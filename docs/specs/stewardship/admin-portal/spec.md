@@ -3150,7 +3150,10 @@ the campaign closes).
   after them, so a longer name never moves either button. The months run
   from the campaign's first day (or its first send, if earlier) to its last
   day (or its last send). At either end the button there stays in place and
-  focusable but is unavailable, and a reserved line after the buttons says
+  focusable but is unavailable (greyed, with the not-allowed pointer, as
+  every [unavailable
+  button](../ui-conventions/spec.md#prerequisite-gates) is), and a reserved
+  line after the buttons says
   why ("This is the campaign's first month." or "This is the campaign's last
   month."). The calendar opens on the month its address names
   (`?month=2054-11`), else on the current month in the browser's zone when
@@ -3171,7 +3174,23 @@ the campaign closes).
   status and Edit. The status is the scheduled emails table's, from the same
   counts-only work summary; each day or week of a digest shows the digest's
   "Repeats" until its time has passed, then "Past". Every send of a digest is
-  listed, however long the campaign.
+  listed, however long the campaign. Above it, **Show** is a [binary
+  choice](../ui-conventions/spec.md#binary-choices) (`?show=`): **Upcoming
+  emails** (the default) or **Include past emails**. A past email is one
+  whose time has passed and is not still sending; the default leaves them
+  out because the list is where the Administrator finds what is still to
+  come and can be edited, and a long campaign's past digest days would
+  otherwise bury it, while the grid above still shows every send. With
+  nothing upcoming the table's one row says so and names Include past
+  emails. The **When** and **Schedule** headings sort the table on the
+  server, as every [Admin table](../ui-conventions/spec.md#admin-tables)
+  does (`?sort=`; When newest first on its first choice, Schedule in
+  sending order of the schedules, each schedule's sends by time); the
+  default is sending order. The table is shown whole, with no navigator.
+  Choosing Show or a heading refreshes only this table in place; both keep
+  the other's choice and the month shown (`?month=`), and the grid never
+  changes with them, since it draws every send from the page's own list of
+  them, not from the table.
 
 A send's time is browser-local, like every Admin time (the
 [browser-local time rule](../ui-conventions/spec.md#dates-and-times)), and the

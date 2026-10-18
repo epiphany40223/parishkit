@@ -287,6 +287,15 @@ first user is the planned
 [Campaign calendar editing](../admin-portal/spec.md#editing-from-the-calendar)
 ([#1521](https://github.com/epiphany40223/parishkit/issues/1521)).
 
+A checkbox or radio button sits on the same line as its own label, the
+box or circle first and the words beside it, and any help or reason for
+that one choice goes under the words, never between the control and its
+label. **Shared code.** The stylesheet lays out every form or fieldset
+`div` that holds one checkbox or radio and its `label` this way (and a
+`label` wrapping its control), so a template never adds its own rule
+(#1656, Edit scheduled email's Apply this edit to and Delete this
+scheduled email).
+
 Client validation improves feedback but never replaces server validation.
 Browser-local timezone conversion uses UTC ISO timestamps supplied by the
 server. The Admin portal [requires
@@ -944,7 +953,12 @@ only content after the toggle ([no layout shift](#no-layout-shift)).
 **Rule.** A button is unavailable until its prerequisites are met and there
 is something for it to do, and while it is unavailable a short visible reason
 says what is missing. A Review button is unavailable until the form differs
-from what is saved. The server still checks every submission. **Why.** A
+from what is saved. The server still checks every submission. An unavailable
+button looks the same whether it is `disabled` or kept focusable with
+`aria-disabled` (a stepping control at the end of its range): greyed, with
+the not-allowed pointer and no hover change. The busy (progress) pointer is
+only for a button whose request is in flight (`is-busy`, `aria-busy` on it
+or its form), never for one that is merely unavailable (#1656). **Why.** A
 button that is available but refuses afterwards wastes a round trip and reads
 as an error; a button greyed out with no reason reads as broken. **Shared
 code.** `ui-v1.js`: `data-require-complete` with `data-complete-hint` and
@@ -1678,7 +1692,8 @@ Testing rehearsal.
   (Production | Testing rehearsal), above its Filters panel, and
   [Roster changes to enter](../admin-portal/spec.md#roster-changes-to-enter)'s
   Show (Not yet entered | All, including entered), above its Ministry
-  filter.
+  filter, and the [Campaign calendar](../admin-portal/spec.md#campaign-calendar)'s
+  Show (Upcoming emails | Include past emails), above Every email by date.
 - **Links.** Each segment is a link to the page's own address with that
   choice (`a[data-in-place]`, marked `aria-current="page"` when chosen), so
   each view has a real address that a reload or bookmark keeps. The link
