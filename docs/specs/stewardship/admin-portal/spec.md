@@ -3609,7 +3609,7 @@ stays; the Preview changes page with its fictional sample and the schedules
 the new text switches is not shown on a draft, whose schedules have sent
 nothing, and Preview and test email shows the sample. Send work in progress
 that would block a schedule change refuses the save with its reason, and the
-status line links Outgoing mail. Pages
+status line links Sent mail. Pages
 and emails' editor also has Keep as is and go back while it holds no change
 (Pages and emails, above). New and Edit scheduled email have no stored
 item mark, so Return to Dates and mail schedules is their way back while
@@ -4039,7 +4039,7 @@ outcome.
    progress.
    - **Direct activation.** Stage boxes **Go live** (Done), **Prepare
      initial emails** (In progress, Done or Failed, with the items processed
-     as its detail) and **Sending**, which links to Outgoing mail once
+     as its detail) and **Sending**, which links to Sent mail once
      preparation is done and never claims delivery. Failed: primary
      **Retry** for mail preparation.
    - **Scheduled.** "Scheduled to start Sat, Nov 7, 9:00 AM. Emails follow
@@ -4055,7 +4055,7 @@ outcome.
      the cancellation counts, and the caution "Testing data deleted earlier
      is not restored; going live again starts from Check." Mail that blocks
      the cancellation is a refusal inside the dialog, with links to Pause
-     and resume mail and Outgoing mail. Apply returns the campaign to a
+     and resume mail and Sent mail. Apply returns the campaign to a
      Testing draft and opens Check with a status line.
 
 After Production is confirmed, the Check, Prepare and Confirm Production
@@ -4749,7 +4749,7 @@ their recipient, state and attempt history. They belong to no campaign, and
 the resolutions and their admission are a campaign's, so their page offers
 no resolution, note or bulk action.
 
-The Mode and Provider attempts columns of Outgoing mail are gone: the
+The Mode and Provider attempts columns of Sent mail are gone: the
 Production and Testing choice below replaces Mode, and the attempt history
 stays on the Mail message page. The command line's `--sort` keeps every
 earlier token, including `mode`, `attempts` and `created` (when the email
