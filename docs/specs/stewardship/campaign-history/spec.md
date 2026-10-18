@@ -869,8 +869,9 @@ and the average of all imported years:
   slice that uses it, since the import slice's migration is frozen once it
   is released.
 - A figure that cannot be computed shows "—" with a toggletip giving the
-  reason (no Family rows for last year, different id
-  systems, financial module off).
+  reason (no Family rows for last year, different id systems, financial
+  module off, no responders last year, no active Families on the day, or no
+  figure for the day yet). Every "—" has a reason.
 
 ### Pledge distribution
 
@@ -1102,11 +1103,12 @@ compiled, the occurrence stores the section's computed aggregates (the
 figures, the chart specifications and each imported year's checksum), so
 the saved digest page shows exactly what was sent, whatever is imported or
 removed later; that page draws the stored figures as
-[stat tiles](../ui-conventions/spec.md#stat-tiles), word for word. The section applies the [small-count
-protection](#pledge-distribution) and carries no note text. With no
-imported years the section is left out. It is the first task to use the
-chart engine's server renderer, so its slice adds that renderer's timeout
-name, as the [chart engine](../reports/spec.md#chart-engine) requires.
+[stat tiles](../ui-conventions/spec.md#stat-tiles), word for word. The
+section applies the [small-count protection](#pledge-distribution) and
+carries no note text. With no imported years the section is left out. It
+is the first task to use the chart engine's server renderer, so its slice
+adds that renderer's timeout name, as the
+[chart engine](../reports/spec.md#chart-engine) requires.
 
 ## Command line
 

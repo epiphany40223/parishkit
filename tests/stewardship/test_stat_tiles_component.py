@@ -118,7 +118,8 @@ def test_a_share_bar_is_drawn_only_against_a_whole_above_zero():
 def test_the_include_reads_label_value_and_details_in_order():
     """One list named by its heading, a tile per figure keyed for tests, the
     visible text in reading order with nothing hidden from assistive
-    technology but the bar, and no mouse-only title tooltip."""
+    technology but the bar and the trend's arrow (its words say the
+    direction), and no mouse-only title tooltip."""
     html = render(
         [
             tile(
@@ -138,7 +139,8 @@ def test_the_include_reads_label_value_and_details_in_order():
         '<span class="stat-label">Invited</span> '
         '<span class="stat-value">1,200</span> '
         '<span class="stat-detail">out of 1,500 (80%)</span> '
-        '<span class="stat-detail stat-trend">↑ 12.5% more</span>'
+        '<span class="stat-detail stat-trend">'
+        '<span aria-hidden="true">↑</span> 12.5% more</span>'
         '<span class="stat-bar" aria-hidden="true">'
         '<progress value="1200" max="1500"></progress></span></li></ul>'
     )
@@ -338,3 +340,29 @@ def test_saved_daily_report_figures_are_drawn_as_emailed():
     assert found[1].unknown_reason == (
         "This figure was not available on the report day."
     )
+
+
+def test_the_include_hides_every_arrow_of_a_line_and_escapes_its_text():
+    """A comparison line's arrows are hidden from screen readers, which read
+    the words; the rest of the line is escaped as plain text (#1637)."""
+    html = render(
+        [
+            shown(
+                "families",
+                "Families",
+                "40",
+                details=(
+                    "Last year: 30 (↑ 33.3% more)",
+                    "<b>2054</b>: 40 (→ the same)",
+                ),
+            )
+        ],
+        tiles_label="Headline figures",
+    )
+    assert (
+        '<span class="stat-detail">Last year: 30 '
+        '(<span aria-hidden="true">↑</span> 33.3% more)</span>'
+    ) in html
+    assert (
+        '&lt;b&gt;2054&lt;/b&gt;: 40 (<span aria-hidden="true">→</span> the same)'
+    ) in html

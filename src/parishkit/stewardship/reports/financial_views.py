@@ -59,6 +59,9 @@ def summary_tiles(summary):
     with its reason, never zero (ui-conventions "Stat tiles").
     """
     total = summary["annual_total"]
+    # Money refuses totals above $999,999,999.99, which MoneyAmount does
+    # not; one parish's annual pledges never come near that, so the bound
+    # is left to raise rather than handled.
     total = Money(total.cents) if total.available else None
     return [
         tile("families", _("Families"), summary["families"]),
