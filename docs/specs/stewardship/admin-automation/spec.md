@@ -2017,8 +2017,9 @@ which `schedule show` lists too. A saved digest's `skip` (one slot date,
 ([#1658](https://github.com/epiphany40223/parishkit/issues/1658)): it adds
 that send to the digest's `skip_dates`, which `schedule show` and each side
 of `schedule preview` list, with the page's refusals (a send already past
-or with work, one already skipped, or a date that is not a send of the
-digest). A `repeat` entry
+or with Production work, one already skipped, or a date that is not a send
+of the digest). An entry with `skip` may not also give `date`, `time` or
+`weekday` (`invalid`), so the skip always names a send of the saved digest. A `repeat` entry
 ([#469](https://github.com/epiphany40223/parishkit/issues/469)) takes a
 repeat rule, a `time` and a `template_version` and adds one ordinary
 reminder per date the rule gives, expanded by the server's copy of the

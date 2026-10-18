@@ -3175,9 +3175,12 @@ directly; the wizard's list has its own Delete.
   digest removes it, as Delete does when Edit is opened from the list (with
   no send named): every send still to come stops, and the review says so.
   Only a send whose time is still ahead, that is a send of this digest, is
-  not skipped already and has no work yet (nothing prepared, sending, sent
-  or failed) is offered; for any other, Edit draws the whole-digest Delete
-  alone. The page's status line after Apply says "Email skipped." or
+  not skipped already and has no Production work yet (nothing prepared,
+  sending, sent or failed) is offered; for any other, Edit draws the
+  whole-digest Delete alone. A Testing rehearsal's work for the send does
+  not count: it is practice mail, so the real send can still be skipped.
+  The review names the skipped send by its send time, browser-local (a
+  Daily digest's send is the morning after the day it reports on). The page's status line after Apply says "Email skipped." or
   "Scheduled email deleted.".
 - **Refusals.** Edit already refuses a schedule that has run or has work
   prepared (a GET or a POST, even from an old link), so an email that sent or
@@ -3189,8 +3192,8 @@ directly; the wizard's list has its own Delete.
   Administrator's change is refused as any review is. Reminder planning,
   live-campaign rules and emailed Family codes and links are those of any
   schedule change. Skipping a digest send whose time has passed, or that has
-  work (prepared, sending, sent or failed), is refused (403) with nothing
-  recorded, and so is one skipped again (409, a stale page); a send that is
+  Production work (prepared, sending, sent or failed), is refused (403) with
+  nothing recorded, and so is one skipped again (409, a stale page); a send that is
   not one of the digest's, or a skip of anything but a digest, is refused
   as an unknown request (400). The reviewed send's time is signed into the
   review, so Apply refuses under the work lock once it has passed, and the
@@ -3200,8 +3203,13 @@ directly; the wizard's list has its own Delete.
   (the slot dates it skips: a Weekly digest's send day, a Daily digest's
   reported day, sent the next morning), so it is an ordinary schedule
   change: a new revision of the digest, reviewed, applied and audited like
-  any other. Every later change to the digest keeps its skip dates; how the
-  scheduler and database honour them is in
+  any other. Every later change to the digest keeps its past skip dates.
+  A change that moves the digest's sends (its weekday, or the campaign's
+  dates) drops each skip of a send still ahead that is no longer a send,
+  so changing the weekday back later does not skip that date again; the
+  change's review lists the dropped skips by their send times. Each side of
+  a digest's review lists the sends it skips the same way. How the
+  scheduler and database honour skip dates is in
   [skipped digest sends](../background-processing/spec.md#schedule-replacement-and-removal).
   A skipped send cannot be brought back in this release. Only digests take
   skip dates, so Family mail is never skipped this way.
