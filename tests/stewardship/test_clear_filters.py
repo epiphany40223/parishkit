@@ -41,21 +41,38 @@ FILTER_FORMS = {
 # form (Sent mail's Production or Testing, #1562; Roster changes' Show,
 # #1535), which Clear filters keeps by rule.
 KEPT_NAMES = {"{{ name }}", "zone", "mode", "show"}
-FORM = re.compile(r'<form id="table-filters".*?</form>', re.S)
-HIDDEN = re.compile(r'<input type="hidden"[^>]*>')
+# Tags are matched whatever their attribute order, so a form or field
+# written another way never escapes the guard.
+FORM = re.compile(r'<form\b[^>]*\bid="table-filters"[^>]*>.*?</form>', re.S)
+FIELD = re.compile(r"<(?:input|select|textarea)\b[^>]*>")
+HIDDEN = re.compile(r'\btype="hidden"')
 NAME = re.compile(r'\bname="([^"]*)"')
 # A submit button: the shared tag with type="submit", or a raw one.
 SUBMIT = re.compile(r'\{%\s*button\b[^%]*type="submit"|<button\b|type="submit"')
 
 
-def filter_forms():
-    """Each template's filter form source, by template name."""
+def filter_forms(root=TEMPLATES):
+    """Each template's filter form source, by its path under ``root``,
+    searching every subdirectory."""
     forms = {}
-    for path in sorted(TEMPLATES.glob("*.html")):
+    for path in sorted(root.rglob("*.html")):
         match = FORM.search(path.read_text())
         if match:
-            forms[path.name] = match.group(0)
+            forms[path.relative_to(root).as_posix()] = match.group(0)
     return forms
+
+
+def unmarked_fields(form):
+    """A filter form's hidden fields that break the Clear filters rule:
+    neither kept state nor marked data-filter."""
+    bad = []
+    for field in FIELD.findall(form):
+        name = NAME.search(field)
+        name = name.group(1) if name else ""
+        if HIDDEN.search(field):
+            if "data-filter" not in field and name not in KEPT_NAMES:
+                bad.append(field)
+    return bad
 
 
 def test_the_inventory_names_every_filter_form():
@@ -84,10 +101,27 @@ def test_every_hidden_field_of_a_filter_form_is_kept_or_a_filter():
     """Clear filters keeps every hidden field not marked data-filter, so a
     hidden field that carries a filter must say so."""
     for name, form in filter_forms().items():
-        for field in HIDDEN.findall(form):
-            if "data-filter" in field:
-                continue
-            assert NAME.search(field).group(1) in KEPT_NAMES, (name, field)
+        assert unmarked_fields(form) == [], name
+
+
+def test_the_guard_finds_forms_and_fields_in_any_attribute_order(tmp_path):
+    """A filter form in a subdirectory, with its id after other attributes,
+    is found, and so is its unmarked hidden filter field whatever its
+    attribute order; marked and kept ones pass."""
+    nested = tmp_path / "stewardship" / "reports"
+    nested.mkdir(parents=True)
+    (nested / "bad.html").write_text(
+        '<form method="get" id="table-filters" data-in-place>'
+        '<input name="secret" value="x" type="hidden">'
+        '<input value="1" type="hidden" name="secret2" data-filter>'
+        '<input value="{{ v }}" type="hidden" name="zone">'
+        "</form>"
+    )
+    (tmp_path / "plain.html").write_text('<form id="other"></form>')
+    forms = filter_forms(tmp_path)
+    assert set(forms) == {"stewardship/reports/bad.html"}
+    bad = unmarked_fields(forms["stewardship/reports/bad.html"])
+    assert bad == ['<input name="secret" value="x" type="hidden">']
 
 
 def test_component_draws_apply_then_clear_with_its_tip():

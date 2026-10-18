@@ -1805,7 +1805,8 @@ names. **Precedent.** #1651.
   does not draw its buttons through the shared component, draws another
   submit button, or has a hidden field that is neither kept state (the
   table's sort and size, the zone, a listed view choice) nor marked
-  `data-filter`.
+  `data-filter`. It finds every filter form and field whatever its
+  attribute order, in every Admin template and subdirectory.
 
 ### Basic and Advanced modes
 
