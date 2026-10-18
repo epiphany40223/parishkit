@@ -1742,9 +1742,8 @@ panel both share Apply's grid cell, Clear wrapping under Apply where that
 cell is too narrow, so no row is added). Clear filters
 puts every filter back to the page's default in one step and shows the
 result in place. No filter form names its apply button otherwise (the
-Ministries list's Filter, Background work's Show tasks, Outgoing mail's Show
-deliveries, Refused addresses' Show refusals and Roster changes' Apply became
-Apply filters, #1651). **Why.** Clearing each field by
+Ministries list's Filter, Background work's Show tasks, Refused addresses'
+Show refusals and Roster changes' Apply became Apply filters, #1651). **Why.** Clearing each field by
 hand, or editing the address, is slow and easy to get wrong; a reload or a
 link to the bare page would lose the reader's sort, rows per page and view
 choices (Administrator, pk-local review,
@@ -1762,13 +1761,23 @@ names. **Precedent.** #1651.
   one inside a closed disclosure (System logs' "Filter by identifier"), and
   so is every hidden field that carries a filter, marked `data-filter`
   (System logs' submitted-form mark, the family directory's kept Campaign
-  mail can reach, Outgoing mail's one-send view). A private filter, kept out
+  mail can reach, Sent mail's one-send view). A private filter, kept out
   of addresses, is cleared from the form too, so no later request sends it.
 - **What it keeps.** The table's sort and rows per page, the browser's time
   zone and any view choice the form carries as a hidden field (a
   [segmented pair](#binary-choices)'s chosen view, such as Production or
   Testing) are kept. The list starts again at its first page, as after
   Apply.
+- **A data view is not a filter.** A choice that switches the data shown
+  between Production and Testing is a view, not a filter: Clear filters
+  keeps it. The family directory's Responses shown and Sent mail's
+  Production or Testing are segmented pairs, so their filter forms carry
+  the choice as a kept hidden field; such a choice drawn as a visible
+  control in a filter form is kept too, and is then marked `data-view`.
+  Roster changes' Show, also a segmented pair, is kept the same way.
+  (Coordinator default on
+  [#1651](https://github.com/epiphany40223/parishkit/issues/1651); the
+  Administrator can override it.)
 - **In place.** Clearing works as applying filters does
   ([Admin tables](#admin-tables), #484): every table region, count, summary
   and Filters panel count is refreshed without a reload or a scroll jump,
@@ -1805,8 +1814,9 @@ names. **Precedent.** #1651.
   does not draw its buttons through the shared component, draws another
   submit button, or has a hidden field that is neither kept state (the
   table's sort and size, the zone, a listed view choice) nor marked
-  `data-filter`. It finds every filter form and field whatever its
-  attribute order, in every Admin template and subdirectory.
+  `data-filter`, or a visible Production or Testing choice (`name="mode"`)
+  not marked `data-view`. It finds every filter form and field whatever
+  its attribute order, in every Admin template and subdirectory.
 
 ### Basic and Advanced modes
 

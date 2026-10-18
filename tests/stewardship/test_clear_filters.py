@@ -41,6 +41,9 @@ FILTER_FORMS = {
 # form (Sent mail's Production or Testing, #1562; Roster changes' Show,
 # #1535), which Clear filters keeps by rule.
 KEPT_NAMES = {"{{ name }}", "zone", "mode", "show"}
+# Visible fields that switch the data shown between Production and Testing:
+# a view, not a filter, so Clear filters keeps them (data-view).
+VIEW_NAMES = {"mode"}
 # Tags are matched whatever their attribute order, so a form or field
 # written another way never escapes the guard.
 FORM = re.compile(r'<form\b[^>]*\bid="table-filters"[^>]*>.*?</form>', re.S)
@@ -63,8 +66,9 @@ def filter_forms(root=TEMPLATES):
 
 
 def unmarked_fields(form):
-    """A filter form's hidden fields that break the Clear filters rule:
-    neither kept state nor marked data-filter."""
+    """A filter form's fields that break the Clear filters rule: a hidden
+    field neither kept state nor marked data-filter, or a visible
+    Production or Testing choice not marked data-view."""
     bad = []
     for field in FIELD.findall(form):
         name = NAME.search(field)
@@ -72,6 +76,8 @@ def unmarked_fields(form):
         if HIDDEN.search(field):
             if "data-filter" not in field and name not in KEPT_NAMES:
                 bad.append(field)
+        elif name in VIEW_NAMES and "data-view" not in field:
+            bad.append(field)
     return bad
 
 
@@ -99,21 +105,33 @@ def test_no_admin_template_draws_apply_filters_on_its_own():
 
 def test_every_hidden_field_of_a_filter_form_is_kept_or_a_filter():
     """Clear filters keeps every hidden field not marked data-filter, so a
-    hidden field that carries a filter must say so."""
+    hidden field that carries a filter must say so; and it resets every
+    visible field not marked data-view, so a Production or Testing choice
+    must say so."""
     for name, form in filter_forms().items():
         assert unmarked_fields(form) == [], name
 
 
+def test_the_directory_keeps_its_responses_shown_choice():
+    """The directory's Production or Testing choice is a view: its segmented
+    pair's choice travels in the filter form as a kept hidden field, never
+    marked data-filter."""
+    form = filter_forms()["directory.html"]
+    field = re.search(r'<input type="hidden" name="mode"[^>]*>', form)
+    assert field and "data-filter" not in field.group(0)
+
+
 def test_the_guard_finds_forms_and_fields_in_any_attribute_order(tmp_path):
     """A filter form in a subdirectory, with its id after other attributes,
-    is found, and so is its unmarked hidden filter field whatever its
-    attribute order; marked and kept ones pass."""
+    is found, and so are its hidden filter field and unmarked view choice
+    whatever their attribute order; marked ones pass."""
     nested = tmp_path / "stewardship" / "reports"
     nested.mkdir(parents=True)
     (nested / "bad.html").write_text(
         '<form method="get" id="table-filters" data-in-place>'
         '<input name="secret" value="x" type="hidden">'
         '<input value="1" type="hidden" name="secret2" data-filter>'
+        '<select aria-label="Mode" name="mode"><option>p</option></select>'
         '<input value="{{ v }}" type="hidden" name="zone">'
         "</form>"
     )
@@ -121,7 +139,12 @@ def test_the_guard_finds_forms_and_fields_in_any_attribute_order(tmp_path):
     forms = filter_forms(tmp_path)
     assert set(forms) == {"stewardship/reports/bad.html"}
     bad = unmarked_fields(forms["stewardship/reports/bad.html"])
-    assert bad == ['<input name="secret" value="x" type="hidden">']
+    assert bad == [
+        '<input name="secret" value="x" type="hidden">',
+        '<select aria-label="Mode" name="mode">',
+    ]
+    marked = '<form id="table-filters"><select data-view name="mode"></select></form>'
+    assert unmarked_fields(marked) == []
 
 
 def test_component_draws_apply_then_clear_with_its_tip():

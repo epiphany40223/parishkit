@@ -2264,13 +2264,19 @@
   // What is sent: the form's hidden fields (the CSRF token, the browser's
   // zone, the table's sort and size, a view choice such as Production or
   // Testing), except those marked data-filter, which carry a filter (System
-  // logs' submitted-form mark, a one-send view). No visible field is sent,
-  // so neither is a private filter.
+  // logs' submitted-form mark, a one-send view), and every visible control
+  // marked data-view: a view choice that switches the data shown (the
+  // directory's Responses shown, Production or Testing) is a view, not a
+  // filter, so Clear keeps it. No other visible field is sent, so neither
+  // is a private filter. An unticked box or radio sends nothing, as in a
+  // native submission.
+  const keptField = (field) => field.name && !field.disabled
+    && (field.hasAttribute("data-view")
+      || (field instanceof HTMLInputElement && field.type === "hidden" && !field.hasAttribute("data-filter")));
   const clearedFields = (form) => {
     const fields = new FormData();
     [...form.elements].forEach((field) => {
-      if (field instanceof HTMLInputElement && field.type === "hidden" && field.name
-          && !field.disabled && !field.hasAttribute("data-filter")) {
+      if (keptField(field) && !((field.type === "checkbox" || field.type === "radio") && !field.checked)) {
         fields.append(field.name, field.value);
       }
     });
@@ -2304,11 +2310,12 @@
   };
   // A filter form's filters as one comparable string: each visible field
   // (ticked or not for a box, else its value) and each data-filter hidden
-  // field, in order. ``rendered`` reads what the server drew (the default*
-  // properties) rather than what the browser now shows, which a reload may
-  // have restored from an earlier visit.
+  // field, in order; a data-view choice is not a filter. ``rendered``
+  // reads what the server drew (the default* properties) rather than what
+  // the browser now shows, which a reload may have restored from an earlier
+  // visit.
   const filterValues = (form, {rendered = false} = {}) => JSON.stringify([...form.elements]
-    .filter((field) => field.name && !isSubmit(field) && !field.matches("[data-browser-zone]")
+    .filter((field) => field.name && !isSubmit(field) && !field.matches("[data-browser-zone], [data-view]")
       && (field.type !== "hidden" || field.hasAttribute("data-filter")))
     .map((field) => {
       if (field.type === "checkbox" || field.type === "radio") {
