@@ -903,7 +903,14 @@ and links, and the detail lives on the linked pages. In order, Home shows:
    health, "ParishSoft data may be out of date" while the latest full
    refresh failed or is late (not merely held by a send). An integration
    key switch that did not finish keeps its own error line with Finish
-   switching, because it stops that integration.
+   switching, because it stops that integration. Each line that reports a
+   problem (system problems, failed tasks, out-of-date data, an unfinished
+   key switch) shows its state word and icon; the notices and held-email
+   lines are plain notices. **Exception:** while the configured backup key
+   cannot be read, System health cannot be shown (it answers 503), so that
+   problem is not counted: Home keeps its own sentence line ("The backup
+   key could not be checked: …"), with no link, and the count line for any
+   other problems has no link either.
 3. The **security events** awaiting this Administrator's acknowledgement,
    when there are any (rare; acknowledged in place, so they stay on Home).
 4. The **campaign panel**: the campaign's name as its heading, with links
@@ -932,7 +939,9 @@ notices list is on Automation access; the unreachable-Family count
 directory's "Can't be reached" preset; the failed task list is on
 Background work; the responses of Families who can use the form now, as
 opposed to all Families, are on the Response dashboard; Refresh now is in
-the menu (Home keeps it only while it is the way to Create the campaign).
+the menu (Home keeps it, under "ParishSoft data as of", while there is no
+current campaign, which is how ParishSoft data is first loaded before
+Create the campaign).
 
 Home is a starting point, not only a status page. Its heading is "Home"; the
 parish name and the current campaign's name and state are its data line.

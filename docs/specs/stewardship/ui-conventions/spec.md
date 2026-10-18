@@ -2751,17 +2751,25 @@ without scrolling.
 
 - **Problems are a count.** Problems another page lists are one short line
   each on the overview: the count in plain words ("2 system problems") and
-  one link to the page that lists them, never the problems themselves. The
-  line is a [status indicator](#status-indicators): the error look when any
-  counted problem is an error, else the warning look. The lines sit
+  one link to the page that lists them, never the problems themselves. A
+  line that reports a problem is a [status indicator](#status-indicators)
+  (its word, icon and colour): the error look when any counted problem is
+  an error, else the warning look. A line that counts work waiting for
+  someone's decision rather than a problem (notices to acknowledge, held
+  emails) is a plain notice, with no state word or icon. The lines sit
   together in one compact row under the page heading, wrapping on a phone,
   and are left out when there is nothing to count. They are page-load
   state, not an in-place change, so they reserve no space.
+  **Exception:** a problem that keeps the linked page from opening is not
+  counted; the overview keeps that problem's own sentence instead, with no
+  link, because a link to a page that cannot be shown leads nowhere.
 - **Facts are one strip.** Facts about one thing (a campaign's name,
   state, dates, the next mailing) are a single key/value strip (`<dl>`),
   not paragraphs, with each date and time in the compact
   [date format](#date-format), as in a table cell. The panel's heading row
-  carries its one "more detail" link.
+  carries its "more detail" links: one to each page that breaks those
+  facts down (a campaign's dates page and its response dashboard, for
+  example), separated by " · ".
 - **Figures are stat tiles.** Headline figures use the
   [stat tiles](#stat-tiles), one population per figure, with a link to the
   page that breaks them down.
@@ -2778,7 +2786,10 @@ without scrolling.
   sideways scroll.
 - **Acknowledgement queues move to their page.** A list someone works
   through item by item (notices to acknowledge, for example) lives on the
-  page it belongs to; the overview shows its count line.
+  page it belongs to; the overview shows its count line. **Exception:** a
+  rare item that must be seen at once and is acknowledged in place (Admin
+  Home's security events awaiting acknowledgement) stays on the overview
+  as its own panel.
 
 **Why.** The Administrator, 2026-10-18, on Home: "This should be more of an
 overview dashboard (with links to more detailed information) rather than
