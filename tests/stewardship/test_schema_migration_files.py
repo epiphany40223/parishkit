@@ -384,6 +384,9 @@ FROZEN = {
     "0117_log_search_indexes.sql": (
         "6041159c2c6b3e86cd23bbcbd3979c335662ae0371cd8a1904b364c319b05b81"
     ),
+    "0118_gender_by_hand.sql": (
+        "5b2cc690bc1f6fdade66a22618290b959145989cd4d650675bda755d4df34ea8"
+    ),
 }
 
 

@@ -95,6 +95,7 @@ def test_all_existing_fields_http_and_revisit_under_exact_web_role(
     assert {row.field for row in current if row.handling == "manual"} == {
         "prefix",
         "suffix",
+        "gender",
         "marital_status",
     }
     assert second.answers["members"]["3"]["home_phone"] == phone_record(

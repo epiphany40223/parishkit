@@ -1994,9 +1994,9 @@ then:
   *Unknown*.
 - **How it reaches ParishSoft**: *Automatic* for a field the
   [handling registry](../data/spec.md#proposed-changes) marks API-writable,
-  *By hand* for every other row. A Family address, a death date, and any
-  answer that removes a recorded value are *By hand*, because ParishSoft's API
-  cannot carry them (see the
+  *By hand* for every other row. A Family address, a death date, a gender,
+  and any answer that removes a recorded value are *By hand*, because
+  ParishSoft's API cannot carry them (see the
   [handling registry](../data/spec.md#proposed-changes) and the
   [data workflow](../data/spec.md#review-and-publication)). A deceased
   Member has two rows, *Deceased* and *Death date*: Staff enter them in
@@ -2210,8 +2210,7 @@ the value publication writes instead of the Family's answer. The Family's
 answer is never changed and stays in its column, with the edit in *Edited
 value* beside it. The field starts with the value publication would write
 now (the edit, else the Family's answer): a date field no later than the
-campaign's today for a birth date, the census choices for Gender,
-and otherwise text no longer than ParishSoft's request schema takes for the
+campaign's today for a birth date, and otherwise text no longer than ParishSoft's request schema takes for the
 field (First name 30 characters, Email address 150, a phone 25). **Save
 value** is unavailable until the value differs from the one shown, with its
 reason in a reserved line ([prerequisite
@@ -2223,8 +2222,7 @@ Both record with an ordinary Confirm, being reversible, and the answer is
 the page, redrawn in place, with the notice naming the row. The value is read as the Family form reads its
 own answer (a phone must be a whole number, email addresses are checked and
 joined, a required name cannot be blank) and must fit ParishSoft's request
-schema as publication will send it; Gender is held to its census choices
-only, since its ParishSoft encoding is not settled yet. Save value is also
+schema as publication will send it. Save value is also
 unavailable, with its reason, while the browser can tell the value is not
 allowed (blank, too long, or a date after today). A value the server refuses
 is answered with the reason at the field in the dialog, and the field is

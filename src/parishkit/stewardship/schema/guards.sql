@@ -4777,8 +4777,10 @@ BEGIN
                 -- The live ParishSoft API test (#1596): a death date leaves
                 -- the Member Active, so it is By hand with the deceased
                 -- status, and no value can be cleared, so an answer that
-                -- removes one (JSON null or "") is By hand too.
-                expected_handling := CASE WHEN NEW.field IN ('prefix','suffix','marital_status','moved_household','deceased_status','death_date')
+                -- removes one (JSON null or "") is By hand too. The live
+                -- gender test (#1603): a gender PUT is accepted but never
+                -- changes the Member, so gender is By hand.
+                expected_handling := CASE WHEN NEW.field IN ('prefix','suffix','gender','marital_status','moved_household','deceased_status','death_date')
                     OR expected_submitted IN ('null'::jsonb,'""'::jsonb)
                     THEN 'manual' ELSE 'api' END;
                 source_field := public.stewardship_response_field_source_v1(

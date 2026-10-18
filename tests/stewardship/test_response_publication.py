@@ -17,7 +17,6 @@ from parishkit.stewardship.responses.publication import (
     Outcome,
     decode_member_value,
     dry_run_summary,
-    encode_member_value,
     payload_digest,
     plan_entity,
 )
@@ -262,8 +261,8 @@ def test_a_value_the_put_schema_refuses_is_by_hand():
     """The API would refuse it with HTTP 400, so it is never planned.
 
     A phone under ten characters and a first name over thirty are reported
-    By hand, and so is gender while its codes are unconfirmed (#1603); the
-    entity's other changes are still written.
+    By hand, and so is gender, which the registry marks by hand (#1603);
+    the entity's other changes are still written.
     """
     rows = [
         proposal("home_phone", phone_record("555-0101"), None),
@@ -281,31 +280,22 @@ def test_a_value_the_put_schema_refuses_is_by_hand():
     assert plan.payload == {"lastName": "L" * 50}
 
 
-def test_gender_codes_are_provisional_and_by_hand():
-    """Gender encodes to one character but is never planned until confirmed.
-
-    The recorded schema allows one character and lists no codes, so the
-    codes are a guess (#1603): every gender change is By hand while
-    ``GENDER_CODES_CONFIRMED`` is false, and the entity's other changes
-    are still written.
-    """
-    assert publication.GENDER_CODES_CONFIRMED is False
-    assert encode_member_value("gender", "Female") == "F"
-    assert encode_member_value("gender", "Male") == "M"
-    assert encode_member_value("gender", "Unspecified") is None
-    rows = [proposal("gender", "Male", "Female"), proposal("last_name", "Lee", None)]
-    plan = plan_entity("member", 1, rows, payload(gender="F"))
-    assert outcomes(plan) == {"gender": Outcome.BY_HAND, "last_name": Outcome.WRITE}
-    assert plan.payload == {"lastName": "Lee"}
-
-
-@pytest.mark.parametrize(
-    ("raw", "expected"),
-    [("F", "Female"), ("M", "Male"), ("Female", "Female"), (" FEMALE ", "Female")],
-)
-def test_a_gender_code_reads_as_its_census_word(raw, expected):
-    """A one-character code compares as its census word; a word reads as now."""
-    assert decode_member_value("gender", raw) == expected
+def test_gender_is_by_hand_whatever_the_read_holds():
+    """A gender PUT is accepted but never changes the Member (#1603), so the
+    registry marks gender by hand: even a row stored as Automatic before
+    0118 is By hand, whatever gender the read returns (a code, a word, an
+    unknown code or not text), and never blocks the entity's other writes."""
+    for raw in ("F", "Female", "X", ["F"], 1):
+        rows = [
+            proposal("gender", "Male", "Female"),
+            proposal("last_name", "Lee", None),
+        ]
+        plan = plan_entity("member", 1, rows, payload(gender=raw))
+        assert outcomes(plan) == {
+            "gender": Outcome.BY_HAND,
+            "last_name": Outcome.WRITE,
+        }
+        assert plan.payload == {"lastName": "Lee"} and not plan.blocked
 
 
 @pytest.mark.parametrize("raw", [["F"], {}, 1])
@@ -314,25 +304,6 @@ def test_a_non_text_gender_read_is_unreadable_not_a_crash(raw):
     value, so it is reported as unreadable (never an unhashable TypeError)."""
     with pytest.raises(ValueError, match="cannot be read"):
         decode_member_value("gender", raw)
-
-
-def test_confirmed_gender_codes_plan_the_code(monkeypatch):
-    """Once confirmed, a gender change sends its code and compares by word.
-
-    The read's ``F`` equals the Family's ``Female`` baseline, so a change to
-    Male plans ``M``; Unspecified has no code and stays By hand.
-    """
-    monkeypatch.setattr(publication, "GENDER_CODES_CONFIRMED", True)
-    current = payload(gender="F")
-    plan = plan_entity("member", 1, [proposal("gender", "Male", "Female")], current)
-    assert outcomes(plan) == {"gender": Outcome.WRITE}
-    assert plan.payload == {"gender": "M"}
-    assert plan.planned_digest == payload_digest({**current, "gender": "M"})
-    plan = plan_entity(
-        "member", 1, [proposal("gender", "Unspecified", "Female")], current
-    )
-    assert outcomes(plan) == {"gender": Outcome.BY_HAND}
-    assert plan.payload is None and not plan.blocked
 
 
 def test_matching_value_is_already_in_parishsoft():

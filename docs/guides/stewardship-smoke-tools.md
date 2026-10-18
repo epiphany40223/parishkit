@@ -154,9 +154,12 @@ docker compose ... exec -T worker pk-stewardship smoke \
   - `encoder_matches_read`: whether the publication encoder, given the
     value as read, produces exactly the same text (or `unreadable`); a
     false one means the encoder or the read mapping must change before
-    publication can verify a write; for gender it is true only for a code
-    the encoder sends (`M` or `F`), so a whole word or another code is the
-    evidence that keeps gender By hand (#1603);
+    publication can verify a write; it is null for a field
+    publication never writes: `pager`, `fax` and `gender`. Gender is By
+    hand: the live test of 2026-10-17 found that a one-character `gender`
+    PUT is accepted but never changes the Member, an unknown code gives
+    HTTP 500, and reads return the code (`M`), not the word (#1603). Its
+    shape is still reported, as a record of what the read returns;
   - `sendable`: whether the value as read satisfies the recorded PUT
     schema (type, length, a strict `YYYY-MM-DD` date).
 

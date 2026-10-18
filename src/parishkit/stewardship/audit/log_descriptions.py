@@ -869,8 +869,8 @@ DESCRIPTIONS = {
     ),
     "census_handling_corrected": _(
         "An upgrade moved open census changes that ParishSoft cannot take "
-        "automatically (a death date, a Family address, or an answer that "
-        "removes a value) to By hand. Count is how many."
+        "automatically (a gender, a death date, a Family address, or an "
+        "answer that removes a value) to By hand. Count is how many."
     ),
     "census_publication_planned": _(
         "The server checked approved census changes against ParishSoft and "
