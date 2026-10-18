@@ -47,7 +47,7 @@ from parishkit.stewardship.jobs.leader_email_owner import (
     TASK_TYPE,
     leader_owner,
 )
-from parishkit.stewardship.jobs.models import TaskRun
+from parishkit.stewardship.jobs.models import TaskRun, TaskRunEvent
 from parishkit.stewardship.jobs.operational_dispatch import (
     begin_submission,
     finish_submission,
@@ -589,8 +589,11 @@ def test_a_switch_to_production_cancels_a_prepared_testing_email(testing):
 
 def test_a_changed_testing_recipient_cancels_a_prepared_email(testing):
     """The email never goes to the old Testing recipient; nor is a request
-    made for the old one prepared."""
-    store, _browser = testing
+    made for the old one prepared: its Task is cancelled, with no error, and
+    Last emailed says why."""
+    from parishkit.stewardship.audit.models import OperationalLog
+
+    store, browser = testing
     rows = prepared(store, ["ann@example.org"])
     seed(
         "UPDATE stewardship_system_configuration SET testing_recipient=%s",
@@ -607,9 +610,29 @@ def test_a_changed_testing_recipient_cancels_a_prepared_email(testing):
         "second-tester@example.org",
     )
     (identifier,) = schedule()
-    with pytest.raises(PermissionError, match="Testing recipient changed"):
-        consume(identifier, store)
+    assert consume(identifier, store)
+    assert TaskRun.objects.get(pk=identifier).state == "cancelled"
     assert LeaderEmailCohort.objects.count() == 1
+    assert not OperationalLog.objects.filter(level="ERROR").exists()
+    with web():
+        section = region(browser.get(USERS).content.decode())
+    assert section.count("Cancelled: the mode or Testing recipient changed") == 1
+
+
+def test_a_mode_change_before_preparation_cancels_the_request(production):
+    """Production to Testing between Apply and preparation: cancelled cleanly."""
+    harness, _browser = production
+    recorded(["leader-9@example.org"])
+    seed(
+        "UPDATE stewardship_system_configuration SET mode='testing', "
+        "testing_recipient=%s",
+        "tester@example.org",
+    )
+    (identifier,) = schedule()
+    assert consume(identifier, harness.service.store)
+    assert TaskRun.objects.get(pk=identifier).state == "cancelled"
+    assert not LeaderEmailCohort.objects.exists()
+    assert not OutboxMessage.objects.filter(purpose="leader_email").exists()
 
 
 def test_pause_holds_a_prepared_email_until_resume(production):
@@ -627,11 +650,16 @@ def test_pause_holds_a_prepared_email_until_resume(production):
         early = leader_email_owner._current_mail(
             store, row.cohort, row.address, message.semantic_key
         )
-    seed(PAUSE)
+    # A claim taken before the pause meets the hold at its effect (a held
+    # email is not claimed at all once paused).
     with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
         execution = claim(message, store)
-        with pytest.raises(FamilyDeliveryHeld, match="paused"):
-            begin(message, execution, store)
+    seed(PAUSE)
+    with (
+        task_login(ServiceRole.MAIL_DISPATCH, exact=True),
+        pytest.raises(FamilyDeliveryHeld, match="paused"),
+    ):
+        begin(message, execution, store)
     message.refresh_from_db()
     assert message.state == "pending" and message.attempt == 0
     # SQL holds it too when the Python check is skipped.
@@ -661,6 +689,66 @@ def test_pause_holds_a_prepared_email_until_resume(production):
     assert mail.recipients == ("leader-9@example.org",) and attempt == 1
 
 
+def test_a_paused_email_is_not_claimed_until_resume(production, tmp_path, monkeypatch):
+    """While mail is paused, the scheduler's due scan does not hint the email
+    and the real MAIL handler takes no claim, writing no Task event however
+    often it is offered it; after Resume it is sent exactly once."""
+    from parishkit.stewardship import family_delivery_process
+    from parishkit.stewardship.accounts.key_files import write_private
+    from parishkit.stewardship.jobs.storage import _status
+
+    harness, _browser = production
+    store = harness.service.store
+    message = prepared(store, ["leader-9@example.org"])["leader-9@example.org"].outbox
+    path = tmp_path / "workspace"
+    write_private(path, b"synthetic-workspace")
+    sent = []
+
+    def submit(candidate, settings, mail, *, seconds, check):
+        """The provider boundary: accept and record the one send."""
+        sent.append(mail.recipients)
+        return FamilyDeliveryResult(FamilyDeliveryStatus.ACCEPTED, 1)
+
+    monkeypatch.setattr(family_delivery_process, "submit_weekly", submit)
+    handler = delivery_handler(store, credential_path=path)
+
+    def deliver():
+        """One MAIL claim cycle for the email's Task."""
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True, reconnect=True):
+            return execute_hint(
+                message.task_id,
+                queue=WorkQueue.MAIL,
+                worker_id=uuid4(),
+                handlers={"outbox_delivery": handler},
+            )
+
+    seed(PAUSE)
+    task = TaskRun.objects.get(pk=message.task_id)
+    events = TaskRunEvent.objects.count()
+    for _ in range(3):
+        with task_login(ServiceRole.MAIL_DISPATCH, exact=True), work_transaction():
+            # The scheduler's due scan asks this before it hints the Task.
+            assert handler.admit("hint", _status(task)) is False
+        # A hint that arrives anyway is refused before anything is written.
+        with pytest.raises(PermissionError, match="not admitted"):
+            deliver()
+    assert TaskRunEvent.objects.count() == events
+    after = TaskRun.objects.get(pk=message.task_id)
+    assert (after.state, after.attempt, after.version) == (
+        task.state,
+        task.attempt,
+        task.version,
+    )
+    message.refresh_from_db()
+    assert message.state == "pending" and message.attempt == 0 and sent == []
+    seed(RESUME)
+    assert deliver()
+    assert not deliver()
+    message.refresh_from_db()
+    assert message.state == "delivered" and message.attempt == 1
+    assert sent == [("leader-9@example.org",)]
+
+
 def test_no_apply_while_mail_is_paused(production):
     """The review and Apply refuse in plain words, and the guard refuses in SQL."""
     _harness, browser = production
@@ -676,6 +764,53 @@ def test_no_apply_while_mail_is_paused(production):
         assert "Mail is paused" in response.content.decode()
     with pytest.raises(IntegrityError, match="mail is paused"):
         recorded(["leader-9@example.org"])
+    assert not LeaderEmailRequest.objects.exists()
+
+
+def test_a_replayed_apply_during_a_pause_says_its_emails_are_held(production):
+    """A double click landing after a pause names the first Apply's emails."""
+    _harness, browser = production
+    with web():
+        review = post(browser, EMAILS, {"scope": "all"})
+        preview = re.search(r'name="preview" value="([^"]+)"', review.content.decode())[
+            1
+        ]
+        applied = post(browser, EMAILS, {"action": "confirm", "preview": preview})
+    assert applied.status_code == 200
+    seed(PAUSE)
+    with web():
+        replayed = post(browser, EMAILS, {"action": "confirm", "preview": preview})
+    assert replayed.status_code == 400
+    body = replayed.content.decode()
+    assert "queued at its first Apply" in body and "Nothing was sent" not in body
+    assert LeaderEmailRequest.objects.count() == 1
+
+
+def test_a_testing_pause_flag_does_not_refuse(testing):
+    """Pause holds only Production mail, so a Testing review and request are
+    not refused by it, in Python or in SQL."""
+    _store, browser = testing
+    seed(PAUSE)
+    with web():
+        review = post(browser, EMAILS, {"scope": "all"})
+    assert review.status_code == 200
+    request, created = recorded(["ann@example.org"])
+    assert created and request.mode == "testing"
+
+
+def test_an_expired_review_gets_the_shared_refusal(production, monkeypatch):
+    """Apply after the review's fifteen minutes is the plain stale refusal."""
+    from parishkit.stewardship.web import refusals
+
+    _harness, browser = production
+    with web():
+        review = post(browser, EMAILS, {"scope": "all"})
+    preview = re.search(r'name="preview" value="([^"]+)"', review.content.decode())[1]
+    monkeypatch.setattr(refusals, "PREVIEW_MAX_AGE", -1)
+    with web():
+        refused = post(browser, EMAILS, {"action": "confirm", "preview": preview})
+    assert refused.status_code == 409
+    assert "This preview is out of date." in refused.content.decode()
     assert not LeaderEmailRequest.objects.exists()
 
 

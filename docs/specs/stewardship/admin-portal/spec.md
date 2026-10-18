@@ -5721,7 +5721,9 @@ selection checkbox, Name (the row header), Email, Last successful sign-in
 (as the users table shows it) and **Last emailed**: when this section last
 emailed that address, and how that email has ended so far, in the words
 Outgoing mail uses for a delivery state ("Delivered", "Not sure it
-arrived" and the rest), or "Never". A Ministry leader user with no Name is
+arrived" and the rest), "Cancelled: the mode or Testing recipient changed"
+when the mode or Testing recipient changed between Apply and the emails'
+preparation (nothing was sent), or "Never". A Ministry leader user with no Name is
 listed under their email, so Email all never skips them. The table follows the shared
 [Admin tables](../ui-conventions/spec.md#admin-tables): Name, Email, Last
 successful sign-in and Last emailed sort on the server, Name by default,
@@ -5755,8 +5757,11 @@ queues nothing more, while a new Apply emails the chosen leaders again, so
 Last emailed is the place to check first. A review lasts fifteen minutes,
 as every review does. While
 [Pause and resume mail](#live-delivery-pause) has the current campaign's
-delivery paused, the review and Apply are refused with that reason and
-nothing is queued; an email already queued waits and is sent after resume.
+delivery paused in Production, the review and Apply are refused with that
+reason and nothing is queued; an email already queued waits and is sent
+after resume. A replayed Apply that lands during the pause says instead
+that its first Apply's emails are queued and held. An expired review gets
+the shared expired-review refusal.
 
 Each email is one message to one leader, with fixed wording that Pages and
 emails does not edit. Its subject names the parish. It says that the

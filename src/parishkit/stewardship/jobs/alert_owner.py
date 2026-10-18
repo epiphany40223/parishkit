@@ -46,6 +46,16 @@ class AlertOwner:
     # Whether each recipient row keeps its compiled subject and bodies, which
     # every later attempt sends again instead of recompiling them.
     keeps_content: bool = False
+    # held(message): whether an unsent message waits without being claimed
+    # (a Production Ministry leader email while mail is paused). Admission
+    # refuses its hint and claim, writing nothing, as it does for paused
+    # campaign mail, so a long pause does not claim it again every retry.
+    held: Callable[..., bool] | None = None
+    # superseded(source_id): whether a source not yet prepared can no longer
+    # be sent as recorded (a Ministry leader request whose mode or Testing
+    # recipient changed since Apply). Preparation then cancels its Task
+    # instead of failing it.
+    superseded: Callable[..., bool] | None = None
 
     def __post_init__(self):
         """Reject an owner assembled from anything but closed, typed parts."""

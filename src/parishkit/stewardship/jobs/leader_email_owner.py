@@ -17,7 +17,10 @@ specification, "Ministry leader emails"), with three differences:
   Ministry leader, the deployment mode the request's and, in Testing, the
   Testing recipient the request's, or the unsent email is cancelled; a
   restore under review holds it, and so does Pause and resume mail while
-  the current campaign's delivery is paused (a Production email only).
+  the current campaign's delivery is paused (a Production email only),
+  and a held email is not claimed until Resume (``held``);
+- a request whose mode or Testing recipient changed before it was prepared
+  is cancelled, not sent (``superseded``), and Last emailed says so.
 
 The private mail helper is the weekly report's (``submit_weekly``): a
 closed, one-recipient report mail with no attachment, whose markup
@@ -95,6 +98,35 @@ def _source_exists(request_id):
     return LeaderEmailRequest.objects.filter(pk=request_id).exists()
 
 
+def _superseded(request_id):
+    """Whether the deployment's mode or Testing recipient changed since Apply.
+
+    Such a request is never prepared under the other one: the preparation
+    Task is cancelled instead (``operational_fanout``), and the Users page's
+    Last emailed shows why (``accounts.leader_emails.leader_rows``).
+    """
+    request = LeaderEmailRequest.objects.values("mode", "testing_recipient").get(
+        pk=request_id
+    )
+    runtime = SystemConfiguration.objects.values("mode", "testing_recipient").get()
+    testing = runtime["testing_recipient"] if runtime["mode"] == "testing" else None
+    return (request["mode"], request["testing_recipient"]) != (runtime["mode"], testing)
+
+
+def _held(message):
+    """Whether Pause and resume mail holds this unsent email now.
+
+    Only a Production email is held, as for campaign mail (admin-portal
+    specification, "Live delivery pause"); admission then takes no claim.
+    """
+    return (
+        message.mode == "production"
+        and SystemConfiguration.objects.filter(
+            current_campaign__delivery_paused=True
+        ).exists()
+    )
+
+
 def _route(store):
     """The current routing: the operational reader's, without its Admin list."""
     from . import operational_fanout
@@ -107,7 +139,8 @@ def _capture(row, claim, store):
 
     A request whose deployment mode (or, in Testing, Testing recipient)
     changed before it was prepared is never sent under the other one: the
-    refusal fails the preparation Task, so no email is created.
+    engine cancels its Task first (``_superseded``); the refusals here only
+    back that up, so no email is created either way.
     """
     route = _route(store)
     if route.sender is None or route.reply_to is None:
@@ -301,6 +334,8 @@ def leader_owner(public_origin=None):
         submit=_submit,
         testing_routed=True,
         keeps_content=True,
+        held=_held,
+        superseded=_superseded,
     )
 
 

@@ -256,7 +256,7 @@ BEGIN
         RAISE EXCEPTION 'Ministry leader email request requires a current Administrator and the reviewed configuration'
             USING ERRCODE='23514';
     END IF;
-    IF c.delivery_paused THEN
+    IF runtime.mode='production' AND c.delivery_paused THEN
         RAISE EXCEPTION 'Ministry leader emails wait while mail is paused'
             USING ERRCODE='23514';
     END IF;

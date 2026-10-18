@@ -2542,7 +2542,10 @@ under its own compiled owner:
   `leader_email_prepare` Task on the general worker, as it does for a
   security event.
 - The worker freezes the request's addresses into a cohort under its fenced
-  claim, and creates one outbox message (purpose `leader_email`) per leader,
+  claim, unless the deployment mode or, in Testing, the Testing recipient
+  changed since Apply: then it cancels the preparation Task instead, sends
+  nothing and logs no error, and Last emailed says the email was cancelled.
+  Otherwise it creates one outbox message (purpose `leader_email`) per leader,
   with its content compiled once from the request's recorded counts and the
   deployment's public address for the two links. The recipient row keeps
   that compiled subject and bodies, so every attempt sends exactly what
@@ -2556,7 +2559,9 @@ under its own compiled owner:
   [Pause and resume mail](../admin-portal/spec.md#live-delivery-pause)
   while the current campaign's delivery is paused: a Production leader
   email stays pending and is sent after resume. Python and the outbox state
-  guard both check this. A provider refusal for now, a sending
+  guard both check this. While it is held, mail dispatch does not claim it
+  at all (as for held campaign mail), so a long pause writes no Task
+  activity; the scheduler offers it again after resume. A provider refusal for now, a sending
   limit and a stopped mail sender hold or retry it as they do
   Administrator notices, and a lost provider answer leaves it
   "Not sure it arrived": it is never resent automatically, and an

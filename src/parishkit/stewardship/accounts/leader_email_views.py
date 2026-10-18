@@ -29,10 +29,12 @@ from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_POST
 
 from parishkit.stewardship.campaigns.work_locks import read_transaction
+from parishkit.stewardship.jobs.leader_email_models import LeaderEmailRequest
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.refusals import (
     UserFacingError,
     UserFacingStale,
+    load_preview,
     unexpected_fields,
 )
 from parishkit.stewardship.web.tables import paginate
@@ -55,9 +57,9 @@ from .user_changes import UserRefused, clean_email
 # The Email Ministry leaders table's query-string prefix, beside the users
 # table's ``users_`` and the leaders table's ``leaders_``.
 PREFIX = "emails_"
+# A review lasts fifteen minutes (web.refusals.PREVIEW_MAX_AGE), as every
+# review does.
 SALT = "stewardship-leader-emails-v1"
-# A review lasts fifteen minutes, as every review does.
-PREVIEW_SECONDS = 15 * 60
 # At most this many addresses in one Email selected post: more than any page
 # of the table can show.
 CHOSEN_LIMIT = 2000
@@ -82,6 +84,13 @@ PAUSED_FIX = _(
     "Resume mail on Pause and resume mail first, then choose the leaders and "
     "review again."
 )
+# A replayed Apply (a double click) that lands after a pause: the first
+# Apply's emails are queued already.
+PAUSED_QUEUED = _(
+    "Mail is paused. The emails this review queued at its first Apply are "
+    "held and will be sent after mail is resumed. Nothing new was queued."
+)
+PAUSED_QUEUED_FIX = _("Resume mail on Pause and resume mail to send them.")
 
 
 def unavailable():
@@ -110,17 +119,22 @@ def unavailable():
     return None
 
 
-def refuse_while_paused():
+def refuse_while_paused(key=None):
     """Refuse a review or Apply while the current campaign's mail is paused.
 
     Pause and resume mail holds every Production message not yet handed to
     the provider (admin-portal specification, "Live delivery pause"), so
     nothing new is queued meanwhile; the request's guard refuses it in SQL
-    too, and a prepared email waits for Resume.
+    too, and a prepared email waits for Resume. Testing mail is never held,
+    as for campaign mail. ``key`` is an Apply's request key: when that
+    request was recorded before the pause (a replayed Apply), the refusal
+    says its emails are queued and held rather than that nothing was sent.
     """
     if SystemConfiguration.objects.filter(
-        current_campaign__delivery_paused=True
+        mode="production", current_campaign__delivery_paused=True
     ).exists():
+        if key is not None and LeaderEmailRequest.objects.filter(pk=key).exists():
+            raise UserFacingError(PAUSED_QUEUED, fix=PAUSED_QUEUED_FIX)
         raise UserFacingError(PAUSED, fix=PAUSED_FIX)
 
 
@@ -250,19 +264,19 @@ def _confirm(request, actor):
     configuration, campaign, mode or leaders changed since is refused by
     the request's guard, and one whose Ministries or counts the guard works
     out differently from the review is refused here; either way nothing is
-    sent. While mail is paused Apply is refused with its plain reason.
+    sent. While mail is paused Apply is refused with its plain reason, and
+    an expired review gets the shared expired-review refusal.
     """
     allowed = {"csrfmiddlewaretoken", "action", "preview"}
     if set(request.POST) - allowed or any(
         len(values) != 1 for _, values in request.POST.lists()
     ):
         raise unexpected_fields(request.POST, allowed=allowed)
-    intent = signing.loads(
-        request.POST.get("preview", ""), salt=SALT, max_age=PREVIEW_SECONDS
-    )
+    # An expired review is the shared plain refusal; a tampered one is a 400.
+    intent = load_preview(request.POST.get("preview", ""), salt=SALT)
     if intent["actor"] != str(actor.identity):
         raise PermissionError("The review belongs to another Administrator.")
-    refuse_while_paused()
+    refuse_while_paused(UUID(intent["key"]))
     try:
         _, created = request_emails(
             actor.identity,

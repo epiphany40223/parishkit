@@ -28,6 +28,7 @@ from dataclasses import dataclass
 from uuid import UUID
 
 from django.db import DatabaseError, connection, transaction
+from django.db.models import Exists, OuterRef
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.campaigns.work_locks import work_transaction
@@ -42,6 +43,8 @@ from parishkit.stewardship.jobs.leader_email_models import (
     LeaderEmailRecipient,
     LeaderEmailRequest,
 )
+from parishkit.stewardship.jobs.leader_email_owner import TASK_TYPE
+from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.observability import current_correlation
 from parishkit.stewardship.web.tables import Sorting
 
@@ -53,6 +56,9 @@ ROLE = "ministry_leader"
 # without EXECUTE also gets, so the words tell the two apart).
 REFUSAL = "Leader email review requires a live Administrator session"
 NEVER = _("Never")
+# A request whose mode or Testing recipient changed before it was prepared
+# is cancelled, not sent (jobs.leader_email_owner._superseded).
+SUPERSEDED = _("Cancelled: the mode or Testing recipient changed")
 
 SKIP_REASONS = {
     "not_leader": _("No longer a Ministry leader user"),
@@ -88,8 +94,10 @@ def leader_rows(rows):
     ``last_emailed`` (when the latest request that emailed the address was
     applied, or None) and ``emailed_label``: that email's delivery state in
     Outgoing mail's words, "Still sending (queued)" while the request is not
-    prepared yet, or "Never". Two queries: every request's addresses, newest
-    first (one row per Apply, so the table stays small), and the latest
+    prepared yet, ``SUPERSEDED`` when its preparation was cancelled because
+    the mode or Testing recipient changed, or "Never". Two queries: every
+    request's addresses, newest first (one row per Apply, so the table stays
+    small) and whether its preparation Task was cancelled, and the latest
     requests' recipient rows with their messages' states. A leader user with
     no Name (such as one converted from an older sign-in rule) is listed
     under their email instead, so Email all never skips them silently.
@@ -101,8 +109,13 @@ def leader_rows(rows):
     ]
     wanted = {row["email"] for row in leaders}
     latest = {}
-    for request in LeaderEmailRequest.objects.order_by("-created_at", "-pk").values(
-        "id", "created_at", "addresses"
+    cancelled = TaskRun.objects.filter(
+        task_type=TASK_TYPE, domain_request_id=OuterRef("pk"), state="cancelled"
+    )
+    for request in (
+        LeaderEmailRequest.objects.annotate(cancelled=Exists(cancelled))
+        .order_by("-created_at", "-pk")
+        .values("id", "created_at", "addresses", "cancelled")
     ):
         for address in wanted.intersection(request["addresses"]):
             latest.setdefault(address, request)
@@ -119,8 +132,12 @@ def leader_rows(rows):
         if request is None:
             emailed, label = None, NEVER
         else:
-            state = states.get((request["id"], row["email"]), "pending")
-            emailed, label = request["created_at"], STATE_LABELS.get(state, NEVER)
+            state = states.get((request["id"], row["email"]))
+            emailed = request["created_at"]
+            if state is None and request["cancelled"]:
+                label = SUPERSEDED
+            else:
+                label = STATE_LABELS.get(state or "pending", NEVER)
         shaped.append(row | {"last_emailed": emailed, "emailed_label": label})
     return shaped
 

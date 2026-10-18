@@ -116,6 +116,13 @@ def admit_task(action, status, *, store, circuit, owner=OPERATIONAL):
         )
     if action not in {"hint", "claim", "effect"}:
         return False
+    # A held message (a Production Ministry leader email while mail is
+    # paused) is not claimed: each claim would only find the hold again and
+    # retry in 30 seconds, writing Task events for as long as the pause lasts.
+    # The scheduler's due scan offers it again after Resume. A claim taken
+    # before the pause still meets the hold at its effect (current_mail).
+    if action != "effect" and owner.held is not None and owner.held(message):
+        return False
     complete, failed = cohort_state(message, owner)
     if not complete:
         return failed

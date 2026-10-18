@@ -38,6 +38,10 @@ from .storage import _status, enqueue
 BATCH_SIZE = 25
 
 
+class PreparationSuperseded(Exception):
+    """The owner's source can no longer be sent as recorded; cancel its Task."""
+
+
 def produce_fanout(guard, owner=OPERATIONAL):
     """Allocate only bounded opaque work; no recipient body or provider is loaded.
 
@@ -132,6 +136,8 @@ def admit_fanout(action, status, *, store=None, owner=OPERATIONAL):
         return _completed(row, owner)
     if action == "retryable_failure":
         return row.phase == TaskPhase.RECONCILING.value
+    if action == "safe_cancel":
+        return _superseded(row, owner)
     if action == "recovery_hint" and row.state == "running":
         return True
     if action.startswith("recovery_"):
@@ -157,8 +163,23 @@ def admit_fanout(action, status, *, store=None, owner=OPERATIONAL):
     return configured
 
 
+def _superseded(row, owner):
+    """A source not captured yet that its owner says can no longer be sent."""
+    return (
+        owner.superseded is not None
+        and not owner.cohort_model.objects.filter(
+            **{owner.source_field: row.domain_request_id}
+        ).exists()
+        and owner.superseded(row.domain_request_id)
+    )
+
+
 def _capture(claim, store, owner):
-    """Capture once; later pages preserve the cohort despite configuration changes."""
+    """Capture once; later pages preserve the cohort despite configuration changes.
+
+    A source superseded before its capture raises ``PreparationSuperseded``,
+    which cancels the Task (``_execute``) rather than failing it.
+    """
     row = _current(_status(lock_task_claim(claim)), owner)
     cohort = owner.cohort_model.objects.filter(
         **{owner.source_field: row.domain_request_id}
@@ -167,6 +188,8 @@ def _capture(claim, store, owner):
         if not TaskRun.objects.filter(pk=cohort.run_id, root_id=row.root_id).exists():
             raise PermissionError(f"{owner.label} cohort belongs to a different Task.")
         return cohort
+    if _superseded(row, owner):
+        raise PreparationSuperseded
     return owner.capture(row, claim, store)
 
 
@@ -254,6 +277,10 @@ def _execute(execution, *, store, owner):
         except (ConfigError, FamilyDeliveryHeld):
             execution.progress(0, 0, phase=TaskPhase.RECONCILING)
             execution.transition("retryable_failure", retry_seconds=30)
+            return
+        except PreparationSuperseded:
+            # Nothing was captured; the cancelled Task is the recorded outcome.
+            execution.transition("safe_cancel")
             return
 
 
