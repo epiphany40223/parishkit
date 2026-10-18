@@ -999,10 +999,17 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
 .spinner { display: inline-block; width: 1em; height: 1em; margin-inline-end: .35em; vertical-align: -.15em; border: 2px solid var(--accent); border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
 /* An export panel collapsed below a report's filters. */
 details.export-panel > form { margin-top: .5rem; }
+/* A worklist's always-open Filters box and its export pane below the table
+   (Census changes, #1682): the open disclosure's box, its title a heading
+   the size and place of a disclosure's summary line, so the page reads as
+   the other reports do with their panels open. */
+section:is(.filter-panel, .export-pane) { border: 1px solid var(--border); border-radius: var(--radius-small); background: var(--paper); padding: 0 1rem 1rem; margin-block: 1rem; }
+section:is(.filter-panel, .export-pane) > h2 { margin: 0; padding-block: .6rem; font-size: 1rem; line-height: 1.5; }
+section.export-pane > form { margin-top: 0; }
 /* A report's Filters panel (#227, the filterpanel tag). At phone width its
    box gives up its side gutters and borders, so its filter bar keeps the
    full width it had before the panel and a label and its "i" keep one line. */
-@media (max-width: 40rem) { details.filter-panel { padding-inline: 0; border-inline: 0; border-radius: 0; } }
+@media (max-width: 40rem) { :is(details, section).filter-panel { padding-inline: 0; border-inline: 0; border-radius: 0; } }
 /* A long filter form in the panel is a grid (#1411), so it takes a few rows
    rather than one per field: one column on a phone, and from 40rem as many
    14rem columns as fit (two or three on a tablet, four on a laptop, where
@@ -1020,16 +1027,16 @@ details.export-panel > form { margin-top: .5rem; }
    directory's form keeps its filter bar (.filter-bar, below): its short
    fields already share rows, and in the grid's equal columns it measured
    taller. */
-details.filter-panel > form:not(.filter-bar) { display: grid; grid-template-columns: minmax(0, 1fr); gap: .5rem 1rem; align-items: end; margin-top: .25rem; }
-details.filter-panel > form:not(.filter-bar) label { margin: 0 0 .25rem; font-size: .925rem; }
-details.filter-panel > form:not(.filter-bar) > :is(p, [data-complete-hint]) { grid-column: 1 / -1; margin: 0; }
-details.filter-panel > form:not(.filter-bar) > button { justify-self: start; margin: 0; }
-details.filter-panel > form:not(.filter-bar) > fieldset { display: grid; grid-template-columns: minmax(0, 1fr); gap: .5rem 1rem; align-items: end; margin: 0; padding: .5rem .75rem .75rem; }
-details.filter-panel > form:not(.filter-bar) > fieldset > legend { grid-column: 1 / -1; margin: 0; font-size: .925rem; }
+:is(details, section).filter-panel > form:not(.filter-bar) { display: grid; grid-template-columns: minmax(0, 1fr); gap: .5rem 1rem; align-items: end; margin-top: .25rem; }
+:is(details, section).filter-panel > form:not(.filter-bar) label { margin: 0 0 .25rem; font-size: .925rem; }
+:is(details, section).filter-panel > form:not(.filter-bar) > :is(p, [data-complete-hint]) { grid-column: 1 / -1; margin: 0; }
+:is(details, section).filter-panel > form:not(.filter-bar) > button { justify-self: start; margin: 0; }
+:is(details, section).filter-panel > form:not(.filter-bar) > fieldset { display: grid; grid-template-columns: minmax(0, 1fr); gap: .5rem 1rem; align-items: end; margin: 0; padding: .5rem .75rem .75rem; }
+:is(details, section).filter-panel > form:not(.filter-bar) > fieldset > legend { grid-column: 1 / -1; margin: 0; font-size: .925rem; }
 /* A range's reserved message line (#1332) spans its fieldset after both
    ends, or the form after Apply when the range has no fieldset. */
-details.filter-panel > form:not(.filter-bar) > .field-error-line,
-details.filter-panel > form:not(.filter-bar) > fieldset > .field-error-line { grid-column: 1 / -1; margin: 0; }
+:is(details, section).filter-panel > form:not(.filter-bar) > .field-error-line,
+:is(details, section).filter-panel > form:not(.filter-bar) > fieldset > .field-error-line { grid-column: 1 / -1; margin: 0; }
 /* A range whose message line sits in its fieldset, apart from the gate's
    reserved hint row (Financial stewardship's dates and amounts, #1469):
    the hint, in the server's words, is held hidden while a line shows them,
@@ -1043,13 +1050,13 @@ details.filter-panel > form:not(.filter-bar) > fieldset > .field-error-line { gr
    narrower than the selects beside them and ragged against the row above.
    The attribute selector outranks that rule, so every cell fills its
    track and every box fills its cell. */
-details.filter-panel[data-filter-panel] > form:not(.filter-bar) > div,
-details.filter-panel[data-filter-panel] > form:not(.filter-bar) > fieldset > div { margin: 0; }
-details.filter-panel[data-filter-panel] > form:not(.filter-bar) > div > input,
-details.filter-panel[data-filter-panel] > form:not(.filter-bar) > fieldset > div > input { max-width: none; }
+:is(details, section).filter-panel[data-filter-panel] > form:not(.filter-bar) > div,
+:is(details, section).filter-panel[data-filter-panel] > form:not(.filter-bar) > fieldset > div { margin: 0; }
+:is(details, section).filter-panel[data-filter-panel] > form:not(.filter-bar) > div > input,
+:is(details, section).filter-panel[data-filter-panel] > form:not(.filter-bar) > fieldset > div > input { max-width: none; }
 @media (min-width: 40rem) {
-  details.filter-panel > form:not(.filter-bar) { grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); }
-  details.filter-panel > form:not(.filter-bar) > fieldset { grid-column: span 2; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  :is(details, section).filter-panel > form:not(.filter-bar) { grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); }
+  :is(details, section).filter-panel > form:not(.filter-bar) > fieldset { grid-column: span 2; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 /* Compact filter bars: short fields share one row on wider screens. */
 .filter-bar { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem 1rem; }
@@ -1610,12 +1617,12 @@ fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0;
    and so would a report filter's range ends, refused in place (#1332),
    and a System logs filter field (#1332).
    A select is held at its minimum height and keeps the global 2px border. */
-:is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(details.filter-panel > form > div, details.filter-panel > form > fieldset > div, .log-filters .filter-bar > div) > input)[aria-invalid=true] { border-width: 1px; box-shadow: inset 0 0 0 1px var(--error-border); }
-:is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(details.filter-panel > form > div, details.filter-panel > form > fieldset > div, .log-filters .filter-bar > div) > input)[aria-invalid=true]:focus { box-shadow: inset 0 0 0 1px var(--error-border), 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+:is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(:is(details, section).filter-panel > form > div, :is(details, section).filter-panel > form > fieldset > div, .log-filters .filter-bar > div) > input)[aria-invalid=true] { border-width: 1px; box-shadow: inset 0 0 0 1px var(--error-border); }
+:is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(:is(details, section).filter-panel > form > div, :is(details, section).filter-panel > form > fieldset > div, .log-filters .filter-bar > div) > input)[aria-invalid=true]:focus { box-shadow: inset 0 0 0 1px var(--error-border), 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
 /* Forced colors draw no shadow: an outline inside the border marks it,
    except under keyboard focus, where the global 3px focus ring shows. */
 @media (forced-colors: active) {
-  :is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(details.filter-panel > form > div, details.filter-panel > form > fieldset > div, .log-filters .filter-bar > div) > input)[aria-invalid=true]:not(:focus-visible) { outline: 1px solid CanvasText; outline-offset: -2px; }
+  :is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(:is(details, section).filter-panel > form > div, :is(details, section).filter-panel > form > fieldset > div, .log-filters .filter-bar > div) > input)[aria-invalid=true]:not(:focus-visible) { outline: 1px solid CanvasText; outline-offset: -2px; }
 }
 .schedule-row-messages { padding-top: .5rem; min-height: calc(1lh + .5rem); }
 .schedule-row-messages > * { margin: 0; }

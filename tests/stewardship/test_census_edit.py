@@ -169,7 +169,7 @@ def page(shown):
             "table": paginate(shown, {}, sorting=SORTING),
             "query": CensusQuery(),
             "query_fields": {},
-            "summary": [],
+            "status_counts": {},
             "status_choices": [],
             "route_choices": [],
             "kind_choices": [],

@@ -328,18 +328,18 @@ def census_row(kind, *, automatic):
 
 
 def census(history=""):
-    """Three kept rows and the page's summary, by its wording, zeros left out."""
+    """Three kept rows and the page's status counts, history only when shown."""
     rows = [
         census_row("contact", automatic=True),
         census_row("moved", automatic=False),
         census_row("contact", automatic=False),
     ]
-    summary = [("To review", 1), ("To do", 2), ("Published", 4)]
+    counts = {"to_review": 1, "to_do": 2, "published": 4}
     if history:
-        summary.append(("Superseded", 1))
+        counts["superseded"] = 1
     query = CensusQuery.parse({"status": "all", "history": history})
     return admin_census.census_model(
-        CAMPAIGN, query, {"rows": rows, "summary": summary, "administrator": True}
+        CAMPAIGN, query, {"rows": rows, "status_counts": counts, "administrator": True}
     )
 
 

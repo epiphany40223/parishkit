@@ -77,10 +77,6 @@ STATUSES = {
     "cancelled": "Cancelled",
 }
 HISTORY = frozenset({"superseded", "cancelled"})
-# The open-work statuses the Summary lists even at 0 (#1472), so acting on
-# the last change of one (resolving the last Conflict, say) never removes a
-# Summary line and moves the table under the pointer.
-SUMMARY_ALWAYS = frozenset({"to_review", "to_do", "conflict"})
 # A terminal execution is the outcome, whatever the decision says.
 TERMINAL = {
     "published": "published",
@@ -540,7 +536,13 @@ def wanted(status_key, query, *, administrator):
 
 
 def select(rows, query, *, administrator):
-    """The rows the filters keep, with counts by status for the summary."""
+    """The rows the filters keep, with every change's count by status.
+
+    ``status_counts`` counts every row of the campaign by status key,
+    whatever the other filters, with the history statuses only when
+    ``history`` is on (zero otherwise): the Status filter's choice counts
+    (``status_choice_counts``, #1682) and ``report census`` read it.
+    """
     lower, upper = query.bounds
     needle = query.search.casefold()
     kept = [
@@ -558,20 +560,35 @@ def select(rows, query, *, administrator):
             or needle in str(row["family_duid"])
         )
     ]
-    # The summary counts every status, and history only when it is shown;
-    # it lists a status with no changes only if it is open work.
+    # Every status is counted, and history only when it is shown.
     counts = {key: 0 for key in STATUSES}
     for row in rows:
         if row["status"] not in HISTORY or query.history:
             counts[row["status"]] += 1
+    return {"rows": kept, "status_counts": counts, "administrator": administrator}
+
+
+def status_choice_counts(counts, *, administrator):
+    """How many changes each Status filter choice lists, by choice key.
+
+    The Status filter's choices carry these counts (#1682), in place of the
+    retired summary above the table: a status's own count, and Work to do
+    and Every status the sum of the statuses they list for this reader
+    (``wanted``). ``counts`` is ``select``'s ``status_counts``, which
+    already leaves history out unless it is shown, so history is taken as
+    on here.
+    """
     return {
-        "rows": kept,
-        "summary": [
-            (label, counts[key])
-            for key, label in STATUSES.items()
-            if counts[key] or key in SUMMARY_ALWAYS
-        ],
-        "administrator": administrator,
+        choice: sum(
+            count
+            for key, count in counts.items()
+            if wanted(
+                key,
+                SimpleNamespace(status=choice, history=True),
+                administrator=administrator,
+            )
+        )
+        for choice in STATUS_CHOICES
     }
 
 
