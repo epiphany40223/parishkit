@@ -51,6 +51,26 @@ def test_reports_when_due_and_then_once_a_minute(monkeypatch, clock):
     assert write.call_count == 2
 
 
+def test_now_writes_before_the_record_is_due(monkeypatch, clock):
+    """A sender that lifted its halt writes at once; the next is due a
+    minute after that write."""
+    database(monkeypatch)
+    reporter = ServiceStatusReporter("mail-dispatch")
+    write = Mock()
+    monkeypatch.setattr(reporter, "_write", write)
+    assert reporter.report()
+    clock[0] += 5
+    assert not reporter.report()
+    assert reporter.report(now=True)
+    assert write.call_count == 2
+    clock[0] += service_status.REPORT_SECONDS - 1
+    assert not reporter.report()
+    # The other rules still hold: never inside a transaction.
+    database(monkeypatch, atomic=True)
+    assert not reporter.report(now=True)
+    assert write.call_count == 2
+
+
 def test_never_opens_a_connection_or_joins_a_transaction_unasked(monkeypatch, clock):
     """Busy threads skip, stay due, and write on the next suitable call."""
     reporter = ServiceStatusReporter("worker", process="source")

@@ -105,6 +105,26 @@ def test_lift_lets_one_probe_through(tmp_path):
     assert first.sender_state()[0] == "outage_paused"
 
 
+def test_idle_says_whether_it_lifted_the_halt(monkeypatch):
+    """The idle pass answers sync's result, so the caller writes the status
+    record at once after a lift; a failed sync answers False."""
+    from parishkit.stewardship.jobs import family_mail_delivery_tasks
+
+    monkeypatch.setattr(family_mail_delivery_tasks, "FAMILY_CIRCUIT", object())
+    for answer in (True, False):
+        monkeypatch.setattr(mail_halt, "sync", lambda circuit, answer=answer: answer)
+        assert mail_halt.idle(main=False) is answer
+
+    def broken(circuit):
+        """A sync that fails outside its own handling."""
+        raise RuntimeError("unexpected")
+
+    monkeypatch.setattr(mail_halt, "sync", broken)
+    assert mail_halt.idle(main=False) is False
+    monkeypatch.setattr(family_mail_delivery_tasks, "FAMILY_CIRCUIT", None)
+    assert mail_halt.idle(main=False) is False
+
+
 def test_lift_leaves_a_newer_halts_marker(tmp_path):
     """The other consumer halted again first: its marker stays."""
     marker, (first, second) = circuits(tmp_path)

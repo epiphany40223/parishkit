@@ -957,18 +957,21 @@ def serve_background(configuration, lease, *, source=False, mail=False):
         an Administrator has cleared it; the main process also runs a
         mailbox check an Administrator asked for (ADM-13 PR 4a,
         ``jobs.mail_halt``). Both happen before the record, so it reports
-        the sender's state after them.
+        the sender's state after them. A pass that lifted the halt writes
+        the record at once, not when it is next due: System health's Mail
+        tile then follows the clear within one idle pass (#530).
         """
+        lifted = False
         if role is ServiceRole.MAIL_DISPATCH:
             from .jobs import mail_halt
 
-            mail_halt.idle(
+            lifted = mail_halt.idle(
                 main=not mail,
                 credential_path=configuration.secrets.get("google_workspace"),
                 profile=configuration.profile,
                 check=lease.check,
             )
-        status.report(connect=True)
+        status.report(connect=True, now=lifted)
 
     def stopping(signum, frame):
         """Signals request drainage; no provider work or SQL runs in this handler."""

@@ -7893,7 +7893,10 @@ container: a marker file that only a restart removes. Now:
    circuit so that it sends one probe email (one probe email per consumer,
    as after an outage cooldown),
    and writes a WARNING log line saying that an Administrator cleared the
-   halt. A consumer that is not halted, or whose halt is newer than the
+   halt. It then rewrites its status record at once rather than when the
+   record is next due (records are otherwise rewritten once a minute), so
+   the Mail tile shows the sender running within about 40 seconds of the
+   clear. A consumer that is not halted, or whose halt is newer than the
    signal, ignores it.
 5. If the fault is still there, the probe meets it again, and the sender
    halts again under a new identity.
