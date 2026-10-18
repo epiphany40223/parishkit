@@ -38,7 +38,7 @@ from parishkit.stewardship.jobs.family_mail_models import FamilyMailTest
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .auth_builders import unguarded
-from .automation_builders import command, paired
+from .automation_builders import approve_now, command, paired, start
 from .test_automation_sessions_postgresql import owner
 from .test_credential_isolation_postgresql import (  # noqa: F401
     advance,
@@ -435,7 +435,13 @@ def test_instant_ended_is_true_only_once_every_full_session_ended(auth_service, 
     live.
     """
     _, _, row = paired(auth_service)
-    _, _, second = paired(auth_service)
+    # Approved from the same browser: paired() would sign in again, and a
+    # sign-in instant is a whole second, so the two could differ.
+    secret, code = start(auth_service)
+    approve_now(auth_service, code)
+    second = AutomationSession.objects.get(
+        secret_digest=automation.secret_digest(secret)
+    )
     _, _, reader = paired(auth_service, scope="read-only")
     shift(reader, timedelta(seconds=7))
     reader.refresh_from_db()
