@@ -803,7 +803,14 @@ and a role rule and cannot carry them, so the
 
 The Admin dashboard shows every unacknowledged notice, with the session label
 escaped as text, to every current Administrator until that Administrator
-acknowledges it; acknowledging affects only one's own view.
+acknowledges it; acknowledging affects only one's own view. Since
+[#1673](https://github.com/epiphany40223/parishkit/issues/1673) the list,
+with its Acknowledge and Acknowledge all controls, is on the Automation
+access page, where the sessions it names can be revoked; Home, the Admin
+dashboard, shows each Administrator only the count, "N automation notices to
+acknowledge", linking that list
+([Home page](../admin-portal/spec.md#home-page)). "The dashboard" in the
+fixed alert texts below means that line and the list it opens.
 
 **Email and Slack** use the existing operational alert path rather than a new
 mail purpose. That path is bound in SQL to operational incidents: the outbox

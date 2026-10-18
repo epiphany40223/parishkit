@@ -68,6 +68,7 @@ when it lands.
   [shared visual style](#shared-visual-style),
   [colour scheme](#colour-scheme),
   [status indicators](#status-indicators), [stat tiles](#stat-tiles),
+  [overview pages](#overview-pages),
   [stage boxes](#stage-boxes), [time entry](#time-entry),
   [schedules](#schedules), [schedule previews](#schedule-previews).
 - Tables: [Admin tables](#admin-tables),
@@ -194,7 +195,9 @@ and page placeholders, and PDF exports all use it. Every date or time inside
 an Admin table cell (row headers included) uses its compact variant (short
 month names or two-digit years, no time-zone abbreviation), still in the
 browser's time zone, so rows stay short and columns narrow (Administrator,
-2026-10-11, #1093). The full form stays in headings, sentences, summaries and
+2026-10-11, #1093); so does every date or time in an
+[overview page's](#overview-pages) fact strip, for the same reason (#1673).
+The full form stays in headings, sentences, summaries and
 detail panels, and downloads keep their own formats (below). System logs rows
 add seconds and the time-zone abbreviation to the compact form, with no UTC
 offset, so entries can be compared exactly
@@ -2738,6 +2741,52 @@ two ways of reading to a screen reader. **Precedent.**
   emailed. A guard test fails when a template outside `components/` draws
   stat-tile markup by hand, with no exceptions. Email and PDF reports
   cannot load the stylesheet and keep their own layouts.
+
+### Overview pages
+
+**Rule.** An overview page (Home, and any later dashboard that sums up
+other pages) summarizes and links; the detail lives on the page it links.
+At a laptop window (1366 × 768, with the menu open) its main regions fit
+without scrolling.
+
+- **Problems are a count.** Problems another page lists are one short line
+  each on the overview: the count in plain words ("2 system problems") and
+  one link to the page that lists them, never the problems themselves. The
+  line is a [status indicator](#status-indicators): the error look when any
+  counted problem is an error, else the warning look. The lines sit
+  together in one compact row under the page heading, wrapping on a phone,
+  and are left out when there is nothing to count. They are page-load
+  state, not an in-place change, so they reserve no space.
+- **Facts are one strip.** Facts about one thing (a campaign's name,
+  state, dates, the next mailing) are a single key/value strip (`<dl>`),
+  not paragraphs, with each date and time in the compact
+  [date format](#date-format), as in a table cell. The panel's heading row
+  carries its one "more detail" link.
+- **Figures are stat tiles.** Headline figures use the
+  [stat tiles](#stat-tiles), one population per figure, with a link to the
+  page that breaks them down.
+- **Links to work are link cards.** A list of places to go next is a grid
+  of **link cards**: each card is one link whose text reads the page's
+  name, then its count in large tabular figures and what the count means
+  ("12", "not yet entered"), in that DOM order. The card's start bar
+  reinforces the count and is never its only signal: the warning colour
+  (`--warning-border`) while the count is above zero, the accent
+  (`--accent`) at zero, and the plain edge (`--border`) when the card has
+  no count. A card the menu greys out is plain text in the muted colour
+  with the menu's reason, never a link. Cards keep their size on hover and
+  focus ([no layout shift](#no-layout-shift)) and stack on a phone with no
+  sideways scroll.
+- **Acknowledgement queues move to their page.** A list someone works
+  through item by item (notices to acknowledge, for example) lives on the
+  page it belongs to; the overview shows its count line.
+
+**Why.** The Administrator, 2026-10-18, on Home: "This should be more of an
+overview dashboard (with links to more detailed information) rather than
+detailed information itself." **Shared code.** `components/link-cards.html`
+and `.link-cards` in `ui-v1.css`; `.home-alerts` for the count lines.
+**Precedent.** Admin Home
+([#1673](https://github.com/epiphany40223/parishkit/issues/1673); see
+[Home page](../admin-portal/spec.md#home-page)).
 
 ### Stage boxes
 
