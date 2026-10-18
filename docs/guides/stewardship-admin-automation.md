@@ -2966,6 +2966,46 @@ pk-admin users import-leaders --confirm --token -
 | `preview` | `token`, which `--confirm` takes, or `null` with nobody to import |
 | `created`, `request` | With `--confirm`: as `users confirm` prints them |
 
+`users email-leaders` is the Users page's
+[Email Ministry leaders](../specs/stewardship/admin-portal/spec.md#email-ministry-leaders):
+one email to each chosen Ministry leader user saying they can sign in, and
+the open requests in each of their Ministries. It needs a full-scope
+session. `--preview` reviews emailing every Ministry leader user (`--all`)
+or the chosen addresses (`--email`, repeatable; one of the two is
+required) and sends nothing. `--confirm --token` applies the review, as
+the page's Apply does: the emails are queued, and the background engine
+sends them. A review lasts fifteen minutes, and the page and the command
+line can apply each other's reviews. Applying the same review again sends
+nothing more; each new review and its Apply sends again, so check Last
+emailed on the Users page first.
+
+```sh
+pk-admin users email-leaders --preview --all
+pk-admin users email-leaders --preview --email ann@example.org
+pk-admin users email-leaders --confirm --token -
+```
+
+| `users email-leaders` field | What it holds |
+| --- | --- |
+| `mode` | `testing` or `production`, the mode the review was made in |
+| `note` | In Testing, that every email goes to the Testing recipient instead of the leader (its address stays on the page); otherwise `null` |
+| `emailed` | Each leader who will be emailed, by Name: `email`, `name` and the `ministries` the email lists, each with its `duid`, `name` and the open `join` and `leave` request counts |
+| `skipped` | Each chosen address left out: `email` and `reason` (`not_leader`, no Ministry leader user now; `no_ministry`, leads none of the campaign's Ministries in ParishSoft) |
+| `remaining` | Chosen leaders past one Apply's limit of 100, left for another review |
+| `preview` | `token`, which `--confirm` takes, or `null` with nobody to email |
+| `created`, `request_id`, `recipient_count` | With `--confirm`: whether this Apply recorded the request (`false` when the same review was applied before), its ID, and how many leaders it emails |
+
+No document names a parishioner. Each review is recorded in System logs
+(`user_leader_emails_reviewed`) and each Apply
+(`user_leader_emails_requested` and `admin_cmd_users_email_leaders`), with
+the number of leaders, never an address. While Production mail is paused
+both are exit 1 (`not_available`) and nothing is queued; so is
+`--preview` with no current campaign with Ministries or with the campaign
+archived. A review that no longer matches (the campaign, mode or Testing
+recipient changed, a leader is no longer one, or a leader's Ministries or
+counts changed) is exit 1 (`stale_version`), as is an expired one; review
+again. Another Administrator's review is `denied`.
+
 ## Security events and critical problems
 
 `events list` reads what the Admin home page asks you to acknowledge: the
@@ -3692,3 +3732,6 @@ Each change is recorded in System logs as on the page
   operational and security notices. The document adds `purpose`, `mode`,
   `start` and `end`; each row keeps its `mode` and `attempt`. Its only
   readers are the Administrator and the operator, who keep no legacy forms.
+- `pk-admin/1` (#1622): additive. `users email-leaders --preview` and
+  `--confirm`, the Users page's Email Ministry leaders review and Apply
+  (full scope, the page's audit events and `admin_cmd_users_email_leaders`).

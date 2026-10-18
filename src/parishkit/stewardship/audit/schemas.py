@@ -284,6 +284,8 @@ class Action(StrEnum):
     # campaign shares-confirm: Share options' Apply (ADM-11 PR 10).
     ADMIN_CMD_CAMPAIGN_SHARES_CONFIRM = "admin_cmd_campaign_shares_confirm"
     ADMIN_CMD_USERS_IMPORT_LEADERS = "admin_cmd_users_import_leaders"
+    # users email-leaders --confirm: Email Ministry leaders' Apply (#1622).
+    ADMIN_CMD_USERS_EMAIL_LEADERS = "admin_cmd_users_email_leaders"
     # The operator's cancellation of a stuck live end-date change (#944).
     ADMIN_CMD_CONFIG_REQUEST_CANCEL = "admin_cmd_config_request_cancel"
     ADMIN_CMD_TASK_RETRY = "admin_cmd_task_retry"

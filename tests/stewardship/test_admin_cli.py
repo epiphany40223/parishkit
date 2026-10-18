@@ -219,6 +219,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "users preview",
         "users confirm",
         "users import-leaders",
+        "users email-leaders",
         # Home's acknowledgements, with the users and follow-up of PR 11.
         "events list",
         "events acknowledge",
@@ -330,6 +331,27 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert chosen["prompts"] and chosen["changes_state"] and chosen["fresh_gated"]
     assert chosen["audit_event"] == "admin_cmd_test_families"
     assert chosen["result_fields"] == ["created", "request_key", "tickets"]
+    # Email Ministry leaders (#1622): one command for the review and its
+    # Apply, as users import-leaders; full scope, neither fresh-gated nor
+    # prompting, as the page's review dialog asks for no recent sign-in.
+    emails = entries["users email-leaders"]
+    assert emails["scope"] == "full" and emails["changes_state"]
+    assert not emails["prompts"] and not emails["fresh_gated"]
+    assert emails["audit_event"] == "admin_cmd_users_email_leaders"
+    assert emails["result_fields"] == [
+        "mode",
+        "note",
+        "emailed",
+        "skipped",
+        "remaining",
+        "preview",
+        "created",
+        "request_id",
+        "recipient_count",
+    ]
+    assert {"--preview", "--confirm", "--all", "--email", "--token"} <= {
+        option["name"] for option in emails["options"]
+    }
     # The review changes nothing; its --names export records this (#817).
     assert not review["prompts"] and not review["changes_state"]
     assert review["audit_event"] == "admin_cmd_export_family_test_names"
@@ -920,6 +942,7 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_census_resolve_conflict",
         "admin_cmd_users_confirm",
         "admin_cmd_users_import_leaders",
+        "admin_cmd_users_email_leaders",
         "admin_cmd_events_acknowledge",
         # The Ministry follow-up queue's Save and bulk outcome (PR 11a).
         "admin_cmd_followup_update",
@@ -1040,6 +1063,17 @@ def test_commands_needs_no_database_and_prints_one_document():
         ["config", "request", "--config", "x", "--session-stdin"],
         ["config", "request", "show", "601", "--config", "x", "--session-stdin"],
         ["config", "request", "show", "--config", "x", "--session-stdin"],
+        # users email-leaders needs --preview or --confirm, not both (#1622).
+        ["users", "email-leaders", "--config", "x", "--session-stdin"],
+        [
+            "users",
+            "email-leaders",
+            "--preview",
+            "--confirm",
+            "--config",
+            "x",
+            "--session-stdin",
+        ],
         # Renamed ``report limitations`` with no alias (#970).
         ["report", "talents", "--config", "x", "--session-stdin"],
     ],

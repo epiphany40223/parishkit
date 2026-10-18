@@ -48,13 +48,21 @@ demote or delete that Administrator's own user (Administrator decision,
 their own session.
 """
 
+import contextlib
 import json
 from dataclasses import dataclass
 
 from django.db import DatabaseError
 
 from .admin_changes import InvalidChange
-from .admin_reads import ReadModel, Unavailable, _held, _recheck, config_request
+from .admin_reads import (
+    NotAvailable,
+    ReadModel,
+    Unavailable,
+    _held,
+    _recheck,
+    config_request,
+)
 
 TOKEN_LIMIT = 256_000
 CHANGES_LIMIT = 256_000
@@ -554,3 +562,171 @@ def confirm_import(caller, service, *, token, context):
         command_action="ADMIN_CMD_USERS_IMPORT_LEADERS",
     )
     return LeaderImport(created=confirmed.created, request=confirmed.request)
+
+
+# The Users page's Testing notice, for a review made in Testing (#1622).
+TESTING_NOTE = (
+    "Testing mode: every email goes to the Testing recipient instead of the leader."
+)
+
+
+@dataclass(frozen=True)
+class LeaderEmails(ReadModel):
+    """``users email-leaders``: the Email Ministry leaders review, and its Apply.
+
+    ``--preview`` fills ``mode`` (``testing`` or ``production``) and ``note``
+    (the page's Testing notice in Testing, else None), ``emailed`` (each
+    leader who would be emailed, in Name order: ``email``, ``name`` and the
+    ``ministries`` the email lists, each ``duid``, ``name`` and its open
+    ``join`` and ``leave`` request counts), ``skipped`` (``email`` and
+    ``reason``: ``not_leader`` or ``no_ministry``), ``remaining`` (chosen
+    leaders past one Apply's limit of 100) and ``preview.token``, which
+    ``--confirm`` takes (null with nobody to email). ``--confirm`` fills
+    ``created`` (false for a repeated confirm), ``request_id`` and
+    ``recipient_count``; the review's fields are then null. No document
+    names a parishioner.
+    """
+
+    mode: str | None = None
+    note: str | None = None
+    emailed: list | None = None
+    skipped: list | None = None
+    remaining: int | None = None
+    preview: dict | None = None
+    created: bool | None = None
+    request_id: str | None = None
+    recipient_count: int | None = None
+
+
+def _not_now(error):
+    """The page's refusal of a review or Apply that can't be made now.
+
+    No current campaign with Ministries, an archived campaign or paused
+    mail is ``not_available`` (exit 1): nothing was read or recorded, and
+    retrying will not help until the Administrator changes it.
+    """
+    return NotAvailable(str(error))
+
+
+def preview_leader_emails(caller, service, *, everyone, emails):
+    """``users email-leaders --preview``: the page's Email Ministry leaders review.
+
+    Admits as the page's post does (recording activity, so it needs a
+    full-scope session), refuses as the page does while no email can be
+    sent, reads every leader's facts through the definer under this
+    command's own session (its own count-only audit event), then plans
+    emailing everyone (``everyone``) or the chosen ``emails`` and signs the
+    review, with the page's own functions. Rechecks access afterwards.
+    """
+    from .accounts.leader_email_views import review_facts, review_plan, review_token
+    from .accounts.leader_emails import LeaderEmailsRefused
+    from .accounts.policy import Capability
+    from .accounts.user_changes import UserRefused, clean_email
+    from .web.refusals import UserFacingError
+
+    actor = _admit(caller, service)
+    chosen = None
+    if not everyone:
+        try:
+            chosen = [clean_email(email) for email in emails]
+        except UserRefused as refused:
+            raise InvalidChange([_problem(refused)]) from None
+    try:
+        facts = review_facts(caller.session.session_key)
+    except UserFacingError as error:
+        raise _not_now(error) from None
+    except LeaderEmailsRefused:
+        _lookup_refused(caller, service)
+
+    def step():
+        """Plan and sign in one snapshot, as the page's review does."""
+        plan, configuration, runtime_row = review_plan(service, facts, chosen)
+        testing = runtime_row.mode == "testing"
+        return LeaderEmails(
+            mode=runtime_row.mode,
+            note=TESTING_NOTE if testing and plan.emailed else None,
+            emailed=[
+                {
+                    "email": item["email"],
+                    "name": item["name"],
+                    "ministries": [
+                        {
+                            "duid": ministry.duid,
+                            "name": str(ministry.name),
+                            "join": ministry.join,
+                            "leave": ministry.leave,
+                        }
+                        for ministry in item["facts"].ministries
+                    ],
+                }
+                for item in plan.emailed
+            ],
+            skipped=plan.skipped,
+            remaining=plan.remaining,
+            preview={"token": review_token(actor, configuration, runtime_row, plan)},
+        )
+
+    model = _held(step)
+    _recheck(caller, service.store, actor, Capability.MANAGE_USERS)
+    return model
+
+
+def confirm_leader_emails(caller, service, *, token, context):
+    """``users email-leaders --confirm``: the review's **Apply**.
+
+    Records the request exactly as the page's Apply does
+    (``apply_review``: the same guard, digest check and replay rule), with
+    ``admin_cmd_users_email_leaders`` (whose subject is the automation
+    session) in the same transaction, once. Refusals: an expired or changed
+    review is ``stale_version``, an altered token ``invalid``, another
+    Administrator's ``denied``, paused mail ``not_available``; each rolls
+    back, so none is ``outcome_unknown``. Nothing is sent here: the
+    background engine prepares and sends the emails.
+    """
+    from uuid import UUID
+
+    from django.core import signing
+
+    from .accounts.leader_email_views import SALT, apply_review
+    from .accounts.policy import Capability
+    from .audit.schemas import Action, ActorKind, Outcome
+    from .audit.services import record_action
+    from .campaigns.work_locks import work_transaction
+    from .observability import _guard_refusal
+    from .web.refusals import UserFacingError
+
+    actor = _admit(caller, service)
+    # The request's key, so a later outage names it (outcome_unknown); a
+    # token that does not carry one is refused by apply_review below.
+    with contextlib.suppress(signing.BadSignature, KeyError, TypeError, ValueError):
+        context["request_id"] = str(UUID(signing.loads(token, salt=SALT)["key"]))
+    written = []
+    try:
+        with work_transaction():
+            intent, created = apply_review(actor, token)
+            if created:
+                record_action(
+                    Action.ADMIN_CMD_USERS_EMAIL_LEADERS,
+                    actor_kind=ActorKind.PORTAL_USER,
+                    actor_id=actor.identity,
+                    subject_id=caller.automation_session_id,
+                    context={"outcome": Outcome.SUCCEEDED},
+                )
+                written.append(True)
+    except signing.BadSignature:
+        raise ValueError("The preview token is not valid.") from None
+    except UserFacingError as error:
+        raise _not_now(error) from None
+    except PermissionError as error:
+        _recheck(caller, service.store, actor, Capability.MANAGE_USERS)
+        raise error
+    except DatabaseError as error:
+        if written and not _guard_refusal(error):
+            context["committed"] = True
+        raise
+    context["committed"] = True
+    return LeaderEmails(
+        created=created,
+        request_id=intent["key"],
+        recipient_count=len(intent["addresses"]),
+    )
