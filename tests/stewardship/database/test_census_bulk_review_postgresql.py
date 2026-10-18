@@ -25,7 +25,7 @@ from ..policy_factory import address as rule
 from .campaign_builders import change
 from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
-from .test_census_resolution_postgresql import resolve
+from .test_census_resolution_postgresql import leader, resolve
 from .test_census_review_postgresql import ROUTE, fresh, review
 from .test_ministry_responses_postgresql import respond, start
 from .test_policy_postgresql import user
@@ -105,8 +105,9 @@ def test_bulk_review_records_each_change_as_one_review(response_service):
 
 
 def test_bulk_review_is_all_or_none(response_service):
-    """A stale change, a change that cannot take the decision, a By-hand
-    change, Staff and an over-long batch each refuse the whole request."""
+    """A stale change, a change that cannot take the decision, a Ministry
+    leader and an over-long batch each refuse the whole request. Staff review
+    in bulk too, By hand changes included (#1683)."""
     harness, admin, staff, home, names = prepared(response_service)
     first, second = names
     review(harness, admin, second, "approved")
@@ -116,10 +117,8 @@ def test_bulk_review_is_all_or_none(response_service):
     # The second is approved now: approving both cannot apply to it.
     with pytest.raises(ValueError):
         bulk(harness, admin, [first, fresh(second)], "approved")
-    with pytest.raises(ValueError):
-        bulk(harness, admin, [first, home], "approved")
     with pytest.raises(PermissionError):
-        bulk(harness, staff, [first], "approved")
+        bulk(harness, leader(harness, admin), [first], "approved")
     with pytest.raises(ValueError):
         bulk(
             harness,
@@ -132,6 +131,8 @@ def test_bulk_review_is_all_or_none(response_service):
         bulk(harness, admin, [], "approved", versions={first.pk: 1, uuid4(): 1})
     assert ProposalReview.objects.count() == 1
     assert fresh(first).decision == "unreviewed"
+    bulk(harness, staff, [first, home], "approved")
+    assert {fresh(first).decision, fresh(home).decision} == {"approved"}
 
 
 def test_bulk_review_refuses_a_queued_change(response_service):

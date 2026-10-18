@@ -10,6 +10,12 @@ checks the actor, the campaign, the version, the starting state and the
 pairing with the proposal and the audit event
 (``schema/migrations/0060_census_resolution.sql``), so a forged or stale
 request is refused even if this code were bypassed.
+
+Since the review pipeline (#1683) the Census changes worklist records only
+**Entered by hand** here (on a To review By hand change it accepts and marks
+in one step); its Ignore and Back to review are reviews
+(``census_review``). The ``ignored`` and ``reopened`` actions remain for
+``pk-admin census resolve``.
 """
 
 from uuid import UUID
@@ -57,15 +63,82 @@ def capability(action):
     )
 
 
+def _valid(action, note):
+    """Whether ``action`` and ``note`` make a resolution; a reopen says why."""
+    return (
+        action in RESOLUTION_ACTIONS
+        and isinstance(note, str)
+        and len(note) <= MAX_NOTE
+        # Undoing an Ignore says why; SQL requires the same.
+        and not (action == "reopened" and not note.strip())
+    )
+
+
+def record_resolution(
+    proposal, actor_id, expected_version, request_key, action, note, parish
+):
+    """Record one locked proposal's resolution, its result and its audit event.
+
+    The caller holds the work order and the proposal's row lock, has
+    checked the actor's capability and admitted the campaign; ``parish``
+    is the active parish's id, which the audit event names. The same
+    ``request_key`` with the same intent returns the first resolution
+    unchanged (a repeated submission); with a different intent it is
+    refused. A proposal changed since the page was drawn is refused by
+    ``check_version``, so the person sees its current state first. The
+    review worklist's bulk Entered by hand records each change through here
+    (``census_review.decide_census_changes``, #1683).
+    """
+    intent = dict(
+        proposal_id=proposal.pk,
+        expected_version=expected_version,
+        action=action,
+        note=note,
+    )
+    previous = ProposalResolution.objects.filter(
+        actor_id=actor_id, request_key=request_key
+    ).first()
+    if previous is not None:
+        if any(getattr(previous, key) != value for key, value in intent.items()):
+            raise ValueError("This request key is already bound.")
+        return previous
+    check_version(proposal, expected_version)
+    if not allowed(proposal, action):
+        raise ValueError("This census change cannot be resolved that way now.")
+    resolution = ProposalResolution.objects.create(
+        actor_id=actor_id, request_key=request_key, **intent
+    )
+    change = (
+        {"execution": "resolved_external"}
+        if action == "entered"
+        else {"decision": "ignored" if action == "ignored" else "unreviewed"}
+    )
+    ProposedChange.objects.filter(pk=proposal.pk).update(
+        version=F("version") + 1, **change
+    )
+    # The audit names the resolution and the versions, never the note.
+    record_action(
+        Action.CENSUS_CHANGE_UPDATED,
+        actor_kind=ActorKind.PORTAL_USER,
+        actor_id=actor_id,
+        subject_id=resolution.pk,
+        parish_id=parish,
+        campaign_id=proposal.submission.campaign_id,
+        context={
+            "outcome": Outcome.CHANGED,
+            "before_version": expected_version,
+            "after_version": expected_version + 1,
+        },
+    )
+    return resolution
+
+
 def resolve_census_change(
     store, actor_id, proposal_id, *, expected_version, request_key, action, note
 ):
     """Record one resolution and its result, replay-safe, under the work order.
 
-    The same ``request_key`` with the same intent returns the first
-    resolution unchanged (a repeated submission); with a different intent it
-    is refused. A proposal changed since the page was drawn is refused by
-    ``check_version``, so the person sees its current state first.
+    See ``record_resolution`` for replays and stale versions.
     """
     if (
         any(
@@ -74,20 +147,10 @@ def resolve_census_change(
         )
         or type(expected_version) is not int
         or not 1 <= expected_version < 2**63 - 1
-        or action not in RESOLUTION_ACTIONS
-        or not isinstance(note, str)
-        or len(note) > MAX_NOTE
-        # Undoing an Ignore says why; SQL requires the same.
-        or (action == "reopened" and not note.strip())
+        or not _valid(action, note)
     ):
         raise ValueError("Invalid census change resolution.")
     bounded_text(note)
-    intent = dict(
-        proposal_id=proposal_id,
-        expected_version=expected_version,
-        action=action,
-        note=note,
-    )
     with work_transaction():
         if not allows(current_principal(store, actor_id), capability(action)):
             raise PermissionError("Census change resolution is unavailable.")
@@ -97,42 +160,15 @@ def resolve_census_change(
             .get(pk=proposal_id, submission__mode="live")
         )
         admit_campaign(proposal.submission.campaign_id, mutating=True)
-        previous = ProposalResolution.objects.filter(
-            actor_id=actor_id, request_key=request_key
-        ).first()
-        if previous is not None:
-            if any(getattr(previous, key) != value for key, value in intent.items()):
-                raise ValueError("This request key is already bound.")
-            return previous
-        check_version(proposal, expected_version)
-        if not allowed(proposal, action):
-            raise ValueError("This census change cannot be resolved that way now.")
-        resolution = ProposalResolution.objects.create(
-            actor_id=actor_id, request_key=request_key, **intent
-        )
-        change = (
-            {"execution": "resolved_external"}
-            if action == "entered"
-            else {"decision": "ignored" if action == "ignored" else "unreviewed"}
-        )
-        ProposedChange.objects.filter(pk=proposal_id).update(
-            version=F("version") + 1, **change
-        )
         system = SystemConfiguration.objects.select_related(
             "active_configuration__parish"
         ).get()
-        # The audit names the resolution and the versions, never the note.
-        record_action(
-            Action.CENSUS_CHANGE_UPDATED,
-            actor_kind=ActorKind.PORTAL_USER,
-            actor_id=actor_id,
-            subject_id=resolution.pk,
-            parish_id=system.active_configuration.parish.pk,
-            campaign_id=proposal.submission.campaign_id,
-            context={
-                "outcome": Outcome.CHANGED,
-                "before_version": expected_version,
-                "after_version": expected_version + 1,
-            },
+        return record_resolution(
+            proposal,
+            actor_id,
+            expected_version,
+            request_key,
+            action,
+            note,
+            system.active_configuration.parish.pk,
         )
-        return resolution

@@ -57,6 +57,24 @@ def prepared(harness):
     return harness, admin.pk, staff.pk, rows["home_address"], rows["first_name"]
 
 
+def leader(harness, admin):
+    """A Ministry leader with current policy, who never sees census changes."""
+    store = harness.service.store
+    change(
+        store,
+        store.active(),
+        admin,
+        [
+            {
+                "operation": "add",
+                "section": "login_rules",
+                **rule("leader@example.org", ("ministry_leader",)),
+            }
+        ],
+    )
+    return user("leader@example.org").pk
+
+
 def resolve(harness, actor, proposal, action, *, version=None, key=None, note=""):
     """Resolve through the service on the restricted web login."""
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):

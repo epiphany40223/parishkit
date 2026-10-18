@@ -21,7 +21,7 @@ from parishkit.stewardship.responses.models import ProposalReview, ProposedChang
 from parishkit.stewardship.storage import StaleRecordError
 
 from .test_background_grants_postgresql import task_login
-from .test_census_resolution_postgresql import prepared, resolve
+from .test_census_resolution_postgresql import leader, prepared, resolve
 from .test_publication_plans_postgresql import owner, ready  # noqa: F401
 from .test_publication_worker_postgresql import (  # noqa: F401 (fixture)
     confirmed,
@@ -82,7 +82,10 @@ def test_approve_ignore_and_back_to_review_keep_history_and_audit(response_servi
         "after_version": first.expected_version + 1,
     }
     review(harness, admin, name, "ignored")
-    review(harness, admin, fresh(name), "unreviewed")
+    # Sending an ignored change back to review says why (#1683).
+    with pytest.raises(ValueError):
+        review(harness, admin, fresh(name), "unreviewed", note=" ")
+    review(harness, admin, fresh(name), "unreviewed", note="Asked again")
     name = fresh(name)
     assert name.decision == "unreviewed"
     assert [row.decision for row in name.reviews.order_by("expected_version")] == [
@@ -92,14 +95,24 @@ def test_approve_ignore_and_back_to_review_keep_history_and_audit(response_servi
     ]
 
 
-def test_service_refuses_staff_by_hand_stale_and_unchanged_reviews(response_service):
-    """Staff never review; a By-hand change is not reviewed here; a stale
-    version, an unchanged decision and an over-long note are refused."""
+def test_staff_review_automatic_and_by_hand_changes(response_service):
+    """Staff review every census change, By hand ones too (the review
+    pipeline's decisions 1 and 2, #1683): an accepted By hand change waits
+    to be entered by hand, an accepted Automatic one for publication."""
+    harness, _, staff, home, name = prepared(response_service)
+    review(harness, staff, home, "approved", note="Checked")
+    review(harness, staff, name, "approved")
+    for row in (fresh(home), fresh(name)):
+        assert (row.decision, row.execution) == ("approved", "pending")
+    assert set(ProposalReview.objects.values_list("actor_id", flat=True)) == {staff}
+
+
+def test_service_refuses_leaders_stale_and_unchanged_reviews(response_service):
+    """A Ministry leader never reviews census changes; a stale version, an
+    unchanged decision and an over-long note are refused."""
     harness, admin, staff, home, name = prepared(response_service)
     with pytest.raises(PermissionError):
-        review(harness, staff, name, "approved")
-    with pytest.raises(ValueError):
-        review(harness, admin, home, "approved")
+        review(harness, leader(harness, admin), name, "approved")
     with pytest.raises(StaleRecordError):
         review(harness, admin, name, "approved", version=name.version + 1)
     with pytest.raises(ValueError):
@@ -185,20 +198,32 @@ def forge(proposal, actor, decision, *, update=True, assignments=None, version=N
             )
 
 
-@pytest.mark.parametrize("case", ["staff", "by_hand", "stale", "unchanged", "unknown"])
+@pytest.mark.parametrize(
+    "case", ["leader", "reopen_without_note", "stale", "unchanged", "unknown"]
+)
 def test_sql_refuses_a_forged_review(response_service, case):
-    """The review guard holds even when the service is bypassed."""
+    """The review guard holds even when the service is bypassed: a Ministry
+    leader, an ignored change sent back without a note (#1683), a stale
+    version, an unchanged decision and an unknown actor are refused."""
     harness, admin, staff, home, name = prepared(response_service)
+    if case == "reopen_without_note":
+        review(harness, staff, home, "ignored")
+        home = fresh(home)
     target, actor, decision, version = {
-        "staff": (name, staff, "approved", None),
-        "by_hand": (home, admin, "approved", None),
-        "stale": (name, admin, "approved", name.version + 1),
-        "unchanged": (name, admin, "unreviewed", None),
-        "unknown": (name, uuid4(), "approved", None),
-    }[case]
+        "leader": (name, leader(harness, admin) if case == "leader" else None),
+        "reopen_without_note": (home, staff),
+        "stale": (name, admin),
+        "unchanged": (name, admin),
+        "unknown": (name, uuid4()),
+    }[case] + {
+        "reopen_without_note": ("unreviewed", None),
+        "stale": ("approved", name.version + 1),
+        "unchanged": ("unreviewed", None),
+    }.get(case, ("approved", None))
+    before = target.decision
     with pytest.raises((IntegrityError, DatabaseError), match="current authority"):
         forge(target, actor, decision, version=version)
-    assert fresh(target).decision == "unreviewed"
+    assert fresh(target).decision == before
 
 
 def test_sql_refuses_a_review_without_its_audit(response_service):
@@ -265,19 +290,25 @@ def test_do_block_refuses_the_earlier_guard_and_installs_on_a_bare_database():
         ),
         "stewardship_response_derived_guard_v1",
     )
-    with transaction.atomic(), connection.cursor() as cursor:
+    own = _replaced(text, "stewardship_proposal_review_guard_v1")
+
+    class Rollback(Exception):
+        """Ends a check that must leave the database as it found it."""
+
+    # 0131 (#1683) replaced the review guard since: each check runs on this
+    # file's own body for it, rolled back, so it tests this file alone.
+    with pytest.raises(Rollback), transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(own)
         cursor.execute(check)
+        raise Rollback
     with (
         pytest.raises(DatabaseError, match="lacks the review branch"),
         transaction.atomic(),
         connection.cursor() as cursor,
     ):
+        cursor.execute(own)
         cursor.execute(earlier)
         cursor.execute(check)
-
-    class Rollback(Exception):
-        """Ends a check that must leave the database as it found it."""
-
     with pytest.raises(Rollback), transaction.atomic(), connection.cursor() as cursor:
         cursor.execute(earlier)
         cursor.execute("DROP TABLE stewardship_proposal_review")

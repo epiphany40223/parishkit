@@ -26,7 +26,7 @@ from parishkit.stewardship.responses.models import ProposalReview, ProposedChang
 from parishkit.stewardship.storage import StaleRecordError
 
 from .test_background_grants_postgresql import task_login
-from .test_census_resolution_postgresql import prepared, resubmit
+from .test_census_resolution_postgresql import leader, prepared, resubmit
 from .test_census_review_postgresql import fresh, review
 from .test_publication_plans_postgresql import owner, ready  # noqa: F401
 from .test_publication_worker_postgresql import (  # noqa: F401 (fixture)
@@ -125,12 +125,16 @@ def test_a_value_publication_would_refuse_is_refused(response_service, value):
     assert ProposalReview.objects.count() == 0
 
 
-def test_staff_stale_by_hand_and_queued_changes_are_refused(response_service):
-    """Staff never edit; a stale version, a By-hand change and a queued one
-    are refused; a Conflict may be edited."""
+def test_leaders_stale_malformed_and_queued_edits_are_refused(response_service):
+    """Staff edit as an Administrator does (#1683), a Ministry leader never;
+    a stale version, an address given as one line and a queued change are
+    refused; a Conflict may be edited."""
     harness, admin, staff, home, name = prepared(response_service)
     with pytest.raises(PermissionError):
-        edit(harness, staff, name, "Corrected")
+        edit(harness, leader(harness, admin), name, "Corrected")
+    edit(harness, staff, name, "Staff value")
+    assert fresh(name).admin_value == "Staff value"
+    name = fresh(name)
     with pytest.raises(StaleRecordError):
         edit(harness, admin, name, "Corrected", version=name.version + 1)
     with pytest.raises(ValueError):
@@ -195,8 +199,9 @@ def forge(proposal, actor, value, *, decision=None, value_set=True):
 @pytest.mark.parametrize(
     ("value", "decision", "value_set", "message"),
     [
-        # A decision and an edit at once.
-        ('"Corrected"', "approved", True, "current authority"),
+        # A decision other than Accept and an edit at once (Edit is Accept
+        # with a value, #1683).
+        ('"Corrected"', "ignored", True, "current authority"),
         # Not the field's shape: a number, an object, JSON null.
         ("7", None, True, "field's shape"),
         ('{"display": "x"}', None, True, "field's shape"),
@@ -303,8 +308,17 @@ def test_do_block_refuses_the_earlier_guard():
         ),
         "stewardship_proposal_review_guard_v1",
     )
-    with transaction.atomic(), connection.cursor() as cursor:
+    own = _replaced(text, "stewardship_proposal_review_guard_v1")
+
+    class Rollback(Exception):
+        """Ends a check that must leave the database as it found it."""
+
+    # 0131 (#1683) replaced the review guard since: each check runs on this
+    # file's own body for it, rolled back, so it tests this file alone.
+    with pytest.raises(Rollback), transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(own)
         cursor.execute(check)
+        raise Rollback
     with (
         pytest.raises(DatabaseError, match="lacks the edit rules"),
         transaction.atomic(),
@@ -318,14 +332,12 @@ def test_do_block_refuses_the_earlier_guard():
         transaction.atomic(),
         connection.cursor() as cursor,
     ):
+        cursor.execute(own)
         cursor.execute(
             "DROP TRIGGER stewardship_proposal_edit_guard"
             " ON stewardship_proposed_change"
         )
         cursor.execute(check)
-
-    class Rollback(Exception):
-        """Ends a check that must leave the database as it found it."""
 
     with pytest.raises(Rollback), transaction.atomic(), connection.cursor() as cursor:
         cursor.execute(earlier)
