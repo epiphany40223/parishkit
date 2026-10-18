@@ -300,3 +300,37 @@ def test_a_through_day_before_from_holds_apply(page, component_origin):
     assert button.is_disabled()
     has_text(hint, "Enter a whole Through date, no earlier than From, or clear it.")
     assert hint.evaluate("node => node.getBoundingClientRect().height") == height
+
+
+# Where the first row's Recipient and its table sit, the page's size, and
+# how far the page is scrolled.
+RECIPIENT_PLACE = """() => {
+    const link = document.querySelector('tbody .recipient-link');
+    const place = (node) => { const box = node.getBoundingClientRect();
+        return [box.left, box.top, box.width, box.height]; };
+    return [...place(link), ...place(link.closest('table')),
+        document.documentElement.scrollWidth, document.documentElement.scrollHeight,
+        scrollX, scrollY];
+}"""
+
+
+@pytest.mark.parametrize("width", [1280, 390])
+def test_hovering_a_recipient_moves_nothing(page, component_origin, width):
+    """Hovering a row's Recipient changes only its look (#736): the name,
+    its table and the page keep their places and size. The resting link
+    once kept the table's compact button padding that its hover look drops,
+    so the name moved left under the pointer."""
+    open_list(page, component_origin, width=width)
+    link = page.locator("tbody .recipient-link").first
+    link.scroll_into_view_if_needed()
+    page.mouse.move(0, 0)
+    before = page.evaluate(RECIPIENT_PLACE)
+    link.hover()
+    # Past the buttons' colour transition.
+    page.wait_for_timeout(300)
+    after = page.evaluate(RECIPIENT_PLACE)
+    assert all(abs(a - b) <= 1 for a, b in zip(before, after, strict=True)), (
+        before,
+        after,
+    )
+    assert link.evaluate("node => getComputedStyle(node).paddingLeft") == "0px"
