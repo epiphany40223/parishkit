@@ -1822,21 +1822,25 @@ A request stands while the Member's latest version of it is neither
 withdrawn (cancelled) nor replaced; an earlier version shown with the
 history option follows that latest version, as its details already do.
 For a Member the Family added on the form, the values are the ones the
-Family entered with the request. A leave request made because the Member
-cannot participate in any ministries (the form's physical-limitations
-checkbox, recorded as `cannot_serve` in the response's `service` answers and
-shown as "Leave (cannot participate)") is not consent: it follows the
-publish flags (Administrator decision, 2026-10-18, on
-[#1591](https://github.com/epiphany40223/parishkit/issues/1591)), while
-ordinary join and stop-participating requests share as above. Such a Member
-joins no Ministry in that response (the response guard refuses it), but an
-earlier join request to the same Ministry (for example one a ParishSoft
-refresh resolved as joined) is listed in its history, and every version
-follows the latest one: once the latest is a cannot-participate leave, that
-Ministry's leaders see the publish flags on the earlier join too. Nothing
-else widens: a Member with no
-standing request to the Ministry (so every other Member of the Family), a
-withdrawn request and other Ministries' requests keep the publish flags, and
+Family entered with the request. A Member whom the Family's latest live
+response in the campaign marks as unable to participate in any ministries
+(the form's physical-limitations checkbox, recorded as `cannot_serve` in the
+response's `service` answers; their leaves show as "Leave (cannot
+participate)") shares nothing unpublished with any Ministry's leaders on any
+of their requests, current or in history, in any state (Administrator
+decision, 2026-10-18, on
+[#1591](https://github.com/epiphany40223/parishkit/issues/1591), applied per
+Member). This holds whatever the roster shows: a cannot-participate
+response adds leaves only for the Ministries the Member is on, so an earlier
+join that was declined or resolved, a leave a ParishSoft refresh confirmed,
+and a request to a Ministry the form no longer offers follow the publish
+flags too. A later live response without the checkbox lets the Member's
+standing requests share again. Both selections read the same latest
+response, so the request page, Export these requests and the packet agree.
+Every other Member's standing requests share as above. Nothing else
+widens: a Member with no standing request to the Ministry (so every other
+Member of the Family), a withdrawn request and other Ministries' requests
+keep the publish flags, and
 a leader still reads only the Ministries they lead. The rule is enforced in
 the SQL selections themselves (`stewardship_ministry_report_v3`, which v4
 reads, and `stewardship_ministry_packet_v1`), so the request page, Export

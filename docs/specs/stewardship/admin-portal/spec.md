@@ -6043,9 +6043,9 @@ Ministry. Who sees it is exactly who may open the request: Administrators,
 Staff, and the leaders of the request's Ministry. A Ministry leader sees the
 requesting Member's own email and phones on a standing request, since asking
 is consent to be contacted (Administrator decision, 2026-10-17,
-[#1591](https://github.com/epiphany40223/parishkit/issues/1591)), except a
-leave because the Member cannot participate in any ministries, and
-otherwise only the values the Member allows to be shared, with "Not
+[#1591](https://github.com/epiphany40223/parishkit/issues/1591)), except on
+any request of a Member whom the Family's latest response says cannot
+participate in any ministries, and otherwise only the values the Member allows to be shared, with "Not
 published" for the others; Administrators and Staff see operational
 contact. The exact rule is the
 [Ministry change summary's](../reports/spec.md#ministry-change-summary).
