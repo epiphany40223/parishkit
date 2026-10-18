@@ -15,10 +15,12 @@ from .quality_ci import environment
 from .quality_pytest import failures_path
 from .quality_sharding import BROWSER_ENGINES, browser_label, parse_browser_runs
 
-# 50 minutes for all of one job's partitions together; a job's tests usually
-# take about 20 (a Firefox half, #1380) to 31 (#1151). Setup usually takes
-# 1 to 2 minutes, so this leaves 10 minutes of the 60-minute job limit for
-# setup and post-job steps, and this bounded timeout, not the job cancel,
+# 50 minutes for all of one job's partitions together; a job's tests should
+# take at most about 30 on an ordinary runner (a Firefox half, #1380, or a
+# Chromium and WebKit fifth, #1529); when they near 38, split the engines
+# further (quality_sharding.BROWSER_JOBS) rather than raising this. Setup
+# usually takes 1 to 2 minutes, so this leaves 10 minutes of the 60-minute
+# job limit for setup and post-job steps, and this bounded timeout, not the job cancel,
 # reports a hang. (One 2026-09-30 mirror outage spent 17 minutes installing;
 # only a long hang in that same run would now reach the job cancel.) Raised
 # from 38 minutes when slow runners ran a partition 60% over its estimate
@@ -193,7 +195,7 @@ def main():
     parser.add_argument(
         "--runs",
         required=True,
-        help='Partitions to run, such as "chromium:1/3 webkit:1/3"',
+        help='Partitions to run, such as "chromium:1/5 webkit:1/5"',
     )
     args = parser.parse_args()
     try:

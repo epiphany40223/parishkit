@@ -5,6 +5,8 @@ from django.conf import settings
 
 from .auth_builders import auth_service, google, real_limiter  # noqa: F401
 from .response_builders import live_response_service, response_service  # noqa: F401
+from .schema_leak_guard import SchemaGuard, schema_connection
+from .schema_leak_guard import failure as schema_leak_failure
 
 
 @pytest.fixture(params=["force_custom_plan", "force_generic_plan"])
@@ -86,3 +88,45 @@ def _flush_without_post_migrate():
 
     with mock.patch.object(flush, "emit_post_migrate_signal", lambda *a, **k: None):
         yield
+
+
+_SCHEMA_GUARD = SchemaGuard()
+
+
+def _transactional(request):
+    """Whether pytest-django runs this test without a wrapping rollback."""
+    from pytest_django.fixtures import validate_django_db
+
+    marker = request.node.get_closest_marker("django_db")
+    if marker:
+        transaction, reset_sequences, *_ = validate_django_db(marker)
+        if transaction or reset_sequences:
+            return True
+    return bool(
+        {"transactional_db", "live_server", "django_db_reset_sequences"}
+        & set(request.fixturenames)
+    )
+
+
+@pytest.fixture(autouse=True)
+def _schema_leak_guard(request):
+    """Fail the transactional test that commits a schema change (#1489).
+
+    Only transactional tests can commit on the test connection; any other
+    test's changes roll back with it. Requesting ``transactional_db`` here
+    sets the database up before this fixture, so this teardown still has
+    database access and runs after the test's own fixtures have restored
+    whatever they changed.
+    """
+    if not _transactional(request):
+        yield
+        return
+    request.getfixturevalue("transactional_db")
+    from django.db import connection
+
+    _SCHEMA_GUARD.start(connection)
+    yield
+    with schema_connection(connection) as checked:
+        changes = _SCHEMA_GUARD.finish(checked)
+    if changes:
+        pytest.fail(schema_leak_failure(changes), pytrace=False)

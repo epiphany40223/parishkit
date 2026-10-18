@@ -20,6 +20,7 @@ from parishkit.stewardship.reports.census_change_views import (
     STATUS_LABELS,
     bulk_actions,
     row_controls,
+    row_dialogs,
 )
 from parishkit.stewardship.reports.census_changes import CensusQuery, select, shape
 from parishkit.stewardship.responses.comparison import phone_record
@@ -121,6 +122,7 @@ def components(context, admin):
         conflict=False,
         path=None,
         filters=None,
+        rows=ROWS,
     ):
         """Render the page with the table paged and sorted as ``paging`` says,
         and ``notice`` (a resolution's answer) above it; with ``automatic``,
@@ -129,12 +131,13 @@ def components(context, admin):
         are, it offers bulk review, and its forms post to ``BULK``; with
         ``edited``, its first (Automatic) row has an edited value; with
         ``conflict``, it is a Conflict; ``path`` is where its forms post;
-        ``filters`` (a CensusQuery) replace the default filters."""
+        ``filters`` (a CensusQuery) replace the default filters; ``rows``
+        is how many changes there are (none draws the empty table)."""
         path = path or (BULK if bulk else AUTOMATIC if automatic else PATH)
         shown = filters or query
         count = 3 if bulk else int(automatic)
         rows = [
-            shaped(index, count, approved, edited, conflict) for index in range(ROWS)
+            shaped(index, count, approved, edited, conflict) for index in range(rows)
         ]
         result = select(rows, shown, administrator=True)
         table = paginate(
@@ -143,7 +146,7 @@ def components(context, admin):
             carry=list(shown.form_values().items()),
             sorting=SORTING,
         )
-        row_controls(table.rows)
+        row_controls(table.rows, administrator=True, mutable=True)
         return (
             "text/html",
             render_to_string(
@@ -165,6 +168,7 @@ def components(context, admin):
                     "mutable": True,
                     "bulk": bulk,
                     "bulk_actions": bulk_actions(),
+                    "row_dialogs": row_dialogs(True),
                     # A fresh key per drawn page, as the view draws one.
                     "bulk_key": uuid4(),
                     "edit_today": "2054-10-06",
@@ -218,5 +222,20 @@ def components(context, admin):
         "/census-changes-stale": page(
             {"size": "25"},
             notice=STALE,
+        ),
+        # No changes at all: with no filter, with only Every status, with
+        # Every status and history, and with a search (#227: each says why
+        # the table is empty).
+        "/census-changes-none": page({"size": "25"}, rows=0),
+        "/census-changes-none-all": page(
+            {"size": "25"}, rows=0, filters=CensusQuery(status="all")
+        ),
+        "/census-changes-none-everything": page(
+            {"size": "25"},
+            rows=0,
+            filters=CensusQuery(status="all", history="yes"),
+        ),
+        "/census-changes-none-searched": page(
+            {"size": "25"}, rows=0, filters=CensusQuery(search="Nobody")
         ),
     }

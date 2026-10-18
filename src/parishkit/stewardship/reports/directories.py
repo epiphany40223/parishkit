@@ -8,6 +8,7 @@ from uuid import UUID
 from django.db import connection
 from django.db.models import Q
 from django.utils.datastructures import MultiValueDict
+from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.accounts.cryptography import canonical_code
 from parishkit.stewardship.campaigns.credential_keys import key_set_lock
@@ -28,12 +29,18 @@ from parishkit.stewardship.source.source_status import (
 )
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.filter_errors import FilterError
 from parishkit.stewardship.web.tables import Sorting
 
 from .directory_query import DIRECTORY
 from .information import parse_page
 
 PAGE_SIZE = 50
+# What the server says when it refuses a malformed Exact Family code at
+# its field (#1332): the words of the field's own hint (data-missing-hint
+# in directory.html), which the browser shows first, so the two never
+# disagree.
+CODE_MESSAGE = _("Type the whole eight-letter Family code, or clear it.")
 REASONS = {
     "no_head": "No active Family head",
     "no_address": "No head email address",
@@ -239,7 +246,11 @@ class DirectoryQuery:
         if query.exact_code:
             code = canonical_code(query.exact_code)
             if code is None:
-                raise ValueError("Invalid exact-code filter.")
+                # Every closed choice above was checked first, so only this
+                # field is wrong: the page is drawn again with the error at
+                # it (#1332). A caller that refused it before (an export, a
+                # ``pk-admin`` command) still does: it is a ``ValueError``.
+                raise FilterError("exact_code", CODE_MESSAGE, query)
             values["exact_code"] = code
         if not query.sorted_column_shown():
             values["sort"] = "name"

@@ -145,7 +145,10 @@ def test_report_and_export_pages_offer_their_actions(page, component_origin):
     """Scope, exact values and each export state's action are on the page."""
     page.goto(component_origin + "/participation")
     assert "$3,234.56" in page.locator("[data-table-region] table").inner_text()
-    visible(page.get_by_role("button", name="Apply report options"))
+    # The Chart population is a binary choice with no Apply button (#1535).
+    choice = page.get_by_role("group", name="Chart population")
+    visible(choice.get_by_role("link", name="Current population"))
+    assert page.get_by_role("button", name="Apply report options").count() == 0
     visible(page.get_by_role("button", name="Generate export"))
     visible(page.get_by_role("button", name="Queue export with the latest data"))
     page.goto(component_origin + "/report-export")
@@ -280,3 +283,45 @@ def test_failed_export_explains_itself_with_retry(page, component_origin):
     page.goto(component_origin + "/report-export-failed")
     visible(page.get_by_role("alert").filter(has_text="could not be created"))
     visible(page.get_by_role("button", name="Retry export"))
+
+
+# Each statistics tile's label, value text and value line's height.
+TILES = """() => [...document.querySelectorAll('#participation-statistics .stat-tile')]
+  .map(tile => [tile.querySelector('.stat-label').innerText,
+                tile.querySelector('.stat-value').firstChild.textContent.trim(),
+                tile.querySelector('.stat-value').getBoundingClientRect().height])"""
+
+
+def test_unknown_statistics_read_a_dash_with_a_reason(
+    page, component_origin, axe_source
+):
+    """ui-conventions "Stat tiles" (#1540): without ParishSoft data every
+    statistics tile reads "—" (never zero, never a word), its toggletip
+    says why, its value line is as tall as a known value's (so a value
+    that becomes unknown in place moves nothing), and the page passes
+    axe."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + "/participation")
+    known_height = page.evaluate(TILES)[0][2]
+    page.goto(component_origin + "/participation-unknown")
+    tiles = page.evaluate(TILES)
+    assert [(label, text) for label, text, _height in tiles] == [
+        ("Active Families", "—"),
+        ("Active Members", "—"),
+        ("Families with eligible email", "—"),
+        ("Families with deliverable email", "—"),
+        ("Families that have responded", "—"),
+        ("Current annual pledges", "—"),
+        ("Last year's pledges (all Families)", "—"),
+    ]
+    assert all(abs(height - known_height) <= 1 for _label, _text, height in tiles)
+    assert page.locator("#participation-statistics [data-chart]").count() == 0
+    tile = page.locator('[data-stat="active_families"]')
+    tile.get_by_role("button", name="More information").click()
+    visible(
+        tile.get_by_text("No ParishSoft data has been loaded for this campaign yet.")
+    )
+    group = page.get_by_role("list", name="Current active population statistics")
+    assert group.locator(".stat-tile").count() == 7
+    page.evaluate(axe_source)
+    assert page.evaluate(AXE) == []

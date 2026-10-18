@@ -109,7 +109,8 @@ and exits 2. Each command prints exactly one JSON document (schema
 (`logs export`, see [System logs](#system-logs), `export census`, see
 [Census changes download](#census-changes-download), `export limitations`,
 see [Limitations download](#limitations-download), `export roster`, see
-[Roster changes download](#roster-changes-download), and `export download`, see
+[Roster changes download](#roster-changes-download), `followup export`, see
+[Ministry follow-up download](#ministry-follow-up-download), and `export download`, see
 [report exports](#report-exports)), whose document goes to standard error; warnings, such as a session with less than
 72 hours left, and structured logs go to standard error. The document's
 fields, the exit codes and the error codes are in the specification's
@@ -457,8 +458,8 @@ Ctrl-C (or TERM, or a closed terminal or SSH session) stops the watch inside
 the web container too: `pk-admin` sends it SIGINT there, waits up to 10
 seconds for that stop and reports it if it fails or finds no watch, shows
 the watch's last document (`watch_interrupted`, the last state) if it
-arrives within 5 seconds (after Ctrl-C only), and exits 130 (143 for
-TERM, 129 for HUP). A second Ctrl-C meanwhile changes nothing. On a host
+arrives within 5 seconds (after Ctrl-C only), and exits 130 (131 for
+QUIT, Ctrl-\, 143 for TERM, 129 for HUP). A second Ctrl-C meanwhile changes nothing. On a host
 without util-linux `setsid -w`, Ctrl-C also ends the docker client at once,
 so the watch still stops but its last document is not shown, and a second
 Ctrl-C can cut the stop off. If the stop fails, the watch runs until its timeout
@@ -1330,8 +1331,11 @@ and `integration key status` and the Finish switching commands follow a key
 change and finish switching to it (see
 [Following a key change and finishing the switch](#following-a-key-change-and-finishing-the-switch)),
 and `integration schedule-preview` previews the ParishSoft refresh schedule
-(see [Previewing the refresh schedule](#previewing-the-refresh-schedule));
-pasting a new key stays on the pages for now.
+(see [Previewing the refresh schedule](#previewing-the-refresh-schedule)),
+and `integration key replace` saves a new key (see
+[Replacing a key](#replacing-a-key)), and the `integration backup-key`
+commands replace the Backup encryption key (see
+[Replacing the backup encryption key](#replacing-the-backup-encryption-key)).
 
 ```sh
 pk-admin integration list
@@ -1344,7 +1348,8 @@ integration, its `target`, `name` and whether it is `configured`.
 
 `integration show TARGET` takes `parishsoft`, `google_workspace` (Google
 Workspace mail), `email` (Outgoing email addresses), `slack` or `backup`
-(Off-site backups); the Backup encryption key stays on its page. Google
+(Off-site backups); the Backup encryption key has its own commands (see
+[Replacing the backup encryption key](#replacing-the-backup-encryption-key)). Google
 Workspace mail or Outgoing email addresses not set up is exit 1
 (`not_available`), as the page finds nothing to show.
 
@@ -1538,10 +1543,144 @@ needs Finish switching, or a request the page no longer shows is not
 dismissed: `dismissed` is false, exit 0, and nothing is recorded, as the
 page's Dismiss does nothing then.
 
+### Replacing a key
+
+`integration key replace TARGET` is a settings page's **Save** with a new
+key pasted: an API key (`parishsoft`), the mail service-account key
+(`google_workspace`) or the bot token (`slack`). It needs a full-scope
+session and an Administrator, stands in for the page's recent sign-in, and
+always asks before it does anything. The key is never an argument: the
+wrapper reads it from a file or from standard input and sends it to the
+command on its own line after the session preamble, so it never appears in
+the process list, shell history, the command's output, System logs or the
+audit trail, and never in the wrapper's work directory.
+
+```sh
+pk-admin integration show slack                # note the version
+pk-admin integration key replace slack --expected-version VERSION \
+    --secret-file ~/slack-token                # prompts at the terminal
+pk-admin integration key replace slack --expected-version VERSION \
+    --secret-stdin                             # paste, then Ctrl-D, then yes
+```
+
+- `--secret-file PATH` reads a regular file you own with no group or other
+  permissions (`chmod 600`), at most 128 KiB. A symbolic link, a FIFO, a
+  larger file or a file others may read is refused (exit 2) before
+  anything runs. Delete the file once the change is done. Keep it in a
+  directory only you can write to (your home directory, or one made with
+  `mkdir -m 700`): the shell cannot refuse a symbolic link that someone
+  swaps in at the instant between the wrapper's checks and its open. What
+  it reads must still be your own private regular file, but a private
+  directory leaves no such instant to anyone else.
+- `--secret-stdin` at a terminal turns echo off, so the key is not shown,
+  and reads until you press Ctrl-D at the start of a line (twice in the
+  middle of one); a multi-line Google Workspace JSON key can be pasted
+  whole. Echo comes back for the prompt's answer. If the command ends
+  before it reads the key (Staff is `denied`, the session has ended, the
+  web container is down), or what you paste is longer than 128 KiB,
+  `pk-admin` says so, keeps echo off and waits: finish the paste and press
+  Ctrl-D, and what you pasted is discarded, never left for your shell to
+  run or keep in its history. A terminal
+  takes at most 1024 bytes on one line on macOS (4096 on Linux), and a
+  Google Workspace JSON key's `private_key` line is longer, so on a Mac
+  give that key with `--secret-file`. From a pipe it needs
+  `--yes`, because standard input then holds only the key, so read what
+  `integration show` says first. Never pipe a key from `echo` or a
+  variable: the value would stay in shell history or the process list.
+  Piping from a password manager's command (`pass show slack | ...`) is
+  fine.
+- `--changes JSON` saves settings with the key, in `integration preview`'s
+  shape (`{"settings": {"channel_id": "C0123ABC"}}`): for example the
+  channel that sets Slack up with its first token, or a new ParishSoft
+  organization ID before any data is loaded. It is literal JSON, never
+  `-`, since standard input carries the key. A refresh schedule change is
+  refused with a key, as on the page: change it first.
+
+The prompt names the integration, whether this sets it up or replaces its
+key, and the settings saved with it (never their values). Then the key is
+sealed for the integration's own installer and staged exactly as from the
+page; the installer checks it with the provider, installs it, and the
+configuration switches to it. If the check fails, nothing changes and the
+current key stays in use. The command prints `version`, `target`, `name`,
+`setup`, `changes`, `key_request_id` and `request` (the configuration
+request that switches to the key); follow the key change with
+`integration key status TARGET --request-id KEY_REQUEST_ID --watch 5`.
+It records the page's own events, the fresh gate's event and notice,
+`admin_cmd_integration_key_replace` and a `policy_change` notice for every
+Administrator.
+
+Refusals: Staff is exit 1 (`denied`) before the key is read; another
+version is `stale_version` (run `integration show` again); a key change for
+the integration still running is `not_available` (wait for it, or follow
+it with `integration key status`); a refused setting is `invalid` at
+`settings.NAME`, and an empty key, one that is not UTF-8, is too long or is
+in the wrong format at `key`, never quoting it. Each run is a new key
+change: if the outcome is unknown (exit 6), read the named request with
+`config request show` and the key change with `integration key status`
+before you try again.
+
+### Replacing the backup encryption key
+
+The `integration backup-key` commands are the **Backup encryption key**
+page's three steps, in the same order and with the same checks as the
+page and the backup runbook's "Replacing the key". They need a full-scope
+session and an Administrator, and stand in for the page's recent sign-in.
+Make the new key pair on the key machine first (`pk-stewardship
+backup-keygen`) and save only its `public_key` value in a file you own
+with mode 600; never give this server the private key.
+
+```sh
+pk-admin integration backup-key challenge --public-key-file ~/new-backup.pub
+# on the key machine: run backup-prove with the new private key and paste
+# the challenge line; it prints a 12-character code
+pk-admin integration backup-key preview --intent INTENT --code-stdin
+                                    # type the code, then Ctrl-D (not shown)
+pk-admin integration backup-key confirm --token TOKEN   # prompts
+```
+
+- `challenge` reads the public key from the file, as `--secret-file`
+  reads a key (a private regular file, here at most 200 bytes), and sends
+  it to the command on its own line, never as an argument. It refuses a
+  private key, a text that is not one public key, and the key already in
+  use, in the page's words. It prints `version`, `current` (the key in use
+  as the page's "Key in use" shows it: `source`, `fingerprint` and, for
+  the installed key, `backup_at`), `fingerprint` (the new key's: compare it
+  with the one `backup-keygen` printed), `challenge` (the line to paste
+  into `backup-prove`) and `intent`, which `preview` takes within fifteen
+  minutes. It records nothing.
+- `preview` takes the intent and the code `backup-prove` printed, from
+  `--code-file PATH` or `--code-stdin` (echo off at a terminal; piped, it
+  needs no `--yes`, as nothing prompts). The code is read as the page
+  reads it: any case, spaces or dashes. A code that does not match is
+  `invalid` at `code`; check that you used the new private key, and try
+  again with the same intent. An expired intent, or one made before the
+  settings changed, is `stale_version`: start again with `challenge`. It
+  prints `version`, `changes` (the fingerprint `before`, null when the
+  key in use is not known yet, and `after`) and `preview.token`. It
+  records nothing.
+- `confirm` prompts with both fingerprints and what the change means,
+  then makes the page's configuration request; `--yes` answers the
+  prompt, and `--token -` needs it. It records the fresh gate's event and
+  notice, `admin_cmd_integration_backup_key_confirm` and a `policy_change`
+  notice. Once the configuration installer applies it, every
+  Administrator is told by the page's `backup_key_replaced` security
+  event, and the next backup is sealed to the new key. It prints
+  `created` and `request`; follow the request with
+  `config request show REQUEST_ID --watch 5`. Keep the old private key
+  until every backup sealed to it has been deleted by retention, and open
+  the next backup with the new private key, as the restore drill does (see
+  the backup runbook's
+  [Replacing the key](stewardship-backup-runbook.md#replacing-the-key)).
+
+Staff is exit 1 (`denied`) before the public key or the code is read, and
+a read-only session is refused. No private key, code or pasted text is ever
+printed or recorded.
+
 ### Following a key change and finishing the switch
 
-A new key (API key, service-account key or bot token) is still pasted on
-the integration's settings page. `integration key status` is the **Key
+A new key (API key, service-account key or bot token) is pasted on the
+integration's settings page or given to `integration key replace` (see
+[Replacing a key](#replacing-a-key)). `integration key status` is the **Key
 replacement status** page for one of your own key changes: by default your
 latest for the integration, or the one `--request-id` names. Any session of
 an Administrator may run it, and it records nothing. It prints `target`,
@@ -2068,8 +2207,8 @@ the rows stay on the page and its downloads. It records the page's
 
 ### Recording a census change's outcome
 
-`census resolve` is a Census changes row's **Record outcome**: Entered in
-ParishSoft (`entered`), Ignore (`ignored`) or Reopen (`reopened`). Like the
+`census resolve` is a Census changes row's **Mark entered in ParishSoft**
+(`entered`), **Ignore** (`ignored`) or **Reopen** (`reopened`) icon. Like the
 page's buttons it needs a full-scope session; Administrators and Staff may
 record Entered and Ignore, and only an Administrator may reopen an ignored
 change (Staff get `denied`). It needs no recent sign-in, as on the page.
@@ -2110,8 +2249,8 @@ logs show the page's `census_change_updated` and the command's
 
 ### Reviewing an automatic census change
 
-`census review` is an Automatic row's **Review**: Approve (`approved`),
-Ignore (`ignored`) or Back to To review (`unreviewed`). Only an
+`census review` is an Automatic row's review: **Approve** (`approved`),
+**Ignore** (`ignored`) or **Send back to To review** (`unreviewed`). Only an
 Administrator may review (Staff and Ministry leaders get `denied`, before
 anything is read), with a full-scope session and no recent sign-in, as on
 the page. Every review can be changed again until publication of the change
@@ -2146,7 +2285,7 @@ page's `census_change_updated` and the command's `admin_cmd_census_review`.
 
 ### Editing a value or resolving a conflict
 
-`census edit` is the same Review's **Edit value** (`--value`) and **Clear
+`census edit` is the same row's **Edit value** (`--value`) and **Clear
 edit** (`--clear`): the value publication writes instead of the Family's
 answer, which never changes. `census resolve-conflict` is **Use the
 Family's value anyway** on a Conflict: it approves the change over
@@ -2584,6 +2723,37 @@ The files are the page's own, with its columns. They name Members and
 Families, so create them private, as above, and delete them once used; the
 wrapper refuses to write one to a terminal.
 
+### Ministry follow-up download
+
+`followup export` writes the page's **Export these requests** download of
+the Ministry follow-up queue to standard output: every request the
+filters select, not one page, with each Member's contact details as the
+request page shows them. Its document (`campaign_id`, `file_name`,
+`content_type`, `format`, `timezone`, `size`, `sha256`, `count`) goes to
+standard error, as for `export roster`. It needs a full-scope session, as
+every export does; Administrators and Staff may run it, and a Ministry
+leader gets only the requests of the Ministries they lead, as on the page.
+It takes `followup
+list`'s filters, `--ministry DUID`, `--action`, `--state` (`unresolved`,
+the default, `any`, `new`, `in_progress`, `resolved` or
+`closed_no_response`), `--outcome` and `--sort`, but no search, page or
+size, plus `--format` (`xlsx`, the default, `csv` or `pdf`) and
+`--timezone` (UTC, the default, or a time zone name, for the file's
+times). A PDF holds at most 1,000 requests; more is exit 1 (`invalid`, at
+`format`): choose CSV or XLSX, or narrow the filters. It records the
+page's "downloaded" event (`ministry_followup_exported`) with the number
+of requests and the Ministries in the file, never their values.
+
+```sh
+(umask 077; pk-admin followup export --state any --format csv > requests.csv)
+```
+
+The file is made when you run the command and is not kept anywhere else:
+run it again for a newer one. It is the page's own file, with its columns,
+and names Members with their contact details, so create it private, as
+above, and delete it once used; the wrapper refuses to write it to a
+terminal.
+
 ### Census changes download
 
 `export census` writes the page's download of **Census changes** to
@@ -2618,7 +2788,7 @@ why), `reviews`: the decisions `census review` takes on that row now
 and `resolvable`: whether `census edit` and `census resolve-conflict` act
 on it now (true or false, for Administrators only). They are empty or false
 while other campaign work holds the campaign, as the page then offers no
-Record outcome or Review. The file names Families and
+row actions. The file names Families and
 Members with their contact details, so create it private, as above, and
 delete it once used; the wrapper refuses to write it to a terminal.
 
@@ -2889,6 +3059,97 @@ page refuses, or text past its length, is exit 1 (`invalid`), with
 `error.fields` naming the option (`outcome`, `notes`, `contact_at`,
 `contact_notes` or `request`). A request that is not one of the current
 campaign's, or is outside your Ministries, is exit 1 (`not_available`).
+
+The queue's **Export these requests** is `followup export`, see
+[Ministry follow-up download](#ministry-follow-up-download).
+
+## Roster tick and Additional information
+
+`followup roster-entered` sets or clears a resolved Ministry request's
+**Entered in ParishSoft** tick, as the tick on the request's page does, and
+`followup roster-bulk` marks several at once, as **Roster changes to
+enter**'s bulk mark does. `followup information-show` reads one
+**Additional information** request's page with its follow-up history, and
+`followup information-update` is its **Save follow-up**. The read runs on a
+session of any scope and records the page's `information_viewed`; the
+changes need a full-scope session. Ministry leaders may not tick, and only
+Staff and Administrators follow up Additional information, as on the pages.
+The documents give IDs, versions, flags, account IDs and instants, never a
+Member's or Family's name or DUID, what the Family wrote, or the Staff
+notes; read those on the page, or download them with `export information`.
+
+```sh
+pk-admin followup show REQUEST_ID
+pk-admin followup roster-entered REQUEST_ID --set --expected-version 0
+pk-admin followup roster-entered REQUEST_ID --clear --expected-version 1
+pk-admin followup roster-bulk --request REQUEST_ID:0 --request OTHER_ID:2
+pk-admin followup information-show ITEM_ID
+pk-admin followup information-update ITEM_ID --expected-version 3 \
+  --completed yes --notes -
+```
+
+`--expected-version` for the tick is its current sequence, as `followup
+show` prints `roster.sequence` (0 before the first tick); each set or clear
+adds one. A tick changed since is exit 1 (`stale_version`). A request that
+takes no tick (only a join or leave a person resolved as joined or leave
+confirmed takes one) is exit 1 (`invalid`, `error.fields` naming
+`request`), and so is a tick that already says so (naming `set` or
+`clear`). `followup roster-bulk` takes each chosen request as `ID:VERSION`,
+up to 250, and only marks; it asks for confirmation first (or takes
+`--yes`), and saves nothing if any request is stale or already marked.
+Find the requests with `followup list --state resolved`: a row whose
+`roster.eligible` is true and `roster.entered` is false is one to enter, and
+its `id` and `roster.sequence` are the `ID` and `VERSION`. The list shows
+only each Member's newest request for a Ministry (as the queue does), but
+**Roster changes to enter** also lists an older resolved request that a
+newer request has replaced, so such a request can be missing from
+`followup list`. That is a known gap: mark it on the page, or with
+`followup roster-entered` if you already have its ID.
+
+`followup information-update` takes `--needed yes|no` (Follow-up needed),
+`--completed yes|no` (Follow-up completed) and `--notes TEXT` (at most 5,000
+characters; `-` reads standard input, which keeps the text out of shell
+history, and trims surrounding whitespace, as `followup update` does; the
+page keeps it as typed). Each one left out stays as it is, as the page's form opens filled
+in. Clearing a completed follow-up (`--completed no`) needs
+`--confirm-clear`, the page's confirmation box; without it the command is
+exit 1 (`invalid`, naming `confirm_clear`). A version that is no longer
+current is exit 1 (`stale_version`).
+
+Each change takes `--request-key`; without one it makes a key and prints it
+to standard error. A repeat with the key records nothing twice; the key
+with another change is exit 1 (`invalid`). A request or item that is not
+one of the current campaign's is exit 1 (`not_available`).
+
+| `followup roster-entered` field | What it holds |
+| --- | --- |
+| `created` | False for a repeat with the same key, which recorded nothing |
+| `request_key` | The key, for a repeat |
+| `entry` | The tick recorded: `id`, `request_id`, `sequence`, `entered`, `created_at` |
+
+| `followup roster-bulk` field | What it holds |
+| --- | --- |
+| `created`, `request_key` | As for `followup roster-entered` |
+| `changed` | How many requests this run marked (0 for a repeat) |
+| `entries` | Each chosen request's tick, as `entry` above |
+
+| `followup information-show` field | What it holds |
+| --- | --- |
+| `campaign_id` | The current campaign |
+| `item` | `id`, `version` (what `--expected-version` takes), `disposition` (`current_actionable`, or why the request no longer is), `submitted_at`, `follow_up_needed`, `completed`, `followed_up_at` and `followed_up_by` (an account ID), `replacement_id` (a later request that replaced this one), `previously_reported` and `correction_resolved` |
+| `history_page`, `more_history` | The history page shown (`--page`), and whether another follows |
+| `history` | Each Save, newest first: `id`, `expected_version`, `follow_up_needed`, `followed_up`, `confirm_clear`, `followed_up_at`, `followed_up_by`, `actor_id`, `created_at` |
+
+| `followup information-update` field | What it holds |
+| --- | --- |
+| `created`, `request_key` | As for `followup roster-entered` |
+| `revision` | What was recorded, as a `history` row |
+| `item` | The item now: `id`, `version`, `follow_up_needed`, `followed_up_at` |
+
+Each change is recorded in System logs as on the page
+(`ministry_roster_entered` for each tick, `information_updated`), with
+`admin_cmd_followup_roster_entered`, `admin_cmd_followup_roster_bulk` or
+`admin_cmd_followup_information_update` naming the session.
 
 ## Output changelog
 
@@ -3231,6 +3492,26 @@ campaign's, or is outside your Ministries, is exit 1 (`not_available`).
   fresh-gated and prompting, recording
   `admin_cmd_integration_key_finish_switching` and a `policy_change`
   notice).
+- `pk-admin/1` (#463): additive. `integration backup-key challenge
+  --public-key-stdin`, `integration backup-key preview --intent TOKEN
+  --code-stdin` and `integration backup-key confirm --token TOKEN [--yes]`,
+  the Backup encryption key page's steps (full scope; the confirmation is
+  fresh-gated and prompting, recording
+  `admin_cmd_integration_backup_key_confirm` and a `policy_change` notice).
+  The public key and the code follow the preamble as one
+  `pk-admin-public-key/1 <base64>` or `pk-admin-proof/1 <base64>` line,
+  which the host wrapper's `--public-key-file PATH`, or `--code-file PATH`
+  or `--code-stdin`, sends. The results have `version`, `current`,
+  `fingerprint`, `challenge` and `intent`; `version`, `changes` and
+  `preview`; and `created` and `request`.
+- `pk-admin/1` (#463): additive. `integration key replace TARGET
+  --expected-version V --secret-stdin [--changes JSON] [--yes]`, a settings
+  page's Save with a new key (full scope, fresh-gated and prompting,
+  recording `admin_cmd_integration_key_replace` and a `policy_change`
+  notice). The key follows the preamble as one `pk-admin-secret/1 <base64>`
+  line, which the host wrapper's `--secret-file PATH` or `--secret-stdin`
+  sends; the result has `version`, `target`, `name`, `setup`, `changes`,
+  `key_request_id` and `request`.
 - `pk-admin/1` (#463): additive. `export roster [--show todo|all]
   [--ministry DUID] [--format csv|xlsx|pdf] [--timezone ZONE]`, the Roster
   changes to enter download (full scope, Administrators and Staff, the
@@ -3318,3 +3599,12 @@ campaign's, or is outside your Ministries, is exit 1 (`not_available`).
   `first_end=`, `latest_start=`, `latest_end=`) are now days in the time
   zone `--filter zone=…` names, as on the page; a date without it is exit 1
   (`invalid`). Its only readers are Administrator-run assistants.
+- `pk-admin/1` (#463 PR 11b): additive. `followup roster-entered` and
+  `followup roster-bulk`, the Entered in ParishSoft tick and Roster changes
+  to enter's bulk mark, and `followup information-show` and `followup
+  information-update`, an Additional information request's page and Save.
+- `pk-admin/1` (#463 PR 11c): additive. `followup export [--ministry DUID]
+  [--action A] [--state S] [--outcome O] [--sort S] [--format
+  csv|xlsx|pdf] [--timezone ZONE]`, the Ministry follow-up queue's Export
+  these requests (full scope, the page's `ministry_followup_exported`),
+  streamed as `export roster` is.

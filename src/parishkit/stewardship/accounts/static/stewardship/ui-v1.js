@@ -39,9 +39,11 @@
     });
   });
 
-  // The LOCAL step-up (components/reauthenticate.html, #613). There is no
-  // Google in LOCAL: the Administrator mints a sign-in link on the laptop
-  // and opens it, often in a new tab, so the page that asked records its
+  // The LOCAL step-up (components/reauthenticate.html, #613). LOCAL starts
+  // with no Google (the sentinel OAuth client; with a real client, #1399,
+  // reauthenticate.html adds the Google button too): the Administrator
+  // mints a sign-in link on the laptop and opens it, often in a new tab, so
+  // the page that asked records its
   // return path (never an answer or credential) for local-sign-in-v1.js to
   // send as the sign-in's "next". The key "pk-local-step-up" and the
   // ten-minute limit pair with STEP_UP_KEY and STEP_UP_SECONDS in
@@ -364,6 +366,15 @@
   const TIME_LONE_SUFFIX = /^[ap]\.?(?:m\.?)?$/i;
   const TIME_WORDS = new Map([["noon", 12], ["midnight", 0]]);
   const pad2 = (number) => String(number).padStart(2, "0");
+  // The page script's one weekday source (#1129), matching the server's
+  // wall_clock.WEEKDAYS: the day names Monday first, and mondayFirst, which
+  // turns a JavaScript day number (getDay or getUTCDay: Sunday 0) into that
+  // index (Monday 0, as Python's date.weekday() and every stored schedule
+  // count). The test_wall_clock guard keeps every other script from holding
+  // its own list of day names.
+  const WEEKDAY_NAMES = Object.freeze(["Monday", "Tuesday", "Wednesday", "Thursday",
+    "Friday", "Saturday", "Sunday"]);
+  const mondayFirst = (jsDay) => (jsDay + 6) % 7;
   const timeWords = (text) => String(text ?? "").split(TIME_SPACES).filter(Boolean);
   // A read time is {hour, minute, second}; its canonical text is "HH:MM",
   // or "HH:MM:SS" for a kept saved time with seconds.
@@ -604,6 +615,7 @@
   const GATE_MARKS = [
     "data-time-gated", "data-acknowledgment-gated", "data-complete-gated", "data-change-gated",
     "data-live-stale-gated", "data-schedule-gated", "data-download-ended-gated",
+    "data-save-spent-gated",
   ];
   const gated = (node) => GATE_MARKS.some((mark) => node.hasAttribute(mark));
   document.querySelectorAll("button[disabled], input[disabled]").forEach((node) => {
@@ -917,7 +929,7 @@
         pad2(at.getDate())}`,
       time: canonicalTime({hour: at.getHours(), minute: at.getMinutes(),
         second: at.getSeconds()}),
-      weekday: (at.getDay() + 6) % 7,
+      weekday: mondayFirst(at.getDay()),
     };
   };
   // localMoment: the moment (ms) a date ("YYYY-MM-DD") and canonical time
@@ -958,7 +970,10 @@
     if (zone && !zone.value) {
       const missing = form.querySelector("[data-zone-missing]");
       if (missing) missing.hidden = false;
-      form.querySelectorAll('button[type="submit"]').forEach((button) => {
+      // form.elements, not the form's descendants: inside the campaign
+      // wizard New and Edit's button is the action row's Save and go back,
+      // a submit of this form drawn after it (#1404 PR 4b).
+      [...form.elements].filter(isSubmit).forEach((button) => {
         button.disabled = true;
         if (missing?.id) {
           button.setAttribute("aria-describedby", [button.getAttribute("aria-describedby"),
@@ -1034,10 +1049,12 @@
   // - a shared table's sort headings, navigator links and forms, and the
   //   page's filter form (form#table-filters, #484), unless that form is
   //   itself a form[data-in-place] because its options reshape far more of
-  //   the page than a table (the participation report's options, which
-  //   refresh its statistics, chart and export panels, #519);
+  //   the page than a table;
   // - a[data-in-place]: a link that shows another view of this page (the
-  //   response dashboard's mode and grain, a list's Refresh). Its value, if
+  //   response dashboard's mode and grain, a list's Refresh, and the
+  //   participation report's Chart population pair, #1535, whose links sit
+  //   in a data-table-sync node so each refresh redraws them with the
+  //   current sort, size and zone). Its value, if
   //   any, is a stable key that finds the link again in the fresh page, for
   //   focus and to announce the view now shown ("By day");
   // - form[data-in-place]: a form whose answer is this page again, such as a
@@ -1567,6 +1584,13 @@
     });
     refusedFields.set(key, marked);
   };
+  // A JSON refusal's same-origin link ({url, label}, such as Outgoing mail
+  // for held send work), or null when it has none.
+  const refusalLink = (text) => {
+    let link = null;
+    try { link = JSON.parse(text)?.refusal?.link; } catch { /* not JSON: no link */ }
+    return link?.url && link.label && sameOrigin(link.url) ? link : null;
+  };
   const showRefusal = (key, control, status, text) => {
     unmarkRefused(key);
     const note = document.createElement("p");
@@ -1574,9 +1598,8 @@
     note.setAttribute("role", "alert");
     note.setAttribute("data-in-place-refusal", "");
     note.textContent = refusalText(status, text);
-    let link = null;
-    try { link = JSON.parse(text)?.refusal?.link; } catch { /* refusalText fell back already */ }
-    if (link?.url && link.label && sameOrigin(link.url)) {
+    const link = refusalLink(text);
+    if (link) {
       const anchor = document.createElement("a");
       anchor.href = link.url;
       anchor.textContent = link.label;
@@ -2337,9 +2360,28 @@
   // page's own Review stays the way on. Its hint after the row keeps its
   // line (data-idle hides it with visibility), and names the button only
   // while it is shown.
+  // On a step that saves directly (Campaign settings, Share options, #1404
+  // PR 4) a change does not hold Continue: the row's one primary switches
+  // to Save and continue, the page form's own submit button in the same
+  // grid cell, and back to Continue once the form holds the saved values
+  // again. The one not offered is data-step-inactive (hidden with
+  // visibility, so the cell keeps its width) and inert. Save and continue
+  // is described by the form's complete hint, as the page's Save was.
   const gateStepContinue = () => {
     const form = document.querySelector("form[data-campaign-continue]");
     if (!form) return;
+    const save = document.querySelector("[data-campaign-save]");
+    const direct = save?.form;
+    if (direct?.matches("[data-direct-save]")) {
+      const changed = direct.hasAttribute("data-holds-change");
+      form.toggleAttribute("data-step-inactive", changed);
+      form.inert = changed;
+      save.toggleAttribute("data-step-inactive", !changed);
+      save.inert = !changed;
+      const hint = direct.querySelector("[data-complete-hint][id]");
+      if (hint) save.setAttribute("aria-describedby", hint.id);
+      return;
+    }
     const held = Boolean(document.querySelector("form[data-require-change][data-holds-change]"))
       || [...document.querySelectorAll('form input[type="file"]')]
         .some((node) => !node.matches(":disabled") && node.files?.length > 0);
@@ -2857,20 +2899,27 @@
       });
     });
   };
-  // A field that must change on its own (data-change-alone="<name>" on a
-  // data-require-change form, with its words in data-change-alone-hint): a
-  // live campaign's Ministries, whose review is applied by itself (#1330).
-  // While it and any other field differ from the saved values, the field
+  // Fields that must change on their own (data-change-alone="<name> ..." on
+  // a data-require-change form, with its words in data-change-alone-hint):
+  // a live campaign's Ministries, whose review is applied by itself, or a
+  // draft's dates and time zone while it has mail schedules (#1330). The
+  // names listed are one group: while a field of it and any field outside
+  // it differ from the saved values, the group's first changed field
   // carries the hint as its data-client-error, so the gate below holds
   // Review with those words. The server still refuses such a change.
   const changeAlone = (form) => {
-    const name = form.dataset.changeAlone;
-    const field = name && form.id && form.elements.namedItem(name);
-    if (!(field instanceof HTMLElement) || !form.hasAttribute("data-require-change")) return;
+    const group = (form.dataset.changeAlone || "").split(/\s+/).filter(Boolean);
+    const fields = group.map((name) => form.elements.namedItem(name))
+      .filter((field) => field instanceof HTMLElement);
+    if (!fields.length || !form.id || !form.hasAttribute("data-require-change")) return;
     const names = changedNames(form, savedState(form));
     const hint = form.dataset.changeAloneHint || "";
-    if (names.has(name) && names.size > 1) field.dataset.clientError = hint;
-    else if (field.dataset.clientError === hint) delete field.dataset.clientError;
+    const mixed = [...names].some((name) => !group.includes(name));
+    const marked = mixed ? fields.find((field) => names.has(field.name)) : null;
+    fields.forEach((field) => {
+      if (field === marked) field.dataset.clientError = hint;
+      else if (field.dataset.clientError === hint) delete field.dataset.clientError;
+    });
   };
   const gateComplete = (form) => {
     if (!form || !form.hasAttribute("data-require-complete")) return;
@@ -3806,7 +3855,10 @@
   // value (confirm-dialog.html; the Ministry follow-up queue's bulk
   // outcomes, #1131). One limited to one kind of row is available only
   // while every ticked row is of that kind (wireSelection), so the dialog
-  // acts on every ticked row.
+  // acts on every ticked row. A row's control may carry its own dialog
+  // text too, and post more of its row's fields than its own name and
+  // value: data-confirm-with, a query string (Census changes' decision,
+  // version and request key, #879), so one dialog serves every row.
   const openConfirm = (dialog, opener) => {
     const form = document.getElementById(dialog.dataset.confirmForm || "");
     if (!(form instanceof HTMLFormElement)) return;
@@ -3856,7 +3908,8 @@
     confirming = {
       dialog, opener, form, chosen, values, busy: false, done: false,
       doneOne: text("doneOne"), doneMany: text("doneMany"),
-      extra: bulk && opener.name ? [opener.name, opener.value] : null,
+      extra: bulk ? (opener.name ? [[opener.name, opener.value]] : [])
+        : [...new URLSearchParams(opener.dataset.confirmWith || "")],
     };
     dialog.showModal();
     // The safe choice takes focus first.
@@ -3902,6 +3955,12 @@
       anchor.textContent = link.text;
       error.append(anchor);
     }
+    // A review dialog's body keeps its height while the refusal shows
+    // (#1482): its height limit then rises by the refusal's room (ui-v1.css),
+    // and the body, flexing, would otherwise take that room and move the
+    // buttons. A max-height, so a window made smaller still shrinks it.
+    const body = state.review && state.dialog.querySelector("[data-review-body]");
+    if (body && error.hidden) body.style.maxHeight = `${body.getBoundingClientRect().height}px`;
     error.hidden = false;
     state.dialog.querySelector("[data-confirm-status]").textContent = "";
     const accept = state.dialog.querySelector("[data-confirm-accept]");
@@ -3915,9 +3974,11 @@
     cancel.focus();
   };
   // A refusal whose errors name fields in the dialog (field_id: the bulk
-  // outcome's contact date and time, #1332) is shown at those fields
-  // instead: the message fills the dialog's field-error line (its first
-  // .errorlist with an id) and each field is marked and described by it.
+  // outcome's contact date and time, #1332, by id; or Census changes' Edit
+  // value, #879, by its name in the dialog's form, since each row's field
+  // has its own id) is shown at those fields instead: the message fills the
+  // dialog's field-error line (its first .errorlist with an id) and each
+  // field is marked and described by it.
   // Confirm stays unavailable, naming the line, until one of them is
   // edited: the edit clears the mark (wireValidity) and then lets the
   // form's complete gate decide again. Any change on the form counts,
@@ -3928,7 +3989,8 @@
     try {
       ids = (JSON.parse(raw)?.errors || []).map((item) => item?.field_id).filter(Boolean);
     } catch { return false; }
-    const fields = [...new Set(ids)].map((id) => document.getElementById(id))
+    const fields = [...new Set(ids)].map((id) => document.getElementById(id)
+      || state.form.elements.namedItem(id))
       .filter((node) => node instanceof HTMLElement && state.dialog.contains(node)
         && node.matches("input, select, textarea") && !node.disabled);
     const list = state.dialog.querySelector(".errorlist[id]");
@@ -4015,6 +4077,30 @@
   // width would move Cancel beside it): its progress is the status line's.
   // Returns the POST's answer ({response, text}) once it is applied;
   // otherwise refuseConfirm has said why in the dialog, and it returns false.
+  // Follow a recorded change's status (statusUrl, a passive read) from its
+  // first reading, status, until it settles or CONFIRM_WAIT_MS passes.
+  // Returns {status, outcome}: "settled" (applied, failed or cancelled, or
+  // no status to follow), "waiting" (still pending at the deadline) or
+  // "lost" (signed out or no longer allowed to read the status, such as
+  // after a change that removed the reader's own access: waiting cannot
+  // help, so it ends at once, #952). The review dialog's Apply and a
+  // campaign wizard step's direct save (#1404 PR 4) both follow with it.
+  const settleChange = async (statusUrl, status) => {
+    const deadline = Date.now() + CONFIRM_WAIT_MS;
+    while (status && !["applied", "failed", "cancelled"].includes(status.state)) {
+      if (Date.now() >= deadline) return {status, outcome: "waiting"};
+      await pause(CONFIRM_POLL_MS);
+      let next;
+      try {
+        next = await readPage(statusUrl, {method: "GET"});
+      } catch { continue; /* keep waiting until the deadline */ }
+      if ([401, 403, 404].includes(next.response.status) || next.response.redirected) {
+        return {status, outcome: "lost"};
+      }
+      if (next.response.ok) status = changeStatus(next.text) || status;
+    }
+    return {status, outcome: "settled"};
+  };
   const followChange = async (state, url, body, onRecorded) => {
     const {dialog} = state;
     state.busy = true;
@@ -4045,27 +4131,15 @@
     onRecorded?.();
     // Follow the change until it is applied (a passive status read).
     const statusUrl = answer.response.url;
-    let status = changeStatus(answer.text);
-    const deadline = Date.now() + CONFIRM_WAIT_MS;
-    while (status && !["applied", "failed", "cancelled"].includes(status.state)) {
-      if (Date.now() >= deadline) {
-        refuseConfirm(state, "The change is saved but not applied yet, so the list is unchanged for now.",
-          {href: statusUrl, text: "See the change's status"});
-        return false;
-      }
-      await pause(CONFIRM_POLL_MS);
-      let next;
-      try {
-        next = await readPage(statusUrl, {method: "GET"});
-      } catch { continue; /* keep waiting until the deadline */ }
-      if ([401, 403, 404].includes(next.response.status) || next.response.redirected) {
-        // Signed out or no longer allowed to read the status (such as after
-        // a change that removed the reader's own access): waiting cannot
-        // help, so say so at once (#952).
-        refuseConfirm(state, CONFIRM_STATUS_LOST);
-        return false;
-      }
-      if (next.response.ok) status = changeStatus(next.text) || status;
+    const {status, outcome} = await settleChange(statusUrl, changeStatus(answer.text));
+    if (outcome === "waiting") {
+      refuseConfirm(state, "The change is saved but not applied yet, so the list is unchanged for now.",
+        {href: statusUrl, text: "See the change's status"});
+      return false;
+    }
+    if (outcome === "lost") {
+      refuseConfirm(state, CONFIRM_STATUS_LOST);
+      return false;
     }
     if (status && status.state !== "applied") {
       refuseConfirm(state, status.text || "The change was not applied. Nothing was changed.",
@@ -4105,14 +4179,16 @@
   const acceptConfirm = async (state) => {
     const {dialog, form, chosen} = state;
     // The form's own fields (CSRF, base version), never its row boxes: the
-    // chosen rows are exactly the ones the dialog named.
-    const fields = new Set(chosen.map((item) => item.field));
+    // chosen rows are exactly the ones the dialog named, and the opener's
+    // own fields (state.extra) are sent once, as it gives them.
+    const fields = new Set([...chosen.map((item) => item.field),
+      ...state.extra.map(([name]) => name)]);
     const body = new URLSearchParams();
     new FormData(form).forEach((value, name) => {
       if (!fields.has(name) && typeof value === "string") body.append(name, value);
     });
     chosen.forEach((item) => body.append(item.field, item.value));
-    if (state.extra) body.append(...state.extra);
+    state.extra.forEach(([name, value]) => body.append(name, value));
     // The answer's page may carry a data-confirm-announce line (below).
     const answer = await followChange(state, form.action, body);
     if (!answer) return;
@@ -4124,6 +4200,10 @@
     // itself with the view's fields, and the answer is that page, redrawn
     // from directly (data-confirm-answer-page).
     const region = form.closest(REGIONS) || state.opener.closest(REGIONS);
+    // A row's control in a table whose rows have ids (Census changes, #879)
+    // returns focus to that row's first action once it is redrawn, so the
+    // reader stays where they were; when the row is gone, the fallback.
+    const row = state.opener.closest("tr[id]")?.id;
     const fresh = dialog.hasAttribute("data-confirm-answer-page")
       ? new DOMParser().parseFromString(answer.text, "text/html")
       : await freshPage(region?.dataset.refreshUrl || window.location.href);
@@ -4133,6 +4213,7 @@
     const fallback = dialog.dataset.confirmFallback || "";
     redrawFrom(fresh);
     const target = (state.opener.isConnected && state.opener)
+      || (row && document.getElementById(row)?.querySelector("[data-confirm-open]:not(:disabled)"))
       || document.getElementById(fallback) || document.querySelector("main h1");
     target?.focus({preventScroll: true});
     target?.scrollIntoView({block: "nearest"});
@@ -4145,52 +4226,6 @@
     announce(outcome || fillIn(chosen.length === 1 ? state.doneOne : state.doneMany,
       state.values));
   };
-
-  // A submit button that asks first (#528): data-confirm-submit="<dialog id>"
-  // opens that components/confirm-dialog.html <dialog>, named by the button's
-  // data-confirm-name. Confirm submits the button's own form with that button
-  // (requestSubmit), so it goes through the form's usual path, in place
-  // included; Cancel, Escape or closing the dialog sends nothing, and focus
-  // returns to the button. Used where one row's form posts with the page's
-  // own filters, which the action tables' dialog cannot carry.
-  let askedSubmit = null;
-  const wiredSubmits = new WeakSet();
-  document.addEventListener("click", (event) => {
-    if (!(event.target instanceof Element)) return;
-    const button = event.target.closest("[data-confirm-submit]");
-    if (!button || button.disabled || !button.form) return;
-    const dialog = document.getElementById(button.dataset.confirmSubmit);
-    if (!(dialog instanceof HTMLDialogElement)) return;
-    event.preventDefault();
-    wireDialog(dialog);
-    if (!wiredSubmits.has(dialog)) {
-      wiredSubmits.add(dialog);
-      dialog.querySelector("[data-confirm-accept]")?.addEventListener("click", () => {
-        const state = askedSubmit?.dialog === dialog ? askedSubmit : null;
-        if (!state) return;
-        askedSubmit = null;
-        dialog.close();
-        state.button.form?.requestSubmit(state.button);
-      });
-      dialog.addEventListener("close", () => {
-        const state = askedSubmit?.dialog === dialog ? askedSubmit : null;
-        askedSubmit = null;
-        if (state?.button.isConnected) state.button.focus();
-      });
-    }
-    dialog.querySelector("[data-confirm-title]").textContent = fillIn(
-      dialog.dataset.titleOne, {name: button.dataset.confirmName || ""});
-    const error = dialog.querySelector("[data-confirm-error]");
-    error.hidden = true;
-    dialog.querySelector("[data-confirm-status]").textContent = "";
-    dialog.querySelectorAll("[data-confirm-accept], [data-confirm-cancel]").forEach((control) => {
-      control.disabled = false;
-    });
-    askedSubmit = {dialog, button};
-    dialog.showModal();
-    // The safe choice takes focus first.
-    dialog.querySelector("[data-confirm-cancel]")?.focus();
-  });
 
   // The review dialog of Admin editors (UX conventions, "Review dialog",
   // #750): components/confirm-dialog.html with review=True, opened by a form
@@ -4401,6 +4436,7 @@
     const token = carried.find((field) => field.hasAttribute("data-review-preview"))?.value || "";
     dialog.querySelector("[data-review-body]").replaceChildren(
       ...(answer ? [...answer.childNodes].map((node) => document.importNode(node, true)) : []));
+    dialog.querySelector("[data-review-body]").style.maxHeight = "";
     // An editor whose Review is a confirmation only for some changes (#1356:
     // New scheduled email, Import Ministry leaders) has its answer name the
     // confirmation's question (data-review-title) and the sentence that
@@ -4581,6 +4617,181 @@
     redrawFrom(fresh, region);
     if (!showOutcome(outcome, text)) announce(text);
   };
+
+  // A campaign wizard step's direct save (#1404 PR 4; UX conventions,
+  // "Wizards", rules 4 and 5): a form marked data-direct-save (Campaign
+  // settings, Share options and the sub-pages that save, while the wizard
+  // applies) is posted by the action row's Save and continue (a sub-page's
+  // Save and go back) without a page load and without the review dialog. The form is inert and aria-busy meanwhile, and the
+  // row's reserved status line (#campaign-step-status) says "Saving…".
+  // - A refusal for the values (status 400 drawing this same form) marks
+  //   the fields and shows the error summary, as a refused Review does
+  //   (showFieldErrors); the form keeps what was typed.
+  // - A Review that leads to another page (Campaign settings' dates-only
+  //   change with schedules, Dates and mail schedules' combined review)
+  //   opens it.
+  // - Any other refusal (a stale page, held work, setup ended) is said in
+  //   the status line, with nothing saved, and with the refusal's own link
+  //   when it has one (Outgoing mail for held send work).
+  // - A recorded change is followed in place (settleChange), the line
+  //   saying it is being applied. Once applied, this page is read again for
+  //   its action row's data-next-url (the next step not done yet, which a
+  //   change of the modules can move) and that step opens, its stepper's
+  //   status line saying what was saved and when (sessionStorage, as the
+  //   review dialog's return does), and, when Financial stewardship was
+  //   turned off, that the share options were removed (data-direct-removed).
+  //   A sub-page's Save and go back (Pages and emails' editor, New and Edit
+  //   scheduled email, #1404 PR 4b) opens its step again: its row's
+  //   data-next-url is marked data-next-fixed, since the step's address
+  //   never moves, so this page is not read again first (an email's
+  //   revision page may no longer exist once a new revision is saved).
+  // - A change that is not applied, or not yet, says so with a link to its
+  //   status, and the page stays. Its request key is spent (a later save
+  //   with it would be the same request), so the typed values are kept at
+  //   the version they came from and only a new key is taken from the page.
+  //   When the page cannot be read again (the sign-in ended), Save and
+  //   continue is held (data-save-spent-gated) and the line says to reload.
+  const SAVE_UNREACHABLE = "The server could not be reached, so nothing was saved. Try again in a moment.";
+  const SAVE_RELOAD = "Reload the page to make another change.";
+  const SAVE_STATUS_LOST = "The change was saved, but its status can no longer be checked: your sign-in ended or your account no longer has access. " + SAVE_RELOAD;
+  const saveStep = async (form, submitter) => {
+    reviewing.add(form);
+    const line = document.getElementById("campaign-step-status");
+    // ``link`` is the change's status page, or a refusal's own link
+    // ({url, label}: Outgoing mail when send work blocks the change).
+    const say = (text, link) => {
+      if (!line) return;
+      line.replaceChildren(text);
+      if (link) {
+        const anchor = document.createElement("a");
+        anchor.href = link.url || link;
+        anchor.textContent = link.label || "See the change's status";
+        line.append(" ", anchor);
+      }
+    };
+    const opener = submitter || form;
+    const body = new URLSearchParams(new FormData(form, submitter || undefined));
+    // Read before the save: the form's drawn (saved) state against the
+    // posted one. Only Campaign settings carries the note.
+    const financial = form.elements.namedItem("financial_enabled");
+    const removes = financial instanceof HTMLInputElement && financial.defaultChecked
+      && !financial.checked;
+    form.setAttribute("aria-busy", "true");
+    opener.setAttribute("aria-disabled", "true");
+    opener.classList.add("is-busy");
+    form.inert = true;
+    say("Saving…");
+    const finish = (text, link) => {
+      form.inert = false;
+      form.removeAttribute("aria-busy");
+      opener.removeAttribute("aria-disabled");
+      opener.classList.remove("is-busy");
+      reviewing.delete(form);
+      say(text, link);
+    };
+    // Hold Save and continue for good (until a reload), saying why.
+    const hold = (text, link) => {
+      finish(text, link);
+      document.querySelectorAll("[data-campaign-save]")
+        .forEach((node) => holdButton(node, "data-save-spent-gated"));
+    };
+    // The change is recorded but the page stays: keep what was typed (at
+    // the version it came from) and take only a new request key from the
+    // page read again, so a retry is a request of its own and, if the
+    // version moved meanwhile, is refused as a stale page.
+    const keep = async (text, link) => {
+      let fresh = null;
+      try {
+        const page = await readPage(window.location.href, {method: "GET"});
+        if (page.response.ok && !page.response.redirected) {
+          fresh = new DOMParser().parseFromString(page.text, "text/html");
+        }
+      } catch { /* not readable: held below */ }
+      const key = fresh?.getElementById(form.id)?.elements.namedItem("request_key");
+      if (!key?.value || !form.elements.namedItem("request_key")) {
+        hold(`${text} ${SAVE_RELOAD}`, link);
+        return;
+      }
+      form.elements.namedItem("request_key").value = key.value;
+      finish(text, link);
+    };
+    let answer = null;
+    try {
+      answer = await readPage(formUrl(form), {method: "POST", body});
+    } catch { /* no answer: said below */ }
+    if (!answer) {
+      finish(SAVE_UNREACHABLE);
+      return;
+    }
+    let status = answer.response.ok ? changeStatus(answer.text) : null;
+    const answered = new URL(answer.response.url || formUrl(form), document.baseURI);
+    if (!status && answer.response.ok && answer.response.redirected && sameOrigin(answered.href)
+      && answered.pathname !== new URL(formUrl(form)).pathname) {
+      window.location.assign(answered.href);
+      return;
+    }
+    if (!status) {
+      const parsed = new DOMParser().parseFromString(answer.text, "text/html");
+      if (answer.response.status === 400 && form.id && parsed.getElementById(form.id)) {
+        finish("");
+        showFieldErrors(form, parsed);
+        return;
+      }
+      finish(refusalText(answer.response.status, answer.text), refusalLink(answer.text));
+      return;
+    }
+    say(status.text || "Applying your change…");
+    const statusUrl = answer.response.url;
+    const settled = await settleChange(statusUrl, status);
+    status = settled.status;
+    if (settled.outcome === "waiting") {
+      await keep("Your change is saved but not applied yet.", statusUrl);
+      return;
+    }
+    if (settled.outcome === "lost") {
+      hold(SAVE_STATUS_LOST);
+      return;
+    }
+    if (status.state !== "applied") {
+      await keep(status.text || "The change was not applied. Nothing was changed.", statusUrl);
+      return;
+    }
+    const text = [form.dataset.directSaved, fillIn(
+      "Applied at {time}.", {time: clockTime()}), removes && form.dataset.directRemoved]
+      .filter(Boolean).join(" ");
+    const row = document.querySelector("[data-campaign-step-actions][data-next-fixed]");
+    const fresh = row ? null : await freshPage(window.location.href);
+    if (!row && !fresh) return;
+    const next = (row || fresh.querySelector("[data-campaign-step-actions]"))?.dataset.nextUrl;
+    if (next && sameOrigin(next)) {
+      const target = new URL(next, document.baseURI);
+      try {
+        window.sessionStorage.setItem(REVIEW_OUTCOME, JSON.stringify(
+          {path: target.pathname, id: "campaign-step-outcome", text, at: Date.now()}));
+      } catch { /* No storage: the next step shows no status line. */ }
+      window.location.assign(target.href);
+      return;
+    }
+    // No later step to open (the wizard ended meanwhile): the page is
+    // redrawn in place with what was applied. A sub-page always names its
+    // step, so it has no fresh copy to redraw from: it is loaded again.
+    if (!fresh) {
+      window.location.reload();
+      return;
+    }
+    finish("");
+    redrawFrom(fresh);
+    if (!showOutcome("campaign-step-outcome", text)) announce(text);
+  };
+  document.addEventListener("submit", (event) => {
+    const form = event.target;
+    if (event.defaultPrevented || !(form instanceof HTMLFormElement)
+      || !form.matches("form[data-direct-save]") || !sameOrigin(formUrl(form))) return;
+    event.preventDefault();
+    // A repeat (Enter pressed twice) while a save is under way is ignored.
+    if (reviewing.has(form)) return;
+    saveStep(form, event.submitter);
+  }, true);
 
   // Basic and Advanced editor modes (#1121; ui-conventions spec, "Basic and
   // Advanced modes"). A settings editor wraps its toggle
@@ -4836,8 +5047,6 @@
   const isoDay = (day) => day.toISOString().slice(0, 10);
   const monthDays = (day) => new Date(Date.UTC(day.getUTCFullYear(),
     day.getUTCMonth() + 1, 0)).getUTCDate();
-  // Monday is 0, as in wall_clock.WEEKDAYS and Python's date.weekday().
-  const mondayFirst = (day) => (day.getUTCDay() + 6) % 7;
   const expandRecurrence = (rule) => {
     const start = civilDay(rule?.start);
     const end = civilDay(rule?.end);
@@ -4867,14 +5076,14 @@
       const date = day.getUTCDate();
       if (rule.frequency === "daily") dates.push(isoDay(day));
       else if (rule.frequency === "weekly") {
-        if (weekdays.has(mondayFirst(day))) dates.push(isoDay(day));
+        if (weekdays.has(mondayFirst(day.getUTCDay()))) dates.push(isoDay(day));
       } else if (byDay) {
         if (date === monthly.day) dates.push(isoDay(day));
         // The month's last day in range stands for a missing chosen day.
         else if (date === monthDays(day) && monthly.day > date) {
           missing.push(isoDay(day).slice(0, 7));
         }
-      } else if (mondayFirst(day) === monthly.weekday && (monthly.ordinal === -1
+      } else if (mondayFirst(day.getUTCDay()) === monthly.weekday && (monthly.ordinal === -1
         ? date + 7 > monthDays(day) : Math.ceil(date / 7) === monthly.ordinal)) {
         dates.push(isoDay(day));
       }
@@ -4904,12 +5113,11 @@
     monthly: "Choose a day of the month from 1 to 31, or a weekday.",
     frequency: "Choose how often to repeat.",
   };
-  const DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
   const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July",
     "August", "September", "October", "November", "December"];
   const spokenDay = (text) => {
     const day = civilDay(text);
-    return `${DAY_NAMES[mondayFirst(day)]}, ${MONTH_NAMES[day.getUTCMonth()]} ${
+    return `${WEEKDAY_NAMES[mondayFirst(day.getUTCDay())]}, ${MONTH_NAMES[day.getUTCMonth()]} ${
       day.getUTCDate()}, ${day.getUTCFullYear()}`;
   };
   // The rule a repeat panel's controls describe, for expandRecurrence.

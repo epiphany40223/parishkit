@@ -34,7 +34,6 @@ from parishkit.stewardship.runtime_grants import (
     CLOSURE_TABLES,
     PUBLICATION_WORKER_TABLES,
 )
-from parishkit.stewardship.schema_inventory import inventory
 from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
 
 from .campaign_builders import initialized
@@ -50,22 +49,6 @@ from .test_users_upgrade_postgresql import (
 )
 
 pytestmark = pytest.mark.django_db(transaction=True)
-
-
-@pytest.fixture(autouse=True)
-def schema_restored(transactional_db):
-    """Fail the test that leaves the shared database unlike a fresh install.
-
-    These tests replace, drop and reinstall functions, tables and columns on
-    the session's one test database, and only their own restore puts them
-    back. Comparing the baseline test's per-object inventory before and
-    after each test reports any drift (#1284) here, by object name, rather
-    than in the baseline fingerprint of whatever later test shares the
-    database.
-    """
-    before = inventory(connection)
-    yield
-    assert inventory(connection) == before
 
 
 MIGRATIONS = Path(__file__).resolve().parents[3] / "src/parishkit/stewardship/schema"
@@ -388,11 +371,16 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # file, after 0090's rerun has put 0090's derived guard back; its bodies
 # keep the phrases ``CLOSURE_REPLACED`` (0107) and ``CLOSURE_REPLACED_ONLY``
 # (0096) look for, so neither puts an older body back afterwards.
+# 0112 (#528, ADM-09) creates nothing: it replaces the derived guard and
+# 0087's confirmation guard in place, which 0087's (``CLOSURE_CREATED``),
+# 0090's (``CLOSURE_RERUN``) and 0108's (``CLOSURE_ALTERED``) files bring back
+# older, so ``CLOSURE_REPLACED`` runs 0112's file again afterwards. Its derived
+# guard keeps the phrase ``CLOSURE_REPLACED_ONLY`` (0096) looks for.
 # 0103 (#1330) creates nothing: it replaces 0091's campaign pointer function
 # in place. No closure file installs that function again, and 0091's
 # ``CLOSURE_OLD_BODIES`` rerun touches only bodies still reading Ministry
 # activity, which 0103's does not, so its body survives the swap and nothing
-# is registered (``schema_restored`` checks this).
+# is registered (the database conftest's schema guard checks this, #1489).
 # 0109 (#1398) creates the discard table (in CLOSURE_TABLES) and the window,
 # ended and discard functions, one of them granted to the scheduler
 # (runtime_grants.CLOSURE_FUNCTIONS); ``closure_functions_absent`` makes it
@@ -735,6 +723,14 @@ CLOSURE_REPLACED = {
         ("stewardship_responses", "0008_proposal_review_edit"),
         "OR decided=edited",
     ),
+    "public.stewardship_response_derived_guard_v1()": (
+        ("stewardship_responses", "0010_upstream_at_check"),
+        "f.outcome='already_in_parishsoft'",
+    ),
+    "public.stewardship_publication_confirmation_guard_v1()": (
+        ("stewardship_responses", "0010_upstream_at_check"),
+        "p.version<>f.proposal_version+1",
+    ),
 }
 
 
@@ -754,11 +750,18 @@ CLOSURE_REPLACED_AGAIN = {
 
 # Run after ``CLOSURE_REPLACED_AGAIN`` the same way: 0106 (#1403) widens
 # 0104's safe context with the refusal schema, and its file also puts back
-# the event check and log writer that 0089's rerun made older.
+# the event check and log writer that 0089's rerun made older. 0111 (#1499)
+# replaces 0104's setup credential guard, which 0104's rerun above brings
+# back, so 0111's file runs again too (its index and constraint statements
+# are idempotent).
 CLOSURE_REPLACED_LAST = {
     "public.stewardship_safe_context_v1(text,jsonb)": (
         ("stewardship_audit", "0004_admin_input_refusal_log"),
         "WHEN 'refusal' THEN",
+    ),
+    "public.stewardship_setup_secret_guard_v1()": (
+        ("stewardship_accounts", "0026_setup_slack_off"),
+        "IF attempt.state='collecting' THEN",
     ),
 }
 

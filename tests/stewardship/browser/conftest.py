@@ -173,6 +173,9 @@ from .settings_components import components as settings_components
 from .setup_back_path_components import components as setup_back_path_components
 from .setup_live_components import POSTS as SETUP_LIVE_POSTS
 from .setup_live_components import components as setup_live_components
+from .setup_order_components import POSTS as SETUP_ORDER_POSTS
+from .setup_order_components import REDIRECTS as SETUP_ORDER_REDIRECTS
+from .setup_order_components import components as setup_order_components
 from .signed_in_components import POSTS as SIGNED_IN_POSTS
 from .signed_in_components import components as signed_in_components
 from .source_form_components import components as source_form_components
@@ -1354,6 +1357,15 @@ def component_origin():
                 "testing_recipient": "testing@example.org",
                 "candidate_digest": "a" * 64,
                 "document": '{"sections": {"campaigns": []}}',
+                # The tests come before Review (#1476), which shows them.
+                "readiness": [
+                    {
+                        "label": "Test email",
+                        "accepted": True,
+                        "url": "/admin/setup/mail-test",
+                    }
+                ],
+                "tests_accepted": True,
                 "samples": [
                     {
                         "label": "Family welcome",
@@ -2277,6 +2289,9 @@ def component_origin():
     responses.update(setup_back_path_components(context, admin, NOW, SETUP_LOAD_STATUS))
     responses.update(in_place_commands_components(context, admin))
     responses.update(campaign_test_components(context, admin))
+    responses.update(
+        setup_order_components(context, admin, NOW, SETUP_MAIL_STATUS, setup_draft)
+    )
     responses.update(backup_test_components(context, admin))
     responses.update(family_test_components(context, admin))
     responses.update(upload_defaults_components(context, admin))
@@ -2315,6 +2330,7 @@ def component_origin():
         | SETTINGS_POSTS
         | INTEGRATION_DIALOG_POSTS
         | STEPPER_POSTS
+        | SETUP_ORDER_POSTS
         | CAMPAIGN_SETTINGS_POSTS
         | CAMPAIGN_CREATE_POSTS
         | SCHEDULE_LIST_POSTS
@@ -2438,9 +2454,17 @@ def component_origin():
             sorted (``automation_components.canonical``), so a page may send
             its state in any order. Automation access's race tests (#621)
             and the participation report's zone race test (#519) get some
-            answers after a pause.
+            answers after a pause, and ``setup_order_components.REDIRECTS``
+            answer with a redirect.
             """
             path = self.path if self.path in responses else canonical(self.path)
+            if path in SETUP_ORDER_REDIRECTS:
+                # A page address the real view redirects (#1505); Playwright
+                # cannot fulfil a redirect from a route on every engine.
+                self.send_response(302)
+                self.send_header("Location", SETUP_ORDER_REDIRECTS[path])
+                self.end_headers()
+                return
             if path in AUTOMATION_SLOW_GETS | REPORT_SLOW_GETS:
                 time.sleep(1.5)
             kind, body = responses.get(path, ("text/plain", ""))

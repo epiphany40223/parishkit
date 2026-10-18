@@ -449,15 +449,22 @@ def contact_section(html):
 
 
 def test_the_queue_offers_export_these_requests():
-    """The section carries the applied view, the notice and the zone choice."""
+    """The closed export disclosure (#227) carries the applied view, the
+    source note and the zone."""
     html = followup_page(total=1)
-    start = html.index('<section aria-labelledby="followup-export-heading">')
-    section = html[start:]
-    assert "Export these requests" in section
+    start = html.index('<details class="export-panel">')
+    section = html[start : html.index("</details>", start)]
+    assert (
+        '<summary id="followup-export-heading">'
+        "Export these requests (CSV, XLSX or PDF)</summary>" in section
+    )
     assert 'id="table-export" data-table-sync' in section
     assert '<input type="hidden" name="search" value="">' in section
     assert '<input type="hidden" name="state" value="unresolved">' in section
-    assert "Sensitive parish information" in section
+    # No sensitive-data banner (#1539); the source note stays as help.
+    assert "Sensitive parish" not in section
+    assert "trusted device" not in section
+    assert "Ministry leaders receive only published email and phone" in section
     assert 'name="timezone" data-browser-timezone' in section
     assert 'id="followup-export-count" data-table-sync' in section
 

@@ -17,6 +17,7 @@ from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
+from parishkit.stewardship.campaigns.domain import Money
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.source.catalog_names import fund_display_name
@@ -25,10 +26,10 @@ from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.security import private_response
+from parishkit.stewardship.web.stat_tiles import tile
 from parishkit.stewardship.web.tables import paginate
 
-from .chart_specs import PROGRESS, participation_chart, population_progress
-from .daily_digest import statistics_cards
+from .chart_specs import participation_chart, population_progress
 from .digest_presentation import participation_table_context
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES, _principal
@@ -38,7 +39,7 @@ from .read_admission import admit_report_read
 from .selection import guarded_participation
 from .statistics import StatisticsUnavailable, calculate_statistics
 from .statistics_selection import capture_statistics
-from .workspace import DAILY_SORTING, RenderedReport, ReportQuery
+from .workspace import DAILY_SORTING, SCOPE_LABELS, RenderedReport, ReportQuery
 
 REPORTABLE = ("draft", "scheduled", "active", "closed", "archived")
 
@@ -249,22 +250,84 @@ def fund_names(statistics):
     }
 
 
-def statistics_panel(statistics):
-    """The statistics panel's tiles and its progress chart (#720).
+def known_money(amount):
+    """A ``MoneyAmount`` as ``Money`` for a stat tile, or ``None`` if unknown."""
+    return Money(amount.cents) if amount.available else None
 
-    The responded and email cards are drawn as progress bars against active
-    Families; the other cards stay tiles. Without an observation nothing is
-    drawn, and every card, those three included, is a tile reading
-    Unavailable.
+
+def statistics_panel(statistics):
+    """The statistics panel's stat tiles and its progress chart (#720, #1540).
+
+    With an observation, the responded and email-reach counts are drawn as
+    progress bars against active Families, and the active Families and
+    Members are tiles. Without one nothing is drawn, and all five are tiles
+    reading "—" with the reason, never zero. With giving enabled two pledge
+    tiles end the row (#728): the current annual pledges, and last year's
+    pledges of every Family in the ParishSoft data, whatever its status
+    today (so not a subtotal of these Families).
     """
-    progress = population_progress(statistics.active)
-    drawn = set(dict(PROGRESS)) if progress else set()
+    active = statistics.active
+    no_data = _("No ParishSoft data has been loaded for this campaign yet.")
+    if active is None:
+        figures = [
+            (key, label, None, no_data)
+            for key, label in (
+                ("active_families", _("Active Families")),
+                ("active_members", _("Active Members")),
+                ("eligible_email", _("Families with eligible email")),
+                ("deliverable_email", _("Families with deliverable email")),
+                ("responses", _("Families that have responded")),
+            )
+        ]
+    else:
+        figures = [
+            ("active_families", _("Active Families"), active.families, ""),
+            ("active_members", _("Active Members"), active.active_members, ""),
+        ]
+    if statistics.financial_enabled:
+        pledges = known_money(active.annual_pledge) if active else None
+        everyone = known_money(statistics.comparison_pledge_all)
+        # One reason per cause, so each says what is actually missing.
+        if active is None:
+            annual_reason = everyone_reason = no_data
+        elif statistics.financial is None:
+            annual_reason = everyone_reason = _(
+                "Giving is turned on, but this campaign has no giving "
+                "definition yet, so pledges cannot be totalled."
+            )
+        else:
+            annual_reason = _(
+                "The total is added up only when every responding Family's "
+                "pledge amount is known."
+            )
+            everyone_reason = _(
+                "The ParishSoft data kept for this campaign does not hold "
+                "every pledge for last year's period, so the total is not "
+                "added up."
+            )
+        figures += [
+            ("annual_pledges", _("Current annual pledges"), pledges, annual_reason),
+            (
+                "comparison_pledges_all",
+                _("Last year's pledges (all Families)"),
+                everyone,
+                everyone_reason,
+            ),
+        ]
     return {
         "tiles": tuple(
-            card for card in statistics_cards(statistics) if card[0] not in drawn
+            tile(key, label, value, unknown_reason="" if value is not None else reason)
+            for key, label, value, reason in figures
         ),
-        "progress": progress,
+        "progress": population_progress(active),
     }
+
+
+def scope_links(query):
+    """Each Chart population segment's address (#1535): this page with that
+    scope, the daily table back on its first page, its sort and size and
+    the zone kept."""
+    return {scope: query.url(page=1, scope=scope) for scope in SCOPE_LABELS}
 
 
 def _page_context(campaign_id, query, selected, principal):
@@ -281,6 +344,7 @@ def _page_context(campaign_id, query, selected, principal):
     context = {
         "campaign": campaign,
         "query": query,
+        "scope_links": scope_links(query),
         "selection": selected,
         "statistics": statistics,
         **statistics_panel(statistics),

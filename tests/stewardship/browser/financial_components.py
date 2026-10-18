@@ -27,12 +27,14 @@ from parishkit.stewardship.web.tables import report_table
 DATED_ZONE = "America/Havana"
 
 
-def refused_values():
-    """The view's context for At most below At least, refused at its field."""
-    sent = FinancialQuery(pledge_min="500", pledge_max="100")
-    error = FilterError(
-        "pledge_max", FIELD_MESSAGES["pledge_max"], sent, pair="pledge_min"
-    )
+def refused_values(name="pledge_max", pair="pledge_min", **sent_fields):
+    """The view's context for a range out of order, refused at its end.
+
+    By default At most below At least; ``name`` and ``pair`` name another
+    range's ends, and ``sent_fields`` the values sent.
+    """
+    sent = FinancialQuery(**(sent_fields or dict(pledge_min="500", pledge_max="100")))
+    error = FilterError(name, FIELD_MESSAGES[name], sent, pair=pair)
     shown = FinancialQuery()
     return error_context(error, FIELD_IDS, FIELD_LINES) | dict(
         query=sent, applied=shown, query_fields=shown.form_values()
@@ -55,6 +57,7 @@ def components(context, admin):
         installment=MoneyAmount(10288),
         frequency="monthly",
         frequency_label=FREQUENCY_LABELS["monthly"],
+        frequency_short="mo",
         shares=[
             dict(label="Online <giving>", text=""),
             dict(label="Another way", text="Stock <gift>"),
@@ -71,11 +74,39 @@ def components(context, admin):
         installment=MoneyAmount(None),
         frequency="",
         frequency_label=FREQUENCY_LABELS["none"],
+        frequency_short="",
         shares=[],
         source_pledge=MoneyAmount(None),
         source_contributions=MoneyAmount(None),
         staff_entered=False,
     )
+    # Rows as a parish's typically read (#1544): a longer surname-first
+    # name, a seven-digit DUID, five-figure sums and up to three methods,
+    # one with Other text, an inactive Family with its badge, and a Family
+    # with a single Other method.
+    typical = [
+        row
+        | dict(
+            family_name="Hernandez-Oliveira, Maria and Jose",
+            family_duid=7654321,
+            annual=MoneyAmount(1200000),
+            installment=MoneyAmount(100000),
+            shares=[
+                dict(label="Online giving", text=""),
+                dict(label="Envelope", text=""),
+                dict(label="Other", text="Quarterly stock transfer"),
+            ],
+            source_pledge=MoneyAmount(1150000),
+            source_contributions=MoneyAmount(1098765),
+        ),
+        unproven | dict(family_name="Nguyen, Thanh", active=False),
+        row
+        | dict(
+            family_name="Smith, John",
+            staff_entered=False,
+            shares=[dict(label="Other", text="Payroll gift")],
+        ),
+    ]
     # Share methods are stable option identities, as the closed grammar requires.
     online, other = str(UUID(int=98)), str(UUID(int=99))
     query = FinancialQuery.parse(
@@ -172,6 +203,7 @@ def components(context, admin):
             metadata=values["metadata"] | dict(giving_through=None),
         ),
         "/financial-empty": values | dict(table=table([], total=0), total=0),
+        "/financial-typical": values | dict(table=table(typical)),
         # The campaign cannot accept work: the export controls are offered gated.
         "/financial-gated": values | dict(mutable=False),
         # The report as first opened, with no filter applied: its Filters
@@ -190,6 +222,24 @@ def components(context, admin):
         # Filters the server refused at At most (#1332): drawn again with
         # the values sent, the error at the field and the unfiltered results.
         "/financial-refused": values | refused_values(),
+        # Each response-date range refused the same way, a Through date
+        # before its From date (#1469: the message said once).
+        "/financial-refused-first": values
+        | refused_values(
+            "first_end",
+            "first_start",
+            first_start="2026-11-02",
+            first_end="2026-11-01",
+            zone=DATED_ZONE,
+        ),
+        "/financial-refused-latest": values
+        | refused_values(
+            "latest_end",
+            "latest_start",
+            latest_start="2026-11-02",
+            latest_end="2026-11-01",
+            zone=DATED_ZONE,
+        ),
         "/financial-dated": values
         | dict(query=dated, query_fields=dated.form_values()),
     }

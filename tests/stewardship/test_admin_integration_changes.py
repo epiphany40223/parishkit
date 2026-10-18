@@ -195,14 +195,19 @@ def test_the_catalog_entries():
 
 
 def test_the_ledger_covers_the_settings_pages_save_and_remove():
-    """The settings page's read, review and Apply; key steps still owed."""
+    """The settings page's read, review, Apply and Save with a key, and the
+    Backup encryption key's steps; nothing is owed."""
     entry = LEDGER["integration_settings"]
-    assert entry.kind == "command" and entry.owed == "PR 10"
+    assert entry.kind == "command" and entry.owed is None
     assert entry.detail == (
         "integration show",
         "integration preview",
         "integration confirm",
         "integration backup-probe",
+        "integration key replace",
+        "integration backup-key challenge",
+        "integration backup-key preview",
+        "integration backup-key confirm",
     )
 
 

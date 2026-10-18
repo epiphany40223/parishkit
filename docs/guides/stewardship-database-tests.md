@@ -28,8 +28,8 @@ duplicating full local and CI acceptance runs during ordinary development.
 
 ## Parallel CI and live progress
 
-Pull-request CI runs sixteen deterministic PostgreSQL partitions on six
-runners, up to three at once per runner, each partition with its own
+Pull-request CI runs twenty-two deterministic PostgreSQL partitions on eight
+runners (#1529), up to three at once per runner, each partition with its own
 PostgreSQL/Valkey cluster. Packing leaves runner slots free for other PRs'
 runs (#158, #625); the
 [test-efficiency guide](stewardship-test-efficiency.md#postgresql-partition-packing)
@@ -42,7 +42,7 @@ it completed. Every part's coverage is merged into the partition's raw
 coverage database before the partition's receipt is written. The required
 `stewardship-postgresql` check independently collects the full database test
 universe and the unsplit baseline. It requires successful receipts for all
-sixteen exact partitions from the same source tree. It also requires each
+twenty-two exact partitions from the same source tree. It also requires each
 baseline part's receipt to match its share of that baseline, and the shares to
 be disjoint and to cover all of it. It then combines raw line/branch data before
 enforcing both 80% floors. Missing, failed, skipped, cancelled or stale

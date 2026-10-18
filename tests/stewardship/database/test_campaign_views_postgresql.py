@@ -520,6 +520,34 @@ def test_campaign_edit_cannot_strand_existing_initial_mail(auth_service, google)
     assert row.active_configuration.start_date.isoformat() == "2054-10-01"
 
 
+def test_dates_with_other_settings_are_refused_at_the_date_field(auth_service, google):
+    """With mail schedules, a draft's dates changed with another setting are
+    refused at the first changed window field, not as a page-level error,
+    and the page holds Save meanwhile (#1330 item 1). Nothing is requested."""
+    store = auth_service.store
+    add_draft(store, store.active(), uuid4())
+    row = Campaign.objects.get()
+    browser, _ = signed_in()
+    hold = 'data-change-alone="start_date end_date timezone"'
+    assert hold in browser.get(url(row)).content.decode()
+    requests = ConfigurationChangeRequest.objects.count()
+    refused = post(
+        browser,
+        url(row),
+        fields(store, row, end_date="2054-11-15", timezone="America/Chicago")
+        | {"name": "Renamed too"},
+    )
+    assert refused.status_code == 400
+    body = refused.content.decode()
+    assert 'id="id_end_date_error"' in body and hold in body
+    assert 'id="id_timezone_error"' not in body
+    assert "Change the dates and time zone on their own" in body
+    assert "errorlist nonfield" not in body
+    assert ConfigurationChangeRequest.objects.count() == requests
+    row.refresh_from_db()
+    assert row.active_configuration.name != "Renamed too"
+
+
 def test_review_and_apply_in_the_review_dialog(auth_service, google):
     """Campaign settings reviews in the shared review dialog (#1119, #750).
 
@@ -533,9 +561,11 @@ def test_review_and_apply_in_the_review_dialog(auth_service, google):
     page = browser.get(url(row))
     body = page.content.decode()
     assert flow_steps(page.content) == (STEPS, "Make changes")
-    assert 'data-review-open="campaign-review"' in body
+    # A Testing draft is in the campaign wizard, whose Save and continue
+    # saves directly (#1404 PR 4, test_campaign_direct_save_postgresql);
+    # the page's Review and Apply, used outside the wizard, stay as they are.
+    assert "data-direct-save" in body and ">Save</button>" not in body
     assert '<dialog id="campaign-review"' in body
-    assert body.count(">Save</button>") == 1
     assert "data-in-place data-table-sync" not in body
     requests = ConfigurationChangeRequest.objects.count()
     review = post(browser, url(row), fields(store, row, name="Renamed in dialog"))

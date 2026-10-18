@@ -148,3 +148,42 @@ def test_pages_localize_with_the_body_style_and_compact_tables(page, component_o
     assert browser_text(page, "fr_FR", INSTANTS[0]) == dates.format_instant(
         datetime.fromisoformat(INSTANTS[0]), ZONE, "us_long"
     )
+
+
+@pytest.mark.parametrize("compact", [True, False], ids=["compact", "full"])
+def test_day_only_instants_show_the_day_in_every_style(page, component_origin, compact):
+    """data-day-only shows an instant's browser-zone day alone (#1544).
+
+    Checked for every style, compact and full, on an instant whose UTC day
+    differs from its Los Angeles day, and against the same element without
+    the attribute, which keeps its clock time.
+    """
+    page.goto(component_origin + "/logs")
+    for style in dates.FORMATS:
+        for value in INSTANTS:
+            moment = datetime.fromisoformat(value)
+            local = moment.astimezone(ZoneInfo(ZONE))
+            shown = page.evaluate(
+                """([style, value, compact]) => {
+                    document.body.dataset.dateFormat = style;
+                    const make = (day) => {
+                        const node = document.createElement("time");
+                        node.setAttribute("data-local-instant", "");
+                        if (compact) node.setAttribute("data-compact", "");
+                        if (day) node.setAttribute("data-day-only", "");
+                        node.dateTime = value;
+                        document.body.append(node);
+                        return node;
+                    };
+                    const [alone, whole] = [make(true), make(false)];
+                    ParishDates.localize(document);
+                    const texts = [alone.textContent, whole.textContent];
+                    alone.remove(); whole.remove();
+                    return texts;
+                }""",
+                [style, value, compact],
+            )
+            day = dates.format_date(local.date(), style, compact=compact)
+            assert shown[0] == day
+            # Without the attribute the same instant keeps its clock time.
+            assert shown[1].startswith(day) and len(shown[1]) > len(day)

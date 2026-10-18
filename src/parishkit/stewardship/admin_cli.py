@@ -51,14 +51,16 @@ delete`` and ``files rename`` (PR 10, in ``admin_hosted_files``),
 and ``content confirm`` (PR 10, in
 ``admin_content``), ``integration list``, ``integration show``, ``integration status``
 and ``integration schedule-preview`` (PR 10, in ``admin_integrations``),
+``integration key replace`` (PR 10, in ``admin_integration_keys``), which
+takes a key from the host wrapper on the line after the preamble,
 ``parish show``, ``ministries list``, ``branding show`` and ``campaign
 shares`` (PR 10, in ``admin_settings``), ``parish preview`` and
 ``parish confirm`` (PR 10, in ``admin_parish``), and ``events list`` and
 ``events acknowledge`` (PR 11, in ``admin_events``). A
 command that streams a file (``logs export``, ``export census``,
-``export limitations``, ``export roster`` and ``export download
---stream``) writes the file's bytes, and nothing else, to standard output,
-and its document to standard error. Other areas join the same
+``export limitations``, ``export roster``, ``followup export`` and
+``export download --stream``) writes the file's bytes, and nothing else,
+to standard output, and its document to standard error. Other areas join the same
 subparser tree in later pull requests, each listed in the catalog with the
 pull request that added it. ``report roster`` (in ``admin_roster``) counts
 the Roster changes to enter list, whose download is ``export roster`` (in
@@ -77,6 +79,12 @@ in ``admin_workgroup``) read and change the No-reminders WorkGroup.
 ``admin_shares``) change a campaign's Share options.
 ``followup list``, ``followup show``, ``followup update`` and ``followup
 bulk`` (PR 11a, in ``admin_followup``) read and record Ministry follow-up.
+``followup roster-entered`` and ``followup roster-bulk`` (PR 11b, in
+``admin_roster_tick``) set the roster tick; ``followup information-show``
+and ``followup information-update`` (PR 11b, in ``admin_information``)
+read and record Additional information follow-up. ``followup export``
+(PR 11c, in ``admin_followup_export``) is the queue's Export these
+requests, streamed as ``export roster`` is.
 """
 
 import argparse
@@ -1510,6 +1518,137 @@ def integration_key_finish_switching(args, preamble, runtime, context):
     )
 
 
+# The tags of the line after the preamble that carries a key, a backup
+# public key or a backup key proof code: the host wrapper's --secret-file
+# or --secret-stdin, --public-key-file, and --code-file or --code-stdin send
+# it as base64 (its secret_row table names the same tags).
+SECRET_TAG = "pk-admin-secret/1"
+PUBLIC_KEY_TAG = "pk-admin-public-key/1"
+PROOF_TAG = "pk-admin-proof/1"
+
+
+def read_secret(stream, *, tag=SECRET_TAG, size=None):
+    """Read the tagged line the host wrapper sends after the preamble.
+
+    One line, ``<tag> <base64>``: the wrapper pipes the file or standard
+    input through ``head -c`` (the page's limit plus one byte) and
+    ``base64``, so the value is never an argument, a variable or a file. A
+    missing, overlong or malformed line is a usage error (exit 2) that names
+    no part of it. ``size`` is the page's limit in bytes (by default an
+    integration key's, 128 KiB). Returns the decoded bytes; the caller
+    checks their size and encoding. Nothing of the line is logged or kept.
+    """
+    import base64
+    import binascii
+
+    from .accounts.key_files import MAX_FILE_BYTES
+
+    prefix = f"{tag} ".encode("ascii")
+    size = MAX_FILE_BYTES if size is None else size
+    # Base64 of one byte over the limit, the most the wrapper ever sends.
+    limit = len(prefix) + 4 * -(-(size + 1) // 3) + 1
+    raw = stream.readline(limit + 1)
+    if len(raw) > limit or not raw.endswith(b"\n") or not raw.startswith(prefix):
+        raise UsageError("The line after the preamble is missing or malformed.")
+    try:
+        return base64.b64decode(raw[len(prefix) : -1], validate=True)
+    except (binascii.Error, ValueError):
+        raise UsageError("The line after the preamble is malformed.") from None
+
+
+def integration_key_replace(args, preamble, runtime, context):
+    """Replace an integration's key, as its settings page's Save with a key.
+
+    The role first (#1339), so Staff is denied before the key is read.
+    Then the key line, the page's checks in one snapshot, the prompt
+    naming the integration and the settings saved with it (never a value
+    or the key), and the page's own staging. ``--yes`` answers the prompt;
+    the wrapper requires it when the key itself came on standard input.
+    """
+    from .admin_integration_changes import parse_settings
+    from .admin_integration_keys import (
+        key_text,
+        replace_key,
+        replace_prompt_lines,
+        review_replacement,
+    )
+
+    _role_first(context, runtime)
+    key = key_text(read_secret(context["stdin"]))
+    fields = {} if args.changes is None else parse_settings(args.changes, args.target)
+    review = review_replacement(
+        context["caller"],
+        runtime,
+        args.target,
+        expected_version=args.expected_version,
+        fields=fields,
+        key=key,
+    )
+    confirm(context, replace_prompt_lines(review))
+    try:
+        return replace_key(
+            context["caller"],
+            runtime,
+            args.target,
+            expected_version=args.expected_version,
+            fields=fields,
+            key=key,
+            context=context,
+        )
+    finally:
+        del key
+
+
+def integration_backup_key_challenge(args, preamble, runtime, context):
+    """Check a new backup public key and seal a proof code to it (PR 10).
+
+    The role first (#1339), so Staff is denied before the key line is read.
+    The host wrapper's ``--public-key-file`` sends the key after the
+    preamble; it is never an argument.
+    """
+    from .admin_backup_key import FIELD_LIMIT, challenge, line_text
+
+    _role_first(context, runtime)
+    raw = read_secret(context["stdin"], tag=PUBLIC_KEY_TAG, size=FIELD_LIMIT)
+    return challenge(context["caller"], runtime, line_text(raw, "public_key"))
+
+
+def integration_backup_key_preview(args, preamble, runtime, context):
+    """Check the code backup-prove printed and review the key change (PR 10).
+
+    The role first (#1339); the code comes from the host wrapper's
+    ``--code-file`` or ``--code-stdin`` after the preamble.
+    """
+    from .admin_backup_key import FIELD_LIMIT, line_text, preview
+
+    _role_first(context, runtime)
+    raw = read_secret(context["stdin"], tag=PROOF_TAG, size=FIELD_LIMIT)
+    return preview(
+        context["caller"],
+        runtime,
+        intent=args.intent,
+        code=line_text(raw, "code"),
+    )
+
+
+def integration_backup_key_confirm(args, preamble, runtime, context):
+    """Confirm a reviewed backup encryption key change (PR 10).
+
+    The page's Confirm needs a recent sign-in, so this always prompts,
+    naming the old and new fingerprints as the page's review shows them,
+    after checking the Administrator role and the token (signature, expiry,
+    owner and settings version), and before any transaction.
+    """
+    from .admin_backup_key import confirm as confirm_key
+    from .admin_backup_key import prompt_lines
+    from .admin_changes import TOKEN_LIMIT
+
+    _role_first(context, runtime)
+    token = _input(args.token, context, TOKEN_LIMIT)
+    confirm(context, prompt_lines(context["caller"], runtime, token))
+    return confirm_key(context["caller"], runtime, token=token, context=context)
+
+
 def parish_show(args, preamble, runtime, context):
     """The Parish settings page's profile (PR 10)."""
     from .admin_settings import read_parish
@@ -2490,7 +2629,7 @@ def report_census(args, preamble, runtime, context):
 
 
 def census_resolve(args, preamble, runtime, context):
-    """Record a Census changes row's outcome, as its Record outcome does (#463).
+    """Record a Census changes row's outcome, as its row actions do (#463).
 
     Without ``--request-key`` a new key is made and written to standard error
     before anything is done, so a run that crashes can be repeated with it.
@@ -2531,7 +2670,7 @@ def census_resolve(args, preamble, runtime, context):
 
 
 def census_review(args, preamble, runtime, context):
-    """Review an Automatic census change, as its row's Review does (#528).
+    """Review an Automatic census change, as its row's actions do (#528).
 
     Approve (``approved``), Ignore (``ignored``) or Back to To review
     (``unreviewed``). Without ``--request-key`` a new key is made and
@@ -3413,6 +3552,66 @@ def _integration_key_finish_options(parser):
     )
 
 
+def _integration_key_replace_options(parser):
+    """Options of ``integration key replace``: the integration, version, key."""
+    parser.add_argument("target", choices=INTEGRATION_KEY_TARGETS, metavar="TARGET")
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_digest,
+        help="the version integration show printed",
+    )
+    parser.add_argument(
+        "--changes",
+        help="settings saved with the key, as integration preview's JSON "
+        "document (not -: standard input carries the key)",
+    )
+    parser.add_argument(
+        "--secret-stdin",
+        action="store_true",
+        required=True,
+        help="read the key from the line after the preamble, which the host "
+        "wrapper's --secret-file PATH or --secret-stdin sends",
+    )
+
+
+def _integration_backup_key_challenge_options(parser):
+    """Options of ``integration backup-key challenge``: the key's line."""
+    parser.add_argument(
+        "--public-key-stdin",
+        action="store_true",
+        required=True,
+        help="read the new public key from the line after the preamble, which "
+        "the host wrapper's --public-key-file PATH sends",
+    )
+
+
+def _integration_backup_key_preview_options(parser):
+    """Options of ``integration backup-key preview``: the intent and code."""
+    parser.add_argument(
+        "--intent",
+        required=True,
+        help="the intent integration backup-key challenge printed",
+    )
+    parser.add_argument(
+        "--code-stdin",
+        action="store_true",
+        required=True,
+        help="read the code from the line after the preamble, which the host "
+        "wrapper's --code-file PATH or --code-stdin sends",
+    )
+
+
+def _integration_backup_key_confirm_options(parser):
+    """Options of ``integration backup-key confirm``: the token."""
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from integration backup-key preview, or - for "
+        "standard input (needs --yes)",
+    )
+
+
 def _content_preview_options(parser):
     """Options of ``content preview``: the emails to delete, or HTML to preview."""
     mode = parser.add_mutually_exclusive_group(required=True)
@@ -4048,7 +4247,7 @@ CENSUS_ACTIONS = ("entered", "ignored", "reopened")
 
 
 def _census_resolve_options(parser):
-    """Options of ``census resolve``: a Census changes row's Record outcome."""
+    """Options of ``census resolve``: a Census changes row's outcome."""
     parser.add_argument("proposal_id", type=_uuid, metavar="PROPOSAL_ID")
     parser.add_argument(
         "--action",
@@ -5420,11 +5619,27 @@ def _integration_specs():
     and ``integration key finish-switching-preview`` and
     ``integration key finish-switching`` (``admin_integration_keys``), the
     confirmation fresh-gated and prompting, as ``integration confirm``.
-    Replacing a key comes later in PR 10.
+    ``integration key replace`` is a settings page's Save with a new key
+    (full scope, fresh-gated and prompting); the host wrapper sends the key
+    after the preamble, never as an argument. ``integration backup-key
+    challenge``, ``preview`` and ``confirm`` are the Backup encryption key
+    page's steps (``admin_backup_key``): full scope; the first two record
+    nothing and take the public key or the proof code from the wrapper
+    after the preamble; the confirmation is fresh-gated and prompting.
     """
+    from .admin_backup_key import (
+        BackupKeyChallenge,
+        BackupKeyConfirm,
+        BackupKeyPreview,
+    )
     from .admin_integration_actions import BackupProbe, KeyDismissal
     from .admin_integration_changes import IntegrationConfirm, IntegrationPreview
-    from .admin_integration_keys import FinishConfirm, FinishPreview, KeyStatus
+    from .admin_integration_keys import (
+        FinishConfirm,
+        FinishPreview,
+        KeyReplacement,
+        KeyStatus,
+    )
     from .admin_integrations import (
         IntegrationList,
         IntegrationShow,
@@ -5554,6 +5769,53 @@ def _integration_specs():
             FinishConfirm.field_names(),
             10,
             options=(_integration_key_finish_options,),
+            fresh_gated=True,
+            prompts=True,
+        ),
+        CommandSpec(
+            "integration key replace",
+            "Replace an integration's key, or set Slack up with its first key.",
+            integration_key_replace,
+            "full",
+            True,
+            KeyReplacement.field_names(),
+            10,
+            options=(_integration_key_replace_options,),
+            fresh_gated=True,
+            prompts=True,
+            expected_version=True,
+        ),
+        CommandSpec(
+            "integration backup-key challenge",
+            "Check a new backup public key and seal a proof code to it.",
+            integration_backup_key_challenge,
+            "full",
+            False,
+            BackupKeyChallenge.field_names(),
+            10,
+            options=(_integration_backup_key_challenge_options,),
+            audit_event=None,
+        ),
+        CommandSpec(
+            "integration backup-key preview",
+            "Check the proof code and review the backup key change.",
+            integration_backup_key_preview,
+            "full",
+            False,
+            BackupKeyPreview.field_names(),
+            10,
+            options=(_integration_backup_key_preview_options,),
+            audit_event=None,
+        ),
+        CommandSpec(
+            "integration backup-key confirm",
+            "Replace the backup encryption key with the proved new key.",
+            integration_backup_key_confirm,
+            "full",
+            True,
+            BackupKeyConfirm.field_names(),
+            10,
+            options=(_integration_backup_key_confirm_options,),
             fresh_gated=True,
             prompts=True,
         ),
@@ -6099,7 +6361,7 @@ def _report_specs():
         # page's service, keyed by the page's request key.
         CommandSpec(
             "census resolve",
-            "Record a census change's outcome, as its row's Record outcome does.",
+            "Record a census change's outcome, as its row's actions do.",
             census_resolve,
             "full",
             True,
@@ -6111,11 +6373,11 @@ def _report_specs():
             request_key=True,
             expected_version=True,
         ),
-        # An Automatic row's Review (#528, ADM-09): the page's service,
+        # An Automatic row's review (#528, ADM-09): the page's service,
         # keyed by the page's request key; reversible, so it asks nothing.
         CommandSpec(
             "census review",
-            "Review an automatic census change, as its row's Review does.",
+            "Review an automatic census change, as its row's actions do.",
             census_review,
             "full",
             True,
@@ -6739,6 +7001,370 @@ def _share_specs():
 # ------------------------------------------------- end of Share options block
 
 
+# ------------------------ Roster tick and information follow-up (PR 11b)
+#
+# ``followup roster-entered``, ``followup roster-bulk`` (in
+# ``admin_roster_tick``), ``followup information-show`` and ``followup
+# information-update`` (in ``admin_information``), #463: a resolved Ministry
+# request's Entered in ParishSoft tick, Roster changes to enter's bulk mark,
+# and an Additional information item's page and Save.
+
+# The longest Staff notes an information item takes (5,000 characters), in
+# UTF-8 bytes at most four per character.
+INFORMATION_NOTES_LIMIT = 5000 * 4
+
+
+def _tick_version(value):
+    """A tick's current sequence: 0 (never ticked) or a positive integer."""
+    if not value.isdecimal() or not 0 <= int(value) < 2**63 - 2:
+        raise argparse.ArgumentTypeError("not a version")
+    return int(value)
+
+
+def _chosen_tick(value):
+    """``--request ID:VERSION``: a request and its tick's current sequence."""
+    identity, separator, version = value.partition(":")
+    if not separator:
+        raise argparse.ArgumentTypeError("not ID:VERSION")
+    try:
+        return _uuid(identity), _tick_version(version)
+    except argparse.ArgumentTypeError:
+        raise argparse.ArgumentTypeError("not ID:VERSION") from None
+
+
+def _yes_no(value):
+    """A follow-up checkbox: ``yes`` or ``no``."""
+    if value not in {"yes", "no"}:
+        raise argparse.ArgumentTypeError("not yes or no")
+    return value == "yes"
+
+
+def followup_roster_entered(args, preamble, runtime, context):
+    """Set or clear one request's Entered in ParishSoft tick (#463, #528).
+
+    The request page's tick asks nothing, so neither does this. Without
+    ``--request-key`` a new key is made and written to standard error
+    before anything is done.
+    """
+    from .admin_roster_tick import roster_entered
+
+    key = _request_key(args, context)
+    return roster_entered(
+        context["caller"],
+        runtime,
+        args.request_id,
+        expected_version=args.expected_version,
+        entered=args.set,
+        request_key=key,
+        context=context,
+    )
+
+
+def followup_roster_bulk(args, preamble, runtime, context):
+    """Mark several requests Entered in ParishSoft at once (#463, #879).
+
+    Roster changes to enter asks in its confirmation dialog, so this asks
+    first (or takes ``--yes``), after the list's own role check, which
+    refuses a Ministry leader before anything is read or asked.
+    """
+    from . import admin_roster_tick
+
+    admin_roster_tick.admit_roster(context["caller"], runtime)
+    key = _request_key(args, context)
+    versions = dict(args.request)
+    if len(versions) != len(args.request):
+        raise ValueError("A request was chosen twice.")
+    # Refused before the prompt: nothing is asked about a choice the list
+    # could not record.
+    admin_roster_tick.check_bulk(versions)
+    confirm(
+        context,
+        (
+            f"Mark {len(versions)} roster change(s) Entered in ParishSoft. "
+            "Each gets its own entry in the request's history.",
+            "A mark can be cleared later, one request at a time.",
+        ),
+    )
+    return admin_roster_tick.roster_bulk(
+        context["caller"], runtime, versions, request_key=key, context=context
+    )
+
+
+def followup_information_show(args, preamble, runtime, context):
+    """One Additional information item and its history, without content (#463)."""
+    from .admin_information import read_information_show
+
+    return read_information_show(
+        context["caller"], runtime, args.item_id, history_page=args.page or 1
+    )
+
+
+def followup_information_update(args, preamble, runtime, context):
+    """Record follow-up on one Additional information item, as its Save does.
+
+    The page's Save asks nothing, so neither does this; clearing a
+    completed follow-up needs ``--confirm-clear``, the page's confirmation
+    box. Without ``--request-key`` a new key is made and written to
+    standard error before anything is done.
+    """
+    from .admin_information import update_information_item
+
+    key = _request_key(args, context)
+    notes = None
+    if args.notes is not None:
+        notes = _input(args.notes, context, INFORMATION_NOTES_LIMIT)
+    return update_information_item(
+        context["caller"],
+        runtime,
+        args.item_id,
+        expected_version=args.expected_version,
+        request_key=key,
+        needed=args.needed,
+        completed=args.completed,
+        confirm_clear=args.confirm_clear,
+        notes=notes,
+        context=context,
+    )
+
+
+def _roster_entered_options(parser):
+    """Options of ``followup roster-entered``: the request page's tick."""
+    parser.add_argument("request_id", type=_uuid, metavar="REQUEST_ID")
+    choice = parser.add_mutually_exclusive_group(required=True)
+    choice.add_argument(
+        "--set",
+        action="store_true",
+        help="mark the change entered in ParishSoft",
+    )
+    choice.add_argument("--clear", action="store_true", help="clear a mistaken mark")
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_tick_version,
+        help="the tick's current sequence, as followup show prints "
+        "roster.sequence (0 before any tick)",
+    )
+    _request_key_option(parser)
+
+
+def _roster_bulk_options(parser):
+    """Options of ``followup roster-bulk``: Roster changes to enter's bulk bar."""
+    parser.add_argument(
+        "--request",
+        required=True,
+        action="append",
+        type=_chosen_tick,
+        metavar="ID:VERSION",
+        help="a chosen request and its tick's current sequence, as followup "
+        "show prints roster.sequence (repeat for each, up to 250)",
+    )
+    _request_key_option(parser)
+
+
+def _information_show_options(parser):
+    """Options of ``followup information-show``: the item and its history page."""
+    parser.add_argument("item_id", type=_uuid, metavar="ITEM_ID")
+    parser.add_argument(
+        "--page", type=_positive, help="the history's page number (default 1)"
+    )
+
+
+def _information_update_options(parser):
+    """Options of ``followup information-update``: an item page's form."""
+    parser.add_argument("item_id", type=_uuid, metavar="ITEM_ID")
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_version,
+        help="the item's version, as followup information-show prints it",
+    )
+    parser.add_argument(
+        "--needed",
+        type=_yes_no,
+        metavar="yes|no",
+        help="Follow-up needed (default: kept)",
+    )
+    parser.add_argument(
+        "--completed",
+        type=_yes_no,
+        metavar="yes|no",
+        help="Follow-up completed (default: kept)",
+    )
+    parser.add_argument(
+        "--confirm-clear",
+        action="store_true",
+        help="with --completed no on a completed follow-up: reopen it",
+    )
+    parser.add_argument(
+        "--notes",
+        help="the Staff notes, replacing them (default: kept), or - to read "
+        "them from standard input",
+    )
+    _request_key_option(parser)
+
+
+def _followup_more_specs():
+    """The roster tick and information follow-up commands (ADM-11 PR 11b).
+
+    ``followup information-show`` is a passive read any session may run; it
+    records the page's ``information_viewed``. The changes need a full-scope
+    session; only ``followup roster-bulk`` asks, as Roster changes to
+    enter's dialog does. None is fresh-gated, as the pages ask for no
+    recent sign-in.
+    """
+    from .admin_information import InformationShow, InformationUpdate
+    from .admin_roster_tick import RosterBulk, RosterEntered
+
+    return (
+        CommandSpec(
+            "followup roster-entered",
+            "Set or clear a Ministry request's Entered in ParishSoft tick.",
+            followup_roster_entered,
+            "full",
+            True,
+            RosterEntered.field_names(),
+            11,
+            options=(_roster_entered_options,),
+            request_key=True,
+            expected_version=True,
+        ),
+        CommandSpec(
+            "followup roster-bulk",
+            "Mark several Ministry requests Entered in ParishSoft.",
+            followup_roster_bulk,
+            "full",
+            True,
+            RosterBulk.field_names(),
+            11,
+            options=(_roster_bulk_options,),
+            prompts=True,
+            request_key=True,
+            expected_version=True,
+        ),
+        CommandSpec(
+            "followup information-show",
+            "Show one Additional information item and its follow-up history.",
+            followup_information_show,
+            "read_only",
+            False,
+            InformationShow.field_names(),
+            11,
+            options=(_information_show_options,),
+            audit_event="information_viewed",
+        ),
+        CommandSpec(
+            "followup information-update",
+            "Record follow-up on one Additional information item.",
+            followup_information_update,
+            "full",
+            True,
+            InformationUpdate.field_names(),
+            11,
+            options=(_information_update_options,),
+            request_key=True,
+            expected_version=True,
+        ),
+    )
+
+
+# ------------------ end of roster tick and information follow-up block
+
+
+# ------------------------------------------ Follow-up export (PR 11c)
+#
+# ``followup export`` (#463, in ``admin_followup_export``): the follow-up
+# queue's Export these requests, the page's own file streamed to standard
+# output.
+
+# The queue's Status choices the page's export takes: ``followup list``'s
+# less ``not_in_parishsoft``, which the export refuses (#1217, a Member no
+# longer in ParishSoft never goes into the file).
+FOLLOWUP_EXPORT_STATES = tuple(
+    state for state in FOLLOWUP_STATES if state != "not_in_parishsoft"
+)
+
+
+def followup_export(args, preamble, runtime, context):
+    """The follow-up queue's Export these requests, streamed (#463 PR 11c)."""
+    from .admin_followup_export import export_followup
+
+    return export_followup(
+        context["caller"],
+        runtime,
+        filters={
+            "ministry": args.ministry,
+            "action": args.action,
+            "state": args.state,
+            "outcome": args.outcome,
+            "sort": args.sort,
+        },
+        fmt=args.format,
+        zone_name=args.timezone,
+        context=context,
+    )
+
+
+def _followup_export_options(parser):
+    """Options of ``followup export``: the queue's filters, format and zone.
+
+    The filters are ``followup list``'s without the search (text naming
+    Members would stay in shell history) and without the page and size (the
+    file is the whole filtered set). The format choices are the page's own
+    (``ministry_followup_exports.FORMATS``, which a test keeps equal),
+    listed here because the parser is built before Django is set up.
+    """
+    parser.add_argument("--ministry", metavar="DUID", help="one Ministry, by DUID")
+    parser.add_argument("--action", choices=("any", "join", "leave"))
+    parser.add_argument(
+        "--state",
+        choices=FOLLOWUP_EXPORT_STATES,
+        help="default unresolved (New or In progress)",
+    )
+    parser.add_argument("--outcome", choices=FOLLOWUP_OUTCOMES)
+    parser.add_argument(
+        "--sort", choices=("newest", "name", "ministry"), help="default newest"
+    )
+    parser.add_argument(
+        "--format",
+        choices=("csv", "xlsx", "pdf"),
+        default=DEFAULT_EXPORT_FORMAT,
+        help=f"default {DEFAULT_EXPORT_FORMAT}; PDF holds at most 1,000 requests",
+    )
+    parser.add_argument(
+        "--timezone",
+        default="UTC",
+        help="the time zone of the file's times (default UTC)",
+    )
+
+
+def _followup_export_specs():
+    """The follow-up queue's download (ADM-11 PR 11c, ``admin_followup_export``).
+
+    Full scope, as every export and as the download's post records
+    activity; neither prompting nor fresh-gated, as the page asks for no
+    recent sign-in. It records only the page's ``ministry_followup_exported``.
+    """
+    from .admin_followup_export import FollowupExport
+
+    return (
+        CommandSpec(
+            "followup export",
+            "Write the Ministry follow-up queue's export to standard output.",
+            followup_export,
+            "full",
+            False,
+            FollowupExport.field_names(),
+            11,
+            options=(_followup_export_options,),
+            audit_event="ministry_followup_exported",
+            streams=True,
+        ),
+    )
+
+
+# ------------------------------------------- end of follow-up export block
+
+
 COMMANDS = (
     COMMANDS
     + _read_specs()
@@ -6759,6 +7385,8 @@ COMMANDS = (
     + _history_specs()
     + _artwork_specs()
     + _integration_specs()
+    + _followup_more_specs()
+    + _followup_export_specs()
 )
 BY_NAME = {spec.name: spec for spec in COMMANDS}
 
@@ -7510,6 +8138,9 @@ def main(argv=None, *, stdin=None, stdout=None, stderr=None):
             # The Delete is built against a version; the plain-text preview
             # reads no configuration, so it takes none.
             raise UsageError("--expected-version goes with --delete, and only there.")
+        if args.command_name == "integration key replace" and args.changes == "-":
+            # Standard input carries the key (and the prompt's answer).
+            raise UsageError("Give --changes as JSON; standard input holds the key.")
         if hasattr(args, "watch"):
             # --timeout belongs to --watch; alone it would silently do nothing.
             if args.watch is None:

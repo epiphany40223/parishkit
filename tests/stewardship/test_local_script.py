@@ -24,6 +24,8 @@ from pathlib import Path
 
 import pytest
 
+from parishkit.parishsoft import DEFAULT_API_BASE_URL
+
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "tools" / "stewardship-local.sh"
 VM_SCRIPT = ROOT / "tools" / "stewardship-local-vm.sh"
@@ -125,7 +127,8 @@ def test_the_guide_and_specification_are_cross_linked():
     # The spec's command table names every laptop command the script accepts.
     for command in (
         "`start`",
-        "`deploy [--schema-change] [--bulk on\\|off] [--smtp-latency-ms N]`",
+        "`deploy [--schema-change] [--bulk on\\|off] [--smtp-latency-ms N] "
+        "[--parishsoft real\\|fake]`",
         "`rehearse [--due-in MIN] [--send-only] [--timeout MIN] [--label NAME]`",
         "`spike [--families N] [--sources S] [--during-send] [--wait MIN] "
         "[--label NAME]`",
@@ -290,6 +293,9 @@ def vm_commands(calls):
         ("deploy", "--smtp-latency-ms", "5001"),
         ("deploy", "--rollback", "--bulk", "on"),
         ("deploy", "--rollback", "--smtp-latency-ms", "600"),
+        ("deploy", "--parishsoft"),
+        ("deploy", "--parishsoft", "production"),
+        ("deploy", "--rollback", "--parishsoft", "real"),
         ("rehearse", "--bogus"),
         ("rehearse", "--due-in"),
         ("finish-setup", "x"),
@@ -448,6 +454,13 @@ def test_deploy_passes_the_rehearsal_rendering_choices(tmp_path):
     # Base 10 whatever the leading zeros: 0600 is 600, not octal 384.
     _, calls, _ = run_local(tmp_path / "zeros", "deploy", "--smtp-latency-ms", "0600")
     assert vm_commands(calls)[-1].endswith(f" 0 {HOST_REMOTE} keep 600")
+    # Which ParishSoft pk-local reads (#1399) is a third, trailing choice.
+    _, calls, _ = run_local(tmp_path / "real", "deploy", "--parishsoft", "real")
+    assert vm_commands(calls)[-1].endswith(f" 0 {HOST_REMOTE} keep keep real")
+    _, calls, _ = run_local(
+        tmp_path / "fake", "deploy", "--bulk", "on", "--parishsoft", "fake"
+    )
+    assert vm_commands(calls)[-1].endswith(f" 0 {HOST_REMOTE} on keep fake")
 
 
 def test_deploy_passes_the_users_upgrade_inputs_to_the_vm_half(tmp_path):
@@ -1263,6 +1276,60 @@ def test_start_applies_the_recorded_clock_mode(tmp_path):
     assert "expected fake or normal" in output
 
 
+@pytest.mark.parametrize("mode", ["fake", "normal"])
+def test_the_fake_clock_refuses_a_real_oauth_client_before_starting(tmp_path, mode):
+    """A real Google client cannot run under the fake clock (#1399).
+
+    Every fake-clock Compose selection refuses it before anything starts, so
+    the developer reads why instead of meeting a web that will not start.
+    The sentinel passes, and the normal clock admits a real client.
+    """
+    from parishkit.stewardship.runtime_web import LOCAL_OAUTH_DOCUMENT
+
+    def prepare(client):
+        """An installed deployment holding ``client`` as its OAuth client."""
+
+        def setup(root, etc, snapshots):
+            installed(root, etc, snapshots, mode=mode, completed=True)
+            (root / "config/services/compose.faketime.json").write_text("{}")
+            oauth = root / "credentials" / "google_oauth"
+            oauth.mkdir(parents=True)
+            (oauth / "credential").write_bytes(client)
+
+        return setup
+
+    real = b'{"client_id": "id.apps.googleusercontent.com", "client_secret": "s"}'
+    calls, output, _ = run_vm(
+        tmp_path / "real",
+        "start",
+        status=1 if mode == "fake" else 0,
+        prepare=prepare(real),
+        env={"FAKE_COMPLETED": "t"},
+    )
+    started = any(c.endswith(" up --detach web") for c in calls)
+    if mode == "fake":
+        assert "A real Google OAuth client is installed" in output
+        assert "reinstall the sentinel OAuth client first" in output
+        assert not started
+    else:
+        assert started
+    calls, _, _ = run_vm(
+        tmp_path / "sentinel",
+        "start",
+        prepare=prepare(LOCAL_OAUTH_DOCUMENT),
+        env={"FAKE_COMPLETED": "t"},
+    )
+    assert any(c.endswith(" up --detach web") for c in calls)
+
+
+def test_the_vm_half_names_the_sentinel_oauth_client():
+    """The VM half's copy of the sentinel's client ID is the package's."""
+    from parishkit.stewardship.runtime_web import LOCAL_OAUTH_SENTINEL
+
+    text = (ROOT / "tools" / "stewardship-local-vm.sh").read_text()
+    assert f"OAUTH_SENTINEL_ID={LOCAL_OAUTH_SENTINEL['client_id']}\n" in text
+
+
 def test_sign_in_needs_the_clock_mode_marker_too(tmp_path):
     """A refusal inside the Compose-file selection ends the command; no exec runs."""
     calls, output, _ = run_vm(
@@ -1412,7 +1479,8 @@ FAKE_HOST = r"""
 echo "host $* debug=$PARISHKIT_DEBUG_LOGGING" >>"$FAKE_LOG"
 if [ -n "$FAKE_HOST_ENV" ]; then
     bulk=$PARISHKIT_LOCAL_BULK_FAMILY_SEND latency=$PARISHKIT_LOCAL_SMTP_LATENCY_MS
-    echo "host bulk=$bulk latency=$latency" >>"$FAKE_LOG"
+    parishsoft=$PARISHKIT_LOCAL_PARISHSOFT
+    echo "host bulk=$bulk latency=$latency parishsoft=$parishsoft" >>"$FAKE_LOG"
 fi
 retarget() {
     echo '{"services": {"web": {"image": "'"$2"'"}}}' >"$3/config/services/compose.json"
@@ -1650,8 +1718,21 @@ def test_deploy_hands_the_rehearsal_choices_to_the_host_half(tmp_path):
         prepare=with_host_script(tmp_path),
         env={"FAKE_IMAGE_EXISTS": "1", "FAKE_HOST_ENV": "1"},
     )
-    assert "bulk=on latency=600" in calls[-1]
-    # Without them, both carry over.
+    assert "bulk=on latency=600 parishsoft=keep" in calls[-1]
+    calls, _, _ = run_vm(
+        tmp_path / "real",
+        "deploy",
+        NEW_IMAGE,
+        "0",
+        str(tmp_path / "real" / "host.sh"),
+        "keep",
+        "keep",
+        "real",
+        prepare=with_host_script(tmp_path / "real"),
+        env={"FAKE_IMAGE_EXISTS": "1", "FAKE_HOST_ENV": "1"},
+    )
+    assert "bulk=keep latency=keep parishsoft=real" in calls[-1]
+    # Without them, all carry over.
     calls, _, _ = run_vm(
         tmp_path / "keep",
         "deploy",
@@ -1661,7 +1742,7 @@ def test_deploy_hands_the_rehearsal_choices_to_the_host_half(tmp_path):
         prepare=with_host_script(tmp_path / "keep"),
         env={"FAKE_IMAGE_EXISTS": "1", "FAKE_HOST_ENV": "1"},
     )
-    assert "bulk=keep latency=keep" in calls[-1]
+    assert "bulk=keep latency=keep parishsoft=keep" in calls[-1]
 
 
 def test_rehearse_needs_a_seeded_set_up_deployment(tmp_path):
@@ -2308,13 +2389,58 @@ def test_an_older_snapshot_is_migrated_forward_by_the_host_half(tmp_path):
         f"upgrade local {tmp_path / 'build'} debug=1"
     )
     # The running rendering choices travel to the host half.
-    assert calls[upgrade + 1] == "host bulk=on latency=600"
+    assert calls[upgrade + 1] == "host bulk=on latency=600 parishsoft=fake"
     # The record is the running deployment's again.
     assert record(tmp_path)["IMAGE"] == IMAGE
     assert record(tmp_path)["PREVIOUS_IMAGE"] == OLD_IMAGE
     assert record(tmp_path)["DEBUG"] == "1"
     assert "Switched to the older snapshot (upgrade)" in output
     assert any("local-sign-in" in c for c in calls[upgrade:])
+
+
+@pytest.mark.parametrize(
+    ("value", "carried"),
+    [(DEFAULT_API_BASE_URL, "real"), ("https://other.example/api/v2", None)],
+)
+def test_an_older_snapshot_switch_carries_the_parishsoft_choice(
+    tmp_path, value, carried
+):
+    """A running real-API choice (#1399) reaches the host half; any other
+    rendered URL is refused before anything stops, as the host half would."""
+    host = tmp_path / "host.sh"
+
+    def prepare(root, etc, snapshots):
+        running(root, etc, snapshots)
+        worker = root / "config" / "services" / "worker.yaml"
+        document = json.loads(worker.read_text())
+        document["deployment"]["parishsoft_base_url"] = value
+        worker.write_text(json.dumps(document))
+        host.write_text(f"#!/usr/bin/env bash\n{FAKE_HOST}\n")
+        snapshot_of(
+            snapshots, "older", image=OLD_IMAGE,
+            migrations="stewardship_accounts 0001_initial",
+        )  # fmt: skip
+
+    calls, output, _ = run_vm(
+        tmp_path, "snapshot-restore", "older", str(host), prepare=prepare,
+        status=0 if carried else 1,
+        env={
+            "FAKE_MIGRATIONS": MIGRATIONS, "FAKE_IMAGE_EXISTS": "1",
+            "FAKE_HOST_ENV": "1",
+        },
+    )  # fmt: skip
+    if carried:
+        upgrade = first(calls, "host - ")
+        assert calls[upgrade + 1] == f"host bulk=on latency=600 parishsoft={carried}"
+    else:
+        assert "not the real API; refusing" in output
+        assert not any(" stop" in c or c.startswith("rsync") for c in calls)
+
+
+def test_the_vm_half_names_the_real_parishsoft_api():
+    """The VM half's copy of the real API's base URL is the package's."""
+    text = (ROOT / "tools" / "stewardship-local-vm.sh").read_text()
+    assert f"            {DEFAULT_API_BASE_URL}) parishsoft=real ;;" in text
 
 
 def post_setup_ready(root, etc, snapshots):

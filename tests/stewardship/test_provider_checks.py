@@ -20,6 +20,7 @@ from parishkit.parishsoft_http_worker import LOCAL_SOURCE_BASE_URL
 from parishkit.stewardship import provider_check_worker as worker
 from parishkit.stewardship import provider_checks as parent
 from parishkit.stewardship.accounts.credential_errors import (
+    CredentialOrganizationMismatch,
     CredentialValidationUnavailable,
 )
 from parishkit.stewardship.deployment import DeploymentProfile
@@ -39,12 +40,15 @@ def payload(target="slack", **overrides):
         "parishsoft": {"organization_id": 123},
         "google_workspace": WORKSPACE,
     }[target]
+    # The profile's default ParishSoft base URL unless the case names one.
+    local = overrides.get("profile") == "local"
     return json.dumps(
         dict(
             target=target,
             settings=settings,
             candidate=base64.b64encode(b"synthetic-private").decode(),
             profile="production",
+            base_url=LOCAL_SOURCE_BASE_URL if local else DEFAULT_API_BASE_URL,
         )
         | overrides
     ).encode()
@@ -189,17 +193,45 @@ def test_local_fake_endpoint_is_admitted_only_for_a_local_request(
     assert len(calls) == 1
 
 
+def test_local_request_that_chose_the_real_api_reaches_only_it(monkeypatch, tmp_path):
+    """A LOCAL deployment that chose the real API (#1399) checks against it alone."""
+    monkeypatch.chdir(tmp_path)
+    calls = http(monkeypatch, Response(body=b'[{"organizationID":123}]'))
+    request = payload("parishsoft", profile="local", base_url=DEFAULT_API_BASE_URL)
+    assert worker.check_request(request) == "valid"
+    assert calls[0][1] == DEFAULT_API_BASE_URL + "/organizations/search"
+    local = ("POST", LOCAL_SOURCE_BASE_URL + "/organizations/search")
+    real = ("POST", DEFAULT_API_BASE_URL + "/organizations/search")
+    chosen = worker.endpoints(DeploymentProfile.LOCAL, DEFAULT_API_BASE_URL)
+    assert real in chosen and local not in chosen
+    with (
+        worker.CheckSession(DeploymentProfile.LOCAL, DEFAULT_API_BASE_URL) as session,
+        pytest.raises(ValueError),
+    ):
+        session.request(*local)
+    assert len(calls) == 1
+
+
 @pytest.mark.parametrize(
-    "overrides", [{"profile": None}, {"profile": "LOCAL"}, {"profile": "private"}]
+    "overrides",
+    [
+        {"profile": None},
+        {"profile": "LOCAL"},
+        {"profile": "private"},
+        {"base_url": None},
+        {"base_url": "https://other.example/api/v2"},
+        {"profile": "production", "base_url": LOCAL_SOURCE_BASE_URL},
+    ],
 )
 def test_request_without_a_valid_profile_is_invalid(monkeypatch, overrides):
-    """A helper request must say which profile it was made under."""
+    """A helper request must say which profile and base URL it was made under."""
     network = Mock(side_effect=AssertionError("network must not run"))
     monkeypatch.setattr(worker, "CheckSession", network)
     assert worker.check_request(payload(**overrides)) == "invalid"
-    raw = json.loads(payload())
-    del raw["profile"]
-    assert worker.check_request(json.dumps(raw).encode()) == "invalid"
+    for field in ("profile", "base_url"):
+        raw = json.loads(payload())
+        del raw[field]
+        assert worker.check_request(json.dumps(raw).encode()) == "invalid"
     network.assert_not_called()
 
 
@@ -207,7 +239,9 @@ def test_request_without_a_valid_profile_is_invalid(monkeypatch, overrides):
     ("body", "expected"),
     [
         (b'[{"organizationID":123}]', "valid"),
-        (b'[{"organizationID":124}]', "unavailable"),
+        # A key that sees another organization is its own permanent outcome,
+        # never a temporary outage (#1492).
+        (b'[{"organizationID":124}]', "mismatch"),
         (b'[{"organizationID":123},{"organizationID":124}]', "unavailable"),
         (b'[{"organizationID":"123"}]', "unavailable"),
         (b"[]", "unavailable"),
@@ -447,11 +481,49 @@ def test_request_local_failures_cannot_reject_a_credential(monkeypatch, stage, e
         close.assert_called_once()
 
 
+def test_request_validator_passes_an_organization_mismatch_through(monkeypatch):
+    """A mismatch is the provider's verdict, never a retryable local failure.
+
+    The installer records it as the refusal's cause (#1495), so the request
+    validator must not fold it into "unavailable" with local errors.
+    """
+    from django.db import connections
+    from django.utils import timezone
+
+    from parishkit.stewardship.accounts import credential_database, secret_requests
+    from parishkit.stewardship.accounts.provider_models import ProviderValidationContext
+
+    query = Mock()
+    query.filter.return_value.first.return_value = SimpleNamespace(
+        settings={"channel_id": "C123"},
+        request=SimpleNamespace(expires_at=timezone.now() + timedelta(minutes=5)),
+    )
+    monkeypatch.setattr(
+        ProviderValidationContext.objects, "select_related", Mock(return_value=query)
+    )
+    monkeypatch.setattr(credential_database, "admit_installer_database", Mock())
+    monkeypatch.setattr(connections, "close_all", Mock())
+    # The deadline reads the database clock; this test has no database.
+    monkeypatch.setattr(secret_requests, "_now", timezone.now)
+    monkeypatch.setattr(
+        parent,
+        "check_candidate",
+        Mock(side_effect=CredentialOrganizationMismatch()),
+    )
+    with pytest.raises(CredentialOrganizationMismatch):
+        parent.request_validator(
+            "slack", check=lambda: None, profile=DeploymentProfile.PRODUCTION
+        )(object(), b"synthetic")
+
+
 @pytest.mark.parametrize(
     ("output", "code", "expected"),
     [
         (b"valid\n", 0, True),
         (b"invalid\n", 0, False),
+        # Refused for good like an invalid key, so it is never retried
+        # (#1492), but raised as itself so its cause is recorded (#1495).
+        (b"mismatch\n", 0, CredentialOrganizationMismatch),
         (b"unavailable\n", 0, None),
         (b"private\n", 0, None),
         (b"valid\n", 1, None),
@@ -465,6 +537,9 @@ def test_parent_private_ipc_and_closed_output(monkeypatch, output, code, expecte
     monkeypatch.setattr(parent.subprocess, "Popen", factory)
     if expected is None:
         with pytest.raises(CredentialValidationUnavailable):
+            invoke()
+    elif expected is CredentialOrganizationMismatch:
+        with pytest.raises(CredentialOrganizationMismatch):
             invoke()
     else:
         assert invoke() is expected

@@ -84,14 +84,14 @@ def test_ci_explicitly_requires_postgresql_verification():
     )
     shards = workflow["jobs"]["stewardship-postgresql-shard"]
     gate = workflow["jobs"]["stewardship-postgresql"]
-    # Packed jobs together run every partition exactly once (#625).
+    # Packed jobs together run every partition exactly once (#625, #1529).
     indexes = [
         index
         for job in shards["strategy"]["matrix"]["job"]
-        for index in quality_ci.job_partitions(job, 16)
+        for index in quality_ci.job_partitions(job, 22)
     ]
     count = len(indexes)
-    assert count == 16 and indexes == list(range(1, count + 1))
+    assert count == 22 and indexes == list(range(1, count + 1))
     assert f"parishkit.stewardship.quality_ci combine --count {count} " in commands
     assert shards["strategy"]["fail-fast"] is False
     # A push to main skips validate, so no shard runs there; main's tree is

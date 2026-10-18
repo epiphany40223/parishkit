@@ -22,7 +22,7 @@ from .setup_forms import FORMS, form_values, initial_values
 from .setup_policy import SetupState
 from .setup_source import start_source_load
 from .setup_staging import _admit, begin_setup, cancel_setup
-from .setup_wizard import BY_KEY, PAGES, continue_after, wizard_for
+from .setup_wizard import BY_KEY, PAGES, build, continue_after, wizard_for
 
 ERRORS = (
     ConfigError,
@@ -64,11 +64,21 @@ def _checked(request, service, response, draft=None):
     return response
 
 
-def _context(draft, current=None):
-    """Render the stepper, the current attempt's safe deadlines and its state."""
+def _context(draft, current=None, *, receipts=None):
+    """Render the stepper, the current attempt's safe deadlines and its state.
+
+    ``receipts`` is the ``(credentials, tests)`` pair from ``observed()`` when
+    the caller already read it (the Review page), so the stepper is built from
+    it rather than read a second time.
+    """
+    if receipts is None:
+        wizard = wizard_for(draft, current)
+    else:
+        credentials, tests = receipts
+        wizard = build(draft, current, credentials=credentials, tests=tests)
     return {
         "draft": draft,
-        "wizard": wizard_for(draft, current),
+        "wizard": wizard,
         "expired": draft is not None and draft.status.state == SetupState.EXPIRED,
     }
 

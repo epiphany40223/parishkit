@@ -88,10 +88,12 @@ def test_explicit_send_redirects_and_passive_polling_does_not_renew_login(
         assert data["items"][0]["id"] in body
         assert "csrfmiddlewaretoken" not in body and "<form" not in body
         assert browser.get(PATH + "/status?format=xml").status_code == 400
-        # Slack is off in this setup: its test page refuses, and so does its
-        # status, in either form, as the page does (#1354).
+        # Slack is off in this setup: its test page opens the next step
+        # needing work instead (#1505), and its status refuses, in either
+        # form (#1354).
         slack = "/admin/setup/slack-test"
-        assert browser.get(slack).status_code == 400
+        skipped = browser.get(slack)
+        assert skipped.status_code == 302 and skipped["Location"] == PATH
         for status in ("/status", "/status?format=status"):
             assert browser.get(slack + status).status_code == 400
         assert (

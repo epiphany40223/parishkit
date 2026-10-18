@@ -404,6 +404,85 @@ def test_page_shows_member_duid_beside_who():
     assert '<td class="numeric">New Member</td>' in html
 
 
+WORK_TO_DO_EMPTY = "No census changes need your work right now."
+NONE_YET = "No census changes yet."
+NO_MATCH = "No census changes match these filters."
+
+
+def empty_page(changes, query, *, administrator):
+    """The page's table cell and Summary when ``query`` keeps none of ``changes``.
+
+    ``changes`` go through the view's own ``select``, so the Summary counts
+    every status while the table shows only what the filters keep.
+    """
+    from django.template.loader import render_to_string
+
+    from parishkit.stewardship.web.tables import paginate
+
+    result = select(
+        [shape(change) for change in changes], query, administrator=administrator
+    )
+    assert result["rows"] == []
+    return unescape(
+        render_to_string(
+            "stewardship/census-changes.html",
+            result
+            | {
+                "table": paginate(result["rows"], {}, sorting=SORTING),
+                "query": query,
+                "query_fields": {},
+                "status_choices": [],
+                "route_choices": [],
+                "kind_choices": [],
+                "export_timezones": ["UTC"],
+            },
+        )
+    )
+
+
+@pytest.mark.parametrize(
+    ("changes", "administrator", "counted"),
+    [
+        # To review is an Administrator's work: Staff's Work to do leaves it
+        # out, while their Summary still counts it.
+        ([row(id="1"), row(id="2")], False, "To review"),
+        # Being published needs no one's work: no one's Work to do lists it.
+        ([row(decision="approved", execution="queued")], True, "Being published"),
+    ],
+)
+def test_empty_work_to_do_names_the_list_not_the_summary(
+    changes, administrator, counted
+):
+    """An empty Work to do never claims there is nothing at all (#227).
+
+    The Summary above counts rows that Work to do leaves out, so the
+    message speaks of work for the viewer and points to Every status.
+    """
+    html = empty_page(changes, CensusQuery(), administrator=administrator)
+    assert f"<dt>{counted}</dt>" in html
+    assert WORK_TO_DO_EMPTY in html
+    assert "set Status to “Every status”" in html
+    assert NONE_YET not in html and NO_MATCH not in html
+
+
+@pytest.mark.parametrize(
+    ("query", "message", "absent"),
+    [
+        (CensusQuery(status="all"), "tick Include history", NO_MATCH),
+        # Every status with history is everything: no change at all yet.
+        (CensusQuery(status="all", history="yes"), NONE_YET, NO_MATCH),
+        (CensusQuery(search="Nobody"), NO_MATCH, NONE_YET),
+        (CensusQuery(history="yes"), NO_MATCH, NONE_YET),
+    ],
+)
+def test_empty_table_says_why_for_the_filters(query, message, absent):
+    """Each filter combination's empty table gives its own reason (#227)."""
+    html = empty_page([], query, administrator=True)
+    assert message in html and absent not in html
+    if query.history:
+        assert "tick Include history" not in html
+
+
 def test_xlsx_report_information_states_what_the_pdf_frame_states():
     """The workbook's "Report information" sheet (#926) names the download.
 
@@ -592,43 +671,45 @@ def test_shape_reads_the_latest_resolution():
     assert gone["resolution_by"] == "Former portal user"
 
 
-def test_page_offers_record_outcome_last_and_only_where_allowed():
+def test_page_offers_row_actions_last_and_only_where_allowed():
     """The page heads Recorded by, Recorded at and Note after Submitted, as
-    the files do, and Actions last; Record outcome appears only on a row it
-    applies to, Reopen only for an Administrator (#528)."""
+    the files do, and Actions last; a row's action icons appear only where
+    they apply, Reopen only for an Administrator (#528), each opening one of
+    the page's shared dialogs (#879)."""
     from django.template.loader import render_to_string
 
+    from parishkit.stewardship.reports.census_change_views import (
+        row_controls,
+        row_dialogs,
+    )
     from parishkit.stewardship.web.tables import paginate
 
     when = datetime(2054, 10, 6, 15, tzinfo=UTC)
-    shown = [
-        shape(row(id="todo", handling="manual", field="suffix")),
-        shape(row(id="auto")),
-        shape(
-            row(
-                id="ignored",
-                handling="manual",
-                decision="ignored",
-                resolution_action="ignored",
-                resolution_at=when,
-                resolution_by="staff@example.org",
-                resolution_note="Duplicate",
-            )
-        ),
-    ]
-    for item in shown:
-        item["describedby"] = f"who-{item['id']} what-{item['id']}"
-        item["final_describedby"] = f"{item['describedby']} final-{item['id']}"
-        item["confirm_name"] = f"{item['label']} for {item['who']}"
 
     def page(administrator, mutable=True):
         """The page as an Administrator or a Staff member sees it."""
+        shown = [
+            shape(row(id="todo", handling="manual", field="suffix")),
+            shape(row(id="auto")),
+            shape(
+                row(
+                    id="ignored",
+                    handling="manual",
+                    decision="ignored",
+                    resolution_action="ignored",
+                    resolution_at=when,
+                    resolution_by="staff@example.org",
+                    resolution_note="Duplicate",
+                )
+            ),
+        ]
+        row_controls(shown, administrator=administrator, mutable=mutable)
         return render_to_string(
             "stewardship/census-changes.html",
             {
                 "table": paginate(shown, {}, sorting=SORTING),
                 "query": CensusQuery(),
-                "query_fields": {},
+                "query_fields": {"status": "open"},
                 "summary": [],
                 "status_choices": [],
                 "route_choices": [],
@@ -637,31 +718,51 @@ def test_page_offers_record_outcome_last_and_only_where_allowed():
                 "administrator": administrator,
                 "action": "/admin/reports/census/",
                 "mutable": mutable,
+                "row_dialogs": row_dialogs(administrator),
             },
+        )
+
+    def icons(html, proposal):
+        """The data-confirm-with of each icon the row ``proposal`` draws."""
+        return re.findall(
+            rf'name="proposal" value="{proposal}"[^>]*data-confirm-with="resolve=(\w+)',
+            html,
         )
 
     html = page(True)
     headings = ["Submitted", "Recorded by", "Recorded at", "Note", "Actions"]
     positions = [html.index(f">{heading}<") for heading in headings]
     assert positions == sorted(positions)
-    assert 'id="resolve-todo"' in html and 'id="resolve-auto"' not in html
-    assert 'id="resolve-ignored"' in html and 'value="reopened"' in html
+    assert icons(html, "todo") == ["entered", "ignored"]
+    assert icons(html, "ignored") == ["reopened"]
     assert "staff@example.org" in html and "Duplicate" in html
     assert "data-compact>2054-10-06T15:00:00+00:00</time>" in html
-    # An Automatic row's Review is the Administrator's alone.
-    assert 'id="review-auto"' in html and 'value="approve"' in html
+    # An Automatic row's actions are the Administrator's alone.
+    assert icons(html, "auto") == ["approve", "ignore_automatic"]
+    assert 'aria-label="Mark Suffix for' in html
+    # Each icon names its dialog and carries the row's version and key.
+    assert 'data-confirm-open="census-enter-dialog"' in html
+    assert re.search(
+        r'resolve=entered&amp;version=\d+&amp;request_key=[0-9a-f-]{36}"', html
+    )
+    for form, dialog in row_dialogs(True):
+        drawn = f'<form id="{form}" method="post" action="/admin/reports/census/"'
+        assert f"{drawn} data-table-sync" in html
+        assert f'id="{dialog}"' in html
+    # The three shared dialogs, and the Automatic row's own Edit value.
+    assert html.count("data-confirm-answer-page") == 4
+    assert '<input type="hidden" name="status" value="open">' in html
+    assert html.count('name="note"') == 4  # one per dialog, none in a row
+    assert "<details" not in html.split("<table", 1)[1]
     staff = page(False)
-    assert 'id="resolve-todo"' in staff and 'id="resolve-ignored"' not in staff
-    assert 'id="review-' not in staff
-    # Entered in ParishSoft asks first, naming the row, in the page's dialog.
-    assert 'data-confirm-submit="census-enter-confirm"' in html
-    assert 'id="census-enter-confirm"' in html
+    assert icons(staff, "todo") == ["entered", "ignored"]
+    assert icons(staff, "ignored") == [] and icons(staff, "auto") == []
+    assert 'id="census-reopen-dialog"' not in staff
     # While other campaign work holds the campaign, nothing is offered, the
-    # page says why, and no confirmation dialog is drawn.
+    # page says why, and no row-action dialog is drawn.
     gated = page(True, mutable=False)
-    assert "Record outcome" not in gated.split("</h1>", 1)[1].split("<table", 1)[1]
-    assert 'id="resolve-' not in gated and 'id="census-enter-confirm"' not in gated
-    assert 'id="review-' not in gated
+    assert "data-confirm-open" not in gated
+    assert 'id="census-enter-dialog"' not in gated
     assert "Other campaign work" in gated
 
 
@@ -774,7 +875,7 @@ def test_page_offers_bulk_review_only_on_reviewable_rows():
         shape(row(id="todo", handling="manual", field="suffix")),
         shape(row(id="auto")),
     ]
-    row_controls(shown)
+    row_controls(shown, administrator=True, mutable=True)
 
     def page(bulk, too_many=False):
         """The page with or without bulk review."""

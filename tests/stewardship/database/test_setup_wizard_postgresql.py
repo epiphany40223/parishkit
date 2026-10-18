@@ -65,7 +65,8 @@ def test_background_work_stays_readable_during_setup(setup_http, google):
 
 
 def test_save_and_continue_follows_the_one_ordered_list(setup_http, google):
-    """Each save goes to the next applicable page, including optional ones."""
+    """Each save goes to the next applicable page not done yet, including
+    optional ones (wizard rule 8, #1476)."""
     with web_login():
         browser = started()
         assert save(browser, "mail", VALUES["mail"])["Location"] == (
@@ -80,10 +81,14 @@ def test_save_and_continue_follows_the_one_ordered_list(setup_http, google):
         )
         disabled = {"channel_id": ""}
         assert save(browser, "slack", disabled)["Location"] == "/admin/setup/branding"
+        # Outgoing email settings and Testing recipient are saved already, so
+        # the Parish profile's save skips them to the first step not done,
+        # the Google Workspace key, never landing on a completed step.
         assert save(browser, "parish", VALUES["parish"])["Location"] == (
-            "/admin/setup/mail"
+            "/admin/setup/credentials/google_workspace"
         )
-        # ParishSoft connection and its load come last before Review (#1353).
+        # ParishSoft connection and its load are the last data-entry steps
+        # (#1353).
         assert save(browser, "access", VALUES["access"])["Location"] == (
             "/admin/setup/credentials/parishsoft"
         )

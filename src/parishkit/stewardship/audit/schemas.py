@@ -201,6 +201,10 @@ class Action(StrEnum):
     SECURITY_EVENT_ACKNOWLEDGED = "security_event_acknowledged"
     CRITICAL_EVENTS_ACKNOWLEDGED = "critical_events_acknowledged"
     CREDENTIAL_RESULT_DISMISSED = "credential_result_dismissed"
+    # A ParishSoft key change refused because the key sees another
+    # organization (#1495); the subject is the key change request. Recorded
+    # by the target installer with the request's failure, never with values.
+    CREDENTIAL_KEY_ORGANIZATION_MISMATCH = "credential_key_organization_mismatch"
     FAMILY_MAINTENANCE_STARTED = "family_maintenance_started"
     FAMILY_MAINTENANCE_ENDED = "family_maintenance_ended"
     HOSTED_FILE_UPLOADED = "hosted_file_uploaded"
@@ -252,6 +256,12 @@ class Action(StrEnum):
     # integration key finish-switching: Finish switching to the new key.
     ADMIN_CMD_INTEGRATION_KEY_FINISH_SWITCHING = (
         "admin_cmd_integration_key_finish_switching"
+    )
+    # integration key replace: a settings page's Save with a new key pasted.
+    ADMIN_CMD_INTEGRATION_KEY_REPLACE = "admin_cmd_integration_key_replace"
+    # integration backup-key confirm: the Backup encryption key page's Confirm.
+    ADMIN_CMD_INTEGRATION_BACKUP_KEY_CONFIRM = (
+        "admin_cmd_integration_backup_key_confirm"
     )
     # workgroup confirm: the No-reminders WorkGroup page's Apply (ADM-11 PR 10).
     ADMIN_CMD_WORKGROUP_CONFIRM = "admin_cmd_workgroup_confirm"
@@ -320,9 +330,9 @@ class Action(StrEnum):
     # events acknowledge: Home's security event and critical-problem
     # acknowledgements, with the page's own event in the same transaction.
     ADMIN_CMD_EVENTS_ACKNOWLEDGE = "admin_cmd_events_acknowledge"
-    # census resolve: a Census changes row's Record outcome (#528, #463).
+    # census resolve: a Census changes row's outcome (#528, #463).
     ADMIN_CMD_CENSUS_RESOLVE = "admin_cmd_census_resolve"
-    # census review: an Automatic row's Review (#528, ADM-09).
+    # census review: an Automatic row's review (#528, ADM-09).
     ADMIN_CMD_CENSUS_REVIEW = "admin_cmd_census_review"
     # followup update and followup bulk: a Ministry follow-up request's Save
     # and the queue's bulk outcome (#463 PR 11a).
@@ -334,6 +344,13 @@ class Action(StrEnum):
     # census resolve-conflict: an Automatic Conflict's Use the Family's value
     # anyway (#1434, ADM-09.03).
     ADMIN_CMD_CENSUS_RESOLVE_CONFLICT = "admin_cmd_census_resolve_conflict"
+    # followup roster-entered and followup roster-bulk: a resolved request's
+    # Entered in ParishSoft tick and Roster changes to enter's bulk mark;
+    # followup information-update: an Additional information item's Save
+    # (#463 PR 11b).
+    ADMIN_CMD_FOLLOWUP_ROSTER_ENTERED = "admin_cmd_followup_roster_entered"
+    ADMIN_CMD_FOLLOWUP_ROSTER_BULK = "admin_cmd_followup_roster_bulk"
+    ADMIN_CMD_FOLLOWUP_INFORMATION_UPDATE = "admin_cmd_followup_information_update"
 
 
 # Closed field identifiers are operational metadata, never census values.

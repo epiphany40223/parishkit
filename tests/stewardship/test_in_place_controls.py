@@ -137,6 +137,13 @@ HOSTED = {
     # A setup test page's live status region (#1354), whose follow-up re-reads
     # the panel each test page draws around it.
     "setup-test-status.html": ("setup-mail.html", "setup-notification.html"),
+    # A binary choice (#1535): every page that draws the shared segmented
+    # pair names the region its links refresh (region_id, required).
+    "segmented-choice.html": tuple(
+        path.name
+        for path in sorted(TEMPLATES.glob("*.html"))
+        if "components/segmented-choice.html" in path.read_text()
+    ),
 }
 
 
@@ -150,7 +157,9 @@ def test_every_in_place_control_names_its_region_as_a_fragment():
     template that draws it around the control. A hosted fragment template
     may name its region ``{{ region_id|default:'…' }}``: each include's
     region is then the region_id it passes (Refresh from ParishSoft's run,
-    #521; the held-email groups, #757), else the default.
+    #521; the held-email groups, #757), else the default. Without a default
+    (``{{ region_id }}``, a binary choice's segments, #1535) every include
+    must pass one.
     The earlier data-region-link name is gone."""
     found = 0
     for path in sorted(TEMPLATES.rglob("*.html")):
@@ -166,7 +175,9 @@ def test_every_in_place_control_names_its_region_as_a_fragment():
                 if (path.name in HOSTED)
                 else [text]
             )
-            named = re.fullmatch(r"\{\{ region_id\|default:'([\w-]+)' \}\}", fragment)
+            named = re.fullmatch(
+                r"\{\{ region_id(?:\|default:'([\w-]+)')? \}\}", fragment
+            )
             for host in hosts:
                 if named is None:
                     # A shared partial (Take a backup now's button) may hold a
@@ -192,6 +203,7 @@ def test_every_in_place_control_names_its_region_as_a_fragment():
                 for include in includes:
                     passed = re.search(r"\bregion_id=([\"'])([\w-]+)\1", include)
                     region = passed.group(2) if passed else named.group(1)
+                    assert region, (path.name, include)
                     assert names_region(host, region), (path.name, region)
     assert found >= 8
 
@@ -292,8 +304,9 @@ def test_campaign_test_send_is_in_place_and_live():
     """Send this test email posts in place (#519): its form sits in the
     notices' region and lands on Recent test results, whose heading takes
     focus. The list is a live status region, pending while a test is on its
-    way, whose settled copy carries a quiet follow-up that re-reads only the
-    form's region. The manual Refresh test results link is gone."""
+    way, whose settled copy carries a quiet follow-up that re-reads the
+    form's region (and Campaign setup's stepper and action row). The manual
+    Refresh test results link is gone."""
     text = (TEMPLATES / "campaign-mail.html").read_text()
     form = re.search(r'<form [^>]*data-in-place="campaign-test-send"[^>]*>', text)
     assert 'action="#campaign-tests"' in form.group(0)
@@ -314,6 +327,9 @@ def test_campaign_test_send_is_in_place_and_live():
     )
     follow = re.search(r"<a hidden data-live-follow[^>]*>", results).group(0)
     assert "data-in-place data-in-place-quiet data-in-place-only" in follow
+    # The settled re-read also redraws Campaign setup's stepper and action
+    # row, so the first accepted test shows Continue (#1583).
+    assert 'data-in-place-only="campaign-stepper campaign-step-actions"' in follow
     assert 'href="{{ page_url }}#campaign-test-send"' in follow
     assert "Refresh test results" not in text
     assert "live-status-v1.js" in text
@@ -478,16 +494,24 @@ def test_acknowledgements_act_in_place():
 
 
 def test_participation_options_apply_in_place():
-    """Apply report options (#519 PR 5) is a data-in-place GET landing on
-    the statistics, and the statistics, chart and export panels are regions,
-    so every panel the options reshape is refreshed together. The chart keeps
+    """The Chart population (#519 PR 5, #1535) is a binary choice whose
+    links land on the statistics, inside a data-table-sync node that every
+    answer redraws, and the statistics, chart and export panels are regions,
+    so every panel the scope reshapes is refreshed together. The chart keeps
     its daily table's own region inside it, and no form opts out of the
-    in-place filter path any more."""
+    in-place filter path any more. No Apply button is left."""
     text = (TEMPLATES / "participation.html").read_text()
-    form = re.search(r'<form id="table-filters"[^>]*>', text).group(0)
-    assert '#participation-statistics" ' in form
-    assert 'data-in-place="report-options"' in form
-    assert "data-in-place-message=" in form and "data-filter-reload" not in form
+    options = re.search(r'<div id="participation-options"[^>]*>', text).group(0)
+    assert "data-table-sync" in options and "data-report-options" in options
+    choice = re.search(
+        r"\{% include \"stewardship/components/segmented-choice\.html\""
+        r"[^%]*%\}",
+        text,
+    ).group(0)
+    assert 'region_id="participation-statistics"' in choice
+    assert 'first_key="scope-historical"' in choice
+    assert 'second_key="scope-current"' in choice
+    assert "Apply report options" not in text and '<select id="scope"' not in text
     for region in (
         "participation-statistics",
         "participation-chart",
@@ -644,15 +668,22 @@ def test_review_button_hint_follows_it_and_keeps_its_space():
     assert ".unchanged-hint[data-idle] { visibility: hidden; }" in css
 
 
+# A form's opening tag in a template, whose attributes may hold template
+# tags and variables (a "%}" is not the tag's end).
+FORM_TAG = r'<form id="settings-form"(?:[^>{]|\{[^}]*\})*>'
+
+
 def test_share_options_review_in_the_dialog():
     """Share options say "option", not "setting", in the hint after its
     Save button (#921); its form opens the shared review dialog
     (#750) from a region redrawn from the page's address once a change is
     applied, and the page draws no in-place review region."""
     text = (TEMPLATES / "share-settings.html").read_text()
-    form = re.search(r'<form id="settings-form"[^>]*>', text).group(0)
+    form = re.search(FORM_TAG, text).group(0)
     assert 'data-require-change="base_digest"' in form
     assert 'data-review-open="share-review"' in form
+    # Inside the campaign wizard the form saves directly instead (#1404 PR 4).
+    assert "{% if wizard.direct %}data-direct-save" in form
     assert "data-in-place" not in form
     assert 'data-refresh-url="{{ refresh_url }}"' in text
     assert "settings-review" not in text
@@ -708,9 +739,11 @@ def test_campaign_settings_reviews_in_the_dialog_once():
     form opens the shared review dialog (#750), waits for a real change
     (#921), and draws no in-place review region or second form."""
     text = (TEMPLATES / "campaign-settings.html").read_text()
-    forms = re.findall(r"<form\b[^>]*>", text)
+    forms = re.findall(FORM_TAG.replace(' id="settings-form"', r"\b"), text)
     assert len(forms) == 1
     assert 'data-review-open="campaign-review"' in forms[0]
+    # Inside the campaign wizard the form saves directly instead (#1404 PR 4).
+    assert "{% if wizard.direct %}data-direct-save" in forms[0]
     assert 'data-require-change="base_digest"' in forms[0]
     assert "data-in-place" not in forms[0]
     assert text.count("stewardship/components/review-changes-button.html") == 1

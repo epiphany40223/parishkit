@@ -119,6 +119,10 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "integration key status",
         "integration key finish-switching-preview",
         "integration key finish-switching",
+        "integration key replace",
+        "integration backup-key challenge",
+        "integration backup-key preview",
+        "integration backup-key confirm",
         "workgroup show",
         "workgroup preview",
         "workgroup confirm",
@@ -221,6 +225,13 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "followup show",
         "followup update",
         "followup bulk",
+        # The roster tick and information follow-up (PR 11b).
+        "followup roster-entered",
+        "followup roster-bulk",
+        "followup information-show",
+        "followup information-update",
+        # The queue's Export these requests (PR 11c).
+        "followup export",
     }
     # Past campaigns' archive import (#1018), listed with the reports.
     reports |= {"history list", "history preview", "history confirm", "history remove"}
@@ -279,6 +290,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
                 "export archive",
                 "integration confirm",
                 "integration key finish-switching",
+                "integration key replace",
+                "integration backup-key confirm",
                 "send confirm",
             }
         ), name
@@ -294,6 +307,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
                 "export census",
                 "export limitations",
                 "export roster",
+                "followup export",
             }
         ), name
         if name in acknowledged:
@@ -619,6 +633,21 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert options["--show"]["choices"] == ["todo", "all"]
     assert "--ministry" in options and "--campaign" not in options
     assert roster["result_fields"] == census["result_fields"]
+    # The follow-up queue's Export these requests (PR 11c): the same, with
+    # the page's own event and followup list's filters, without the search,
+    # the page and size, or the Status choice the export refuses.
+    followup = entries["followup export"]
+    assert followup["scope"] == "full" and not followup["changes_state"]
+    assert followup["audit_event"] == "ministry_followup_exported"
+    assert followup["streams"] and not followup["prompts"]
+    assert not followup["fresh_gated"]
+    assert not followup["request_key"] and not followup["expected_version"]
+    options = {option["name"]: option for option in followup["options"]}
+    assert options["--format"]["choices"] == ["csv", "xlsx", "pdf"]
+    assert "not_in_parishsoft" not in options["--state"]["choices"]
+    for absent in ("--search", "--page", "--size", "--campaign"):
+        assert absent not in options, absent
+    assert followup["result_fields"] == census["result_fields"]
     # The export lifecycle: status is any session's passive read with
     # --watch and no view event; every other command needs a full-scope
     # session. The three changes are keyed (but cancel) and record their
@@ -874,6 +903,12 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_integration_backup_probe",
         "admin_cmd_integration_dismiss",
         "admin_cmd_integration_key_finish_switching",
+        "admin_cmd_integration_key_replace",
+        "admin_cmd_integration_backup_key_confirm",
+        # The roster tick and information follow-up (PR 11b).
+        "admin_cmd_followup_roster_entered",
+        "admin_cmd_followup_roster_bulk",
+        "admin_cmd_followup_information_update",
     ]
     for event in events:
         assert Action(event) and event in DESCRIPTIONS, event

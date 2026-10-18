@@ -8,6 +8,7 @@
 <p>{% translate "This page updates by itself while a test is being sent, without extending your login's idle deadline." %}</p>{% endaboutpage %}
 <p class="notice">{% translate "Testing mode. This sends a fixed fictional notification to the configured Slack channel. It contains no parishioner data and does not activate the campaign." %}</p>
 <p>{% translate "Slack channel" %}: {{ channel_id }}</p>
+<div class="notice">{% include 'stewardship/setup-slack-off.html' with intro=True %}</div>
 <p class="visually-hidden" role="status" data-live-announcer="setup-test"></p>
 <div id="setup-test-panel" data-in-place-region>
 <section class="panel"><h2>{% translate "Send an explicit test" %}</h2>
@@ -22,5 +23,6 @@
 {% include 'stewardship/setup-test-status.html' with status_url=status_url %}
 </section>
 {% include 'stewardship/setup-test-actions.html' with send=_("Send Slack test") %}
+{% include 'stewardship/setup-test-failed.html' %}
 </div>
 {% endblock %}

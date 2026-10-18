@@ -518,12 +518,20 @@ completed deletions intact.
 ### Go-live sequencing
 
 > **Status:** target of
-> [#462](https://github.com/epiphany40223/parishkit/issues/462); until it
-> lands, the Administrator prepares the links by hand after cleanup.
+> [#462](https://github.com/epiphany40223/parishkit/issues/462). The producer
+> and the hold are built (`campaigns/go_live_sequencing.py`) but idle,
+> because nothing begins an attempt yet; slice 3 of
+> [#1585](https://github.com/epiphany40223/parishkit/issues/1585) makes
+> **Start go-live** begin attempt 1. Until then, the Administrator prepares
+> the links by hand after cleanup.
 
 Between **Start go-live** and **Confirm Production** on the
 [Go live page](../admin-portal/spec.md#go-live-page), the system runs the
-steps in order by itself. The scheduler's go-live producer, built like the
+steps in order by itself. Start go-live (the Apply of the Check step's
+Start go-live dialog) begins attempt 1 in the same web transaction that
+creates the transition request, acquires the gate and queues cleanup, so
+the producer has work from that moment; the page's Prepare step shows the
+producer's progress. The scheduler's go-live producer, built like the
 [ParishSoft refresh producer](#refresh-schedule), looks at the one open
 ProductionTransitionRequest on each loop and does at most one thing, always
 for the request's current [attempt](../admin-portal/spec.md#go-live-page):
@@ -1383,7 +1391,8 @@ unchanged.
 > **Status:** the scheduler side is built (`campaigns/go_live_sequencing.py`:
 > the hold, its logging and the data-age shift), but it is idle: nothing
 > begins an attempt until the Go live page's **Start go-live** does, which is
-> the rest of [#462](https://github.com/epiphany40223/parishkit/issues/462).
+> the rest of [#462](https://github.com/epiphany40223/parishkit/issues/462)
+> (slice 3 of [#1585](https://github.com/epiphany40223/parishkit/issues/1585)).
 > The "waiting for go-live" health line below is not built yet either.
 
 From the start of a go-live [attempt](../admin-portal/spec.md#go-live-page)
@@ -2545,9 +2554,10 @@ unavailability, not a retry conflict.
 ## ParishSoft publication
 
 Not in use yet: publication is ADM-09
-([#528](https://github.com/epiphany40223/parishkit/issues/528)), its Publish
-page is not built and it ships switched off, so today census changes reach
-ParishSoft by hand from the
+([#528](https://github.com/epiphany40223/parishkit/issues/528)), its
+[Publish to ParishSoft](../reports/spec.md#publish-to-parishsoft) page is
+specified but not built, and it ships switched off, so today census changes
+reach ParishSoft by hand from the
 [Census changes](../reports/spec.md#pending-census-changes) page.
 
 Publication runs on the worker's source queue (the low-concurrency
@@ -2573,9 +2583,13 @@ after a refusal, an Administrator may rerun that plan while it still has an
 unfinished entity. A rerun reads before each PUT and never repeats a write
 that landed. A changed decision/source after preflight invalidates the plan
 and requires a new confirmation. Execution owns and heartbeats the lease
-through final ParishSoft verification, releases it, and then queues the
-targeted reconciliation refresh, which claims the lease normally (not yet
-built).
+through final ParishSoft verification, releases it, and then, when it
+published at least one entity, requests the final full refresh as the
+[data workflow](../data/spec.md#review-and-publication) says, which claims
+the lease normally (not yet built). The worker may already create
+`source_refresh` tasks, so this needs no task-creator change. The preflight
+also marks already-matching changes `resolved_upstream` in a Production-mode
+plan (frozen migration 0112).
 
 Writes use shared v2 `PUT` contact primitives, expected-tenant guard, current
 full payload merge, idempotent retry, and read-after-write verification as

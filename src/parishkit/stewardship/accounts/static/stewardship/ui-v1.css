@@ -63,6 +63,11 @@
   --button-padding: .6rem 1.25rem;
   --button-weight: 650;
   --button-min-height: 44px;
+  /* Headings: sections, subsections, and a plain fieldset or table caption */
+  --heading-2: 1.3rem;
+  --heading-3: 1.1rem;
+  --card-heading: 1.05rem;
+  --heading-weight: 650;
   --shadow: 0 1px 2px rgb(16 24 40 / 5%), 0 4px 16px rgb(16 24 40 / 6%);
   --gutter: max(1rem, calc((100% - 72rem) / 2));
   --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
@@ -342,9 +347,9 @@ main nav.breadcrumbs [aria-current=page] { color: var(--ink); font-weight: 600; 
 /* Typography */
 h1, h2, h3, h4 { color: var(--ink); text-wrap: balance; }
 h1 { font-family: var(--serif); font-size: clamp(1.75rem, 4vw, 2.4rem); font-weight: 600; line-height: 1.2; letter-spacing: -.005em; margin-block: .25rem 1.25rem; }
-h2 { font-size: 1.3rem; font-weight: 650; line-height: 1.35; margin-block: 1.75rem .75rem; }
-h3 { font-size: 1.1rem; font-weight: 650; line-height: 1.4; margin-block: 1.5rem .5rem; }
-h4 { font-size: 1rem; font-weight: 650; margin-block: 1.25rem .5rem; }
+h2 { font-size: var(--heading-2); font-weight: var(--heading-weight); line-height: 1.35; margin-block: 1.75rem .75rem; }
+h3 { font-size: var(--heading-3); font-weight: var(--heading-weight); line-height: 1.4; margin-block: 1.5rem .5rem; }
+h4 { font-size: 1rem; font-weight: var(--heading-weight); margin-block: 1.25rem .5rem; }
 p, ul, ol, dl { margin-block: 0 1rem; }
 code, pre { font-family: var(--mono); font-size: .9em; }
 pre { padding: .85rem 1rem; background: var(--paper-soft); border: 1px solid var(--border); border-radius: var(--radius-small); }
@@ -357,7 +362,9 @@ hr { border: 0; border-top: 1px solid var(--border); margin-block: 2rem; }
 /* A card inside a card is a flat inset rather than a second floating layer. */
 .panel .panel { background: var(--paper-soft); box-shadow: none; }
 .empty-state { text-align: center; background: transparent; border-style: dashed; border-color: var(--control-border); box-shadow: none; color: var(--muted); }
-/* Report stat tiles (the response dashboard, Home's Family participation): a count per tile, wrapping. */
+/* Stat tiles (ui-conventions "Stat tiles", #1540), drawn by components/stat-tiles.html: a row of
+   cards, wrapping, each its label, value and up to two explanation lines; a row's tiles stretch
+   to one height. */
 .stat-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: .75rem; list-style: none; margin: 0 0 1.25rem; padding: 0; }
 .stat-tile { display: flex; flex-direction: column; gap: .2rem; padding: .85rem 1rem; border: 1px solid var(--border); border-radius: var(--radius-small); background: var(--paper-soft); }
 /* The Campaign comparison's Compare on day (#1018): a short day field with
@@ -380,6 +387,11 @@ hr { border: 0; border-top: 1px solid var(--border); margin-block: 2rem; }
 .stat-label { font-weight: 600; }
 .stat-value { font-size: 1.75rem; font-weight: 650; line-height: 1.2; font-variant-numeric: tabular-nums; }
 .stat-detail { color: var(--muted); font-size: .875rem; }
+/* An unknown value's "—" carries its reason in a toggletip beside it (#1540), its "i" at the
+   size it has elsewhere. The 1.75rem button is centred in the value's 2.1rem line from its top,
+   so it never makes the line taller: a value that becomes unknown in place moves nothing. */
+.stat-value .toggletip { vertical-align: top; line-height: 1; margin-top: .175rem; }
+.stat-value .toggletip-button { font-size: 1rem; }
 /* A tile's share bar (#720) sits at the tile's foot, so the bars of a row's tiles (stretched to one height) line up. */
 .stat-bar { display: block; margin-top: auto; padding-top: .35rem; }
 /* The empty track must read as the whole against the tile's --paper-soft:
@@ -387,10 +399,6 @@ hr { border: 0; border-top: 1px solid var(--border); margin-block: 2rem; }
    (above 3:1), so a 10% bar reads as a tenth of a bar, not a short line. */
 .stat-bar progress { display: block; background: var(--track); border: 1px solid var(--control-border); }
 .stat-bar progress::-webkit-progress-bar { background: var(--track); }
-/* A small set of links choosing one view of a page; the current one is marked. */
-.choice-links { display: flex; flex-wrap: wrap; gap: .5rem; margin-block: .75rem; }
-.choice-links a { padding: .3rem .9rem; border: 1px solid var(--accent); border-radius: 999px; }
-.choice-links a[aria-current=page] { background: var(--accent); color: var(--paper); font-weight: 650; text-decoration: none; }
 
 /* Key/value lists become two columns once there is room for them. */
 dt { font-weight: 600; }
@@ -423,13 +431,13 @@ label + .help, label + .helptext { margin-block: -.15rem .5rem; }
 .error { color: var(--error-ink); font-weight: 600; }
 /* Legends float inside the box so a fieldset reads as a titled card. */
 fieldset { border: 1px solid var(--border); border-radius: var(--radius); background: var(--paper); margin-block: 1.25rem; min-width: 0; padding: 1rem 1.25rem 1.25rem; }
-fieldset > legend { float: left; width: 100%; padding: 0; margin-bottom: .5rem; font-size: 1.05rem; }
+fieldset > legend { float: left; width: 100%; padding: 0; margin-bottom: .5rem; font-size: var(--card-heading); }
 /* Every sibling after the floated legend clears it, not just the next one:
    a hidden element (e.g. an error line) there would otherwise leave the
    first visible row flowing beside the float, so a checkbox label's text
    dropped below its absolutely positioned box. */
 fieldset > legend ~ * { clear: both; }
-fieldset.panel > legend { font-size: 1.3rem; font-weight: 650; }
+fieldset.panel > legend { font-size: var(--heading-2); font-weight: var(--heading-weight); }
 input, textarea, select, button { font: inherit; max-width: 100%; }
 input:not([type=checkbox], [type=radio], [type=hidden]), textarea, select { display: block; width: 100%; min-height: 44px; padding: .65rem .85rem; border: 1px solid var(--control-border); border-radius: var(--radius-small); background: var(--paper); color: var(--ink); box-shadow: inset 0 1px 2px rgb(16 24 40 / 6%); transition: border-color .15s, box-shadow .15s; }
 input:not([type=checkbox], [type=radio], [type=hidden]):hover, textarea:hover, select:hover { border-color: var(--ink); }
@@ -512,8 +520,15 @@ input[data-time-entry=list] { max-width: 24rem; }
 .hint-row-messages > * { grid-area: 1 / 1; margin: 0; }
 .hint-row-messages > .field-error-line { min-height: 0; font-size: .925rem; }
 .hint-row-messages > .field-error-line > .field-error-size:empty { display: none; }
-.hint-row-messages:has(> [data-complete-hint]:not([hidden]), > .field-error-line > .field-error-size:not(:empty)) { margin-block: 0 1rem; }
+/* Not in a filter bar, whose gap spaces its items (below, #1332). */
+.hint-row-messages:not(.filter-bar > *):has(> [data-complete-hint]:not([hidden]), > .field-error-line > .field-error-size:not(:empty)) { margin-block: 0 1rem; }
 .hint-row-messages:has(> .field-error-line > .errorlist:not([hidden])) > [data-complete-hint] { visibility: hidden; }
+/* A form whose message line sits apart from its gate's reserved hint row
+   (the Additional information queue's Submitted dates, #1469): the hint,
+   in the server's words, is held hidden while the line shows them, so the
+   form says it once. Both keep their room, so nothing moves either way and
+   an unrefused page lays out as before. */
+.filter-line-hides-hint:has(> .field-error-line > .errorlist:not([hidden])) > [data-complete-hint] { visibility: hidden; }
 /* A reason line that keeps one line's height while empty, so its text
    coming or going never moves what follows (no layout shift; the Restore
    review's held-email rows, #537). */
@@ -641,7 +656,7 @@ button.is-busy::after, .button.is-busy::after { content: ""; display: inline-blo
 .notice { padding: 1rem 1.25rem; background: var(--warning-bg); border: 1px solid var(--warning-border); border-inline-start-width: .35rem; border-radius: var(--radius-small); margin-block: 1rem; }
 .notice-error { background: var(--error-bg); border-color: var(--error-border); }
 .notice-info { background: var(--accent-soft); border-color: var(--accent); }
-.notice h2 { margin-top: 0; font-size: 1.1rem; }
+.notice h2 { margin-top: 0; font-size: var(--heading-3); }
 .notice ul { margin-bottom: 0; }
 /* System health's problems: one notice per problem, without list bullets. */
 .health-problems { list-style: none; padding: 0; }
@@ -756,7 +771,7 @@ details.about-page > summary::after { content: "\24D8" / ""; font-weight: 400; }
 /* Tables */
 .table-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); margin-block: 1.25rem; background: var(--paper); }
 table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
-caption { text-align: start; font-weight: 650; font-size: 1.05rem; padding: 1rem 1.25rem; }
+caption { text-align: start; font-weight: var(--heading-weight); font-size: var(--card-heading); padding: 1rem 1.25rem; }
 th, td { text-align: start; padding: .75rem 1rem; border-bottom: 1px solid var(--border); vertical-align: top; }
 thead { background: var(--paper-soft); }
 thead th { color: var(--muted); font-size: .875rem; font-weight: 650; letter-spacing: .01em; border-bottom-color: var(--rule-strong); }
@@ -830,7 +845,7 @@ td > :last-child { margin-bottom: 0; }
    and by its status in words in the table below. */
 .calendar-months { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
 .calendar-month { width: 100%; min-width: 42rem; table-layout: fixed; border-collapse: collapse; }
-.calendar-month caption { text-align: start; font-weight: 650; padding-block: .25rem; }
+.calendar-month caption { text-align: start; font-weight: var(--heading-weight); padding-block: .25rem; }
 .calendar-month th, .calendar-month td { border: 1px solid var(--border); padding: .3rem .4rem; overflow-wrap: normal; }
 /* Positioned, so the grid's visually hidden text (weekday names, a send's
    status) is clipped by its scrolling region instead of widening the page
@@ -985,6 +1000,14 @@ details.filter-panel > form:not(.filter-bar) > fieldset > legend { grid-column: 
    ends, or the form after Apply when the range has no fieldset. */
 details.filter-panel > form:not(.filter-bar) > .field-error-line,
 details.filter-panel > form:not(.filter-bar) > fieldset > .field-error-line { grid-column: 1 / -1; margin: 0; }
+/* A range whose message line sits in its fieldset, apart from the gate's
+   reserved hint row (Financial stewardship's dates and amounts, #1469):
+   the hint, in the server's words, is held hidden while a line shows them,
+   so the form says it once. Both keep their room (visibility only), so
+   nothing moves either way and an unrefused page lays out as before. The
+   class is the one the Additional information queue's form uses for a
+   line that is the form's own child. */
+.filter-line-hides-hint:has(> fieldset > .field-error-line > .errorlist:not([hidden])) > [data-complete-hint] { visibility: hidden; }
 /* The theme's short-field rule (a date's div, from 48rem, above) gives a
    date cell an end margin and caps its box at 14rem, which left the dates
    narrower than the selects beside them and ragged against the row above.
@@ -1001,12 +1024,20 @@ details.filter-panel[data-filter-panel] > form:not(.filter-bar) > fieldset > div
 /* Compact filter bars: short fields share one row on wider screens. */
 .filter-bar { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem 1rem; }
 .filter-bar label { margin: 0 0 .25rem; font-size: .925rem; }
+/* A filter-bar label row is at least as tall as its "i" button (1.75rem), tip or not, so a cell whose tip comes and goes (the directory's Export timezone) never changes its row's height and shifts the end-aligned cells beside it. */
+.filter-bar .label-row { min-height: 1.75rem; }
 .filter-bar > div { flex: 0 1 26rem; min-width: 12rem; }
 .filter-bar > div.short { flex: 0 1 9rem; }
 /* A field as wide as its longest choice, so a long option reads whole
    (Limitations' Show, #227); it still shrinks to the row on a phone. */
 .filter-bar > div.fit { flex: 0 1 auto; }
 .filter-bar button { margin: 0; }
+/* A filter bar's hint row with the server's refusal over the gate's hint
+   (.hint-row-messages, the Family directory's Exact Family code, #1332)
+   is the bar's last, full-width item with no margin of its own (the
+   bar's gap spaces it), as its hint alone was, so an ordinary page lays
+   out as before. */
+.filter-bar > .hint-row-messages { flex: 0 1 100%; }
 /* Short form fields side by side (the Ministry follow-up request, #1014).
    Unlike a filter bar the fields align at the top, since a time field keeps
    a reading line under its box; every label takes the height of a label
@@ -1125,6 +1156,11 @@ details.technical-details dd { overflow-wrap: anywhere; }
 /* A 44px touch target around the 28px circle, without enlarging the icon. */
 .toggletip-button::before { content: ""; position: absolute; inset: -.5rem; }
 .toggletip-button:not(:disabled):hover, .toggletip-button[aria-expanded=true] { background: var(--accent); color: var(--paper); box-shadow: none; }
+/* A "+N" chip (ui-conventions "Table fit and row height", #1544): a
+   toggletip whose button looks like the status-badge chip it follows and
+   shows "+2" for the rest of a list, which its bubble lists one per line. */
+.toggletip-button.toggletip-chip { width: auto; height: auto; padding: .1rem .5rem; border-width: 1px; border-radius: 999px; font-family: inherit; font-size: .8125rem; font-style: normal; font-weight: 600; }
+.toggletip-line { display: block; }
 .toggletip-bubble { position: fixed; inset: auto; z-index: 3; display: block; width: max-content; max-width: min(20rem, calc(100vw - 2rem)); padding: .6rem .8rem; border: 1px solid var(--border); border-inline-start: .3rem solid var(--accent); border-radius: var(--radius-small); background: var(--paper-soft, var(--paper)); color: var(--ink); font-size: .925rem; font-weight: 450; font-style: normal; line-height: 1.4; box-shadow: var(--shadow); }
 
 /* A Member's section groups fields without a second box around them. */
@@ -1234,7 +1270,7 @@ label.limitation { display: block; margin-block: 1rem; font-weight: 600; }
 .ministry-choices.is-locked :is(label, .ministry-join > summary) { cursor: not-allowed; }
 /* Ministry rows: the ministry name, then the choice, stated once. */
 .ministry-row { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1.25rem; padding: .6rem .9rem; margin-block: .5rem; }
-.ministry-row > legend { float: none; width: auto; flex: 1 1 100%; font-weight: 650; margin: 0; }
+.ministry-row > legend { float: none; width: auto; flex: 1 1 100%; font-weight: var(--heading-weight); margin: 0; }
 /* The choice labels are long ("Stop participating in this ministry"): let them
    wrap inside the row on a phone, keeping the radio beside the first line. */
 .ministry-row > label { display: inline-flex; align-items: center; gap: .4rem; min-height: 44px; margin: 0; min-width: 0; max-width: 100%; }
@@ -1281,6 +1317,28 @@ label.limitation { display: block; margin-block: 1rem; font-weight: 600; }
   cursor: pointer;
   font: inherit;
 }
+
+/* The Financial stewardship report's Family table (#1544, ui-conventions
+   "Table fit and row height"): short rows that fit beside the Admin menu
+   at laptop width. The table
+   is a .data-table.whole-words (#931), which already gives it the .nowrap
+   and .numeric cell classes and between-word wrapping, so a table wider than
+   the screen scrolls in its .table-scroll box. Only what is specific to
+   this report is here: one-line rows are centred vertically (the shared
+   table aligns to the top for multi-line rows) with tighter padding and a
+   slightly smaller body, so typical rows fit beside the Admin menu; a tip's
+   bubble inside a no-wrap cell wraps its own text again; cells are
+   positioned so the Staff chip's absolutely placed screen-reader text stays
+   inside its cell and the scroll box, never widening the page (as in #933). */
+.financial-table.data-table th, .financial-table.data-table td,
+.financial-table.data-table tbody th, .financial-table.data-table tbody td { position: relative; padding: .45rem .5rem; vertical-align: middle; }
+.financial-table tbody { font-size: .9375rem; }
+.financial-table .toggletip-bubble { white-space: normal; }
+
+/* Two related values stacked in one table cell, each on its own line
+   (ui-conventions "Table fit and row height", #1544), with the heading
+   naming them in the same order on its own stacked lines. */
+.data-table .stack-line { display: block; }
 
 /* Family codes are short fixed-length tokens; never wrap one mid-code. */
 td.family-code, td.family-code code { white-space: nowrap; }
@@ -1442,8 +1500,16 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
    Cancel never moves. dvh follows a phone's changing toolbar; vh is the
    fallback. The status line it ends with on the page (review-outcome.html)
    keeps one line of space whether or not it says anything, and cuts a long
-   line short, so it never moves a control. */
-.review-dialog { margin-top: 5vh; margin-top: 5dvh; width: min(44rem, calc(100vw - 2rem)); max-height: 90vh; max-height: 90dvh; }
+   line short, so it never moves a control.
+   A refusal below the buttons never moves them either (#1482): a long
+   review stops short of the height limit by the refusal's room, and once a
+   refusal shows, ui-v1.js holds the body at its height and the limit rises
+   by that room, so the dialog grows downwards into it. A refusal taller
+   than the room (a long one on a phone) is never cut short: it squeezes
+   the body (min-height: 0), so the buttons rise only by what does not fit
+   in the room. */
+.review-dialog { --refusal-room: min(7rem, 20vh); --refusal-room: min(7rem, 20dvh); margin-top: 5vh; margin-top: 5dvh; width: min(44rem, calc(100vw - 2rem)); max-height: calc(90vh - var(--refusal-room)); max-height: calc(90dvh - var(--refusal-room)); }
+.review-dialog:has(> [data-confirm-error]:not([hidden])) { max-height: 90vh; max-height: 90dvh; }
 .review-dialog[open] { display: flex; flex-direction: column; }
 .review-dialog > * { flex: none; }
 .review-dialog .dialog-body { flex: 1 1 auto; min-height: 0; overflow: auto; margin-bottom: 1rem; }
@@ -1455,23 +1521,27 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
 .compact-review li + li { margin-top: 0.25rem; }
 .compact-review-field { font-weight: 600; }
 .review-outcome { min-height: 1.6em; margin: .5rem 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-/* The Basic / Advanced mode toggle (#1121, components/editor-mode.html): a
-   segmented pair of radios with a visible label, at the top of the editor.
-   Both segments are always bold and fixed in size, so choosing one changes
-   only colours and never moves anything (no layout shift). The radio itself
-   covers its segment, invisible, so the native radio group keeps its
-   keyboard behaviour (arrow keys) and its accessible name. */
-fieldset.editor-mode { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; margin-block: 0 1rem; padding: 0; border: 0; border-radius: 0; background: none; }
+/* The one segmented-pair look (ui-conventions spec, "Binary choices",
+   #1535): a visible label and two segments, the chosen one filled. A binary
+   choice (components/segmented-choice.html) draws its segments as links,
+   the chosen one aria-current="page"; the Basic / Advanced mode toggle
+   (#1121, components/editor-mode.html) draws them as radios, each covering
+   its segment, invisible, so the native radio group keeps its keyboard
+   behaviour (arrow keys) and its accessible name. Both segments are always
+   bold and fixed in size, so choosing one changes only colours and never
+   moves anything (no layout shift). */
+fieldset.editor-mode, .segmented-choice { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; margin-block: 0 1rem; }
+fieldset.editor-mode { padding: 0; border: 0; border-radius: 0; background: none; }
 fieldset.editor-mode > legend { float: none; width: auto; margin: 0; padding: 0; font-size: 1rem; }
-.editor-mode-options { display: inline-flex; border: var(--button-border-width) solid var(--accent); border-radius: var(--radius-small); overflow: hidden; }
-.editor-mode-options label:has(> input[type=radio]) { display: inline-flex; align-items: center; min-height: var(--button-min-height); margin: 0; padding: .5rem 1.25rem; color: var(--accent); font-weight: 650; }
-.editor-mode-options label + label { border-inline-start: var(--button-border-width) solid var(--accent); }
+.editor-mode-options, .segmented-choice-options { display: inline-flex; border: var(--button-border-width) solid var(--accent); border-radius: var(--radius-small); overflow: hidden; }
+.editor-mode-options label:has(> input[type=radio]), .segmented-choice-options a { display: inline-flex; align-items: center; min-height: var(--button-min-height); margin: 0; padding: .5rem 1.25rem; color: var(--accent); font-weight: 650; text-decoration: none; }
+.editor-mode-options label + label, .segmented-choice-options a + a { border-inline-start: var(--button-border-width) solid var(--accent); }
 .editor-mode-options label:has(> input[type=radio]) > input { inset: 0; width: 100%; height: 100%; opacity: 0; }
-.editor-mode-options label:has(> input:checked) { background: var(--accent); color: var(--paper); }
-.editor-mode-options label:has(> input:focus-visible) { outline: 3px solid var(--focus); outline-offset: -6px; }
-/* The ring sits inside the segment, so on the checked (accent) segment it
+.editor-mode-options label:has(> input:checked), .segmented-choice-options a[aria-current=page] { background: var(--accent); color: var(--paper); }
+.editor-mode-options label:has(> input:focus-visible), .segmented-choice-options a:focus-visible { outline: 3px solid var(--focus); outline-offset: -6px; }
+/* The ring sits inside the segment, so on the chosen (accent) segment it
    is drawn in --paper, which keeps 3:1 on --accent in both schemes (#1264). */
-.editor-mode-options label:has(> input:checked:focus-visible) { outline-color: var(--paper); }
+.editor-mode-options label:has(> input:checked:focus-visible), .segmented-choice-options a[aria-current=page]:focus-visible { outline-color: var(--paper); }
 /* The Basic panel is a <fieldset> so one disabled attribute keeps its
    controls unsent while Advanced is shown; it draws no box of its own. */
 fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0; background: none; }

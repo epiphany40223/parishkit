@@ -34,6 +34,23 @@ def assert_tip_layout(page, tip, image):
     assert inner["x"] + inner["width"] <= outer["x"] + outer["width"] + 1
 
 
+def guide_share(guide, image):
+    """Where the hover guide line (#1536) crosses the image, as a share of
+    its width, after checking it runs down the image's plot and is hidden
+    from assistive technology."""
+    assert guide.is_visible()
+    assert guide.get_attribute("aria-hidden") == "true"
+    outer, line = image.bounding_box(), guide.bounding_box()
+    assert (
+        outer["y"]
+        < line["y"]
+        < line["y"] + line["height"]
+        < outer["y"] + outer["height"]
+    )
+    assert line["height"] > outer["height"] / 2
+    return (line["x"] - outer["x"]) / outer["width"]
+
+
 @pytest.mark.parametrize("width", [320, 1280])
 def test_chart_pointer_and_keyboard_preserve_exact_values(
     page, component_origin, axe_source, width
@@ -72,8 +89,13 @@ def test_chart_pointer_and_keyboard_preserve_exact_values(
     ]
     assert tip.locator("dd").all_inner_texts() == ["3", "1", "$3,235"]
     assert_tip_layout(page, tip, image)
+    # A faint line marks the inspected date across the plot: Nov 2, the last
+    # of the three dates, sits in the right part of the image.
+    guide = page.locator("[data-digest-guide]")
+    assert guide_share(guide, image) > 0.6
     page.mouse.move(0, 0)
     assert tip.is_hidden()
+    assert guide.is_hidden()
     # Keyboard users see the same tooltip, and Escape dismisses it. Opening
     # or closing it never moves the slider (on a phone it sits under the
     # chart, in space reserved for it).
@@ -84,9 +106,12 @@ def test_chart_pointer_and_keyboard_preserve_exact_values(
     assert tip.is_visible()
     assert tip.locator(".digest-tip-date").inner_text() == "Oct 31, 2026"
     assert_tip_layout(page, tip, image)
+    # The slider moves the guide line too: Oct 31 is the first date.
+    assert guide_share(guide, image) < 0.4
     assert slider.evaluate(offset) == resting
     page.keyboard.press("Escape")
     assert tip.is_hidden()
+    assert guide.is_hidden()
     assert slider.evaluate(offset) == resting
     assert not errors
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")

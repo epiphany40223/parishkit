@@ -15,7 +15,7 @@ from parishkit.stewardship.accounts.sessions import SETUP_FRESH_SECONDS, freshne
 from parishkit.stewardship.campaigns import single_campaign
 from parishkit.stewardship.campaigns.configuration import REMINDER_WORKGROUP_NAME
 from parishkit.stewardship.source.source_status import source_status_label
-from parishkit.stewardship.web import dates, presentation
+from parishkit.stewardship.web import dates, presentation, stat_tiles
 from parishkit.stewardship.web.buttons import portal_classes
 from parishkit.stewardship.web.exports import DEFAULT_EXPORT_FORMAT
 
@@ -30,6 +30,16 @@ for name in (
     "instant",
 ):
     register.filter(name, getattr(presentation, name))
+
+
+@register.simple_tag
+def stat_tiles_row(labelledby="", label="", tiles_id=""):
+    """A stat-tile row's name attribute and toggletip id prefix (#1540).
+
+    Raises (see ``stat_tiles.row_name``) when the row has no name.
+    """
+    (attribute, value), prefix = stat_tiles.row_name(labelledby, label, tiles_id)
+    return {"name": format_html('{}="{}"', attribute, value), "prefix": prefix}
 
 
 @register.simple_tag
@@ -269,6 +279,12 @@ def applied_filters(query, ignore=()):
     )
 
 
+# Also a template filter: an empty report table tells "nothing matches these
+# filters" from "nothing to show yet" with the panel's own count (#227), so
+# the message and the panel summary never disagree.
+register.filter("applied_filters", applied_filters)
+
+
 @register.tag
 def filterpanel(parser, token):
     """Wrap a report's filter form in a collapsible "Filters" panel (#227).
@@ -340,6 +356,39 @@ class FilterPanelNode(template.Node):
             # Template output is already escaped and marked safe.
             self.nodelist.render(context),
         )
+
+
+@register.simple_tag
+def whole_dollars(amount):
+    """A money cell's amount in whole dollars, its cents kept for screen readers.
+
+    Usage: ``{% whole_dollars row.annual %}`` with a ``MoneyAmount``. A
+    narrow table shows "$1,235" (ui-conventions "Table fit and row
+    height", #1544); when that rounds away cents, the rounded text is
+    hidden from screen readers and the exact "$1,234.50" is read instead,
+    so no one hears a figure the downloads do not have.
+    """
+    shown = amount.whole_display
+    if not amount.available or amount.cents % 100 == 0:
+        return shown
+    return format_html(
+        '<span aria-hidden="true">{}</span><span class="visually-hidden">{}</span>',
+        shown,
+        amount.display,
+    )
+
+
+@register.filter
+def share_lines(shares):
+    """A Financial row's share methods as the lines of its "+N" chip's tip.
+
+    Each chosen method by its label, with the Family's Other text after it
+    ("Other: Stock gift"), in the row's order (#1544).
+    """
+    return [
+        _("%(label)s: %(text)s") % share if share["text"] else share["label"]
+        for share in shares
+    ]
 
 
 @register.simple_tag

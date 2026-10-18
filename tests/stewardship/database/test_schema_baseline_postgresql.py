@@ -42,6 +42,33 @@ def test_fresh_schema_matches_verified_baseline():
 
 
 @pytest.mark.django_db(transaction=True)
+def test_inventory_detects_a_column_grant_and_its_revoke():
+    """A column-level GRANT or REVOKE changes exactly that column's entry (#1519).
+
+    database-grants installs column privileges (runtime_grants), so a leaked
+    or migrated column grant must not hide from the baseline or upgrade parity.
+    """
+    table = "stewardship_export_request"
+    column = f"{table}.report"
+    before = inventory(connection)
+    with connection.cursor() as cursor:
+        cursor.execute(f"GRANT SELECT (report) ON {table} TO PUBLIC")
+        try:
+            granted = inventory(connection)
+        finally:
+            cursor.execute(f"REVOKE SELECT (report) ON {table} FROM PUBLIC")
+    assert granted["columns"][column] != before["columns"][column]
+    changed = {
+        (kind, name)
+        for kind, objects in granted.items()
+        for name, digest in objects.items()
+        if before[kind].get(name) != digest
+    }
+    assert changed == {("columns", column)}
+    assert inventory(connection) == before
+
+
+@pytest.mark.django_db(transaction=True)
 def test_model_declarations_match_installed_schema():
     """Model and state edits alone cannot silently omit database protections."""
     mismatches = []

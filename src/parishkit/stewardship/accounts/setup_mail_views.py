@@ -15,11 +15,13 @@ from parishkit.stewardship.web.acknowledgment import ACKNOWLEDGMENT
 from parishkit.stewardship.web.admin_forms import AdminForm
 
 from .authentication import runtime
+from .integration_credentials import FAILED
 from .setup_delivery_models import SetupMailDelivery
 from .setup_drafts import view_draft
 from .setup_mail import request_sample
 from .setup_preview import PREVIEW_SALT, prepare_preview
 from .setup_views import ERRORS, _checked, _closed, _context, error_response, page_error
+from .setup_wizard import BY_KEY
 
 # A setup test email has its own states, named with the outbox's nearest
 # plain words (STATE_LABELS) so a test result reads like the same result on
@@ -34,6 +36,10 @@ LABELS = {
 }
 # The Recent tests list before any test (setup-test-status.html).
 EMPTY = _("No test has been requested yet. Select Send test email below to send one.")
+# What a test that was not sent points to (#1476): the provider whose key
+# advice it repeats (integration_credentials.FAILED, as Finishing setup and
+# Integrations say it) and the wizard steps that fix it, in step order.
+FIX = ("google_workspace", ("mail", "google_workspace"))
 
 
 class SetupMailForm(AdminForm):
@@ -78,19 +84,39 @@ def _status_data(draft, *, model=SetupMailDelivery, labels=LABELS):
     }
 
 
-def page_status(form, data, empty, status_url):
+def page_status(form, data, empty, status_url, fix=FIX):
     """The test page's context for its form and live status region (#1354).
 
     An earlier test whose delivery is unknown makes the acknowledgement box
     required, so the browser and the acknowledgement gate both hold Send.
+    ``fix`` names the provider and the steps a test that was not sent links
+    (``failure``).
     """
     if data["unknown"]:
         form.fields["acknowledge_unknown"].widget.attrs["required"] = True
     return data | {
         "form": form,
         "tested": tested(data["items"]),
+        "failure": failure(data["items"], *fix),
         "empty": empty,
         "status_url": status_url,
+    }
+
+
+def failure(items, provider, steps):
+    """The fix notice when this revision's newest test was not sent (#1476).
+
+    Only the newest test counts, and only for the current draft revision: a
+    later test, or a saved fix (which bumps the revision), drops the notice.
+    It carries the provider (a Slack notice offers turning Slack off,
+    #1499), its rejected-key advice and the steps to correct.
+    """
+    if not items or not items[0]["current"] or items[0]["state"] != "not_sent":
+        return None
+    return {
+        "provider": provider,
+        "advice": FAILED[provider],
+        "steps": [BY_KEY[key] for key in steps],
     }
 
 
@@ -117,6 +143,18 @@ def tested(items):
     sending; tests are listed newest first, so a current one is among them.
     """
     return any(item["current"] and item["state"] == "accepted" for item in items)
+
+
+def retest(items):
+    """Whether an accepted test exists only for an earlier draft revision.
+
+    Test email then says why it must be sent again (#1499): any saved
+    change, such as turning Slack off, bumps the revision, and only a test
+    of the current revision counts.
+    """
+    return not tested(items) and any(
+        not item["current"] and item["state"] == "accepted" for item in items
+    )
 
 
 @require_http_methods(["GET", "HEAD", "POST"])
@@ -156,6 +194,7 @@ def setup_mail(request):
                 "testing_recipient": preview.draft.sections["testing"][
                     "testing_recipient"
                 ],
+                "retest": retest(data["items"]),
             },
             status=status,
         )

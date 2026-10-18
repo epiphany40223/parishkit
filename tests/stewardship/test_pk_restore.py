@@ -306,6 +306,7 @@ def host(tmp_path):
     )
     yaml = tmp_path / "deployment.yaml"
     yaml.write_text("deployment: {}\n")
+    yaml.chmod(0o644)  # a world-readable file, as Production keeps it
     (tmp_path / "state").mkdir()
     (tmp_path / "work").mkdir()
     (tmp_path / "cron.d").mkdir()
@@ -562,6 +563,63 @@ def test_every_guard_refuses_before_anything_stops(host, fake, typed, message):
     assert "nothing changed" in output(result)
     assert not stopped(calls)
     assert not list(host["root"].glob("*.pre-restore-*"))
+
+
+def test_an_unreadable_yaml_is_named_not_called_an_unknown_field(host):
+    """A YAML the container user cannot read gets the plain refusal."""
+    host["yaml"].chmod(0o200)  # the test user is the container user
+    result, calls = restore(host)
+    assert result.returncode == 1, output(result)
+    text = output(result)
+    assert "not readable by the container's user" in text
+    assert str(host["yaml"]) in text
+    assert "0644" in text
+    assert "does not load" not in text
+    assert not stopped(calls)
+
+
+def _as_root_for_other_owner(host):
+    """Make the script think it runs as root so a foreign owner is allowed.
+
+    Without it the run refuses earlier ("run as root") for any owner but the
+    test user, so the group and other columns could not be reached.
+    """
+    fake_id = Path(host["env"]["PATH"].split(":")[0]) / "id"
+    fake_id.write_text('#!/bin/sh\n[ "$1" = -u ] && echo 0 || exec /usr/bin/id "$@"\n')
+    fake_id.chmod(0o755)
+
+
+def test_a_group_readable_yaml_is_accepted_for_the_runtime_group(host):
+    """Mode 0640 passes when the container user shares the file's group."""
+    host["yaml"].chmod(0o640)
+    # Another uid in the file's own group: the group column decides.
+    _as_root_for_other_owner(host)
+    host["env"]["PK_RESTORE_OWNER"] = f"{os.getuid() + 1}:{host['yaml'].stat().st_gid}"
+    result, _ = restore(host)
+    assert "not readable by the container's user" not in output(result)
+
+
+def test_an_other_only_yaml_is_refused_for_a_stranger(host):
+    """Mode 0640 refuses when the container user is neither owner nor group."""
+    host["yaml"].chmod(0o640)
+    _as_root_for_other_owner(host)
+    host["env"]["PK_RESTORE_OWNER"] = (
+        f"{os.getuid() + 1}:{host['yaml'].stat().st_gid + 1}"
+    )
+    result, calls = restore(host)
+    assert result.returncode == 1, output(result)
+    assert "not readable by the container's user" in output(result)
+    assert not stopped(calls)
+
+
+def test_a_readable_but_invalid_yaml_keeps_the_unknown_field_message(host):
+    """A world-readable YAML that fails validation keeps the old advice."""
+    host["yaml"].chmod(0o644)
+    result, calls = restore(host, FAKE_VALIDATE="2")
+    assert result.returncode == 1, output(result)
+    assert "does not load" in output(result)
+    assert "not readable" not in output(result)
+    assert not stopped(calls)
 
 
 def test_the_system_crontab_is_checked(host):
