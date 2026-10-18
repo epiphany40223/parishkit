@@ -4,8 +4,8 @@ An Administrator chooses Ministry leader users on the Users page, reviews
 what each one's email will say, and applies it (admin-portal specification,
 "Email Ministry leaders"). Nothing here sends anything: Apply records one
 ``LeaderEmailRequest``, which the background engine prepares and mail
-dispatch sends (``jobs.leader_email_owner``). The page and, later, the
-command line (#1622) share these functions:
+dispatch sends (``jobs.leader_email_owner``). The page and the command
+line (``pk-admin users email-leaders``, #1622) share these functions:
 
 - ``leader_rows`` adds each Ministry leader user's Last emailed outcome to
   the Users page's own user rows, from the recipient rows' addresses and
