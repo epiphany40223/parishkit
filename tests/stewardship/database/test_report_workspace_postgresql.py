@@ -36,11 +36,14 @@ def http_scenario(family_mail, google):  # noqa: F811
         yield (family_mail.service.store, None, ready.fact_set, None), browser
 
 
-def read(browser, path):
-    """Consume the real response-owned transaction with an abortable transport."""
+def read(browser, path, **headers):
+    """Consume the real response-owned transaction with an abortable transport.
+
+    ``headers`` are extra request headers, by their WSGI names.
+    """
     server, peer = socket.socketpair()
     try:
-        response = browser.get(path, **{"gunicorn.socket": server})
+        response = browser.get(path, **{"gunicorn.socket": server}, **headers)
         if response.streaming:
             assert connection.in_atomic_block
             content = b"".join(response.streaming_content)
@@ -436,3 +439,63 @@ def test_staff_report_access_then_ministry_role_and_revocation(http_scenario, go
             assert response.status_code == 403
         assert post(browser, export_action(job_path, "cancel")).status_code == 403
         assert post(browser, export_action(job_path, "download")).status_code == 403
+
+
+def test_figures_status_is_passive_and_rereads_never_renew(http_scenario):
+    """The Response dashboard and Campaign comparison follow their newest
+    figures (#1586): the figures status they poll says only whether newer
+    figures than the page's are ready, and is never audited; the page's one
+    re-read when they are (sent with X-ParishKit-Read: passive) is audited as
+    a view but, like the status reads, never renews the Admin sign-in."""
+    setup, browser = http_scenario
+    fact_set = setup[2]
+    pointer(fact_set)
+    status = reverse("admin:response_dashboard_status")
+    session = PortalSession.objects.get(revoked_at__isnull=True)
+    # Renewing the sign-in sets its last activity and bumps its version; the
+    # clock is fixed here, so the version is what shows a renewal.
+    before = (session.last_activity_at, session.version)
+    events = AuditEvent.objects.filter(
+        event_type__in=("participation_viewed", "campaign_comparison_viewed")
+    )
+    participation = (
+        reverse("admin:response_dashboard") + "?scope=historical&timezone=UTC"
+    )
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        # The page shows the published figures, which are still Updating: the
+        # region keeps being watched at the fast pace and asks for no re-read.
+        shown = f"?view=dashboard&scope=historical&shown={fact_set.pk}"
+        response = browser.get(status + shown)
+        assert response.status_code == 200
+        assert response["Cache-Control"] == "no-store"
+        assert b'data-live-status="figures"' in response.content
+        assert b"data-live-pending" in response.content
+        assert b"data-live-interval" not in response.content
+        assert b"Updating" in response.content
+        assert b"data-reread" not in response.content
+        # A page that shows no figures yet (or older ones) is told to re-read
+        # itself into the comparison's region.
+        response = browser.get(status + "?view=comparison&scope=historical&shown=")
+        assert response.status_code == 200
+        assert b"data-live-pending" not in response.content
+        assert b'data-reread href="#comparison-report"' in response.content
+        for query in (
+            "view=other&scope=historical&shown=",
+            "view=dashboard&scope=all&shown=",
+            "view=dashboard&scope=historical&shown=not-a-uuid",
+            "view=dashboard&scope=historical&shown=&day=3",
+        ):
+            assert browser.get(status + "?" + query).status_code == 400, query
+        assert events.count() == 0
+        # The pages' own re-reads: passive, but audited (two events a view).
+        for path in (participation, reverse("admin:campaign_comparison")):
+            response, html = read(browser, path, HTTP_X_PARISHKIT_READ="passive")
+            assert response.status_code == 200, path
+            assert b'data-live-status="figures"' in html
+        assert events.count() == 4
+        session.refresh_from_db()
+        assert (session.last_activity_at, session.version) == before
+        # The reader's own load of the page still renews it.
+        assert read(browser, participation)[0].status_code == 200
+    session.refresh_from_db()
+    assert session.version > before[1]

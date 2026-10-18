@@ -27,7 +27,11 @@
 // refreshes the page where the reader is rather than loading it again: an
 // off-site backup's settled check (#519) names its settings page's address,
 // and a link naming only a fragment (a task page once its task ends, #869)
-// re-reads this same address.
+// re-reads this same address. A follow-up link marked data-reread (a
+// report's figures status, #1586) is handed to ui-v1.js instead, with a
+// parishkit:reread event: it re-reads the page's own address once,
+// passively, so a view that is audited and would renew the sign-in (such as
+// Participation) never keeps an idle sign-in alive.
 //
 // A region that follows a steadily changing count (such as Family email
 // progress) may set data-live-interval="<ms>" to poll at that fixed pace
@@ -664,6 +668,14 @@
     function finish() {
       stop("");
       const follow = region.querySelector("a[data-live-follow]");
+      if (follow?.hasAttribute("data-reread")) {
+        // A report's figures status (#1586): newer figures are ready, so
+        // ui-v1.js re-reads this page's own address once, passively, as a
+        // page's periodic re-read does (it waits while the reader is busy
+        // and retries a failed read), and the fresh region is watched anew.
+        follow.dispatchEvent(new CustomEvent("parishkit:reread", {bubbles: true}));
+        return;
+      }
       if (follow) {
         // An in-place link naming only a fragment re-reads this page
         // (#869); one naming an address is clicked as it is (#519).

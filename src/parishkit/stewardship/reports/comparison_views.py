@@ -38,6 +38,7 @@ from django.views.decorators.http import require_GET
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+from parishkit.stewardship.accounts.sessions import passive_read
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.observability import Event, emit_failure
@@ -56,6 +57,7 @@ from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES, _principal
 from .facts import FactUnavailable
 from .read_admission import admit_report_read
+from .workspace_views import figures_status
 
 # A day as the Compare on day field sends it: a whole number without a sign
 # or leading zero. Four digits are far more than any campaign has days.
@@ -184,6 +186,13 @@ def page_context(comparison, principal, *, refused=False, mutable=True):
         # times, so it asks for no time zone (#1161).
         "mutable": mutable,
         "request_key": uuid4(),
+        # The Updating status, which follows the newest figures (#1586).
+        **figures_status(
+            "comparison",
+            "historical",
+            comparison.fact_set_id,
+            comparison.status != "current",
+        ),
     }
 
 
@@ -224,7 +233,9 @@ def report(request, campaign_id):
     finish, handed_off = None, False
     try:
         service = runtime()
-        principal = _principal(request, service.store)
+        # The page's own re-read when newer figures are ready (#1586) is
+        # passive: it never extends the sign-in, though it is audited.
+        principal = _principal(request, service.store, read_only=passive_read(request))
         admit_report_read(campaign_id)
         try:
             day, refused = requested_day(request.GET)

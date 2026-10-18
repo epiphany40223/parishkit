@@ -11,19 +11,21 @@ and the export count Production responses.
 """
 
 from contextlib import ExitStack
-from uuid import uuid4
+from urllib.parse import urlencode
+from uuid import UUID, uuid4
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, transaction
-from django.shortcuts import redirect
+from django.shortcuts import redirect, render
 from django.template.loader import render_to_string
+from django.urls import reverse
 from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
-from parishkit.stewardship.accounts.sessions import authenticated_admin
+from parishkit.stewardship.accounts.sessions import authenticated_admin, passive_read
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.domain import Money
@@ -42,10 +44,11 @@ from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES, _principal
 from .facts import FactUnavailable
 from .ministries import can_report, unscoped
+from .models import POPULATION_SCOPES
 from .read_admission import admit_report_read
 from .response_dashboard import _admit_mode, funnel_panels, read_metrics
 from .response_dashboard import _audit as _audit_funnel
-from .selection import guarded_participation
+from .selection import guarded_participation, newest_figures
 from .statistics import StatisticsUnavailable, calculate_statistics
 from .statistics_selection import capture_statistics
 from .workspace import (
@@ -149,7 +152,9 @@ def dashboard(request, campaign_id):
     finish, handed_off = None, False
     try:
         service = runtime()
-        principal = _principal(request, service.store)
+        # The page's own re-read when newer figures are ready (#1586) is
+        # passive: it never extends the sign-in, though it is audited.
+        principal = _principal(request, service.store, read_only=passive_read(request))
         try:
             query = ReportQuery.parse(request.GET)
         except ValueError:
@@ -277,6 +282,76 @@ def _participation(stack, guard, campaign_id, query):
     except StatisticsUnavailable:
         debug_swallowed("participation statistics unavailable")
         return None, "statistics"
+
+
+# The pages that show Participation figures, by the in-place region their
+# re-read names (the one holding the figures status, #1586).
+FIGURES_REGIONS = {
+    "dashboard": "response-dashboard",
+    "comparison": "comparison-report",
+}
+
+
+def figures_status(view, scope, shown, updating, *, newer=False):
+    """The figures status region's context (report-figures-status.html).
+
+    ``view`` is the page (a FIGURES_REGIONS key), ``scope`` the population
+    scope its figures are for, ``shown`` the generation the page shows (None
+    when it shows none) and ``updating`` whether the newest figures are
+    still being prepared. ``newer`` (the status read's answer only) says a
+    newer generation than ``shown`` is ready, so the page re-reads itself.
+    """
+    query = urlencode({"view": view, "scope": scope, "shown": shown or ""})
+    return {
+        "figures_status": {
+            "view": view,
+            "region": FIGURES_REGIONS[view],
+            "updating": updating,
+            "newer": newer,
+            "url": reverse("admin:response_dashboard_status") + "?" + query,
+        }
+    }
+
+
+@require_GET
+def dashboard_status(request, campaign_id):
+    """Passive figures status an open report polls; never audited (#1586).
+
+    The Response dashboard and Campaign comparison audit every view, so
+    instead of re-reading themselves on a timer they poll this fragment: it
+    says only whether newer figures than the page's (``shown``) are ready
+    and whether the newest are still being prepared, never a figure. When
+    newer ones are ready, the page re-reads its own address once, passively
+    (UX conventions, "Pages that update themselves"). The read never
+    extends the sign-in.
+    """
+    try:
+        service = runtime()
+        _principal(request, service.store, read_only=True)
+        fields = request.GET
+        view = fields.get("view", "")
+        scope = fields.get("scope", "")
+        if (
+            set(fields) - {"view", "scope", "shown"}
+            or view not in FIGURES_REGIONS
+            or scope not in POPULATION_SCOPES
+        ):
+            raise ValueError("Invalid figures status options.")
+        shown = UUID(fields["shown"]) if fields.get("shown") else None
+        admit_report_read(campaign_id)
+        newest, updating = newest_figures(campaign_id, scope)
+    except (PermissionError, ObjectDoesNotExist):
+        return denial()
+    except (FactUnavailable, StorageInvariantError):
+        return report_unavailable()
+    except SAFE_FAILURES:
+        return report_unavailable()
+    except ValueError:
+        return private_response("Invalid report options.\n", status=400)
+    context = figures_status(view, scope, shown, updating, newer=newest != shown)
+    response = render(request, "stewardship/report-figures-status.html", context)
+    response["Cache-Control"] = "no-store"
+    return response
 
 
 def daily_table(chart, presented, query):
@@ -428,6 +503,14 @@ def _page_context(campaign_id, query, participation, metrics, principal, cause=N
         "export_key": uuid4(),
         # No list of earlier exports: exports are point-in-time (#1398).
         "export_allowed": mutable,
+        # The chart's Updating status, which follows the newest figures
+        # (#1586).
+        **figures_status(
+            "dashboard",
+            query.scope,
+            selected.document.fact_set_id if selected.document is not None else None,
+            selected.updating,
+        ),
     }
     if selected.document is not None:
         context.update(participation_table_context(selected.document))
