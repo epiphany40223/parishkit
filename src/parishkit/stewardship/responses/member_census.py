@@ -35,6 +35,11 @@ class CensusField:
 
 
 GENDERS = ("Male", "Female", "Unspecified")
+# ParishSoft v2 Member reads return gender as a one-character code, not the
+# census word (#1621). Reads decode it for display and for "unchanged"
+# matching only; the stored baseline stays ParishSoft's code, because the
+# SQL submission guard compares answers against the raw source value.
+GENDER_CODES = {"M": "Male", "F": "Female", "U": "Unspecified"}
 MARITAL_STATUSES = (
     "",
     "Annulled",
@@ -105,9 +110,23 @@ def source_value(field, value):
     return value
 
 
+def gender_word(value):
+    """The census word a ParishSoft gender code means, else ``value`` unchanged.
+
+    Codes match case-insensitively and ignore surrounding whitespace. Any other
+    value, including a blank, a whole word or an unexpected code, is returned
+    as is, so an unknown code still shows as the current record.
+    """
+    if type(value) is str:
+        return GENDER_CODES.get(value.strip().upper(), value)
+    return value
+
+
 def browser_value(field, known, *, previous_unknown=False):
     """Convert only effective values to controls, never expose competing source."""
     value = known.value
+    if field.name == "gender":
+        value = gender_word(value)
     if field.kind is ValueKind.DATE:
         return value or ("unknown" if previous_unknown else "")
     if field.kind is ValueKind.PHONE and isinstance(value, dict):
@@ -183,6 +202,16 @@ def validate_member_value(field, raw, source=UNAVAILABLE, *, today):
         )
     ):
         raise InvalidMemberValue("Choose one of the displayed options.")
+    if (
+        field.name == "gender"
+        and source.available
+        and value != source.value
+        and gender_word(source.value) == value
+    ):
+        # The Family kept the decoded current record (Male for ``M``): store
+        # ParishSoft's own code, so the answer equals the source and is no
+        # change, as the SQL guard's raw source baseline also sees it.
+        return clean_text(source.value, field.max_length)
     if field.kind is ValueKind.PHONE and value:
         return _phone(value, source)
     if field.kind is ValueKind.EMAIL and value:

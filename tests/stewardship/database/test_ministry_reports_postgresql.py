@@ -81,10 +81,15 @@ def drop_leader(harness, email="leader@example.org"):
     promote(snapshot, claim, harness.campaign, harness.rings)
 
 
-def setup(harness):
-    """Create live requests only after selected Ministries survive activation."""
+def setup(harness, **member):
+    """Create live requests only after selected Ministries survive activation.
+
+    ``member`` overrides the joining Member's source fields.
+    """
     start(harness)
-    snapshot, claim = prepare(ministry_source())
+    data = ministry_source()
+    data.members[3].update(member)
+    snapshot, claim = prepare(data)
     promote(snapshot, claim, harness.campaign, harness.rings)
     harness = activate_response_service(harness)
     form = load_form(harness)
@@ -178,6 +183,12 @@ def test_current_intent_history_and_contact_projection(response_service):
     assert scoped["address_lines"][0] == "1 Example Street"
     assert scoped["age"] >= 60 and scoped["gender"] == "Unspecified"
     assert "1960-01-01" not in str(scoped) and "birthdate" not in scoped
+
+
+def test_parishsoft_gender_code_reads_as_census_word(response_service):
+    """An existing Member's ParishSoft code reads as the census word (#1621)."""
+    harness = setup(response_service, sex="F")
+    assert page(harness, ministry=9)["rows"][0]["gender"] == "Female"
     leaver = page(harness, ministry=4, action="leave")["rows"][0]
     assert leaver["current_role"] == "Chairperson"
     assert leaver["emails"] == [] and leaver["phones"] == {} and leaver["age"] is None

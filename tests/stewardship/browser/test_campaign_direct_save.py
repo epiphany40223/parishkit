@@ -226,6 +226,11 @@ def test_a_save_not_applied_keeps_the_typed_values_with_a_new_key(
     available(save)
     save.click()
     has_text(line, re.compile(r"not applied"))
+    # The line says "not applied" before the page is read again for a new
+    # key; wait for that read (the link and Save come back after it), so
+    # no routed fetch is left in flight at teardown (#1612).
+    visible(line.get_by_role("link", name="See the change's status"))
+    available(save)
     assert [body["options-0-label"] for body in sent] == [
         ["First change"],
         ["First change"],

@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
+from parishkit.stewardship.responses.member_census import gender_word
 from parishkit.stewardship.web.presentation import phone as format_phone
 
 from .directories import address_lines
@@ -153,7 +154,7 @@ def ministry_document(payload, parameters, *, parish_name, requested_at, timezon
         rows.append(
             common
             + (
-                item["gender"] or "Unavailable",
+                gender_word(item["gender"]) or "Unavailable",
                 f"{item['age']:,}" if item["age"] is not None else "Unavailable",
                 "Not published"
                 if item["email_visibility"] == "not_published"
