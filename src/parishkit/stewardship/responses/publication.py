@@ -1,19 +1,27 @@
 """Dry-run ParishSoft publication planning: a pure value, never a write.
 
 This module implements the evaluation half of the data spec's publication
-preflight (re-evaluate each approved field against a freshly read payload,
-block an entity with any conflict, merge approved values into the full
-payload, and digest it). It performs no network or database operation, and
-uses no ParishSoft client or transport: it cannot write to ParishSoft.
-Fetching the uncached payload, persisting the plan and the fenced PUT belong
-to later, separately reviewed slices.
+preflight (re-evaluate each approved field against a freshly read record,
+block an entity with any conflict, build the PUT body from the approved
+changes, and digest the record read and the record expected after the PUT).
+It performs no network or database operation, and uses no ParishSoft client
+or transport: it cannot write to ParishSoft. Fetching the uncached record,
+persisting the plan and the fenced PUT live in ``publication_plans`` and
+``publication_worker``.
 
 The ParishSoft v2 API writes only two shapes, recorded in the
 credential-free capability fixture: the Member contact PUT and the Family
 contact PUT. Family addresses stay by hand until a verified address read
-exists, so only Member contact fields are ever planned here. The live write
-test of 2026-10-17 (#528, #1596) showed both PUTs are partial updates and
-that no value can be cleared, so a blank value is never planned.
+exists, so only Member contact fields are ever planned here.
+
+The live v2 write test of 2026-10-17 (#528) observed partial updates on
+both contact PUTs (``nickName`` on a Member, ``primaryPhone`` on a Family:
+a field left out of the body was left unchanged) and, on ``dateOfDeath``,
+``null`` ignored and ``""`` refused with HTTP 400. So a PUT body holds only
+the approved, Automatic changes to write, never a field as read (#1600), and
+a blank value is never planned: the API is taken to be unable to clear a
+field. Nor is a value the recorded PUT schema would refuse
+(``contact_schema.sendable``), so the API never sees a write it would reject.
 
 The provider value encodings below (text as is, ISO civil dates, phone
 display text, email addresses joined by ``"; "``) are provisional until the
@@ -33,19 +41,18 @@ from enum import StrEnum
 
 from parishkit.parishsoft import split_email_addresses
 
-from .capabilities import Handling, capability, clears_value
+from .capabilities import Handling, capability
 from .comparison import ComparisonValueError, ValueKind
+from .contact_schema import sendable
 from .member_census import MEMBER_FIELDS, InvalidMemberSource, source_value
 from .member_requests import REQUEST_FIELDS
 from .merge import KnownValue, MergeState, PriorChange, merge_value
 
 # The complete MemberContactUpdateRequestModel property set, pinned to the
-# recorded public schema by a test. The live write test (#528) showed the
-# PUT is a partial update: a field left out is left unchanged, null is
-# ignored and "" is refused with HTTP 400. This planner still sends the whole
-# record as read plus the writes, and plans a payload only when every one of
-# these was read; a whole-record body can therefore be refused, so #1600
-# changes it to send only the changed fields before publication is enabled.
+# recorded public schema by a test. A Member contact read is keyed by these
+# names (the gateway maps the record onto them), and a PUT body holds some of
+# them. The PUT is a partial update (#528), so a field that was not read is
+# simply left out of the body and cannot be cleared.
 MEMBER_CONTACT_FIELDS = (
     "cellPhone",
     "dateOfBirth",
@@ -97,10 +104,13 @@ class FieldPlan:
 class EntityPlan:
     """One entity's dry-run plan.
 
-    ``payload`` is the full planned PUT body, present only when the entity is
-    not blocked and at least one field would be written. The digests cover
-    the payload read and the payload planned, so a later step can refuse a
-    PUT whose fresh read no longer matches the confirmed plan.
+    ``payload`` is the PUT body: only the fields to write, under the API's
+    names, present only when the entity is not blocked and at least one
+    field would be written. ``current_digest`` covers the record read and
+    ``planned_digest`` the record a read must return after the PUT (the
+    record read with the writes applied), so the worker can refuse a PUT
+    whose fresh read no longer matches the confirmed plan and verify the
+    write, and every field it left alone, by reading back.
     """
 
     entity_kind: str
@@ -162,7 +172,9 @@ def encode_member_value(field, value):
     if kind is ValueKind.PHONE and isinstance(value, dict):
         return value["display"]
     if kind is ValueKind.EMAIL and value:
-        return "; ".join(part.strip() for part in value.split(","))
+        # Empty parts are dropped, so " , " encodes as blank, never "; ".
+        parts = (part.strip() for part in value.split(","))
+        return "; ".join(part for part in parts if part)
     if isinstance(value, date):
         return value.isoformat()
     return value
@@ -219,61 +231,86 @@ def _evaluate(row, provider, payload):
     return _MERGE_OUTCOMES[merge.state]
 
 
+def _unwritable(row, provider):
+    """Whether the API could not write this change, so it is worked by hand.
+
+    A blank value (None, or text that is empty or only whitespace) would ask
+    to clear the field, which the API cannot do (``null`` is ignored and
+    ``""`` refused, #528). A value the recorded PUT schema refuses (a phone
+    under ten characters, an over-long name, a gender longer than one
+    character) would be refused with HTTP 400. The encoded form is checked,
+    so a phone whose display text is empty counts as blank too.
+    """
+    value = encode_member_value(row.field, _proposed(row))
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return True
+    return not sendable(provider, value)
+
+
 def plan_entity(entity_kind, entity_key, rows, payload=None):
     """Build one entity's dry-run plan from its proposals and a fresh read.
 
     ``rows`` are the entity's proposals (ProposedChange rows or equivalents,
     annotated by ``accepted_base.with_accepted_base`` so a resolved conflict
     merges against its accepted value); rows no publication may act on are
-    left out. ``payload`` is the entity's
-    freshly read Member contact record, keyed by request-schema field, or
-    None when it could not be read. A caller mapping a read onto those keys
-    must leave a field out, never fill it with None, when the read lacks it:
-    the plan still echoes the whole record, so it blocks an incomplete read
-    (the PUT itself is a partial update; #1600 plans only changed fields).
-    Only approved, API-writable Member fields are evaluated; everything else
-    is reported as not approved or by hand and is left at its current
-    ParishSoft value. Any approved field that conflicts or cannot be checked
-    blocks the whole entity, and a payload missing any request-schema field
-    blocks it too.
+    left out. ``payload`` is the entity's freshly read Member contact
+    record, keyed by request-schema field, or None when it could not be
+    read. A caller mapping a read onto those keys must leave a field out,
+    never fill it with None, when the read lacks it, so an approved field
+    that was not read cannot be checked rather than looking blank.
+
+    Only approved, API-writable Member fields with a non-blank value the
+    PUT schema accepts are evaluated; everything else is reported as not
+    approved or by hand and is left out of the PUT body, so ParishSoft
+    keeps its value. Any approved
+    field that conflicts or cannot be checked blocks the whole entity. The
+    planned body holds exactly the fields to write (#1600): the contact PUT
+    is a partial update, so fields not written, or not read, are never sent.
+    A Member's fields are read back under the request schema's own names, so
+    the record expected after the PUT is the read with the writes applied.
+    The Family PUT's names differ from its read's (``primaryPhone`` reads
+    back as ``familyHomePhone``), so planning Family fields would need an
+    explicit read-back map; none is planned today.
     """
     rows = [row for row in rows if row.execution in PLANNABLE_EXECUTIONS]
     if len({row.field for row in rows}) != len(rows):
         raise ValueError("An entity has more than one open proposal for a field.")
-    complete = payload is not None and set(payload) == set(MEMBER_CONTACT_FIELDS)
     fields, writes = [], {}
     for row in sorted(rows, key=lambda item: item.field):
         known = capability(entity_kind, row.field)
-        # Defence in depth (#1596): the stored handling, the registry and the
-        # value must all allow a write. A blank value would ask the API to
-        # clear the field, which it cannot do (null is ignored, "" refused).
+        # Defence in depth: the stored handling, the registry and the value
+        # must all allow a write (#1596). Keep _unwritable last: the ``or``
+        # short-circuit is what makes it run only for a Member API field, the
+        # only kind encode_member_value and its provider name apply to.
         if (
             entity_kind != "member"
             or row.handling != Handling.API.value
             or known.handling is not Handling.API
-            or clears_value(_proposed(row))
+            or _unwritable(row, known.provider_fields[0])
         ):
             outcome = Outcome.BY_HAND
         elif row.decision != "approved":
             outcome = Outcome.NOT_APPROVED
         else:
             (provider,) = known.provider_fields
-            outcome = _evaluate(row, provider, payload if complete else None)
+            outcome = _evaluate(row, provider, payload)
             if outcome is Outcome.WRITE:
                 writes[provider] = encode_member_value(row.field, _proposed(row))
         fields.append(FieldPlan(row.pk, row.field, outcome))
     blocked = any(item.outcome in BLOCKING for item in fields)
     if blocked or not writes:
         return EntityPlan(entity_kind, str(entity_key), tuple(fields), blocked)
-    planned = {**payload, **writes}
+    # Every written field was read (or _evaluate could not have planned a
+    # write), so the expected record never gains a field the read lacked.
+    expected = {**payload, **writes}
     return EntityPlan(
         entity_kind,
         str(entity_key),
         tuple(fields),
         False,
-        planned,
+        writes,
         payload_digest(payload),
-        payload_digest(planned),
+        payload_digest(expected),
     )
 
 

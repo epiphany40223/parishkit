@@ -19,17 +19,20 @@ construction:
 - it queues the entity's written proposals (``pending|failed -> queued``)
   with their rows locked ``FOR NO KEY UPDATE`` in pk order, under the fence,
   and reserves the lease's request window before every provider call;
-- after the PUT it reads the record back and requires the confirmed
-  ``planned_sha256`` before recording ``published`` and moving the
+- the PUT body holds only the fields to write (the contact PUT is a
+  partial update, #1600); after the PUT it reads the record back and
+  requires the confirmed ``planned_sha256`` (the record read with the writes
+  applied, so every field the PUT left alone is checked too) before
+  recording ``published`` and moving the
   proposals ``queued -> published``; anything else records ``failed`` with
   a sanitized word, and the entity is tried again (at most ``ATTEMPTS``
   times in a run); a published entity is never written again;
 - an entity whose proposals are queued and whose fresh read already equals
-  the planned payload (a crash after its PUT) is verified and recorded
+  the planned record (a crash after its PUT) is verified and recorded
   ``published`` without a second PUT;
 - when the run ends, every entity still unfinished is closed: one whose
   written proposals this plan queued (its PUT may have landed) is read back
-  first and recorded ``published`` if ParishSoft holds the planned payload;
+  first and recorded ``published`` if ParishSoft holds the planned record;
   any other is recorded ``invalidated`` and its queued proposals go back to
   ``failed`` (an attempt failed) or ``pending`` (none did), so a new
   preflight can plan them and they never block a later confirmation. Plans
@@ -340,7 +343,7 @@ def _close(claim, gateway, item):
     An entity whose written proposals this plan queued may have had its PUT
     land before a crash, a stop or the end of its attempts. It is read back
     first (#1245 review note 3) and recorded ``published`` when ParishSoft
-    holds exactly the planned payload; otherwise, or if the read fails, it
+    holds exactly the planned record; otherwise, or if the read fails, it
     is ``invalidated``. An entity with nothing queued was never written, so
     it is invalidated without a read.
     """
