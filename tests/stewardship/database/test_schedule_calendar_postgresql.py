@@ -14,7 +14,7 @@ from uuid import uuid4
 
 import pytest
 
-from parishkit.stewardship.accounts import schedule_calendar_views
+from parishkit.stewardship.accounts import campaign_wizard, schedule_calendar_views
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.campaigns.models import ScheduleDefinition
 
@@ -123,13 +123,20 @@ def test_an_admin_without_configure_is_refused(auth_service, google, role):
     assert "data-calendar-send" not in response.content.decode()
 
 
-def test_add_on_a_day_opens_new_with_that_date_and_returns_here(auth_service, google):
+def test_add_on_a_day_opens_new_with_that_date_and_returns_here(
+    auth_service, google, monkeypatch
+):
     """The calendar's Add (#1521) is New with the day filled in; Apply comes back.
 
     The day is the only thing filled in, so the review is New's: a reminder
     added from it is reviewed and applied exactly as from the list, and the
     calendar keeps the reserved status line the dialog ends on.
+
+    Outside the campaign wizard (``shown`` says so here, as a live campaign
+    would): inside it New saves directly, with no Cancel or review dialog
+    of its own (#1404 PR 4b).
     """
+    monkeypatch.setattr(campaign_wizard, "shown", lambda *_, **__: False)
     store = auth_service.store
     _, emails = draft_with_schedules(store)
     browser, _ = signed_in()
