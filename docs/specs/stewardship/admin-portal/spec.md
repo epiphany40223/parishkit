@@ -1085,7 +1085,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `ministry_followup_item` | Follow-up request | Ministry requests | Administrator, Staff, Ministry leader | Ministry follow-up (one request) | `/admin/reports/ministries/follow-up/<request>/` | (same) | Return to the queue keeps its filters and page. Status, notes and outcome only; no Assign to (#552). Shows the Member's contact details (#1157). A resolved join or leave's Entered in ParishSoft tick posts to `follow-up/<request>/roster/` (#528). |
 | `ministry_roster` | Roster changes to enter | Ministry requests | Administrator, Staff | (new, #528) | (none) | `/admin/reports/ministries/follow-up/roster/` | [Roster changes to enter](#roster-changes-to-enter); its CSV/XLSX/PDF download (`roster/exports/`) and its bulk Mark entered in ParishSoft (`roster/marks/`, #879) are non-page actions. |
 | `family_directory` | Active parishioner family directory | Menu: Active parishioner family directory | Administrator, Staff | (same) | `/admin/reports/families/` | (same) |  |
-| `timeline` | Timeline | Active parishioner family directory | Administrator, Staff | (new, #477; renamed from Family timeline, #1570) | `/admin/reports/families/<family>/` | (same) | One Family's [Timeline](../reports/spec.md#timeline); opened from every Family name the shared `family_link` helper draws (directory rows, Find a Family, NAV-19, and every other Admin table that names a Family; see the [Timeline](../reports/spec.md#timeline) for the list); `<family>` is the opaque campaign record id. Staff see the summary only. |
+| `timeline` | Timeline | Active parishioner family directory | Administrator, Staff | (new, #477; renamed from Family timeline, #1570) | `/admin/reports/families/<family>/` | (same) | One Family's [Timeline](../reports/spec.md#timeline); opened from every Family name the shared `family_link` helper draws (directory rows, Find a Family, NAV-19, and every other Admin table that names a Family; see the [Timeline](../reports/spec.md#timeline) for the list); `<family>` is the opaque campaign record id. Staff see the summary only. It is the Family's [information hub](#family-information-hub): a header strip above tabs (`?tab=`), on this one address. |
 | `emailed_reports` | Emailed reports | Menu: Emailed reports | Administrator, Staff | (new) | `/admin/reports/emailed/` | (same) | New page (decision 7, ADM-12.17): the current campaign's daily reports (and weekly reports for Administrators), newest first, each linking its page; Send a weekly report now is on it and returns to it, linking the report it produced. |
 | `weekly_digest_manual` | Send a weekly report now | Emailed reports | Administrator | Request a manual information report; Manual information report | `/admin/reports/emailed/weekly/new/` | (same) | Was the Manual information report menu entry; now a button on Emailed reports, where it ends, linking the report it produced (or its background task until it is ready). Its address named the campaign until #865; that old address is gone, with no redirect (#864). |
 | `weekly_digest_snapshot` | Weekly report | Emailed reports | Administrator | Weekly information report; Weekly summary | `/admin/reports/emailed/weekly/<snapshot>/` | (same) | Its old address, which weekly report emails sent before NAV-12 link, is gone, with no redirect (#864). |
@@ -6694,6 +6694,137 @@ not would break the downloaded-files rule. Roster changes to enter is where
 the tick is read and set; the Administrator may ask for the summary to carry
 it too, as its own forward migration
 ([#528](https://github.com/epiphany40223/parishkit/issues/528)).
+
+## Family information hub
+
+The [Timeline](../reports/spec.md#timeline) page is one Family's
+**information hub** for the campaign: one place to see everything about the
+Family, so no separate "Family profile" page exists
+([#1678](https://github.com/epiphany40223/parishkit/issues/1678); the
+Administrator's design of 2026-10-18). It stays at the Timeline's address,
+`/admin/reports/families/<family>/`, with the page name **Timeline** and the
+same access, reads and audit; no new address and no alias is added
+([addresses and legacy URLs](../ui-conventions/spec.md#addresses-and-legacy-urls)).
+Every Admin table's Family name already links here through
+`{% family_link %}`. The hub draws a header strip above a row of
+[tabs](../ui-conventions/spec.md#tabs), which follow the shared tab rules:
+the chosen tab is the address's `?tab=`, a switch is in place with no page
+refresh, and only the chosen tab's panel is read and drawn.
+
+The hub is built in slices, each its own pull request; each subsection below
+says which slice delivers it:
+
+1. **Slice 1:** the header strip, the tab row and the Timeline tab.
+2. **Slice 2:** the Family tab and the Member tabs (census).
+3. **Slice 3:** the Financial tab.
+4. **Slice 4:** the Cannot participate and Additional information tab.
+
+### Hub header strip
+
+**Slice 1.** A narrow band above the tabs, in the style of the Timeline's
+header lines. The heading is the Family's name in the shared surname-and-heads
+form ([Family and Member names](../ui-conventions/spec.md#family-and-member-names)),
+or "Timeline" alone when the latest ParishSoft data no longer has the Family;
+the browser title stays "Timeline", so browser history never keeps the name.
+Below it, on one line: the Family DUID, the envelope number when ParishSoft
+has one, the **Last portal action** (Administrators only, below) and the
+link to the Active parishioner family directory. The campaign's name and
+Counted at follow on the next line, as on the Timeline today.
+
+**Last portal action** is the newest thing the Family itself did on the
+parishioner portal, with its time in the browser's time zone, or "None
+recorded". It is one of the Timeline's own lines:
+
+- **Submitted a response**, except one Staff entered for the Family through
+  [Open form](../reports/spec.md#open-form), which is not the Family's own
+  action;
+- **Signed out** (the Family chose Sign out);
+- **Got past the first step** and **Reached the furthest step so far** (the
+  Family moved through the form).
+
+A sign-in and a form open are never counted: an email reader that fetches the
+Family's personal link (a mail scanner checking it) signs in and opens the
+form exactly as the Family would, so neither proves the Family was there. A
+session the system ended, and every email line, are not the Family's actions
+either. Form steps are recorded per Family, not per session, so steps taken
+while Staff fill in the form through Open form count too. The value comes
+from the lines the Timeline already reads, so it adds no statement.
+
+Only Administrators see it. Staff see the Timeline's summary only, and the
+records behind the full timeline (sign-outs and form steps) are not read for
+them ([Timeline](../reports/spec.md#timeline) access); Staff's strip shows
+the name, DUID, envelope number and directory link.
+
+### Hub tabs
+
+**Slice 1.** The tab row is the shared
+[tab component](../ui-conventions/spec.md#tabs), labelled "Family
+information", with the tabs in this order:
+
+1. **Timeline**: everything the Timeline page showed before the hub (its
+   summary, its timeline table with the filter bar and its export), for each
+   role as before. It is the first tab, so an address without `?tab=` opens
+   it, and its filters, When sort and export work inside its panel, in place,
+   exactly as before. Its filters stay its own: a tab's link carries only
+   `tab`.
+2. **Family**: Family-level information. Shown only when census is part of
+   the campaign (the campaign's modules include census).
+3. **One tab per Member**, labelled with the Member's name: each Member in
+   the Family's baseline and each Member the Family added. A Member the
+   Family removed, marked as moved or as deceased is shown clearly, with the
+   same marks the Family's census answers use, so the tab never reads as a
+   current Member's. Shown when census or Ministry stewardship is part of the
+   campaign.
+4. **Financial**: the Family's financial information. Shown when Financial
+   stewardship is part of the campaign.
+5. **Cannot participate and Additional information**. Shown when Ministry
+   stewardship (where the cannot-participate answers are given) or
+   Additional information is part of the campaign.
+
+A tab whose subject is not part of the campaign is left out, not greyed
+([conditional fields](../ui-conventions/spec.md#conditional-fields)).
+
+**Until each slice lands**, a tab that applies to the campaign but is not
+built yet is drawn **unavailable** with the reason "Coming soon", as the
+shared tab rules draw any unavailable tab (greyed, reached by the arrow keys,
+its reason in a tip), rather than left out. The Administrator, the hub's main
+reader, sees its whole shape from the first slice, and each later slice only
+turns its tabs on. Member tabs are the exception: naming each Member needs the
+census read that slice 2 adds, so slice 1 draws none, and slice 2 adds them.
+`?tab=` naming an unavailable tab opens the Timeline tab, with no error.
+
+### Hub content tabs
+
+**Slices 2 to 4.** Each content tab (every tab but Timeline) shows the
+Family's answers for its subject as the
+[review pipeline](../review-pipeline/spec.md) sees them, read through the
+shared stage mapping (`parishkit.stewardship.pipeline`), so the hub never
+holds a second comparison that could drift from the review worklist:
+
+- one row per field, with the **Baseline** (the ParishSoft value the Family
+  answered from, or nothing for data ParishSoft does not hold) beside the
+  **Family's answer** (its latest live response), and the **Reviewer's
+  value** when a reviewer edited or added one;
+- unchanged fields read as unchanged, and each changed field shows its
+  change's **stage**, with the stage's word and chip exactly as the
+  [pipeline vocabulary](../review-pipeline/spec.md#pipeline-vocabulary)
+  spells them (To review, Conflict, Ignored, Ready to update, Updating,
+  Updated in ParishSoft, To enter by hand, Entered by hand, Entered
+  incorrectly, To handle, Handled, Confirmed), and the Not seen in ParishSoft
+  flag when it is set;
+- per tab: the Family tab shows the Family-level census fields; a Member tab
+  shows that Member's census fields and Ministry joins and leaves (the
+  [census](../review-pipeline/spec.md#census-stream) and
+  [Ministry](../review-pipeline/spec.md#ministry-stream) streams); the
+  Financial tab the [financial stream](../review-pipeline/spec.md#financial-stream);
+  and the last tab the
+  [cannot participate](../review-pipeline/spec.md#cannot-participate-stream)
+  and [Additional information](../review-pipeline/spec.md#additional-information-stream)
+  streams.
+
+The tabs show; they do not act. Review decisions stay on the review
+worklist, which each row links to. Each slice specifies its tab's columns and
+reads here before it is built, and adds a query-count test for its panel.
 
 ## System health
 

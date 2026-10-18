@@ -904,8 +904,11 @@ later slice of #1570; until then the page has only the Family subject.
 
 `<family>` is the Family's campaign record id, an opaque random identifier
 like a Mail message's; the Family's name, DUID, envelope number and code never
-enter the URL. The heading is "Family name — timeline", but the browser
-title is "Timeline" alone, so browser history does not keep the name. Every
+enter the URL. The page is the Family's
+[information hub](../admin-portal/spec.md#family-information-hub): a header
+strip, then tabs, the first of which (Timeline) holds everything described
+here. The heading is the Family's name, but the browser title is "Timeline"
+alone, so browser history does not keep the name. Every
 Admin table that names a Family links the name to this page through one
 shared helper (the `{% family_link %}` template tag), drawn only for roles
 that may open the page (the shared rule is in
@@ -935,9 +938,11 @@ Data comes first: the heading with the Family's name (the directory's
 surname-and-heads name from the latest ParishSoft data; "Timeline" alone when
 that data no longer has the Family, whose line then starts with the shared
 [Not in ParishSoft](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
-badge), a line with its DUID and envelope number and a link to the
-directory, a line with the campaign's name and Counted at, then a summary
-that both roles see:
+badge), a line with its DUID and envelope number (and, for Administrators,
+the hub's
+[Last portal action](../admin-portal/spec.md#hub-header-strip)) and a link
+to the directory, a line with the campaign's name and Counted at, then, in
+the Timeline tab, a summary that both roles see:
 
 - **Submitted:** Yes, with the first submission's time and, after more than
   one, how many and the latest, noting any that Staff entered for the Family
