@@ -10,10 +10,11 @@ The first tests check 0117's closing check against 0094's bodies, as the
 earlier selection migrations' tests do; each statement there runs in a
 transaction that is rolled back. The rest prove, through the real web
 database role, that nothing else widens: another Member of the Family, a
-withdrawn request, a leave because the Member cannot participate in any
-ministries (Administrator decision, 2026-10-18), another Ministry and a
-reader who leads nothing keep the publish flags or read nothing, while Staff
-keep operational contact.
+withdrawn request, every request of a Member whom the Family's latest
+submission says cannot participate in any ministries (Administrator
+decision, 2026-10-18, applied per Member, whatever the roster shows),
+another Ministry and a reader who leads nothing keep the publish flags or
+read nothing, while Staff keep operational contact.
 """
 
 import io
@@ -32,14 +33,17 @@ from ..census_factory import member
 from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
 from .test_hide_gone_members_postgresql import SCHEMA_FILES, definition
+from .test_ministry_followup_postgresql import edit, requests
 from .test_ministry_packets_postgresql import packet, sections
-from .test_ministry_reports_postgresql import actor, page, prepare
+from .test_ministry_reports_postgresql import actor, page, prepare, setup
 from .test_ministry_responses_postgresql import (
+    configure,
     ministry_source,
     respond,
     revisit,
     start,
 )
+from .test_policy_postgresql import user
 from .test_response_http_postgresql import answers_for, load_form
 from .test_source_families_postgresql import promote
 
@@ -128,14 +132,12 @@ def test_the_closing_check_refuses_a_half_applied_rule(name, kind):
 
 
 def test_the_closing_check_refuses_a_report_without_the_exclusion():
-    """A report v3 whose chain consent forgets the cannot-participate
-    exclusion is refused, so an earlier join row never shows unpublished
-    contacts after a later cannot-participate leave."""
+    """A report v3 whose consent forgets the cannot-participate exclusion is
+    refused, so no row of such a Member shows unpublished contacts."""
     own = definition(MIGRATION, "stewardship_ministry_report_v3")
     changed, count = re.subn(
-        r"first_value\(r\.state NOT IN \('cancelled','superseded'\) AND coalesce\("
-        r".*?\)\s+OVER",
-        "first_value(r.state NOT IN ('cancelled','superseded')) OVER",
+        r"\)\n\s+AND coalesce\(\n\s+a\.answers.*?AS consented",
+        ") AS consented",
         own,
         flags=re.S,
     )
@@ -145,7 +147,7 @@ def test_the_closing_check_refuses_a_report_without_the_exclusion():
 
 def test_the_closing_check_refuses_a_packet_without_the_exclusion():
     """A packet whose consent forgets the cannot-participate exclusion is
-    refused, so such a leave never shows unpublished contacts."""
+    refused, so such a Member's requests never show unpublished contacts."""
     own = definition(MIGRATION, "stewardship_ministry_packet_v1")
     changed, count = re.subn(
         r"r\.state NOT IN \('cancelled','superseded'\) AND coalesce\(.*?AS consented,",
@@ -153,6 +155,39 @@ def test_the_closing_check_refuses_a_packet_without_the_exclusion():
         own,
         flags=re.S,
     )
+    assert count == 1
+    check_refuses(changed, "\\(leaders see")
+
+
+@pytest.mark.parametrize("name", REPLACED)
+def test_the_closing_check_refuses_the_requests_own_answer(name):
+    """Reading the cannot-participate answer from the request's own
+    submission, the rule before the Member-level decision (#1591), is
+    refused: it let an earlier request the new answer adds no leave to keep
+    sharing, depending only on roster state."""
+    own = definition(MIGRATION, name)
+    changed, count = re.subn(r"\ba\.answers#>", "s.answers#>", own)
+    assert count == 1
+    check_refuses(changed, "\\(leaders see")
+
+
+@pytest.mark.parametrize(
+    "pattern, replacement",
+    [
+        # The Family's earliest submission, not its latest.
+        (r"s\.family_id,s\.family_version DESC", "s.family_id,s.family_version"),
+        # Rehearsal (test) submissions count too.
+        (r"(answered AS MATERIALIZED.*?)AND s\.mode='live'", r"\1"),
+        # Not joined by Family.
+        (r"JOIN answered l ON l\.family_id=s\.family_id", "JOIN answered l ON true"),
+    ],
+)
+@pytest.mark.parametrize("name", REPLACED)
+def test_the_closing_check_refuses_another_latest_answer(name, pattern, replacement):
+    """Both selections must take the Family's latest live submission the
+    same way; a different one in either is refused."""
+    own = definition(MIGRATION, name)
+    changed, count = re.subn(pattern, replacement, own, flags=re.S)
     assert count == 1
     check_refuses(changed, "\\(leaders see")
 
@@ -307,3 +342,130 @@ def test_a_cannot_participate_leave_keeps_the_publish_flags(response_service):
     ]
     found = sections(packet(harness, actor(harness, ("staff",), ()).identity))[1]
     assert EMAIL in json.dumps(found[4]["rows"])
+
+
+def answer(harness, *, leave, cannot_serve):
+    """Submit the Family's form again: Member 3 joins nothing and leaves
+    ``leave``, checking the physical-limitations box when ``cannot_serve``."""
+    form = revisit(harness)
+    answers = answers_for(form)
+    answers["ministries"]["members"]["3"] = {"join": [], "leave": list(leave)}
+    answers["service"] = {
+        "members": {"3": {"cannot_serve": cannot_serve}},
+        "proposed_members": {},
+    }
+    respond(harness, form, answers)
+
+
+def history_rows(harness, scope, ministry):
+    """A leader's history packet rows and Staff's for one Ministry."""
+    leader = actor(harness, roles=("ministry_leader",), scope=scope).identity
+    staff = actor(harness, ("staff",), ()).identity
+    return (
+        sections(packet(harness, leader, history=True))[1][ministry]["rows"],
+        sections(packet(harness, staff, history=True))[1][ministry]["rows"],
+    )
+
+
+def join_rows(harness, scope=(9,), **filters):
+    """A leader's join request rows for Food pantry (9), with history."""
+    return page(
+        harness,
+        roles=("ministry_leader",),
+        scope=scope,
+        ministry=9,
+        history="all",
+        state="any",
+        **filters,
+    )["rows"]
+
+
+def test_cannot_participate_hides_a_declined_join(response_service):
+    """S2: Staff resolve Member 3's join to Food pantry (9) as declined, so
+    the Member is not on its roster and the later cannot-participate
+    submission adds no leave there. The Member-level rule (Administrator,
+    #1591) still shows Food pantry's leader the email Not published on the
+    declined join, in report v3 history and the history packet; Staff still
+    see it."""
+    harness = setup(response_service)
+    join, _ = requests()
+    edit(
+        harness,
+        user("admin@example.org").pk,
+        join,
+        state="resolved",
+        outcome="declined",
+    )
+    # Before the box is checked, the resolved ordinary join still shares.
+    assert EMAIL in json.dumps(join_rows(harness), default=str)
+    answer(harness, leave=[4], cannot_serve=True)
+    (row,) = [row for row in join_rows(harness) if row["id"] == str(join.pk)]
+    assert (row["state"], row["outcome"]) == ("resolved", "declined")
+    assert row["email_visibility"] == "not_published" and row["emails"] == []
+    assert EMAIL not in json.dumps(join_rows(harness), default=str)
+    assert EMAIL not in json.dumps(join_rows(harness, scope=(4, 9)), default=str)
+    leader, staff = history_rows(harness, (9,), 9)
+    assert [row["email_visibility"] for row in leader] == ["not_published"]
+    assert EMAIL not in json.dumps(leader) and EMAIL in json.dumps(staff)
+
+
+def test_cannot_participate_hides_a_confirmed_leave(response_service):
+    """S3: a roster refresh confirms Member 3's ordinary leave of Choir (4),
+    and the Family then checks the box with no current Ministries, so there
+    is no new leave. Choir's leader's history packet shows the resolved
+    leave's email Not published; Staff still see it."""
+    harness = setup(response_service)
+    _, leave = requests()
+    data = ministry_source()
+    data.ministry_type_memberships[4]["membership"] = []
+    snapshot, claim = prepare(data)
+    promote(snapshot, claim, harness.campaign, harness.rings)
+    leave.refresh_from_db()
+    assert (leave.state, leave.outcome) == ("resolved", "leave_confirmed")
+    leader, _ = history_rows(harness, (4,), 4)
+    assert EMAIL in json.dumps(leader)
+    answer(harness, leave=[], cannot_serve=True)
+    leader, staff = history_rows(harness, (4,), 4)
+    (row,) = [row for row in leader if row["id"] == str(leave.pk)]
+    assert row["email_visibility"] == "not_published" and row["emails"] is None
+    assert row["phone_visibility"] == "available"
+    assert EMAIL not in json.dumps(leader) and EMAIL in json.dumps(staff)
+
+
+def test_cannot_participate_hides_a_request_to_a_ministry_no_longer_offered(
+    response_service,
+):
+    """Review 1's advisory: the campaign stops offering Food pantry (9) while
+    Member 3's join to it stands, so the cannot-participate form cannot
+    withdraw it. Once the campaign offers it again (its leaders lead only
+    offered Ministries), Food pantry's leader sees the email Not published
+    on that standing join, though its own submission had no box checked;
+    Staff still see it."""
+    harness = setup(response_service)
+    join, _ = requests()
+    configure(harness, selected=(4,))
+    answer(harness, leave=[4], cannot_serve=True)
+    join.refresh_from_db()
+    assert join.state == "new"
+    configure(harness, selected=(4, 9))
+    rows = page(harness, ministry=9, **LEADER_9)["rows"]
+    assert [row["id"] for row in rows] == [str(join.pk)]
+    assert rows[0]["email_visibility"] == "not_published"
+    assert EMAIL not in json.dumps(rows, default=str)
+    leader, staff = history_rows(harness, (9,), 9)
+    assert EMAIL not in json.dumps(leader) and EMAIL in json.dumps(staff)
+    assert EMAIL in json.dumps(page(harness, ministry=9)["rows"], default=str)
+
+
+def test_a_later_ordinary_submission_resumes_sharing(response_service):
+    """S4: after the cannot-participate submission, the Family submits again
+    without the box; Member 3's standing leave of Choir (4) shares the email
+    with its leader again."""
+    harness, _ = family(response_service, cannot_serve=True)
+    leader = actor(harness, **LEADER_4).identity
+    (row,) = sections(packet(harness, leader))[1][4]["rows"]
+    assert row["email_visibility"] == "not_published"
+    answer(harness, leave=[4], cannot_serve=False)
+    (row,) = sections(packet(harness, leader))[1][4]["rows"]
+    assert (row["action"], row["email_visibility"]) == ("leave", "available")
+    assert EMAIL in json.dumps(row["emails"])

@@ -94,6 +94,17 @@ WITH selected AS MATERIALIZED (
     LEFT JOIN stewardship_source_ministry p ON p.id=m.payload_id
     LEFT JOIN chairs c ON c.ministry_key=d.duid::text
     WHERE selection IS NULL OR d.duid=ANY(selection::bigint[])
+), answered AS MATERIALIZED (
+    -- Each Family's latest live submission in the campaign, its current
+    -- answer. A Member it says cannot participate in any ministries
+    -- (physical limitations) shares no unpublished contact with leaders on
+    -- any of their requests, current or history, until a later submission
+    -- clears it (Administrator, #1591). One sort over the campaign's
+    -- submissions (ids only), joined by Family, not a lookup per request.
+    SELECT DISTINCT ON (s.family_id) s.family_id,s.id
+    FROM source x JOIN stewardship_submission s
+        ON s.campaign_id=x.id AND s.mode='live'
+    ORDER BY s.family_id,s.family_version DESC
 ), requests AS MATERIALIZED (
     SELECT r.id,r.entity_kind,r.entity_key,r.ministry_duid,r.action,r.state,
         r.outcome,r.submission_id,s.submitted_at,f.family_duid,
@@ -108,11 +119,12 @@ WITH selected AS MATERIALIZED (
     SELECT r.*,p.canonical::jsonb AS person,
         -- A standing request (this is its latest version) is its Member's
         -- consent to be contacted about it by the Ministry's leaders
-        -- (#1591); a withdrawn one is not. Nor is a leave because the
-        -- Member cannot participate in any ministries (physical
-        -- limitations): it follows the publish flags (Administrator, #1591).
+        -- (#1591); a withdrawn one is not. Nor is any request of a Member
+        -- the Family's latest submission says cannot participate in any
+        -- ministries (physical limitations): those follow the publish
+        -- flags (Administrator, #1591), whatever the roster holds.
         r.state NOT IN ('cancelled','superseded') AND coalesce(
-            s.answers#>ARRAY['service',CASE WHEN r.entity_kind='member'
+            a.answers#>ARRAY['service',CASE WHEN r.entity_kind='member'
                 THEN 'members' ELSE 'proposed_members' END,
                 r.entity_key,'cannot_serve'],'false'::jsonb)<>'true'::jsonb
             AS consented,
@@ -120,6 +132,8 @@ WITH selected AS MATERIALIZED (
             THEN s.answers->'proposed_members'->r.entity_key END AS proposed
     FROM requests r CROSS JOIN source x
     JOIN stewardship_submission s ON s.id=r.submission_id
+    JOIN answered l ON l.family_id=s.family_id
+    JOIN stewardship_submission a ON a.id=l.id
     LEFT JOIN stewardship_snapshot_member sm
         ON r.entity_kind='member' AND sm.snapshot_id=x.source_id
         AND sm.source_key=r.entity_key
