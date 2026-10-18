@@ -37,7 +37,8 @@ def begin(page, origin, form, submit):
 NOTICE = (
     "If you choose to join a ministry or stop participating in one, that "
     "ministry's leaders will see this person's email address and phone numbers "
-    "so they can follow up."
+    "so they can follow up. Checking the physical limitations box below does "
+    "not share them."
 )
 SERVE = (
     "Because of physical limitations, I/we cannot participate in any ministries "

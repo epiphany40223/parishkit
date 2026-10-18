@@ -1022,11 +1022,11 @@
     const panel = node("section", null, parent, {class: "panel ministry-panel"});
     node("h4", "Ministry participation", panel);
     // Asking to join or stop is consent to be contacted (#1591, #1625): say
-    // so once, before every choice that shares contacts (the "cannot
-    // participate" checkbox stops every Ministry, so it comes after too), as
-    // plain always-present text (no tooltip, nothing that appears on click
-    // and moves the controls).
-    node("p", "If you choose to join a ministry or stop participating in one, that ministry's leaders will see this person's email address and phone numbers so they can follow up.", panel);
+    // so once, before every choice, as plain always-present text (no
+    // tooltip, nothing that appears on click and moves the controls). The
+    // "cannot participate" checkbox, just below, stops every Ministry but
+    // is not consent (Administrator, 2026-10-18), and the notice says so.
+    node("p", "If you choose to join a ministry or stop participating in one, that ministry's leaders will see this person's email address and phone numbers so they can follow up. Checking the physical limitations box below does not share them.", panel);
     limitationEditor(member, panel);
     const choices = ministryChoices(member), current = ministryCurrent(member);
     const locked = Boolean(form.service && serviceEntry(member).cannot_serve);

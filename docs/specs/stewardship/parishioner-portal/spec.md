@@ -334,12 +334,16 @@ leave/withdrawal action. Recheck the same rule at submission, including the
 linked stale-form reconfirmation requirement.
 
 Directly under each Member's "Ministry participation" heading, before the
-"cannot participate" checkbox and the continue, stop and join choices, one
-plain sentence that is always shown says: "If you choose to join a ministry
+"cannot participate" checkbox and the continue, stop and join choices, a short
+plain notice that is always shown says: "If you choose to join a ministry
 or stop participating in one, that ministry's leaders will see this person's
-email address and phone numbers so they can follow up." It comes before the
-checkbox because checking it stops every current Ministry, so Families and
-screen readers meet the sentence before any choice that shares contacts. It
+email address and phone numbers so they can follow up. Checking the physical
+limitations box below does not share them." The second sentence is there
+because checking that box stops every current Ministry, yet such a leave
+keeps ParishSoft's publish flags (Administrator decision, 2026-10-18, on
+[#1591](https://github.com/epiphany40223/parishkit/issues/1591)). The notice
+comes before the checkbox so Families and screen readers meet it before any
+Ministry choice. It
 is shown once per Member page, never per Ministry, and describes the
 [leader contact rule](../reports/spec.md#ministry-change-summary) for a
 standing request
