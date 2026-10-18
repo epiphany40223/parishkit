@@ -1777,8 +1777,10 @@ names. **Precedent.** #1651.
   draws), one request runs at a time, and a filter the server had refused
   loses its mark. The Filters panel stays open. The live region
   says "Filters cleared." and then the rows now shown.
-- **Focus.** Focus stays on Clear filters, which is then unavailable, so a
-  keyboard or screen-reader user hears its reason at once.
+- **Focus.** Focus stays on Clear filters, which is then unavailable.
+  What is announced is the live region's "Filters cleared." and the rows
+  now shown; the unavailable reason's tip is not shown or announced at
+  that moment, but on the next hover, keyboard focus or tap.
 - **Unavailable.** Clear filters is unavailable while it has nothing to do:
   every filter field shows the page's default and the list shown uses the
   defaults too. It is then greyed (`aria-disabled`), stays in the tab order
