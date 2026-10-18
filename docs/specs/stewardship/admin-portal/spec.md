@@ -7867,7 +7867,9 @@ after its problems, and only while a mail consumer that is running reports
 only then, so other reads gain no query. Until the halt is recorded (up to
 about 30 seconds) the button is greyed with that reason; right after a
 clear, while a sender still reports **Halted**, it says the halt was cleared
-and the senders start again within about 30 seconds; and when a sender has
+and the senders start again within about 30 seconds, and that the tile shows
+it within about a minute (a sender rewrites its status record as soon as it
+lifts the halt, and the page reads it every 10 seconds); and when a sender has
 reported Halted for more than two minutes with no halt recorded, it says
 to restart the mail sender and links the
 [mail-provider outage runbook](../../../guides/stewardship-launch-runbooks.md#mail-provider-outage),
