@@ -922,8 +922,11 @@ names stay unlinked where the page must not open a Timeline: the Additional
 information queue (each name is already the link to its request, and the
 request page links the Timeline), Go-live's Testing submissions and the
 chosen-Family test send (Testing only), and the examples of a refused
-ParishSoft load. Outgoing mail and the Mail message page follow
-[#1571](https://github.com/epiphany40223/parishkit/issues/1571) and
+ParishSoft load. Sent mail's Recipient stays the button that lists
+everything that recipient was sent, in place
+([#1571](https://github.com/epiphany40223/parishkit/issues/1571); see
+[Sent mail](../admin-portal/spec.md#sent-mail)), so it is not a Timeline
+link, and the Mail message page follows
 [#1563](https://github.com/epiphany40223/parishkit/issues/1563). Its breadcrumb
 parent is the active parishioner family directory. The page reads the
 Family's records at the database's current instant (**Counted at**).

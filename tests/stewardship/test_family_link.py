@@ -138,10 +138,11 @@ FAMILY_NAME_PAGES = {
     "system-health-accept.html": "Refused load examples (no link)",
 }
 
-# The justified exceptions: pages another open change converts. Outgoing
-# mail's Recipient column follows #1571 (Sent mail) and the Mail message
-# page's Family line #1563; remove each entry when its change lands.
-NOT_YET = {"deliveries.html": "#1571", "delivery.html": "#1563"}
+# The justified exceptions: pages another open change converts. The Mail
+# message page's Family line follows #1563; remove the entry when it lands.
+# (Sent mail's Recipient, #1571, is its in-place recipient filter, a
+# button drawn without a printed name, so the guard needs no entry for it.)
+NOT_YET = {"delivery.html": "#1563"}
 
 # A printed Family name: a {{ ... }} expression naming family_name.
 PRINTED_NAME = re.compile(r"\{\{[^}]*\bfamily_name\b[^}]*\}\}")
