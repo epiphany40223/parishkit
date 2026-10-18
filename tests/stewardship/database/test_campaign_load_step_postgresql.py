@@ -263,10 +263,11 @@ def test_only_refreshes_since_creation_and_families_count(auth_service, google):
         )[0]
     )
     assert "Continue" not in actions(html)
-    # Every stage is done, and the run and the settings are linked.
+    # Every stage is done; the run and Refresh from ParishSoft are linked.
     assert html.count('data-stage-state="done"') == 4
     assert f'href="{reverse("admin:background_task_page", args=[succeeded])}"' in html
-    assert ">See the load<" in html and ">Review Campaign settings<" in html
+    assert ">See the load<" in html and ">Refresh from ParishSoft<" in html
+    assert "Check that ParishSoft has active Parishioner Families" in html
     # Every other step says the same instead of offering the load.
     content = page(browser, reverse("admin:content_catalog"))
     assert NO_FAMILIES in content and "data-campaign-load-start" not in content

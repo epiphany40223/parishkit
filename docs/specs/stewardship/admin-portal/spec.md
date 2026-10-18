@@ -3476,17 +3476,19 @@ live.
     in the browser's time zone), and the action row's primary **Continue
     to** the next step not done yet, a link.
   - *Loaded, no Families* (the newest full refresh succeeded, yet the
-    campaign has no Families, because its population matches no Family):
-    "The campaign's ParishSoft data loaded, but no Families matched.", with
-    **See the load** (the run's Background task) and **Review Campaign
-    settings** (the campaign's settings, which decide who is included). Every
-    stage is done, since the load ran and finished; the line after the boxes
-    is empty; and there is no button at all, not the plain Load again (a
-    load did run) and not Continue (the later steps need Families). Once
-    the settings are changed, the next full refresh, scheduled or run from
-    Refresh from ParishSoft outside the stepper, loads the Families. The
-    other Campaign setup pages show the same sentence, with the same
-    Campaign settings link, in place of the load offer.
+    campaign has no Families, because ParishSoft reported no active
+    Parishioner Families for it): "The campaign's ParishSoft data loaded,
+    but no Families matched. Check that ParishSoft has active Parishioner
+    Families, then load again.", with **See the load** (the run's
+    Background task) and **Refresh from ParishSoft** (which shows what
+    the load found). Every stage is done, since the load ran and finished;
+    the line after the boxes is empty; and there is no button at all, not
+    the plain Load again (a load did run) and not Continue (the later
+    steps need Families). Once ParishSoft has the Families, the next full
+    refresh, scheduled or run from Refresh from ParishSoft outside the
+    stepper, loads them. The other Campaign setup pages show the same
+    sentences, with the same Refresh from ParishSoft link, in place of the
+    load offer.
   - *Failed* (as above): "The campaign's ParishSoft data did not load.",
     with **See what went wrong**, which opens the run's Background task,
     the stage the run stopped in marked failed, and the primary **Try

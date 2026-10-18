@@ -527,9 +527,9 @@ def test_load_with_no_families_has_its_own_state(page, component_origin, width):
     assert summary.get_by_role("link", name="See the load").get_attribute(
         "href"
     ) == reverse("admin:background_task_page", args=[LOAD_RUN])
-    assert summary.get_by_role("link", name="Review Campaign settings").get_attribute(
+    assert summary.get_by_role("link", name="Refresh from ParishSoft").get_attribute(
         "href"
-    ) == reverse("admin:campaign_settings")
+    ) == reverse("admin:source_refresh")
     assert [state for _key, state in stage_states(page)] == ["done"] * 4
     assert region.get_by_role("button").count() == 0
     assert row.get_by_role("link", name="Continue to Share options").count() == 0

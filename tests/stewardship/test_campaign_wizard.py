@@ -893,14 +893,14 @@ def test_load_status_region_draws_one_state_each():
     assert "data-live-follow" in polled and 'href="#refresh-run"' in polled
     assert "is loaded." in polled and "data-live-pending" not in polled
     # A succeeded full load with no Families: its own wording, every box
-    # done, the run and the settings linked, and no button (#1587).
+    # done, the run and Refresh from ParishSoft linked, and no button (#1587).
     empty = load_region(
         **wizard.load_status(task_values("succeeded", task), families=False)
     )
     assert "loaded, but no Families matched." in empty and "is loaded." not in empty
     assert empty.count('data-stage-state="done"') == 4
     assert reverse("admin:background_task_page", args=[task]) in empty
-    assert reverse("admin:campaign_settings") in empty
+    assert reverse("admin:source_refresh") in empty
     assert "<button" not in empty and "hasn't been loaded" not in empty
 
 
