@@ -10,7 +10,9 @@ class SetupSealedCredential(MutableRecord):
 
     SQL column grants deny web/scheduler ciphertext reads. Only the matching
     target installer may decrypt a candidate. Loading freezes replacement;
-    terminal setup scrubs ciphertext atomically without erasing its receipt.
+    terminal setup scrubs ciphertext atomically without erasing its receipt,
+    and so does turning Slack off while collecting, for the Slack token
+    (#1499). A scrubbed row is never repopulated: a new token is a new row.
     """
 
     immutable_fields = MutableRecord.immutable_fields + ("attempt_id", "target")
@@ -25,8 +27,13 @@ class SetupSealedCredential(MutableRecord):
     class Meta(MutableRecord.Meta):
         db_table = "stewardship_setup_sealed_credential"
         constraints = MutableRecord.Meta.constraints + [
+            # One live (unscrubbed) row per target: a Slack token discarded
+            # by turning Slack off stays as the audit's tombstone beside a
+            # newly staged one (#1499).
             models.UniqueConstraint(
-                fields=["attempt", "target"], name="setup_secret_attempt_target"
+                fields=["attempt", "target"],
+                condition=models.Q(scrubbed_at=None),
+                name="setup_secret_one_live_target",
             ),
             models.CheckConstraint(
                 condition=models.Q(

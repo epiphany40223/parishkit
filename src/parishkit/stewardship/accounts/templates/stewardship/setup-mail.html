@@ -8,6 +8,7 @@
 <p>{% translate "This page updates by itself while a test is being sent, without extending your login's idle deadline." %}</p>{% endaboutpage %}
 <p class="notice">{% translate "Testing mode. The test goes only to the designated Testing recipient. This does not contact parishioners, satisfy a scheduled mailing, or activate the campaign." %}</p>
 <p>{% translate "Test recipient" %}: {{ testing_recipient }}</p>
+{# Drawn with the page, outside the in-place panel, so it never appears or leaves under the pointer (#1499). #}{% if retest %}<p data-setup-retest>{% translate "A setting changed, such as Slack turned off, so send the test email again." %}</p>{% endif %}
 <p class="visually-hidden" role="status" data-live-announcer="setup-test"></p>
 <div id="setup-test-panel" data-in-place-region>
 <section class="panel"><h2>{% translate "Send an explicit test" %}</h2>

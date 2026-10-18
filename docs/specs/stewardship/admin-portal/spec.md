@@ -225,7 +225,8 @@ same advice about a rejected key as the provider's
 [integration settings](#parish-and-integration-configuration), and links the
 steps that fix it: Outgoing email settings and Google Workspace connection
 for the email test, Slack notifications and Slack connection for the Slack
-test. Saving a fix opens the next step not done yet (Google Workspace
+test, which also offers [turning Slack off](#turning-slack-off-during-setup).
+Saving a fix opens the next step not done yet (Google Workspace
 connection when its key must be entered again, otherwise Test email), never
 Review first; when that step's prerequisites are missing, the save opens the
 step that needs work instead. Review's Readiness section says, for each
@@ -471,6 +472,45 @@ browser wizard behaves the same way.
 Restore is an operator command performed before bootstrap/wizard. A restored,
 valid configured database skips initial setup after version/migration and
 credential-reference checks.
+
+### Turning Slack off during setup
+
+Slack is optional, and an Administrator who turned it on can turn it off
+again at any point of setup, for example after a made-up or wrong token
+failed Test Slack
+([#1499](https://github.com/epiphany40223/parishkit/issues/1499)). The Slack
+connection step only checks the token's format and sends nothing, so a wrong
+token fails only at Test Slack; both pages say, in plain language, that Slack
+is optional and can be turned off. Each offers a **Turn off Slack
+notifications** button above its form, and a Slack test that was not sent says
+first "use a real Slack bot token, or turn Slack notifications off" with the
+same button beside it. The button is no separate action: it saves the Slack
+notifications step with Enable Slack notifications unticked and no channel,
+through that step's own save (exact draft version, CSRF, audit), exactly like
+unticking the box there and choosing Save and continue, and then opens the
+next step not done yet ([wizard rule 8](../ui-conventions/spec.md#wizards));
+since every save bumps the draft version, that is Test email when its test
+must be sent again, otherwise Review. The button's text says so before it is
+chosen, and Test email, while its only accepted test is from an earlier draft
+version, says that a setting changed (for example, Slack was turned off), so
+the test email is sent once more. The Slack notifications step's help says
+that turning Slack off discards the Slack token entered for this setup.
+
+Any save that leaves Slack off, from the button or from the Slack
+notifications step, continues as if Slack had never been enabled. In the same
+transaction it discards this setup's staged Slack bot token (its ciphertext
+and channel are scrubbed; the audit records `setup_credential_scrubbed` for
+the Administrator) and cancels a Slack test still waiting for the Slack
+installer, so nothing is posted to Slack afterwards; a test already handed to
+Slack keeps its recorded result. The Slack connection and Test Slack steps
+leave the step bar, Review and Finish setup no longer need a Slack test, and
+turning Slack on again asks for a new token and a new test. The staged
+credential's SQL guard admits that scrub only from the web, for the attempt's
+owner, while the attempt is collecting and its saved Slack step is off; the
+scrubbed row stays as the audit's tombstone, so at most one unscrubbed staged
+credential per target is kept. Slack notifications (optional) itself has no
+prerequisite: once saved it stays a link in the step bar from every step,
+whatever the state of the other steps, except while the parish data load runs.
 
 ## Navigation and home
 
