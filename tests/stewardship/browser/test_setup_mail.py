@@ -188,7 +188,9 @@ def test_status_error_retries_and_refusal_stops(page, component_origin):
     hidden(problem)
     page.clock.fast_forward(3000)
     recorded(page, polls, 3)
-    expect(problem).to_contain_text("Couldn't check status")
+    # The refusal line, in any wording (#1644): not the retry line.
+    expect(problem).to_contain_text("Couldn't check")
+    expect(problem).not_to_contain_text("retrying")
     page.clock.fast_forward(60000)
     page.wait_for_timeout(200)
     assert len(polls) == 3
@@ -288,7 +290,9 @@ def test_held_send_names_the_pending_test_and_a_failed_check(
     # A refused check stops watching; Send names why it still waits.
     page.clock.fast_forward(3000)
     recorded(page, polls, 3)
-    expect(problem).to_contain_text("Couldn't check status")
+    # The refusal line, in any wording (#1644): not the retry line.
+    expect(problem).to_contain_text("Couldn't check")
+    expect(problem).not_to_contain_text("retrying")
     assert named(send) == ["setup-test-pending", "setup-test-problem"]
     assert send.is_disabled()
     assert page.locator("#setup-test-problem").count() == 1

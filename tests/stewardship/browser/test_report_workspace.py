@@ -1,5 +1,6 @@
 """Real report templates retain exact values, native forms and accessible controls."""
 
+import re
 from uuid import UUID
 
 import pytest
@@ -228,9 +229,12 @@ def test_an_export_cancelled_elsewhere_settles_its_open_page(page, component_ori
     assert panel.evaluate("node => node.getBoundingClientRect().top") == top
     settled = len(reads)
     # Polling has stopped: no further read, and no "Couldn't check" line.
+    # The common prefix matches every wording of the refusal and retry lines
+    # ("Couldn't check status", "Couldn't check for updates", #1644), so a
+    # rewording cannot make this pass whatever the page says.
     page.wait_for_timeout(4000)
     assert len(reads) == settled == 2
-    assert page.get_by_text("Couldn't check status").count() == 0
+    assert page.get_by_text("Couldn't check").count() == 0
 
 
 def test_a_410_without_a_gone_sentence_stops_polling(page, component_origin):
@@ -259,7 +263,8 @@ def test_a_410_without_a_gone_sentence_stops_polling(page, component_origin):
     settled = len(reads)
     page.wait_for_timeout(4000)
     assert len(reads) == settled == 2
-    assert page.get_by_text("Couldn't check status — retrying.").count() == 0
+    # No retry line, in any wording (#1644).
+    assert page.get_by_text(re.compile(r"Couldn't check .*retrying")).count() == 0
 
 
 def test_queued_export_shows_what_it_waits_for(page, component_origin):
