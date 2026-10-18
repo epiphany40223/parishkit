@@ -4893,7 +4893,7 @@ Administrator emails' ids, one definer read per 500 of them and one query
 of the users, and then orders by a JSON object of their keys. The orderings are not indexed, so a page is a top-N sort of
 the filtered emails, as before.
 
-**Recipient reads (frozen migration 0115).** The web login has no grant on
+**Recipient reads (frozen migration 0116).** The web login has no grant on
 an email's rendering, which holds its subject and body beside the addresses
 ([outbox recipient reads](../data/spec.md#outbox-recipient-reads)). Two
 `SECURITY DEFINER` reads, with the caller and Administrator checks of

@@ -1,6 +1,6 @@
 """Sent mail's recipient reads, filters and every kind of email (#1562).
 
-Frozen migration 0115 adds ``stewardship_delivery_ids_for_address_v1`` (the
+Frozen migration 0116 adds ``stewardship_delivery_ids_for_address_v1`` (the
 emails meant for one address, through the GIN index
 ``outbox_render_intended_lower``) and
 ``stewardship_delivery_page_recipients_v1`` (the addresses of a page's
@@ -51,7 +51,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 FROZEN = (
     Path(__file__).resolve().parents[3]
-    / "src/parishkit/stewardship/schema/migrations/0115_sent_mail_recipients.sql"
+    / "src/parishkit/stewardship/schema/migrations/0116_sent_mail_recipients.sql"
 ).read_text(encoding="utf-8")
 CHECK = FROZEN[FROZEN.index("DO $check$") :]
 ADDRESS_FUNCTION = "public.stewardship_delivery_ids_for_address_v1(text, uuid)"
@@ -254,7 +254,7 @@ def test_the_index_serves_the_address_read(response_service):
 
 
 def test_the_check_passes_on_the_installed_reads():
-    """A migrated database has both reads and the index as 0115 declares."""
+    """A migrated database has both reads and the index as 0116 declares."""
     with connection.cursor() as cursor:
         cursor.execute(CHECK)
 
@@ -287,7 +287,7 @@ def test_the_check_refuses_a_missing_or_different_read(change):
     """Without either read or the index, or with any declared attribute
     changed, the DO block raises, so the migration would not commit."""
     with (
-        pytest.raises(DatabaseError, match="0115"),
+        pytest.raises(DatabaseError, match="0116"),
         transaction.atomic(),
         connection.cursor() as cursor,
     ):

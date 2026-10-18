@@ -340,7 +340,7 @@ class OutboxRender(ImmutableRecord):
         indexes = [
             # Sent mail's Recipient filter finds the emails meant for one
             # address, in any case, through an Administrator-only definer
-            # read (#1562, frozen migration 0115). Lower-casing the JSON
+            # read (#1562, frozen migration 0116). Lower-casing the JSON
             # text keeps it valid JSON, so containment works on the result.
             # The jsonb_path_ops operator class: the read uses only
             # containment (@>), which it answers with a smaller index than

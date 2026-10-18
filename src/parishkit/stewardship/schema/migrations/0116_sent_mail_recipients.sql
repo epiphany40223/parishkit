@@ -1,4 +1,4 @@
--- Frozen forward migration file 0115 (the repository-wide file sequence):
+-- Frozen forward migration file 0116 (the repository-wide file sequence):
 -- Sent mail's Recipient filter and Recipient column (#1562). This file is
 -- installed by its Django migration in the jobs app and must never change
 -- once released; tests/stewardship/test_schema_migration_files.py pins its
@@ -112,7 +112,7 @@ BEGIN
     IF to_regprocedure('public.stewardship_delivery_ids_for_address_v1(text,uuid)') IS NULL
        OR to_regprocedure('public.stewardship_delivery_page_recipients_v1(uuid[],uuid)') IS NULL
        OR to_regclass('public.outbox_render_intended_lower') IS NULL THEN
-        RAISE EXCEPTION 'Migration 0115 (Sent mail recipient reads) is not installed as declared';
+        RAISE EXCEPTION 'Migration 0116 (Sent mail recipient reads) is not installed as declared';
     END IF;
     IF (SELECT count(*) FROM pg_proc p
          WHERE p.oid IN ('public.stewardship_delivery_ids_for_address_v1(text,uuid)'::regprocedure,
@@ -129,7 +129,7 @@ BEGIN
           'public.stewardship_delivery_page_recipients_v1(uuid[],uuid)', 'EXECUTE')
        OR pg_get_indexdef('public.outbox_render_intended_lower'::regclass)
           <>'CREATE INDEX outbox_render_intended_lower ON public.stewardship_outbox_render USING gin (((lower((intended_recipients)::text))::jsonb) jsonb_path_ops)' THEN
-        RAISE EXCEPTION 'Migration 0115 (Sent mail recipient reads) is not installed as declared';
+        RAISE EXCEPTION 'Migration 0116 (Sent mail recipient reads) is not installed as declared';
     END IF;
 END
 $check$;

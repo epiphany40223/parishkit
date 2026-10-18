@@ -1654,7 +1654,7 @@ the web login still cannot `SELECT` any rendering column.
 
 [Sent mail](../admin-portal/spec.md#sent-mail) adds two reads of the same
 kind, with the same caller and actor checks, fixed search path and grants
-(frozen migration 0115,
+(frozen migration 0116,
 [#1562](https://github.com/epiphany40223/parishkit/issues/1562)).
 `stewardship_delivery_ids_for_address_v1(address, actor)` returns only the
 ids of the emails any of whose renderings has `address` among its intended

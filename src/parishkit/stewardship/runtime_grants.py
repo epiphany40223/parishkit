@@ -512,10 +512,10 @@ CLOSURE_FUNCTIONS = {
         "stewardship_reports",
         "0029_point_in_time_exports",
     ),
-    # Sent mail's recipient reads (0115, #1562).
+    # Sent mail's recipient reads (0116, #1562).
     **dict.fromkeys(
         (ADDRESS_DELIVERIES_FUNCTION, PAGE_RECIPIENTS_FUNCTION),
-        ("stewardship_jobs", "0033_sent_mail_recipients"),
+        ("stewardship_jobs", "0034_sent_mail_recipients"),
     ),
 }
 

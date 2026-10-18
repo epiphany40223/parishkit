@@ -138,7 +138,7 @@
 !src/parishkit/stewardship/schema/migrations/0111_setup_slack_off.sql
 !src/parishkit/stewardship/schema/migrations/0112_upstream_at_check.sql
 !src/parishkit/stewardship/schema/migrations/0113_census_handling_registry.sql
-!src/parishkit/stewardship/schema/migrations/0115_sent_mail_recipients.sql
+!src/parishkit/stewardship/schema/migrations/0116_sent_mail_recipients.sql
 !src/parishkit/stewardship/schema/due_work_health.sql
 !src/parishkit/stewardship/schema/family_dispatch.sql
 !src/parishkit/stewardship/schema/production.sql

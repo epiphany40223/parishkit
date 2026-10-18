@@ -367,7 +367,7 @@ def address_deliveries(address, actor_id):
     """The ids of the emails meant for ``address``, for Sent mail (#1562).
 
     Read through ``stewardship_delivery_ids_for_address_v1`` (frozen
-    migration 0115), which compares in lower case over the renderings'
+    migration 0116), which compares in lower case over the renderings'
     intended recipients, through their index, and returns nothing else.
     Raises ``PermissionError`` when it refuses ``actor_id`` (see
     ``_definer_rows``): the page then answers with its denial.
@@ -414,7 +414,7 @@ def administrator_addresses(ids, actor_id):
     """``{message id: address}`` for emails with no Family (#1562).
 
     Read through ``stewardship_delivery_page_recipients_v1`` (frozen
-    migration 0115), one call per ``PAGE_RECIPIENTS_LIMIT`` ids: a page
+    migration 0116), one call per ``PAGE_RECIPIENTS_LIMIT`` ids: a page
     makes one, the Recipient sort one per 500 such emails. A report or
     notice goes to one address; the first is kept. Raises
     ``PermissionError`` when the read refuses ``actor_id``.
@@ -440,7 +440,7 @@ def with_recipients(rows, actor_id):
     A Family email is named by its Family (``with_family_names``). An email
     with no Family (a report or notice, sent to one Administrator address)
     gains ``recipient_address``, read for the shown page through
-    ``stewardship_delivery_page_recipients_v1`` (frozen migration 0115),
+    ``stewardship_delivery_page_recipients_v1`` (frozen migration 0116),
     and ``recipient_name``, that address's Users-page Name or None: one
     definer read and one query, however many rows, and none when the page
     lists only Family emails. Raises ``PermissionError`` when the read

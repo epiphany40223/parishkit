@@ -3622,7 +3622,7 @@ Each change is recorded in System logs as on the page
   they printed `custom`, the word Pages and emails now shows (Edited; it
   was Customized). `empty` and `default` are unchanged. The only readers
   are Administrator-run assistants.
-- `pk-admin/1` (#1562, migration 0115): a change of meaning, kept on
+- `pk-admin/1` (#1562, migration 0116): a change of meaning, kept on
   version 1. `delivery list` follows Sent mail: `--search` is replaced by
   `--recipient`, which also takes an email address; `--purpose`, `--mode`,
   `--from`, `--to` and `--zone` are new, `--state` gains `needs_attention`,

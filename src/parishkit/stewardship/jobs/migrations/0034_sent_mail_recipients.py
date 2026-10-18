@@ -1,7 +1,7 @@
 """Forward migration: Sent mail's recipient filter and names (#1562).
 
-Its SQL is the frozen file ``schema/migrations/0115_sent_mail_recipients.sql``
-(prefix 0115, assigned centrally in the repository-wide file sequence), read
+Its SQL is the frozen file ``schema/migrations/0116_sent_mail_recipients.sql``
+(prefix 0116, assigned centrally in the repository-wide file sequence), read
 whole and never parsed. It adds the GIN index ``outbox_render_intended_lower``
 (operator class ``jsonb_path_ops``) over the renderings' lower-cased
 intended recipients and two
@@ -28,18 +28,17 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0115_sent_mail_recipients.sql"
+    / "0116_sent_mail_recipients.sql"
 )
 
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("stewardship_jobs", "0032_debug_off_clear_subject"),
-        # The migration that installed the previous frozen file (0110, the
-        # financial report's local days), so the files apply in prefix
-        # order. Repoint it at the migration that installs 0114 when 0111 to
-        # 0114 land first.
-        ("stewardship_reports", "0030_financial_local_days"),
+        # The jobs app's previous migration, which also installs the
+        # previous frozen file (0115, Clear the halt, #1555, which merges
+        # just before this one), so the app keeps one leaf and the files
+        # apply in prefix order.
+        ("stewardship_jobs", "0033_mail_halt_clear"),
     ]
 
     operations = [
