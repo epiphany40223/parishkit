@@ -4,11 +4,11 @@ Home is a starting point (admin-portal spec, "Home page"): below its
 overview it lists a few link cards chosen by the current campaign's state
 and the viewer's role, headed for a Ministry leader by one Today line. Every
 link comes from the viewer's own menu, so a next step is offered exactly
-when its menu entry is, greys out
-with the menu's own reason when the entry does, and is left out when the
-viewer's role has no such entry. Nothing here runs a query: the menu (with
-its open counts and the outgoing-mail warning count) is the chrome's, and the
-Today counts ride on Home's existing statements (``admin_dashboard``).
+when its menu entry is, greys out with the menu's own reason when the entry
+does, and is left out when the viewer's role has no such entry. Nothing here
+runs a query: the menu (with its open counts and the outgoing-mail warning
+count) is the chrome's, and the Today counts ride on Home's existing
+statements (``admin_dashboard``).
 """
 
 from typing import NamedTuple
