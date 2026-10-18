@@ -4852,14 +4852,12 @@ defaults to the system's current operating mode: Testing on a system in
 Testing mode (before Production is activated), Production on a Production
 system, so every link into the page from the status bar, Home, Family email
 progress, System health or the chosen-Family test lists that system's
-emails. It is a pair of link-styled buttons, the chosen one marked current,
-each a small CSRF form that posts
-the applied filters (the Recipient too) with its mode, redraws the list in
-place and returns to page 1; it follows the shared
-two-choice pattern (the Family timeline's Records shown) until the shared
-segmented control of
-[#1535](https://github.com/epiphany40223/parishkit/issues/1535) replaces it
-everywhere. A link from Family email history that names a send
+emails. It is the shared
+[segmented pair](../ui-conventions/spec.md#binary-choices), labelled Emails
+shown ([#1575](https://github.com/epiphany40223/parishkit/issues/1575)),
+whose segments are small CSRF forms: each posts the applied filters (the
+Recipient too) with its mode, redraws the list in place and returns to
+page 1. A link from Family email history that names a send
 (`send=<schedule>:<revision>:<mode>:<cycle>`) shows that send's mode unless
 it names a mode itself.
 
@@ -4867,7 +4865,7 @@ The Recipient filter names a person (an email address or a Family DUID),
 so it is private filter state
 ([Admin tables](../ui-conventions/spec.md#admin-tables)) and never reaches
 a URL: the filter form posts every filter in a CSRF-protected POST body,
-the table's navigator and headings, the mode buttons and the rows'
+the table's navigator and headings, the mode segments and the rows'
 Recipient buttons post them again, and the bulk actions' forms carry the
 applied Recipient beside their own fields so their answer's list keeps it.
 The other filters, sort and size may be linked: a GET (a bookmark, or a link
