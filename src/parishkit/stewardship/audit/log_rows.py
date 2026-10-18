@@ -426,6 +426,7 @@ UNGROUPED_REASONS = {
         "financial_report_viewed",
         "information_viewed",
         "ministry_followup_viewed",
+        "ministry_leader_coverage_viewed",
         "ministry_report_viewed",
         "participation_viewed",
         "portal_users_viewed",

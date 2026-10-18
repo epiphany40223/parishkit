@@ -922,6 +922,10 @@ DESCRIPTIONS = {
         "Someone opened Ministry requests (formerly Ministry follow-up) or one "
         "of its follow-up requests."
     ),
+    "ministry_leader_coverage_viewed": _(
+        "Someone read which Ministries have a leader who can sign in, for the "
+        "Leaders column on Ministry requests."
+    ),
     "ministry_request_updated": _("Someone updated follow-up on a Ministry request."),
     "ministry_followup_bulk_applied": _(
         "Someone recorded one outcome for several Ministry requests at once on "

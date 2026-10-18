@@ -390,6 +390,11 @@ LEADER_EMAILS_FUNCTION = "stewardship_leader_emails_v1(text, uuid)"
 # The report sends waiting on an earlier email, for an Administrator's Sent
 # mail and Mail message page (0165, #1872): ids and times, never an address.
 REPORT_WAITING_FUNCTION = "stewardship_report_email_waiting_v1(uuid)"
+# Ministry requests' Leaders column (#1594): for each Ministry with a
+# ParishSoft leader, only how many leader addresses, users and signed-in
+# users it has. Like the leaders read it takes no address, answers only a
+# live Admin session (Staff or an Administrator here) and audits every call.
+LEADER_COVERAGE_FUNCTION = "stewardship_ministry_leader_coverage_v1(text, uuid)"
 # One email's recipient addresses for its Mail message page (#1024): web
 # reads them, for an Administrator only, without any grant on the email's
 # rendering (its subject and body).
@@ -605,6 +610,11 @@ CLOSURE_FUNCTIONS = {
     ADDRESS_LEADER_SCOPE_FUNCTION: (
         "stewardship_accounts",
         "0033_address_leader_scope",
+    ),
+    # Ministry requests' Leaders column (0168, #1594).
+    LEADER_COVERAGE_FUNCTION: (
+        "stewardship_reports",
+        "0033_ministry_leader_coverage",
     ),
 }
 
@@ -881,7 +891,8 @@ def runtime_functions(role, *, target=None):
     names for the New user page's Name default, and the ParishSoft Ministry
     leaders who are no user yet for the Users page's import, and each
     Ministry leader user's Ministries and open request counts for its Email
-    Ministry leaders review (#1592). Web reads the
+    Ministry leaders review (#1592), and each Ministry's count-only leader
+    coverage for Ministry requests' Leaders column (#1594). Web reads the
     campaign comparison report's aggregates (#1018), and so does the general
     worker, for the daily digest's Compared with past campaigns section.
     The general worker also reads the archive's parts of each live answer
@@ -928,6 +939,7 @@ def runtime_functions(role, *, target=None):
                 MEMBER_NAMES_FOR_FUNCTION,
                 LEADERS_WITHOUT_USER_FUNCTION,
                 LEADER_EMAILS_FUNCTION,
+                LEADER_COVERAGE_FUNCTION,
                 RECIPIENTS_FUNCTION,
                 COMPARISON_FUNCTION,
                 ARCHIVE_RENEWAL_FUNCTION,

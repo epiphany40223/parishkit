@@ -74,7 +74,9 @@ def test_only_the_config_installer_may_read_the_catalog_function():
     # bounce (#806 slice 4), the campaign comparison report's aggregates
     # (#1018), and Sent mail's emails for one address and its page's
     # Administrator addresses (#1562), and the Ministries one user's address
-    # leads, for an Administrator reading that user's Timeline (#1925).
+    # leads, for an Administrator reading that user's Timeline (#1925), and,
+    # for Staff and Administrators, Ministry requests' count-only leader
+    # coverage (#1594).
     assert runtime_functions(ServiceRole.WEB) == {
         FAMILY_LOGIN_FUNCTION,
         "stewardship_family_daily_sends_v1()",
@@ -86,6 +88,7 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         "stewardship_member_names_for_v1(text, text, uuid)",
         "stewardship_leaders_without_user_v1(text, uuid)",
         "stewardship_leader_emails_v1(text, uuid)",
+        "stewardship_ministry_leader_coverage_v1(text, uuid)",
         "stewardship_delivery_recipients_v1(uuid, uuid)",
         "stewardship_campaign_comparison_v1(uuid, date, numeric[], uuid)",
         "stewardship_campaign_archive_renewal_v1(uuid, uuid, integer)",
