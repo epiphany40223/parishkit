@@ -108,8 +108,9 @@ def test_the_weekly_report_in_progress_is_shown_unavailable():
         # their export were retired (#1157), and the packet moved from the
         # summary page to its own include (#1133).
         ("ministry-packet.html", "ministry-export-locked", 1, 1),
-        # The Response dashboard's one export button (#1537).
-        ("response-dashboard.html", "participation-export-locked", 1, 1),
+        # The Response dashboard's export button, drawn once with a chart
+        # and once (also naming why no chart) without one (#1537).
+        ("response-dashboard.html", "participation-export-locked", 2, 1),
         ("information.html", "information-locked", 4, 1),
         # Save, Save and next, and (#1331) the bulk bar and both kinds of box.
         ("ministry-followup.html", "followup-locked", 6, 1),
@@ -158,8 +159,10 @@ def test_participation_exports_without_their_data_are_shown_unavailable():
         ("participation-chart-export-unavailable", "Generate export"),
     ]:
         assert text.count(f'id="{reason}"') == 1
+        # While exports are also held it names the hold's notice too (#1537).
         assert (
-            f'{{% button type="submit" enabled=False aria-describedby="{reason}" %}}'
+            '{% button type="submit" enabled=False aria-describedby=export_allowed'
+            f'|yesno:"{reason},{reason} participation-export-locked" %}}'
             f'{{% translate "{label}" %}}'
         ) in text
 
