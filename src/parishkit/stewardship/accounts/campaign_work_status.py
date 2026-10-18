@@ -26,6 +26,7 @@ from django.views.decorators.http import require_http_methods
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns import single_campaign
+from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.campaigns.work_locks import read_transaction
 from parishkit.stewardship.web.contracts import filters
 
@@ -70,6 +71,10 @@ def campaign_work_status(request):
             if view == "home":
                 configuration = editable_configuration(service)
                 offer = single_campaign.first_campaign_offer(configuration)
+                # No offer is "Campaign created" only when a campaign row
+                # exists; otherwise (say, switched to Production mode while
+                # held) the panel says what Home says with no campaign.
+                created = offer is None and Campaign.objects.exists()
             else:
                 # As the page: no edit is possible before setup or during a
                 # restore review, so the status is unavailable then too.
@@ -79,7 +84,7 @@ def campaign_work_status(request):
             response = render(
                 request,
                 "stewardship/home-first-campaign.html",
-                {"first_campaign": offer},
+                {"first_campaign": offer, "created": created, "swapped": True},
             )
         else:
             response = render(

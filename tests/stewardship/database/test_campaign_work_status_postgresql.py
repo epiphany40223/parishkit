@@ -21,7 +21,9 @@ from parishkit.stewardship.campaigns.runtime_models import CampaignWorkGate
 from ..test_source_corpus import source
 from .auth_builders import signed_in, unguarded
 from .campaign_builders import add_draft
+from .test_admin_reachability_postgresql import _sign_in
 from .test_campaign_views_postgresql import fields, post, url
+from .test_debug_production_banner_postgresql import force_mode
 from .test_parish_views_postgresql import digest
 from .test_source_families_postgresql import (  # noqa: F401
     publish,
@@ -152,6 +154,37 @@ def test_home_follows_the_hold_through_the_status(auth_service, google, monkeypa
     assert b'href="/admin/campaign/first/"' in ready.content
     assert AuditEvent.objects.count() == events
     assert activity() == before
+
+
+def test_home_status_says_created_only_with_a_campaign(auth_service, google):
+    """Once Home can no longer offer Create the campaign, the status says a
+    campaign has been created only while a campaign row exists: switched to
+    Production mode with none, it answers Home's no-campaign sentence."""
+    publish(source())
+    browser, _ = signed_in()
+    force_mode("production")
+    none = browser.get(HOME)
+    assert none.status_code == 200
+    assert b"Campaign created" not in none.content
+    assert b"There is no current campaign." in none.content
+    # A campaign is created only in Testing mode, so go back to add one.
+    force_mode("testing")
+    store = auth_service.store
+    add_draft(store, store.active(), uuid4())
+    created = browser.get(HOME)
+    assert created.status_code == 200
+    assert b"Campaign created" in created.content
+    assert b"There is no current campaign." not in created.content
+
+
+def test_status_refuses_a_reader_without_configure(auth_service, google):
+    """A signed-in Staff user, who may not configure, is refused (403) for
+    either view, so the status shows nothing beyond Configure holders."""
+    publish(source())
+    browser = _sign_in(auth_service.store, google, "staff")
+    assert browser.get("/admin/").status_code == 200
+    assert browser.get(SETTINGS).status_code == 403
+    assert browser.get(HOME).status_code == 403
 
 
 def test_status_refuses_bad_views_and_signed_out_callers(auth_service, google):

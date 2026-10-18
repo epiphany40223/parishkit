@@ -137,6 +137,7 @@ def components(context, admin):
             "stewardship/home-first-campaign.html", {"first_campaign": "held"}
         ),
         HOME_READY: fragment(
-            "stewardship/home-first-campaign.html", {"first_campaign": "ready"}
+            "stewardship/home-first-campaign.html",
+            {"first_campaign": "ready", "swapped": True},
         ),
     }

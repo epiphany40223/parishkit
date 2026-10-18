@@ -84,10 +84,13 @@ def test_settings_status_region_pending_then_follow_up():
     assert "can change now" in ended
 
 
-def home(offer):
-    """Home's first-campaign panel for ``offer`` (first_campaign_offer)."""
+def home(offer, **context):
+    """Home's first-campaign panel for ``offer`` (first_campaign_offer).
+
+    ``context`` adds the status answer's ``created`` and ``swapped``.
+    """
     return render_to_string(
-        "stewardship/home-first-campaign.html", {"first_campaign": offer}
+        "stewardship/home-first-campaign.html", {"first_campaign": offer} | context
     )
 
 
@@ -102,7 +105,7 @@ def test_home_panel_is_followed_only_while_held():
     assert "becomes available here by itself" in held
     assert "Reload" not in held
     assert 'aria-describedby="create-campaign-reason"' in held
-    ready = home("ready")
+    ready = home("ready", swapped=True)
     assert "data-live-pending" not in ready
     assert f'href="{reverse("admin:campaign_create")}"' in ready
     assert 'data-live-announce="Create the campaign is available now."' in ready
@@ -111,5 +114,26 @@ def test_home_panel_is_followed_only_while_held():
     assert '<p aria-hidden="true">Create the campaign becomes' in ready
     assert '<p aria-hidden="true">Setup is complete. Next' in held
     assert "data-live-pending" not in home("source")
-    created = home(None)
+    created = home(None, created=True, swapped=True)
     assert "Campaign created" in created and "No campaign yet" not in created
+
+
+def test_home_ready_without_a_hold_draws_no_held_copy():
+    """Only the status's swapped answer keeps the held sentence's room: a
+    Home drawn ready, never held, has no invisible copy and so no blank
+    space under its sentence."""
+    drawn = home("ready")
+    assert "Setup is complete. Next" in drawn
+    assert 'aria-hidden="true"' not in drawn
+    assert "becomes available here by itself" not in drawn
+
+
+def test_home_status_says_created_only_when_a_campaign_exists():
+    """With no offer and no campaign row (say, switched to Production mode
+    while held), the status's answer is Home's own no-campaign sentence,
+    not "Campaign created"."""
+    none = home(None, created=False, swapped=True)
+    assert "Campaign created" not in none
+    assert "has been created" not in none
+    assert "There is no current campaign." in none
+    assert "data-live-pending" not in none
