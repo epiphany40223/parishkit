@@ -24,6 +24,7 @@ from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.refusals import (
     UserFacingError,
+    UserFacingStale,
     unexpected_fields,
     with_default_code,
 )
@@ -591,13 +592,23 @@ def _key_review(request, configuration, actor, target):
     value (the organization lock, #1496) or a key with a refresh schedule
     change is the settings page again with status 400, at its field, with
     the dialog shut; an out-of-date page or a key field's request that is
-    expired, altered or another Administrator's raises its refusal, which
-    the dialog shows. Otherwise the answer is ``integration-review.html``'s
+    expired, altered or another Administrator's, or an earlier key change
+    still installing (409), raises its refusal, which the dialog shows.
+    Otherwise the answer is ``integration-review.html``'s
     key confirmation, listing any other setting saved with the key, old
     -> new. The browser names the key by its last characters; the server
     draws no part of it.
     """
     record = _optional(configuration, target)
+    # The page hides the key field while a key change is installing, so
+    # only another tab gets here; refuse now rather than let its Apply meet
+    # the intake guard's generic "temporarily unavailable" answer.
+    latest = key_summary(configuration, target)
+    if latest is not None and latest.kind == "pending":
+        raise UserFacingStale(
+            _("A new key is already being installed."),
+            fix=_("Reload the page to follow it, then paste the key again."),
+        )
     form = _form(target, request.POST, stored=record)
     # The key field's own form, without the key: only its signed request.
     credential = InlineCredentialForm(
@@ -987,9 +998,10 @@ def integration_settings(request, target=None):
             # #1568) is posted without the key, which goes only with Apply.
             pasted = request.POST.get("candidate", "").strip()
             if action == "preview" and "key_review" in request.POST:
-                if pasted or request.POST["key_review"] != "yes":
-                    # A review never takes a key; the refusal names no field,
-                    # so the refusal log never records the pasted value's.
+                if pasted or request.FILES or request.POST["key_review"] != "yes":
+                    # A review never takes a key, not even as an uploaded
+                    # file; the refusal names no field, so the refusal log
+                    # never records the pasted value's.
                     # No sources: the fields are allowed, their values are not.
                     raise unexpected_fields()
                 response = _key_review(request, configuration, actor, target)

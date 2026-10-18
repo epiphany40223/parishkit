@@ -1059,6 +1059,46 @@ def test_a_key_review_never_takes_a_key(auth_service, google, handoff, fields):
     assert nothing_staged()
 
 
+def test_a_key_review_never_takes_an_uploaded_key(auth_service, google, handoff):
+    """A key's Review posted multipart with the key as a ``candidate`` file
+    part is refused like a pasted one (400), and the key never echoed."""
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    browser, _ = signed_in()
+    upload = SimpleUploadedFile("key.txt", SECRET.encode())
+    refused = key_review(browser, browser.get(URL), candidate=upload)
+    assert refused.status_code == 400
+    assert b"this page sent something the server did not expect" in refused.content
+    assert SECRET.encode() not in refused.content
+    assert nothing_staged()
+
+
+def test_a_key_review_waits_for_a_key_change_installing(auth_service, google, handoff):
+    """A second tab's key Review while the first tab's key is still
+    installing is refused in plain words (409), before its Apply could meet
+    the intake guard; only the first key is staged and nothing is echoed."""
+    browser, _ = signed_in()
+    with identity("pk_stewardship_web"):
+        first, second = browser.get(URL), browser.get(URL)
+        applied = fetch(
+            browser,
+            URL,
+            {
+                "action": "preview",
+                "base_digest": hidden(first, "base_digest"),
+                "organization_id": "12345",
+                "intent": hidden(first, "intent"),
+                "candidate": SECRET,
+            },
+        )
+        assert applied.status_code == 302, applied.content
+        refused = key_review(browser, second)
+    assert refused.status_code == 409, refused.content
+    assert b"A new key is already being installed." in refused.content
+    assert SECRET.encode() not in refused.content
+    assert SecretReplacementRequest.objects.count() == 1
+
+
 @pytest.mark.parametrize("refusal", ["schedule", "locked", "forged", "stale"])
 def test_a_key_review_refuses_before_apply(
     auth_service, google, handoff, monkeypatch, refusal

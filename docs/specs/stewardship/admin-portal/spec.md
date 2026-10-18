@@ -1796,6 +1796,10 @@ everything a key save checks except the key itself (the fields, the key
 field's signed one-hour request, that the request is this Administrator's
 for this integration, the version, the organization lock and that the
 refresh schedule is not changed with it) and draws no part of the key.
+A Review that carries a key, as a field or as an uploaded file, is refused
+as unexpected input without echoing it; a Review while this integration's
+earlier key change is still being installed is refused in the dialog ("A
+new key is already being installed"), since its Apply could not be staged.
 A refusal at a field (the organization ID, a key with a schedule change,
 shown at the key field) keeps the dialog shut and the key in its field;
 another refusal (an out-of-date page, a request older than an hour or
