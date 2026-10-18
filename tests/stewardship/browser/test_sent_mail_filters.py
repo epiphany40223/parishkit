@@ -14,7 +14,7 @@ from urllib.parse import parse_qs
 import pytest
 
 from .keyboard import tab_to_next
-from .waits import eventually, has_text, visible
+from .waits import eventually, has_text, recorded, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -59,15 +59,17 @@ def answer_with(page, component_origin, fixture):
     """Answer every POST to the list page with ``fixture``'s page.
 
     Returns the bodies posted, each parsed. The page itself (a GET) keeps
-    its ordinary fixture.
+    its ordinary fixture, whatever query an answer put in its address (a
+    reload of that address).
     """
     body = page.request.get(component_origin + fixture).text()
+    listed = page.request.get(component_origin + PAGE).text()
     sent = []
 
     def handle(route):
-        """Fulfil a filtered read with the fixture; let the page through."""
+        """Fulfil a filtered read with the fixture; the page with its own."""
         if route.request.method != "POST":
-            route.continue_()
+            route.fulfill(status=200, body=listed, content_type="text/html")
             return
         sent.append(parse_qs(route.request.post_data or "", keep_blank_values=True))
         route.fulfill(status=200, body=body, content_type="text/html")
@@ -300,3 +302,178 @@ def test_a_through_day_before_from_holds_apply(page, component_origin):
     assert button.is_disabled()
     has_text(hint, "Enter a whole Through date, no earlier than From, or clear it.")
     assert hint.evaluate("node => node.getBoundingClientRect().height") == height
+
+
+# Where the first row's Recipient and its table sit, the page's size, and
+# how far the page is scrolled.
+RECIPIENT_PLACE = """() => {
+    const link = document.querySelector('tbody .recipient-link');
+    const place = (node) => { const box = node.getBoundingClientRect();
+        return [box.left, box.top, box.width, box.height]; };
+    return [...place(link), ...place(link.closest('table')),
+        document.documentElement.scrollWidth, document.documentElement.scrollHeight,
+        scrollX, scrollY];
+}"""
+
+
+@pytest.mark.parametrize("width", [1280, 390])
+def test_hovering_a_recipient_moves_nothing(page, component_origin, width):
+    """Hovering a row's Recipient changes only its look (#736): the name,
+    its table and the page keep their places and size. The resting link
+    once kept the table's compact button padding that its hover look drops,
+    so the name moved left under the pointer."""
+    open_list(page, component_origin, width=width)
+    link = page.locator("tbody .recipient-link").first
+    link.scroll_into_view_if_needed()
+    page.mouse.move(0, 0)
+    before = page.evaluate(RECIPIENT_PLACE)
+    link.hover()
+    # Past the buttons' colour transition.
+    page.wait_for_timeout(300)
+    after = page.evaluate(RECIPIENT_PLACE)
+    assert all(abs(a - b) <= 1 for a, b in zip(before, after, strict=True)), (
+        before,
+        after,
+    )
+    assert link.evaluate("node => getComputedStyle(node).paddingLeft") == "0px"
+
+
+def recipient_shown(page):
+    """The Recipient filter field's value."""
+    return page.locator("#delivery-recipient").input_value()
+
+
+def test_back_after_a_recipient_returns_to_the_list_before(page, component_origin):
+    """A row's Recipient adds a history entry (#1562): the field shows the
+    recipient, the address never does, and Back redraws the list before it
+    in place, its field with it; Forward shows the recipient's list again,
+    posting it afresh. The Recipient is kept in history state only."""
+    sent = answer_with(page, component_origin, "/deliveries-applied")
+    open_list(page, component_origin)
+    start = page.url
+    assert page.locator("tbody tr").count() == 4
+    page.locator("tbody tr").first.get_by_role(
+        "button", name="Castellanos, Maximiliana and Bartholomew"
+    ).click()
+    eventually(page, "document.querySelectorAll('tbody tr').length", 1)
+    assert recipient_shown(page) == "12345"
+    assert "12345" not in page.url and "recipient" not in page.url
+    assert page.evaluate("history.state.inPlaceView") == [
+        ["recipient", "12345"],
+        ["mode", "production"],
+    ]
+    page.go_back()
+    eventually(page, "document.querySelectorAll('tbody tr').length", 4)
+    assert recipient_shown(page) == ""
+    assert page.url == start
+    assert page.evaluate(MARKED) == "kept"
+    page.go_forward()
+    eventually(page, "document.querySelectorAll('tbody tr').length", 1)
+    assert recipient_shown(page) == "12345"
+    assert page.evaluate(MARKED) == "kept"
+    recorded(page, sent, 2)
+    assert sent[1]["recipient"] == ["12345"] and sent[1]["mode"] == ["production"]
+    assert sent[1]["csrfmiddlewaretoken"]
+
+
+def test_back_redraws_the_filters_applied_before(page, component_origin):
+    """A view the filter form drew (a POST) is drawn again on Back with the
+    same body, so the Recipient typed there comes back too."""
+    sent = answer_with(page, component_origin, "/deliveries-applied")
+    open_list(page, component_origin)
+    page.locator("#delivery-recipient").fill("777")
+    page.get_by_role("button", name="Apply filters").click()
+    eventually(page, "document.querySelectorAll('tbody tr').length", 1)
+    page.locator("tbody .recipient-link").first.click()
+    eventually(page, "history.state && history.state.inPlaceView[0][1]", "12345")
+    recorded(page, sent, 2)
+    page.go_back()
+    recorded(page, sent, 3)
+    # The fixture answers every POST with one page, so the body posted
+    # again is what shows the view before was asked for.
+    assert sent[2]["recipient"] == ["777"] and sent[2]["state"] == ["all"]
+    assert page.evaluate(MARKED) == "kept"
+
+
+def test_a_reload_shows_its_address_view(page, component_origin):
+    """A reload draws the page from its address, without the Recipient:
+    the list and the empty Recipient field agree, and the entry forgets the
+    view a POST drew there."""
+    answer_with(page, component_origin, "/deliveries-applied")
+    open_list(page, component_origin)
+    page.locator("tbody .recipient-link").first.click()
+    eventually(page, "document.querySelectorAll('tbody tr').length", 1)
+    page.reload()
+    assert page.locator("tbody tr").count() == 4
+    assert recipient_shown(page) == ""
+    assert page.evaluate("history.state.inPlaceView") is None
+
+
+def test_back_never_sends_a_bulk_confirm_again(page, component_origin):
+    """Sent mail's bulk Preview and Confirm are saves posted to the page's
+    own address, whose answers draw that address (#1571): their entries
+    keep no body, so Back to them draws the address by GET and never sends
+    a Preview or a Confirm again. A body naming an action, however it got
+    into history, is never re-sent either."""
+    from .delivery_components import LIST_ACTION, OWN_ACTION
+
+    def fixture(path):
+        """The fixture server's page at ``path``."""
+        return page.request.get(component_origin + path).text()
+
+    listed = fixture(OWN_ACTION)
+    saves = [fixture(OWN_ACTION + "-review"), fixture(OWN_ACTION + "-result")]
+    # A Recipient's answer, drawn at this page's own address too, so its
+    # entry is pushed (an answer drawing another page's address is not).
+    read = fixture("/deliveries-applied").replace(LIST_ACTION, OWN_ACTION)
+    sent, drawn = [], []
+
+    def handle(route):
+        """Answer a save with its next page, a read with one row, a GET
+        with the list; note every request."""
+        if route.request.method != "POST":
+            drawn.append(route.request.url)
+            route.fulfill(status=200, body=listed, content_type="text/html")
+            return
+        fields = parse_qs(route.request.post_data or "", keep_blank_values=True)
+        sent.append(fields)
+        body = saves.pop(0) if "action" in fields else read
+        route.fulfill(status=200, body=body, content_type="text/html")
+
+    page.route(component_origin + OWN_ACTION + "*", handle)
+    page.goto(component_origin + OWN_ACTION)
+    page.evaluate(MARK)
+    page.locator("#bulk-panel summary").click()
+    retry = page.locator("#bulk-retry_failed")
+    retry.locator("textarea[name=note]").fill("Gmail was down from 2 to 3 PM.")
+    retry.get_by_role("button", name="Preview retry").click()
+    page.get_by_role("button", name="Retry 3 emails").click()
+    page.get_by_role("heading", name="Partly done").wait_for()
+    recorded(page, sent, 2)
+    assert [fields["action"] for fields in sent] == [["preview"], ["confirm"]]
+    # The Confirm's answer set the address, and its entry keeps no body.
+    assert page.url.startswith(component_origin + OWN_ACTION + "?")
+    assert page.evaluate("history.state.inPlaceView") is None
+    # A Recipient (a read) adds an entry; Back returns to the Confirm's.
+    page.locator("tbody .recipient-link").first.click()
+    eventually(page, "history.length", 3)
+    assert recipient_shown(page) == "12345"
+    recorded(page, sent, 3)
+    assert "action" not in sent[2]
+    page.go_back()
+    # The page's load, then Back's redraw of the address by GET.
+    recorded(page, drawn, 2)
+    eventually(page, "document.querySelector('#delivery-recipient').value", "")
+    # Defense in depth: an entry whose body names an action draws its
+    # address by GET instead of posting it.
+    page.evaluate(
+        """() => {
+            history.replaceState({inPlaceView: [['action', 'confirm'],
+                ['preview', 'signed-preview']]}, '');
+            history.pushState({inPlaceView: null}, '');
+        }"""
+    )
+    page.go_back()
+    recorded(page, drawn, 3)
+    assert len(sent) == 3
+    assert page.evaluate(MARKED) == "kept"

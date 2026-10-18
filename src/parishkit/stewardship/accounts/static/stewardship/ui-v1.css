@@ -1107,8 +1107,12 @@ details.filter-panel[data-filter-panel] > form:not(.filter-bar) > fieldset > div
   .mail-title > #delivery-mode .segmented-choice { margin: 0; }
 }
 /* A row's Recipient is a link-styled button posting the private recipient
-   (#1562): it reads as a link in its cell, never as a portal button. */
-.recipient-link, .recipient-link:not(:disabled):hover { min-height: 0; margin: 0; padding: 0; border: 0; vertical-align: baseline; background: none; box-shadow: none; color: var(--link); line-height: inherit; text-align: start; }
+   (#1562): it reads as a link in its cell, never as a portal button. The
+   resting selector names .data-table so it outranks the table's compact
+   button rule (.data-table button), as the hover selector outranks the
+   portal hover: otherwise the rest look had that rule's padding and the
+   hover look had none, and the name moved under the pointer (#736). */
+.data-table .recipient-link, .recipient-link:not(:disabled):hover { min-height: 0; margin: 0; padding: 0; border: 0; vertical-align: baseline; background: none; box-shadow: none; color: var(--link); line-height: inherit; text-align: start; }
 .filter-bar button { margin: 0; }
 /* A filter bar's hint row with the server's refusal over the gate's hint
    (.hint-row-messages, the Family directory's Exact Family code, #1332)

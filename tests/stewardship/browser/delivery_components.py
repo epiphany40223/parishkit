@@ -42,6 +42,19 @@ POSTS = {CLEAR: (303, CLEARED, ""), BOUNCE: (303, REPORTED, "")}
 LIST_ACTION = "/deliveries-names"
 
 
+# A Sent mail page that posts to, and draws, its own address (#1571).
+OWN_ACTION = "/deliveries-own"
+
+
+def at_own_address(context):
+    """``context`` with its table posting to, and its view drawn at,
+    OWN_ACTION instead of LIST_ACTION."""
+    return context | dict(
+        table=replace(context["table"], action=OWN_ACTION),
+        page_address=OWN_ACTION + "?size=25&sort=-changed",
+    )
+
+
 def mode_fields(*kept):
     """The fields each Production / Testing segment posts besides its mode,
     as the view draws them (#1575): the applied filters, size and sort."""
@@ -289,48 +302,46 @@ def components(now):
             "confirm_unsent": {"total": 1, "purposes": [("reminder", 1)]},
         },
     )
+    review = bulk | dict(
+        bulk_review=dict(
+            kind="retry_failed",
+            purpose="all",
+            count=3,
+            note="Gmail was down from 2 to 3 PM.",
+            token="signed-preview",
+            form="bulk-retry_failed",
+        )
+    )
+    result = bulk | dict(
+        table=sent_table(
+            PageWindow(1, 25),
+            [failed | dict(state="pending")],
+            False,
+            total=(1, False),
+            sorting=DELIVERY_SORTING,
+            sort=DELIVERY_SORTING.default,
+        ),
+        bulk_result=BulkResult(
+            kind="retry_failed",
+            purpose="all",
+            total=250,
+            resolved=100,
+            newly=100,
+            skipped=2,
+            remaining=148,
+            token="signed-continue",
+        ),
+        bulk_note="Gmail was down from 2 to 3 PM.",
+    )
     yield "/deliveries-bulk", "deliveries", bulk
-    yield (
-        "/deliveries-bulk-review",
-        "deliveries",
-        bulk
-        | dict(
-            bulk_review=dict(
-                kind="retry_failed",
-                purpose="all",
-                count=3,
-                note="Gmail was down from 2 to 3 PM.",
-                token="signed-preview",
-                form="bulk-retry_failed",
-            )
-        ),
-    )
-    yield (
-        "/deliveries-bulk-result",
-        "deliveries",
-        bulk
-        | dict(
-            table=sent_table(
-                PageWindow(1, 25),
-                [failed | dict(state="pending")],
-                False,
-                total=(1, False),
-                sorting=DELIVERY_SORTING,
-                sort=DELIVERY_SORTING.default,
-            ),
-            bulk_result=BulkResult(
-                kind="retry_failed",
-                purpose="all",
-                total=250,
-                resolved=100,
-                newly=100,
-                skipped=2,
-                remaining=148,
-                token="signed-continue",
-            ),
-            bulk_note="Gmail was down from 2 to 3 PM.",
-        ),
-    )
+    yield "/deliveries-bulk-review", "deliveries", review
+    yield "/deliveries-bulk-result", "deliveries", result
+    # The same three pages served at an address that is also where they
+    # post and the address they draw (OWN_ACTION), as the real Sent mail
+    # page is: Preview's and Confirm's answers then set the address, so a
+    # test sees what history keeps of them (#1571).
+    for suffix, context in (("", bulk), ("-review", review), ("-result", result)):
+        yield OWN_ACTION + suffix, "deliveries", at_own_address(context)
     yield (
         "/deliveries-bulk-refused",
         "deliveries",

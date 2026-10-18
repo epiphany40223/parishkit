@@ -1107,7 +1107,17 @@
   // another control's answer or a redraw: Hosted files' Upload panel keeps a
   // chosen file and a typed name across a sort, a page or a deletion, which
   // a fresh copy would discard (#519).
+  // A page whose filter form is marked data-in-place-views (Sent mail,
+  // #1562) keeps, in each history entry, how to draw the view it shows: the
+  // POST body of the read that drew it (never its CSRF token), or none
+  // for a view drawn from its address or by a save. A form marked data-in-place-push (a
+  // row's Recipient) adds a history entry for its answer instead of
+  // replacing the address, and Back or Forward redraws that entry's view in
+  // place (the popstate handler below), so a private filter that never
+  // reaches a URL still has a Back. A reload draws the page from its
+  // address, so it shows that view, its filter fields with it.
   const REGIONS = "[data-in-place-region][id], [data-table-region][id]";
+  const VIEWS_FORM = "form#table-filters[data-in-place-views]";
   const ownedElsewhere = (other, region) => other !== region
     && other.hasAttribute("data-in-place-own");
   // The control whose answer is being swapped in, while refreshRegions swaps
@@ -1643,7 +1653,10 @@
   // options.owner is the data-in-place link or form behind the control (null
   // for a table control; see focusAfter); options.form is the
   // form a saving data-in-place POST came from (a form="…" submitter can sit
-  // outside it).
+  // outside it). options.filters makes the filter form show the answer's
+  // filters (syncFilters), as a data-in-place-filters owner does;
+  // options.popped marks a Back or Forward redraw (see VIEWS_FORM), whose
+  // history entry is left as it is.
   const refreshTable = async (region, control, url, init, fallback, options = {}) => {
     if (saving) {
       // The control was ignored; say why rather than doing nothing visibly.
@@ -1915,7 +1928,7 @@
       swappingFor = null;
     }
     if (!anywhere) syncControls(parsed);
-    if (owner?.hasAttribute("data-in-place-filters")) syncFilters(parsed);
+    if (owner?.hasAttribute("data-in-place-filters") || options.filters) syncFilters(parsed);
     // A report's filters refused at a field (#1332) are drawn again with
     // that field marked, but the filter form keeps its element and the
     // values typed (syncControls), so the marks and messages are copied
@@ -1958,6 +1971,28 @@
     // that draws its own address (a[data-page-address], System logs' link
     // to its filters, #536) puts that in the address bar: the server built
     // it from only the filters a link may carry, never an identifier.
+    // On a page that keeps its views in history (data-in-place-views, see
+    // REGIONS) the entry also records this view, unless this answer is
+    // itself a Back or Forward redraw, whose entry already holds it.
+    const views = !anywhere && !refused && !options.popped
+      && Boolean(document.querySelector(VIEWS_FORM));
+    const setAddress = (href) => {
+      if (!views) {
+        window.history.replaceState(window.history.state, "", href);
+        return;
+      }
+      // Only a read's body is kept, as only a read is safe to send again:
+      // the filter form or a table control (no owner) or a form marked
+      // data-in-place-read (a row's Recipient). A save on the same page
+      // (Sent mail's bulk Preview and Confirm) keeps none, so Back or
+      // Forward to its entry draws the address by GET (#1571).
+      const read = !owner || owner.hasAttribute("data-in-place-read");
+      const body = read && init.method === "POST" && init.body instanceof URLSearchParams
+        ? [...init.body].filter(([name]) => name !== "csrfmiddlewaretoken") : null;
+      const state = {...(window.history.state || {}), inPlaceView: body};
+      if (owner?.hasAttribute("data-in-place-push")) window.history.pushState(state, "", href);
+      else window.history.replaceState(state, "", href);
+    };
     if (!anywhere && response.redirected) {
       // A form may name one-time answer parameters (data-in-place-forget,
       // space-separated) that say what just happened, such as a notice; they
@@ -1965,13 +2000,13 @@
       const address = new URL(withFragment(response.url, id), document.baseURI);
       (owner?.getAttribute("data-in-place-forget") || "").split(/\s+/).filter(Boolean)
         .forEach((name) => address.searchParams.delete(name));
-      window.history.replaceState(window.history.state, "", address.href);
+      setAddress(address.href);
     } else if (!anywhere && init.method !== "POST") {
-      window.history.replaceState(window.history.state, "", options.quiet ? keepHash(url) : url);
+      setAddress(options.quiet ? keepHash(url) : url);
     } else if (!anywhere && !refused && address) {
       const href = new URL(address, window.location.href);
       if (href.origin === window.location.origin && href.pathname === window.location.pathname) {
-        window.history.replaceState(window.history.state, "", keepHash(href.href));
+        setAddress(keepHash(href.href));
       }
     } else if (!anywhere && !refused) {
       // A follow-up queue names its remembered view by an opaque token
@@ -2162,6 +2197,38 @@
     refreshTable(region, control, action.href, init, load, {owner, form: save ? form : null})
       .finally(settle);
   }, true);
+  // Back or Forward within a page that keeps its views in history
+  // (VIEWS_FORM, #1562) redraws the entry's view in place: its recorded
+  // POST body with the filter form's current CSRF token, or else its
+  // address by GET. Quietly, as the reader did not choose a control here:
+  // focus stays where it is. The filter form shows the view's filters
+  // (options.filters). Should no answer come, the page reloads from its
+  // address, which draws that address's view.
+  window.addEventListener("popstate", (event) => {
+    const filters = document.querySelector(VIEWS_FORM);
+    const region = document.querySelector("[data-table-region][id]");
+    if (!filters || !region) return;
+    const body = event.state?.inPlaceView;
+    const reload = () => window.location.reload();
+    const options = {quiet: true, filters: true, popped: true};
+    // A body naming an action is a save (a bulk Preview or Confirm), never
+    // re-sent even if one was recorded: the address is drawn instead.
+    if (Array.isArray(body) && !body.some(([name]) => name === "action")) {
+      const fields = new URLSearchParams(body);
+      const token = filters.querySelector("input[name=csrfmiddlewaretoken]")?.value;
+      if (token) fields.set("csrfmiddlewaretoken", token);
+      const action = new URL(filters.getAttribute("action") || "", document.baseURI);
+      refreshTable(region, filters, action.href, {method: "POST", body: fields}, reload, options);
+    } else {
+      refreshTable(region, filters, window.location.href, {method: "GET"}, reload, options);
+    }
+  });
+  // A load (a reload, or a return the back/forward cache did not keep)
+  // draws the page from its address, so its entry forgets any view a POST
+  // drew there: Back and Forward then agree with what this load shows.
+  if (window.history.state?.inPlaceView && document.querySelector(VIEWS_FORM)) {
+    window.history.replaceState({...window.history.state, inPlaceView: null}, "");
+  }
   // An in-place review (Sent mail's bulk review, #382; Past campaigns'
   // import, #1018) shows what its form's last Review would change, in an
   // element marked data-review-of="<form id>", with Apply. Editing that form again makes
