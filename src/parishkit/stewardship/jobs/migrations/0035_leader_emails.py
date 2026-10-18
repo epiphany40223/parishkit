@@ -1,8 +1,8 @@
 """Forward migration: Ministry leader emails, sent by hand (#1592).
 
-Its SQL is the frozen file ``schema/migrations/0117_leader_emails.sql``
-(prefix 0117 in the repository-wide file sequence; provisional until the
-files before it, 0114 to 0116, are merged), read whole and never parsed. It
+Its SQL is the frozen file ``schema/migrations/0120_leader_emails.sql``
+(prefix 0120 in the repository-wide file sequence), read whole and never
+parsed. It
 creates the request, cohort and recipient tables with their guards, the
 facts function and the Users page's review read, the preparation and
 dispatch admissions of the new outbox purpose ``leader_email``, adds the
@@ -32,20 +32,19 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0117_leader_emails.sql"
+    / "0120_leader_emails.sql"
 )
 
 
 class Migration(migrations.Migration):
     dependencies = [
         # The jobs app's previous migration.
-        ("stewardship_jobs", "0032_debug_off_clear_subject"),
-        # The migration that installs the previous frozen file (0113, the
-        # census handling registry, #1596), so the files apply in prefix
-        # order; 0114 to 0116 belong to open pull requests, and this names
-        # the migration that installs 0116 once they merge. It follows the
-        # users swap, so `migrate --users-upgrade-base` never applies it.
-        ("stewardship_responses", "0011_census_handling_registry"),
+        ("stewardship_jobs", "0034_sent_mail_recipients"),
+        # The migration that installs the previous frozen file (0119,
+        # leader request contacts, #1591), so the files apply in prefix
+        # order. It follows the users swap, so
+        # `migrate --users-upgrade-base` never applies it.
+        ("stewardship_reports", "0031_leader_request_contacts"),
         ("stewardship_accounts", "0026_setup_slack_off"),
         ("stewardship_campaigns", "0013_any_creation_timezone"),
     ]

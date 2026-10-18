@@ -1,6 +1,6 @@
 """Email Ministry leaders, sent by hand (#1592), under the real database logins.
 
-Migration 0117: the facts function counts each Ministry leader user's open
+Migration 0120: the facts function counts each Ministry leader user's open
 requests as the follow-up queue does; the review definer answers only a
 live Administrator session and audits by count; the request guard admits
 only the web login's reviewed request and records the facts itself; the
@@ -85,7 +85,7 @@ LEADER_USERS = (
 EVERYONE_PRODUCTION = {"email": [email for email, _name in LEADER_USERS]}
 
 
-# The three checks as they were before 0117 (frozen copies of the
+# The three checks as they were before 0120 (frozen copies of the
 # baseline's definitions), to compare the new ones against.
 OLD_CHECKS = {
     "outbox_purpose": (
@@ -1195,12 +1195,12 @@ def test_the_outbox_checks_admit_leader_email_and_change_nothing_else():
 
 MIGRATION = (
     Path(__file__).resolve().parents[3]
-    / "src/parishkit/stewardship/schema/migrations/0117_leader_emails.sql"
+    / "src/parishkit/stewardship/schema/migrations/0120_leader_emails.sql"
 )
 
 
 def check_block():
-    """0117's closing DO block, run on its own."""
+    """0120's closing DO block, run on its own."""
     text = MIGRATION.read_text(encoding="utf-8")
     return re.search(r"^DO \$check\$.*?^\$check\$;", text, re.M | re.S)[0]
 

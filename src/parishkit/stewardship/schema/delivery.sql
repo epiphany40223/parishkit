@@ -439,7 +439,7 @@ BEGIN
        ) THEN
         RAISE EXCEPTION 'Testing delivery is not currently admitted' USING ERRCODE='23514';
     END IF;
-    -- A Ministry leader email (#1592, migration 0117) belongs to no
+    -- A Ministry leader email (#1592, migration 0120) belongs to no
     -- campaign: its Testing work is admitted only while the deployment
     -- itself is in Testing.
     IF NEW.purpose='leader_email' AND NEW.routing='testing_override' AND (TG_OP='INSERT'

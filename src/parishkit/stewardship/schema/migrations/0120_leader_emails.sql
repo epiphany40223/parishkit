@@ -1,4 +1,4 @@
--- Frozen forward migration file 0117 (the repository-wide file sequence):
+-- Frozen forward migration file 0120 (the repository-wide file sequence):
 -- Ministry leader emails, sent by hand (#1592). This file is installed by
 -- its Django migration in the jobs app and must never change once
 -- released; tests/stewardship/test_schema_migration_files.py pins its
@@ -634,7 +634,7 @@ BEGIN
        ) THEN
         RAISE EXCEPTION 'Testing delivery is not currently admitted' USING ERRCODE='23514';
     END IF;
-    -- A Ministry leader email (#1592, migration 0117) belongs to no
+    -- A Ministry leader email (#1592, migration 0120) belongs to no
     -- campaign: its Testing work is admitted only while the deployment
     -- itself is in Testing.
     IF NEW.purpose='leader_email' AND NEW.routing='testing_override' AND (TG_OP='INSERT'
@@ -1217,14 +1217,14 @@ BEGIN
     IF to_regclass('public.stewardship_leader_email_request') IS NULL
        OR to_regclass('public.stewardship_leader_email_cohort') IS NULL
        OR to_regclass('public.stewardship_leader_email_recipient') IS NULL THEN
-        RAISE EXCEPTION 'Migration 0117: a Ministry leader email table is missing';
+        RAISE EXCEPTION 'Migration 0120: a Ministry leader email table is missing';
     END IF;
     -- The outbox admits the purpose, parish-scoped and routed by mode.
     IF (SELECT count(*) FROM pg_constraint
         WHERE conrelid='public.stewardship_outbox_message'::regclass
           AND conname IN ('outbox_purpose','outbox_routing','outbox_family_purpose')
           AND pg_get_constraintdef(oid) LIKE '%leader_email%')<>3 THEN
-        RAISE EXCEPTION 'Migration 0117: the outbox checks do not admit leader_email';
+        RAISE EXCEPTION 'Migration 0120: the outbox checks do not admit leader_email';
     END IF;
     -- Every new function, with its declared rights; the definers and trigger
     -- functions with no EXECUTE for PUBLIC. The invoker helpers the outbox
@@ -1250,7 +1250,7 @@ BEGIN
           AND (NOT expected.revoked
               OR NOT has_function_privilege('public', p.oid, 'EXECUTE')));
     IF missing IS NOT NULL THEN
-        RAISE EXCEPTION 'Migration 0117: not installed as declared: %', missing;
+        RAISE EXCEPTION 'Migration 0120: not installed as declared: %', missing;
     END IF;
     -- Each guard trigger is in place.
     IF (SELECT count(*) FROM pg_trigger t
@@ -1261,7 +1261,7 @@ BEGIN
             'stewardship_leader_email_cohort_binding',
             'stewardship_leader_email_recipient_binding',
             'stewardship_leader_email_prepare_receipt'))<>6 THEN
-        RAISE EXCEPTION 'Migration 0117: a Ministry leader email trigger is missing';
+        RAISE EXCEPTION 'Migration 0120: a Ministry leader email trigger is missing';
     END IF;
     -- The replaced functions carry the new owner, and stay invoker's rights.
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
@@ -1278,7 +1278,7 @@ BEGIN
             OR (p.proname='stewardship_family_dispatch_write_v1'
                 AND p.prosrc LIKE '%stewardship_leader_email_dispatch_write_v1(TG_TABLE_NAME,proposed,%'
                 AND p.prosrc LIKE '%''security_event'',''leader_email'');%')))<>4 THEN
-        RAISE EXCEPTION 'Migration 0117: a replaced outbox guard lacks Ministry leader emails';
+        RAISE EXCEPTION 'Migration 0120: a replaced outbox guard lacks Ministry leader emails';
     END IF;
     IF public.stewardship_task_type_login_v1('leader_email_prepare') IS DISTINCT FROM 'pk_stewardship_worker'
        OR public.stewardship_task_type_creators_v1('leader_email_prepare')
@@ -1286,7 +1286,7 @@ BEGIN
        OR public.stewardship_task_type_login_v1('census_publication') IS DISTINCT FROM 'pk_stewardship_worker'
        OR public.stewardship_task_type_creators_v1('census_publication')
            IS DISTINCT FROM ARRAY['pk_stewardship_web'] THEN
-        RAISE EXCEPTION 'Migration 0117: the task-type maps do not carry leader_email_prepare';
+        RAISE EXCEPTION 'Migration 0120: the task-type maps do not carry leader_email_prepare';
     END IF;
 END
 $check$;

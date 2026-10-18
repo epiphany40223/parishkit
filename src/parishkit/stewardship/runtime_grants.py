@@ -545,8 +545,8 @@ CLOSURE_FUNCTIONS = {
         (ADDRESS_DELIVERIES_FUNCTION, PAGE_RECIPIENTS_FUNCTION),
         ("stewardship_jobs", "0034_sent_mail_recipients"),
     ),
-    # The Email Ministry leaders review (0117, #1592).
-    LEADER_EMAILS_FUNCTION: ("stewardship_jobs", "0033_leader_emails"),
+    # The Email Ministry leaders review (0120, #1592).
+    LEADER_EMAILS_FUNCTION: ("stewardship_jobs", "0035_leader_emails"),
 }
 
 
@@ -630,7 +630,7 @@ CLOSURE_TABLES = {
         "stewardship_accounts",
         "0025_campaign_setup_review",
     ),
-    # Ministry leader emails (0117, #1592): web records requests and lists
+    # Ministry leader emails (0120, #1592): web records requests and lists
     # recipients, the worker prepares them and mail dispatch sends them.
     **dict.fromkeys(
         (
@@ -638,7 +638,7 @@ CLOSURE_TABLES = {
             "stewardship_leader_email_cohort",
             "stewardship_leader_email_recipient",
         ),
-        ("stewardship_jobs", "0033_leader_emails"),
+        ("stewardship_jobs", "0035_leader_emails"),
     ),
 }
 

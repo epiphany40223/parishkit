@@ -652,7 +652,7 @@ CLOSURE_CREATED = {
         ),
         ("stewardship_jobs", "0034_sent_mail_recipients"),
     ),
-    # 0117 (#1592) creates the Ministry leader email tables (in
+    # 0120 (#1592) creates the Ministry leader email tables (in
     # CLOSURE_TABLES) and these functions, and replaces the four outbox
     # guards and the two task-type maps in place with bodies that keep every
     # earlier rule, so its file installs whole again, after 0077's file has
@@ -672,7 +672,7 @@ CLOSURE_CREATED = {
             "public.stewardship_leader_email_dispatch_live_v1(uuid)",
             "public.stewardship_leader_email_dispatch_write_v1(text,jsonb,jsonb)",
         ),
-        ("stewardship_jobs", "0033_leader_emails"),
+        ("stewardship_jobs", "0035_leader_emails"),
     ),
 }
 
@@ -1477,7 +1477,7 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
             # Clear the halt's halt records (0115, #530): mail dispatch
             # records them; web only reads them.
             "stewardship_mail_halt": ("pk_stewardship_mail_dispatch", "INSERT"),
-            # Ministry leader emails (0117, #1592): web records the request;
+            # Ministry leader emails (0120, #1592): web records the request;
             # the worker writes the cohort and recipient rows.
             **dict.fromkeys(
                 (

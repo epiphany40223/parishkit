@@ -11,7 +11,7 @@
 - Mail dispatch reads the cohort and the recipient rows, whose kept content
   is what it sends.
 
-Every write is admitted by the tables' own guards (migration 0117).
+Every write is admitted by the tables' own guards (migration 0120).
 """
 
 # The columns the scheduler and web need to bind or list a recipient row

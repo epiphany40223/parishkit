@@ -41,7 +41,7 @@ from parishkit.stewardship.web.weekly_digest_content import validate_weekly_body
 from parishkit.stewardship.weekly_delivery import WeeklyDeliveryMail
 
 ROOT = Path(__file__).resolve().parents[2]
-FROZEN = ROOT / "src/parishkit/stewardship/schema/migrations/0117_leader_emails.sql"
+FROZEN = ROOT / "src/parishkit/stewardship/schema/migrations/0120_leader_emails.sql"
 RECIPIENTS = [
     {
         "email": "ann@example.org",
