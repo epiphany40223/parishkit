@@ -100,13 +100,21 @@ if [ -n "$containers" ]; then
     # shellcheck disable=SC2086 # container IDs hold no whitespace
     kept=$(docker inspect --format '{{.Image}} used by a container' $containers)
 fi
-# The protected images, resolved to IDs; one not on the host is just noted.
+# The protected images, resolved to IDs. Only Docker's "No such image"
+# means one is not on the host (just noted); any other lookup failure, such
+# as a daemon error, stops the run, since that protection would be lost.
+# Docker's error text goes to a file so it never mixes into the ID.
+errf=$(mktemp)
+trap 'rm -f "$errf"' EXIT
 for ref in ${protect[@]+"${protect[@]}"}; do
     [ -n "$ref" ] || continue
-    if id=$(docker image inspect --format '{{.Id}}' "$ref" 2>/dev/null) && [ -n "$id" ]; then
+    if id=$(docker image inspect --format '{{.Id}}' "$ref" 2>"$errf") && [ -n "$id" ]; then
         kept+=$'\n'"$id protected ($ref)"
-    else
+    elif grep -q "No such image" "$errf"; then
         say "    protected image not on this host: $ref"
+    else
+        say "    WARNING: could not look up protected image $ref: $(head -1 "$errf")"
+        false
     fi
 done
 reason() {

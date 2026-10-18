@@ -5,10 +5,11 @@ these tests run it with a stand-in `docker` (a small Python program over a
 JSON state file) that answers the few commands the script uses and records
 every call. They pin which images are kept (any container's, the protected
 release and rollback target, the newest N, anything of another repository),
-that a dry run removes nothing, and that a failure is reported without
-stopping the rest. The local half of `tools/stewardship-upgrade.sh` is run
-with a recording `ssh` to pin that it prunes only after a successful run,
-protects the replaced release, and never fails because pruning did.
+that a dry run removes nothing, that a failure is reported without
+stopping the rest, and that a failed lookup of what to keep stops it. The
+local half of `tools/stewardship-upgrade.sh` is run with a recording `ssh`
+to pin that it prunes only after a successful run, protects the replaced
+release, and never fails because pruning did.
 """
 
 import json
@@ -70,7 +71,13 @@ FAKE_DOCKER = textwrap.dedent(
         for cid in args[3:]:
             print(args[2].replace("{{.Image}}", by_id[cid]))
     elif args[:3] == ["image", "inspect", "--format"]:
+        if args[4] in state.get("inspect_fail", []):
+            print("Error response from daemon: i/o timeout", file=sys.stderr)
+            sys.exit(1)
         image = find(args[4])
+        if image is None:
+            print("Error: No such image: " + args[4], file=sys.stderr)
+            sys.exit(1)
         if image is None:
             print("Error: No such image: " + args[4], file=sys.stderr)
             sys.exit(1)
@@ -277,6 +284,33 @@ def test_a_failed_lookup_removes_nothing(tmp_path):
     assert result.returncode == 1
     assert left == ids(rel)
     assert not any(c.startswith(("image rm", "builder")) for c in calls)
+    assert "WARNING: pruning stopped" in result.stdout
+
+
+def test_a_failed_protect_lookup_removes_nothing(tmp_path):
+    """Only "No such image" lets a protected image be skipped.
+
+    A daemon error while resolving a protected image would silently drop
+    that protection, so the run stops before any removal.
+    """
+    rel = releases()
+    result, calls, left = run_prune(
+        tmp_path,
+        rel,
+        "--keep",
+        "1",
+        "--protect",
+        rel[1]["digests"][0],
+        containers=[rel[7]["id"]],
+        inspect_fail=[rel[1]["digests"][0]],
+    )
+    assert result.returncode == 1
+    assert left == ids(rel)
+    assert not any(c.startswith(("image rm", "image ls", "builder")) for c in calls)
+    assert (
+        f"WARNING: could not look up protected image {rel[1]['digests'][0]}: "
+        "Error response from daemon: i/o timeout"
+    ) in result.stdout
     assert "WARNING: pruning stopped" in result.stdout
 
 
