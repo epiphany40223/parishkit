@@ -27,22 +27,27 @@ pytestmark = pytest.mark.parametrize(
 
 # The Chart population's Current population segment (#1535).
 CURRENT = '#participation-scope a[data-in-place="scope-current"]'
-# The binary choice's box and each segment's, page-relative: choosing a
-# segment must change only colours, never a size or a place (#1535).
+# The binary choice's box and each segment's, in the viewport: choosing a
+# segment must change only colours, never a size or a place (#1535), and
+# nothing above may move it under the reader's pointer (#1537). Measured
+# against the viewport, not the page or its panel, so a taller statistics
+# row above fails here even where the browser's scroll anchoring would
+# hide it (WebKit has none).
 PAIR_LAYOUT = """() => [...document.querySelectorAll(
     '#participation-scope, #participation-scope a')].map((node) => {
   const box = node.getBoundingClientRect();
-  return [box.x + scrollX, box.y + scrollY, box.width, box.height];
+  return [box.x, box.y, box.width, box.height];
 }).flat()"""
 ZONE = "timezone=America%2FLos_Angeles"
-# The current-population answer's all-Families comparison card, which the
-# first page lacks: it shows that the statistics panel was swapped in place.
+# The current-population answer's all-Families comparison value, which the
+# first page lacks ($1,000.00 there): it shows that the statistics panel was
+# swapped in place. It is wider, so on Linux fonts it once wrapped onto a
+# second line and made the row taller (#1537); a value is now one line.
 REFRESHED = "$982,657.00"
 # The daily chart panel's top, measured from the top of the statistics
 # panel's progress chart: the redrawn chart keeps its space, so the panel
-# below it must not move (#720). Measured from the chart, not the page,
-# because the fresh answer's extra comparison tile can wrap the tiles above
-# it onto another row where the fonts are wider.
+# below it must not move (#720). Measured from the chart, so it checks
+# the chart's own space; PAIR_LAYOUT checks that nothing above moved.
 CHART_TOP = (
     "document.getElementById('participation-chart').getBoundingClientRect().top"
     " - document.querySelector('#participation-statistics figure.chart')"
@@ -87,7 +92,9 @@ def test_options_apply_in_place(page, component_origin):
     )
     visible(page.locator("#participation-statistics .stat-value", has_text=REFRESHED))
     assert page.evaluate(MARKED) == "kept"
-    assert abs(page.evaluate("window.scrollY") - offset) < 40
+    # Exactly the same place: scroll anchoring would change it to
+    # follow content that moved above.
+    assert page.evaluate("window.scrollY") == pytest.approx(offset, abs=1)
     eventually(
         page,
         "() => document.activeElement?.dataset.inPlace === 'scope-current'",

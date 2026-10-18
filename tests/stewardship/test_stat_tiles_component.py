@@ -136,6 +136,26 @@ def test_the_include_reads_label_value_and_details_in_order():
     assert "title=" not in html
 
 
+@pytest.mark.parametrize(
+    ("value", "fit"),
+    [
+        (Money(100000), ""),  # "$1,000.00", 9 characters
+        (Money(98265700), "stat-value-long"),  # "$982,657.00", 11
+        (Money(999999999), "stat-value-long"),  # "$9,999,999.99", 13
+        (Money(9999999999), "stat-value-longest"),  # "$99,999,999.99", 14
+    ],
+)
+def test_a_long_value_is_drawn_smaller_on_its_one_line(value, fit):
+    """A value's size class follows its length (#1537), and the include
+    draws it, so a wider figure never wraps and makes its row taller."""
+    built = tile("k", "L", value)
+    assert built.fit == fit
+    drawn = "stat-value " + fit if fit else "stat-value"
+    assert f'<span class="{drawn}">{built.text}</span>' in render(
+        [built], tiles_label="Figures"
+    )
+
+
 def test_the_include_gives_an_unknown_value_its_toggletip():
     """The dash is followed, inside the value, by a toggletip holding the
     reason; a row without a heading takes its label."""
