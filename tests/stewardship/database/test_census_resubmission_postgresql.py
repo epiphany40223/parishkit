@@ -9,11 +9,12 @@ answer. These tests pin the census cases the rule names.
 from uuid import uuid4
 
 import pytest
-from django.db import transaction
+from django.db import IntegrityError, transaction
 
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports.census_changes import REOPENED, census_rows
 from parishkit.stewardship.reports.census_worklist import worklist_rows
+from parishkit.stewardship.responses import effective
 from parishkit.stewardship.responses.census_review import resolve_census_conflict
 from parishkit.stewardship.responses.models import ProposedChange
 
@@ -22,6 +23,7 @@ from .test_census_conflict_postgresql import conflicted
 from .test_census_pipeline_review_postgresql import decide, prepared
 from .test_census_review_postgresql import fresh
 from .test_ministry_responses_postgresql import respond, revisit
+from .test_publication_plans_postgresql import owner
 from .test_response_http_postgresql import answers_for
 from .test_runtime_auth_grants_postgresql import web_login
 
@@ -47,18 +49,75 @@ def rows_for(field):
     )
 
 
-def test_an_unchanged_answer_after_entry_creates_a_new_row_today(response_service):
-    """Today's behaviour, pinned before #1683 changes it: an unchanged
-    answer for a change already Entered by hand (not yet in ParishSoft's
-    download) is not "same intent", so it creates a fresh unreviewed row."""
+@pytest.mark.parametrize("field", ["prefix", "first_name"])
+def test_an_unchanged_answer_after_entry_keeps_the_entered_change(
+    response_service, field
+):
+    """An unchanged answer for a change already Entered by hand (or written
+    to ParishSoft), not yet in ParishSoft's download, keeps that change and
+    creates no row, however many times the Family answers again; a
+    different answer later is a new change To review, against ParishSoft's
+    value (#1683). Before #1683 each unchanged answer made a duplicate
+    unreviewed row."""
+    harness, admin, staff, rows = prepared(response_service)
+    if field == "prefix":
+        decide(harness, staff, [rows["prefix"]], "entered_by_hand")
+        final = "resolved_external"
+    else:
+        # As the publication worker leaves a written change.
+        owner(
+            "UPDATE stewardship_proposed_change SET decision='approved',"
+            " execution='published' WHERE id=%s",
+            [rows["first_name"].pk],
+        )
+        final = "published"
+    again(harness)
+    again(harness)
+    assert [row.execution for row in rows_for(field)] == [final]
+    value = "Rev." if field == "prefix" else "Changed again"
+    again(harness, **{field: value})
+    found = rows_for(field)
+    assert [(row.decision, row.execution) for row in found] == [
+        (found[0].decision, final),
+        ("unreviewed", found[1].execution),
+    ]
+    assert found[1].submitted_value == value
+    assert found[1].execution in ("pending", "conflict")
+
+
+def test_an_answer_set_back_is_not_kept_as_the_entered_change(response_service):
+    """A Family that sets the field back to ParishSoft's value after the
+    entry, then answers the entered value again, asks for it anew: the
+    entered change is not carried past the different answer."""
     harness, _, staff, rows = prepared(response_service)
     decide(harness, staff, [rows["prefix"]], "entered_by_hand")
-    again(harness)
-    found = rows_for("prefix")
-    assert [(row.decision, row.execution) for row in found] == [
-        ("unreviewed", "resolved_external"),
-        ("unreviewed", "pending"),
+    baseline = rows["prefix"].baseline_value or ""
+    again(harness, prefix=baseline)
+    assert len(rows_for("prefix")) == 1
+    again(harness, prefix="Dr.")
+    assert [row.execution for row in rows_for("prefix")] == [
+        "resolved_external",
+        "pending",
     ]
+
+
+def test_the_database_refuses_an_answer_set_back_kept_as_entered(
+    response_service, monkeypatch
+):
+    """The database's completeness check holds the same rule: the Family's
+    answer again keeps an entered change only when its prior census
+    response gave that answer too. Here an answer set back to ParishSoft's
+    value came in between, so a derivation that treats the entered value
+    again as kept (makes no row) is refused, not committed (#1716)."""
+    harness, _, staff, rows = prepared(response_service)
+    decide(harness, staff, [rows["prefix"]], "entered_by_hand")
+    again(harness, prefix=rows["prefix"].baseline_value or "")
+    # A derivation that keeps the entered change whatever the prior
+    # census response answered: the newest earlier row alone decides.
+    monkeypatch.setattr(effective, "same_answer", lambda *args: True)
+    with pytest.raises(IntegrityError, match="atomic derived work"):
+        again(harness, prefix="Dr.")
+    assert [row.execution for row in rows_for("prefix")] == ["resolved_external"]
 
 
 def test_an_answer_over_an_accepted_base_comes_back_as_a_conflict(response_service):

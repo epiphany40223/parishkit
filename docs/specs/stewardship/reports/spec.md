@@ -2205,7 +2205,10 @@ down. Before #1683 these rows were *To do* and went straight to Entered in
 ParishSoft or Ignore; the page's help says that they are now To review. A
 Conflict By hand row is accepted first, then entered. Entered by hand is
 final, as every resolved outcome is: a mistaken mark is corrected in
-ParishSoft, and a later Family answer creates new rows. Its dialog says it
+ParishSoft, and a later different Family answer creates a new row (the same
+answer again keeps the entered change,
+[resubmission](../review-pipeline/spec.md#resubmission-while-the-setting-is-off)).
+Its dialog says it
 is final and to check ParishSoft first. Who, when and the note are kept as
 history.
 

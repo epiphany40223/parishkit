@@ -1120,7 +1120,17 @@ Decision and execution are orthogonal:
 
 Ignored decisions remain searchable and may return to unreviewed/approved.
 Published or resolved records are immutable outcomes; a later response creates
-new proposed-change records where necessary.
+new proposed-change records where necessary. A later census response that
+gives the same answer again for an ordinary field already *published* or
+*resolved_external* (not yet in the promoted download) creates none: the
+entered change stays as it is
+([resubmission rule](../review-pipeline/spec.md#resubmission-while-the-setting-is-off),
+[#1683](https://github.com/epiphany40223/parishkit/issues/1683)). The
+submission's completeness check admits that absence, and the effective-value
+index keeps that change for the next response while each census response
+answers it the same way. A terminal request (moved, deceased, a death date)
+asked for again after it was entered is a new request, since an entered one
+is no longer presented.
 
 Writability is `api`, `manual`, or `report-only`. It is derived from a shared
 ParishSoft capability registry, not guessed in views. The initial registry is:

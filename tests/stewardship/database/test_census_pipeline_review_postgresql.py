@@ -9,6 +9,7 @@ here with the service bypassed.
 """
 
 import json
+import re
 from pathlib import Path
 from uuid import uuid4
 
@@ -301,36 +302,65 @@ def test_sql_admits_staff_on_a_by_hand_change_only_with_its_audit(response_servi
         forge(fresh(rows["prefix"]), staff, decision="unreviewed", note="  ")
 
 
-def test_do_block_refuses_the_earlier_guard_and_installs_it():
+# The completeness check's addition (#1683), which the earlier body lacks.
+RESUBMISSION = re.compile(
+    r"\n *-- The same answer again for a change already entered by hand.*?"
+    r"IS NOT DISTINCT FROM submitted_key\)\)",
+    re.S,
+)
+# Its requirement that the prior census response gave the answer too: a
+# body without it (the newest earlier row alone decides) is too loose.
+PRIOR_ANSWER = re.compile(
+    r"\n *JOIN public\.stewardship_submission census_prior.*?\) given"
+    r"|\n *IS NOT DISTINCT FROM submitted_key\n *AND given\.value IS NOT NULL"
+    r".*?given\.value\)",
+    re.S,
+)
+
+
+def test_do_block_refuses_the_earlier_bodies_and_installs_them():
     """The file's closing check passes as installed and raises once the
-    review guard is put back to 0108's body; on that state the file
-    installs its own again."""
+    review guard is put back to 0108's body or the submission check to the
+    earlier baseline's; on that state the file installs its own again."""
     text = FROZEN.read_text(encoding="utf-8")
     check = text[text.index("DO $check$") :]
-    earlier = _replaced(
+    earlier_guard = _replaced(
         (FROZEN.parent / "0108_conflict_resolution.sql").read_text(encoding="utf-8"),
         "stewardship_proposal_review_guard_v1",
     )
+    effects = _replaced(text, "stewardship_submission_effects_v1")
+    earlier_effects = RESUBMISSION.sub("", effects)
+    assert earlier_effects != effects and "latest.execution" not in earlier_effects
+    looser_effects = PRIOR_ANSWER.sub("", effects)
+    assert "given." not in looser_effects and "census_prior" not in looser_effects
     with transaction.atomic(), connection.cursor() as cursor:
         cursor.execute(check)
-    with (
-        pytest.raises(DatabaseError, match="lacks the review pipeline rules"),
-        transaction.atomic(),
-        connection.cursor() as cursor,
+    for earlier, message in (
+        (earlier_guard, "lacks the review pipeline rules"),
+        (earlier_effects, "lacks the resubmission rule"),
+        (looser_effects, "lacks the resubmission rule"),
     ):
-        cursor.execute(earlier)
-        cursor.execute(check)
+        with (
+            pytest.raises(DatabaseError, match=message),
+            transaction.atomic(),
+            connection.cursor() as cursor,
+        ):
+            cursor.execute(earlier)
+            cursor.execute(check)
 
     class Rollback(Exception):
         """Ends a check that must leave the database as it found it."""
 
     with pytest.raises(Rollback), transaction.atomic(), connection.cursor() as cursor:
-        cursor.execute(earlier)
+        cursor.execute(earlier_guard)
+        cursor.execute(earlier_effects)
         cursor.execute(text)
         cursor.execute(
-            "SELECT prosrc LIKE '%%stewardship_export_authorized_v1(NEW.actor_id,"
-            "false)%%', prosecdef FROM pg_proc"
-            " WHERE proname='stewardship_proposal_review_guard_v1'"
+            "SELECT count(*) FROM pg_proc WHERE NOT prosecdef AND ("
+            "(proname='stewardship_proposal_review_guard_v1' AND prosrc LIKE"
+            " '%%stewardship_export_authorized_v1(NEW.actor_id,false)%%')"
+            " OR (proname='stewardship_submission_effects_v1'"
+            " AND prosrc LIKE '%%latest.execution%%'))"
         )
-        assert cursor.fetchone() == (True, False)
+        assert cursor.fetchone() == (2,)
         raise Rollback
