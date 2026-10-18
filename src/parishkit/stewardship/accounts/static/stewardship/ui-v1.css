@@ -1030,6 +1030,38 @@ details.filter-panel[data-filter-panel] > form:not(.filter-bar) > fieldset > div
 /* A field as wide as its longest choice, so a long option reads whole
    (Limitations' Show, #227); it still shrinks to the row on a phone. */
 .filter-bar > div.fit { flex: 0 1 auto; }
+/* Sent mail's five filters share one row beside the Admin menu at desktop
+   width (#1562): each grows from a short basis instead of starting at
+   its widest choice. */
+.filter-bar.mail-filters > div { flex: 1 1 7.5rem; min-width: 6.5rem; }
+/* From and Through are wide enough for the empty "mm/dd/yyyy" placeholder
+   beside the calendar button, with Linux's wider fonts too. They drop the
+   desktop short-field rule's end margin: the bar's gap spaces them, and
+   that margin kept Apply off the row at 1280 px with those fonts. */
+.filter-bar.mail-filters > div.short { flex: 0 1 10rem; min-width: 10rem; margin-inline-end: 0; }
+.filter-bar.mail-filters > div > :is(input, select) { width: 100%; }
+/* Every label sits on one line of the toggletip's height, and the fields
+   line up at their tops, so Recipient's label (with its toggletip) and the
+   plain labels share one baseline although a date control is a little
+   taller than a text box; Apply still sits at the fields' foot. */
+.filter-bar.mail-filters { align-items: start; }
+.filter-bar.mail-filters > button { align-self: end; }
+.filter-bar.mail-filters > div > :is(label, .label-row) { display: flex; align-items: center; min-height: 1.75rem; margin: 0 0 .25rem; }
+/* Sent mail's Production / Testing choice sits at the end of the heading's
+   line on a wider screen, out of the flow, so it takes no line of its own
+   and the first rows start on a laptop screen (#227, #1562); the heading
+   and its About summary are short enough to leave it the room. The line
+   is at least the pair's height (its segments and their border), so the
+   filter bar below never meets it. On a phone it keeps its own line under
+   the heading. */
+@media (min-width: 40rem) {
+  .mail-title { position: relative; min-height: calc(var(--button-min-height) + 2 * var(--button-border-width)); }
+  .mail-title > #delivery-mode { position: absolute; inset-block-start: 0; inset-inline-end: 0; }
+  .mail-title > #delivery-mode .segmented-choice { margin: 0; }
+}
+/* A row's Recipient is a link-styled button posting the private recipient
+   (#1562): it reads as a link in its cell, never as a portal button. */
+.recipient-link, .recipient-link:not(:disabled):hover { min-height: 0; margin: 0; padding: 0; border: 0; vertical-align: baseline; background: none; box-shadow: none; color: var(--link); line-height: inherit; text-align: start; }
 .filter-bar button { margin: 0; }
 /* A filter bar's hint row with the server's refusal over the gate's hint
    (.hint-row-messages, the Family directory's Exact Family code, #1332)

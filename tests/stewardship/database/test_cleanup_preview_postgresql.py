@@ -162,7 +162,7 @@ def test_families_missing_from_the_snapshot_sort_last_by_name(
     response_service, monkeypatch
 ):
     """A Family absent from the source snapshot has no name to sort by, so it
-    is listed after every named Family in both directions, as Outgoing mail
+    is listed after every named Family in both directions, as Sent mail
     lists its unnamed rows."""
     form, answers = form_and_answers(response_service)
     submit(response_service, form, answers)

@@ -1067,14 +1067,22 @@ def _request_key(args, context):
 
 
 def delivery_list(args, preamble, runtime, context):
-    """One page of Outgoing mail, filtered and sorted as the page (PR 9)."""
+    """One page of Sent mail, filtered and sorted as the page (PR 9, #1562)."""
     from .admin_operations import read_deliveries
     from .admin_reads import query
+    from .web.dates import parish_zone
 
     parameters = query(
         state=args.state,
         send=args.send,
-        q=args.search,
+        recipient=args.recipient,
+        purpose=args.purpose,
+        mode=args.mode,
+        start=args.start,
+        end=args.end,
+        # The days are in --zone, else the parish's zone: a host command has
+        # no browser (#1562). Sent only with a day, as the page's form.
+        zone=(args.zone or parish_zone()) if args.start or args.end else None,
         page=args.page,
         size=args.size,
         sort=args.sort,
@@ -3197,11 +3205,14 @@ def _task_retry_options(parser):
     _request_key_option(parser)
 
 
-# Outgoing mail's state filter. Spelled out because the parser is built
+# Sent mail's state filter. Spelled out because the parser is built
 # before Django is set up, when ``jobs.delivery_metadata`` cannot be
 # imported; a test keeps it equal to ``delivery_metadata.STATES``.
 DELIVERY_STATES = (
     "all",
+    "needs_attention",
+    "not_delivered",
+    "still_sending",
     "delivery_unknown",
     "permanent_failure",
     "pending",
@@ -3209,6 +3220,19 @@ DELIVERY_STATES = (
     "submitting",
     "delivered",
     "cancelled",
+)
+# Sent mail's Purpose filter, spelled out for the same reason; a test keeps
+# it equal to ``delivery_metadata.PURPOSE_CHOICES``.
+DELIVERY_PURPOSES = (
+    "all",
+    "initial",
+    "reminder",
+    "receipt",
+    "family_test",
+    "daily_digest",
+    "weekly_digest",
+    "operational",
+    "security_event",
 )
 # The resolutions ``delivery resolve`` offers (``admin_operations``); a test
 # keeps them equal.
@@ -3771,13 +3795,33 @@ def _files_rename_options(parser):
 
 
 def _delivery_list_options(parser):
-    """Options of ``delivery list``: Outgoing mail's filters."""
+    """Options of ``delivery list``: Sent mail's filters (#1562)."""
     parser.add_argument("--state", choices=DELIVERY_STATES, help="default all")
+    parser.add_argument("--purpose", choices=DELIVERY_PURPOSES, help="default all")
+    parser.add_argument(
+        "--mode", choices=("production", "testing"), help="default both modes"
+    )
+    parser.add_argument(
+        "--from",
+        dest="start",
+        metavar="YYYY-MM-DD",
+        help="the first day listed (by when each email last changed)",
+    )
+    parser.add_argument(
+        "--to",
+        dest="end",
+        metavar="YYYY-MM-DD",
+        help="the last day listed, whole",
+    )
+    parser.add_argument(
+        "--zone", help="the time zone of --from and --to; default the parish's"
+    )
     parser.add_argument(
         "--send", help="one Family email send (send history's send value)"
     )
     parser.add_argument(
-        "--search", help="an exact Family DUID or delivery ID, as the page's search"
+        "--recipient",
+        help="a Family DUID, an email address or a delivery ID, as the page's",
     )
     _page_options(parser)
 
@@ -5042,7 +5086,7 @@ def _operation_specs():
         ),
         CommandSpec(
             "delivery list",
-            "List Outgoing mail, without recipients.",
+            "List Sent mail, without recipients.",
             delivery_list,
             "read_only",
             False,

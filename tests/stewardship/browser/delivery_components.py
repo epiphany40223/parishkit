@@ -8,13 +8,18 @@ served at its real address too (``DELIVERED``), with a "reported" view
 (``REPORTED``), for the in-place bounce report (#806 slice 4).
 """
 
+from dataclasses import replace
 from datetime import timedelta
 from uuid import UUID, uuid4
 
 from django.urls import reverse
 
 from parishkit.stewardship.jobs.delivery_bulk import BulkResult
-from parishkit.stewardship.jobs.delivery_metadata import DELIVERY_SORTING
+from parishkit.stewardship.jobs.delivery_metadata import (
+    DELIVERY_SORTING,
+    PURPOSE_CHOICES,
+    STATES,
+)
 from parishkit.stewardship.jobs.delivery_views import REFUSAL_SORTING
 from parishkit.stewardship.web.contracts import PageWindow
 from parishkit.stewardship.web.tables import window_table
@@ -32,13 +37,46 @@ DELIVERED = reverse("admin:delivery", args=[DELIVERED_ID])
 BOUNCE = reverse("admin:delivery_bounce_report", args=[DELIVERED_ID])
 REPORTED = DELIVERED + "?reported=1"
 POSTS = {CLEAR: (303, CLEARED, ""), BOUNCE: (303, REPORTED, "")}
+# Where Sent mail's POST controls post (#1562): the list fixture the
+# filter tests open, whose in-place requests they route.
+LIST_ACTION = "/deliveries-names"
+
+
+def mode_fields(*kept):
+    """The fields each Production / Testing segment posts besides its mode,
+    as the view draws them (#1575): the applied filters, size and sort."""
+    return dict([*kept, ("size", "25"), ("sort", "-changed")])
+
+
+def sent_table(*args, **kwargs):
+    """A Sent mail table: its filters are private POST state (#1562)."""
+    return replace(window_table(*args, **kwargs), method="post", action=LIST_ACTION)
+
+
+# Sent mail's filter bar as the view draws it with no filter applied
+# (#1562): every Delivery and Purpose choice, Production shown, the
+# Production / Testing choices and the view's linkable address.
+LIST_FILTERS = dict(
+    purposes=PURPOSE_CHOICES,
+    selected_purpose="all",
+    recipient="",
+    start="",
+    end="",
+    zone="",
+    mode="production",
+    mode_fields=mode_fields(),
+    page_address=LIST_ACTION + "?size=25&sort=-changed",
+)
 
 
 def components(now):
     """Keep each operational state visible without browser provider credentials."""
     message = dict(
         id=uuid4(),
+        family_id=uuid4(),
         family__family_duid=12345,
+        # Recipient lists everything sent to this Family (#1562).
+        recipient_fields=[("recipient", "12345"), ("mode", "production")],
         # The Family's name beside its DUID (#931), long enough to wrap.
         family_name="Castellanos, Maximiliana and Bartholomew",
         state="delivery_unknown",
@@ -47,7 +85,7 @@ def components(now):
         version=4,
         attempt=1,
         updated_at=now,
-        # Outgoing mail shows only the last change (#931), never this.
+        # Sent mail shows only the last change (#931), never this.
         created_at=now - timedelta(hours=3),
     )
     refusal = dict(
@@ -67,7 +105,7 @@ def components(now):
         "/deliveries",
         "deliveries",
         dict(
-            table=window_table(
+            table=sent_table(
                 PageWindow(1, 25),
                 [message],
                 True,
@@ -78,7 +116,7 @@ def components(now):
             ),
             states=["all", "delivery_unknown"],
             selected_state="delivery_unknown",
-            query="",
+            **LIST_FILTERS,
         ),
     )
     # Each kind of recipient (#931): a named Family, a Family the latest
@@ -90,7 +128,7 @@ def components(now):
         "deliveries",
         dict(
             refusal_count=3,
-            table=window_table(
+            table=sent_table(
                 PageWindow(1, 25),
                 [
                     message | dict(refused=2),
@@ -101,23 +139,105 @@ def components(now):
                         family_name=None,
                         refused=1,
                     ),
+                    # An Administrator's report, named by the Users page
+                    # (#1562), and a notice to an address with no Name.
                     message
                     | dict(
                         id=uuid4(),
+                        family_id=None,
                         family__family_duid=None,
                         family_name=None,
                         purpose="daily_digest",
                         state="delivered",
+                        recipient_name="Morgan Administrator",
+                        recipient_address="morgan@example.org",
+                        recipient_fields=[
+                            ("recipient", "morgan@example.org"),
+                            ("mode", "production"),
+                        ],
+                    ),
+                    message
+                    | dict(
+                        id=uuid4(),
+                        family_id=None,
+                        family__family_duid=None,
+                        family_name=None,
+                        purpose="security_event",
+                        state="permanent_failure",
+                        recipient_name=None,
+                        recipient_address="pat@example.org",
+                        recipient_fields=[
+                            ("recipient", "pat@example.org"),
+                            ("mode", "production"),
+                        ],
                     ),
                 ],
                 False,
-                total=(3, False),
+                total=(4, False),
                 sorting=DELIVERY_SORTING,
                 sort=DELIVERY_SORTING.default,
             ),
-            states=["all", "delivery_unknown"],
+            states=STATES,
             selected_state="all",
-            query="",
+            **LIST_FILTERS,
+        ),
+    )
+    # Sent mail's filters and its Production / Testing links acting in
+    # place (#1562): the answers a test routes the Testing link and an
+    # applied filter to.
+    yield (
+        "/deliveries-testing",
+        "deliveries",
+        dict(
+            table=sent_table(
+                PageWindow(1, 25),
+                [
+                    message
+                    | dict(
+                        mode="testing",
+                        recipient_fields=[("recipient", "12345"), ("mode", "testing")],
+                    )
+                ],
+                False,
+                total=(1, False),
+                sorting=DELIVERY_SORTING,
+                sort=DELIVERY_SORTING.default,
+            ),
+            states=STATES,
+            selected_state="all",
+            **LIST_FILTERS
+            | dict(
+                mode="testing",
+                mode_fields=mode_fields(),
+                page_address=LIST_ACTION + "?mode=testing&size=25&sort=-changed",
+            ),
+        ),
+    )
+    yield (
+        "/deliveries-applied",
+        "deliveries",
+        dict(
+            table=sent_table(
+                PageWindow(1, 25),
+                [message | dict(state="permanent_failure")],
+                False,
+                carry=[("recipient", "12345"), ("state", "needs_attention")],
+                total=(1, False),
+                sorting=DELIVERY_SORTING,
+                sort=DELIVERY_SORTING.default,
+            ),
+            states=STATES,
+            selected_state="needs_attention",
+            **LIST_FILTERS
+            | dict(
+                recipient="12345",
+                mode_fields=mode_fields(
+                    ("recipient", "12345"),
+                    ("state", "needs_attention"),
+                ),
+                page_address=LIST_ACTION
+                + "?state=needs_attention&size=25&sort=-changed",
+            ),
         ),
     )
     # Family email waiting on a sending limit (#382 M3a): the note above
@@ -126,7 +246,7 @@ def components(now):
         "/deliveries-holds",
         "deliveries",
         dict(
-            table=window_table(
+            table=sent_table(
                 PageWindow(1, 25),
                 [message | dict(state="retry_wait")],
                 False,
@@ -136,7 +256,7 @@ def components(now):
             ),
             states=["all", "retry_wait"],
             selected_state="all",
-            query="",
+            **LIST_FILTERS,
             holds=dict(
                 daily_limit=True,
                 gmail_held=True,
@@ -146,11 +266,11 @@ def components(now):
             ),
         ),
     )
-    # Outgoing mail's bulk actions (#382 M4): the panel, and the answers its
+    # Sent mail's bulk actions (#382 M4): the panel, and the answers its
     # in-place Preview and Confirm get (a test routes each POST to one).
     failed = message | dict(state="permanent_failure")
     bulk = dict(
-        table=window_table(
+        table=sent_table(
             PageWindow(1, 25),
             [failed],
             False,
@@ -160,7 +280,7 @@ def components(now):
         ),
         states=["all", "permanent_failure"],
         selected_state="all",
-        query="",
+        **LIST_FILTERS,
         bulk_overview={
             "retry_failed": {
                 "total": 3,
@@ -190,7 +310,7 @@ def components(now):
         "deliveries",
         bulk
         | dict(
-            table=window_table(
+            table=sent_table(
                 PageWindow(1, 25),
                 [failed | dict(state="pending")],
                 False,

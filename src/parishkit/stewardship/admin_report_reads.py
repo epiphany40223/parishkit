@@ -141,7 +141,7 @@ class ResponseReport(ReadModel):
     rehearsal (the page then shows no figures). Otherwise it holds the
     stage counts in funnel order, the three figures beside the funnel, the
     activity buckets at ``grain``, the Family email sends marked on them
-    (each by its Outgoing mail ``send`` token) and each list's length
+    (each by its Sent mail ``send`` token) and each list's length
     (``lists``; the data-quality list has none on the page either).
     """
 

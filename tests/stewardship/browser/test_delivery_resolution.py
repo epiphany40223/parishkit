@@ -30,11 +30,11 @@ def test_keyboard_resend_requires_evidence_and_explicit_duplicate_ack(
     page.keyboard.press("Space")
     assert form.evaluate("form => form.checkValidity()")
     page.route(
-        "**/admin/mail/outgoing/*/resolution/",
+        "**/admin/mail/sent/*/resolution/",
         lambda route: route.fulfill(status=200, body="Recorded"),
     )
     form.get_by_role("button").focus()
-    with page.expect_request("**/admin/mail/outgoing/*/resolution/") as sent:
+    with page.expect_request("**/admin/mail/sent/*/resolution/") as sent:
         page.keyboard.press("Enter")
     assert sent.value.method == "POST"
     fields = parse_qs(sent.value.post_data)

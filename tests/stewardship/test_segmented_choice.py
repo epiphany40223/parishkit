@@ -238,3 +238,17 @@ def test_the_guard_sees_a_two_option_menu():
     sample = '<select id="x"><option>A</option><option>B</option></select>'
     match = SELECT.search(sample)
     assert match and len(OPTION.findall(match.group(2))) == 2
+
+
+def test_sent_mail_draws_the_shared_pair_as_post_segments():
+    """Sent mail's Production / Testing (#1575) is the shared pair. Its
+    Recipient is private filter state, so the segments are POST forms to
+    the table's action (never links), each setting the filter form to what
+    it applied."""
+    text = (TEMPLATES / "deliveries.html").read_text()
+    (include,) = re.findall(
+        r"\{% include \"stewardship/components/segmented-choice.html\"[^%]*%\}", text
+    )
+    for part in ("action=table.action", "fields=mode_fields", 'name="mode"'):
+        assert part in include, part
+    assert "filters=True" in include and "_href" not in include

@@ -996,7 +996,11 @@ success or failure, to standard error:
   addresses, aliases or redirects
   ([#864](https://github.com/epiphany40223/parishkit/issues/864)). The
   command follows the page it mirrors, so a version bump would only carry
-  a legacy form the Administrator declined.
+  a legacy form the Administrator declined. The same holds for `delivery
+  list`'s filters in
+  [#1562](https://github.com/epiphany40223/parishkit/issues/1562):
+  `--search` became `--recipient` (which also takes an email address) and
+  stayed on `pk-admin/1`.
 - A documented exception: the `content` commands' state value `custom`
   was renamed `edited` (#1404) and stayed on `pk-admin/1`, with a guide
   changelog entry, for the same reasons as the #931 exception above.
@@ -3235,15 +3239,17 @@ services' own correlation ID, not the invocation's; the command event and
 the run's `retry_command_id` (the key) join them.
 
 The delivery commands (PR 9b) read through `jobs.delivery_reads`, the
-functions the Outgoing mail and Refused addresses pages use, and record the
+functions the Sent mail and Refused addresses pages use, and record the
 pages' `delivery_viewed` event. Their documents follow [personal data on the
 command line](#personal-data-on-the-command-line): a delivery has its
 metadata only (no recipient address, Family DUID or Family id; a
 `delivery list` row adds `refused`, the count of its unresolved refused
-addresses that Outgoing mail marks, from the page's own query, #1004), a
+addresses that Sent mail marks, from the page's own query, #1004), a
 resolution note only its time and action, and a refusal only its id, time,
-resolution and the source version to verify; a DUID is accepted as search input. A
-DUID-filtered read still links that Family to its delivery or refusal facts
+resolution and the source version to verify; a DUID or an email address is
+accepted as `delivery list --recipient` input, never echoed in the document
+([#1562](https://github.com/epiphany40223/parishkit/issues/1562)). A
+DUID- or address-filtered read still links that Family to its delivery or refusal facts
 (counts, states, times); that is intended, for sessions only Administrators
 approve, as on the pages. `delivery show` lists in `actions` what the page
 offers: `resend` is `delivery resend` (PR 9c), and each other action is a

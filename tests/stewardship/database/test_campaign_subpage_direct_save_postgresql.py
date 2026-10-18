@@ -237,7 +237,7 @@ def test_send_work_that_blocks_a_schedule_change_refuses_it(
     assert script.status_code == 409
     assert script.json()["refusal"]["link"] == {
         "url": reverse("admin:deliveries"),
-        "label": "Outgoing mail",
+        "label": "Sent mail",
     }
     assert ConfigurationChangeRequest.objects.count() == requests
 

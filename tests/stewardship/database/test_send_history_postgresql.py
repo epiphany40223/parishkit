@@ -6,7 +6,7 @@ another session holds the global work-order lock. Finished sends, failures
 remaining emails a schedule edit cancelled, and the same invitation in
 Testing and in Production are built on temporary copies of the tables the
 panel reads (see ``test_send_progress_postgresql``). Each linked count is
-then opened on Outgoing mail and must list exactly the emails it counts.
+then opened on Sent mail and must list exactly the emails it counts.
 """
 
 import hashlib
@@ -68,7 +68,7 @@ from .test_send_progress_postgresql import (
 pytestmark = pytest.mark.django_db(transaction=True)
 
 PAGE = "/admin/mail/family-history/"
-DELIVERIES = "/admin/mail/outgoing/"
+DELIVERIES = "/admin/mail/sent/"
 # The cloned reminder definition, copied from the invitation's row.
 REMINDER = UUID(hashlib.md5(b"pk432-reminder").hexdigest())
 
@@ -100,7 +100,7 @@ def plan(*groups):
 
 
 def listed(key, state):
-    """The ids Outgoing mail lists for ``key`` in ``state`` (at most 100)."""
+    """The ids Sent mail lists for ``key`` in ``state`` (at most 100)."""
     _, rows, has_next, total = listing(
         PageWindow(1, 100), state=state, query="", send=key
     )
@@ -237,13 +237,13 @@ def test_the_web_login_lists_a_real_send_during_a_work_order_hold(
     # #521). Each check includes the help's own words around the link, since
     # the sidebar links the same pages with the same labels.
     for before, name, label, after in (
-        ("on the ", "admin:deliveries", "Outgoing mail", " page."),
+        ("on the ", "admin:deliveries", "Sent mail", " page."),
         ("on ", "admin:background", "Background work", ".</dd>"),
         ("on ", "admin:schedule_settings", "Dates and mail schedules", ". A"),
     ):
         assert f'{before}<a href="{reverse(name)}">{label}</a>{after}' in body
     listed_body = filtered.content.decode()
-    assert f'href="/admin/mail/outgoing/{message.pk}/"' in listed_body
+    assert f'href="/admin/mail/sent/{message.pk}/"' in listed_body
     assert "Showing only the emails of one Family email send" in listed_body
     assert f'name="send" value="{token}"' in listed_body
     # Two audited views; reading never renews the Admin's idle time.
@@ -467,7 +467,7 @@ def test_sends_count_like_the_panel_and_link_to_exactly_their_emails(
 
 
 def test_a_malformed_or_unknown_send_filter_is_refused(auth_service, google):
-    """Outgoing mail never silently drops a send filter it cannot honor."""
+    """Sent mail never silently drops a send filter it cannot honor."""
     store = auth_service.store
     add_draft(store, store.active(), uuid4())
     browser, _ = signed_in()
@@ -514,7 +514,7 @@ def test_send_history_is_for_administrators_only(auth_service, google, role):
     google[0]["email"] = "reader@example.org"
     reader, _ = signed_in()
     # The role is checked before the query, so even a bad query is a 403,
-    # and a send filter on Outgoing mail is refused like the page itself.
+    # and a send filter on Sent mail is refused like the page itself.
     send = f"{uuid4()}:{uuid4()}:testing:0"
     for path in (
         PAGE,

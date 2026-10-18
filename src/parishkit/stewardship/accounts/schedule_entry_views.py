@@ -228,9 +228,7 @@ BLOCKED = _(
     "Email from these schedules is being sent right now, or has an uncertain "
     "result, so nothing was saved."
 )
-BLOCKED_FIX = _(
-    "Wait for it to finish, or resolve it on Outgoing mail, then save again."
-)
+BLOCKED_FIX = _("Wait for it to finish, or resolve it on Sent mail, then save again.")
 
 
 class RepeatRule(AdminForm):
@@ -1387,7 +1385,7 @@ def _entry(request, campaign_id, schedule_id=None):
                 BLOCKED,
                 fix=BLOCKED_FIX,
                 link=reverse("admin:deliveries"),
-                link_label=_("Outgoing mail"),
+                link_label=_("Sent mail"),
                 reason="send_work_blocks",
             )
     # A direct save, recorded now that the work transaction has ended.
@@ -1606,7 +1604,7 @@ def schedule_delete(request, campaign_id):
                     "uncertain result, so they can't be deleted yet."
                 ),
                 fix=_(
-                    "Wait for it to finish, or resolve it on the Outgoing mail "
+                    "Wait for it to finish, or resolve it on the Sent mail "
                     "page, then try again."
                 ),
             )

@@ -378,6 +378,9 @@ FROZEN = {
     "0115_mail_halt_clear.sql": (
         "517dcb53a4790e92c58addd1f0cd65809f1c7dfdaef405f6a178332e93e63198"
     ),
+    "0116_sent_mail_recipients.sql": (
+        "42f1fe9ef354c7239f22c98a56262eb1a40ffb2cc63410edf9e8a2faf8de7d6a"
+    ),
 }
 
 

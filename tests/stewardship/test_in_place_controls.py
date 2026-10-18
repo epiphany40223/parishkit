@@ -132,7 +132,7 @@ HOSTED = {
     "backup-status-lines.html": ("integration-settings.html",),
     # Refresh from ParishSoft shows the run it requested (#521).
     "background-task-status.html": ("background-task.html", "source-refresh.html"),
-    # Outgoing mail's bulk review region (#382 M4): Confirm and Continue
+    # Sent mail's bulk review region (#382 M4): Confirm and Continue
     # sit inside it, and the bulk panel draws it.
     "delivery-bulk-review.html": ("delivery-bulk.html",),
     # The roster tick (#528): on the request page, and on each row of

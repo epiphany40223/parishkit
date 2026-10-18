@@ -45,19 +45,19 @@ patterns = [
         send_history_views.family_email_sends,
         name="family_email_sends",
     ),
-    path("mail/outgoing/", delivery_views.delivery_list, name="deliveries"),
+    path("mail/sent/", delivery_views.delivery_list, name="deliveries"),
     path(
-        "mail/outgoing/<uuid:message_id>/",
+        "mail/sent/<uuid:message_id>/",
         delivery_views.delivery_detail,
         name="delivery",
     ),
     path(
-        "mail/outgoing/<uuid:message_id>/resolution/",
+        "mail/sent/<uuid:message_id>/resolution/",
         delivery_views.resolution_command,
         name="delivery_resolve",
     ),
     path(
-        "mail/outgoing/<uuid:message_id>/bounce-report/",
+        "mail/sent/<uuid:message_id>/bounce-report/",
         delivery_views.bounce_report,
         name="delivery_bounce_report",
     ),

@@ -484,10 +484,10 @@ DESCRIPTIONS = {
         "the next full refresh may go through if no count falls further."
     ),
     "background_viewed": _("An Administrator opened Background work."),
-    "delivery_viewed": _("An Administrator opened Outgoing mail."),
+    "delivery_viewed": _("An Administrator opened Sent mail."),
     "delivery_bulk_resolved": _(
         "An Administrator retried failed emails, or recorded uncertain emails "
-        "as not sent, several at a time on Outgoing mail. Each email also has "
+        "as not sent, several at a time on Sent mail. Each email also has "
         "its own entry."
     ),
     "family_directory_viewed": _(
@@ -590,7 +590,7 @@ DESCRIPTIONS = {
     ),
     "delivery_unknown": _(
         "The mail provider did not confirm whether an email was accepted; "
-        "review it on Outgoing mail before it is retried."
+        "review it on Sent mail before it is retried."
     ),
     "campaign_boundary_lag": _(
         "A scheduled campaign start or close ran later than planned; the "

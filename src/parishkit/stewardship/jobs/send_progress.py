@@ -5,7 +5,7 @@ or one reminder) of the current campaign, in the current mode and Production
 cycle: every Family's occurrence of that revision is one email of the send,
 and every Family planning still owes that revision is one more. Moving or
 editing a schedule makes a new revision and so a new send; the earlier
-revision's emails stay listed on Outgoing mail but are not part of it.
+revision's emails stay listed on Sent mail but are not part of it.
 
 The panel is a moment-in-time view. A send is *in progress* when it still has
 work to do: an email not yet settled (an occurrence not yet prepared, or a
@@ -328,7 +328,7 @@ class SendCounts:
     """What one read of a send observed, per Family; ``progress`` derives the rest.
 
     ``prepare_failed`` is the part of ``failed`` that failed before an email
-    existed (so Outgoing mail cannot show it). ``waiting`` counts reminders
+    existed (so Sent mail cannot show it). ``waiting`` counts reminders
     held until the Family's failed or uncertain invitation is resolved;
     ``unreachable`` Families could not be emailed (no deliverable address, or
     no longer eligible); ``not_needed`` emails were dropped because the
@@ -367,7 +367,7 @@ class SendCounts:
 
     @property
     def outbox_failed(self):
-        """Failed emails that exist, so Outgoing mail can show them."""
+        """Failed emails that exist, so Sent mail can show them."""
         return self.failed - self.prepare_failed
 
     @property

@@ -1,6 +1,6 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n stewardship delivery %}{% comment %}One email's page (#1015). Object-named: the heading names the email by
 its type and its Family's heads ("Initial invitation to Morgan, Henry"),
-from the latest ParishSoft data as Outgoing mail reads it; the browser
+from the latest ParishSoft data as Sent mail reads it; the browser
 title names only the type, so browser history does not keep the Family's
 name (as on the Family timeline). The page reads top to bottom: what the
 email is and whom it was for, its attempt history, the technical details
@@ -16,7 +16,7 @@ Admin evidence already recorded.{% endcomment %}
 <div id="delivery-state" data-in-place-region>
 <p>{{ delivery.purpose|delivery_label }} · {{ delivery.mode|delivery_label }} · {{ delivery.state|delivery_label }}</p>
 {% if delivery.family__family_duid %}<p>{% translate "Family:" %} {% if delivery.family_name %}{{ delivery.family_name }}{% else %}{% source_status "missing" %}{% endif %} · {% translate "Family DUID:" %} {{ delivery.family__family_duid|duid }}</p>
-{% else %}<p>{% translate "Administrator report" %}</p>{% endif %}
+{% else %}<p>{% translate "Administrator email" %}</p>{% endif %}
 {# Whom the email is for, from its newest rendering (#1024; every address is a To: address). In Testing mode the provider is told to send it to the Testing recipient instead, which the second line names. Both are in the page as served, so nothing appears later and moves the page. #}
 {# Each routed address is followed by what the email's latest attempt recorded for it (#806): in Production on the To: line, in Testing mode on the Testing line, and, for an address refused for now, what the email's follow-up to it did since. When the email reached only some addresses, a line says how many; the About panel explains the labels and the automatic retry. #}
 {% if recipients.intended %}<p id="email-recipients">{% translate "To:" %} {% for address, outcome in recipients.intended_rows %}{{ address }}{% if outcome %} ({{ outcome }}){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}

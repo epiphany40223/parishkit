@@ -397,6 +397,10 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # statement alone; the one-time correction does not run again.
 # 0115 (#530) creates three tables (in CLOSURE_TABLES) and their guards
 # (``CLOSURE_CREATED``), and replaces nothing.
+# 0116 (#1562) creates Sent mail's two recipient reads (in
+# runtime_grants.CLOSURE_FUNCTIONS), which go, and an index on the outbox
+# renderings, which stays: its file makes the index only when missing, so it
+# installs whole again.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -628,6 +632,13 @@ CLOSURE_CREATED = {
             "public.stewardship_mailbox_check_guard_v1()",
         ),
         ("stewardship_jobs", "0033_mail_halt_clear"),
+    ),
+    **dict.fromkeys(
+        (
+            "public.stewardship_delivery_ids_for_address_v1(text,uuid)",
+            "public.stewardship_delivery_page_recipients_v1(uuid[],uuid)",
+        ),
+        ("stewardship_jobs", "0034_sent_mail_recipients"),
     ),
 }
 

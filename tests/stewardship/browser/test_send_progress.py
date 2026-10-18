@@ -47,7 +47,7 @@ def test_progress_pages_are_accessible_at_phone_and_desktop_widths(
             assert "emails finished" in name
         # Counts change on every poll, so the region itself never speaks.
         assert page.locator(REGION).get_attribute("aria-live") is None
-        assert page.get_by_role("link", name="Outgoing mail").count() >= 1
+        assert page.get_by_role("link", name="Sent mail").count() >= 1
 
 
 def test_the_running_page_follows_the_send_and_announces_only_its_end(

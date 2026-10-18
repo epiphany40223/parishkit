@@ -74,10 +74,16 @@ def task_retry():
 
 
 def delivery_list():
-    """One page of Outgoing mail with one message."""
+    """One page of Sent mail with one message."""
     return admin_operations.delivery_list_model(
         {
-            "values": {"state": "all", "q": "", "sort": "-created"},
+            "values": {
+                "state": "all",
+                "recipient": "",
+                "purpose": "all",
+                "mode": None,
+                "sort": "-created",
+            },
             "window": WINDOW,
             "rows": [MESSAGE_ROW | {"refused": 2}],
             "has_next": False,
@@ -246,6 +252,10 @@ GOLDEN |= {
         delivery_list,
         {
             "state": "all",
+            "purpose": "all",
+            "mode": None,
+            "start": None,
+            "end": None,
             "send": None,
             "page": 1,
             "size": 25,
@@ -400,7 +410,17 @@ ALLOWED = {
         "state",
     },
     # ``refused`` is the page's count of unresolved refused addresses (#1004).
-    "delivery list": {"state", "send", "deliveries", "refused"}
+    # The filters echo all but the recipient, which is input only (#1562).
+    "delivery list": {
+        "state",
+        "purpose",
+        "mode",
+        "start",
+        "end",
+        "send",
+        "deliveries",
+        "refused",
+    }
     | PAGE_MEMBERS
     | DELIVERY_MEMBERS,
     "delivery show": {
@@ -485,9 +505,10 @@ def test_each_documents_members_are_exactly_its_allowlist(command):
 
 def test_the_parsers_vocabularies_match_the_pages():
     """Spelled out before Django is set up; kept equal to their sources."""
-    from parishkit.stewardship.jobs.delivery_metadata import STATES
+    from parishkit.stewardship.jobs.delivery_metadata import PURPOSE_CHOICES, STATES
 
     assert admin_cli.DELIVERY_STATES == STATES
+    assert admin_cli.DELIVERY_PURPOSES == PURPOSE_CHOICES
     assert admin_cli.RESOLVE_ACTIONS == admin_operations.RESOLVE_ACTIONS
 
 
