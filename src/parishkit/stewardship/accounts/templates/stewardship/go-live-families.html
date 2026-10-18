@@ -8,7 +8,7 @@
 <div id="{{ table.anchor }}" data-table-region>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="testing-families-caption"><table class="data-table"><caption id="testing-families-caption">{% translate "Distinct Families with Testing submissions" %}</caption><thead><tr>{% translate "Family" as heading %}{% sort_heading table "name" heading %}{% translate "Family DUID" as heading %}{% sort_heading table "duid" heading "numeric" %}</tr></thead><tbody>
-{# The shared Family-name helper (#1570) with no record id: these Families are listed for their Testing responses, so no name opens a (Production) Timeline. #}{% for row in table.rows %}<tr><th scope="row">{% family_link None row.name|default:None %}</th><td class="numeric">{{ row.duid|duid }}</td></tr>{% empty %}<tr><td colspan="2">{% translate "No Families have Testing responses left to delete, so cleanup has nothing to remove. A Family is listed here once its form is submitted in Testing mode." %}</td></tr>{% endfor %}
+{# The shared Family-name helper (#1570) with no record id: these Families are listed for their Testing responses, so no name opens a (Production) Timeline. #}{% for row in table.rows %}<tr><th scope="row">{% family_link None row.name %}</th><td class="numeric">{{ row.duid|duid }}</td></tr>{% empty %}<tr><td colspan="2">{% translate "No Families have Testing responses left to delete, so cleanup has nothing to remove. A Family is listed here once its form is submitted in Testing mode." %}</td></tr>{% endfor %}
 </tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 </div>

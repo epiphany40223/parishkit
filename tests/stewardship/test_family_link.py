@@ -58,6 +58,10 @@ def test_marks_follow_the_shared_convention():
         f'{LINK}Adams, Ann</a> <span class="status-badge" '
         'data-source-status="inactive">Inactive in ParishSoft</span>'
     )
+    # A blank name is a missing one too, never an empty link.
+    assert draw("{% family_link id '' %}", id=FAMILY) == missing
+    badge = missing.removeprefix(LINK).removesuffix("</a>")
+    assert draw("{% family_link None '' %}") == badge
     # A missing Family is never also marked inactive.
     assert "inactive" not in draw("{% family_link id None active=False %}", id=FAMILY)
     assert "status-badge" not in draw("{% family_link id 'A' active=True %}", id=FAMILY)
