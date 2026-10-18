@@ -1127,11 +1127,12 @@ ParishSoft capability registry, not guessed in views. The initial registry is:
 
 | Change | Handling |
 | --- | --- |
-| Family home/mailing contact/address fields | ParishSoft v2 Family contact PUT, not written until a verified address read exists ([Review and publication](#review-and-publication)) |
+| Family home/mailing contact/address fields | Manual until a verified address read exists; the v2 Family contact PUT accepts them, but they cannot be read back to confirm ([Review and publication](#review-and-publication)) |
 | Member first/middle/last/nickname/maiden names | ParishSoft v2 Member contact PUT |
 | Member birth date, language, gender | ParishSoft v2 Member contact PUT where semantically sufficient |
-| Member death-date field correction | ParishSoft v2 Member contact PUT |
+| Member death date | Manual, with the deceased-status request: writing `dateOfDeath` leaves the Member Active |
 | Member email and home/mobile/work phone | ParishSoft v2 Member contact PUT |
+| Any answer that removes a recorded value | Manual: the API cannot clear a field |
 | Prefix, suffix, marital status | Manual unless a verified API capability is added |
 | Deceased-status or moved-household semantic request | Manual; writing a death date alone does not complete the semantic request |
 | Proposed Member/Family structure | Manual |
@@ -1142,10 +1143,36 @@ ParishSoft capability registry, not guessed in views. The initial registry is:
 The capability registry must be covered by tests against recorded, redacted API
 shapes and updated when ParishSoft support changes.
 
+The registry follows the live v2 write test of October 17, 2026
+([#528](https://github.com/epiphany40223/parishkit/issues/528),
+[#1596](https://github.com/epiphany40223/parishkit/issues/1596)). Both contact
+PUTs are partial updates: a field left out of the body is left unchanged. The
+API cannot clear a value: `null` is ignored and `""` is refused. Setting
+`dateOfDeath` stores the date but leaves the Member's status Active. The
+Family PUT's `primaryPhone` writes what a Family read returns as
+`familyHomePhone`, so publication maps each written field to the field it is
+read back from rather than assuming the names match. Family address blocks
+cannot be read back at all.
+
+Handling is therefore decided per value, not only per field: a change to an
+API-writable field is `manual` when the Family's answer removes the value (a
+blank answer, or a birth date of Unknown, over a recorded value). The SQL
+proposal guard derives the same handling, so a proposal cannot be stored as
+`api` when publication could not carry it. Changes recorded before this
+correction that are still open (`pending` or `conflict`) are re-marked
+`manual` once by a forward migration, which records one
+`census_handling_corrected` audit event with only their count. Their
+decision, edited value and execution are kept, so an ignored change stays
+ignored and every other one appears in Staff's *By hand* work as *To do*
+(or *Conflict* if ParishSoft changed since the Family answered); every other
+row (queued, published, resolved, superseded or cancelled) is
+left as it is.
+
 A submission that marks a Member deceased and supplies a death date creates two
-distinct proposals: an API-writable `death_date` field proposal and a manual
-`deceased_status` semantic request. Their decisions and execution states are
-independent, and neither queue may collapse or silently discard the other.
+distinct proposals: a manual `death_date` field proposal and a manual
+`deceased_status` semantic request, both entered by hand together. Their
+decisions and execution states are independent, and neither queue may collapse
+or silently discard the other.
 
 ### Follow-up records
 
@@ -2025,9 +2052,20 @@ current authorization/filter snapshot.
 6. Merge approved values into the freshly fetched full payload, leaving
    unapproved fields at their current upstream values. Only `approved`
    decisions are planned. An approved proposal that reconciliation already
-   holds in `conflict` counts as a conflict until it is re-reviewed. A
-   fetched payload that lacks any field of the provider's request schema
-   blocks its entity, so a write can never clear a field that was not read.
+   holds in `conflict` counts as a conflict until it is re-reviewed. Both
+   contact PUTs are partial updates (see the
+   [handling registry](#proposed-changes)): a field left out of the body is
+   left unchanged, so a write cannot clear a field that was not read.
+   Today's planner still builds the whole record as read plus the approved
+   writes, and blocks an entity whose read lacks any request-schema field.
+   Because the API refuses `""`, a whole-record body can be refused, so
+   publication must not be switched on until the planner sends only the
+   changed fields
+   ([#1600](https://github.com/epiphany40223/parishkit/issues/1600)).
+   As defence in depth for the [handling registry](#proposed-changes), a
+   change the registry no longer marks API-writable, or whose value to write
+   is blank, is reported *By hand* and never planned, whatever its stored
+   handling says.
 7. Persist the plan with the recorded source version and source-payload digests,
    present counts and conflicts, and require fresh Google authentication and
    final confirmation before queueing writes. The plan also records each

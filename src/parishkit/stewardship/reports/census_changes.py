@@ -439,6 +439,14 @@ def edit_control(row):
     }
 
 
+def family_answer(row):
+    """The Family's answer as text. A birth date given as Unknown is stored
+    as None, which would otherwise show blank like a removed value."""
+    if row["submitted_value"] is None and row["field"] == "birth_date":
+        return "Unknown"
+    return display(row["submitted_value"])
+
+
 def shape(row):
     """Word one proposal row for the page and the downloads."""
     shown = row | {
@@ -446,7 +454,7 @@ def shape(row):
         "automatic": automatic(row),
         "kind": kind(row),
         "label": LABELS.get(row["field"], row["field"]),
-        "family_answer": display(row["submitted_value"]),
+        "family_answer": family_answer(row),
         "edited": display(row["admin_value"]) if row["admin_value_set"] else "",
         # Blank where no verified ParishSoft read exists (every Family
         # household field today) rather than a value that is not there.
