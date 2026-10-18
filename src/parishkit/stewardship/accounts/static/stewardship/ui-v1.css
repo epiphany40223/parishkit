@@ -388,18 +388,24 @@ hr { border: 0; border-top: 1px solid var(--border); margin-block: 2rem; }
 /* Every value's line is 2.1rem tall (#1537), whatever its size. A tile drawn by the component
    (data-stat) keeps its value on one line, drawn smaller when it is long (StatTile.fit), so a
    fresh answer's wider figure never wraps and makes its row taller in place, moving everything
-   below under the reader's pointer. In Linux's wide fonts each size fits its longest value
-   (9, 13 and 17 characters, such as "$9,999,999.99" at 13) in a four-across desktop tile, and
-   up to 13 characters stays inside the tile's padding down to the 40rem breakpoint, below
-   which the tiles stack. Not sized to the tile with container units: a size container makes
-   WebKit's scroll anchoring jump the page when an in-place answer replaces it. Tiles still
-   drawn by hand keep wrapping until they move onto the component (#1540). */
+   below under the reader's pointer. A one-line value must also stay inside its tile, so a row
+   of component tiles has a wider minimum column (12.5rem, not 10rem): the row drops to three
+   or two across before a tile is too narrow for its value. In rem, so it scales with the
+   reader's font size; min() keeps a row in a narrower container from overflowing it. In
+   Linux's wide fonts each size then fits its longest value (9, 13 and 17 characters, such as
+   "$9,999,999.99" at 13) inside the tile at every width. Not sized to the tile with container
+   units: a size container makes WebKit's scroll anchoring jump the page when an in-place
+   answer replaces it. Tiles still drawn by hand keep wrapping until they move onto the
+   component (#1540). */
 .stat-value { font-size: 1.75rem; font-weight: 650; line-height: 2.1rem; font-variant-numeric: tabular-nums; }
+.stat-tiles:has(> [data-stat]) { grid-template-columns: repeat(auto-fit, minmax(min(12.5rem, 100%), 1fr)); }
 .stat-tile[data-stat] .stat-value { white-space: nowrap; }
 .stat-value-long { font-size: 1.25rem; }
 .stat-value-longest { font-size: 1rem; }
-/* On a phone a two-across tile is too narrow for a one-line value, so the tiles stack. */
-@media (max-width: 40rem) { .stat-tiles { grid-template-columns: 1fr; } }
+/* On a phone even one tile per column of two is too narrow for a one-line value, so every
+   .stat-tiles row stacks, those still drawn by hand (home, campaign comparison, financial
+   report, ministry follow-up) as well as the component's. */
+@media (max-width: 40rem) { .stat-tiles, .stat-tiles:has(> [data-stat]) { grid-template-columns: 1fr; } }
 .stat-detail { color: var(--muted); font-size: .875rem; }
 /* An unknown value's "—" carries its reason in a toggletip beside it (#1540), its "i" at the
    size it has elsewhere. The 1.75rem button is centred in the value's 2.1rem line from its top,

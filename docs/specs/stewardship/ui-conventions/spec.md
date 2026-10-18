@@ -2632,7 +2632,11 @@ two ways of reading to a screen reader. **Precedent.**
   always one line of one height: it never wraps, a long value (ten
   characters or more) is drawn smaller instead, and on a phone the tiles
   stack, so a wider figure in a fresh answer cannot make its row taller
-  ([#1537](https://github.com/epiphany40223/parishkit/issues/1537)).
+  ([#1537](https://github.com/epiphany40223/parishkit/issues/1537)). A
+  value also always stays inside its tile, at every window width and
+  font size: a row puts fewer tiles across rather than make a tile too
+  narrow for its value. Every row of tiles stacks on a phone, including
+  those not yet drawn by the shared code.
 - **Shared code.** The helper's `tile()` builds each tile and the include
   draws a row of them. A guard test fails when a template outside
   `components/` draws stat-tile markup by hand; the templates not yet
