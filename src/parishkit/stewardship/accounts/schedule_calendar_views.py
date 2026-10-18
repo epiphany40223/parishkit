@@ -19,10 +19,17 @@ changes anything: Edit opens the existing Edit scheduled email page (with
 the month shown, so it returns there; its Delete is Edit's, #1656), and each
 day's Add (#1521) the existing New scheduled email page with that send date
 (``schedule_entry_views.added_on``), whose review, Apply and audit are New's.
+
+The table, Every email by date, has its own view of the sends (#1656): Show
+(``?show=``) leaves out the past ones by default, and its When and Schedule
+headings sort it (``?sort=``, ``SORTING``), each refreshed in place. The grid
+never follows them: the page also lists every send, in sending order, for
+the script to draw from.
 """
 
 from dataclasses import replace
 from datetime import UTC, datetime
+from urllib.parse import urlencode
 
 from django.shortcuts import render
 from django.urls import reverse
@@ -34,6 +41,7 @@ from parishkit.stewardship.campaigns.schedule_evaluation import SchedulePlan
 from parishkit.stewardship.campaigns.work_locks import read_transaction
 from parishkit.stewardship.wall_clock import WEEKDAYS
 from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.tables import Sorting, whole_table
 
 from .admin_editing import error_response, principal
 from .authentication import runtime
@@ -50,6 +58,21 @@ from .schedule_views import campaign_email_names
 PAGE_DATES = 1000
 # The address parameter naming the month shown (``2054-11``, #1656).
 MONTH = "month"
+# The table's Show choice (#1656): upcoming emails only (the default), or
+# every email, past ones included.
+SHOW = "show"
+UPCOMING, ALL = "upcoming", "all"
+# When sorts by send time (newest first on its first choice, as every time
+# column does); Schedule by the schedules' sending order, each schedule's
+# sends by time. Sending order is the default.
+SORTING = Sorting.by_column(
+    {
+        "when": lambda send: (send.due, send.position),
+        "schedule": lambda send: (send.position, send.due),
+    },
+    default="when",
+    descending_first=("when",),
+)
 # The month grids' weekday headings, Sunday first as parish calendars are:
 # the short name shown and the shared full name a screen reader reads.
 WEEK = tuple(
@@ -114,6 +137,35 @@ def digest_slots(values, campaign):
         cursor = page.cursor
 
 
+def is_past(send, now):
+    """Whether ``send``'s time has passed and it is no longer sending."""
+    return send.due <= now and send.status not in ("preparing", "sending")
+
+
+def sends_view(sends, parameters, now, path):
+    """Every email by date's table, Show choice and Show links (#1656).
+
+    ``parameters`` are the address's checked ones (``filters``): ``show``
+    (``upcoming`` by default, or ``all``) and the table's ``sort``; any other
+    value is refused with ValueError, as an unknown address. ``path`` is the
+    page's own address, which each Show link names with that choice and the
+    sort shown. Every heading keeps the Show choice.
+    """
+    show = parameters.get(SHOW, UPCOMING)
+    if show not in (UPCOMING, ALL):
+        raise ValueError("Unknown filter input.")
+    sort = SORTING.parse(parameters)
+    shown = sends if show == ALL else [s for s in sends if not is_past(s, now)]
+    links = {
+        key: f"{path}?{urlencode({SHOW: key, 'sort': sort})}" for key in (UPCOMING, ALL)
+    }
+    return {
+        "table": whole_table(shown, sorting=SORTING, sort=sort, carry=[(SHOW, show)]),
+        "show": show,
+        "show_links": links,
+    }
+
+
 @require_http_methods(["GET", "HEAD"])
 def schedule_calendar(request, campaign_id):
     """Show the current campaign's sends by date, read-only (Administrator).
@@ -121,12 +173,15 @@ def schedule_calendar(request, campaign_id):
     It reads the applied configuration in one read-only snapshot, as the
     scheduled emails list does, and rechecks access after rendering so a
     revocation committed meanwhile is not hidden. ``?month=`` (#1656) is
-    the page script's; a malformed one is refused as an unknown address.
+    the page script's; a malformed one is refused as an unknown address, as
+    is a Show or sort the table does not offer (``sends_view``).
     """
     try:
         service = runtime()
         principal(request, service)
-        year_month(filters(request.GET, allowed={MONTH}), MONTH)
+        parameters = filters(request.GET, allowed={MONTH, SHOW, "sort"})
+        year_month(parameters, MONTH)
+        now = timezone.now()
         with read_transaction():
             state, campaign, _editable = schedule_state(service, campaign_id, page=True)
             configuration = state[0]
@@ -135,7 +190,7 @@ def schedule_calendar(request, campaign_id):
                 campaign_schedules(configuration, campaign.pk),
                 values,
                 work_summary(campaign.pk),
-                timezone.now(),
+                now,
                 campaign_email_names(_records(configuration, campaign.pk)),
             )
             response = render(
@@ -149,7 +204,8 @@ def schedule_calendar(request, campaign_id):
                     "list_url": reverse("admin:schedule_settings"),
                     # Each day's Add (#1521) opens New with ?date=<day>.
                     "add_url": reverse("admin:schedule_new"),
-                },
+                }
+                | sends_view(sends, parameters, now, request.path),
             )
         _recheck(request, service)
         response["Cache-Control"] = "no-store"

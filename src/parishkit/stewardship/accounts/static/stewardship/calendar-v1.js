@@ -1,10 +1,12 @@
 "use strict";
 
-// Campaign calendar (#469): draws the page's table of sends as a month grid,
-// one month at a time (#1656). The table (schedule-calendar.html) is both the
-// source and the grid's text equivalent: each row names its send time,
-// schedule and status and, while the schedule can still change, its Edit
-// page. Each send goes into the cell of its day in this browser's time zone,
+// Campaign calendar (#469): draws the page's list of sends as a month grid,
+// one month at a time (#1656). The hidden list (schedule-calendar.html,
+// data-calendar-source) holds every send in sending order: each item names
+// its send time, schedule and status and, while the schedule can still
+// change, its Edit page. The table below is the grid's text equivalent with
+// its own Show and sort, refreshed in place by ui-v1.js, so the grid reads
+// the list, never the table. Each send goes into the cell of its day in this browser's time zone,
 // as every Admin time is browser-local; the campaign's first and last days
 // are calendar dates and are never shifted. Text is only ever set as text:
 // nothing read from the page is parsed as markup.
@@ -23,7 +25,9 @@
 // also gets a (+) Add link (#1521) that opens New scheduled email with that
 // day as its send date, and every Edit link (grid and table) carries the
 // month shown (?calendar=), so Edit returns to it; the page itself never
-// changes anything.
+// changes anything. The table's Show and sort links carry the month shown
+// too (?month=), so the address they leave keeps it; both are set again
+// after each in-place swap of the table (parishkit:swap).
 (() => {
   const root = document.querySelector("[data-calendar]");
   const template = document.getElementById("calendar-month");
@@ -48,11 +52,11 @@
   };
   const monthKey = (index) => `${Math.floor(index / 12)}-${two((index % 12) + 1)}`;
 
-  // The table's sends grouped by local day ("2054-10-05"), each day's in the
-  // table's sending order.
+  // The list's sends grouped by local day ("2054-10-05"), each day's in
+  // sending order.
   function sendsByDay() {
     const days = new Map();
-    document.querySelectorAll("tr[data-calendar-send]").forEach((row) => {
+    document.querySelectorAll("[data-calendar-source] [data-calendar-send]").forEach((row) => {
       const node = row.querySelector("time[datetime]");
       const when = node ? new Date(node.dateTime) : null;
       if (!when || !Number.isFinite(when.getTime())) return;
@@ -73,7 +77,7 @@
 
   // One send in a day: its local time and schedule name, a link to its Edit
   // page when it has one, and its status for screen readers (the table shows
-  // it to everyone).
+  // it to everyone). ``row`` is the send's item in the hidden list.
   function sendItem({when, row}, index) {
     const item = document.createElement("li");
     if (row.classList.contains("schedule-past")) item.className = "schedule-past";
@@ -203,8 +207,22 @@
   const today = localKey(new Date());
   const first = monthIndex(keys[0]);
   const last = monthIndex(keys[keys.length - 1]);
-  const editLinks = Array.from(document.querySelectorAll(
-    "tr[data-calendar-send][data-edit-url] .table-actions a[href]"));
+
+  // The table's links with the month shown: each Edit link's ?calendar=,
+  // and its Show segments' and sort headings' ?month=. The table is
+  // swapped in place, so they are looked up afresh each time.
+  function linkTable(index) {
+    document.querySelectorAll("tr[data-calendar-row][data-edit-url] .table-actions a[href]")
+      .forEach((link) => {
+        link.href = editUrl(link.closest("tr").dataset.editUrl, index);
+      });
+    document.querySelectorAll("[data-table-region] a[data-in-place][href], [data-table-region] th a.sort-link[href]")
+      .forEach((link) => {
+        const url = new URL(link.href, document.baseURI);
+        url.searchParams.set("month", monthKey(index));
+        link.href = url.pathname + url.search + url.hash;
+      });
+  }
 
   // Draw month ``index``: the grid, the month's name after the buttons, each
   // button available or not (with the reason line), and the table's Edit
@@ -230,9 +248,7 @@
     if (index === first) why.push(reason.dataset.first);
     if (index === last) why.push(reason.dataset.last);
     reason.textContent = why.join(" ");
-    editLinks.forEach((link) => {
-      link.href = editUrl(link.closest("tr").dataset.editUrl, index);
-    });
+    linkTable(index);
     if (announce) said.textContent = label;
   }
 
@@ -260,4 +276,5 @@
     draw(next, true);
     remember(next);
   }));
+  document.addEventListener("parishkit:swap", () => linkTable(shown));
 })();

@@ -50,6 +50,11 @@ pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
 MONDAYS = [5, 12, 19, 26]
+# Every email by date's rows (#1656): every send (three one-time schedules,
+# the weekly digest's Mondays and the daily one's 31 days), and the upcoming
+# ones, without the sent invitation and the daily digest's four past days.
+ALL_ROWS = 3 + len(MONDAYS) + 31
+UPCOMING_ROWS = ALL_ROWS - 5
 
 
 def page_place(locator):
@@ -116,12 +121,12 @@ def test_calendar_draws_each_send_on_its_local_day(
     assert grids.locator("tbody td").first.inner_text().startswith("1")
     visible(november.get_by_role("link", name="4:00 AM Daily Admin digest"))
     assert "Campaign" not in november.inner_text()
-    # The table lists the same sends as text, with compact times.
+    # The table lists the same sends as text, with compact times: by default
+    # the upcoming ones (not the sent invitation or four past digest days).
     rows = page.locator("table.calendar-sends tbody tr")
-    assert rows.count() == 3 + len(MONDAYS) + 31
-    assert rows.first.locator("time").inner_text() == "Oct 1, 2054 6:00 AM"
-    assert rows.first.locator("th").inner_text() == "Initial invitation"
-    assert rows.first.get_by_role("link").count() == 0
+    assert rows.count() == UPCOMING_ROWS
+    assert rows.first.locator("time").inner_text() == "Oct 5, 2054 6:00 AM"
+    assert rows.first.locator("th").inner_text() == "Weekly Admin digest"
     visible(page.get_by_role("link", name="Edit Reminder 1"))
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert axe_violations(page, axe_source) == []
@@ -429,3 +434,127 @@ def test_edit_links_carry_the_month_shown(page, component_origin):
     assert table.get_attribute("href").endswith("/?calendar=2054-11")
     digest = cell(page, 1).get_by_role("link", name="4:00 AM Daily Admin digest")
     assert digest.get_attribute("href").endswith("/?calendar=2054-11")
+
+
+def unavailable_look(button):
+    """``button``'s pointer, opacity and background, as drawn now."""
+    return button.evaluate(
+        "node => { const style = getComputedStyle(node);"
+        " return [style.cursor, style.opacity, style.backgroundColor]; }"
+    )
+
+
+@pytest.mark.parametrize(
+    ("scheme", "width"), [("light", 1280), ("dark", 1280), ("light", 390)]
+)
+def test_an_end_button_looks_unavailable_not_busy(
+    page, component_origin, scheme, width
+):
+    """At the first and last months the button there is greyed with the
+    not-allowed pointer, never the busy (progress) one, and hovering it
+    changes nothing; the other button keeps the ordinary pointer (#1656)."""
+    page.emulate_media(color_scheme=scheme)
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + CALENDAR)
+    previous = page.get_by_role("button", name="Previous month")
+    following = page.get_by_role("button", name="Next month")
+    # October (the first month), then November (the last).
+    for end, other in ((previous, following), (following, previous)):
+        if end is following:
+            following.click()
+            assert month_shown(page) == "November 2054"
+        before = unavailable_look(end)
+        assert before[:2] == ["not-allowed", "0.55"]
+        end.hover(force=True)
+        # Past the buttons' colour transition: hovering changed nothing.
+        page.wait_for_timeout(300)
+        assert unavailable_look(end) == before
+        assert unavailable_look(other)[:2] == ["pointer", "1"]
+        # Still focusable, and its reason is still named.
+        end.focus()
+        assert end.evaluate("node => node === document.activeElement")
+        assert end.get_attribute("aria-describedby") == "calendar-nav-reason"
+
+
+def table_rows(page):
+    """Every email by date's rows."""
+    return page.locator("table.calendar-sends tbody tr")
+
+
+def first_row(page):
+    """The first row's time and schedule, as shown."""
+    row = table_rows(page).first
+    return row.locator("time").inner_text(), row.locator("th").inner_text()
+
+
+@pytest.mark.parametrize(
+    ("scheme", "width"), [("light", 1280), ("dark", 1280), ("light", 390)]
+)
+def test_show_and_sort_refresh_the_table_in_place(
+    page, component_origin, axe_source, scheme, width
+):
+    """Show and the When and Schedule headings refresh only the table, with
+    no page load; each keeps the other's choice and the month shown, focus
+    stays on the chosen control, and the grid never changes (#1656)."""
+    from playwright.sync_api import expect
+
+    page.emulate_media(color_scheme=scheme)
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + CALENDAR)
+    failures = watch(page)
+    upcoming = page.get_by_role("link", name="Upcoming emails")
+    past = page.get_by_role("link", name="Include past emails")
+    assert upcoming.get_attribute("aria-current") == "page"
+    assert table_rows(page).count() == UPCOMING_ROWS
+    page.get_by_role("button", name="Next month").click()
+    grid = page.locator("[data-calendar]").inner_html()
+    choice = page_place(past)
+    past.click()
+    expect(table_rows(page)).to_have_count(ALL_ROWS)
+    assert first_row(page) == ("Oct 1, 2054 6:00 AM", "Initial invitation")
+    expect(page.get_by_role("link", name="Include past emails")).to_have_attribute(
+        "aria-current", "page"
+    )
+    assert page.evaluate("document.activeElement.textContent") == "Include past emails"
+    assert same_place([page_place(past)], [choice])
+    query = page.url.partition("?")[2]
+    assert sorted(query.partition("#")[0].split("&")) == [
+        "month=2054-11",
+        "show=all",
+        "sort=when",
+    ]
+    # When, newest first on its first choice; Show is kept.
+    when = page.locator("th[data-sort-column=when] a.sort-link")
+    when.click()
+    expect(page.locator("th[data-sort-column=when]")).to_have_attribute(
+        "aria-sort", "descending"
+    )
+    assert first_row(page) == ("Nov 1, 2054 4:00 AM", "Daily Admin digest")
+    assert table_rows(page).count() == ALL_ROWS
+    # Schedule: the schedules in sending order, each one's sends by time.
+    page.locator("th[data-sort-column=schedule] a.sort-link").click()
+    expect(page.locator("th[data-sort-column=schedule]")).to_have_attribute(
+        "aria-sort", "ascending"
+    )
+    assert first_row(page) == ("Oct 1, 2054 6:00 AM", "Initial invitation")
+    # Back to the upcoming emails, keeping the Schedule sort.
+    page.get_by_role("link", name="Upcoming emails").click()
+    expect(table_rows(page)).to_have_count(UPCOMING_ROWS)
+    assert (
+        page.locator("th[data-sort-column=schedule]").get_attribute("aria-sort")
+        == "ascending"
+    )
+    assert "sort=schedule" in page.url and "month=2054-11" in page.url
+    # The swapped-in Edit links carry the month shown, the grid is as it was.
+    edit = page.get_by_role("link", name="Edit Reminder 1")
+    assert edit.get_attribute("href").endswith("/?calendar=2054-11")
+    assert page.locator("[data-calendar]").inner_html() == grid
+    assert month_shown(page) == "November 2054"
+    # A month change after the swap is carried by the new links too.
+    page.get_by_role("button", name="Previous month").click()
+    assert "month=2054-10" in when.get_attribute("href")
+    assert edit.get_attribute("href").endswith("/?calendar=2054-10")
+    assert page.evaluate("window.notReloaded === true")
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert axe_violations(page, axe_source) == []
+    assert not failures

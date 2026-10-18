@@ -67,7 +67,9 @@ checks need no database:
   view draws it, whose Cancel and Apply return to ``CALENDAR`` on October
   (``CALENDAR_OCTOBER``). The calendar shows one month (#1656); ``MONTHS``
   are its addresses with ``?month=``, each the same page (the script reads
-  the month).
+  the month). Its table, Every email by date (#1656), opens on the upcoming
+  emails in sending order; ``CALENDAR_VIEWS`` are its other Show and sort
+  addresses, each with a month, as the page's links send them.
 - Edit's Delete (#1656): ``EDIT`` posts it to ``EDIT_DELETE``, answered with
   the review of removing Reminder 1; ``EDIT_SERIES`` to ``SERIES_DELETE``,
   answered with the review of deleting its whole series; ``EDIT_INITIAL``
@@ -92,6 +94,7 @@ from parishkit.stewardship.accounts.campaign_mail import NOT_OPEN as CLOSED
 from parishkit.stewardship.accounts.schedule_calendar_views import (
     WEEK,
     calendar_sends,
+    sends_view,
 )
 from parishkit.stewardship.accounts.schedule_changes import (
     EMAIL_DOES_NOT_FIT,
@@ -129,6 +132,7 @@ from parishkit.stewardship.web.tables import whole_table
 from ..campaign_factory import campaign, schedule
 from ..content_factory import content
 from ..test_schedule_forms import data_for
+from .automation_components import canonical
 
 # Between the invitation (October 1, 2054) and the reminders, so the list
 # shows a sent row next to upcoming ones.
@@ -188,6 +192,14 @@ MONTHS = [
     # Outside the campaign's months: the script opens the nearer end.
     f"{CALENDAR}?month=2054-01",
     f"{CALENDAR}?month=2060-01",
+]
+# Every Show and sort of the calendar's table, with either month: the
+# addresses its in-place links fetch (the script adds the month shown).
+CALENDAR_VIEWS = [
+    f"{CALENDAR}?show={show}&sort={sort}&month={month}"
+    for show in ("upcoming", "all")
+    for sort in ("when", "-when", "schedule", "-schedule")
+    for month in ("2054-10", "2054-11")
 ]
 EDIT_DELETE = f"{EDIT}/deletion"
 SERIES_DELETE = f"{EDIT_SERIES}/deletion"
@@ -282,8 +294,12 @@ def _list(values, owner, emails, rows, *, sort="when", **extra):
     )
 
 
-def _calendar(values, owner, emails, rows):
-    """The Campaign calendar for ``rows`` and a daily digest (invitation sent)."""
+def _calendar(values, owner, emails, rows, address=CALENDAR):
+    """The Campaign calendar for ``rows`` and a daily digest (invitation sent).
+
+    ``address`` is the page's address: its ``show`` and ``sort`` choose the
+    table's view, as the view's own ``sends_view`` reads them.
+    """
     names = email_names([row for row in emails if row["values"]["kind"] == "email"])
     summary = {rows[0]["id"]: {"delivered": 1031, "failed": 2}}
     email = next(row for row in emails if row["values"]["slot"] == "daily_digest")
@@ -296,14 +312,17 @@ def _calendar(values, owner, emails, rows):
         subject=email["values"]["subject"],
     )
     rows = sorted([*rows, daily], key=schedule_order)
+    sends = calendar_sends(rows, owner["values"], summary, NOW, names)
+    parameters = QueryDict(address.partition("?")[2]).dict()
+    parameters.pop("month", None)
     context = {
         "campaign": {"pk": owner["id"], "active_configuration": owner["values"]},
         "values": owner["values"],
-        "sends": calendar_sends(rows, owner["values"], summary, NOW, names),
+        "sends": sends,
         "weekdays": WEEK,
         "list_url": LIST,
         "add_url": NEW,
-    }
+    } | sends_view(sends, parameters, NOW, CALENDAR)
     return (
         "text/html",
         render_to_string("stewardship/schedule-calendar.html", values | context),
@@ -640,6 +659,10 @@ def components(context, admin):
         FAILED: _list(values, owner, emails, rows, delete_url=f"{FAILED}/deletion"),
         CALENDAR: _calendar(values, owner, emails, rows),
         **{month: _calendar(values, owner, emails, rows) for month in MONTHS},
+        **{
+            canonical(view): _calendar(values, owner, emails, rows, view)
+            for view in CALENDAR_VIEWS
+        },
         APPLIED: _status(values, "applied"),
         NOT_APPLIED: _status(values, "failed", failure_code="stale_base"),
         NEW: _entry(values, owner, emails, rows, post_url=f"{NEW}/review"),

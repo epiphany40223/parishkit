@@ -65,9 +65,10 @@ def test_calendar_lists_each_send_and_changes_nothing(auth_service, google):
     actions = page.split("data-campaign-step-actions", 1)[1]
     assert "Return to Dates and mail schedules" in actions.split("</div>", 1)[0]
     assert ConfigurationChangeRequest.objects.count() == before
-    # The list links it; the calendar takes no parameters and no POST.
+    # The list links it; the calendar takes only its own parameters and no
+    # POST.
     assert f'href="{CALENDAR}"' in unescape(browser.get(LIST).content.decode())
-    assert browser.get(f"{CALENDAR}?sort=when").status_code == 400
+    assert browser.get(f"{CALENDAR}?page=2").status_code == 400
     assert browser.post(CALENDAR).status_code in {403, 405}
 
 
@@ -260,3 +261,43 @@ def test_the_calendar_takes_only_a_well_formed_month(auth_service, google):
     for month in ("2054-13", "2054-1", "november", ""):
         assert browser.get(f"{CALENDAR}?month={month}").status_code == 400, month
     assert browser.get(f"{CALENDAR}?month=2054-10&month=2054-11").status_code == 400
+
+
+def test_every_email_by_date_shows_upcoming_and_sorts(
+    auth_service, google, monkeypatch
+):
+    """Show (#1656) leaves out a past email by default and Include past emails
+    lists it; When and Schedule sort the table, and each keeps the other's
+    choice. The grid's own list always holds every send."""
+    store = auth_service.store
+    draft_with_schedules(store)
+    browser, _ = signed_in()
+    initial = definition("initial")
+    later = initial.current_revision.due_at + timedelta(hours=1)
+    monkeypatch.setattr(
+        schedule_calendar_views, "timezone", SimpleNamespace(now=lambda: later)
+    )
+
+    def table(query=""):
+        page = unescape(browser.get(f"{CALENDAR}{query}").content.decode())
+        source = page.split("data-calendar-source", 1)[1].split("</ul>", 1)[0]
+        body = page.split('<table class="data-table whole-words calendar-sends">')[1]
+        return page, source, re.findall(r'<th scope="row">([^<]+)</th>', body)
+
+    page, source, rows = table()
+    assert source.count("data-calendar-send ") == 2
+    assert rows == ["Reminder 1"]
+    assert 'aria-current="page">Upcoming emails</a>' in page
+    assert f'href="{CALENDAR}?show=all&sort=when#table"' in page
+    assert 'href="?show=upcoming&sort=-when#table"' in page
+    _, source, rows = table("?show=all")
+    assert source.count("data-calendar-send ") == 2
+    assert rows == ["Initial invitation", "Reminder 1"]
+    _, _, rows = table("?show=all&sort=-when")
+    assert rows == ["Reminder 1", "Initial invitation"]
+    page, _, rows = table("?show=all&sort=-schedule")
+    assert rows == ["Reminder 1", "Initial invitation"]
+    assert 'href="?show=all&sort=schedule#table"' in page
+    assert f'href="{CALENDAR}?show=upcoming&sort=-schedule#table"' in page
+    for refused in ("?show=past", "?sort=email", "?show=all&show=upcoming"):
+        assert browser.get(f"{CALENDAR}{refused}").status_code == 400, refused
