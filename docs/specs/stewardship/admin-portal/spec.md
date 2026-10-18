@@ -38,6 +38,34 @@ defined by the
 All login and callback denial pages preserve the retry path while honoring
 `429`/`Retry-After`; they never reveal which authorization check failed.
 
+A user's address need not be a Gmail address, but it must have a Google
+Account, and many volunteer Ministry leaders' addresses have none
+([#1593](https://github.com/epiphany40223/parishkit/issues/1593)). Google
+itself refuses such an address before it ever reaches the callback, so the
+portal says how to fix it where the person meets the problem. The Admin
+login page (below Sign in with Google) and the Admin generic not-authorized
+page both show the same short **Google Account guidance**: sign in with the
+address the parish gave access to; an address with no Google Account needs
+one created for it first, keeping the existing address (Google's sign-up
+offers to use an existing email address instead of a new Gmail address),
+with a link to Google's own "Create a Google Account" help; and whom to ask
+when it still fails. The not-authorized page shows it for every refusal
+alike, so it still reveals nothing about which check failed. The
+temporary-unavailability page and the Family portal's pages do not show it.
+The local laptop environment's test sign-in branch does not either. The
+guidance's wording is kept in one place in code
+(`accounts/google_account_help.py`), so the [Users page](#users-table) and a
+later leader email ([#1592](https://github.com/epiphany40223/parishkit/issues/1592))
+repeat it rather than restate it. The
+[leader sign-in guide](../../../guides/stewardship-leader-sign-in.md) is the
+same help for an Administrator to send to leaders.
+
+Authentication itself is unchanged: Google is the only sign-in method.
+Rejected for v1 (default of #1593, which the Administrator may override
+there): a second sign-in method such as emailed one-time links, which would
+be a new authentication surface under the
+[identity security policy](../architecture/spec.md#identity-and-session-security).
+
 If bootstrap exists but setup is incomplete, an Admin is routed only to the
 setup wizard, and the Admin navigation offers only the wizard. The read-only
 background-work list, task detail and header counts stay available so the
@@ -6104,6 +6132,19 @@ time ([date format](../ui-conventions/spec.md#date-format)), with users who
 never signed in sorting last; it sorts by the time itself. The default order is Email. The table
 refreshes in place like every other Admin table.
 
+A muted line under the table counts the Ministry leader users who have
+never signed in (their Last successful sign-in reads Never), across every
+page of the table, such as "3 Ministry leaders have never signed in."
+([#1593](https://github.com/epiphany40223/parishkit/issues/1593)), so an
+Administrator sees who may be stuck, often for want of a Google Account
+for their address. With none it says "No Ministry leader user is waiting
+for a first sign-in.", so the line is always there and a redraw moves nothing below it. It is counted from the
+rows the page already reads, adding no query. The About panel says users
+sign in with a Google Account for their address and repeats the
+[Google Account guidance](#login-and-denial-behavior) word for word, so an
+Administrator can pass it on (in the local laptop environment, only while
+it offers Google sign-in beside its test sign-in links).
+
 Each row is one line. An email or Name too long for its column is cut short
 with an ellipsis; the full value stays the cell's text for screen readers and
 copying, the cell's `title` attribute shows it whole as a hover tooltip, and
@@ -6312,6 +6353,9 @@ count and one audit row per new user, and both tables then refresh in place.
 Import never changes an existing user, never grants more than Ministry
 leader, and so raises no security alert; the last-Administrator guard is
 unaffected. Each imported Name stays editable on that user's Edit page.
+Import sends nothing to the leaders, so the Administrator tells them; the
+About panel's [Google Account guidance](#login-and-denial-behavior) is what
+to pass on to a leader whose address has no Google Account (#1593).
 
 The bulk bar is the [shared one](../ui-conventions/spec.md#admin-tables):
 while no row is ticked, its reserved reason line under the buttons says
