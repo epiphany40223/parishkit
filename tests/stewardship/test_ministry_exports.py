@@ -299,6 +299,16 @@ def test_lists_follow_the_page_column_order(action, contact):
     assert "Ministry DUID" not in report.headings
 
 
+@pytest.mark.parametrize(
+    ("gender", "shown"),
+    [("M", "Male"), ("u", "Unspecified"), ("X", "X"), (None, "Unavailable")],
+)
+def test_join_list_decodes_parishsoft_gender_codes(gender, shown):
+    """A captured ParishSoft gender code exports as its census word (#1621)."""
+    report = document(count=1, gender=gender)
+    assert report.rows[0][report.headings.index("Gender")] == shown
+
+
 def test_summary_capture_is_not_rendered():
     """The campaign-wide summary export was removed (#1126): a summary
     capture is refused rather than rendered."""
