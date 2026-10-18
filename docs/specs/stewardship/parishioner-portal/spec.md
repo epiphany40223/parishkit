@@ -298,6 +298,12 @@ of a recorded date requests a blank date through the normal Admin-reviewed
 change workflow. The control and review summary must explain that it requests
 removal of any recorded birth date, not describe it as merely withholding an
 answer from this campaign. It never clears the source record automatically.
+While "Birth date is unknown" is ticked, the birth-date field is cleared and
+greyed out (disabled, so it is not sent), named by the always-visible help
+under the box, which says why; unticking turns the field back on, still empty
+and required ([conditional fields](../ui-conventions/spec.md#conditional-fields);
+[#1674](https://github.com/epiphany40223/parishkit/issues/1674)). The answer is
+one value, a date or Unknown, so a date is never sent with Unknown.
 
 Two mutually exclusive terminal choices precede the remaining fields:
 
