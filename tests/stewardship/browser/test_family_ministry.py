@@ -34,6 +34,67 @@ def begin(page, origin, form, submit):
     prepare(page, origin, form=form, submit=submit)
 
 
+NOTICE = (
+    "If you choose to join a ministry or stop participating in one, that "
+    "ministry's leaders will see this person's email address and phone numbers "
+    "so they can follow up."
+)
+# Appended only when the "cannot participate" checkbox is drawn.
+NOTICE_SERVICE = (
+    NOTICE + " If the physical limitations box below is checked, they are not shared."
+)
+SERVE = (
+    "Because of physical limitations, I/we cannot participate in any ministries "
+    "at this time."
+)
+
+
+@pytest.mark.parametrize(
+    ("census", "service"), [(True, True), (False, True), (True, False)]
+)
+def test_contact_notice_precedes_every_ministry_choice(
+    page, component_origin, census, service
+):
+    """Families meet the leader contact sentence before any sharing choice (#1625).
+
+    It sits under the "Ministry participation" heading, above the "cannot
+    participate" checkbox (which stops every Ministry) and the first Ministry
+    row, once per Member page, at 320px with no horizontal overflow.
+    """
+    page.set_viewport_size({"width": 320, "height": 900})
+    form = ministry_form(census=census)
+    if service:
+        form["service"] = {
+            "talent_options": [],
+            "members": {"3": {"cannot_serve": False}},
+            "proposed_members": {},
+        }
+    begin(page, component_origin, form, None)
+    heading = page.get_by_role(
+        "heading", name="Ministry participation", include_hidden=True
+    )
+    show(page, heading)
+    notice = page.get_by_text(NOTICE_SERVICE if service else NOTICE, exact=True)
+    expect(notice).to_have_count(1)
+    choir = page.get_by_role("group", name="Choir", include_hidden=True)
+    order = [heading, notice]
+    if service:
+        expect(page.get_by_label(SERVE)).to_have_count(1)
+        order.append(page.get_by_label(SERVE))
+    order.append(choir)
+    tops = [item.bounding_box()["y"] for item in order]
+    assert tops == sorted(tops) and len(set(tops)) == len(tops)
+    # Reading order (screen readers) matches the visual order.
+    handles = [item.element_handle() for item in order]
+    assert page.evaluate(
+        """items => items.every((item, i) => i === 0 ||
+          (items[i - 1].compareDocumentPosition(item) &
+           Node.DOCUMENT_POSITION_FOLLOWING))""",
+        handles,
+    )
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+
+
 @pytest.mark.parametrize("census", [True, False])
 def test_mobile_ministry_edit_review_and_definitive_submit(
     page, component_origin, axe_source, census
@@ -303,7 +364,7 @@ def test_repaired_ministry_names_fit_a_phone_screen(page, component_origin):
         {"id": 4, "name": long_name},
         {"id": 9, "name": "Ministry 9"},
     ]
-    begin(page, component_origin, form, lambda route: route.abort())
+    begin(page, component_origin, form, None)
     expect(
         show(page, page.get_by_role("group", name=long_name, include_hidden=True))
     ).to_be_visible()

@@ -339,6 +339,27 @@ earlier request does not delete it or turn omission into a new
 leave/withdrawal action. Recheck the same rule at submission, including the
 linked stale-form reconfirmation requirement.
 
+Directly under each Member's "Ministry participation" heading, before the
+"cannot participate" checkbox and the continue, stop and join choices, a short
+plain notice that is always shown says: "If you choose to join a ministry
+or stop participating in one, that ministry's leaders will see this person's
+email address and phone numbers so they can follow up." When the campaign
+includes the service module, so the "cannot participate" checkbox is drawn,
+the notice adds a second sentence: "If the physical limitations box below
+is checked, they are not shared." That sentence is there because checking
+that box stops every current Ministry, yet while the Family's latest response
+has it checked, every request of that Member, earlier ones included, keeps
+ParishSoft's publish flags (Administrator decision, 2026-10-18, on
+[#1591](https://github.com/epiphany40223/parishkit/issues/1591), applied per
+Member). Without the
+service module there is no box, so the notice has only the first sentence. The
+notice comes before the checkbox so Families and screen readers meet it before
+any Ministry choice. It is shown once per Member page, never per Ministry, and
+describes the
+[leader contact rule](../reports/spec.md#ministry-change-summary) for a
+standing request
+([#1625](https://github.com/epiphany40223/parishkit/issues/1625)).
+
 Current memberships appear first (with no visible heading; screen readers get
 a "Current ministries" heading), each stating its choice once as "Continue in
 this ministry" (the default) or "Stop participating in this ministry". Leaving
@@ -358,11 +379,12 @@ unresolved choice cancels/supersedes its workflow while retaining history.
 
 ### Cannot participate in ministries
 
-Above the Ministry choices, each Member may check "Because of physical
-limitations, I/we cannot participate in any ministries at this time." While
-checked, every current Ministry is set to "Stop participating in this
-ministry", every join choice is cleared, and the Ministry choices and the
-join-more-ministries disclosure are disabled for pointer, keyboard and
+Inside the "Ministry participation" section, after the leader contact
+sentence and above the Ministry choices, each Member may check "Because of
+physical limitations, I/we cannot participate in any ministries at this
+time." While checked, every current Ministry is set to "Stop participating
+in this ministry", every join choice is cleared, and the Ministry choices
+and the join-more-ministries disclosure are disabled for pointer, keyboard and
 assistive technology alike. Unchecking restores the Family's own earlier
 choices. The server rejects a response in which such a Member continues or
 joins any Ministry. This answer is recorded with the response and is never
