@@ -647,6 +647,21 @@ def test_last_portal_action_ignores_what_an_email_reader_makes():
     assert str(Timeline(summary([], []), lines).last_action.what) == (
         "Reached the furthest step so far"
     )
+    # The first step is reported as the form page loads, with nothing
+    # chosen (a script-running mail scanner too): never an action.
+    lines = events([], [], engagement=Engagement(None, "welcome", same))
+    assert Timeline(summary([], []), lines).last_action is None
+    # A Sign out in a session Staff opened through Open form is Staff's.
+    lines = events(
+        [],
+        [FIRST],
+        sign_ins=[(later, True)],
+        session_ends=[(later + MINUTE, "family_logout", True)],
+    )
+    assert [str(line.what) for line in lines][-1] == "Signed out"
+    assert str(Timeline(summary([], [FIRST]), lines).last_action.what) == (
+        "Submitted a response"
+    )
     # Nothing but a link fetch: none recorded.
     lines = events([INVITATION], [], sign_ins=[later], forms=[later])
     assert Timeline(summary([INVITATION], []), lines).last_action is None

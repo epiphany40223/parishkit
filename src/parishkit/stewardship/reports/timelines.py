@@ -68,6 +68,9 @@ STEPS = {
     "additional": _("Additional information"),
     "review": _("Review"),
 }
+# The form's first step. The form page's script reports it as soon as the
+# page loads, with no choice made, so reaching it is no portal action.
+FIRST_STEP = next(iter(STEPS))
 # The timeline is a shared Admin table with one sortable column, When:
 # newest first by default (the Administrator's decision on #590), and the
 # heading reverses it in place. Rows at the same instant sort by their
@@ -378,10 +381,13 @@ def events(
     Staff started through Open form (#795) reads "Staff opened the form",
     since no link was followed, and never names who did.
 
-    ``session_ends`` are ``(instant, event_type)`` pairs, ``family_logout``
-    (the Family chose Sign out) or ``family_session_ended`` (the system ended
-    the session); they are built after the Family's own steps, so a sign-in,
-    a submission and the sign-out at one instant read in that order. The
+    ``session_ends`` are ``(instant, event_type)`` pairs, or ``(instant,
+    event_type, by_staff)`` triples, ``family_logout`` (Sign out was chosen)
+    or ``family_session_ended`` (the system ended the session); ``by_staff``
+    says the session was one Staff opened through Open form, whose Sign out
+    is not the Family's portal action. They are built after the Family's own
+    steps, so a sign-in, a submission and the sign-out at one instant read
+    in that order. The
     exception is a system end at the same instant as a sign-in: a new
     sign-in in the same browser ends the earlier session in its own
     transaction, so that end reads "Earlier session ended" and is built
@@ -411,10 +417,10 @@ def events(
             kind="sessions",
         )
 
-    def session_end(at, event_type):
+    def session_end(at, event_type, by_staff=False):
         """One sign-out or session-end line."""
         if event_type == "family_logout":
-            return Event(at, _("Signed out"), kind="sessions", portal=True)
+            return Event(at, _("Signed out"), kind="sessions", portal=not by_staff)
         return Event(
             at,
             _("Session ended"),
@@ -426,9 +432,11 @@ def events(
         )
 
     sign_in_at = {value[0] if isinstance(value, tuple) else value for value in sign_ins}
+    # Every end as a triple: a pair is a session the Family opened itself.
+    session_ends = [(*end, False)[:3] for end in session_ends]
     replaced = [
         (at, event_type)
-        for at, event_type in session_ends
+        for at, event_type, _by_staff in session_ends
         if event_type == "family_session_ended" and at in sign_in_at
     ]
     lines = [
@@ -447,12 +455,15 @@ def events(
             Event(engagement.progress_at, _("Got past the first step"), portal=True)
         )
     if engagement is not None and engagement.furthest_at is not None:
+        # Only a step past the first is the Family's action: the first is
+        # reported when the form page loads (a script-running mail scanner
+        # too), with nothing chosen.
         lines.append(
             Event(
                 engagement.furthest_at,
                 _("Reached the furthest step so far"),
                 engagement.furthest_label,
-                portal=True,
+                portal=engagement.furthest != FIRST_STEP,
             )
         )
     for submission in submissions:
@@ -472,8 +483,8 @@ def events(
             )
         )
     lines += [
-        session_end(at, event_type)
-        for at, event_type in session_ends
+        session_end(at, event_type, by_staff)
+        for at, event_type, by_staff in session_ends
         if (at, event_type) not in replaced
     ]
     lines += [
@@ -578,7 +589,8 @@ def read_sessions(family_id, scope, current_mode, bounds):
     """The Family's sign-ins and session ends in the scope, oldest first.
 
     Returns ``(sign_ins, session_ends)``: sign-ins as ``(instant, by_staff)``
-    and ends as ``(instant, event_type)``, the ``events`` arguments.
+    and ends as ``(instant, event_type, by_staff)``, the ``events``
+    arguments.
     ``by_staff`` says the sign-in's Family session was started by Staff
     through Open form; it is decided per session, so two sign-ins at the
     same instant are never confused. Sign-in audit events carry no mode, so
@@ -623,7 +635,7 @@ def read_sessions(family_id, scope, current_mode, bounds):
     )
     sign_ins = [(at, subject in assisted) for at, subject in logins if at in kept]
     ends = [
-        (at, kind)
+        (at, kind, subject in assisted)
         for at, subject, kind in rows
         if kind != "family_login" and subject in sessions
     ]

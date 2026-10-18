@@ -296,8 +296,15 @@ def test_last_portal_action_ignores_email_reader_fetches(request, auth_service, 
         at = re.search(r'<time datetime="([^"]+)"', value)
         return words, datetime.fromisoformat(at.group(1)) if at else None
 
-    # An email reader's fetch: a sign-in and a form open, no action.
-    open_form(live_login(harness, 1))
+    # An email reader's fetch: a sign-in, a form open and, when the reader
+    # runs the page's script, the first step's report. None is an action.
+    reader = live_login(harness, 1)
+    open_form(reader)
+    progress_to(reader, "welcome")
+    assert (
+        FamilyEngagement.objects.get(family_id=family.pk, mode="live").furthest_section
+        == "welcome"
+    )
     assert shown() == ("None recorded", None)
     # The Family itself gets past the first step to the Census step.
     live = live_login(harness, 1)
@@ -319,6 +326,7 @@ def test_last_portal_action_ignores_email_reader_fetches(request, auth_service, 
     # Another fetch after it, and one more form open: still the sign-out.
     later = live_login(harness, 1)
     open_form(later)
+    progress_to(later, "welcome")
     assert shown() == ("Signed out", out.created_at)
     assert AuditEvent.objects.filter(
         event_type="family_login", actor_id=family.pk, created_at__gt=out.created_at
@@ -389,7 +397,9 @@ def test_session_ends_follow_their_sign_ins_mode():
     The switch to Testing ends a Production session at the switch instant,
     which already counts as Testing, so the end must be paired with its
     sign-in by Family session, not attributed by its own instant; a Testing
-    session's end is dropped. The rows are seeded past the append-only
+    session's end is dropped. A Sign out in a session Staff opened through
+    Open form says so, as its sign-in does, so it is no portal action of
+    the Family's (#1678). The rows are seeded past the append-only
     guards (``unguarded``) so the instants are exact.
     """
     from types import SimpleNamespace
@@ -399,11 +409,15 @@ def test_session_ends_follow_their_sign_ins_mode():
 
     from .auth_builders import unguarded
 
-    family, production, testing = uuid4(), uuid4(), uuid4()
+    family, production, testing, assisted = uuid4(), uuid4(), uuid4(), uuid4()
     start = database_now() + timedelta(days=1)
     switch, signed_in_testing = start + timedelta(hours=1), start + timedelta(hours=2)
+    staff_in, staff_out = start + timedelta(minutes=10), start + timedelta(minutes=20)
     seeded = [
         (start, production, "family_login"),
+        (staff_in, assisted, "family_login"),
+        (staff_in, assisted, "family_assisted_login"),
+        (staff_out, assisted, "family_logout"),
         (switch, production, "family_session_ended"),
         (signed_in_testing, testing, "family_login"),
         (signed_in_testing + timedelta(minutes=5), testing, "family_session_ended"),
@@ -430,5 +444,8 @@ def test_session_ends_follow_their_sign_ins_mode():
             )
     scope = SimpleNamespace(mode="production", rehearsal_epoch_id=None)
     sign_ins, ends = read_sessions(family, scope, "testing", (None, None))
-    assert sign_ins == [(start, False)]
-    assert ends == [(switch, "family_session_ended")]
+    assert sign_ins == [(start, False), (staff_in, True)]
+    assert ends == [
+        (staff_out, "family_logout", True),
+        (switch, "family_session_ended", False),
+    ]
