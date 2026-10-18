@@ -167,6 +167,7 @@
   stay.addEventListener("click", async () => {
     if (stay.getAttribute("aria-disabled") === "true") return;
     stay.setAttribute("aria-disabled", "true");
+    stay.setAttribute("aria-busy", "true"); // in flight: the busy pointer
     error.hidden = true;
     try {
       const token = form.querySelector('input[name="csrfmiddlewaretoken"]').value;
@@ -186,6 +187,7 @@
       error.hidden = false;
     } finally {
       stay.removeAttribute("aria-disabled");
+      stay.removeAttribute("aria-busy");
     }
   });
 

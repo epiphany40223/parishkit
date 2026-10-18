@@ -1048,10 +1048,10 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `artwork_upload` | Campaign images | Campaign images | Administrator | Campaign images (upload error); Campaign image upload | `/admin/campaign/images/<slot>/` (POST only) | (same) | POST-only: a staged upload answers with the review dialog's review of it (#750); a refused one re-renders Campaign images (status 400). Review campaign image is a review, and Remove campaign image a confirmation (#1356), in Campaign images' review dialog; their old addresses are gone. |
 | `schedule_settings` | Dates and mail schedules | Menu: Dates and mail schedules | Administrator | Mail schedules and campaign dates; Mail schedules | `/admin/campaign/schedules/` | (same) |  |
 | `schedule_new` | New scheduled email | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/addition/` | (same) | Its review confirms through Dates and mail schedules. |
-| `schedule_edit` | Edit scheduled email | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/<schedule>/` | (same) | The New page filled in; refuses a read-only schedule. |
+| `schedule_edit` | Edit scheduled email | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/<schedule>/` | (same) | The New page filled in; refuses a read-only schedule. `?calendar=<month>` (from the calendar) returns to that month. |
 | `schedule_email_test` | Send a test of this text | New and Edit scheduled email | Administrator | (new, #446) | `/admin/campaign/schedules/test-email/` (POST only) | (same) | The page script posts the schedule's unsaved email here; nothing is saved. |
-| `schedule_calendar` | Campaign calendar | Dates and mail schedules | Administrator | (new, #469) | `/admin/campaign/schedules/calendar/` | (same) | Read-only; every send by date. |
-| `schedule_delete` | Delete scheduled emails | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/deletion/` (POST only) | (same) | The table's confirmation dialog posts here. |
+| `schedule_calendar` | Campaign calendar | Dates and mail schedules | Administrator | (new, #469) | `/admin/campaign/schedules/calendar/` | (same) | Read-only; every send by date. `?month=<year-month>` names the month shown. |
+| `schedule_delete` | Delete scheduled emails | Dates and mail schedules | Administrator | (new, #878) | `/admin/campaign/schedules/deletion/` (POST only) | (same) | The table's confirmation dialog posts here; Edit's Delete posts `action=preview` for its review (#1656). |
 | `share_settings` | Share options | Menu: Share options | Administrator | How Families will share | `/admin/campaign/share-options/` | (same) | Gains a Return link and About panel. |
 | `reminder_workgroup` | No-reminders WorkGroup | Menu: No-reminders WorkGroup | Administrator | (new, #861) | `/admin/campaign/no-reminders-workgroup/` | (same) | Edit, confirm, apply; stays editable while live. |
 | `go_live` | Go-live readiness | Menu: Go-live readiness | Administrator | (same) | `/admin/campaign/go-live/` | (same) |  |
@@ -3136,40 +3136,124 @@ what happens to the series:
   (with its rule, now ending the day before) and that the changed ones become
   a new series (with its rule).
 
-Changing a series' rule, and deleting a series, stay on the command line for
-now. Editing from the calendar is planned in
+Changing a series' rule stays on the command line for now; deleting a series
+is Edit's Delete ([Delete a scheduled email](#delete-a-scheduled-email)).
+Editing from the calendar is in
 [Editing from the calendar](#editing-from-the-calendar).
+
+##### Delete a scheduled email
+
+From [#1656](https://github.com/epiphany40223/parishkit/issues/1656). Edit
+scheduled email has a **Delete** button in a section of its own under the
+form, where calendar applications put Delete: on the item's own page. It
+opens the [review dialog](../ui-conventions/spec.md#review-dialog), titled
+"Review deleting this scheduled email", without a page load: the page posts
+the schedule to Delete scheduled emails
+(`/admin/campaign/schedules/deletion/`, `action=preview`), and the server
+builds the review exactly as for any schedule change (the complete set of
+schedules without it, validated, previewed and signed as the schedule
+commands do). The dialog lists each schedule removed with its affected work:
+emails already sent (not recalled), planned sends not started yet (cancelled)
+and sends that block. **Apply** confirms on Dates and mail schedules with the
+same signed preview, work-lock recheck and audited change request as every
+schedule review. Once the change is applied the page returns to where its
+Cancel goes (Dates and mail schedules, or the calendar month it was opened
+from), whose status line says "Scheduled email deleted." (or "Reminder series
+deleted."). Delete is not drawn inside the campaign wizard, whose step saves
+directly; the wizard's list has its own Delete.
+
+- **A reminder in a series** has a **Delete** choice above the button:
+  **This reminder only** (the default) and **The whole series**, the same
+  words as Edit's own scope. This reminder only removes just this reminder,
+  which leaves its series, as deleting it from the list does. The whole
+  series removes every reminder of the series that has not sent or been
+  prepared, and the series itself, as the command line's series delete does
+  (`series_edits.plan`, scope `delete`); its reminders that sent stay as
+  ordinary reminders. The review names the series' rule and says so.
+- **An Admin digest** is one repeating schedule with no single-day
+  exceptions, so Delete removes the whole digest: every send still to come
+  stops, and the review says so. Skipping one day of a digest is a later
+  change ([#1658](https://github.com/epiphany40223/parishkit/issues/1658)).
+- **Refusals.** Edit already refuses a schedule that has run or has work
+  prepared (a GET or a POST, even from an old link), so an email that sent or
+  is being sent cannot be deleted, and the deletion checks that again. A
+  rule the remaining schedules would break (a reminder left without an
+  Initial invitation) is refused in the dialog in plain words, recording
+  nothing. Sends in progress or with an uncertain result block the review,
+  which then offers no Apply and names Sent mail; a stale page or another
+  Administrator's change is refused as any review is. Reminder planning,
+  live-campaign rules and emailed Family codes and links are those of any
+  schedule change.
 
 #### Campaign calendar
 
 **Campaign calendar** (`/admin/campaign/schedules/calendar/`,
 [#469](https://github.com/epiphany40223/parishkit/issues/469)), opened by the
 link beside New scheduled email, shows every email the saved schedules send,
-by date. It changes nothing itself and offers no Delete; its only way to
-start a change is Add on a day ([Editing from the
-calendar](#editing-from-the-calendar)). It reads the current schedules: the
+by date. It changes nothing itself and offers no Delete of its own: Add on a
+day starts a new schedule ([Editing from the
+calendar](#editing-from-the-calendar)), and each send links to its Edit
+scheduled email page, which has [Delete](#delete-a-scheduled-email). It reads
+the current schedules: the
 Initial invitation, each reminder, and every day or week of the Daily and
 Weekly Admin digests, expanded the way the scheduler evaluates them (a Daily Admin digest's last send is the day after
 the campaign closes).
 
-- **By month** draws one month grid per month, Sunday first, from the
-  campaign's first day (or its first send, if earlier) to its last day (or
-  its last send). Each day lists its sends with their time and schedule name,
-  and notes Today and the campaign's first and last days ("Campaign opens",
-  "Campaign closes") in words, not only in color.
+- **By month** shows one month at a time, Sunday first (#1656), with
+  **Previous month** and **Next month** buttons above it and the month's name
+  after them, so a longer name never moves either button. The months run
+  from the campaign's first day (or its first send, if earlier) to its last
+  day (or its last send). At either end the button there stays in place and
+  focusable but is unavailable (greyed, with the not-allowed pointer, as
+  every [unavailable
+  button](../ui-conventions/spec.md#prerequisite-gates) is), and a reserved
+  line after the buttons says
+  why ("This is the campaign's first month." or "This is the campaign's last
+  month."). The calendar opens on the month its address names
+  (`?month=2054-11`), else on the current month in the browser's zone when
+  it is one of the campaign's months, else on the first; a month outside
+  them opens the nearer end, and an address whose `month` is not a year and
+  month is refused as an unknown address. Changing month redraws the grid in
+  place, with no request ([in-place
+  controls](../ui-conventions/spec.md#in-place-controls)): focus stays on the
+  button, the new month's name is announced, and the address's `month` is
+  replaced, so Refresh, a bookmark, and Back from a page opened from the
+  calendar show the same month. Every month is drawn with six week rows, so
+  changing month never changes the grid's row count. Each day lists its
+  sends with their time and schedule name, and notes Today and the
+  campaign's first and last days ("Campaign opens", "Campaign closes") in
+  words, not only in color.
 - **Every email by date** is the same sends as a table, the grids' text
   equivalent: when, the schedule ("Reminder 2"), the email it sends, its
   status and Edit. The status is the scheduled emails table's, from the same
   counts-only work summary; each day or week of a digest shows the digest's
   "Repeats" until its time has passed, then "Past". Every send of a digest is
-  listed, however long the campaign.
+  listed, however long the campaign. Above it, **Show** is a [binary
+  choice](../ui-conventions/spec.md#binary-choices) (`?show=`): **Upcoming
+  emails** (the default) or **Include past emails**. A past email is one
+  whose time has passed and is not still sending; the default leaves them
+  out because the list is where the Administrator finds what is still to
+  come and can be edited, and a long campaign's past digest days would
+  otherwise bury it, while the grid above still shows every send. With
+  nothing upcoming the table's one row says so and names Include past
+  emails. The **When** and **Schedule** headings sort the table on the
+  server, as every [Admin table](../ui-conventions/spec.md#admin-tables)
+  does (`?sort=`; When newest first on its first choice, Schedule in
+  sending order of the schedules, each schedule's sends by time); the
+  default is sending order. The table is shown whole, with no navigator.
+  Choosing Show or a heading refreshes only this table in place; both keep
+  the other's choice and the month shown (`?month=`), and the grid never
+  changes with them, since it draws every send from the page's own list of
+  them, not from the table.
 
 A send's time is browser-local, like every Admin time (the
 [browser-local time rule](../ui-conventions/spec.md#dates-and-times)), and the
 grids place it on its day in the browser's zone; table cells use the compact
 date form. The campaign's dates are calendar dates and are never shifted. A
 send of a schedule that has not run links to its Edit scheduled email page,
-in the grid and through Edit in the table; a schedule that has run, or has work
+in the grid and through Edit in the table, with `?calendar=` and the month
+shown (`?calendar=2054-11`), so that page's Cancel, Apply and Delete return
+to that month of the calendar; a schedule that has run, or has work
 prepared, is listed muted and not linked, as on the list, and so is a digest's
 send whose time has passed (editing the digest changes only its later sends).
 A muted send is told apart by its status, in words in the table and read to
@@ -3193,9 +3277,10 @@ and audited configuration request as
 checks it exactly as that page does.
 
 - **Add on a day.** Each day of the campaign's dates that is today or later
-  (in the browser's zone) has a small **Add**
-  link beside its number, reachable by keyboard and named with its date ("Add
-  an email on October 12, 2054"). It opens New scheduled email
+  (in the browser's zone) has a small (+) icon link beside its number
+  (#1656), at least 24 px square, reachable by keyboard, and named, with a
+  matching tooltip, with its date ("Add a scheduled email on October 12,
+  2054"). It opens New scheduled email
   (`?date=` that day) as a Reminder with that day as the send date, in the
   browser's zone; choosing the Initial invitation instead keeps the day, and
   a day that is not a real date is refused as an unknown address. The type

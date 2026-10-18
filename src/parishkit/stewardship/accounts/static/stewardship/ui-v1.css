@@ -644,6 +644,16 @@ textarea { max-width: 56rem; }
 :is(form, fieldset) > div:has(> input[type=checkbox]):not(:has(> :is(select, textarea, input:not([type=checkbox], [type=hidden])))) > input[type=checkbox] { grid-column: 1; grid-row: 1; }
 :is(form, fieldset) > div:has(> input[type=checkbox]):not(:has(> :is(select, textarea, input:not([type=checkbox], [type=hidden])))) > label { grid-column: 2; grid-row: 1; margin: 0; font-weight: 550; cursor: pointer; }
 :is(form, fieldset) > div:has(> input[type=checkbox]):not(:has(> :is(select, textarea, input:not([type=checkbox], [type=hidden])))) > :is(.helptext, .errorlist) { grid-column: 2; margin: .2rem 0 0; }
+/* One radio of a group, drawn as a div holding the radio and its own label
+   (Edit scheduled email's Apply this edit to and Delete, #1656): the circle
+   beside its words, as a lone checkbox is above, with that choice's help or
+   unavailable reason under the words. The options read as answers, not
+   questions, so their words keep the ordinary option weight. User roles
+   (.choice) lay out their own. */
+:is(form, fieldset) > div:not(.choice):has(> input[type=radio]):not(:has(> :is(select, textarea, input:not([type=radio], [type=hidden])))) { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: .65rem; align-items: center; margin-block: .5rem; clear: both; }
+:is(form, fieldset) > div:not(.choice):has(> input[type=radio]):not(:has(> :is(select, textarea, input:not([type=radio], [type=hidden])))) > input[type=radio] { grid-column: 1; grid-row: 1; }
+:is(form, fieldset) > div:not(.choice):has(> input[type=radio]):not(:has(> :is(select, textarea, input:not([type=radio], [type=hidden])))) > label { grid-column: 2; grid-row: 1; margin: 0; font-weight: 450; cursor: pointer; }
+:is(form, fieldset) > div:not(.choice):has(> input[type=radio]):not(:has(> :is(select, textarea, input:not([type=radio], [type=hidden])))) > :is(.help, .helptext, .errorlist) { grid-column: 2; margin: .2rem 0 0; }
 /* A locked checkbox (Campaign settings, #1119) labels itself in a .label-row
    that also holds the "i" tip with why it is locked. The row takes the
    label's place. It must be exactly as tall as the open checkbox's plain
@@ -693,19 +703,31 @@ button, .button { display: inline-block; vertical-align: middle; border: var(--b
    rule whether they are POST buttons or GET links (.sort-link), so the two
    kinds of heading wrap alike. */
 button, .button, .link-button, .sort-link, input[type=submit], input[type=button] { overflow-wrap: normal; word-break: normal; }
-button:not(:disabled):hover, .button:hover { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--paper); box-shadow: 0 2px 6px rgb(16 24 40 / 16%); }
+/* :where() keeps the aria-disabled exclusion at zero specificity, so the
+   hover rule stays as weak as before and the per-class hover overrides
+   (.button-danger, .icon-button-danger, .toggletip-button, .recipient-link)
+   still win. */
+button:not(:disabled):not(:where([aria-disabled=true])):hover, .button:not(:where([aria-disabled=true])):hover { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--paper); box-shadow: 0 2px 6px rgb(16 24 40 / 16%); }
 button:not(:disabled):active { box-shadow: none; }
 button:disabled { cursor: not-allowed; opacity: .55; box-shadow: none; }
 /* The secondary look comes only from its class ({% button variant="secondary" %}
    or class "button-secondary" in script), never from where a button sits, so
    a button's look is decided where it is drawn (#732). */
 .button-secondary { background: var(--paper); color: var(--accent); border-color: var(--accent); box-shadow: none; }
-.button-secondary:not(:disabled):hover { background: var(--accent-soft); color: var(--accent-strong); box-shadow: none; }
+.button-secondary:not(:disabled):not(:where([aria-disabled=true])):hover { background: var(--accent-soft); color: var(--accent-strong); box-shadow: none; }
 .actions { display: flex; gap: .75rem 1rem; flex-wrap: wrap; align-items: center; }
+/* A button kept focusable but unavailable (aria-disabled; a stepping
+   control at the end of its range, #1656) looks as a disabled one does:
+   greyed, the not-allowed pointer, no hover change (the hover rules above
+   skip it). The busy "progress" pointer is only for a request in flight:
+   a submitted form's buttons (the form is aria-busy), the clicked one
+   (is-busy) or a button marked aria-busy itself while its fetch runs; such
+   a button keeps its colours, so it does not flash grey. */
+button[aria-disabled=true], .button[aria-disabled=true], input[type=submit][aria-disabled=true] { cursor: not-allowed; opacity: .55; box-shadow: none; }
+:is(button, .button, input[type=submit])[aria-disabled=true]:is(.is-busy, [aria-busy=true], [aria-busy=true] *) { cursor: progress; opacity: 1; }
 /* A submitted form (ui-v1.js): its clicked button turns muted with a small
    spinner and the form ignores repeat clicks until the next page loads. With
    reduced motion the spinner stays still (see the rule at the end). */
-button[aria-disabled=true], .button[aria-disabled=true], input[type=submit][aria-disabled=true] { cursor: progress; box-shadow: none; }
 button.is-busy[aria-disabled=true], .button.is-busy[aria-disabled=true], input[type=submit].is-busy[aria-disabled=true] { background: var(--muted); border-color: var(--muted); color: var(--paper); }
 button.is-busy::after, .button.is-busy::after { content: ""; display: inline-block; width: .85em; height: .85em; margin-inline-start: .5em; vertical-align: -.1em; border: 2px solid currentColor; border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
 @keyframes busy-spin { to { transform: rotate(360deg); } }
@@ -933,6 +955,15 @@ td > :last-child { margin-bottom: 0; }
 .schedule-table tr[data-schedule-choose] { cursor: pointer; }
 .schedule-table tr[data-schedule-choose]:hover { background: var(--accent-soft); }
 .schedule-table tr.schedule-past, .calendar-sends tr.schedule-past { color: var(--muted); }
+/* Campaign calendar's month navigation (#1656): Previous and Next, then the
+   month's name, so a longer name moves neither button. At an end the button
+   stays in place, greyed but focusable (aria-disabled, the shared
+   unavailable look above), and the reason line
+   under them keeps one line's height while empty, so it moves nothing. */
+.calendar-nav { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; }
+.calendar-nav .button { margin: 0; }
+.calendar-nav-month { font-weight: var(--heading-weight); font-size: 1.125rem; }
+.calendar-nav-reason { min-height: 1.5em; margin-block: .25rem .5rem; }
 /* Campaign calendar (#469): month grids drawn by calendar-v1.js. Each grid
    keeps a readable width and scrolls inside its .table-scroll region on a
    phone; days hold short lines (time and schedule name) that wrap between
@@ -951,11 +982,14 @@ td > :last-child { margin-bottom: 0; }
 .calendar-month td { height: 4.5rem; vertical-align: top; font-size: .875rem; }
 .calendar-month td[aria-current="date"] { background: var(--accent-soft); }
 .calendar-day { display: block; font-weight: 650; }
-/* A campaign day's Add (#1521) sits on the number's line, at its end, with a
-   target at least 24px square (WCAG 2.2 SC 2.5.8). The grid is drawn once,
-   so it never moves anything later. */
+/* A campaign day's Add (#1521), a (+) icon (#1656), sits on the number's
+   line, at its end, with a target at least 24px square (WCAG 2.2 SC 2.5.8).
+   A month is drawn whole when it is shown, so it never moves anything
+   later. */
 .calendar-day-head { display: flex; justify-content: space-between; align-items: center; gap: .25rem; }
-.calendar-add { display: inline-flex; align-items: center; justify-content: center; min-width: 1.5rem; min-height: 1.5rem; padding-inline: .2rem; font-size: .8125rem; }
+.calendar-add { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem; border: 1px solid var(--accent); border-radius: 50%; color: var(--accent); }
+.calendar-add:hover { background: var(--accent-soft); color: var(--accent-strong); }
+.calendar-add .action-icon { width: .9rem; height: .9rem; }
 .calendar-marker { display: block; color: var(--accent-strong); font-weight: 600; }
 .calendar-month ul { list-style: none; margin: 0; padding: 0; }
 .calendar-month li { margin-block: .15rem; }
@@ -1409,9 +1443,10 @@ main nav.family-track { display: block; margin: 0; }
    content ignore the second declaration and keep the first. */
 .family-track button::after, .setup-track a::after { content: attr(data-tip); content: attr(data-tip) / ""; }
 /* A step not available yet (aria-disabled: one the Family has not reached,
-   #330, or an Admin step whose prerequisites are missing, #1402): not the busy
-   "progress" cursor. */
-.family-track button[aria-disabled=true], .setup-track a[aria-disabled=true] { cursor: not-allowed; }
+   #330, or an Admin step whose prerequisites are missing, #1402): the
+   not-allowed pointer, but drawn by its own track colours rather than the
+   shared unavailable button's dimming, which would also dim its tip. */
+.family-track button[aria-disabled=true], .setup-track a[aria-disabled=true] { cursor: not-allowed; opacity: 1; }
 .family-submitted { margin-block: 0 1rem; }
 .financial-conditional { border: 0; padding: 0; margin: 0; background: none; }
 /* Limitation checkboxes ("cannot attend", "cannot participate", "cannot

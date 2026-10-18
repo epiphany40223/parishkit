@@ -2,54 +2,72 @@
 {% block title %}{% translate "Campaign calendar" %}{% endblock %}
 {% block head %}<script src="{% static 'stewardship/calendar-v1.js' %}" defer></script>{% endblock %}
 {% block content %}{% comment %}
-The Campaign calendar (#469; schedule_calendar_views). The table of
-sends is the page's text equivalent and its source: each row carries its
-browser-local send time (<time data-local-instant>), its name, status and,
-for a schedule that has not run, its Edit page (data-edit-url).
-calendar-v1.js reads those rows and draws them as month grids into
-[data-calendar], one per month from the campaign's first day (or first send)
-to its last day (or last send), cloning the <template> below so the weekday
-headings stay translated. The campaign's first and last days are calendar
+The Campaign calendar (#469; schedule_calendar_views). The hidden list of
+every send (data-calendar-source, in sending order) is the grid's source:
+each item carries its send time (<time datetime>), its name, status and,
+for a schedule that has not run, its Edit page (data-edit-url). The table
+below (Every email by date) is its text equivalent, with its own Show
+choice and sorting (#1656), so the grid never changes with them.
+calendar-v1.js reads that list and draws one month of it into
+[data-calendar] (#1656), cloning the <template> below so the weekday
+headings stay translated; the months run from the campaign's first day (or
+first send) to its last day (or last send). Previous month and Next month
+([data-calendar-step]) redraw it in place and replace the address's ?month=;
+their month's name follows them, so a longer name moves neither, and at an
+end the unavailable one says why in the reserved line after them
+(data-first / data-last). The campaign's first and last days are calendar
 dates, never shifted into a time zone.
-Each day of the campaign's dates gets an Add link (#1521, data-add-url with
-?date=<that day>, named by data-add-name with {date} filled in), which opens
-New scheduled email with that send date; its Apply returns here, and the
-reserved status line below (schedules-outcome, the New page's review
-dialog's) then says what was applied. The page itself changes nothing.
+Each day of the campaign's dates gets a (+) Add link (#1521, data-add-url
+with ?date=<that day>, named and titled by data-add-name with {date} filled
+in), which opens New scheduled email with that send date; its Apply returns
+here, and the reserved status line below (schedules-outcome, the New page's
+review dialog's) then says what was applied. Each Edit link (in the grid and
+the table) gets ?calendar=<the month shown>, so Edit's Cancel, Apply and
+Delete return to that month. The page itself changes nothing.
+The table's region (id "table", data-table-region) holds Show, a binary
+choice (components/segmented-choice.html; Upcoming emails by default) and
+the table, whose When and Schedule headings sort it on the server; both
+refresh the region in place, keep each other's choice, and the script
+adds the month shown to their links (and to the swapped-in Edit links).
 {% endcomment %}
 <h1>{% translate "Campaign calendar" %}</h1>
-{% aboutpage "schedule-calendar" %}<p>{% translate "Every email the campaign's mail schedules send, by date: the Initial invitation, each reminder, and every day or week of the Admin digests. Times are in your computer's time zone. Edit opens a schedule that has not run yet. Add on a day of the campaign opens New scheduled email with that send date, and returns here once it is added; Delete is on Dates and mail schedules." %}</p>{% endaboutpage %}
+{% aboutpage "schedule-calendar" %}<p>{% translate "Every email the campaign's mail schedules send, by date, one month at a time: the Initial invitation, each reminder, and every day or week of the Admin digests. Previous month and Next month go through the campaign's months. Times are in your computer's time zone. An email links to its Edit page while it has not run yet, and Delete is on that page. The + on a day of the campaign opens New scheduled email with that send date, and returns here once it is added." %}</p>{% endaboutpage %}
 <p>{{ campaign.active_configuration.name }}</p>
 <p class="campaign-dates">{% blocktranslate trimmed with start=values.start_date|parish_date end=values.end_date|parish_date %}Campaign dates: {{ start }} – {{ end }}{% endblocktranslate %}</p>
 {% include "stewardship/components/review-outcome.html" with outcome_id="schedules-outcome" %}
 {% if sends %}
 <section class="panel" aria-labelledby="calendar-months-title">
 <h2 id="calendar-months-title">{% translate "By month" %}</h2>
-<div class="calendar-months" data-calendar data-start="{{ values.start_date }}" data-end="{{ values.end_date }}" data-opens="{% translate 'Campaign opens' %}" data-closes="{% translate 'Campaign closes' %}" data-today="{% translate 'Today' %}" data-add-url="{{ add_url }}" data-add-text="{% translate 'Add' %}" data-add-name="{% translate 'Add an email on {date}' %}"></div>
+<div class="calendar-nav">{% button type="button" variant="secondary" data-calendar-step="-1" %}{% translate "Previous month" %}{% endbutton %}{% button type="button" variant="secondary" data-calendar-step="1" %}{% translate "Next month" %}{% endbutton %}<span class="calendar-nav-month" data-calendar-name></span></div>
+<p class="help calendar-nav-reason" id="calendar-nav-reason" data-calendar-reason data-first="{% translate "This is the campaign's first month." %}" data-last="{% translate "This is the campaign's last month." %}"></p>
+<p class="visually-hidden" role="status" data-calendar-said></p>
+<div class="calendar-months" id="calendar-months" data-calendar data-start="{{ values.start_date }}" data-end="{{ values.end_date }}" data-opens="{% translate 'Campaign opens' %}" data-closes="{% translate 'Campaign closes' %}" data-today="{% translate 'Today' %}" data-add-url="{{ add_url }}" data-add-name="{% translate 'Add a scheduled email on {date}' %}"></div>
 <template id="calendar-month"><div class="table-scroll" tabindex="0" role="region"><table class="calendar-month"><caption></caption><thead><tr>{% for short, long in weekdays %}<th scope="col"><span aria-hidden="true">{{ short }}</span><span class="visually-hidden">{{ long }}</span></th>{% endfor %}</tr></thead><tbody></tbody></table></div></template>
 <p class="help">{% translate "The table below lists the same emails as text." %}</p>
+<ul hidden data-calendar-source>{% for send in sends %}<li data-calendar-send data-label="{{ send.label }}" data-status="{{ send.status_label }}"{% if send.read_only %} class="schedule-past"{% else %} data-edit-url="{{ send.edit_url }}"{% endif %}><time datetime="{{ send.due|instant }}"></time></li>{% endfor %}</ul>
 </section>
 {% translate "Every email by date" as caption %}
-<section class="panel" aria-labelledby="calendar-sends-title">
+<section id="{{ table.anchor }}" class="panel" data-table-region aria-labelledby="calendar-sends-title">
 <h2 id="calendar-sends-title">{{ caption }}</h2>
+{% include "stewardship/components/segmented-choice.html" with choice_id="calendar-show" region_id="table" label=_("Show") first_key="show-upcoming" first_label=_("Upcoming emails") first_href=show_links.upcoming second_key="show-all" second_label=_("Include past emails") second_href=show_links.all chosen="show-"|add:show %}
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="calendar-sends-caption">
 <table class="data-table whole-words calendar-sends">
   <caption id="calendar-sends-caption" class="visually-hidden">{{ caption }}</caption>
   <thead><tr>
-    <th scope="col">{% translate "When" %}</th>
-    <th scope="col">{% translate "Schedule" %}</th>
+    {% translate "When" as heading %}{% sort_heading table "when" heading %}
+    {% translate "Schedule" as heading %}{% sort_heading table "schedule" heading %}
     <th scope="col">{% translate "Email to send" %}</th>
     <th scope="col">{% translate "Status" %}</th>
     <th scope="col">{% translate "Actions" %}</th>
   </tr></thead>
   <tbody>
-  {% for send in sends %}<tr data-calendar-send data-label="{{ send.label }}" data-status="{{ send.status_label }}" data-schedule-state="{{ send.status }}"{% if send.read_only %} class="schedule-past"{% else %} data-edit-url="{{ send.edit_url }}"{% endif %}>
+  {% for send in table.rows %}<tr data-calendar-row data-schedule-state="{{ send.status }}"{% if send.read_only %} class="schedule-past"{% else %} data-edit-url="{{ send.edit_url }}"{% endif %}>
     <td class="nowrap"><time datetime="{{ send.due|instant }}" data-local-instant data-compact>{{ send.due|instant }}</time></td>
     <th scope="row">{{ send.label }}</th>
     <td>{{ send.email }}</td>
     <td><span class="status-badge{% if send.status == 'upcoming' %} status-badge-on{% endif %}">{{ send.status_label }}</span></td>
     {% if send.read_only %}{% table_actions name=send.label %}{% else %}{% table_actions name=send.label edit=send.edit_url %}{% endif %}
-  </tr>{% endfor %}
+  </tr>{% empty %}<tr><td colspan="5">{% translate "No email is still to come: every scheduled email has already sent. Choose Include past emails to see them." %}</td></tr>{% endfor %}
   </tbody>
 </table>
 </div>
