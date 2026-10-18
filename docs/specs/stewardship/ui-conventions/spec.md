@@ -3532,6 +3532,20 @@ Family's surname only (from the shared `family_display_name`), never the
 heads' names. The refused field can itself be a head's name, and that page
 never shows Member values (open #965).
 
+**Family names link to the Timeline.** In the Admin portal every Family name
+a page shows is drawn by one shared template tag, `{% family_link %}` in
+`accounts/templatetags/stewardship.py`, which links the name to the Family's
+[Timeline](../reports/spec.md#timeline) when the row carries the Family's
+campaign record id and the viewer may open the Timeline (Administrators and
+Staff; never Ministry leaders), and draws the shared marks below otherwise
+unchanged. A page whose names must not open the Timeline (a Testing-only list,
+or a name that is already its row's link to something else, since one cell
+holds one link) still uses the tag, passing no record id. A page reads its
+shown rows' record ids in one query (`reports/family_links.py`), never one per
+row. A guard test fails when an Admin template prints a Family name, or draws
+a Family column, without the tag
+([#1570](https://github.com/epiphany40223/parishkit/issues/1570)).
+
 A Member or Family that the current ParishSoft data no longer has, or marks
 inactive or deceased, is named and marked as
 [the next convention](#members-and-families-no-longer-in-parishsoft) says.

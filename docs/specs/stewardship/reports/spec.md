@@ -908,14 +908,25 @@ enter the URL. The heading is "Family name — timeline", but the browser
 title is "Timeline" alone, so browser history does not keep the name. Every
 Admin table that names a Family links the name to this page through one
 shared helper (the `{% family_link %}` template tag), drawn only for roles
-that may open the page: so far the
-[active parishioner family directory](#active-parishioner-family-directory)
+that may open the page (the shared rule is in
+[Family and Member names](../ui-conventions/spec.md#family-and-member-names)):
+the [active parishioner family directory](#active-parishioner-family-directory)
 (each row), the header's Find a Family box (each match; see
-[Admin navigation](../admin-portal/spec.md#admin-navigation)) and the
-[Financial stewardship](#financial-stewardship-detail) Family table; #1570's next
-slice moves every other Admin table that names a Family onto the helper. Its
-breadcrumb parent is the active parishioner family directory. The page reads
-the Family's records at the database's current instant (**Counted at**).
+[Admin navigation](../admin-portal/spec.md#admin-navigation)), the
+[Financial stewardship](#financial-stewardship-detail) Family table, Census
+changes, Publish to ParishSoft's newest check, Roster changes to enter, both
+Limitations tables, Families on the form now, the Additional information
+request page's heading, each Weekly report item, Refused addresses and each
+Refused address page, and Families the form cannot open. The
+names stay unlinked where the page must not open a Timeline: the Additional
+information queue (each name is already the link to its request, and the
+request page links the Timeline), Go-live's Testing submissions and the
+chosen-Family test send (Testing only), and the examples of a refused
+ParishSoft load. Outgoing mail and the Mail message page follow
+[#1571](https://github.com/epiphany40223/parishkit/issues/1571) and
+[#1563](https://github.com/epiphany40223/parishkit/issues/1563). Its breadcrumb
+parent is the active parishioner family directory. The page reads the
+Family's records at the database's current instant (**Counted at**).
 
 Data comes first: the heading with the Family's name (the directory's
 surname-and-heads name from the latest ParishSoft data; "Timeline" alone when
