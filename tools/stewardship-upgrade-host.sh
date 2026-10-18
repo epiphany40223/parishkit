@@ -671,6 +671,29 @@ if [ "$mode" = upgrade ]; then
         echo "    skipped: the upgrade check answered t (schema and grants already match)"
     else
         echo "    running migration and grants: the check answered: $(head -3 <<<"$answer")"
+        # The System logs search's indexes (#765, migration file 0117) need
+        # pg_trgm, and creating an extension needs CREATE on the database,
+        # which only the operator superuser holds (runbook, Text search
+        # extension). IF NOT EXISTS leaves an installed one alone, so this
+        # runs before every migration; it takes well under a second. It runs
+        # in the running postgres service (not a one-off), so `timeout`
+        # alone limits it: an expired limit is logged with what ran, the
+        # limit and the elapsed time, and the run stops with the page up.
+        step "4. Text search extension (pg_trgm)"
+        started=$(date -u +%s)
+        rc=0
+        extension=$(timeout --kill-after=10 60 "${dc[@]}" exec -T postgres psql \
+            -U pk_stewardship_operator -d "$database" -At -v ON_ERROR_STOP=1 \
+            -c "CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public" 2>&1) || rc=$?
+        if [ "$rc" -eq 124 ] || [ "$rc" -eq 137 ]; then
+            echo "TIMEOUT: installing the pg_trgm extension killed after $(( $(date -u +%s) - started ))s (limit 60s). The maintenance page" >&3
+            echo "    stays up." >&3
+            exit 1
+        elif [ "$rc" -ne 0 ]; then
+            echo "Could not install the pg_trgm extension: $(tail -3 <<<"$extension")" >&2
+            exit 1
+        fi
+        echo "    pg_trgm is installed"
         # Every step-4 command runs under a time limit in a named one-off
         # container (`oneoff`): a migration or conversion that hangs is
         # killed, container and all, the kill is logged and the run stops
