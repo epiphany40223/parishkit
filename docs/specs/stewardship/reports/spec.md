@@ -1822,11 +1822,11 @@ A request stands while the Member's latest version of it is neither
 withdrawn (cancelled) nor replaced; an earlier version shown with the
 history option follows that latest version, as its details already do.
 For a Member the Family added on the form, the values are the ones the
-Family entered with the request. A Member whom the Family's latest live
-response in the campaign marks as unable to participate in any ministries
-(the form's physical-limitations checkbox, recorded as `cannot_serve` in the
-response's `service` answers; their leaves show as "Leave (cannot
-participate)") shares nothing unpublished with any Ministry's leaders on any
+Family entered with the request. A Member whose latest live answer in the
+campaign marks them as unable to participate in any ministries (the form's
+physical-limitations checkbox, recorded as `cannot_serve` in the response's
+`service` answers; their leaves show as "Leave (cannot participate)") shares
+nothing unpublished with any Ministry's leaders on any
 of their requests, current or in history, in any state (Administrator
 decision, 2026-10-18, on
 [#1591](https://github.com/epiphany40223/parishkit/issues/1591), applied per
@@ -1834,9 +1834,19 @@ Member). This holds whatever the roster shows: a cannot-participate
 response adds leaves only for the Ministries the Member is on, so an earlier
 join that was declined or resolved, a leave a ParishSoft refresh confirmed,
 and a request to a Ministry the form no longer offers follow the publish
-flags too. A later live response without the checkbox lets the Member's
-standing requests share again. Both selections read the same latest
-response, so the request page, Export these requests and the packet agree.
+flags too. A Member's answer is the one in the Family's latest live
+response that answers the question for that Member (lists them in its
+`service` answers). Only a later live response that answers it for the
+Member without the checkbox lets their standing requests share again; a
+response that leaves the Member out, such as one reporting them moved out
+or deceased, does not, and a Member never answered is not withheld. For a
+Member the Family added, the answer is the one for the form's own entry for
+that person: such a Member is not linked to the ParishSoft record Staff
+create for them later, so a later answer for that ParishSoft Member does
+not cover their earlier added-Member requests
+([#1670](https://github.com/epiphany40223/parishkit/issues/1670)). Both
+selections read the same answer, so the request page, Export these
+requests and the packet agree.
 Every other Member's standing requests share as above. Nothing else
 widens: a Member with no standing request to the Ministry (so every other
 Member of the Family), a withdrawn request and other Ministries' requests
