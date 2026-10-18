@@ -1,14 +1,16 @@
 """The scheduled emails table on Dates and mail schedules (#448, #878).
 
-The page lists every saved schedule in one short table, opening in the order
-the schedule forms already use (``schedule_forms.schedule_order``); its When
-heading sorts it the other way round (``SORTING``). On the list, an editable
-row links to its Edit scheduled email page and offers Delete; on the
-date-change review each table row is paired with its form, so a click opens
-that schedule's editor in place. This module only describes the saved
-schedules for display: what each one is, when it sends, its status and its
-last send, and which of them are read-only. It never changes what the forms
-post or how the server validates, previews and applies a schedule change.
+The page lists every saved schedule in one short table. The rows are
+described in the order the schedule forms already use
+(``schedule_forms.schedule_order``), which numbers the reminders; the list's
+When heading sorts them by when they next send, or the reverse (``SORTING``,
+#1652). On the list, an editable row links to its Edit scheduled email page
+and offers Delete; on the date-change review each table row is paired with
+its form, so a click opens that schedule's editor in place. This module only
+describes the saved schedules for display: what each one is, when it sends,
+its status and its last send, and which of them are read-only. It never
+changes what the forms post or how the server validates, previews and
+applies a schedule change.
 
 Status comes from the counts-only ``schedule_preview.work_summary`` (the
 same aggregate the review page reads), keyed by schedule ID, so the page
@@ -65,7 +67,7 @@ class ScheduleRow:
     open: after a refused preview, an editor with an error or an unsaved
     change stays open so the reader sees it. ``email`` is the readable name
     of the email it sends (``schedule_forms.email_names``), and ``position``
-    its place in sending order, which the When heading sorts by.
+    its place in sending order, which breaks ties in the When heading's sort.
     """
 
     id: str
@@ -115,9 +117,22 @@ class ScheduleRow:
         )
 
 
-# The When heading sorts by sending order (the rows' own order) or its
-# reverse. Sending order is the default and the first click.
-SORTING = Sorting.by_column({"when": lambda row: row.position}, default="when")
+def when(row):
+    """The When heading's sort key: the moment the row next sends (#1652).
+
+    A dated send sorts at its send time and a digest at its next send, the
+    time its When cell shows, so a digest falls among the dated sends rather
+    than after them all. Rows at one moment keep sending order (``position``:
+    the Initial invitation first, then the saved ID). A digest with no more
+    sends this campaign has no key and so lists last either way.
+    """
+    moment = row.due or row.next_due
+    return None if moment is None else (moment, row.position)
+
+
+# The When heading sorts chronologically or the reverse; chronological is the
+# default and the first click. Reminder numbers stay in sending order.
+SORTING = Sorting.by_column({"when": when}, default="when")
 
 
 def status(kind, due, counts, now):

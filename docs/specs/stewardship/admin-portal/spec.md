@@ -2688,10 +2688,14 @@ the link beside it the read-only [Campaign calendar](#campaign-calendar).
 The **Scheduled emails** table
 ([#448](https://github.com/epiphany40223/parishkit/issues/448)) is an
 [action table](../ui-conventions/spec.md#row-actions-and-confirmation) with one row per saved schedule.
-It opens in sending order: dated sends by date and time (the Initial invitation
-first at a tie), then the digests, with the saved ID as the final tie-break, so
-the order never changes between loads. Its **When** heading sorts it in place
-(sending order, or the reverse), as any [Admin table](../ui-conventions/spec.md#admin-tables) heading
+It opens in time order: a dated send at its date and time and a digest at its
+next send (the time its When cell shows,
+[#1652](https://github.com/epiphany40223/parishkit/issues/1652)), so a digest
+sits among the dated sends rather than after them. At a tie the Initial
+invitation comes first and the saved ID breaks any remaining one, so the order
+is the same on every load at a given moment; a digest with no more sends this
+campaign is listed last. Its **When** heading sorts it in place (time order, or
+the reverse), as any [Admin table](../ui-conventions/spec.md#admin-tables) heading
 does. Reminders are numbered in sending order, as [Family email
 sends](#family-email-sends) numbers them, whichever way the table is sorted. The
 columns are a selection box, the schedule, when it sends (a browser-local time,
