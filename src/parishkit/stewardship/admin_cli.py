@@ -3211,6 +3211,7 @@ def _task_retry_options(parser):
 DELIVERY_STATES = (
     "all",
     "needs_attention",
+    "needs_review",
     "not_delivered",
     "still_sending",
     "delivery_unknown",
@@ -3225,6 +3226,7 @@ DELIVERY_STATES = (
 # it equal to ``delivery_metadata.PURPOSE_CHOICES``.
 DELIVERY_PURPOSES = (
     "all",
+    "family",
     "initial",
     "reminder",
     "receipt",

@@ -142,6 +142,9 @@ def test_status_reads_the_home_summary_and_audits_it_once(admin, google):
     assert result["campaign"]["id"] == row["id"]
     assert result["campaign"]["state"] == "draft"
     assert result["tasks"]["delivery_unknown"] == 0
+    # The status bar's two review-needed counts, per mode (#1576).
+    assert result["tasks"]["delivery_review"] == 0
+    assert result["tasks"]["delivery_review_other"] == 0
     assert result["presence"] == {"count": 0}
     assert result["offsite_backup"] == {"state": "unset"}
     # The approval itself is an unacknowledged automation notice: a count.

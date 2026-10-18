@@ -257,7 +257,7 @@ def _mail_problems(deliveries, unknown):
     other = None
     if unknown["other"]:
         other = Other(
-            f"{url}?state=delivery_unknown&mode={unknown['other_mode']}",
+            f"{url}?state=needs_review&mode={unknown['other_mode']}",
             unknown["other"],
             _OTHER_NOTES[unknown["other_mode"]],
         )
@@ -265,7 +265,7 @@ def _mail_problems(deliveries, unknown):
         return Step(label, url, other=other)
     return Step(
         label,
-        f"{url}?state=delivery_unknown&mode={unknown['mode']}",
+        f"{url}?state=needs_review&mode={unknown['mode']}",
         count=unknown["count"],
         note=_("may not have arrived"),
         other=other,

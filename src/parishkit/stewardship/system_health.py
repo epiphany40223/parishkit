@@ -1847,19 +1847,19 @@ def _retries(mode):
     Returns ``(count, other, due)``: the operating mode ``mode``'s count,
     the other mode's, and when ``mode``'s next retry is due (None without
     one). Each count gets its own Sent mail link in its mode, so a count is
-    never shown against a list of the other mode's emails (#1576). One
-    grouped query.
+    never shown against a list of the other mode's emails (#1576). Both read
+    Sent mail's own filter (``matching``) for Family email waiting to retry,
+    which the links open (``state=retry_wait&purpose=family``), so a count
+    is exactly the rows its link lists (#1632). One grouped query.
     """
     from django.db.models import Count, Min
 
-    from .jobs.delivery_metadata import mode_split
-    from .jobs.outbox_models import OutboxMessage
+    from .jobs.delivery_metadata import matching, mode_split
 
+    # Sent mail's Family group is FAMILY_PURPOSES (test_system_health pins it).
     found = {
         row[0]: row[1:]
-        for row in OutboxMessage.objects.filter(
-            state="retry_wait", purpose__in=FAMILY_PURPOSES
-        )
+        for row in matching(state="retry_wait", purpose="family")
         .order_by()
         .values_list("mode")
         .annotate(Count("id"), Min("not_before"))

@@ -112,7 +112,7 @@ def test_warning_polls_durable_count_and_survives_unavailable_response(
             expect(other).to_be_visible()
             expect(other).to_have_text("Not sure it arrived in Testing: 5")
             expect(other).to_have_attribute(
-                "href", "/admin/mail/sent/?state=delivery_unknown&mode=testing"
+                "href", "/admin/mail/sent/?state=needs_review&mode=testing"
             )
         if value == "bad":
             # The failure sentence covers the counts (#1643); the counts
@@ -129,6 +129,45 @@ def test_warning_polls_durable_count_and_survives_unavailable_response(
         elif index == 1:
             assert page.evaluate("window.warningMutations") == 0
     assert len(requests) == 5 and all(request.method == "GET" for request in requests)
+
+
+def test_other_mode_link_stays_put_when_this_mode_clears(page, component_origin):
+    """#1576 review: when the poll hides the operating mode's link, the other
+    mode's link, which comes first, keeps its place under the pointer."""
+    from playwright.sync_api import expect
+
+    page.clock.install(time=NOW)
+    here = [3]
+
+    def result(route):
+        """Counts with the other mode's 5 and this mode's current count."""
+        route.fulfill(
+            json={
+                "counts": dict.fromkeys(
+                    ("queued", "running", "retry_wait", "abandoned", "active"), 0
+                ),
+                "delivery_unknown": here[0],
+                "delivery_unknown_other": 5,
+            }
+        )
+
+    page.route("**/admin/background/counts", result)
+    page.goto(component_origin + "/delivery")
+    warning = page.locator("[data-delivery-warning]")
+    other = warning.locator("[data-delivery-other]")
+    mine = warning.locator("[data-delivery-here]")
+    with page.expect_response("**/admin/background/counts"):
+        page.clock.fast_forward(30000)
+    expect(mine).to_have_text("Not sure it arrived — review needed: 3")
+    expect(other).to_be_visible()
+    before = other.bounding_box()
+    other.hover()
+    here[0] = 0
+    with page.expect_response("**/admin/background/counts"):
+        page.clock.fast_forward(30000)
+    expect(mine).to_be_hidden()
+    expect(other).to_be_visible()
+    assert other.bounding_box() == before
 
 
 def test_email_page_names_the_email_and_reads_in_the_requested_order(

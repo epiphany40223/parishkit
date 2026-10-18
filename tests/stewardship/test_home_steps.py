@@ -149,9 +149,9 @@ def test_mail_problems_link_each_mode_separately():
             "active", "administrator", entries, mail_unknown=split(2, 3)
         )
     )
-    assert both.url == "/deliveries/?state=delivery_unknown&mode=production"
+    assert both.url == "/deliveries/?state=needs_review&mode=production"
     assert both.count == 2
-    assert both.other.url == "/deliveries/?state=delivery_unknown&mode=testing"
+    assert both.other.url == "/deliveries/?state=needs_review&mode=testing"
     assert (both.other.count, str(both.other.note)) == (
         3,
         "in Testing may not have arrived",
@@ -162,7 +162,7 @@ def test_mail_problems_link_each_mode_separately():
         )
     )
     assert (only.url, only.count) == ("/deliveries/", None)
-    assert only.other.url == "/deliveries/?state=delivery_unknown&mode=testing"
+    assert only.other.url == "/deliveries/?state=needs_review&mode=testing"
     testing = sent(
         home_steps.next_steps(
             "active",
@@ -171,7 +171,7 @@ def test_mail_problems_link_each_mode_separately():
             mail_unknown=split(0, 4, mode="testing"),
         )
     )
-    assert testing.other.url == ("/deliveries/?state=delivery_unknown&mode=production")
+    assert testing.other.url == ("/deliveries/?state=needs_review&mode=production")
     assert str(testing.other.note) == "in Production may not have arrived"
 
 
@@ -197,7 +197,7 @@ def test_active_and_paused_steps_carry_the_open_counts():
     )
     assert (active[3].count, str(active[3].note)) == (3, "open")
     assert (active[4].count, str(active[4].note)) == (0, "open")
-    assert active[6].url == "/deliveries/?state=delivery_unknown&mode=production"
+    assert active[6].url == "/deliveries/?state=needs_review&mode=production"
     assert (active[6].count, str(active[6].note)) == (2, "may not have arrived")
     assert active[6].other is None
     for idle in (
@@ -358,9 +358,9 @@ def test_template_links_available_steps_and_names_greyed_ones():
     assert f"Roster changes to enter — {navigation.NO_CAMPAIGN}" in html
     assert f"Ministry requests — {navigation.NO_CAMPAIGN}" in html
     assert (
-        '<a href="/deliveries/?state=delivery_unknown&amp;mode=production">'
+        '<a href="/deliveries/?state=needs_review&amp;mode=production">'
         "Sent mail</a> — 1 may not have arrived; "
-        '<a href="/deliveries/?state=delivery_unknown&amp;mode=testing">'
+        '<a href="/deliveries/?state=needs_review&amp;mode=testing">'
         "2 in Testing may not have arrived</a>"
     ) in html
     context["dashboard"] = {"campaign": None}

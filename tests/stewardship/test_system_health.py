@@ -735,11 +735,11 @@ def test_the_status_region_states_problems_and_panels_in_words():
         "invitations, reminders and Family tests stop at 1,600." in body
     )
     # Each mode's count links Sent mail in its own mode, never summed (#1576).
-    assert "?state=retry_wait&amp;mode=production" in body
+    assert "?state=retry_wait&amp;purpose=family&amp;mode=production" in body
     assert "2 Testing Family emails wait to retry" in body
     assert (
-        '?state=retry_wait&amp;mode=testing">Sent mail: waiting to retry in Testing'
-        in body
+        '?state=retry_wait&amp;purpose=family&amp;mode=testing">'
+        "Sent mail: waiting to retry in Testing" in body
     )
     assert "All services run version 1.4.2." in body
     assert "stewardship-deployment-runbook.md" not in body  # no sender is stopped
@@ -3289,3 +3289,12 @@ def test_a_watch_stops_when_only_problems_waiting_cannot_clear_remain():
     assert health(problems=stuck).terminal
     for other in (Problem("backup_rpo_breach", at=NOW), Problem("backup_key_mismatch")):
         assert not health(problems=(*stuck, other)).terminal, other.kind
+
+
+def test_waiting_to_retry_counts_sent_mails_family_group():
+    """#1632: Waiting to retry counts and links Sent mail's Family group, so
+    the group must be exactly the Family purposes this panel is about."""
+    from parishkit.stewardship import system_health
+    from parishkit.stewardship.jobs.delivery_metadata import PURPOSE_GROUPS
+
+    assert PURPOSE_GROUPS["family"] == system_health.FAMILY_PURPOSES

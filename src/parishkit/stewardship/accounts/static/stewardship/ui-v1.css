@@ -182,10 +182,12 @@ a:hover { text-decoration-thickness: .15em; }
 :is([data-background-indicator], [data-presence-indicator]) > * { grid-area: 1 / 1; }
 .pill-size { visibility: hidden; }
 :is([data-background-indicator], [data-presence-indicator]):has(> :is([data-background-unavailable], [data-presence-unavailable]):not([hidden])) > :first-child { visibility: hidden; }
-/* The delivery warning's two links (this mode's and the other mode's, #1576)
-   sit side by side: each is a full 24px target with room between them. */
+/* The delivery warning's two links (the other mode's, then this mode's,
+   #1576) sit side by side: each is a full 24px target with room between
+   them. The gap is the second link's own margin, so the first never moves
+   when the second disappears. */
 [data-delivery-warning] a { display: inline-block; min-block-size: 24px; }
-[data-delivery-here]:not([hidden]) + [data-delivery-other] { margin-inline-start: 1rem; }
+[data-delivery-other]:not([hidden]) + [data-delivery-here] { margin-inline-start: 1rem; }
 /* The header's Find a Family box (#561): a search field whose results drop
    down beneath it over the page, ordinary links in a panel. On narrow
    screens it takes a full row under the brand. */
