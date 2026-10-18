@@ -141,11 +141,15 @@ def test_edit_value_is_saved_in_place(page, component_origin):
     )
     assert not dialog.is_visible()
     assert abs(page.evaluate("window.scrollY") - scrolled) <= 1
-    # The redrawn row shows the edit beside the Family's answer, and its
-    # Edit value starts from the edit; Clear edit is now offered.
+    # The redrawn row shows the edit under the Family's answer in its
+    # Values (#1472), and its Edit value starts from the edit; Clear edit is
+    # now offered.
     first = page.locator("#table tbody tr").first
-    has_text(first.locator("td").nth(5), "555-0000")
-    has_text(first.locator("td").nth(6), EDITED_VALUE)
+    values = first.locator("td").nth(4)
+    names = ["ParishSoft now", "Family's answer", "Edited value"]
+    has_text(values.locator("dt"), names)
+    has_text(values.locator("dd").nth(1), "555-0000")
+    has_text(values.locator("dd").nth(2), EDITED_VALUE)
     first.get_by_role("button", name=f"Edit value of {ROW}").click()
     dialog = page.locator("#census-edit-dialog-0")
     assert dialog.get_by_label("Value to publish").input_value() == EDITED_VALUE

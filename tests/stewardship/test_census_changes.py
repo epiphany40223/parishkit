@@ -408,11 +408,23 @@ def test_page_shows_member_duid_beside_who():
     ]
     positions = [html.index(f">{heading}<") for heading in headings]
     assert positions == sorted(positions)
-    # The downloads have exactly the page's columns, in its order (#932),
-    # except the page's last, Actions, which has no file column (#528), and
-    # ParishSoft status, the badge the page shows in the Family cell (#1216).
-    page = [heading for heading in HEADINGS if heading != "ParishSoft status"]
-    assert page_headings(html) == [*page, "Actions"]
+    # The downloads have the page's columns, in its order (#932), except the
+    # page's last, Actions, which has no file column (#528), and ParishSoft
+    # status, the badge the page shows in the Family cell (#1216). Each of
+    # the page's labelled lists (#1472) is a run of file columns, in the
+    # list's order: Values, and Last recorded.
+    groups = {
+        "Values": ("ParishSoft now", "Family's answer", "Edited value"),
+        "Last recorded": ("Recorded by", "Recorded at", "Note"),
+    }
+    files = [heading for heading in HEADINGS if heading != "ParishSoft status"]
+    page = []
+    for heading in page_headings(html):
+        page.extend(groups.get(heading, (heading,)))
+    assert page == [*files, "Actions"]
+    # Each value is named beside it; a blank one says so.
+    assert "<dt>ParishSoft now</dt><dd>" in html
+    assert "<dt>Family's answer</dt><dd>" in html
     assert '<td class="numeric">41</td>' in html
     assert '<td class="numeric">New Member</td>' in html
 
@@ -743,9 +755,12 @@ def test_page_offers_row_actions_last_and_only_where_allowed():
         )
 
     html = page(True)
-    headings = ["Submitted", "Recorded by", "Recorded at", "Note", "Actions"]
+    headings = ["Submitted", "Last recorded", "Actions"]
     positions = [html.index(f">{heading}<") for heading in headings]
     assert positions == sorted(positions)
+    # Last recorded names who, when and the note (#1472).
+    assert "<dt>By</dt><dd>staff@example.org</dd><dt>At</dt>" in html
+    assert "<dt>Note</dt><dd>Duplicate</dd>" in html
     assert icons(html, "todo") == ["entered", "ignored"]
     assert icons(html, "ignored") == ["reopened"]
     assert "staff@example.org" in html and "Duplicate" in html

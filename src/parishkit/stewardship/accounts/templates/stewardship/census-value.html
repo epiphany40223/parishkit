@@ -1,0 +1,1 @@
+{% load i18n %}{% comment %}One value in a Census changes Values cell (#1472): the value in full, or a muted (blank) where there is none, so a blank Family's answer (the Family removed the value) is never an empty line.{% endcomment %}{% if value %}{{ value }}{% else %}<span class="cell-blank">{% translate "(blank)" %}</span>{% endif %}

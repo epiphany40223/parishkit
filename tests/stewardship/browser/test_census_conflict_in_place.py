@@ -27,6 +27,9 @@ HELP = (
     "the change needs review again. Ignore keeps ParishSoft's value."
 )
 
+# A row's top edge in the window.
+TOP = "row => row.getBoundingClientRect().top"
+
 
 def test_use_the_familys_value_anyway_answers_in_place(page, component_origin):
     """The Conflict row's Review offers the resolution with its help line; the
@@ -63,6 +66,7 @@ def test_use_the_familys_value_anyway_answers_in_place(page, component_origin):
         "button", name="Ignore Mobile phone for Member 00"
     ).is_enabled()
     scrolled = centre(page, use)
+    top = first.evaluate(TOP)
     use.click()
     dialog = page.locator("#census-decide-dialog")
     has_text(dialog.locator("h2"), f"{name}?")
@@ -73,7 +77,14 @@ def test_use_the_familys_value_anyway_answers_in_place(page, component_origin):
     dialog.get_by_label("Note (optional)").fill("Asked the Family")
     dialog.get_by_role("button", name="Record").click()
     has_text(page.locator("#census-notice"), CONFLICT_RESOLVED)
-    assert abs(page.evaluate("window.scrollY") - scrolled) <= 1
+    # Nothing jumps: the Summary above loses its Conflict line, so either the
+    # page keeps its scroll position (WebKit) or Chromium's scroll anchoring
+    # keeps the row just acted on where it was on the screen (#1472).
+    row = page.locator("#table tbody tr").first
+    assert (
+        abs(page.evaluate("window.scrollY") - scrolled) <= 1
+        or abs(row.evaluate(TOP) - top) <= 1
+    )
     assert "resolve=use_family" in posts[0] and "note=Asked+the+Family" in posts[0]
     assert "value=" not in posts[0] and len(posts) == 1
     first = page.locator("#table tbody tr").first

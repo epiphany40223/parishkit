@@ -71,6 +71,91 @@ STALE = (
     "someone else, so nothing was recorded. The list shows its current status."
 )
 
+# The page whose rows carry the longest values staff meet (#1472): a long
+# Family name, a Family address, a New Member, an edited Conflict and a
+# recorded change with its sign-in address and note.
+WIDE = "/census-changes-wide"
+
+
+def wide_rows(when):
+    """Shaped rows with realistic long values, one of each kind of row."""
+    family = "Fernández-Castellanos, Maria Guadalupe and Christopher"
+    address = {
+        "line1": "12345 North Saint Bartholomew Boulevard",
+        "line2": "Apartment 1204",
+        "city": "Louisville",
+        "region": "KY",
+        "postal_code": "40241-1234",
+    }
+    base = {
+        "entity_kind": "member",
+        "field": "mobile_phone",
+        "baseline_available": True,
+        "baseline_value": "555-0100",
+        "submitted_value": phone_record("(502) 555-0142"),
+        "current_available": True,
+        "current_value": "555-0100",
+        "admin_value_set": False,
+        "admin_value": None,
+        "handling": "manual",
+        "decision": "unreviewed",
+        "execution": "pending",
+        "submitted_at": when,
+        "family_duid": 1234567,
+        "family_name": family,
+        "member_name": "Fernández-Castellanos, Maria Guadalupe",
+        "version": 1,
+    }
+    changes = [
+        {
+            "entity_kind": "family",
+            "entity_key": "1234567",
+            "field": "home_address",
+            "current_available": False,
+            "submitted_value": address,
+        },
+        {
+            "entity_key": "7654321",
+            "handling": "api",
+            "execution": "conflict",
+            "current_value": "(502) 555-0177",
+            "admin_value_set": True,
+            "admin_value": phone_record("(502) 555-0199"),
+        },
+        {
+            "entity_kind": "proposed_member",
+            "entity_key": "new-1",
+            "field": "new_member",
+            "current_available": False,
+            "baseline_available": False,
+            "submitted_value": {
+                "first_name": "Bartholomew",
+                "last_name": "Fernández-Castellanos",
+                "email": "bartholomew.fernandez-castellanos@example.org",
+            },
+        },
+        {
+            "entity_key": "7654322",
+            "field": "email",
+            "execution": "resolved_external",
+            "current_value": "maria.guadalupe.fernandez@example.org",
+            "submitted_value": "maria.fernandez-castellanos@example.org",
+            "resolution_action": "entered",
+            "resolution_by": "parish.office.administrator@example.org",
+            "resolution_at": when + timedelta(days=1),
+            "resolution_note": "Typed into ParishSoft after calling the Family "
+            "to confirm the new address and spelling.",
+        },
+    ]
+    return [
+        shape(
+            base
+            | {"id": f"w{index}", "submitted_at": when + timedelta(minutes=index)}
+            | change
+        )
+        for index, change in enumerate(changes)
+    ]
+
 
 def components(context, admin):
     """The page at each table choice the test steps through."""
@@ -123,6 +208,7 @@ def components(context, admin):
         path=None,
         filters=None,
         rows=ROWS,
+        wide=False,
     ):
         """Render the page with the table paged and sorted as ``paging`` says,
         and ``notice`` (a resolution's answer) above it; with ``automatic``,
@@ -132,13 +218,16 @@ def components(context, admin):
         ``edited``, its first (Automatic) row has an edited value; with
         ``conflict``, it is a Conflict; ``path`` is where its forms post;
         ``filters`` (a CensusQuery) replace the default filters; ``rows``
-        is how many changes there are (none draws the empty table)."""
+        is how many changes there are (none draws the empty table); with
+        ``wide``, the rows are WIDE_ROWS' realistic long values instead."""
         path = path or (BULK if bulk else AUTOMATIC if automatic else PATH)
         shown = filters or query
         count = 3 if bulk else int(automatic)
         rows = [
             shaped(index, count, approved, edited, conflict) for index in range(rows)
         ]
+        if wide:
+            rows = wide_rows(when)
         result = select(rows, shown, administrator=True)
         table = paginate(
             result["rows"],
@@ -235,6 +324,8 @@ def components(context, admin):
             rows=0,
             filters=CensusQuery(status="all", history="yes"),
         ),
+        # Realistic long values at their widest (#1472): the column-fit test.
+        WIDE: page({"size": "25"}, wide=True, filters=CensusQuery(status="all")),
         "/census-changes-none-searched": page(
             {"size": "25"}, rows=0, filters=CensusQuery(search="Nobody")
         ),
