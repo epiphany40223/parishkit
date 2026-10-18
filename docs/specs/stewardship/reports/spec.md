@@ -2085,7 +2085,8 @@ is in By Ministry. Rejected: the two stat tiles with resolved counts
 that #1676 first proposed, since the worklist would remove them again.
 
 **By Ministry** has the columns Ministry, Join requests, Leave requests and
-Unresolved, with one row for every Ministry in the reader's scope. It does
+Unresolved (and, for Staff and Administrators, Leaders, described below),
+with one row for every Ministry in the reader's scope. It does
 not follow the filters, because it is the way to choose one Ministry. The
 Ministry name is the row header and shows no Ministry DUID
 ([#1123](https://github.com/epiphany40223/parishkit/issues/1123)). Its
@@ -2114,6 +2115,66 @@ A reader whose scope holds one Ministry sees a single line instead of a
 table. A long list scrolls inside a bounded box. By Ministry is redrawn with
 every in-place refresh, so the change a decision makes shows in its counts.
 
+**Leaders** ([#1594](https://github.com/epiphany40223/parishkit/issues/1594)).
+Staff and Administrators see one more column, Leaders, after Unresolved, so
+they can tell which Ministries' requests nobody but Staff will work. A
+Ministry leader never sees it, on the page or from the command line. Each
+cell is one short status, shown as a
+[status indicator](../ui-conventions/spec.md#status-indicators) (a word, an
+icon and a colour):
+
+| Leaders cell | Meaning | State |
+| --- | --- | --- |
+| No leader | ParishSoft lists nobody who leads this Ministry with a valid email address, under the [leaders definition](../data/spec.md#ministry-leaders): no active Member holds one of the campaign's Ministry leader roles on its roster, or none of them has a valid email address. | Warning |
+| No user yet | It has leaders, but none of their addresses is an Admin portal user yet, so none of them can sign in. An Administrator can import them on Users ([ParishSoft Ministry leaders without a user](../admin-portal/spec.md#parishsoft-ministry-leaders-without-a-user)). | Warning |
+| Not signed in yet | At least one leader's address is a user, but none of those users has ever signed in successfully. | Warning |
+| 1 signed in, 2 signed in, … | How many of its leaders' users have signed in successfully at least once. | Working |
+
+A leader counts once per email address; an address that several leader
+Members list is one leader. A user counts when its role is Ministry leader,
+Staff or Administrator, the roles that give a leader's Ministries; a sign-in
+counts when it opened a session, as the Users page's Last successful sign-in
+does, from a Google identity that is not disabled. A Ministry marked "No
+longer in this campaign" or "Not in ParishSoft data" has no leaders, since
+the leaders definition leaves it out, so it reads No leader. A reader whose
+scope holds one Ministry gets the same words after the counts on its single
+line. The cells are never links and name nobody: no leader's name, Member
+or address appears, because the Users page that lists them is
+Administrator-only (Administrator decision on #952); counts are enough to
+act. The page help explains each word in plain language.
+
+The Ministry requests page reads the column once per rendering, which
+includes every in-place refresh, before its guarded read-only response
+starts, through the SECURITY DEFINER function
+`stewardship_ministry_leader_coverage_v1` (migration 0168). Like the
+Users page's leaders read, it answers only the caller's live Admin session (one begun after the
+latest Admin-access recovery) whose user is Staff or an Administrator now,
+and it records its own `ministry_leader_coverage_viewed` audit event for
+each read, with the number of Ministries answered and never an address. It
+takes no argument but the session and the correlation, so it answers no
+question about a chosen address or Ministry. It returns, for each Ministry
+with at least one leader, three counts only: leaders, those that are users,
+and those users that have signed in. A Ministry it does not list has no
+leader. If the read is refused, the page is refused, as for any other
+failed access check; if the read fails, the page shows the usual
+"temporarily unavailable" answer. The column changes only with a ParishSoft
+refresh, a users change or a first sign-in, and each read is an audited
+view, so the page does not re-read it on a timer (automatic re-reads are
+passive and never audited,
+[#1586](https://github.com/epiphany40223/parishkit/issues/1586)); a
+reload or any in-place refresh shows the current values. Its cells
+are ordinary table text, so the column keeps the table's row height
+([no layout shift](../ui-conventions/spec.md#no-layout-shift)). `report
+ministry` prints the same status for each Ministry to Staff and
+Administrators ([Admin automation](../admin-automation/spec.md)).
+
+Rejected: listing the leaders' names and addresses to Staff (the Users page
+is Administrator-only by decision; counts are enough to act); a separate
+"Ministries with no active leader" filter (the column already sorts the
+eye, and By Ministry is short; it can be added later); and reading the
+coverage inside the guarded response (that read-only transaction cannot
+record the audit event).
+
 "Not in ParishSoft data" and "No longer in this campaign" are the
 Administrator's concern and change nothing a leader does with a request, so
 only Admin/Staff see them: each Ministry's notes in By Ministry and the page
@@ -2137,7 +2198,7 @@ hold. By Ministry counts a request edited into another Ministry under both
 its Ministries, as the worklist's Ministry filter finds it under either, so
 each count link lists exactly what it counts
 ([#1718](https://github.com/epiphany40223/parishkit/issues/1718)).
-The page's view audit is
+The Leaders column added migration 0168 (above). The page's view audit is
 the queue's `ministry_followup_viewed`; it no longer records
 `ministry_report_viewed`, which the host `report ministry` command still
 records.

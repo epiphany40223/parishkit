@@ -7034,6 +7034,12 @@ leader conditions are those of the
 counts leaders with no valid address; a PostgreSQL test pins the two to the
 same answer.
 
+Staff cannot open Users. On Ministry requests, Staff and Administrators see
+instead, for each Ministry, whether it has a leader who is a user and has
+signed in (the [Leaders column](../reports/spec.md#ministry-change-summary),
+[#1594](https://github.com/epiphany40223/parishkit/issues/1594)), as counts
+only, never a name or an address.
+
 Rejected: letting every ParishSoft leader sign in without a user (the
 Administrator decided that sign-in needs an explicit user), and importing
 automatically at each refresh (that would create accounts silently; the
