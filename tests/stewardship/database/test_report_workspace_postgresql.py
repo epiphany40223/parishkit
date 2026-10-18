@@ -499,3 +499,41 @@ def test_figures_status_is_passive_and_rereads_never_renew(http_scenario):
         assert read(browser, participation)[0].status_code == 200
     session.refresh_from_db()
     assert session.version > before[1]
+
+
+def test_figures_status_refuses_signed_out_and_unauthorized_readers(
+    http_scenario, google
+):
+    """The figures status (#1586) is a report read like the pages it serves:
+    a signed-out caller and a signed-in user without report access (a
+    Ministry leader) are refused before any option is looked at, and nothing
+    is audited as a report view."""
+    from django.test import Client
+
+    from ..policy_factory import address
+    from .campaign_builders import change
+
+    setup, _ = http_scenario
+    store, _, facts, _ = setup
+    pointer(facts)
+    status = reverse("admin:response_dashboard_status")
+    query = f"?view=dashboard&scope=historical&shown={facts.pk}"
+    rule = address("leader@example.org", roles=("ministry_leader",))
+    change(
+        store,
+        store.active(),
+        uuid4(),
+        [{"operation": "add", "section": "login_rules", **rule}],
+    )
+    google[0]["email"] = "leader@example.org"
+    leader, _ = signed_in()
+    events = AuditEvent.objects.filter(
+        event_type__in=("participation_viewed", "campaign_comparison_viewed")
+    )
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        assert Client().get(status + query).status_code == 403
+        # Refused before the options are validated: never a 400.
+        assert Client().get(status + "?view=other").status_code == 403
+        assert leader.get(status + query).status_code == 403
+        assert leader.get(status + "?view=other").status_code == 403
+    assert events.count() == 0
