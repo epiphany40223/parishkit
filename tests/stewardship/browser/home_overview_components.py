@@ -17,6 +17,7 @@ from parishkit.stewardship.accounts import admin_context, admin_navigation
 from parishkit.stewardship.accounts.admin_dashboard import campaign_facts, family_tiles
 from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.campaigns.domain import Percentage
+from parishkit.stewardship.jobs.delivery_metadata import mode_split
 
 PATH = "/home-overview"
 CAMPAIGN = SimpleNamespace(
@@ -74,7 +75,9 @@ def components(context, admin):
     chrome = admin | {
         "sections": sections,
         "breadcrumbs": [],
-        "delivery_unknown": 2,
+        # Both modes have emails that may not have arrived, so the Sent mail
+        # card carries its second, Testing link (#1576) in the fold test.
+        "delivery_unknown": mode_split({"production": 2, "testing": 1}, "production"),
         "testing": False,
         "entries": {item.name: item for item in items},
     }

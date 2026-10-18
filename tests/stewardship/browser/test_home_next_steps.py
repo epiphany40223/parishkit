@@ -69,6 +69,13 @@ def test_next_steps_link_their_pages_and_never_shift(
     expect(mail).to_have_attribute(
         "href", "/admin/mail/sent/?state=needs_review&mode=production"
     )
+    # The other mode's emails: a second, small link in the same card, with
+    # its own count and list (#1576).
+    other = panel.get_by_role("link", name="1 in Testing may not have arrived")
+    expect(other).to_have_attribute(
+        "href", "/admin/mail/sent/?state=needs_review&mode=testing"
+    )
+    expect(other).to_have_text("1 in Testing may not have arrived")
     before = page.evaluate(BOXES)
     for step in panel.get_by_role("link").all():
         step.hover()

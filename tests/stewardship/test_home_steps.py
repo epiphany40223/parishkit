@@ -151,9 +151,10 @@ def test_mail_problems_link_each_mode_separately():
     assert both.url == "/deliveries/?state=needs_review&mode=production"
     assert both.count == 2
     assert both.other.url == "/deliveries/?state=needs_review&mode=testing"
-    assert (both.other.count, str(both.other.note)) == (
+    assert (both.other.count, str(both.other.note), str(both.other.more)) == (
         3,
-        "in Testing may not have arrived",
+        "in Testing",
+        "may not have arrived",
     )
     only = sent(
         home_steps.next_steps(
@@ -171,7 +172,7 @@ def test_mail_problems_link_each_mode_separately():
         )
     )
     assert testing.other.url == ("/deliveries/?state=needs_review&mode=production")
-    assert str(testing.other.note) == "in Production may not have arrived"
+    assert str(testing.other.note) == "in Production"
 
 
 def test_active_and_paused_steps_carry_the_open_counts():
@@ -386,16 +387,21 @@ def test_template_links_available_steps_and_names_greyed_ones():
             f'<span class="link-card-label">{label}</span> '
             f'<span class="link-card-note">{navigation.NO_CAMPAIGN}</span></li>'
         ) in html
+    # Sent mail's other mode has some too: a second, small link at the
+    # card's end, whose hidden words finish its name (#1576).
+    production = card(
+        "/deliveries/?state=needs_review&amp;mode=production",
+        "Sent mail",
+        1,
+        "may not have arrived",
+        "link-card-attention link-card-split",
+    ).removesuffix("</li>")
     assert (
-        card(
-            "/deliveries/?state=needs_review&amp;mode=production",
-            "Sent mail",
-            1,
-            "may not have arrived",
-            "link-card-attention",
-        )
-        in html
-    )
+        f"{production} "
+        '<a class="link-card-other" '
+        'href="/deliveries/?state=needs_review&amp;mode=testing">2 in Testing'
+        '<span class="visually-hidden"> may not have arrived</span></a></li>'
+    ) in html
     context["dashboard"] = {"campaign": None}
     assert "data-next-steps" not in render_to_string(
         "stewardship/home-next-steps.html", context

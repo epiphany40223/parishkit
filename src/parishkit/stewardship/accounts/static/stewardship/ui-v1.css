@@ -420,6 +420,14 @@ hr { border: 0; border-top: 1px solid var(--border); margin-block: 2rem; }
 .link-card-attention { border-inline-start-color: var(--warning-border); }
 .link-card-clear { border-inline-start-color: var(--accent); }
 .link-card-off { color: var(--muted); }
+/* A card with a second, small link (#1576: Sent mail's other-mode count) puts it at the card's
+   end, beside the main link's count and divided from it, so the card stays two lines; on a
+   narrow card it wraps under the main link. Its padding and gaps are a little tighter than a
+   plain card's so both fit a third of a laptop window's row in Linux's DejaVu Sans. */
+.link-card-split { display: flex; flex-wrap: wrap; }
+.link-card-split > a:first-child { flex: 1 1 auto; height: auto; column-gap: .4rem; padding-inline-end: .5rem; }
+.link-card > a.link-card-other { display: flex; align-items: center; flex: 0 0 auto; padding: .35rem .5rem; border-inline-start: 1px solid var(--border); font-size: .8125rem; }
+.link-card > a.link-card-other:hover, .link-card > a.link-card-other:focus-visible { text-decoration: underline; }
 /* A card without a count leaves the count column empty, so it needs no gap beside it. */
 .link-card-off, .link-card > a:not(:has(> .link-card-count)) { column-gap: 0; }
 /* Stat tiles (ui-conventions "Stat tiles", #1540), drawn by components/stat-tiles.html: a row of

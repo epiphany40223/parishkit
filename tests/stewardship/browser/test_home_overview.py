@@ -73,6 +73,16 @@ def test_overview_counts_link_their_pages(page, component_origin):
     )
     expect(roster).to_be_visible()
     assert "link-card-attention" in roster.locator("..").get_attribute("class")
+    # Sent mail's other-mode link sits beside the card's own link, so the
+    # card keeps its two lines (#1576).
+    mail = steps.get_by_role("link", name="Sent mail 2 may not have arrived")
+    other = steps.get_by_role("link", name="1 in Testing may not have arrived")
+    expect(other).to_have_attribute(
+        "href", "/admin/mail/sent/?state=needs_review&mode=testing"
+    )
+    main_box, other_box = mail.bounding_box(), other.bounding_box()
+    assert other_box["x"] >= main_box["x"] + main_box["width"] - 0.5
+    assert other_box["y"] < main_box["y"] + main_box["height"]
 
 
 def test_overview_has_no_sideways_scroll_on_a_phone(page, component_origin):

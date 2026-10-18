@@ -1040,9 +1040,12 @@ problems are the emails that may not have arrived (the header's "Not sure
 it arrived — review needed" counts), and the card links Sent mail filtered
 to the operating mode's, counted as "N may not have arrived", or plain Sent
 mail while that mode has none. When the other mode has some, the card adds
-a second, small link, "N in Testing may not have arrived" (or in
-Production), filtered to that mode; each count is exactly the list its
-link opens ([#1576](https://github.com/epiphany40223/parishkit/issues/1576)).
+a second, small link at its end, "N in Testing" (or in Production; its name
+for screen readers is "N in Testing may not have arrived"), filtered to
+that mode, as the
+[link cards](../ui-conventions/spec.md#overview-pages) rule draws it, so
+the card keeps its two lines; each count is exactly the list its link opens
+([#1576](https://github.com/epiphany40223/parishkit/issues/1576)).
 
 At campaign end the Staff work through four lists, so an active, paused,
 closed or archived campaign offers Administrators and Staff each of them

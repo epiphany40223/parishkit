@@ -82,17 +82,23 @@ STEPS = {
 
 
 class Other(NamedTuple):
-    """A step's second, separately linked count: the other mode's (#1576)."""
+    """A step's second, separately linked count: the other mode's (#1576).
+
+    ``note`` is the short visible text after the count ("in Testing");
+    ``more`` finishes the link's name for screen readers ("may not have
+    arrived"), so the small link inside its card stays one short line.
+    """
 
     url: str
     count: int
     note: str
+    more: str
 
 
 # What an Other count means, by the mode it counts.
 _OTHER_NOTES = {
-    "testing": _("in Testing may not have arrived"),
-    "production": _("in Production may not have arrived"),
+    "testing": _("in Testing"),
+    "production": _("in Production"),
 }
 
 
@@ -231,6 +237,7 @@ def _mail_problems(deliveries, unknown):
             f"{url}?state=needs_review&mode={unknown['other_mode']}",
             unknown["other"],
             _OTHER_NOTES[unknown["other_mode"]],
+            _("may not have arrived"),
         )
     if not unknown["count"]:
         return Step(label, url, other=other)

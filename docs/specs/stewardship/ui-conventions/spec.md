@@ -2782,7 +2782,12 @@ without scrolling.
   spanning both lines. The card's start bar reinforces the count and is
   never its only signal: the warning colour (`--warning-border`) while the
   count is above zero, the accent (`--accent`) at zero, and the plain edge
-  (`--border`) when the card has no count. A card the menu greys out is
+  (`--border`) when the card has no count. A related count that another
+  list holds apart (another mode's, say) is a second, small link inside
+  the card, at its end after a divider, never another card: it shows its
+  count and a short note ("1 in Testing"), its name reads in full for
+  screen readers, the card keeps its two lines, and the start bar warns
+  while either count is above zero. A card the menu greys out is
   plain text in the muted colour with the menu's reason, never a link.
   Cards keep their size on hover and focus
   ([no layout shift](#no-layout-shift)) and stack on a phone with no
