@@ -946,8 +946,8 @@ the [in-place controls](#in-place-controls); no other mechanism.
   page.
   The directory, Sent mail, System logs and Financial stewardship do this
   ([#1586](https://github.com/epiphany40223/parishkit/issues/1586)).
-- **Go-live pages.** The Go live page's Check and Prepare steps have no
-  Refresh link. Production activation still has its own until the go-live
+- **Go-live pages.** The Go live page's Check, Prepare and Confirm
+  Production steps have no Refresh link. Production activation still has its own until the go-live
   redesign applies this rule there
   ([#1585](https://github.com/epiphany40223/parishkit/issues/1585)).
 
@@ -1110,7 +1110,10 @@ some states are required only while shown (not hidden or greyed). A required tex
 only spaces counts as empty, as the server trims it: the reason for
 cancelling go-live and the evidence notes on Mail delivery and delivery
 refusal pages use this gate, as does the typed "Production" confirmation
-(which, like the server, ignores spaces around the word). The Admin portal
+(which, like the server, ignores spaces around the word). That field sits
+inside the Confirm Production review dialog, whose answer marks it
+`data-review-require`: Apply waits for it, and the dialog's reserved status
+line under the buttons says what is missing and describes Apply meanwhile. The Admin portal
 requires JavaScript ([#565](https://github.com/epiphany40223/parishkit/issues/565));
 server validation is unchanged and still refuses an incomplete submission.
 Likewise, a settings form's Review changes button is unavailable
@@ -1204,7 +1207,7 @@ again after a refused Save shows what was posted, so its Save does not
 wait for a change then.
 
 The same holds for the rest of the Admin portal (#563, the audit's last
-slice): Confirm Production before a passing check (named by the step still needed); Confirm cancelling
+slice): Confirm cancelling
 go-live while mail blocks it; the retry the Mail message page would offer while
 the resend admission refuses it; Queue new manual report while an earlier
 Weekly Admin digest is still being prepared or delivered (checked when the
@@ -1480,7 +1483,10 @@ line, `components/review-outcome.html`. An editor's form names the dialog
 with `data-review-open`; its Review answers a fragment marked
 `data-review-answer` (with `data-review-done`, the start of the status
 line), whose hidden fields Apply posts, the signed preview marked
-`data-review-preview`. A field-value refusal answers the form again (status
+`data-review-preview`. A field in the answer marked `data-review-require`
+(the Confirm Production dialog's typed word) names Apply's form in its
+`form` attribute, so Apply posts it, and holds Apply until it is valid
+([prerequisite gates](#prerequisite-gates)). A field-value refusal answers the form again (status
 400); any other refusal is the closed JSON refusal, or a fragment marked
 `data-review-refusal` that the dialog shows as drawn. A page whose own
 address records a view when read (System health) marks its dialog
