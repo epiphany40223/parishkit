@@ -62,6 +62,25 @@ POSTS = {
 }
 
 
+# The item page's Contact details (#1595): the Family record and one head,
+# with an address long enough to test wrapping at phone width.
+CONTACTS = {
+    "state": "shown",
+    "owners": [
+        {
+            "label": "Family record",
+            "emails": ["the.example.household.with.a.long.address@example.org"],
+            "phones": [],
+        },
+        {
+            "label": "Anna Example",
+            "emails": ["anna@example.org"],
+            "phones": [("Home", "202-555-0123"), ("Mobile", "202-555-0199")],
+        },
+    ],
+}
+
+
 def refused(sent, field, pair=None):
     """The view's context for ``sent`` refused at ``field`` (#1332).
 
@@ -238,7 +257,10 @@ def components(context, admin):
                 "table": table(InformationQuery()),
             },
         ),
-        "/information-item": ("information", values | {"item": item}),
+        "/information-item": (
+            "information",
+            values | {"item": item, "contacts": CONTACTS},
+        ),
         # A request no Staff member has saved yet (#227 empty state).
         "/information-item-new": (
             "information",
