@@ -27,13 +27,20 @@ pytestmark = pytest.mark.parametrize(
 
 # The Chart population's Current population segment (#1535).
 CURRENT = '#participation-scope a[data-in-place="scope-current"]'
-# The binary choice's box and each segment's, page-relative: choosing a
-# segment must change only colours, never a size or a place (#1535).
-PAIR_LAYOUT = """() => [...document.querySelectorAll(
-    '#participation-scope, #participation-scope a')].map((node) => {
-  const box = node.getBoundingClientRect();
-  return [box.x + scrollX, box.y + scrollY, box.width, box.height];
-}).flat()"""
+# The binary choice's box and each segment's, relative to the daily chart
+# panel it heads: choosing a segment must change only colours, never a size
+# or a place (#1535). Not page-relative, because the fresh answer's extra
+# comparison tile can wrap the statistics panel above onto another row
+# (see CHART_TOP), which moves the whole chart panel down on Linux fonts.
+PAIR_LAYOUT = """() => {
+  const panel = document.getElementById('participation-chart')
+    .getBoundingClientRect();
+  return [...document.querySelectorAll(
+      '#participation-scope, #participation-scope a')].map((node) => {
+    const box = node.getBoundingClientRect();
+    return [box.x - panel.x, box.y - panel.y, box.width, box.height];
+  }).flat();
+}"""
 ZONE = "timezone=America%2FLos_Angeles"
 # The current-population answer's all-Families comparison card, which the
 # first page lacks: it shows that the statistics panel was swapped in place.
