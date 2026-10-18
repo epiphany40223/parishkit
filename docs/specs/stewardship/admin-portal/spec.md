@@ -6389,7 +6389,7 @@ and leaves with no resolution source that are not yet ticked, or, with
 clear a mistaken mark, and **Ministry** narrows it to one Ministry (a closed
 DUID value, no schema change). Show (Not yet entered | All, including
 entered) is a [binary choice](../ui-conventions/spec.md#binary-choices)
-above the Ministry filter, applied at once in place, its links keeping the
+at the end of the heading's line, applied at once in place, its links keeping the
 applied Ministry, sort and page size and going back to the first page
 ([#1535](https://github.com/epiphany40223/parishkit/issues/1535)); Ministry
 keeps its Apply, which keeps the Show shown. Its columns follow the
@@ -6430,6 +6430,20 @@ browser's time zone
 ([#558](https://github.com/epiphany40223/parishkit/issues/558)); the dialog
 posts the browser's zone for the refusal, which leaves the day out rather
 than guess when no known zone came.
+
+The controls above the list are kept compact, so its first rows start on a
+laptop screen ([compact pages](../ui-conventions/spec.md#page-help),
+[#1653](https://github.com/epiphany40223/parishkit/issues/1653)): Show sits
+at the end of the heading's line, after the About panel, while the heading,
+the About summary and the pair fit on one line, and on its own line under
+the heading otherwise (a phone); Ministry and its Apply are one filter bar
+row, with the notice a tick answers beside them (its two reserved lines fit
+within the row's height on a laptop); the link to Ministry requests is in
+the About panel, the list having its own menu entry; the table's caption,
+which repeats the heading, is for screen readers only; and its cells wrap
+only between words, dates on one line, the table scrolling sideways in its
+own box rather than squeezing its headings. The download form is a closed
+disclosure, "Download this list (CSV, XLSX or PDF)", below the list.
 
 Its CSV, XLSX and PDF downloads carry the page's columns, without the tick
 ([downloaded files](../ui-conventions/spec.md#downloaded-files)), for every

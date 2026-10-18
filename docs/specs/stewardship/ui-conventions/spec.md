@@ -1666,8 +1666,8 @@ Testing rehearsal.
   [family directory](../reports/spec.md#active-parishioner-family-directory)'s Responses shown
   (Production | Testing rehearsal), above its Filters panel, and
   [Roster changes to enter](../admin-portal/spec.md#roster-changes-to-enter)'s
-  Show (Not yet entered | All, including entered), above its Ministry
-  filter.
+  Show (Not yet entered | All, including entered), at the end of its
+  heading's line (#1653).
 - **Links.** Each segment is a link to the page's own address with that
   choice (`a[data-in-place]`, marked `aria-current="page"` when chosen), so
   each view has a real address that a reload or bookmark keeps. The link
@@ -2242,8 +2242,8 @@ Apply while the panel and its form keep their elements. A report's export form
 is likewise a closed disclosure (for example, "Export complete results (CSV,
 XLSX or PDF)"). The Family directory,
 Additional information, Financial stewardship, Limitations, Census
-changes and Ministry requests follow this (#227). Ministry requests keeps its
-compact filter bar rather than a Filters panel: its By Ministry counts apply
+changes, Ministry requests and Roster changes to enter follow this
+(#227, #1653). Ministry requests keeps its compact filter bar rather than a Filters panel: its By Ministry counts apply
 a Ministry and request into the filters in place, and a closed panel would
 hide what the link just applied. System logs and the remaining report pages
 are still to convert.
