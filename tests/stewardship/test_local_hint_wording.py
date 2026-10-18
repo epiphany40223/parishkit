@@ -19,6 +19,8 @@ from parishkit.stewardship.accounts.integration_forms import (
     InlineCredentialForm,
     IntegrationForm,
 )
+from parishkit.stewardship.accounts.leader_email_views import PREFIX as EMAIL_PREFIX
+from parishkit.stewardship.accounts.leader_emails import EMAIL_SORTING
 from parishkit.stewardship.accounts.leader_import import LEADER_SORTING
 from parishkit.stewardship.accounts.leader_import_views import PREFIX as LEADER_PREFIX
 from parishkit.stewardship.accounts.setup_credential_views import SetupCredentialForm
@@ -84,6 +86,9 @@ def pages():
                 ),
                 "leaders_unreachable": 0,
                 "import_url": "/admin/users/leaders/import/",
+                # Its Email Ministry leaders table (#1592).
+                "emails": paginate([], {}, prefix=EMAIL_PREFIX, sorting=EMAIL_SORTING),
+                "emails_url": "/admin/users/leader-emails/",
             },
             ("Everyone who may sign in to the Admin portal with Google.",),
             ("Everyone who may sign in to the Admin portal.",),

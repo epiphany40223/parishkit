@@ -1103,6 +1103,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `user_delete` | Delete user | Users | Administrator | (new, #952) | (none) | `/admin/users/deletion/` (POST only) | The table's confirmation dialog posts here. |
 | `user_name_suggestions` | (not a page) | New user | Administrator | (new, #952) | (none) | `/admin/users/new/names/` (POST only, JSON) | Read-only Name suggestions from ParishSoft. |
 | `user_leader_import` | Import Ministry leaders | Users | Administrator | (new, #952) | (none) | `/admin/users/leaders/import/` (POST only) | Review of the chosen ParishSoft Ministry leaders, shown in the review dialog on Users; applies through Users. |
+| `user_leader_emails` | Email Ministry leaders | Users | Administrator | (new, #1592) | (none) | `/admin/users/leader-emails/` (POST only) | Review of the chosen Ministry leader users' emails, shown in the review dialog on Users; its Apply posts here too and queues the emails. |
 | `user_rules` | Review sign-in rules | Portal users | Administrator | Review login rule change | `/admin/users/rules` (POST only) | (none) | Retired by #952: removed with the rule tables when Users lands; its old address is not kept (#864). |
 | `rule_request` | (not a page) | Portal users | Administrator | Rule change (status) | `/admin/users/rules/requests/<request>` (JSON) | (none) | Retired by #952 with the autosave queue; a user change's status is its Change status page. |
 | `assignments` | Review Ministry assignment | Portal users | Administrator | Assignments | `/admin/users/assignments` (POST only) | (none) | Retired by #922: removed with Ministry assignments. |
@@ -4377,7 +4378,9 @@ due counts. It atomically sets the Campaign's durable delivery-pause control and
 holds every production message that has not begun provider submission. Family
 access and live submissions continue; their receipts are accepted but held.
 Nothing is rerouted to the Testing recipient. Operational notifications and
-explicit readiness/test-recipient sends remain allowed.
+explicit readiness/test-recipient sends remain allowed. The pause also holds
+[Ministry leader emails](#email-ministry-leaders), which belong to no
+campaign, and refuses new ones until resume.
 
 Messages already `submitting` may have reached the provider and
 `delivery_unknown` messages retain their reconciliation workflow, including an
@@ -5723,6 +5726,114 @@ Rejected: letting every ParishSoft leader sign in without a user (the
 Administrator decided that sign-in needs an explicit user), and importing
 automatically at each refresh (that would create accounts silently; the
 Administrator sees and confirms who gets access).
+
+### Email Ministry leaders
+
+Importing leaders sends nothing, and nothing else tells a Ministry leader
+that they can sign in, where, with which Google Account, or that requests
+are waiting for them
+([#1592](https://github.com/epiphany40223/parishkit/issues/1592)). Below the
+leaders table, a third section, **Email Ministry leaders**, lets an
+Administrator send each chosen Ministry leader user one email that says so.
+It is sent **by hand only** (Administrator decision, 2026-10-17, on #1592):
+only when an Administrator applies this section's review, never on import,
+on a schedule or after any other change, and never to Staff or
+Administrators, who see every Ministry and have no "Staff copy". A scheduled
+"new requests in your Ministries" email is not built.
+
+The section's table lists every user whose role is Ministry leader, in the
+[shared column order](../ui-conventions/spec.md#table-column-order): the
+selection checkbox, Name (the row header), Email, Last successful sign-in
+(as the users table shows it) and **Last emailed**: when this section last
+emailed that address, and how that email has ended so far, in the words
+Outgoing mail uses for a delivery state ("Delivered", "Not sure it
+arrived" and the rest), "Cancelled: the mode or Testing recipient changed"
+when the mode or Testing recipient changed between Apply and the emails'
+preparation (nothing was sent), or "Never". A Ministry leader user with no Name is
+listed under their email, so the table never hides them. The table follows the shared
+[Admin tables](../ui-conventions/spec.md#admin-tables): Name, Email, Last
+successful sign-in and Last emailed sort on the server, Name by default,
+and it pages and refreshes in place. Its bulk bar is the shared one:
+**Email selected** is available only while a row is ticked, and the
+bar's reserved reason line says why when it is not, so ticking a row moves
+nothing. There is deliberately no Email all button: the Administrator
+chooses the leaders to email (`pk-admin users email-leaders --all` still
+plans every leader). With no Ministry leader user, the table says so and
+the button is unavailable. The section shows nothing to email while there
+is no current campaign with Ministries, or the current campaign is archived (its
+leaders no longer sign in to work it, #527); its line says why.
+
+Email selected opens the **Email Ministry leaders** review in
+the [review dialog](../ui-conventions/spec.md#review-dialog). It is a full
+review, because it shows what the page does not: for each leader who will
+be emailed, their Ministries in the current campaign with each one's open
+requests to join and to leave, read now and counted as the email will state
+them: when the counts worked out again at Apply differ (a ParishSoft
+refresh or a new request since the review), Apply is refused as a changed
+page and nothing is queued. It then lists anyone chosen but skipped, and why: no longer a
+Ministry leader user, or leading none of the campaign's Ministries in
+ParishSoft (their email would have nothing to show). In Testing mode the
+review says that every email goes to the Testing recipient instead, naming
+that address. One Apply emails at most 100 leaders; when more are chosen, the review emails
+the first 100 by Name and says how many remain for another Apply. With
+nobody left to email the review says so and offers no Apply. **Apply**
+queues one email per listed leader, then the section is redrawn in place,
+and its status line, above the table, says the emails were queued. Each
+Apply is one request: replaying it (a double click, a resent request)
+queues nothing more, while a new Apply emails the chosen leaders again, so
+Last emailed is the place to check first. A review lasts fifteen minutes,
+as every review does. While
+[Pause and resume mail](#live-delivery-pause) has the current campaign's
+delivery paused in Production, the review and Apply are refused with that
+reason and nothing is queued; an email already queued waits and is sent
+after resume. A replayed Apply that lands during the pause says instead
+that its first Apply's emails are queued and held. An expired review gets
+the shared expired-review refusal.
+
+Each email is one message to one leader, with fixed wording that Pages and
+emails does not edit. Its subject names the parish. It says that the
+leader can sign in to the parish's stewardship portal as a Ministry leader
+to see and follow up the requests parishioners made in the campaign to join
+or leave the Ministries they lead, and links the Admin portal's sign-in
+page at the deployment's public address. It names the address the leader
+signs in with, the one the email was sent to, followed by the shared
+[Google Account guidance](#login-and-denial-behavior) for an address that
+is not a Gmail address
+([#1593](https://github.com/epiphany40223/parishkit/issues/1593)), with
+Google's help link. It lists each of the leader's Ministries with its open
+requests to join and to leave, or "No open requests", counted as Home's
+[My Ministries panel](#home-page) counts them, then links
+[Ministry requests](../reports/spec.md#ministry-change-summary), and it
+ends with the guidance's line on whom to ask when sign-in still fails. It
+names no parishioner and carries no contact or request detail: email is not
+an audited channel (rejected on #1592). How the emails are prepared,
+routed in Testing and retried is
+[background processing's](../background-processing/spec.md#ministry-leader-emails).
+
+Every route is Administrator-only (`Capability.MANAGE_USERS`) and checks
+that again after building its answer. The web login reads the leaders'
+Ministries and counts through one SECURITY DEFINER function,
+`stewardship_leader_emails_v1`, which, like the
+[leaders table's](#parishsoft-ministry-leaders-without-a-user), answers only
+the caller's live Admin session whose user is an Administrator now, takes no
+address, and records its own `user_leader_emails_reviewed` audit event with
+the number of leaders and never an address. Posted addresses only choose
+among the leaders it returns. Apply records one Ministry leader email
+request. Its database guard admits it only from the web login, for a
+current Administrator, for at most 100 distinct addresses that are each a
+current Ministry leader user leading one of the campaign's Ministries,
+while the campaign is not archived and its delivery is not paused. The guard works out each leader's Ministries and counts itself, with
+the same function, so no form supplies them, and it records the
+`user_leader_emails_requested` audit event with the count. The signed
+review binds the Testing recipient only by its digest, never the address
+(the review is signed, not encrypted); Apply refuses the review as changed
+when the current Testing recipient's digest differs. The command line
+does not have this action yet
+([#1622](https://github.com/epiphany40223/parishkit/issues/1622)).
+
+Rejected: emailing every ParishSoft leader, users or not (access needs an
+explicit user), putting request details in the email, sending at import or
+on a schedule, and a Staff copy (Administrator decision of 2026-10-17).
 
 ### Upgrade from sign-in rules
 

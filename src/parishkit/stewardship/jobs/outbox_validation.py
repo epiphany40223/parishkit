@@ -82,6 +82,7 @@ class DeliveryIdentity:
             "weekly_digest",
             "operational",
             "security_event",
+            "leader_email",
         ):
             raise ValueError("Invalid delivery identity.")
         family_purpose = self.purpose in (
@@ -100,6 +101,17 @@ class DeliveryIdentity:
             raise ValueError("Invalid delivery identity.")
         if self.purpose in ("operational", "security_event"):
             valid = self.routing == "operational"
+        elif self.purpose == "leader_email":
+            # A Ministry leader email (#1592) belongs to no campaign: its
+            # scope is the parish, but it is routed like campaign mail, to
+            # the Testing recipient in Testing.
+            valid = (
+                self.campaign_id is None
+                and self.routing
+                == {"testing": "testing_override", "production": "production"}[
+                    self.mode
+                ]
+            )
         else:
             valid = (
                 self.campaign_id == self.scope_id

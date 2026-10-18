@@ -471,6 +471,7 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
     if role in {ServiceRole.WORKER, ServiceRole.SCHEDULER}:
         from dataclasses import replace
 
+        from .jobs.leader_email_owner import leader_owner
         from .jobs.operational_collection import TASK_TYPE as OPERATIONAL_COLLECT
         from .jobs.operational_collection import collection_handler
         from .jobs.operational_fanout import TASK_TYPE as OPERATIONAL_PREPARE
@@ -493,6 +494,16 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
         handlers[SECURITY.task_type] = replace(
             fanout_handler(
                 store, scheduler=role is ServiceRole.SCHEDULER, owner=SECURITY
+            ),
+            pulse=heartbeat,
+        )
+        # A Ministry leader email request (#1592) is prepared by the same
+        # engine; its owner compiles the two links on this deployment's own
+        # public address.
+        leader = leader_owner(configuration.public_origin)
+        handlers[leader.task_type] = replace(
+            fanout_handler(
+                store, scheduler=role is ServiceRole.SCHEDULER, owner=leader
             ),
             pulse=heartbeat,
         )

@@ -39,9 +39,10 @@ def test_covered_routes_name_commands_in_the_catalog():
             assert set(entry.detail) <= catalog, name
             assert entry.pr is None, name
         elif entry.kind == "pending":
-            # An ADM-11 pull request, or a feature's own later slice that
-            # brings its page's commands (Publish to ParishSoft, #528).
-            assert re.fullmatch(r"PR \d+[a-z]?|#\d+ slice \d+", entry.pr), name
+            # An ADM-11 pull request, a feature's own later slice that
+            # brings its page's commands (Publish to ParishSoft, #528), or the
+            # follow-up issue that does (Email Ministry leaders, #1622).
+            assert re.fullmatch(r"PR \d+[a-z]?|#\d+( slice \d+)?", entry.pr), name
             # None of a pending entry's commands is in the catalog yet; once
             # one is, the entry becomes a "command" entry, with what is
             # still owed.

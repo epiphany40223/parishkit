@@ -666,6 +666,12 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             "weekly_manual_guard",
             "stewardship_weekly_manual_guard_v1",
         ),
+        # One Administrator's Email Ministry leaders Apply (#1592): its
+        # guard admits the web's reviewed insert and refuses every change.
+        "stewardship_leader_email_request": (
+            "stewardship_leader_email_request_guard",
+            "stewardship_leader_email_request_guard_v1",
+        ),
         **{
             "stewardship_recipient_" + name: (
                 "recipient_immutable",
@@ -867,6 +873,7 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
                 "stewardship_family_mail_preparation",
                 "stewardship_fact_build_receipt",
                 "stewardship_weekly_manual_request",
+                "stewardship_leader_email_request",
                 "stewardship_proposal_resolution",
                 "stewardship_proposal_review",
                 "stewardship_campaign_setup_review",

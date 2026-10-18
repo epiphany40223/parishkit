@@ -1482,6 +1482,20 @@ applies to every OutboxMessage, including operational messages whose scope is
 the deployment rather than a Campaign. Provider attempts update the one row;
 concurrent producers cannot create duplicate semantic mail.
 
+A [Ministry leader email](../background-processing/spec.md#ministry-leader-emails)
+(purpose `leader_email`,
+[#1592](https://github.com/epiphany40223/parishkit/issues/1592)) is the only
+Testing-routed message that belongs to no Campaign: its scope is the parish,
+its Campaign and Family are empty, and its routing is `testing_override` in
+Testing and `production` in Production. Three immutable records own it:
+`LeaderEmailRequest` (one Administrator's Apply: its actor, configuration,
+mode, Testing recipient, the chosen addresses and, filled in by its database
+guard, each leader's Ministries with their open join and leave counts),
+`LeaderEmailCohort` (the request's addresses frozen by its fenced preparation
+Task) and `LeaderEmailRecipient` (one address, its outbox message and the
+compiled subject and bodies it sends). None holds a parishioner's name or
+contact.
+
 Terminal outbox outcomes stop automatic scheduling. The sole explicit retry
 exception is a still-applicable `permanent_failure` returning to `pending`
 under the [background retry contract](../background-processing/spec.md#durable-scheduling-and-task-execution).
