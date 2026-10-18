@@ -323,7 +323,9 @@
   function conflictChoice(path, input, parent, apply = null) {
     const conflict = conflicts.get(path);
     if (!conflict) return;
-    input.disabled = conflict.choice === undefined;
+    // An unresolved conflict holds the field; once chosen, the field's own
+    // state stands (a chosen birth-date Unknown keeps the date greyed).
+    if (conflict.choice === undefined) input.disabled = true;
     const group = node("fieldset", null, parent, {"data-conflict": path});
     node("legend", "Choose which value to keep before continuing", group);
     [["Use my edit", conflict.edited], ["Use updated records", conflict.refreshed]].forEach(([label, value], index) => {
@@ -332,8 +334,8 @@
       radio.checked = conflict.choice === index;
       wrapper.append(document.createTextNode(" " + label + ": " + (value || "Blank")));
       radio.addEventListener("change", () => {
-        if (apply) apply(value); else input.value = value;
         input.disabled = false;
+        if (apply) apply(value); else input.value = value;
         conflict.choice = index;
         input.dispatchEvent(new Event("input"));
         // Keep both values available while arrows/mouse change the selection.
@@ -689,13 +691,17 @@
         const label = node("label", null, group);
         unknown = node("input", null, label, {type: "checkbox", id: id + "-unknown"});
         label.append(document.createTextNode(" Birth date is unknown"));
-        node("p", "Choosing Unknown requests removal of any recorded birth date, subject to parish review.", group, {id: id + "-unknown-help", class: "muted"});
+        // Always shown, so ticking the box moves nothing (#1674). It is also
+        // the visible reason the greyed birth-date field names.
+        node("p", "Choosing Unknown clears and turns off the birth date field. " +
+          "It requests removal of any recorded birth date, subject to parish review.", group,
+          {id: id + "-unknown-help", class: "muted"});
         unknown.setAttribute("aria-describedby", id + "-unknown-help");
+        input.setAttribute("aria-describedby", input.getAttribute("aria-describedby") + " " + id + "-unknown-help");
         unknown.disabled = conflicts.has(path);
         unknown.addEventListener("change", () => {
           input.value = "";
-          input.readOnly = unknown.checked;
-          input.required = !unknown.checked;
+          unknownState();
           input.dispatchEvent(new Event("input"));
           validateField(input, {...definition, required: !unknown.checked});
         });
@@ -714,11 +720,16 @@
           if (language.value === "other") input.focus();
         });
       }
+      function unknownState() {
+        // A ticked Unknown greys the empty birth-date field (disabled, so it
+        // is neither typed in nor validated); unticked, it is required again.
+        input.disabled = unknown.checked;
+        input.required = !unknown.checked;
+      }
       function setValue(value) {
         if (unknown) {
           unknown.checked = value === "unknown";
-          input.readOnly = unknown.checked;
-          input.required = !unknown.checked;
+          unknownState();
           input.value = unknown.checked ? "" : value;
         } else input.value = definition.kind === "phone" ? Phone.format(value) : value;
         if (language) {
