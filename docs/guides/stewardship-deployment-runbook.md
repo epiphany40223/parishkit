@@ -1152,7 +1152,7 @@ What to watch after deploying it:
 
 ### Text search extension (#765)
 
-The release with migration file 0116 adds trigram indexes for the System
+The release with migration file 0117 adds trigram indexes for the System
 logs text search, which need PostgreSQL's `pg_trgm` extension. It ships
 with the pinned PostgreSQL image, but creating an extension needs CREATE on
 the database, which no service login holds, so the migration login cannot

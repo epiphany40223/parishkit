@@ -401,7 +401,7 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # runtime_grants.CLOSURE_FUNCTIONS), which go, and an index on the outbox
 # renderings, which stays: its file makes the index only when missing, so it
 # installs whole again.
-# 0116 (#765) creates only the pg_trgm extension and six indexes, each only
+# 0117 (#765) creates only the pg_trgm extension and six indexes, each only
 # when missing, and replaces nothing; the swap drops none of them, so
 # nothing is registered.
 CLOSURE_CREATED = {

@@ -1,7 +1,7 @@
 """Forward migration: indexes for the System logs text search (#765).
 
-Its SQL is the frozen file ``schema/migrations/0116_log_search_indexes.sql``
-(number 0116, assigned centrally), read whole and never parsed. It notices
+Its SQL is the frozen file ``schema/migrations/0117_log_search_indexes.sql``
+(number 0117, assigned centrally), read whole and never parsed. It notices
 the ``pg_trgm`` extension the operator installed (or, on a superuser test
 database, installs it) and creates six indexes: a trigram GIN on the text of
 every context value of the operational log and of audit contexts, a trigram
@@ -29,7 +29,7 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0116_log_search_indexes.sql"
+    / "0117_log_search_indexes.sql"
 )
 
 
@@ -81,9 +81,9 @@ class Migration(migrations.Migration):
     dependencies = [
         # The audit app's previous migration (0106, #1403).
         ("stewardship_audit", "0004_admin_input_refusal_log"),
-        # The migration that installs the previous frozen file (0110, #558),
+        # The migration that installs the previous frozen file (0116, #1562),
         # so the files apply in prefix order.
-        ("stewardship_reports", "0030_financial_local_days"),
+        ("stewardship_jobs", "0034_sent_mail_recipients"),
     ]
 
     operations = [

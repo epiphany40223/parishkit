@@ -431,7 +431,7 @@ def provision_roles(configuration, deployment_id):
                     )
                 )
         # The System logs search's trigram indexes (#765, migration file
-        # 0116) need pg_trgm. Creating an extension needs CREATE on the
+        # 0117) need pg_trgm. Creating an extension needs CREATE on the
         # database, which no service login holds (revoked above), so the
         # operator installs it here; the migration then only notices it.
         cursor.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public")

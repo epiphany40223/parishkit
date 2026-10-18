@@ -16,7 +16,7 @@ travels only in POST bodies, never in a link (``log_rows.LINK_FIELDS``).
 
 A cheap condition over the text of every stored value runs first; the
 exact per-value condition runs only on the rows it passes. Trigram indexes
-(#765, frozen migration file 0116) hold exactly the ``UPPER(...)``
+(#765, frozen migration file 0117) hold exactly the ``UPPER(...)``
 expressions Django's ``icontains`` compares for the cheap condition and the
 stored type, and pattern btrees serve the other type arms (the listed types
 and the trigger prefixes), so PostgreSQL combines every arm of the text OR

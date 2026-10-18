@@ -17,7 +17,7 @@ def value_text_index(name):
 
     It holds exactly what the System logs search compares
     (``log_search.ContextValues`` under ``icontains``'s ``UPPER``), so the
-    planner can use it; frozen migration file 0116 creates it.
+    planner can use it; frozen migration file 0117 creates it.
     """
     values = models.Func(
         "context",

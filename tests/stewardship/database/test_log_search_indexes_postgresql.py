@@ -1,4 +1,4 @@
-"""The System logs text search indexes and migration file 0116 (#765)."""
+"""The System logs text search indexes and migration file 0117 (#765)."""
 
 from datetime import UTC, datetime
 from pathlib import Path
@@ -14,7 +14,7 @@ from parishkit.stewardship.audit.log_search import indexable
 pytestmark = pytest.mark.django_db(transaction=True)
 FROZEN = (
     Path(__file__).resolve().parents[3]
-    / "src/parishkit/stewardship/schema/migrations/0116_log_search_indexes.sql"
+    / "src/parishkit/stewardship/schema/migrations/0117_log_search_indexes.sql"
 ).read_text(encoding="utf-8")
 CHECK = FROZEN[FROZEN.index("DO $check$") :]
 TRIGRAM = (
@@ -110,7 +110,7 @@ def test_the_extension_and_every_index_are_installed():
 def test_the_migration_check_refuses_a_missing_or_different_object(statement):
     """The DO block raises for a missing index, a changed one or no extension."""
     with (
-        pytest.raises(DatabaseError, match="Migration 0116"),
+        pytest.raises(DatabaseError, match="Migration 0117"),
         transaction.atomic(),
         connection.cursor() as cursor,
     ):

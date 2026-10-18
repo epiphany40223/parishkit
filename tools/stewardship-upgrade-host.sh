@@ -671,7 +671,7 @@ if [ "$mode" = upgrade ]; then
         echo "    skipped: the upgrade check answered t (schema and grants already match)"
     else
         echo "    running migration and grants: the check answered: $(head -3 <<<"$answer")"
-        # The System logs search's indexes (#765, migration file 0116) need
+        # The System logs search's indexes (#765, migration file 0117) need
         # pg_trgm, and creating an extension needs CREATE on the database,
         # which only the operator superuser holds (runbook, Text search
         # extension). IF NOT EXISTS leaves an installed one alone, so this

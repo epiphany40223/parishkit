@@ -1,4 +1,4 @@
--- Frozen forward migration file 0116 (the repository-wide file sequence,
+-- Frozen forward migration file 0117 (the repository-wide file sequence,
 -- number assigned centrally): indexes for the System logs text search
 -- (#765; admin portal spec, System logs, text search). This file is
 -- installed by its Django migration in the audit app and must never change
@@ -73,7 +73,7 @@ BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_extension
         WHERE extname='pg_trgm' AND extnamespace='public'::regnamespace) THEN
-        RAISE EXCEPTION 'Migration 0116 (log search indexes) needs the pg_trgm extension in public';
+        RAISE EXCEPTION 'Migration 0117 (log search indexes) needs the pg_trgm extension in public';
     END IF;
     FOREACH definition IN ARRAY expected LOOP
         IF NOT EXISTS (
@@ -81,7 +81,7 @@ BEGIN
             WHERE i.relnamespace='public'::regnamespace
               AND x.indisvalid AND x.indisready
               AND pg_get_indexdef(i.oid)=definition) THEN
-            RAISE EXCEPTION 'Migration 0116 (log search indexes) index is not installed as declared: %', definition;
+            RAISE EXCEPTION 'Migration 0117 (log search indexes) index is not installed as declared: %', definition;
         END IF;
     END LOOP;
 END
