@@ -1772,6 +1772,17 @@ fieldset.editor-mode > legend { float: none; width: auto; margin: 0; padding: 0;
   .tabs-tab[aria-selected=true] { forced-color-adjust: none; background: Highlight; border-color: Highlight; color: HighlightText; }
   .tabs-tab[aria-selected=true] .tabs-count { background: HighlightText; color: Highlight; }
 }
+/* A review-pipeline stage's chip (the Family hub's census tabs, #1678): a
+   plain badge, or for a needs-correction stage (Entered incorrectly) the
+   Error look with its icon (UX conventions, "Status indicators"). The same
+   rule as the review worklist's Stage column (#1683); whichever of the two
+   lands second keeps one copy. */
+.stage-chip { display: inline-flex; align-items: center; gap: .3rem; padding: .1rem .55rem; border: 1px solid var(--border); border-radius: 999px; background: var(--paper-soft); color: var(--ink); font-size: .8125rem; font-weight: 600; white-space: nowrap; }
+.stage-chip:is(.status-error, .status-warning) { border-color: var(--status-line); background: var(--status-bg); color: var(--status-ink); }
+/* The hub's Show unchanged disclosure: its table opens below the toggle,
+   which stays put (no layout shift above it). */
+details.hub-unchanged { margin-block: 1rem; }
+details.hub-unchanged > .table-scroll { margin-top: .5rem; }
 /* The Basic panel is a <fieldset> so one disabled attribute keeps its
    controls unsent while Advanced is shown; it draws no box of its own. */
 fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0; background: none; }

@@ -26,8 +26,11 @@ plus the hub's ``tab``.
 
 The page is the Family's information hub (#1678, admin-portal spec "Family
 information hub"): a header strip, then the shared tabs (``web/tabs.py``).
-The Timeline tab holds everything above; the other tabs come in later
-slices and are drawn unavailable ("Coming soon") until then (``hub_tabs``).
+The Timeline tab holds everything above. The Family tab and one tab per
+Member (slice 2) show the Family's census answers against their baseline,
+with each change's review-pipeline stage (``hub_census``); the other tabs
+come in later slices and are drawn unavailable ("Coming soon") until then
+(``hub_tabs``).
 """
 
 from dataclasses import dataclass, replace
@@ -75,22 +78,27 @@ from parishkit.stewardship.web.tabs import PARAMETER as TAB
 from parishkit.stewardship.web.tabs import Tab, tab_set
 
 from .export_views import SAFE_FAILURES
+from .hub_census import HubCensus, read_hub_census
 from .read_admission import admit_report_read
 from .response_metrics import ResponseScope
 from .timelines import KINDS, REACH, TIMELINE_SORTING, narrow, read_timeline
 
 # The days a From or Through filter accepts, as on Census changes.
 EARLIEST, LATEST = date(2000, 1, 1), date(2999, 12, 31)
-# The hub's content tabs not built yet (#1678 slices 2 to 4), in tab order:
-# (key, label). Each is drawn unavailable with COMING_SOON while it applies
-# to the campaign (``hub_sections``). Member tabs (slice 2) need the census
-# read that slice adds, so none is drawn before it.
-HUB_TABS = (
-    ("family", _("Family")),
+# The hub's content sections, in tab order (#1678). "members" stands for
+# the Member tabs, one per Member (``hub_census``). The Family and Member
+# tabs are built (slice 2); the tabs not built yet (slices 3 and 4), with
+# their labels, are drawn unavailable with COMING_SOON while they apply to
+# the campaign (``hub_sections``).
+SECTIONS = ("family", "members", "financial", "other")
+COMING = (
     ("financial", _("Financial")),
     ("other", _("Cannot participate and Additional information")),
 )
 COMING_SOON = _("Coming soon")
+# The Family and Member tabs' one panel template; the context's
+# ``hub_subject`` is the chosen tab's subject.
+CENSUS_PANEL = "stewardship/hub-census-panel.html"
 
 
 @dataclass(frozen=True)
@@ -248,36 +256,52 @@ def open_form(identity, *, testing_codes, current=True, eligible=True):
 
 
 def hub_sections(values):
-    """The hub's content tabs that apply to a campaign, as ``HUB_TABS`` keys.
+    """The hub's content sections that apply to a campaign, as ``SECTIONS`` keys.
 
     ``values`` is the campaign configuration's values. The Family tab needs
-    census; Financial needs Financial stewardship; the last tab needs
-    Ministry stewardship (where cannot-participate answers are given) or
-    Additional information. A tab whose subject is not in the campaign is
-    left out (ui-conventions "Conditional fields").
+    census; the Member tabs census or Ministry stewardship; Financial needs
+    Financial stewardship; the last tab needs Ministry stewardship (where
+    cannot-participate answers are given) or Additional information. A tab
+    whose subject is not in the campaign is left out (ui-conventions
+    "Conditional fields").
     """
     modules = set(values.get("modules", ()))
     applies = {
         "family": "census" in modules,
+        "members": "census" in modules or "ministry" in modules,
         "financial": "financial" in modules,
         "other": "ministry" in modules or bool(values.get("additional_information")),
     }
-    return tuple(key for key, _label in HUB_TABS if applies[key])
+    return tuple(key for key in SECTIONS if applies[key])
 
 
-def hub_tabs(page_url, parameters, sections):
-    """The hub's ``TabSet``: Timeline, then each of ``sections`` unavailable.
+def hub_tabs(page_url, parameters, sections, census=None):
+    """The hub's ``TabSet``: Timeline, Family, the Members, then the rest.
 
     ``parameters`` is the address's (``request.GET``); ``sections`` are the
-    ``hub_sections`` keys that apply. Until its slice lands, each content
-    tab is drawn unavailable with the reason "Coming soon", so the hub's
-    whole shape shows from slice 1. A tab's link carries nothing but
-    ``tab``: the Timeline's filters are its panel's own.
+    ``hub_sections`` keys that apply and ``census`` the ``HubCensus`` read
+    for them (None reads as no response yet). The Family tab is drawn
+    whenever census applies, saying so when the Family has no census
+    answers; each Member tab is named by its Member, and is unavailable
+    ("Coming soon") in a campaign without census, whose Member tabs show
+    Ministry joins and leaves from a later slice. Each tab not built yet is
+    drawn unavailable with the reason "Coming soon". A tab's link carries
+    nothing but ``tab``: the Timeline's filters are its panel's own.
     """
+    census = census or HubCensus()
     tabs = [Tab("timeline", _("Timeline"), template="stewardship/timeline-panel.html")]
+    if "family" in sections:
+        tabs.append(Tab("family", _("Family"), template=CENSUS_PANEL))
+    if "members" in sections:
+        tabs += [
+            Tab(member.key, member.label, template=CENSUS_PANEL)
+            if census.census
+            else Tab(member.key, member.label, unavailable=COMING_SOON)
+            for member in census.members
+        ]
     tabs += [
         Tab(key, label, unavailable=COMING_SOON)
-        for key, label in HUB_TABS
+        for key, label in COMING
         if key in sections
     ]
     return tab_set(page_url, parameters, tabs)
@@ -296,8 +320,9 @@ def page_context(campaign, family_id, identity, timeline, as_of, **options):
     Open form), ``query``, the validated ``TimelineQuery``, ``values``, the
     timeline table's validated ``sort`` and ``size``, ``export``, the
     export form's values (``export_context``), shown only on the full view,
-    and for the hub's tabs (``hub_tabs``) ``parameters``, the address's, and
-    ``sections``, the content tabs that apply (``hub_sections``).
+    and for the hub's tabs (``hub_tabs``) ``parameters``, the address's,
+    ``sections``, the content tabs that apply (``hub_sections``), and
+    ``census``, the Family and Member tabs' ``HubCensus``.
     """
     full = options.get("full", False)
     query = options.get("query") or TimelineQuery()
@@ -311,6 +336,13 @@ def page_context(campaign, family_id, identity, timeline, as_of, **options):
         eligible=options.get("eligible", True),
     )
     page_url = reverse("admin:timeline", args=[family_id])
+    census = options.get("census") or HubCensus()
+    tabs = hub_tabs(
+        page_url,
+        options.get("parameters", {}),
+        options.get("sections", ()),
+        census,
+    )
     return {
         "campaign": campaign,
         "identity": identity,
@@ -319,9 +351,13 @@ def page_context(campaign, family_id, identity, timeline, as_of, **options):
         # The hub's Last portal action (#1678), for Administrators and Staff
         # (Administrator decision, 2026-10-18).
         "last_action": timeline.last_action,
-        "tabs": hub_tabs(
-            page_url, options.get("parameters", {}), options.get("sections", ())
-        ),
+        "tabs": tabs,
+        # The chosen Family or Member tab's subject (None on another tab, and
+        # on the Family tab before any census answers); its panel is the only
+        # one drawn.
+        "hub_subject": census.subject(tabs.selected),
+        "census_tabs": "family" in options.get("sections", ()),
+        "census_url": reverse("admin:census_changes"),
         "table": table,
         "query": query,
         "kinds": KINDS,
@@ -506,6 +542,14 @@ def timeline(request, campaign_id, family_id):
                 full=full,
                 current_mode=system.mode,
             )
+            # The hub's Family and Member tabs (#1678): read on every load,
+            # whichever tab is chosen, since the Member tabs' names need it.
+            sections = hub_sections(campaign.active_configuration.values)
+            census = None
+            if "members" in sections:
+                census = read_hub_census(
+                    campaign_id, family.pk, census="family" in sections
+                )
             # The chosen-Family test page is Administrator only (CONFIGURE).
             test_url = None
             if codes and testing_codes and allows(principal, Capability.CONFIGURE):
@@ -530,7 +574,8 @@ def timeline(request, campaign_id, family_id):
                 values=values,
                 export=export_context(campaign_id, family.pk) if full else None,
                 parameters=request.GET,
-                sections=hub_sections(campaign.active_configuration.values),
+                sections=sections,
+                census=census,
             )
             page = render_to_string(
                 "stewardship/timeline.html", context, request=request
