@@ -14,7 +14,6 @@ from parishkit.stewardship.reports.directories import (
     DIRECTORY_SORTING,
     INACTIVE,
     MISSING_NAME,
-    MODES,
     REACH,
     REASONS,
     RESPONSES,
@@ -316,7 +315,6 @@ def preset_pages(values, counted):
             + len(dates)
             + len(counts)
             + int(checks),
-            "modes": MODES,
             "can_test": True,
             "testing_responses": testing,
             "export_headings": export_headings(

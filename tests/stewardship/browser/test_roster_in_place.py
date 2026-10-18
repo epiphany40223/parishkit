@@ -14,16 +14,33 @@ from django.http import QueryDict
 from parishkit.stewardship.reports.ministry_roster_views import bulk_values
 
 from .followup_components import TICK_ITEM
-from .roster_components import BULK_KEY, BULK_POST, PATH, TWICE
+from .roster_components import BULK_KEY, BULK_POST, MINISTRY, PATH, TWICE
 from .test_components import axe_violations
 from .test_table_sorting import MARK, MARKED
-from .waits import available, has_count, has_text, hidden, same_place, visible
+from .waits import (
+    available,
+    eventually,
+    has_count,
+    has_text,
+    hidden,
+    same_place,
+    visible,
+)
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
 
 NAMES = "#table tbody th[scope=row] a"
+# The Show binary choice's box and each segment's, page-relative: choosing a
+# segment must change only colours, never a size or a place (#1535).
+SHOW_LAYOUT = """() => [...document.querySelectorAll(
+    '#roster-show, #roster-show a, #table-filters')].map((node) => {
+  const box = node.getBoundingClientRect();
+  return [box.x + scrollX, box.y + scrollY, box.width, box.height];
+}).flat()"""
+# The Show segment the page marks as the one shown.
+CHOSEN = "#roster-show a[aria-current=page]"
 # Every accessible name and tooltip in a table, to find a stray UTC instant.
 NAME_TEXT = (
     "node => [...node.querySelectorAll('[aria-label], [title]')]"
@@ -55,12 +72,36 @@ def test_a_tick_and_the_pager_act_in_place(page, component_origin):
 
 
 def test_show_all_and_a_tick_there_stay_on_all(page, component_origin):
-    """The Show filter refreshes in place, and a tick on All comes back to All
-    with the row now marked, never to the default view."""
+    """Show is a binary choice (#1535): All, including entered refreshes the
+    list in place with one GET, no Apply and no reload, keeps the reader's
+    place and focus on the segment, announces the view, replaces the
+    address and moves nothing; the filter form then carries All. A tick on
+    All comes back to All with the row now marked, never to the default
+    view."""
     page.goto(component_origin + PATH)
     page.evaluate(MARK)
-    page.get_by_label("Show").select_option("all")
-    page.get_by_role("button", name="Apply").click()
+    choice = page.get_by_role("group", name="Show", exact=True)
+    has_text(page.locator(CHOSEN), "Not yet entered")
+    layout = page.evaluate(SHOW_LAYOUT)
+    scrolled = page.evaluate("window.scrollY")
+    gets = []
+    page.on(
+        "request",
+        lambda request: gets.append(request.url) if "show=all" in request.url else None,
+    )
+    choice.get_by_role("link", name="All, including entered").click()
+    has_text(page.locator(CHOSEN), "All, including entered")
+    assert page.evaluate(MARKED) == "kept"
+    assert gets == [component_origin + PATH + "?show=all&sort=-resolved&size=25&page=1"]
+    assert page.url == gets[0] + "#table"
+    assert abs(page.evaluate("window.scrollY") - scrolled) < 40
+    eventually(page, "() => document.activeElement?.dataset.inPlace === 'show-all'")
+    has_text(
+        page.get_by_role("status").filter(has_text="All, including entered"),
+        "All, including entered",
+    )
+    assert page.evaluate(SHOW_LAYOUT) == pytest.approx(layout, abs=1)
+    assert page.locator("#table-filters input[name=show]").input_value() == "all"
     has_text(page.locator(NAMES).nth(1), "Member 28")
     with page.expect_request(lambda request: request.method == "POST") as sent:
         page.locator("#table tbody tr").nth(1).get_by_role(
@@ -72,7 +113,36 @@ def test_show_all_and_a_tick_there_stay_on_all(page, component_origin):
         .nth(1)
         .get_by_role("button", name="Clear Entered in ParishSoft")
     )
-    assert page.get_by_label("Show").input_value() == "all"
+    has_text(page.locator(CHOSEN), "All, including entered")
+    assert page.evaluate(MARKED) == "kept"
+
+
+def test_show_links_follow_the_applied_ministry(page, component_origin):
+    """Apply (a Ministry) refreshes the list in place and redraws the Show
+    segments with that Ministry (#1535); choosing All then keeps it, and
+    the filter form shows the Ministry and carries All, so the next Apply
+    keeps both."""
+    page.goto(component_origin + PATH)
+    page.evaluate(MARK)
+    page.get_by_label("Ministry", exact=True).select_option("9")
+    with page.expect_request(lambda request: "ministry=9" in request.url) as sent:
+        page.get_by_role("button", name="Apply", exact=True).click()
+    assert sent.value.url == component_origin + MINISTRY
+    eventually(
+        page,
+        "() => document.querySelector('#roster-show a[data-in-place=show-all]')"
+        ".href.includes('ministry=9')",
+    )
+    with page.expect_request(lambda request: "show=all" in request.url) as chosen:
+        page.get_by_role("group", name="Show", exact=True).get_by_role(
+            "link", name="All, including entered"
+        ).click()
+    assert chosen.value.url == (
+        component_origin + PATH + "?show=all&ministry=9&sort=-resolved&size=25&page=1"
+    )
+    has_text(page.locator(CHOSEN), "All, including entered")
+    assert page.get_by_label("Ministry", exact=True).input_value() == "9"
+    assert page.locator("#table-filters input[name=show]").input_value() == "all"
     assert page.evaluate(MARKED) == "kept"
 
 

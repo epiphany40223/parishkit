@@ -565,6 +565,16 @@ def row_controls(rows):
             row["label"] += f", resolved {row['local_day']}"
 
 
+def show_links(table, action):
+    """Each Show segment's address (#1535): the list with that Show, the
+    applied Ministry, sort and page size kept, back on its first page."""
+    others = tuple(field for field in table.carried if field[0] != "show")
+    return {
+        key: f"{action}?{replace(table, carried=(('show', key), *others)).query(1)}"
+        for key in SHOW
+    }
+
+
 @require_GET
 def page(request, campaign_id):
     """The list, sorted and paged in place, with each row's tick."""
@@ -588,7 +598,7 @@ def page(request, campaign_id):
                 "metadata": result["metadata"],
                 "table": replace(table, action=action),
                 "show": show,
-                "show_choices": SHOW.items(),
+                "show_links": show_links(table, action),
                 "ministry": ministry,
                 # The Ministry filter's choices: the Ministries the list reads.
                 "ministries": result["ministries"],

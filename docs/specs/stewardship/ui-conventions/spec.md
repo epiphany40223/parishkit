@@ -439,11 +439,13 @@ never scrolls to show it (Administrator, pk-local review of
   Compare on day, which refreshes everything below it)
   names its region by its
   URL's fragment. A POST form saves a change unless it is marked
-  `data-in-place-read` (the System logs cross-links only read): a read may
+  `data-in-place-read` (the System logs cross-links and the family
+  directory's Responses shown segments only read): a read may
   be cancelled by a newer choice and, with no answer at all, falls back to
   the ordinary submission. A form or link marked `data-in-place-filters`
   sets the page's filters from outside its filter form (a System logs
-  cross-link), so after the swap the filter
+  cross-link, a [binary choice](#binary-choices) beside a filter form), so
+  after the swap the filter
   form's visible fields, and any disclosure in it, show what the fresh page
   applied, and the next Apply, sort or page keeps them; every other swap
   leaves filters typed but not yet applied alone. A region a
@@ -1662,17 +1664,33 @@ Testing rehearsal.
 - **Where.** The Participation page's Chart population (Historical as of
   day | Current population), the Response dashboard's Responses shown
   (Production | Testing rehearsal) and Activity grouped by (By hour | By
-  day), and the Family timeline's Records shown (Production | Testing
-  rehearsal). The family directory's Responses shown and the roster
-  changes' Show are still menus in their filter forms; their conversion is
-  tracked in #1535.
+  day), the Family timeline's Records shown (Production | Testing
+  rehearsal), the
+  [family directory](../reports/spec.md#active-parishioner-family-directory)'s Responses shown
+  (Production | Testing rehearsal), above its Filters panel, and
+  [Roster changes to enter](../admin-portal/spec.md#roster-changes-to-enter)'s
+  Show (Not yet entered | All, including entered), above its Ministry
+  filter.
 - **Links.** Each segment is a link to the page's own address with that
   choice (`a[data-in-place]`, marked `aria-current="page"` when chosen), so
   each view has a real address that a reload or bookmark keeps. The link
   carries the page's other view state (a table's sort and page size, the
   browser's time zone), and the pair is redrawn with every in-place answer
   (`data-table-sync` or inside a region), so its links always match the
-  page shown.
+  page shown. On a page whose filters are private POST state (the family
+  directory), a link cannot carry them, so each segment is instead a small
+  POST form holding the applied filters as hidden fields, as a POST table's
+  navigator does, with one button marked `aria-current="page"` when chosen;
+  it looks and acts the same, and the address bar then shows the page's own
+  link-safe address.
+- **Beside a filter form.** When the page also has a filter form, the pair
+  sits outside it, before it, and each segment carries the filters the page
+  shows (not ones typed but not yet applied) and goes back to the first
+  page; the form carries the choice as a hidden field, so its Apply keeps
+  it. Applying the filters in place redraws the pair with the new filters,
+  and choosing a segment sets the form to what the new view applied
+  (`data-in-place-filters`). The choice is a mode of the page, not a filter,
+  so the Filters panel's count leaves it out.
 - **In place.** Choosing a segment refreshes the page's regions without a
   reload or a scroll jump ([in-place controls](#in-place-controls)); the
   address is replaced, focus stays on the segment just chosen, and the view
@@ -1693,7 +1711,11 @@ Testing rehearsal.
   or more (Appearance).
 - **Guard.** A template test refuses an Admin template's `<select>` with
   exactly two written options, unless it is listed as an exception with
-  its reason. A menu built from a loop is checked in review.
+  its reason. A menu built from a loop cannot be counted that way, so the
+  test also checks each converted page by name: it draws the shared pair
+  and has no menu for that choice, and its view no longer hands the
+  template the choice's options. Any other menu built from a loop is
+  checked in review.
 
 ### Basic and Advanced modes
 

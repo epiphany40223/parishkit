@@ -235,7 +235,10 @@ class AboutPageNode(template.Node):
 
 # Query fields that order, page or place the results rather than filter them:
 # a report's sort, its page number and the browser's time zone.
-NOT_FILTERS = frozenset({"sort", "page", "zone"})
+# The family directory's Responses shown (``mode``) is a mode of the whole
+# page, drawn as a binary choice outside its Filters panel (#1535), so it
+# is not counted as one of the panel's filters either.
+NOT_FILTERS = frozenset({"sort", "page", "zone", "mode"})
 
 
 def applied_filters(query, ignore=()):
@@ -244,7 +247,7 @@ def applied_filters(query, ignore=()):
     A report's query is a frozen dataclass whose defaults are the page's
     unfiltered view (an Additional information default such as "Current
     actionable requests" is the page's normal list, so it does not count).
-    Sort, page and zone are left out (``NOT_FILTERS``), as is any field
+    Sort, page, zone and mode are left out (``NOT_FILTERS``), as is any field
     named in ``ignore``: one another choice currently overrides.
     """
     return sum(

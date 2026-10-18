@@ -214,7 +214,12 @@ def test_every_in_place_control_names_its_region_as_a_fragment():
                     passed = re.search(r"\bregion_id=([\"'])([\w-]+)\1", include)
                     region = passed.group(2) if passed else named.group(1)
                     assert region, (path.name, include)
-                    assert names_region(host, region), (path.name, region)
+                    # A shared table's region is drawn with its anchor,
+                    # "table" for a table with no prefix (the directory's
+                    # and the roster's binary choices, #1535).
+                    assert names_region(host, region) or (
+                        region == "table" and names_region(host, "{{ table.anchor }}")
+                    ), (path.name, region)
     assert found >= 8
 
 

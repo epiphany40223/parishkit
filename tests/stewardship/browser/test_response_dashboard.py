@@ -218,11 +218,13 @@ def test_lists_of_families_open_the_directory_presets(
 def test_testing_links_open_the_directory_testing_switch(page, component_origin):
     """A Testing dashboard link opens the directory in Testing rehearsal (#933).
 
-    The directory shows the Responses shown switch set to Testing rehearsal,
-    says so in a notice and leaves out the Production-only Responded column.
-    Switching back to Production is a filter like the others: Apply posts
-    it privately, the answer replaces the table in place without moving the
-    filter bar, and the address bar drops ``mode=testing``.
+    The directory shows the Responses shown switch (a binary choice above
+    the Filters panel, #1535) set to Testing rehearsal, says so in a notice
+    and leaves out the Production-only Responded column. Choosing
+    Production posts it privately with the filters applied, with no Apply;
+    the answer replaces the table in place without moving the switch or the
+    filter bar, focus stays on Production, the address bar drops
+    ``mode=testing``, and the filter form now carries Production.
     """
     from playwright.sync_api import expect
 
@@ -230,8 +232,8 @@ def test_testing_links_open_the_directory_testing_switch(page, component_origin)
     page.goto(component_origin + "/response-dashboard-rehearsal")
     page.get_by_role("link", name="Families that submitted", exact=True).click()
     expect(page).to_have_url(re.compile(r"[?&]mode=testing$"))
-    switch = page.get_by_label("Responses shown", exact=True)
-    expect(switch).to_have_value("testing")
+    switch = page.get_by_role("group", name="Responses shown", exact=True)
+    expect(switch.locator("[aria-current=page]")).to_have_text("Testing rehearsal")
     expect(page.locator("[data-testing-responses]")).to_be_visible()
     headings = page.locator("table thead th").all_inner_texts()
     assert not any(text.strip() == "Responded" for text in headings), headings
@@ -247,17 +249,27 @@ def test_testing_links_open_the_directory_testing_switch(page, component_origin)
     )
     # The filter bar's place on the page (not in the viewport: the answer
     # may scroll to the table).
-    layout = """() => {
-        const box = document.querySelector('#table-filters').getBoundingClientRect();
-        return [box.x + scrollX, box.y + scrollY, box.width, box.height];
-    }"""
+    layout = """() => [...document.querySelectorAll(
+        '#table-filters, #directory-mode, #directory-mode button')].map((node) => {
+      const box = node.getBoundingClientRect();
+      return [box.x + scrollX, box.y + scrollY, box.width, box.height];
+    }).flat()"""
     before = page.evaluate(layout)
-    switch.select_option("production")
     with page.expect_request(lambda request: request.method == "POST") as sent:
-        page.get_by_role("button", name="Apply filters").click()
-    assert "mode=production" in sent.value.post_data
+        switch.get_by_role("button", name="Production").click()
+    body = sent.value.post_data
+    assert "mode=production" in body and body.count("mode=") == 1
+    # The segment carries the filters the page applied.
+    assert "response=submitted" in body and "responses=yes" in body
     assert "?" not in sent.value.url
     expect(page).to_have_url(production)
+    expect(switch.locator("[aria-current=page]")).to_have_text("Production")
+    eventually(
+        page,
+        "() => document.activeElement?.closest('form')?.dataset.inPlace"
+        " === 'mode-production'",
+    )
+    assert page.locator("#table-filters input[name=mode]").input_value() == "production"
     expect(page.locator("[data-testing-responses]")).to_have_count(0)
     expect(page.locator("table thead th", has_text="Responded")).to_have_count(1)
     assert page.evaluate(layout) == pytest.approx(before, abs=1)
@@ -268,10 +280,12 @@ def test_switch_sends_mode_once_after_the_rehearsal_ends(page, component_origin)
     """An answer drawn without the switch never doubles the mode (#933).
 
     If the rehearsal ends after the page loads, the in-place answer has no
-    Responses shown switch. The page keeps its own select, and since the
-    fresh form carries no hidden ``mode`` either, the next Apply still
-    sends ``mode`` once (the server then refuses Testing with its 409),
-    never twice, which every later Apply would answer with a 400.
+    Responses shown switch. The first Apply sends the page's own hidden
+    ``mode`` once (the server would refuse Testing with its 409), never
+    twice, which every later Apply would answer with a 400. The answer's
+    form has no ``mode``, and the switch is gone with it (#1535), so the
+    form follows the page now shown and the next Apply sends none:
+    Production.
     """
     from playwright.sync_api import expect
 
@@ -284,12 +298,13 @@ def test_switch_sends_mode_once_after_the_rehearsal_ends(page, component_origin)
         "**/families/",
         lambda route: route.fulfill(body=answer, content_type="text/html"),
     )
-    for _ in range(2):
+    for sends in (1, 0):
         with page.expect_request(lambda request: request.method == "POST") as sent:
             page.get_by_role("button", name="Apply filters").click()
-        assert sent.value.post_data.count("mode=") == 1, sent.value.post_data
+        assert sent.value.post_data.count("mode=") == sends, sent.value.post_data
         # The answer (no rehearsal notice) is in place before the next Apply.
         expect(page.locator("[data-testing-responses]")).to_have_count(0)
+        expect(page.locator("#directory-mode")).to_have_count(0)
     assert_clean(page, errors)
 
 

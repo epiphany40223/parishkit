@@ -1,12 +1,15 @@
 """Three-engine private native directories and accessible contacts."""
 
 import re
+from urllib.parse import urlencode
 from uuid import UUID
 
 import pytest
 from django.urls import reverse
 
-from .waits import same_place, visible
+from parishkit.stewardship.reports.response_dashboard import DIRECTORY_PRESETS
+
+from .waits import eventually, has_text, same_place, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -520,3 +523,55 @@ def test_filter_bar_tips_sit_beside_their_labels(page, component_origin, width):
     # Linux Firefox may report the same place a ten-thousandth of a pixel apart.
     assert same_place(boxes(), before)
     page.keyboard.press("Escape")
+
+
+def test_responses_shown_carries_the_applied_filters(page, component_origin):
+    """The Responses shown segments (#1535) carry the filters the page shows.
+
+    An in-place Apply filters redraws them with the filters it applied;
+    choosing Production then posts those filters privately with the mode
+    once, back on the first page, without a reload, and the filter form
+    shows what that answer applied and carries Production.
+    """
+    directory = reverse("admin:family_directory")
+
+    def preset(key, **extra):
+        """A directory preset's address, as the response dashboard links it."""
+        return f"{directory}?{urlencode(DIRECTORY_PRESETS[key] | extra)}"
+
+    answers = [
+        page.request.get(component_origin + preset("started", mode="testing")).text(),
+        page.request.get(component_origin + preset("started")).text(),
+    ]
+    posts = []
+
+    def answer(route):
+        """Answer each POST with the next page, in order."""
+        posts.append(route.request.post_data)
+        route.fulfill(body=answers[len(posts) - 1], content_type="text/html")
+
+    page.goto(component_origin + preset("submitted", mode="testing"))
+    page.evaluate("document.querySelector('h1').dataset.mark = 'kept'")
+    page.route("**/families/", answer)
+    production = "#directory-mode form[data-in-place=mode-production]"
+    assert page.locator(f"{production} input[name=response]").input_value() == (
+        "submitted"
+    )
+    page.get_by_label("Response", exact=True).select_option("started")
+    page.get_by_role("button", name="Apply filters").click()
+    eventually(
+        page,
+        f"() => document.querySelector('{production} input[name=response]')"
+        ".value === 'started'",
+    )
+    page.get_by_role("group", name="Responses shown", exact=True).get_by_role(
+        "button", name="Production"
+    ).click()
+    has_text(page.locator("#directory-mode [aria-current=page]"), "Production")
+    assert len(posts) == 2
+    sent = dict(pair.split("=", 1) for pair in posts[1].split("&"))
+    assert posts[1].count("mode=") == 1 and sent["mode"] == "production"
+    assert sent["response"] == "started" and "page" not in sent
+    assert page.locator("#table-filters input[name=mode]").input_value() == "production"
+    assert page.get_by_label("Response", exact=True).input_value() == "started"
+    assert page.evaluate("document.querySelector('h1').dataset.mark") == "kept"
