@@ -2,7 +2,11 @@
 
 Status: **revised after the Administrator's review of 2026-10-18**
 ([epic #1680](https://github.com/epiphany40223/parishkit/issues/1680)); the
-[decisions](#decisions) are settled. Nothing here is built yet. Every Staff
+[decisions](#decisions) are settled. Built so far: the shared vocabulary,
+stage mapping, role-action table and refresh comparison
+(`parishkit.stewardship.pipeline`,
+[#1691](https://github.com/epiphany40223/parishkit/issues/1691)), which no
+page uses yet. Every Staff
 and Ministry leader part ships during the current campaign. The
 Family-facing view of reviewed changes
 ([#1705](https://github.com/epiphany40223/parishkit/issues/1705)) comes
@@ -40,7 +44,7 @@ registry in [Proposed changes](../data/spec.md#proposed-changes). General UX
 rules (tables, row actions, selection, exports) are in the
 [UX conventions](../ui-conventions/spec.md), which take precedence for those
 rules; [proposed convention changes](#proposed-convention-changes) lists the
-edits this pipeline needs there.
+rules this pipeline added there.
 
 ## Administrator's direction
 
@@ -710,7 +714,8 @@ reader).
 
 Each row offers only the actions its stage and the reader's
 [role](#role-specific-actions) allow, as
-[row action](../ui-conventions/spec.md#row-actions-and-confirmation) icons:
+[row action](../ui-conventions/spec.md#row-actions-and-confirmation) icons
+(hidden, not disabled, by role):
 Accept (check), Edit (pencil; opens the stream's own value editor: for a
 pledge the amount and frequency, for a Ministry request the Ministry list
 scoped to the reader), Ignore (eye struck through), Back to review (arrow
@@ -720,21 +725,17 @@ a box). Each takes the optional note in the shared confirmation dialog.
 ### Selected-state icons
 
 A row's decision is shown on its action icons, not only in the Stage
-column: the icon of the decision in force is drawn **selected** (filled
-with the decision's status colour, white glyph, `aria-pressed="true"`), the
-others unselected (outline). Choosing the selected icon again is not
-offered as an undo; Back to review is. This is a
-[proposed convention](#proposed-convention-changes) for every table whose
-row actions record a state, so Ministry requests and Roster changes to enter
-use it too.
+column: Accept, Ignore and Entered by hand / Handled follow the
+[selected state](../ui-conventions/spec.md#row-actions-and-confirmation) rule, and Back to review is the row's undo.
+Ministry requests and Roster changes to enter use it too.
 
 ### Bulk actions
 
-Every row with at least one action has a selection box (today Census
-changes gives a box only to rows offering a review decision, so the By hand
-rows have actions but no box). The bulk bar offers Accept, Ignore, Back to
-review and Entered by hand / Handled, each available only while every
-ticked row offers it to the reader
+Selection boxes and the bulk bar follow the
+[row action](../ui-conventions/spec.md#row-actions-and-confirmation) rules (several rows, by role); today Census changes
+breaks the box rule, giving a box only to rows offering a review decision,
+so the By hand rows have actions but no box. The bulk bar offers Accept,
+Ignore, Back to review and Entered by hand / Handled
 ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)), with
 the exact count in the dialog. Edit and Add are one item at a time. The
 typical flow the Administrator described is a handful of Edits, then select
@@ -897,26 +898,20 @@ in order. New schema follows the
 
 ## Proposed convention changes
 
-Edits to the [UX conventions](../ui-conventions/spec.md), made there (not
-here) in the vocabulary slice:
+Done: the general UX rules this pipeline needs were made in the
+[UX conventions](../ui-conventions/spec.md) (not here) by the vocabulary
+slice ([#1691](https://github.com/epiphany40223/parishkit/issues/1691)),
+which are the rules in force:
 
 1. [Row actions and confirmation](../ui-conventions/spec.md#row-actions-and-confirmation):
-   a recording action whose state is in force is drawn selected, as above.
-2. Same section: "Rows without actions have no selection box" stays, and a
-   row with any bulk-eligible action has one; a table never gives boxes to
-   only some of its actionable rows.
-3. Same section: row actions a reader's role does not allow are not shown
-   (not shown disabled), so a leader and Staff see different icon sets on
-   the same table, and the bulk bar offers only what every ticked row
-   allows that reader.
-4. [Admin tables](../ui-conventions/spec.md#admin-tables): a worklist's
-   filters are always open and its export pane is below the table; a
-   table's create action (Add) sits in its selection bar.
-5. [Status indicators](../ui-conventions/spec.md#status-indicators): a
-   "needs correction" status (Entered incorrectly) uses the danger colour;
-   Not seen in ParishSoft uses the warning colour.
-6. A new **Review pipeline terms** entry pointing at the
-   [vocabulary](#pipeline-vocabulary).
+   the selected state, row actions by role, and selection boxes on every
+   actionable row.
+2. [Admin tables](../ui-conventions/spec.md#admin-tables): worklist filters
+   and export pane, and the create action in the selection bar.
+3. [Status indicators](../ui-conventions/spec.md#status-indicators): the
+   needs-correction looks.
+4. [Review pipeline terms](../ui-conventions/spec.md#review-pipeline-terms),
+   pointing at the [vocabulary](#pipeline-vocabulary).
 
 ## Decisions
 
