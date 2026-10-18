@@ -5,7 +5,9 @@
   Administrator's address) and the mode shown, because the Recipient filter
   is private filter state and never reaches a URL (ui-conventions, Admin
   tables). It is a read (data-in-place-read), and the filter bar then shows
-  the filters applied (data-in-place-filters). The button's id names its
-  email, so focus returns to the same row's button when that row is still
-  listed. Without a known recipient the label is plain text.
-{% endcomment %}{% if delivery.recipient_fields %}{% with row_id=delivery.id|stringformat:"s" %}<form method="post" action="{{ table.action }}#{{ table.anchor }}" class="inline-form" data-in-place data-in-place-read data-in-place-filters>{% csrf_token %}{% for name, value in delivery.recipient_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}{% button type="submit" variant="link" class="recipient-link" id="recipient-"|add:row_id %}{{ label }}{% endbutton %}</form>{% endwith %}{% else %}{{ label }}{% endif %}
+  the filters applied (data-in-place-filters). Its answer adds a history
+  entry (data-in-place-push), so Back returns to the list before it, in
+  place; the Recipient stays in the browser's history state, never in the
+  address. The button's id names its email, so focus returns to the same
+  row's button when that row is still listed. Without a known recipient the label is plain text.
+{% endcomment %}{% if delivery.recipient_fields %}{% with row_id=delivery.id|stringformat:"s" %}<form method="post" action="{{ table.action }}#{{ table.anchor }}" class="inline-form" data-in-place data-in-place-read data-in-place-filters data-in-place-push>{% csrf_token %}{% for name, value in delivery.recipient_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}{% button type="submit" variant="link" class="recipient-link" id="recipient-"|add:row_id %}{{ label }}{% endbutton %}</form>{% endwith %}{% else %}{{ label }}{% endif %}

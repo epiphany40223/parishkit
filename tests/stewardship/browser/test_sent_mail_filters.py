@@ -14,7 +14,7 @@ from urllib.parse import parse_qs
 import pytest
 
 from .keyboard import tab_to_next
-from .waits import eventually, has_text, visible
+from .waits import eventually, has_text, recorded, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -59,15 +59,17 @@ def answer_with(page, component_origin, fixture):
     """Answer every POST to the list page with ``fixture``'s page.
 
     Returns the bodies posted, each parsed. The page itself (a GET) keeps
-    its ordinary fixture.
+    its ordinary fixture, whatever query an answer put in its address (a
+    reload of that address).
     """
     body = page.request.get(component_origin + fixture).text()
+    listed = page.request.get(component_origin + PAGE).text()
     sent = []
 
     def handle(route):
-        """Fulfil a filtered read with the fixture; let the page through."""
+        """Fulfil a filtered read with the fixture; the page with its own."""
         if route.request.method != "POST":
-            route.continue_()
+            route.fulfill(status=200, body=listed, content_type="text/html")
             return
         sent.append(parse_qs(route.request.post_data or "", keep_blank_values=True))
         route.fulfill(status=200, body=body, content_type="text/html")
@@ -334,3 +336,74 @@ def test_hovering_a_recipient_moves_nothing(page, component_origin, width):
         after,
     )
     assert link.evaluate("node => getComputedStyle(node).paddingLeft") == "0px"
+
+
+def recipient_shown(page):
+    """The Recipient filter field's value."""
+    return page.locator("#delivery-recipient").input_value()
+
+
+def test_back_after_a_recipient_returns_to_the_list_before(page, component_origin):
+    """A row's Recipient adds a history entry (#1562): the field shows the
+    recipient, the address never does, and Back redraws the list before it
+    in place, its field with it; Forward shows the recipient's list again,
+    posting it afresh. The Recipient is kept in history state only."""
+    sent = answer_with(page, component_origin, "/deliveries-applied")
+    open_list(page, component_origin)
+    start = page.url
+    assert page.locator("tbody tr").count() == 4
+    page.locator("tbody tr").first.get_by_role(
+        "button", name="Castellanos, Maximiliana and Bartholomew"
+    ).click()
+    eventually(page, "document.querySelectorAll('tbody tr').length", 1)
+    assert recipient_shown(page) == "12345"
+    assert "12345" not in page.url and "recipient" not in page.url
+    assert page.evaluate("history.state.inPlaceView") == [
+        ["recipient", "12345"],
+        ["mode", "production"],
+    ]
+    page.go_back()
+    eventually(page, "document.querySelectorAll('tbody tr').length", 4)
+    assert recipient_shown(page) == ""
+    assert page.url == start
+    assert page.evaluate(MARKED) == "kept"
+    page.go_forward()
+    eventually(page, "document.querySelectorAll('tbody tr').length", 1)
+    assert recipient_shown(page) == "12345"
+    assert page.evaluate(MARKED) == "kept"
+    recorded(page, sent, 2)
+    assert sent[1]["recipient"] == ["12345"] and sent[1]["mode"] == ["production"]
+    assert sent[1]["csrfmiddlewaretoken"]
+
+
+def test_back_redraws_the_filters_applied_before(page, component_origin):
+    """A view the filter form drew (a POST) is drawn again on Back with the
+    same body, so the Recipient typed there comes back too."""
+    sent = answer_with(page, component_origin, "/deliveries-applied")
+    open_list(page, component_origin)
+    page.locator("#delivery-recipient").fill("777")
+    page.get_by_role("button", name="Apply filters").click()
+    eventually(page, "document.querySelectorAll('tbody tr').length", 1)
+    page.locator("tbody .recipient-link").first.click()
+    eventually(page, "history.state && history.state.inPlaceView[0][1]", "12345")
+    recorded(page, sent, 2)
+    page.go_back()
+    recorded(page, sent, 3)
+    # The fixture answers every POST with one page, so the body posted
+    # again is what shows the view before was asked for.
+    assert sent[2]["recipient"] == ["777"] and sent[2]["state"] == ["all"]
+    assert page.evaluate(MARKED) == "kept"
+
+
+def test_a_reload_shows_its_address_view(page, component_origin):
+    """A reload draws the page from its address, without the Recipient:
+    the list and the empty Recipient field agree, and the entry forgets the
+    view a POST drew there."""
+    answer_with(page, component_origin, "/deliveries-applied")
+    open_list(page, component_origin)
+    page.locator("tbody .recipient-link").first.click()
+    eventually(page, "document.querySelectorAll('tbody tr').length", 1)
+    page.reload()
+    assert page.locator("tbody tr").count() == 4
+    assert recipient_shown(page) == ""
+    assert page.evaluate("history.state.inPlaceView") is None
