@@ -41,6 +41,7 @@ from parishkit.stewardship.web.tables import paginate
 
 from .admin_editing import error_response, principal
 from .authentication import runtime
+from .campaign_mail import recipient_digest
 from .leader_emails import (
     EMAIL_SORTING,
     SKIP_REASONS,
@@ -231,7 +232,11 @@ def _review(request, service, actor):
                 "configuration": str(configuration.active_configuration.pk),
                 "campaign": str(runtime_row.current_campaign_id),
                 "mode": runtime_row.mode,
-                "testing_recipient": runtime_row.testing_recipient if testing else None,
+                # The token is signed, not encrypted, so it binds the Testing
+                # recipient by digest and never carries the address itself.
+                "recipient": _recipient_binding(
+                    runtime_row.testing_recipient if testing else None
+                ),
                 "addresses": plan.addresses,
                 # What the review showed each leader's email would state;
                 # Apply is refused when the guard works out anything else.
@@ -255,6 +260,26 @@ def _review(request, service, actor):
     )
 
 
+def _recipient_binding(testing_recipient):
+    """The token's binding of the Testing recipient: its digest, or "" in Production."""
+    return recipient_digest(testing_recipient) if testing_recipient else ""
+
+
+def _current_recipient(intent):
+    """The Testing recipient to record for a reviewed Apply, or refuse it as stale.
+
+    The review signed only the recipient's digest, so Apply reads the
+    current Testing recipient (None in Production) and refuses the review
+    as changed when its digest differs from the signed one. The request's
+    guard still checks the address against the runtime row.
+    """
+    runtime_row = SystemConfiguration.objects.only("mode", "testing_recipient").get()
+    current = runtime_row.testing_recipient if runtime_row.mode == "testing" else None
+    if intent.get("recipient") != _recipient_binding(current):
+        raise UserFacingStale(CHANGED, fix=CHANGED_FIX, reason="stale_page")
+    return current
+
+
 def _confirm(request, actor):
     """Record the reviewed request once; answer with a short fragment.
 
@@ -262,8 +287,9 @@ def _confirm(request, actor):
     the answer only has to be a page the dialog accepts. A replay of the
     same review (a double click) records nothing more. A review whose
     configuration, campaign, mode or leaders changed since is refused by
-    the request's guard, and one whose Ministries or counts the guard works
-    out differently from the review is refused here; either way nothing is
+    the request's guard, one whose Testing recipient changed is refused
+    by ``_current_recipient``, and one whose Ministries or counts the guard
+    works out differently from the review is refused here; either way nothing is
     sent. While mail is paused Apply is refused with its plain reason, and
     an expired review gets the shared expired-review refusal.
     """
@@ -277,6 +303,7 @@ def _confirm(request, actor):
     if intent["actor"] != str(actor.identity):
         raise PermissionError("The review belongs to another Administrator.")
     refuse_while_paused(UUID(intent["key"]))
+    testing_recipient = _current_recipient(intent)
     try:
         _, created = request_emails(
             actor.identity,
@@ -285,7 +312,7 @@ def _confirm(request, actor):
             configuration_id=UUID(intent["configuration"]),
             campaign_id=UUID(intent["campaign"]),
             mode=intent["mode"],
-            testing_recipient=intent["testing_recipient"],
+            testing_recipient=testing_recipient,
             reviewed=intent["facts"],
         )
     except (IntegrityError, LeaderEmailsChanged):

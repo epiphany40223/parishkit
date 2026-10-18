@@ -5797,7 +5797,10 @@ current Administrator, for at most 100 distinct addresses that are each a
 current Ministry leader user leading one of the campaign's Ministries,
 while the campaign is not archived and its delivery is not paused. The guard works out each leader's Ministries and counts itself, with
 the same function, so no form supplies them, and it records the
-`user_leader_emails_requested` audit event with the count. The command line
+`user_leader_emails_requested` audit event with the count. The signed
+review binds the Testing recipient only by its digest, never the address
+(the review is signed, not encrypted); Apply refuses the review as changed
+when the current Testing recipient's digest differs. The command line
 does not have this action yet
 ([#1622](https://github.com/epiphany40223/parishkit/issues/1622)).
 

@@ -10,6 +10,7 @@ with the compiled content kept and rechecked at send; and the Users page's
 section reviews and applies it.
 """
 
+import base64
 import json
 import re
 from pathlib import Path
@@ -1038,6 +1039,49 @@ def test_the_users_page_reviews_and_applies_the_emails(testing):
     with web():
         refused = post(browser, EMAILS, {"action": "confirm", "preview": "x" + preview})
     assert refused.status_code == 400
+
+
+def token_payload(token):
+    """The base64url payload of a signed review, decoded without the secret.
+
+    Django signing does not encrypt, so anyone holding a review can read
+    this much of it.
+    """
+    payload = token.split(":", 1)[0]
+    return base64.urlsafe_b64decode(payload + "=" * (-len(payload) % 4)).decode()
+
+
+def test_the_review_binds_the_testing_recipient_only_by_digest(testing):
+    """The signed review never carries the Testing recipient's address, and
+    a changed Testing recipient refuses Apply as changed."""
+    _store, browser = testing
+    recipient = SystemConfiguration.objects.get().testing_recipient
+    with web():
+        review = post(browser, EMAILS, {"scope": "all"})
+    preview = re.search(r'name="preview" value="([^"]+)"', review.content.decode())[1]
+    payload = token_payload(preview)
+    assert '"recipient"' in payload
+    assert recipient and recipient not in payload
+    seed(
+        "UPDATE stewardship_system_configuration SET testing_recipient=%s",
+        "other-tester@example.org",
+    )
+    with web():
+        refused = post(browser, EMAILS, {"action": "confirm", "preview": preview})
+    assert refused.status_code == 409
+    assert "Something changed since this review" in refused.content.decode()
+    assert not LeaderEmailRequest.objects.exists()
+    # The same review read now applies and records the current address.
+    with web():
+        review = post(browser, EMAILS, {"scope": "all"})
+        preview = re.search(r'name="preview" value="([^"]+)"', review.content.decode())[
+            1
+        ]
+        applied = post(browser, EMAILS, {"action": "confirm", "preview": preview})
+    assert applied.status_code == 200
+    assert LeaderEmailRequest.objects.get().testing_recipient == (
+        "other-tester@example.org"
+    )
 
 
 def test_email_selected_needs_a_choice_and_skips_non_leaders(testing):
