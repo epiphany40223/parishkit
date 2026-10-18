@@ -165,8 +165,8 @@ def browser_zone(zone):
 def unasked_zone(zone, fallback):
     """The zone a download that asks for none uses: the browser's, else ``fallback``.
 
-    A download whose rows hold no exact action times does not ask for a time
-    zone (#1127, ui-conventions "Downloaded files"); its form posts the
+    Downloads never ask for a time zone except System logs (#1679,
+    ui-conventions "Downloaded files", Time zones); the form posts the
     browser's zone silently (``data-browser-zone``) for the frame times. The
     choice was never the reader's, so nothing is refused for it: a missing,
     empty or unknown name (no Intl, "Etc/Unknown", a tab from before the

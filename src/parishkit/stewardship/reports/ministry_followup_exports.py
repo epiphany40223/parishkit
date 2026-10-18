@@ -17,9 +17,10 @@ document and writers as the retired lists' exports, so its Report
 information sheet, PDF report card and privacy line are theirs.
 
 Like those exports it is not privileged (only the directory, postal,
-financial and timeline files are, #547), and it asks for a time zone because
-it holds exact times (Last contact). Each download is audited
-with its count, the sorted Ministry DUIDs in the file and whether the
+financial and timeline files are, #547). It holds exact times (Last
+contact), so it asks for no time zone: it writes them in the browser's zone
+and states that zone in the file (#1679). Each download is audited with its
+count, the sorted Ministry DUIDs in the file and whether the
 contacts were operational or publish-restricted; never names, contact
 values, filters or search text.
 """
