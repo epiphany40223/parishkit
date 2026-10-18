@@ -6,6 +6,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID
 
+import pytest
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts.presence import PRESENCE_SORTING
@@ -1064,15 +1065,24 @@ def test_no_manual_page_refresh_controls():
             assert re.search(r"(?<![\w-])hidden(?![\w-])", tag), path.name
 
 
-def test_refused_updates_say_the_same_in_both_scripts():
-    """A refused automatic read (the sign-in ended) says one sentence on
-    every page, whether a status region or a periodic re-read was refused
-    (UX conventions, "Pages that update themselves", #1586)."""
+@pytest.mark.parametrize(
+    ("constant", "sentence"),
+    [
+        (
+            "UPDATES_REFUSED",
+            "Couldn't check for updates. Reload the page or sign in again.",
+        ),
+        ("UPDATES_RETRYING", "Couldn't check for updates — retrying."),
+    ],
+)
+def test_failed_updates_say_the_same_in_both_scripts(constant, sentence):
+    """A refused automatic read (the sign-in ended) and a failed one that
+    will be retried each say one sentence on every page, whether a status
+    region or a periodic re-read failed (UX conventions, "Pages that update
+    themselves", #1586, #1647)."""
     scripts = TEMPLATES.parents[1] / "static/stewardship"
     said = {
-        re.search(r'const UPDATES_REFUSED = "([^"]+)";', (scripts / name).read_text())[
-            1
-        ]
+        re.search(rf'const {constant} = "([^"]+)";', (scripts / name).read_text())[1]
         for name in ("ui-v1.js", "live-status-v1.js")
     }
-    assert said == {"Couldn't check for updates. Reload the page or sign in again."}
+    assert said == {sentence}
