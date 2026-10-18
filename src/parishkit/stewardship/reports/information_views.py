@@ -42,6 +42,7 @@ from parishkit.stewardship.web.tables import report_table
 from .chart_specs import information_followup
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
+from .family_links import link_families
 from .information import (
     FIELD_MESSAGES,
     INFORMATION_SORTING,
@@ -342,6 +343,11 @@ def _page_response(request, campaign_id, *, item_id=None, sent=None):
                 row["completed_by"] = labels.get(
                     str(row["followed_up_by_id"]), "Former portal user"
                 )
+            if item_id:
+                # The request page's Family name opens its Timeline (#1570).
+                # The queue's names stay links to their requests, so it
+                # needs no record ids.
+                link_families(campaign_id, result["rows"])
             for row in history:
                 row.actor_label = labels.get(str(row.actor_id), "Former portal user")
                 row.completer_label = labels.get(

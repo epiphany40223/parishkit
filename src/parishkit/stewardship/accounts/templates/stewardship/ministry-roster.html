@@ -41,7 +41,7 @@
 <th scope="row" id="member-{{ row.id }}"><a href="{% url 'admin:ministry_followup_item' row.id %}">{% if row.member_name %}{{ row.member_name }}{% else %}{{ row.member_label }}{% endif %}</a></th>
 {% if row.member_duid %}<td class="numeric">{{ row.member_duid|duid }}</td>{% else %}<td>{% translate "New Member" %}</td>{% endif %}
 <td>{% if row.source_mark %}{% source_status row.member_status %}{% endif %}</td>
-<td>{{ row.family_name }}</td>
+{# The shared Family-name link (#1570): the name opens its Timeline; with no name known the cell stays blank and the Family DUID identifies the Family. #}<td>{% if row.family_name %}{% family_link row.family_id row.family_name %}{% endif %}</td>
 <td class="numeric">{% if row.family_duid %}{{ row.family_duid|duid }}{% endif %}</td>
 <td id="ministry-{{ row.id }}">{{ row.ministry_name }}</td>
 <td>{% if row.action == 'join' %}{% translate "Join" %}{% else %}{% translate "Leave" %}{% endif %}</td>

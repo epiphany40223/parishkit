@@ -7,6 +7,7 @@ from uuid import uuid4
 
 import pytest
 from django.db import connection, transaction
+from django.test.utils import CaptureQueriesContext
 from openpyxl import load_workbook
 
 from parishkit.stewardship.accounts.policy import Principal
@@ -21,6 +22,7 @@ from ..census_factory import address
 from ..policy_factory import address as rule_address
 from .auth_builders import signed_in, unguarded
 from .campaign_builders import change
+from .family_link_checks import link_reads, timeline_link
 from .family_name_cases import DEFAULT, NAME_CASES, seed_name_cases
 from .leader_builders import promote_leaders
 from .response_builders import activate_response_service
@@ -152,12 +154,22 @@ def test_native_page_and_downloads(response_service, google, settings):
     harness = activate_response_service(harness)
     submit_live(harness)
     route = "/admin/reports/census/"
+    # The rows the page shows by default, read before the download pool
+    # takes over the web login.
+    rows = worklist(harness, ADMIN)["rows"]
     browser, login = signed_in()
     assert login.status_code == 302
     with restricted_download_pool(settings):
-        response, body = get(browser, route)
+        with CaptureQueriesContext(connection) as queries:
+            response, body = get(browser, route)
         assert response.status_code == 200 and response["Cache-Control"] == "no-store"
         assert b"Requested" in body and b"To review" in body
+        # Each row's Family name opens its Timeline (#1570), the page's
+        # record ids read once, however many rows it shows.
+        duid = rows[0]["family_duid"]
+        link = timeline_link(harness.campaign, duid, directory_name(duid))
+        assert len(rows) == body.count(f"<td>{link}</td>".encode()) == 2
+        assert len(link_reads(queries)) == 1
         assert get(browser, route + "?search=x")[0].status_code == 400
         response, body = search(browser, route, {"status": "conflict"})
         assert (
@@ -298,6 +310,8 @@ def test_staff_may_open_the_page_and_ministry_leaders_may_not(
     response, body = get(browser, route)
     if allowed:
         assert response.status_code == 200 and b"9 Census Way" in body
+        # Staff may open the Timeline (its summary), so the name links.
+        assert b'<td><a href="/admin/reports/families/' in body
     else:
         assert response.status_code in {403, 404} and b"9 Census Way" not in body
         # A real CSRF POST to the live route: refused by access, not CSRF.

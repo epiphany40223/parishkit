@@ -549,25 +549,3 @@ def export(request, campaign_id, family_id):
         return report_unavailable()
     except ValueError:
         return private_response("Invalid timeline export.\n", status=400)
-
-
-def link_families(campaign_id, rows):
-    """Give each report row its Family's campaign record id, for its link.
-
-    ``rows`` are dicts with a ``family_duid``; each gains ``family_id``, the
-    Family's ``FamilyCampaign`` id in ``campaign_id`` (the Timeline address's
-    opaque id), or None when the Family has no campaign record, so the
-    shared ``family_link`` tag draws its name unlinked. One indexed read for
-    the whole page, never one per row (#1570).
-    """
-    duids = {row["family_duid"] for row in rows if row.get("family_duid") is not None}
-    ids = {}
-    if duids:
-        ids = dict(
-            FamilyCampaign.objects.filter(
-                campaign_id=campaign_id, family_duid__in=duids
-            ).values_list("family_duid", "pk")
-        )
-    for row in rows:
-        row["family_id"] = ids.get(row.get("family_duid"))
-    return rows

@@ -29,7 +29,7 @@
   <tbody>
   {% for refusal in table.rows %}<tr>
     <td class="nowrap"><time datetime="{{ refusal.created_at|instant }}" data-local-instant data-compact>{{ refusal.created_at|instant }}</time></td>
-    <th scope="row">{% if refusal.family_name %}{{ refusal.family_name }}{% else %}{% source_status "missing" %}{% endif %}</th>
+    {# The shared Family-name link (#1570): the name opens its Timeline; a Family the current ParishSoft data no longer has shows only the shared mark (ui-conventions, #1216). #}<th scope="row">{% family_link refusal.family_id refusal.family_name %}</th>
     <td class="numeric nowrap">{{ refusal.family_duid|duid }}</td>
     <td><a href="{% url 'admin:delivery_refusal' refusal.id %}">{{ refusal.address }}</a>{% if refusal.kind == 'reported_bounce' %} <span class="cell-detail">{% translate "Bounce reported" %}</span>{% endif %}</td>
     <td class="nowrap">{% if refusal.message_id %}<a href="{% url 'admin:delivery' refusal.message_id %}">{% translate "Open email" %}</a>{% else %}—{% endif %}</td>

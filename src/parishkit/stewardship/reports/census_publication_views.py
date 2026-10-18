@@ -54,6 +54,7 @@ from parishkit.stewardship.web.tables import paginate, table_parameters
 from . import census_publication as publication
 from .census_change_views import _error
 from .export_views import SAFE_FAILURES
+from .family_links import link_families
 from .read_admission import admit_report_read
 
 # The session key remembering the check this sign-in last requested, so the
@@ -176,6 +177,10 @@ def _render(request, campaign_id, paging, run):
         if view is not None
         else None
     )
+    if table is not None:
+        # Each shown Family name opens its Timeline (#1570): one read of
+        # the page's Family record ids.
+        link_families(campaign_id, table.rows)
     return (
         render_to_string(
             "stewardship/census-publication.html",

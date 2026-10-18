@@ -5,6 +5,7 @@ from datetime import timedelta
 import pytest
 from django.db import IntegrityError, connection, transaction
 from django.db.models import F
+from django.test.utils import CaptureQueriesContext
 
 from parishkit.stewardship.accounts.presence import visible_sessions
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
@@ -18,6 +19,7 @@ from ..test_source_corpus import source
 from .auth_builders import signed_in, unguarded
 from .campaign_builders import campaign_clock
 from .credential_builders import populate
+from .family_link_checks import link_reads
 from .leader_builders import grant_role
 from .test_background_grants_postgresql import task_login
 from .test_family_auth_postgresql import family_service as family_service
@@ -341,7 +343,16 @@ def test_real_web_grants_support_family_presence_and_admin_names(
         # The web role also reads the heads, so the Family is named as on the
         # Family codes directory: "Surname, Heads" (#232).
         assert response.json()["sessions"][0]["name"] == "Example, Member"
-        assert b"Example, Member" in admin.get(ADMIN).content
+        # The JSON answer keeps its fields: the record id is the page's only.
+        assert "family_id" not in response.json()["sessions"][0]
+        # The name opens the Family's Timeline (#1570) by the session row's
+        # own Family record id, so the page reads no record ids.
+        with CaptureQueriesContext(connection) as queries:
+            html = admin.get(ADMIN).content
+        family_id = FamilySession.objects.values_list("family_id", flat=True).get()
+        link = f'<th scope="row"><a href="/admin/reports/families/{family_id}/">'
+        assert (link + "Example, Member</a></th>").encode() in html
+        assert link_reads(queries) == []
 
 
 def test_header_count_poll_never_fetches_family_names(family_service, google):

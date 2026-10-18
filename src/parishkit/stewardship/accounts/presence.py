@@ -263,6 +263,9 @@ def active_families(request):
                         "name": names.get(row.family.family_duid)
                         or str(_("Name unavailable")),
                         "duid": row.family.family_duid,
+                        # The Family's record id, for the name's Timeline
+                        # link (#1570); the session row already holds it.
+                        "family_id": row.family_id,
                         "started_at": row.authenticated_at,
                         "last_activity_at": row.last_activity_at,
                         "presence_at": row.presence_at,
@@ -273,6 +276,13 @@ def active_families(request):
             }
         if count_only:
             data = {"count": data["count"], "as_of": instant}
+        elif selected.get("format") == "json":
+            # The JSON answer keeps its fields; the record id is only for
+            # the page's links.
+            data["sessions"] = [
+                {key: value for key, value in session.items() if key != "family_id"}
+                for session in data["sessions"]
+            ]
         response = (
             JsonResponse(data)
             if selected.get("format") in {"json", "count"}

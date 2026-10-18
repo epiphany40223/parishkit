@@ -162,17 +162,23 @@ def family_link(context, family_id, name, active=None):
     Usage: ``{% family_link row.family_id row.display_name active=row.active %}``.
     ``name`` is the shared surname-and-heads name, or None when the current
     ParishSoft data no longer has the Family: the shared "Not in ParishSoft"
-    badge then stands alone in its place. ``active`` False adds the
+    badge then stands alone in its place, never an empty link. A blank name
+    is treated the same, defensively: every source gives None for a missing
+    Family and a placeholder for a present one with no name, so blank should
+    not occur.
+    ``family_id`` None draws no link, for a page whose names must not open
+    the Timeline (a Testing-only list, or a name already linking its row's
+    own page). ``active`` False adds the
     "Inactive in ParishSoft" badge after a known name, outside the link
     (ui-conventions, #1216). The name links only when
     ``family_timeline_url`` gives an address, so every table that names a
     Family links it the same way, for the same viewers.
     """
-    shown = source_status("missing") if name is None else conditional_escape(name)
+    shown = conditional_escape(name) if name else source_status("missing")
     href = family_timeline_url(context, family_id)
     if href:
         shown = format_html('<a href="{}">{}</a>', href, shown)
-    if name is not None and active is False:
+    if name and active is False:
         shown = format_html("{} {}", shown, source_status("inactive"))
     return shown
 

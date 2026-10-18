@@ -38,6 +38,7 @@ from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
 
 from .export_views import SAFE_FAILURES
+from .family_links import link_families
 from .limitations import (
     LimitationsQuery,
     limitations_csv,
@@ -369,6 +370,9 @@ def report(request, campaign_id):
             extra["paging"],
             reverse("admin:limitations_report"),
         )
+        # Each shown Family name, in either table, opens its Timeline
+        # (#1570): one read of both tables' Family record ids.
+        link_families(campaign_id, members.rows + families.rows)
         return render_to_string(
             "stewardship/limitations-report.html",
             result

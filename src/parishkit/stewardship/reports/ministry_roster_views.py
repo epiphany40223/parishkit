@@ -71,6 +71,7 @@ from parishkit.stewardship.workflows.roster import (
 
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
+from .family_links import link_families
 from .ministry_followup import FollowupQuery, followup_page, valid_ministry
 from .read_admission import admit_report_read
 
@@ -611,6 +612,9 @@ def page(request, campaign_id):
         ministry = extra["ministry"]
         carry = [("show", show)] + ([("ministry", ministry)] if ministry else [])
         table = paginate(rows, extra["paging"], carry=carry, sorting=SORTING)
+        # Each shown Family name opens its Timeline (#1570): one read of
+        # the page's Family record ids.
+        link_families(campaign_id, table.rows)
         mutable = True
         try:
             admit_campaign(campaign_id, mutating=True)
