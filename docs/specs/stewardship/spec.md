@@ -75,7 +75,7 @@ Implementation tracking: [plans](../../plans/stewardship/README.md) and
 - [Local laptop environment](local-environment/spec.md): the
   production-shaped `local` profile in a Lima VM, with a mail catcher, fake
   ParishSoft, synthetic parish, seeded campaign and local test sign-in.
-- [Review pipeline](review-pipeline/spec.md) (draft): one stage model,
+- [Review pipeline](review-pipeline/spec.md): one stage model,
   vocabulary and review worklist for every Family-submitted stream, from
   baseline through review to ParishSoft update or manual handling.
 

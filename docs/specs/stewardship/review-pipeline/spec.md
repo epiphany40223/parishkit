@@ -454,15 +454,22 @@ The rules, in order:
    rule: R = C on an Ignored item is recorded as "ParishSoft now matches the
    Family's answer" for the reviewer, and the item stays Ignored.
 2. **R = A: unchanged.** Nothing happened in ParishSoft; the item stays where
-   it is. An item marked Entered by hand that a configurable number of full
-   refreshes (default two) still finds at A is flagged **Not seen in
-   ParishSoft** on its stream's report, without changing its stage, so a
-   missed entry is noticed.
+   it is. For an item marked Entered by hand (or Entered incorrectly), rules
+   2 and 3 compare R with the value recorded at the mark instead of A
+   (normally the two are equal), so an item re-marked over an incorrect
+   value is not reported again until ParishSoft changes. An item marked
+   Entered by hand that a configurable number of full refreshes (default
+   two) still finds at that value is flagged **Not seen in ParishSoft** on
+   its stream's report, without changing its stage, so a missed entry is
+   noticed. An **Updated in ParishSoft** item found back at A is the
+   exception: the write was undone in ParishSoft, so it becomes a
+   **Conflict** as in rule 3.
 3. **R differs from both A and C**:
    - an item marked **Entered by hand** becomes
-     [Entered incorrectly](#entered-incorrectly-stage) when R also differs
-     from the value recorded at the mark (normally A); the entry reached
+     [Entered incorrectly](#entered-incorrectly-stage); the entry reached
      ParishSoft wrongly;
+   - an **Ignored** item stays Ignored: no change is wanted, so a new
+     ParishSoft value does not reopen it;
    - any other open item becomes **Conflict** and returns to Review,
      keeping its decision visible but not in force, as an approved census
      change does today
@@ -543,12 +550,8 @@ The child issues of the epic carry the detailed gap analysis.
 Stored state: `ProposedChange` decision (`unreviewed`, `approved`,
 `ignored`) × execution (`pending`, `conflict`, `queued`, `published`,
 `resolved_upstream`, `resolved_external`, `failed`, `superseded`,
-`cancelled`). Mapping: unreviewed → To review; approved + pending on an
-`api` change → Ready to update; approved/pending on a `manual` change →
-To enter by hand; queued → Updating; published → Updated in ParishSoft;
-resolved_external → Entered by hand; resolved_upstream → Confirmed;
-ignored → Ignored; conflict → Conflict; failed → Ready to update with the
-failure shown.
+`cancelled`). The mapping onto stages is the
+[existing state to stage](#existing-state-to-stage) table.
 
 Gaps: *By hand* changes are never reviewed today (Staff go straight to
 Entered in ParishSoft or Ignore), so Accept is new for them, and the
@@ -569,11 +572,8 @@ Stored state: `MinistryRequest` workflow (`new`, `in_progress`,
 the Entered in ParishSoft tick on
 [Roster changes to enter](../admin-portal/spec.md#roster-changes-to-enter),
 then reconciliation resolving a request whose roster state is current.
-Mapping: new / in progress → To review; resolved joined or leave confirmed
-→ To enter by hand; ticked → Entered by hand; declined, duplicate,
-other, no response → Ignored, keeping the outcome as the decision's label;
-roster now current → Confirmed
-([existing state to stage](#existing-state-to-stage)). A decided request is
+The mapping onto stages is the
+[existing state to stage](#existing-state-to-stage) table. A decided request is
 not offered again in today's form; a Family that ticks it again is handled
 by [rule 1](#resubmission-while-the-setting-is-off).
 
