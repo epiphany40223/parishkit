@@ -965,9 +965,12 @@ no such entry. A count follows the link as text. "Production being
 activated" is a scheduled campaign, or Production preparation in progress;
 "Mail paused" is Production with live mail paused, in any state not closed.
 Sent mail problems are the emails that may not have arrived (the
-header's "Not sure it arrived" count), and the step links Sent mail
-filtered to them, counted as "N may not have arrived", or plain Outgoing
-mail while there are none.
+header's "Not sure it arrived" counts), and the step links Sent mail
+filtered to the operating mode's, counted as "N may not have arrived", or
+plain Sent mail while that mode has none. When the other mode has some, a
+second link follows, "N in Testing may not have arrived" (or in
+Production), filtered to that mode; each count is exactly the list its
+link opens ([#1576](https://github.com/epiphany40223/parishkit/issues/1576)).
 
 At campaign end the Staff work through four lists, so an active, paused,
 closed or archived campaign offers Administrators and Staff each of them
@@ -1458,7 +1461,15 @@ Administrators have two always-visible indicators:
   evidence-note, delivered-resolution, recorded-unsent and acknowledged-resend
   actions defined by the
   [delivery workflow](../background-processing/spec.md#family-invitations-and-reminders);
-  it never displays credentials or sealed substitutions.
+  it never displays credentials or sealed substitutions. Its count is the
+  emails of the system's operating mode that Sent mail lists as Not sure it
+  arrived (every kind Sent mail lists, operational and security notices
+  too), and it links Sent mail filtered to them in that mode, so the count
+  is exactly the list it opens: both read Sent mail's one filter
+  definition. When the other mode also has some, a second, separate link
+  ("Not sure it arrived in Testing: N", or in Production) opens them in that
+  mode; the two are never added into one number ([#1576](https://github.com/epiphany40223/parishkit/issues/1576)). The warning shows
+  while either has some, and each link while its own count does.
 
 Family clients heartbeat while a form is actively visible, at no more than one
 request every 30 seconds. Expired/closed/ineligible sessions disappear. Worker
@@ -4534,7 +4545,10 @@ its outbox message state, or, before preparation, by its occurrence:
   failed ([#482](https://github.com/epiphany40223/parishkit/issues/482)).
   Once an Admin retries that preparation, the email counts as remaining
   until the retry fails again.
-- **Not sure it arrived**: delivery unknown, linked to Sent mail. Counts
+- **Not sure it arrived**: delivery unknown, linked to Sent mail. The
+  review links below the counts (emails that may not have arrived, failed
+  emails) name the current mode, the one these counts read, so Sent mail
+  opens in it ([#1576](https://github.com/epiphany40223/parishkit/issues/1576)). Counts
   and links use the plain state words of
   [the Family timeline](../reports/spec.md#family-timeline).
 - **Remaining**: pending, waiting to retry or submitting, or not yet
@@ -7348,9 +7362,12 @@ reason ends (if known), and a link to act on it:
   [mail sender panel](#mail-sender-panel).
 - **Planning is held:** the same reasons, in the same words, for which
   [Family email progress](#family-email-progress) shows **Held**.
-- **Waiting to retry:** how many messages wait to retry after a temporary
-  refusal, and when the next retry is due, linking Sent mail filtered to
-  Waiting to retry.
+- **Waiting to retry:** how many messages of the operating mode wait to
+  retry after a temporary refusal, and when the next retry is due, linking
+  Sent mail filtered to Waiting to retry in that mode. When the other mode
+  also has some, a separate **Waiting to retry in Testing** (or in
+  Production) line counts them and links Sent mail in that mode; the two
+  counts are never added together ([#1576](https://github.com/epiphany40223/parishkit/issues/1576)).
 
 When nothing is waiting, the panel says "Nothing is holding Family email
 back". During a send it links Family email progress, which counts the
