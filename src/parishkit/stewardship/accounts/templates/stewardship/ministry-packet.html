@@ -1,7 +1,7 @@
 {% load i18n stewardship %}{% comment %}Ministry requests' Follow-up packet (#533, #1133): one printable packet of the chosen Ministries, from every Ministry in the reader's scope (packet_choices), whatever the queue above shows.{% endcomment %}
 <section aria-labelledby="ministry-packet-heading"><h2 id="ministry-packet-heading">{% translate "Follow-up packet" %}</h2>
 <p>{% translate "One printable packet with a section for each Ministry: its chairs, and one row for each latest join or leave request with recorded email and phone contact dates and the outcome. Blank cells are left for completion by hand." %}</p>
-<p class="help">{% translate "Ministry leaders receive only published email and phone values." %}</p>
+<p class="help">{% translate "Ministry leaders receive the email and phones of each Member who asked to join or leave their Ministry, and for a withdrawn request only published values." %}</p>
 {% if not mutable %}<p class="notice" id="ministry-export-locked">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so new exports are unavailable until it finishes or is cancelled; going live can take days. Files that are ready can still be downloaded." %}</p>{% endif %}
 {# The packet takes at most packet_limit ticked Ministries (#1332): past that the complete gate holds Queue with the count as its reason (data-max-ticked, ui-v1.js). The server still refuses more. #}<form method="post" action="{% url 'admin:ministry_packet' %}" data-require-complete>{% csrf_token %}
 <input type="hidden" name="request_key" value="{{ packet_key }}">

@@ -106,6 +106,10 @@ WITH selected AS MATERIALIZED (
     JOIN stewardship_family_campaign f ON f.id=s.family_id
 ), latest AS MATERIALIZED (
     SELECT r.*,p.canonical::jsonb AS person,
+        -- A standing request (this is its latest version) is its Member's
+        -- consent to be contacted about it by the Ministry's leaders
+        -- (#1591); a withdrawn one is not.
+        r.state NOT IN ('cancelled','superseded') AS consented,
         CASE WHEN r.entity_kind='proposed_member'
             THEN s.answers->'proposed_members'->r.entity_key END AS proposed
     FROM requests r CROSS JOIN source x
@@ -131,17 +135,21 @@ WITH selected AS MATERIALIZED (
             'Name not recorded in ParishSoft') AS member_name,
         CASE WHEN r.entity_kind='member' THEN r.entity_key::bigint END AS member_duid,
         CASE WHEN r.entity_kind='proposed_member' THEN r.entity_key END AS proposed_id,
-        CASE WHEN NOT operational AND coalesce(
+        -- Leaders see published values, and the requesting Member's own on
+        -- a standing request (#1591); Admins and Staff see operational ones.
+        CASE WHEN NOT operational AND NOT r.consented AND coalesce(
             c.value->'publish_email','false'::jsonb)<>'true'::jsonb
             THEN 'not_published' ELSE 'available' END AS email_visibility,
-        CASE WHEN operational OR c.value->'publish_email'='true'::jsonb
+        CASE WHEN operational OR r.consented
+            OR c.value->'publish_email'='true'::jsonb
             THEN CASE WHEN r.entity_kind='member' THEN c.value->'emails'
                 ELSE jsonb_build_array(jsonb_build_object(
                     'value',r.proposed->>'email')) END END AS emails,
-        CASE WHEN NOT operational AND coalesce(
+        CASE WHEN NOT operational AND NOT r.consented AND coalesce(
             c.value->'publish_phone','false'::jsonb)<>'true'::jsonb
             THEN 'not_published' ELSE 'available' END AS phone_visibility,
-        CASE WHEN operational OR c.value->'publish_phone'='true'::jsonb
+        CASE WHEN operational OR r.consented
+            OR c.value->'publish_phone'='true'::jsonb
             THEN CASE WHEN r.entity_kind='member' THEN c.value->'phones'
                 ELSE jsonb_build_object('home',r.proposed->>'home_phone',
                     'mobile',r.proposed->>'mobile_phone',

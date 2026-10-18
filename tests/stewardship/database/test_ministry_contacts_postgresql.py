@@ -77,12 +77,13 @@ def exported():
     ]
 
 
-def test_a_leader_sees_published_contacts_for_their_own_ministry_only(
+def test_a_leader_sees_the_requesters_contacts_for_their_own_ministry_only(
     response_service, google, monkeypatch
 ):
-    """The leader of Food pantry (9) sees its request's Member details, only
-    as published, and is refused the Choir (4) request; the view is audited
-    with the request's Ministry and no values."""
+    """The leader of Food pantry (9) sees its request's Member details,
+    the unpublished email too since the Member asked (#1591), and is
+    refused the Choir (4) request; the view is audited with the
+    request's Ministry and no values."""
     harness = setup(response_service)
     browser, _, _, _ = leader(harness, google)
     join, leave = requests()
@@ -95,14 +96,15 @@ def test_a_leader_sees_published_contacts_for_their_own_ministry_only(
 
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         section = contact(item(browser, join))
-        assert "<dt>Email</dt><dd>Not published</dd>" in section
-        assert EMAIL not in section and PHONE in section
+        assert "<dt>Email</dt><dd>Not published</dd>" not in section
+        assert EMAIL in section and PHONE in section
         assert "1 Example Street" in section and "1960-01-01" not in section
         assert "<dt>Gender</dt><dd>Unspecified</dd>" in section
-        # Contacts follow the reader's scope in SQL, never an outer decision.
+        # Contacts follow the reader's scope in SQL, never an outer
+        # decision: an outer Staff decision shows no more than the leader's.
         with monkeypatch.context() as patch:
             patch.setattr(ministry_followup_views, "_principal", previously_staff)
-            assert EMAIL not in contact(item(browser, join))
+            assert contact(item(browser, join)) == section
         path = reverse("admin:ministry_followup_item", args=[leave.pk])
         assert read(browser, path)[0].status_code == 403
     contexts = [
@@ -132,8 +134,9 @@ def test_staff_see_operational_contacts_and_a_leaves_role(response_service, goog
 
 
 def test_a_leaders_export_is_the_queue_view_in_their_scope(response_service, google):
-    """A leader's file lists only their Ministry's requests, published values
-    only, in every format; the audit keeps the Ministry DUIDs, not values."""
+    """A leader's file lists only their Ministry's requests, with the
+    requesting Member's own values (#1591), in every format; the audit
+    keeps the Ministry DUIDs, not values."""
     harness = setup(response_service)
     browser, _, _, _ = leader(harness, google)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
@@ -145,8 +148,8 @@ def test_a_leaders_export_is_the_queue_view_in_their_scope(response_service, goo
         assert [(row["Ministry"], row["Request"]) for row in rows] == [
             ("Food pantry", "Join")
         ]
-        assert rows[0]["Email"] == "Not published" and rows[0]["Phones"]
-        assert EMAIL.encode() not in body and b"Choir" not in body
+        assert rows[0]["Email"] == EMAIL and rows[0]["Phones"]
+        assert b"Choir" not in body
         # A Ministry filter outside the leader's scope reads nothing more.
         response, body = export(browser, state="any", ministry="4")
         assert response.status_code == 200 and table(body) == []

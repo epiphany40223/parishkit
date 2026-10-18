@@ -464,7 +464,7 @@ def test_the_queue_offers_export_these_requests():
     # No sensitive-data banner (#1539); the source note stays as help.
     assert "Sensitive parish" not in section
     assert "trusted device" not in section
-    assert "Ministry leaders receive only published email and phone" in section
+    assert "Ministry leaders receive the email and phones of each Member" in section
     assert 'name="timezone" data-browser-timezone' in section
     assert 'id="followup-export-count" data-table-sync' in section
 

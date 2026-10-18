@@ -156,7 +156,8 @@ def page(
 
 
 def test_current_intent_history_and_contact_projection(response_service):
-    """History never resurrects cancelled requests or bypasses leader publication."""
+    """History never resurrects cancelled requests; a leader sees the requesting
+    Member's own unpublished email only while the request stands (#1591)."""
     harness = setup(response_service)
     summary = page(harness)
     assert [
@@ -178,7 +179,9 @@ def test_current_intent_history_and_contact_projection(response_service):
     operational = page(harness, ministry=9)["rows"][0]
     scoped = page(harness, ministry=9, **leader)["rows"][0]
     assert operational["emails"] == ["valid@example.org"]
-    assert scoped["emails"] == [] and scoped["email_visibility"] == "not_published"
+    # The Member asked to join, so the leader sees their unpublished email.
+    assert scoped["emails"] == ["valid@example.org"]
+    assert scoped["email_visibility"] == "available"
     assert scoped["phones"] == {"home": "202-555-0123"}
     assert scoped["address_lines"][0] == "1 Example Street"
     assert scoped["age"] >= 60 and scoped["gender"] == "Unspecified"
@@ -188,6 +191,7 @@ def test_current_intent_history_and_contact_projection(response_service):
 def test_parishsoft_gender_code_reads_as_census_word(response_service):
     """An existing Member's ParishSoft code reads as the census word (#1621)."""
     harness = setup(response_service, sex="F")
+    leader = dict(roles=("ministry_leader",), scope=(9,))
     assert page(harness, ministry=9)["rows"][0]["gender"] == "Female"
     leaver = page(harness, ministry=4, action="leave")["rows"][0]
     assert leaver["current_role"] == "Chairperson"
@@ -203,6 +207,9 @@ def test_parishsoft_gender_code_reads_as_census_word(response_service):
         "new",
         "superseded",
     }
+    # The replaced version follows its Member's standing latest one.
+    versions = page(harness, ministry=9, history="all", **leader)["rows"]
+    assert [row["emails"] for row in versions] == [["valid@example.org"]] * 2
     form = revisit(harness)
     answers = answers_for(form)
     answers["ministries"]["members"]["3"] = {"join": [], "leave": []}
@@ -210,6 +217,18 @@ def test_parishsoft_gender_code_reads_as_census_word(response_service):
     assert page(harness, ministry=9)["total"] == 0
     assert page(harness, ministry=9, state="unresolved")["total"] == 0
     assert page(harness, ministry=9, history="all", state="cancelled")["total"] == 1
+    # Withdrawn, the request is no consent: the leader's history shows its
+    # every version with the publish flags again, while Staff keep
+    # operational contact.
+    withdrawn = page(harness, ministry=9, history="all", **leader)["rows"]
+    assert {row["state"] for row in withdrawn} == {"superseded", "cancelled"}
+    assert all(
+        row["emails"] == [] and row["email_visibility"] == "not_published"
+        for row in withdrawn
+    )
+    assert all(row["phones"] == {"home": "202-555-0123"} for row in withdrawn)
+    staff = page(harness, ministry=9, history="all")["rows"]
+    assert all(row["emails"] == ["valid@example.org"] for row in staff)
     assert all(row["unresolved"] == 0 for row in page(harness)["summaries"])
 
 
@@ -316,8 +335,11 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
     result = page(harness, roles=("ministry_leader",), scope=(9,), ministry=9)["rows"][
         0
     ]
-    assert result["emails"] == ["valid@example.org"] and result["phones"] == {}
-    assert result["phone_visibility"] == "not_published"
+    # The request stands, so its Member's own phone shows though no longer
+    # published (#1591).
+    assert result["emails"] == ["valid@example.org"]
+    assert result["phones"] == {"home": "202-555-0123"}
+    assert result["phone_visibility"] == "available"
     data.members[3]["familyDUID"] = 2
     snapshot, claim = prepare(data)
     promote(snapshot, claim, harness.campaign, harness.rings)
@@ -459,8 +481,11 @@ def test_testing_hidden_proposed_and_resolved_intent(response_service):
         row for row in page(harness, **leader)["rows"] if row["proposed_id"]
     )
     assert proposed["proposed_id"] == identifier and proposed["member_duid"] is None
-    assert proposed["member_name"] == "New Person" and not proposed["emails"]
-    assert proposed["email_visibility"] == "not_published"
+    # A Member the Family added asked to join too, so the leader sees the
+    # email the Family entered (#1591).
+    assert proposed["member_name"] == "New Person"
+    assert proposed["emails"] == ["proposed@example.org"]
+    assert proposed["email_visibility"] == "available"
     staff_proposed = next(
         row for row in page(harness, ministry=9)["rows"] if row["proposed_id"]
     )
@@ -779,8 +804,9 @@ def test_sql_scope_comes_from_the_actor_not_python(response_service):
         assert empty["authorized"] is False and empty["summaries"] == []
         assert empty["authorization_scope"]["operational"] is False
     # Python claiming Staff for the leader cannot widen the read: the
-    # summary still names 9 only, contact stays redacted, and the other
-    # Ministry's detail is refused.
+    # summary still names 9 only, contact stays the leader's (the
+    # requester's own on a standing request, #1591, not operational), and
+    # the other Ministry's detail is refused.
     widened = Principal(leader.identity, frozenset({"staff"}))
     with task_login(ServiceRole.WEB, exact=True, reconnect=True), transaction.atomic():
         summary = ministry_page(harness.campaign.pk, MinistryQuery(), widened)
@@ -801,8 +827,8 @@ def test_sql_scope_comes_from_the_actor_not_python(response_service):
         assert campaign_ids(widened) == ()
         assert campaign_ids(leader) == (harness.campaign.pk,)
     assert [row["duid"] for row in summary["summaries"]] == [9]
-    assert detail["rows"][0]["emails"] == []
-    assert detail["rows"][0]["email_visibility"] == "not_published"
+    assert detail["authorization_scope"]["operational"] is False
+    assert detail["rows"][0]["emails"] == ["valid@example.org"]
     # SQL wider than Python is drift, and the page is refused: Staff in SQL
     # whom Python sees as a leader of 9 only.
     narrowed = Principal(staff.identity, frozenset({"ministry_leader"}), frozenset({9}))
