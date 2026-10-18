@@ -41,7 +41,7 @@ NOTICE = (
 )
 # Appended only when the "cannot participate" checkbox is drawn.
 NOTICE_SERVICE = (
-    NOTICE + " Checking the physical limitations box below does not share them."
+    NOTICE + " If the physical limitations box below is checked, they are not shared."
 )
 SERVE = (
     "Because of physical limitations, I/we cannot participate in any ministries "

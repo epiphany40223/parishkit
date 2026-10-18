@@ -1025,10 +1025,12 @@
     // so once, before every choice, as plain always-present text (no
     // tooltip, nothing that appears on click and moves the controls). The
     // "cannot participate" checkbox, just below, stops every Ministry but
-    // is not consent (Administrator, 2026-10-18), and the notice says so,
-    // but only when that box is drawn (the service module is on).
+    // is not consent: while the Family's latest response has it checked,
+    // none of the Member's requests share, earlier ones included
+    // (Administrator, 2026-10-18, #1591). The notice says so, but only
+    // when that box is drawn (the service module is on).
     node("p", "If you choose to join a ministry or stop participating in one, that ministry's leaders will see this person's email address and phone numbers so they can follow up." +
-      (form.service ? " Checking the physical limitations box below does not share them." : ""), panel);
+      (form.service ? " If the physical limitations box below is checked, they are not shared." : ""), panel);
     limitationEditor(member, panel);
     const choices = ministryChoices(member), current = ministryCurrent(member);
     const locked = Boolean(form.service && serviceEntry(member).cannot_serve);
