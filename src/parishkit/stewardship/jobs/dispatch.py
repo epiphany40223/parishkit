@@ -24,7 +24,7 @@ from .lifetime import ExecutionControl, maintain_execution, maintain_source
 from .models import TaskRun
 from .ownership import TaskClaim, database_now, lock_task_claim
 from .queues import WorkQueue
-from .storage import _locked, _status, change_run
+from .storage import TaskNotAdmitted, _locked, _status, change_run
 
 # How long an in-flight ownership check may wait for this worker's control
 # lock, or for any one database statement (a lock wait included), before it
@@ -246,7 +246,7 @@ class Execution:
             stack.enter_context(transaction.atomic())
             row = lock_task_claim(self.claim)
             if self.handler.admit("effect", _status(row)) is not True:
-                raise PermissionError("This task effect is not admitted.")
+                raise TaskNotAdmitted("This task effect is not admitted.")
             return stack.pop_all()
 
     def transition(self, action, **options):

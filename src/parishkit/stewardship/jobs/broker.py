@@ -83,11 +83,13 @@ def stop_consumer(error, args, stop):
 
 
 def report_failure(error):
-    """Log one consumer failure; a refused admission is INFO, not ERROR (#1659).
+    """Log one consumer failure; a refused claim or effect is INFO (#1659).
 
-    A handler that refuses a claim on purpose (Family mail while paused or
-    stopped) leaves the task queued for a later hint; the pause or stop
-    has its own entries, so the refusal itself is routine.
+    A handler that refuses new work on purpose (Family mail while paused or
+    stopped) leaves the task queued, or running until its lease expires;
+    the pause or stop has its own entries, so the refusal itself is
+    routine. Any other refused transition (TransitionNotAdmitted) is an
+    invariant violation and stays ERROR, like every other exception.
     """
     refused = isinstance(error, TaskNotAdmitted)
     emit_failure(error, level=logging.INFO if refused else logging.ERROR)

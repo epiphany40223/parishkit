@@ -12,7 +12,7 @@ from uuid import uuid4
 import pytest
 
 from parishkit.stewardship.jobs import storage
-from parishkit.stewardship.jobs.storage import TaskNotAdmitted
+from parishkit.stewardship.jobs.storage import TaskNotAdmitted, TransitionNotAdmitted
 from parishkit.stewardship.observability import Event, FailureKind, failure_kind_of
 
 
@@ -25,6 +25,29 @@ def test_a_refused_admission_names_its_own_category():
     # A genuine filesystem error keeps its category.
     assert failure_kind_of(PermissionError("synthetic")) is FailureKind.FILESYSTEM
     assert failure_kind_of(OSError("synthetic")) is FailureKind.FILESYSTEM
+
+
+@pytest.mark.parametrize(
+    "action",
+    [
+        "enqueue",
+        "explicit_retry",
+        "complete",
+        "retryable_failure",
+        "permanent_failure",
+        "safe_cancel",
+        "lease_expired",
+        "recovery_retry",
+        "recovery_complete",
+    ],
+)
+def test_only_a_refused_claim_is_a_designed_refusal(action):
+    """Any other refused transition is an invariant violation, still an ERROR."""
+    with pytest.raises(TransitionNotAdmitted) as caught:
+        storage._admit(lambda action, status: False, action, None)
+    assert not isinstance(caught.value, TaskNotAdmitted)
+    assert isinstance(caught.value, PermissionError)
+    assert failure_kind_of(caught.value) is FailureKind.TASK_TRANSITION_REFUSED
 
 
 def consumer_lines(monkeypatch, caplog, error):
@@ -70,6 +93,13 @@ def test_a_real_filesystem_failure_is_still_an_error(monkeypatch, caplog):
     assert lines == [(logging.ERROR, FailureKind.FILESYSTEM)]
 
 
+def test_a_refused_transition_is_still_an_error(monkeypatch, caplog):
+    """A refused complete, retry or recovery keeps ERROR, under its own name."""
+    refused = TransitionNotAdmitted("Task operation is not admitted.")
+    lines = consumer_lines(monkeypatch, caplog, refused)
+    assert lines == [(logging.ERROR, FailureKind.TASK_TRANSITION_REFUSED)]
+
+
 def test_only_a_refused_admission_is_lowered_to_info(monkeypatch, caplog):
     """The shared reporter (hint and bulk batch paths) lowers nothing else."""
     from parishkit.stewardship.jobs import broker
@@ -81,8 +111,10 @@ def test_only_a_refused_admission_is_lowered_to_info(monkeypatch, caplog):
         lambda error, level=logging.ERROR: reported.append((type(error), level)),
     )
     broker.report_failure(TaskNotAdmitted("synthetic"))
+    broker.report_failure(TransitionNotAdmitted("synthetic"))
     broker.report_failure(OSError("synthetic"))
     assert reported == [
         (TaskNotAdmitted, logging.INFO),
+        (TransitionNotAdmitted, logging.ERROR),
         (OSError, logging.ERROR),
     ]
