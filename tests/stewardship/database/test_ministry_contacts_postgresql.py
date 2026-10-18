@@ -11,6 +11,7 @@ leaving pages, and their export form, answer 404 with no redirect.
 import csv
 import io
 import json
+from uuid import uuid4
 
 import pytest
 from django.urls import reverse
@@ -25,6 +26,7 @@ from parishkit.stewardship.reports.ministries import MinistryQuery
 from parishkit.stewardship.reports.ministry_followup import FollowupQuery
 from parishkit.stewardship.workflows.models import MinistryRequest
 
+from ..census_factory import member
 from .test_background_grants_postgresql import task_login
 from .test_export_views_postgresql import post
 from .test_information_followup_postgresql import search
@@ -198,6 +200,38 @@ def test_a_leaders_export_is_the_queue_view_in_their_scope(response_service, goo
     drop_leader(harness)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         assert export(browser, state="any")[0].status_code == 403
+
+
+def test_an_added_members_entered_phone_reads_as_a_number(response_service, google):
+    """The Administrator's pk-local check (#1623): a Member the Family adds
+    on the form with a mobile phone asks to join Food pantry (9). The form
+    stores the phone as {display, normalized}; its leader's request page and
+    Export these requests show it as a formatted number, never that JSON."""
+    harness = setup(response_service)
+    browser, _, _, _ = leader(harness, google)
+    form = revisit(harness)
+    answers = answers_for(form)
+    added = str(uuid4())
+    answers["proposed_members"][added] = member(
+        first_name="New", last_name="Person", mobile_phone="5025551212"
+    )
+    answers["ministries"]["proposed_members"][added] = {"join": [9]}
+    respond(harness, form, answers)
+    request = MinistryRequest.objects.get(
+        entity_kind="proposed_member", entity_key=added, action="join"
+    )
+    shown = "mobile: +1 (502) 555-1212"
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        section = contact(item(browser, request))
+        assert shown in section and "normalized" not in section
+        response, body = export(browser, state="any")
+        assert response.status_code == 200
+        (row,) = [row for row in table(body) if row["Member DUID"] == "New Member"]
+        assert row["Phones"] == shown
+        response, body = export(browser, format="xlsx", state="any")
+        sheet = load_workbook(io.BytesIO(body))["Ministry requests"]
+        cells = [str(cell.value) for cells in sheet.iter_rows() for cell in cells]
+        assert shown in cells and not any("normalized" in cell for cell in cells)
 
 
 def test_staff_export_every_ministry_with_operational_contacts(

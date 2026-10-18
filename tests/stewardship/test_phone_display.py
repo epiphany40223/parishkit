@@ -1,5 +1,6 @@
 """Telephone numbers read as "+1 (502) 555-1234" everywhere; storage stays E.164."""
 
+import json
 import re
 from datetime import date
 from pathlib import Path
@@ -18,6 +19,8 @@ from parishkit.stewardship.web.presentation import parse_us_phone, phone
 
 TEMPLATES = Path(__file__).parents[2] / "src/parishkit/stewardship"
 PHONE_CONTEXT = re.compile(r"phone", re.IGNORECASE)
+# A phone as the Family form stores it.
+RECORD = {"display": "5025551212", "normalized": "+15025551212"}
 
 
 @pytest.mark.parametrize(
@@ -35,6 +38,21 @@ PHONE_CONTEXT = re.compile(r"phone", re.IGNORECASE)
     ],
 )
 def test_phone_display_format(value, expected):
+    assert phone(value) == expected
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        (RECORD, "+1 (502) 555-1212"),
+        (json.dumps(RECORD), "+1 (502) 555-1212"),
+        ({"display": "call me", "normalized": None}, "call me"),
+        ("{not a record", "{not a record"),
+    ],
+)
+def test_a_family_entered_phone_record_reads_as_its_number(value, expected):
+    """A phone the Family entered is stored as {display, normalized}; the
+    Ministry selections hand it over as that object's JSON text (#1623)."""
     assert phone(value) == expected
 
 
