@@ -981,8 +981,10 @@ when that sign-in is.
 **Timeline table.** A [shared Admin table](../ui-conventions/spec.md#admin-tables)
 with one row per line and the columns When, What happened and Details. It
 is newest first (the Administrator's decision on #590); When is its one sort
-heading, which reverses the order in place, and rows at the same instant keep
-the order the Family took them in. A Family has few lines, so the table
+heading, which reverses the order in place. Rows at the same instant are
+listed in the order the Family took them in, reversed with the rest newest
+first, so each line still reads as happening when it did in both
+directions. A Family has few lines, so the table
 shows them all, with no paging or row navigator. Its lines are:
 
 - each Family email with its outcome (including Not sent (cancelled)),
@@ -1003,8 +1005,10 @@ shows them all, with no paging or row navigator. Its lines are:
   `family_session_ended`); a session that simply timed out records
   neither. A new sign-in in the same browser ends the earlier session in
   the same transaction, so that end has the sign-in's instant: it reads
-  **Earlier session ended** (replaced by a new sign-in) and sorts just
-  before that sign-in, so it never reads as the new session ending;
+  **Earlier session ended** (replaced by a new sign-in) and is listed as
+  happening just before that sign-in in both sort directions (below it
+  newest first, above it oldest first), so it never reads as the new
+  session ending;
 - each form open, getting past the first step and the furthest step
   reached;
 - each submission, noting when Staff entered it for the Family and when no

@@ -546,6 +546,40 @@ def test_a_session_replaced_by_a_new_sign_in_ends_before_it():
     assert {line.kind for line in lines} == {"sessions"}
 
 
+def test_the_page_shows_a_replaced_session_ending_first_both_ways():
+    """In both sort directions the replaced end reads as before the sign-in."""
+    # Newest first lists the later line above, so the earlier session's end
+    # must sit below the new sign-in there and above it oldest first. The
+    # newest-first view is exactly the oldest-first one reversed, so the
+    # sign-out at the same instant is listed above its sign-in too.
+    first, again = START + 20 * MINUTE, START + 30 * MINUTE
+    lines = events(
+        [],
+        [],
+        sign_ins=[first, again],
+        session_ends=[(again, "family_session_ended"), (again, "family_logout")],
+    )
+    timeline = Timeline(summary([], []), lines, None)
+
+    def shown(sort):
+        """The rendered "What happened" cells for one sort, in row order."""
+        page = render(timeline, values={"sort": sort, "size": "all"})
+        return re.findall(r'<th scope="row">(.*?)</th>', page)
+
+    assert shown("when") == [
+        "Signed in",
+        "Earlier session ended",
+        "Signed in",
+        "Signed out",
+    ]
+    assert shown("-when") == [
+        "Signed out",
+        "Signed in",
+        "Earlier session ended",
+        "Signed in",
+    ]
+
+
 def test_narrow_keeps_one_kind_within_half_open_bounds():
     """``narrow`` keeps the kind and the [start, end) interval, in order."""
     lines = TIMELINE.events

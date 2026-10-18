@@ -38,7 +38,7 @@ indexed by Family: they are read in one statement through the audit's
 keeps this Family's (a few thousand rows per campaign at launch scale).
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from uuid import UUID
 
@@ -70,10 +70,16 @@ STEPS = {
 }
 # The timeline is a shared Admin table with one sortable column, When:
 # newest first by default (the Administrator's decision on #590), and the
-# heading reverses it in place. Rows at the same instant keep the order
-# ``events`` builds them in, in both directions (the sort is stable).
+# heading reverses it in place. Rows at the same instant sort by their
+# ``Event.rank``, their place in the oldest-first order ``events`` builds,
+# so newest first is exactly that order reversed: a line built first at an
+# instant (an earlier session's end before the new sign-in, a sign-in
+# before its sign-out) is listed below the other newest first and above it
+# oldest first, and always reads as happening first.
 TIMELINE_SORTING = Sorting.by_column(
-    {"when": lambda event: event.at}, default="-when", descending_first={"when"}
+    {"when": lambda event: (event.at, event.rank)},
+    default="-when",
+    descending_first={"when"},
 )
 # Whether campaign email can reach the Family, by the campaign record's
 # ``deliverability_reason`` (``source/families.py`` and the refusal trigger).
@@ -238,7 +244,9 @@ class Event:
 
     ``message_id`` names the email a line is about, so the page can link its
     Mail message page. ``kind`` is its ``KINDS`` key (never "all"), for the
-    page's Kind filter.
+    page's Kind filter. ``rank`` is the line's place in the oldest-first
+    order ``events`` returns, which ``TIMELINE_SORTING`` uses to order lines
+    at the same instant, so both sort directions read the same way.
     """
 
     at: datetime
@@ -246,6 +254,7 @@ class Event:
     detail: str = ""
     message_id: UUID | None = None
     kind: str = "form"
+    rank: int = 0
 
 
 @dataclass(frozen=True)
@@ -372,7 +381,13 @@ def events(
     exception is a system end at the same instant as a sign-in: a new
     sign-in in the same browser ends the earlier session in its own
     transaction, so that end reads "Earlier session ended" and is built
-    before the sign-in, never as if the new session had ended.
+    before the sign-in, so the page shows it as happening first in both
+    sort directions (each line's ``rank`` is its place in this order),
+    never as if the new session had ended.
+    The audit links neither session to the other (the end's subject is the
+    earlier session), so the match is by instant: the login path writes both
+    events with one transaction's time, and other system ends run in other
+    transactions.
     """
 
     def sign_in(value):
@@ -466,8 +481,10 @@ def events(
         for email in emails
         if not (email.state == "cancelled" and email.occurrence in skipped)
     ]
-    # sorted() is stable, so equal instants keep the order built above.
-    return tuple(sorted(lines, key=lambda line: line.at))
+    # sorted() is stable, so equal instants keep the order built above; the
+    # rank records that order so the page can reverse it exactly.
+    ordered = sorted(lines, key=lambda line: line.at)
+    return tuple(replace(line, rank=rank) for rank, line in enumerate(ordered))
 
 
 def narrow(lines, kind="all", bounds=(None, None)):
