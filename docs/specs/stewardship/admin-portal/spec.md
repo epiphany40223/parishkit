@@ -6707,9 +6707,7 @@ same access, reads and audit; no new address and no alias is added
 ([addresses and legacy URLs](../ui-conventions/spec.md#addresses-and-legacy-urls)).
 Every Admin table's Family name already links here through
 `{% family_link %}`. The hub draws a header strip above a row of
-[tabs](../ui-conventions/spec.md#tabs), which follow the shared tab rules:
-the chosen tab is the address's `?tab=`, a switch is in place with no page
-refresh, and only the chosen tab's panel is read and drawn.
+[tabs](../ui-conventions/spec.md#tabs), which follow the shared tab rules.
 
 The hub is built in slices, each its own pull request; each subsection below
 says which slice delivers it:
@@ -6731,24 +6729,30 @@ has one, the **Last portal action** (Administrators only, below) and the
 link to the Active parishioner family directory. The campaign's name and
 Counted at follow on the next line, as on the Timeline today.
 
-**Last portal action** is the newest thing the Family itself did on the
-parishioner portal, with its time in the browser's time zone, or "None
-recorded". It is one of the Timeline's own lines:
+**Last portal action** is the newest action taken on the parishioner portal
+for the Family that an email reader could not have made, with its time in
+the browser's time zone, or "None recorded". It is one of the Timeline's own
+lines:
 
 - **Submitted a response**, except one Staff entered for the Family through
-  [Open form](../reports/spec.md#open-form), which is not the Family's own
-  action;
-- **Signed out** (the Family chose Sign out);
-- **Got past the first step** and **Reached the furthest step so far** (the
-  Family moved through the form).
+  [Open form](../reports/spec.md#open-form);
+- **Signed out**, except in a session Staff opened through Open form;
+- **Got past the first step**, and **Reached the furthest step so far** when
+  that step is past the first (the form moved on).
 
 A sign-in and a form open are never counted: an email reader that fetches the
 Family's personal link (a mail scanner checking it) signs in and opens the
-form exactly as the Family would, so neither proves the Family was there. A
-session the system ended, and every email line, are not the Family's actions
-either. Form steps are recorded per Family, not per session, so steps taken
-while Staff fill in the form through Open form count too. The value comes
-from the lines the Timeline already reads, so it adds no statement.
+form exactly as the Family would, so neither proves the Family was there.
+Reaching the first step is not counted either, because the form page reports
+it as soon as it loads, before anything is chosen, and a scanner that runs
+the page's script makes that report too. A session the system ended, and
+every email line, are not the Family's actions. Form steps are recorded per
+Family, not per session, so steps taken while Staff fill in the form through
+Open form count as well; the About panel says so. The engagement record keeps
+only the first and the furthest step, so a Family that comes back later and
+neither submits, signs out nor reaches a step further than before leaves the
+value where it was. The value comes from the lines the Timeline already
+reads, so it adds no statement.
 
 Only Administrators see it. Staff see the Timeline's summary only, and the
 records behind the full timeline (sign-outs and form steps) are not read for
@@ -6785,13 +6789,16 @@ A tab whose subject is not part of the campaign is left out, not greyed
 ([conditional fields](../ui-conventions/spec.md#conditional-fields)).
 
 **Until each slice lands**, a tab that applies to the campaign but is not
-built yet is drawn **unavailable** with the reason "Coming soon", as the
-shared tab rules draw any unavailable tab (greyed, reached by the arrow keys,
-its reason in a tip), rather than left out. The Administrator, the hub's main
-reader, sees its whole shape from the first slice, and each later slice only
-turns its tabs on. Member tabs are the exception: naming each Member needs the
-census read that slice 2 adds, so slice 1 draws none, and slice 2 adds them.
-`?tab=` naming an unavailable tab opens the Timeline tab, with no error.
+built yet is drawn as an
+[unavailable tab](../ui-conventions/spec.md#tabs) with the reason "Coming
+soon", rather than left out. The Administrator, the hub's main reader, sees
+its whole shape from the first slice, and each later slice only turns its
+tabs on. Member tabs are the exception: naming each Member needs the census
+read that slice 2 adds, so slice 1 draws none, and slice 2 adds them.
+
+Administrators and Staff both see every tab, since both review these
+streams; Ministry leaders cannot open the page. Within the Timeline tab each
+role sees what it saw before.
 
 ### Hub content tabs
 
@@ -6808,10 +6815,7 @@ holds a second comparison that could drift from the review worklist:
 - unchanged fields read as unchanged, and each changed field shows its
   change's **stage**, with the stage's word and chip exactly as the
   [pipeline vocabulary](../review-pipeline/spec.md#pipeline-vocabulary)
-  spells them (To review, Conflict, Ignored, Ready to update, Updating,
-  Updated in ParishSoft, To enter by hand, Entered by hand, Entered
-  incorrectly, To handle, Handled, Confirmed), and the Not seen in ParishSoft
-  flag when it is set;
+  spells them, and the Not seen in ParishSoft flag when it is set;
 - per tab: the Family tab shows the Family-level census fields; a Member tab
   shows that Member's census fields and Ministry joins and leaves (the
   [census](../review-pipeline/spec.md#census-stream) and
