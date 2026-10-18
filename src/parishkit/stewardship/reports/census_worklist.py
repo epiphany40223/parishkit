@@ -94,7 +94,7 @@ def _last_decision(row):
     """
     if row.get("resolution_action"):
         return row["resolution_by"], row["resolution_at"], row["resolution_note"]
-    if row.get("reopened") and row["placement"].held_decision:
+    if row.get("reopened") and row["decision"] == "unreviewed":
         return "Family", row["submitted_at"], REOPENED
     return "", None, ""
 
