@@ -14,11 +14,13 @@
 -- contacted, so for a Member's request to a Ministry that Ministry's leaders
 -- see the requesting Member's own email and phones even when not published.
 -- Nothing else widens: a request stands only while its latest version is not
--- withdrawn (cancelled) or replaced (superseded); a Member whom the Family's
--- latest live submission says cannot participate in any ministries
--- (physical limitations) shares nothing unpublished on any of their requests,
--- current or history, until a later submission clears it (Administrator
--- decision, 2026-10-18, applied per Member); a Member with no standing
+-- withdrawn (cancelled) or replaced (superseded); a Member whose latest
+-- live answer says they cannot participate in any ministries (physical
+-- limitations) shares nothing unpublished on any of their requests, current
+-- or history, until a later submission answers it for them without the box
+-- (Administrator decision, 2026-10-18, applied per Member; a submission that
+-- leaves the Member out, such as one reporting them moved out or deceased,
+-- does not clear it); a Member with no standing
 -- request to the Ministry, another Ministry's requests and every other
 -- Member of the Family keep the publish flags; Administrators and Staff keep
 -- operational contact; and each selection still reads only the Ministries in
@@ -27,11 +29,11 @@
 -- Replaced functions, each copied whole from its newest definition (0094)
 -- with only the consent column, the four contact expressions and an
 -- 'answered' CTE changed. Both consent columns read the cannot-participate
--- answer from the Family's latest live submission ('answered', the same
--- text in both), not from the request's own: a cannot-participate
--- submission adds leaves only for the Ministries the Member is on the
--- roster of, so an earlier join that was declined, a leave a roster
--- refresh confirmed, or a request to a Ministry no longer offered would
+-- answer from each Member's latest live submission that answers it for them
+-- ('answered', the same text in both), not from the request's own: a
+-- cannot-participate submission adds leaves only for the Ministries the
+-- Member is on the roster of, so an earlier join that was declined, a leave a
+-- roster refresh confirmed, or a request to a Ministry no longer offered would
 -- otherwise keep sharing, depending only on roster state:
 --   stewardship_ministry_packet_v1   (the baseline): the follow-up packet,
 --                                    and the leave requests' contact details
@@ -148,16 +150,30 @@ WITH selected AS MATERIALIZED (
     LEFT JOIN chairs c ON c.ministry_key=d.duid::text
     WHERE selection IS NULL OR d.duid=ANY(selection::bigint[])
 ), answered AS MATERIALIZED (
-    -- Each Family's latest live submission in the campaign, its current
-    -- answer. A Member it says cannot participate in any ministries
-    -- (physical limitations) shares no unpublished contact with leaders on
-    -- any of their requests, current or history, until a later submission
-    -- clears it (Administrator, #1591). One sort over the campaign's
-    -- submissions (ids only), joined by Family, not a lookup per request.
-    SELECT DISTINCT ON (s.family_id) s.family_id,s.id
+    -- Each Member's current answer to cannot participate in any ministries
+    -- (physical limitations): the one in the Family's latest live
+    -- submission that answers it for that Member (lists them under
+    -- 'service'). A Member so answered shares no unpublished contact with
+    -- leaders on any of their requests, current or history, until a later
+    -- submission answers it for them without the box (Administrator,
+    -- #1591). A submission that leaves the Member out (reported moved out or
+    -- deceased) does not clear it; a Member never answered is not hidden.
+    -- One sort over the campaign's live submissions of Families with a
+    -- request here, joined by Member, not a lookup per request.
+    SELECT DISTINCT ON (s.family_id,g.kind,e.key) s.family_id,g.kind,e.key,
+        e.value->'cannot_serve'='true'::jsonb AS cannot_serve
     FROM source x JOIN stewardship_submission s
         ON s.campaign_id=x.id AND s.mode='live'
-    ORDER BY s.family_id,s.family_version DESC
+    CROSS JOIN LATERAL (VALUES ('member','members'),
+        ('proposed_member','proposed_members')) g(kind,grp)
+    CROSS JOIN LATERAL jsonb_each(CASE WHEN jsonb_typeof(
+        s.answers->'service'->g.grp)='object'
+        THEN s.answers->'service'->g.grp END) e
+    WHERE s.family_id IN (SELECT q.family_id FROM stewardship_submission q
+        JOIN stewardship_ministry_request r ON r.submission_id=q.id
+        JOIN ministries m ON m.duid=r.ministry_duid
+        WHERE q.campaign_id=x.id AND q.mode='live')
+    ORDER BY s.family_id,g.kind,e.key,s.family_version DESC
 ), requests AS MATERIALIZED (
     SELECT r.id,r.entity_kind,r.entity_key,r.ministry_duid,r.action,r.state,
         r.outcome,r.submission_id,s.submitted_at,f.family_duid,
@@ -173,20 +189,17 @@ WITH selected AS MATERIALIZED (
         -- A standing request (this is its latest version) is its Member's
         -- consent to be contacted about it by the Ministry's leaders
         -- (#1591); a withdrawn one is not. Nor is any request of a Member
-        -- the Family's latest submission says cannot participate in any
+        -- whose current answer ('answered') is cannot participate in any
         -- ministries (physical limitations): those follow the publish
         -- flags (Administrator, #1591), whatever the roster holds.
-        r.state NOT IN ('cancelled','superseded') AND coalesce(
-            a.answers#>ARRAY['service',CASE WHEN r.entity_kind='member'
-                THEN 'members' ELSE 'proposed_members' END,
-                r.entity_key,'cannot_serve'],'false'::jsonb)<>'true'::jsonb
+        r.state NOT IN ('cancelled','superseded') AND a.cannot_serve IS NOT TRUE
             AS consented,
         CASE WHEN r.entity_kind='proposed_member'
             THEN s.answers->'proposed_members'->r.entity_key END AS proposed
     FROM requests r CROSS JOIN source x
     JOIN stewardship_submission s ON s.id=r.submission_id
-    JOIN answered l ON l.family_id=s.family_id
-    JOIN stewardship_submission a ON a.id=l.id
+    LEFT JOIN answered a ON a.family_id=s.family_id
+        AND a.kind=r.entity_kind AND a.key=r.entity_key
     LEFT JOIN stewardship_snapshot_member sm
         ON r.entity_kind='member' AND sm.snapshot_id=x.source_id
         AND sm.source_key=r.entity_key
@@ -342,16 +355,30 @@ WITH selected AS MATERIALIZED (
       AND (operational OR n.duid::bigint=ANY(ministry_scope::bigint[]))
       AND (ministry_id::integer IS NULL OR n.duid::bigint=ministry_id)
 ), answered AS MATERIALIZED (
-    -- Each Family's latest live submission in the campaign, its current
-    -- answer. A Member it says cannot participate in any ministries
-    -- (physical limitations) shares no unpublished contact with leaders on
-    -- any of their requests, current or history, until a later submission
-    -- clears it (Administrator, #1591). One sort over the campaign's
-    -- submissions (ids only), joined by Family, not a lookup per request.
-    SELECT DISTINCT ON (s.family_id) s.family_id,s.id
+    -- Each Member's current answer to cannot participate in any ministries
+    -- (physical limitations): the one in the Family's latest live
+    -- submission that answers it for that Member (lists them under
+    -- 'service'). A Member so answered shares no unpublished contact with
+    -- leaders on any of their requests, current or history, until a later
+    -- submission answers it for them without the box (Administrator,
+    -- #1591). A submission that leaves the Member out (reported moved out or
+    -- deceased) does not clear it; a Member never answered is not hidden.
+    -- One sort over the campaign's live submissions of Families with a
+    -- request here, joined by Member, not a lookup per request.
+    SELECT DISTINCT ON (s.family_id,g.kind,e.key) s.family_id,g.kind,e.key,
+        e.value->'cannot_serve'='true'::jsonb AS cannot_serve
     FROM source x JOIN stewardship_submission s
         ON s.campaign_id=x.id AND s.mode='live'
-    ORDER BY s.family_id,s.family_version DESC
+    CROSS JOIN LATERAL (VALUES ('member','members'),
+        ('proposed_member','proposed_members')) g(kind,grp)
+    CROSS JOIN LATERAL jsonb_each(CASE WHEN jsonb_typeof(
+        s.answers->'service'->g.grp)='object'
+        THEN s.answers->'service'->g.grp END) e
+    WHERE s.family_id IN (SELECT q.family_id FROM stewardship_submission q
+        JOIN stewardship_ministry_request r ON r.submission_id=q.id
+        JOIN ministries m ON m.duid=r.ministry_duid
+        WHERE q.campaign_id=x.id AND q.mode='live')
+    ORDER BY s.family_id,g.kind,e.key,s.family_version DESC
 ), requests AS MATERIALIZED (
     SELECT r.id,r.entity_kind,r.entity_key,r.ministry_duid,r.action,r.state,
         r.outcome,r.assignee_id,s.submitted_at,s.family_version,f.family_duid,s.id AS submission_id,
@@ -361,24 +388,21 @@ WITH selected AS MATERIALIZED (
         -- not withdrawn): their consent to be contacted about it by the
         -- Ministry's leaders (#1591). Every version of it follows the
         -- latest, as a leave request's details do. No request of a Member
-        -- the Family's latest submission says cannot participate in any
+        -- whose current answer ('answered') is cannot participate in any
         -- ministries (physical limitations) is consent (Administrator,
         -- #1591), whatever the roster holds; the packet reads the same.
         first_value(r.state NOT IN ('cancelled','superseded'))
             OVER (PARTITION BY s.family_id,r.entity_kind,r.entity_key,
                 r.ministry_duid ORDER BY s.family_version DESC,r.id)
-            AND coalesce(
-            a.answers#>ARRAY['service',CASE WHEN r.entity_kind='member'
-                THEN 'members' ELSE 'proposed_members' END,
-                r.entity_key,'cannot_serve'],'false'::jsonb)<>'true'::jsonb
+            AND a.cannot_serve IS NOT TRUE
             AS consented
     FROM source x
     JOIN stewardship_submission s ON s.campaign_id=x.id AND s.mode='live'
     JOIN stewardship_ministry_request r ON r.submission_id=s.id
     JOIN ministries m ON m.duid=r.ministry_duid
     JOIN stewardship_family_campaign f ON f.id=s.family_id
-    JOIN answered l ON l.family_id=s.family_id
-    JOIN stewardship_submission a ON a.id=l.id
+    LEFT JOIN answered a ON a.family_id=s.family_id
+        AND a.kind=r.entity_kind AND a.key=r.entity_key
 ), summary AS MATERIALIZED (
     SELECT m.*,
         count(r.id) FILTER (WHERE r.action='join') AS joining,
@@ -565,32 +589,41 @@ BEGIN
               'stewardship_ministry_report_v3')
           AND NOT p.prosecdef AND p.provolatile='s'
           AND p.prorettype='jsonb'::regtype
-          -- Both consents exclude every request of a Member the Family's
-          -- latest live submission says cannot participate, read from that
-          -- submission ('answered', one row per Family) and never from
-          -- the request's own; v3 takes the chain's latest standing.
+          -- Both consents exclude every request of a Member whose current
+          -- answer is cannot participate: each Member's latest live answer
+          -- ('answered', one row per Family, kind and key, only from
+          -- submissions that list them under service), never the request's
+          -- own submission or a Family-wide latest one; v3 takes the
+          -- chain's latest standing.
           AND p.prosrc LIKE '%), answered AS MATERIALIZED (
-%SELECT DISTINCT ON (s.family_id) s.family_id,s.id
+%SELECT DISTINCT ON (s.family_id,g.kind,e.key) s.family_id,g.kind,e.key,
+        e.value->''cannot_serve''=''true''::jsonb AS cannot_serve
     FROM source x JOIN stewardship_submission s
         ON s.campaign_id=x.id AND s.mode=''live''
-    ORDER BY s.family_id,s.family_version DESC
+    CROSS JOIN LATERAL (VALUES (''member'',''members''),
+        (''proposed_member'',''proposed_members'')) g(kind,grp)
+    CROSS JOIN LATERAL jsonb_each(CASE WHEN jsonb_typeof(
+        s.answers->''service''->g.grp)=''object''
+        THEN s.answers->''service''->g.grp END) e
+    WHERE s.family_id IN (SELECT q.family_id FROM stewardship_submission q
+        JOIN stewardship_ministry_request r ON r.submission_id=q.id
+        JOIN ministries m ON m.duid=r.ministry_duid
+        WHERE q.campaign_id=x.id AND q.mode=''live'')
+    ORDER BY s.family_id,g.kind,e.key,s.family_version DESC
 ), requests AS MATERIALIZED (%'
-          AND p.prosrc LIKE '%JOIN answered l ON l.family_id=s.family_id
-    JOIN stewardship_submission a ON a.id=l.id
+          AND p.prosrc LIKE '%LEFT JOIN answered a ON a.family_id=s.family_id
+        AND a.kind=r.entity_kind AND a.key=r.entity_key
 %'
-          AND p.prosrc NOT LIKE '%s.answers#>ARRAY[''service''%'
+          AND p.prosrc NOT LIKE '%answers#>ARRAY[''service''%'
+          AND p.prosrc NOT LIKE '%DISTINCT ON (s.family_id) s.family_id,s.id%'
           AND CASE WHEN p.proname='stewardship_ministry_report_v3'
               THEN p.prosrc LIKE '%first_value(r.state NOT IN (''cancelled'',''superseded''))
             OVER (PARTITION BY s.family_id,r.entity_kind,r.entity_key,
                 r.ministry_duid ORDER BY s.family_version DESC,r.id)
-            AND coalesce(
-            a.answers#>ARRAY[''service'',%
-                r.entity_key,''cannot_serve''],''false''::jsonb)<>''true''::jsonb
+            AND a.cannot_serve IS NOT TRUE
             AS consented
 %'
-              ELSE p.prosrc LIKE '%r.state NOT IN (''cancelled'',''superseded'') AND coalesce(
-            a.answers#>ARRAY[''service'',%
-                r.entity_key,''cannot_serve''],''false''::jsonb)<>''true''::jsonb
+              ELSE p.prosrc LIKE '%r.state NOT IN (''cancelled'',''superseded'') AND a.cannot_serve IS NOT TRUE
             AS consented,%' END
           AND p.prosrc LIKE '%NOT operational AND NOT r.consented AND coalesce(
 %c.value->''publish_email''%'

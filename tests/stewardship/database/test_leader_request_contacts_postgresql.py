@@ -10,9 +10,11 @@ The first tests check 0117's closing check against 0094's bodies, as the
 earlier selection migrations' tests do; each statement there runs in a
 transaction that is rolled back. The rest prove, through the real web
 database role, that nothing else widens: another Member of the Family, a
-withdrawn request, every request of a Member whom the Family's latest
-submission says cannot participate in any ministries (Administrator
-decision, 2026-10-18, applied per Member, whatever the roster shows),
+withdrawn request, every request of a Member whose latest live answer
+(from the newest submission that answers for them, so not one that leaves
+them out as moved out or deceased) says they cannot participate in any
+ministries (Administrator decision, 2026-10-18, applied per Member,
+whatever the roster shows),
 another Ministry and a reader who leads nothing keep the publish flags or
 read nothing, while Staff keep operational contact.
 """
@@ -136,7 +138,7 @@ def test_the_closing_check_refuses_a_report_without_the_exclusion():
     refused, so no row of such a Member shows unpublished contacts."""
     own = definition(MIGRATION, "stewardship_ministry_report_v3")
     changed, count = re.subn(
-        r"\)\n\s+AND coalesce\(\n\s+a\.answers.*?AS consented",
+        r"\)\n\s+AND a\.cannot_serve IS NOT TRUE\n\s+AS consented",
         ") AS consented",
         own,
         flags=re.S,
@@ -150,7 +152,8 @@ def test_the_closing_check_refuses_a_packet_without_the_exclusion():
     refused, so such a Member's requests never show unpublished contacts."""
     own = definition(MIGRATION, "stewardship_ministry_packet_v1")
     changed, count = re.subn(
-        r"r\.state NOT IN \('cancelled','superseded'\) AND coalesce\(.*?AS consented,",
+        r"r\.state NOT IN \('cancelled','superseded'\) AND a\.cannot_serve"
+        r" IS NOT TRUE\n\s+AS consented,",
         "r.state NOT IN ('cancelled','superseded') AS consented,",
         own,
         flags=re.S,
@@ -166,7 +169,12 @@ def test_the_closing_check_refuses_the_requests_own_answer(name):
     refused: it let an earlier request the new answer adds no leave to keep
     sharing, depending only on roster state."""
     own = definition(MIGRATION, name)
-    changed, count = re.subn(r"\ba\.answers#>", "s.answers#>", own)
+    changed, count = re.subn(
+        r"a\.cannot_serve IS NOT TRUE",
+        "coalesce(s.answers#>ARRAY['service','members',r.entity_key,"
+        "'cannot_serve'],'false'::jsonb)<>'true'::jsonb",
+        own,
+    )
     assert count == 1
     check_refuses(changed, "\\(leaders see")
 
@@ -174,18 +182,32 @@ def test_the_closing_check_refuses_the_requests_own_answer(name):
 @pytest.mark.parametrize(
     "pattern, replacement",
     [
-        # The Family's earliest submission, not its latest.
-        (r"s\.family_id,s\.family_version DESC", "s.family_id,s.family_version"),
+        # The Member's earliest answer, not their latest.
+        (r"e\.key,s\.family_version DESC", "e.key,s.family_version"),
         # Rehearsal (test) submissions count too.
         (r"(answered AS MATERIALIZED.*?)AND s\.mode='live'", r"\1"),
+        # Only the Family's latest submission, so one that leaves the Member
+        # out (moved out, deceased) clears the answer (review 2 of 2).
+        (
+            r"WHERE s\.family_id IN \(",
+            "WHERE s.family_version=(SELECT max(v.family_version) FROM "
+            "stewardship_submission v WHERE v.family_id=s.family_id "
+            "AND v.mode='live') AND s.family_id IN (",
+        ),
         # Not joined by Family.
-        (r"JOIN answered l ON l\.family_id=s\.family_id", "JOIN answered l ON true"),
+        (
+            r"LEFT JOIN answered a ON a\.family_id=s\.family_id",
+            "LEFT JOIN answered a ON true",
+        ),
+        # Not joined by Member: another Member's answer applies.
+        (r" AND a\.key=r\.entity_key", ""),
     ],
 )
 @pytest.mark.parametrize("name", REPLACED)
 def test_the_closing_check_refuses_another_latest_answer(name, pattern, replacement):
-    """Both selections must take the Family's latest live submission the
-    same way; a different one in either is refused."""
+    """Both selections must take each Member's latest live answer (from
+    the newest live submission that lists them under service) the same way;
+    a different one in either is refused."""
     own = definition(MIGRATION, name)
     changed, count = re.subn(pattern, replacement, own, flags=re.S)
     assert count == 1
@@ -469,3 +491,55 @@ def test_a_later_ordinary_submission_resumes_sharing(response_service):
     (row,) = sections(packet(harness, leader))[1][4]["rows"]
     assert (row["action"], row["email_visibility"]) == ("leave", "available")
     assert EMAIL in json.dumps(row["emails"])
+
+
+@pytest.mark.parametrize("kind", ["moved_household", "deceased_status"])
+def test_cannot_participate_outlasts_a_submission_that_leaves_the_member_out(
+    response_service, kind
+):
+    """Review 2 of 2: Staff decline Member 3's join to Food pantry (9), the
+    Family checks the box and leaves Choir (4), and a roster refresh
+    confirms the leave. The Family then reports Member 3 moved out (or
+    deceased), so its latest submission no longer lists them under service;
+    ParishSoft still lists them as current. That submission never answers
+    the question for Member 3, so it does not clear the box: Choir's
+    leader's history packet (the cannot-participate leave) and Food pantry's
+    report v3 history (the declined join) still show the email Not
+    published, while Staff still see it."""
+    harness = setup(response_service)
+    join, _ = requests()
+    edit(
+        harness,
+        user("admin@example.org").pk,
+        join,
+        state="resolved",
+        outcome="declined",
+    )
+    answer(harness, leave=[4], cannot_serve=True)
+    data = ministry_source()
+    data.ministry_type_memberships[4]["membership"] = []
+    snapshot, claim = prepare(data)
+    promote(snapshot, claim, harness.campaign, harness.rings)
+    leader, _ = history_rows(harness, (4,), 4)
+    assert ("leave", "resolved", "leave_confirmed") in [
+        (row["action"], row["state"], row["outcome"]) for row in leader
+    ]
+    assert EMAIL not in json.dumps(leader)
+    # The Family reports Member 3 gone; the form then drops them from its
+    # Ministry and service answers.
+    form = revisit(harness)
+    answers = answers_for(form)
+    answers["members"]["3"] = {kind: True, "confirmed": True}
+    if kind == "deceased_status":
+        answers["members"]["3"]["death_date"] = "2026-01-01"
+    answers["ministries"]["members"].pop("3", None)
+    latest = respond(harness, form, answers)
+    assert "3" not in latest.answers["service"]["members"]
+    leader, staff = history_rows(harness, (4,), 4)
+    assert leader and {row["email_visibility"] for row in leader} == {"not_published"}
+    assert EMAIL not in json.dumps(leader) and EMAIL in json.dumps(staff)
+    (row,) = [row for row in join_rows(harness) if row["id"] == str(join.pk)]
+    assert row["email_visibility"] == "not_published" and row["emails"] == []
+    assert EMAIL not in json.dumps(join_rows(harness, scope=(4, 9)), default=str)
+    leader, staff = history_rows(harness, (9,), 9)
+    assert EMAIL not in json.dumps(leader) and EMAIL in json.dumps(staff)
