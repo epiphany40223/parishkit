@@ -3068,21 +3068,34 @@ def users_email_leaders(args, preamble, runtime, context):
 
     ``--preview`` takes ``--all`` or ``--email`` (repeatable), never both:
     unlike the import's listing, there is nothing to read without a choice,
-    as the page's Email selected needs a ticked leader.
+    as the page's Email selected needs a ticked leader. ``--confirm`` sends
+    outbound mail, so, like ``send confirm`` and ``delivery resend``, it
+    prompts with the review's count and mode (``--yes`` answers it) after
+    checking the Administrator role and before any transaction.
     """
-    from .admin_users import TOKEN_LIMIT, confirm_leader_emails, preview_leader_emails
+    from .accounts.policy import Capability
+    from .admin_users import (
+        TOKEN_LIMIT,
+        confirm_leader_emails,
+        leader_emails_prompt_lines,
+        preview_leader_emails,
+    )
 
     if args.confirm:
         if args.token is None or args.all or args.email:
-            raise UsageError("--confirm takes only --token.")
+            raise UsageError("--confirm takes only --token (and --yes).")
+        # The role first (#1339): Staff is denied before any read or prompt.
+        _role_first(context, runtime, Capability.MANAGE_USERS)
+        token = _input(args.token, context, TOKEN_LIMIT)
+        confirm(context, leader_emails_prompt_lines(token))
         return confirm_leader_emails(
-            context["caller"],
-            runtime,
-            token=_input(args.token, context, TOKEN_LIMIT),
-            context=context,
+            context["caller"], runtime, token=token, context=context
         )
     if args.token is not None or args.all == bool(args.email):
         raise UsageError("--preview takes --all or --email, not both, and no --token.")
+    if args.yes:
+        # The review sends nothing and asks nothing; --yes answers Apply.
+        raise UsageError("--yes goes with --confirm.")
     return preview_leader_emails(
         context["caller"], runtime, everyone=args.all, emails=args.email or []
     )
@@ -6700,6 +6713,8 @@ def _users_specs():
             LeaderEmails.field_names(),
             11,
             options=(_users_email_options,),
+            # Apply queues outbound mail, as test sample and send confirm do.
+            prompts=True,
         ),
     )
 

@@ -2974,7 +2974,12 @@ session. `--preview` reviews emailing every Ministry leader user (`--all`)
 or the chosen addresses (`--email`, repeatable; one of the two is
 required) and sends nothing. `--confirm --token` applies the review, as
 the page's Apply does: the emails are queued, and the background engine
-sends them. A review lasts fifteen minutes, and the page and the command
+sends them. Like `send confirm`, `--confirm` first asks you to type `yes`,
+showing how many leaders are emailed and the mode; `--yes` answers it, and
+is required with `--token -` or when no terminal can answer (otherwise
+exit 4, `confirmation_required`, and nothing is queued). The review
+binds the Testing recipient only by a digest, so the printed token does
+not carry its address. A review lasts fifteen minutes, and the page and the command
 line can apply each other's reviews. Applying the same review again sends
 nothing more; each new review and its Apply sends again, so check Last
 emailed on the Users page first.
@@ -2982,7 +2987,8 @@ emailed on the Users page first.
 ```sh
 pk-admin users email-leaders --preview --all
 pk-admin users email-leaders --preview --email ann@example.org
-pk-admin users email-leaders --confirm --token -
+pk-admin users email-leaders --confirm --token TOKEN
+pk-admin users email-leaders --confirm --token - --yes
 ```
 
 | `users email-leaders` field | What it holds |
@@ -3734,4 +3740,5 @@ Each change is recorded in System logs as on the page
   readers are the Administrator and the operator, who keep no legacy forms.
 - `pk-admin/1` (#1622): additive. `users email-leaders --preview` and
   `--confirm`, the Users page's Email Ministry leaders review and Apply
-  (full scope, the page's audit events and `admin_cmd_users_email_leaders`).
+  (full scope, the page's audit events and `admin_cmd_users_email_leaders`;
+  `--confirm` prompts, `--yes` answers it).

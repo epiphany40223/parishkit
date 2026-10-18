@@ -332,11 +332,12 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert chosen["audit_event"] == "admin_cmd_test_families"
     assert chosen["result_fields"] == ["created", "request_key", "tickets"]
     # Email Ministry leaders (#1622): one command for the review and its
-    # Apply, as users import-leaders; full scope, neither fresh-gated nor
-    # prompting, as the page's review dialog asks for no recent sign-in.
+    # Apply, as users import-leaders; full scope and not fresh-gated, as the
+    # page's review dialog asks for no recent sign-in, but --confirm prompts
+    # (--yes answers it), as every other command that sends mail does.
     emails = entries["users email-leaders"]
     assert emails["scope"] == "full" and emails["changes_state"]
-    assert not emails["prompts"] and not emails["fresh_gated"]
+    assert emails["prompts"] and not emails["fresh_gated"]
     assert emails["audit_event"] == "admin_cmd_users_email_leaders"
     assert emails["result_fields"] == [
         "mode",

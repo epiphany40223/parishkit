@@ -3394,9 +3394,14 @@ checks, audit and alerts:
   is `stale_version` (the guard's refusals included), paused mail
   `not_available` for both, a review with no current campaign with
   Ministries or an archived campaign `not_available`, and another
-  Administrator's review `denied`. Neither is fresh-gated or prompts, as
-  the page's review dialog asks for no recent sign-in and the review is
-  the confirmation. The confirmation records
+  Administrator's review `denied`. Neither is fresh-gated, as the page's
+  review dialog asks for no recent sign-in. `--confirm` prompts, as every
+  other command that sends mail does (`send confirm`, `delivery resend`,
+  `test sample`): after the Administrator role is checked and before any
+  transaction it shows how many leaders are emailed and the mode, never an
+  address or name, and `--yes` answers it; `--preview` takes no `--yes`.
+  The review token binds the Testing recipient by digest only, since a
+  signed token is readable. The confirmation records
   `admin_cmd_users_email_leaders` with the page's
   `user_leader_emails_requested`, once: applying the same review again
   returns the first request. No document names a parishioner.

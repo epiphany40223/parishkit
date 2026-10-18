@@ -12,6 +12,7 @@ addresses) leaves nothing recorded. In Testing, the emails the command
 queues go only to the Testing recipient.
 """
 
+import io
 import json
 from uuid import uuid4
 
@@ -19,6 +20,7 @@ import pytest
 from django.core import signing
 
 from parishkit.stewardship import admin_cli
+from parishkit.stewardship.accounts.campaign_mail import recipient_digest
 from parishkit.stewardship.accounts.leader_email_views import SALT
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.models import AuditContext, AuditEvent
@@ -42,6 +44,7 @@ from .test_leader_emails_postgresql import (  # noqa: F401
     schedule,
     seed,
     testing,
+    token_payload,
 )
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -61,8 +64,8 @@ def preview(admin, secret, *choice):  # noqa: F811
 
 
 def confirm(admin, secret, token):  # noqa: F811
-    """``--confirm --token``; returns (code, document)."""
-    return one(admin, *COMMAND, "--confirm", "--token", token, secret=secret)
+    """``--confirm --token --yes``; returns (code, document)."""
+    return one(admin, *COMMAND, "--confirm", "--token", token, "--yes", secret=secret)
 
 
 def forged(**values):
@@ -74,7 +77,7 @@ def forged(**values):
         "configuration": str(runtime.active_configuration_id),
         "campaign": str(runtime.current_campaign_id),
         "mode": runtime.mode,
-        "testing_recipient": runtime.testing_recipient,
+        "recipient": recipient_digest(runtime.testing_recipient),
         "addresses": ["ann@example.org"],
         "facts": "0" * 64,
     }
@@ -115,6 +118,9 @@ def test_the_command_reviews_and_confirms_in_testing(testing, admin):  # noqa: F
     context = AuditContext.objects.get(event_id=event.pk).context
     assert context == {"outcome": "succeeded", "count": 2}
     assert runtime.testing_recipient not in json.dumps(document)
+    # Nor in the printed token: it is signed, not encrypted, so it binds the
+    # Testing recipient by digest only.
+    assert runtime.testing_recipient not in token_payload(result["preview"]["token"])
     # The review alone records nothing.
     assert not LeaderEmailRequest.objects.exists() and events(EVENT) == 0
 
@@ -202,6 +208,10 @@ def test_the_command_skips_who_it_will_not_email(testing, admin):  # noqa: F811
         ("--confirm",),
         ("--confirm", "--token", "x", "--all"),
         ("--confirm", "--token", "x", "--email", "ann@example.org"),
+        # The review asks nothing; --yes answers Apply's prompt alone.
+        ("--preview", "--all", "--yes"),
+        # Standard input cannot carry both the token and the answer.
+        ("--confirm", "--token", "-"),
     ],
 )
 def test_the_options_are_checked(testing, admin, argv):  # noqa: F811
@@ -210,6 +220,28 @@ def test_the_options_are_checked(testing, admin, argv):  # noqa: F811
     code, document = one(admin, *COMMAND, *argv, secret=secret)
     assert code == 2 and document["error"]["code"] == "usage", document
     assert not LeaderEmailRequest.objects.exists()
+
+
+def test_confirm_prompts_unless_yes(testing, admin):  # noqa: F811
+    """``--confirm`` asks first, as send confirm does: no answer (a run
+    without a terminal) is ``confirmation_required`` and records nothing; a
+    typed ``yes`` applies. The prompt names counts and the mode, never an
+    address."""
+    _, secret, _ = paired(admin.service)
+    code, document = preview(admin, secret, "--all")
+    token = document["result"]["preview"]["token"]
+    argv = (*COMMAND, "--confirm", "--token", token)
+    code, document = one(admin, *argv, secret=secret)
+    assert code == 4 and document["error"]["code"] == "confirmation_required"
+    assert not LeaderEmailRequest.objects.exists() and events(EVENT) == 0
+    stderr = io.StringIO()
+    code, documents = admin(*argv, secret=secret, answer=b"yes\n", stderr=stderr)
+    assert code == 0 and documents[-1]["result"]["created"] is True, documents
+    prompt = stderr.getvalue()
+    assert "Email 2 Ministry leader users how to sign in." in prompt
+    assert "Testing mode: every email goes to the Testing recipient" in prompt
+    assert "Type yes to continue" in prompt and "@" not in prompt
+    assert LeaderEmailRequest.objects.count() == 1 and events(EVENT) == 1
 
 
 def test_only_a_full_scope_administrator_session_runs_it(
@@ -268,7 +300,7 @@ def test_a_changed_or_expired_review_is_stale(
         patch.setattr(refusals, "PREVIEW_MAX_AGE", -1)
         code, document = confirm(admin, secret, token)
     assert code == 1 and document["error"]["code"] == "stale_version", document
-    # A Testing recipient changed since the review: the guard refuses it.
+    # A Testing recipient changed since the review: Apply refuses it.
     seed(
         "UPDATE stewardship_system_configuration SET testing_recipient=%s",
         "other-recipient@example.org",

@@ -671,6 +671,37 @@ def preview_leader_emails(caller, service, *, everyone, emails):
     return model
 
 
+def leader_emails_prompt_lines(token):
+    """The ``--confirm`` prompt's summary, from the signed review ``token``.
+
+    How many Ministry leader users are emailed and where the mail goes, in
+    the review's words; never an address or name. An altered token is
+    ``invalid`` and an expired one the shared stale refusal, both before
+    the prompt; the rest is checked when the review is applied.
+    """
+    from django.core import signing
+
+    from .accounts.leader_email_views import SALT
+    from .web.refusals import load_preview
+
+    try:
+        intent = load_preview(token, salt=SALT)
+    except signing.BadSignature:
+        raise ValueError("The preview token is not valid.") from None
+    count = len(intent["addresses"])
+    noun = "user" if count == 1 else "users"
+    where = (
+        TESTING_NOTE
+        if intent["mode"] == "testing"
+        else "Production mode: each email goes to the leader."
+    )
+    return (
+        f"Email {count} Ministry leader {noun} how to sign in.",
+        where,
+        "The emails are queued when you confirm; a sent email cannot be recalled.",
+    )
+
+
 def confirm_leader_emails(caller, service, *, token, context):
     """``users email-leaders --confirm``: the review's **Apply**.
 
