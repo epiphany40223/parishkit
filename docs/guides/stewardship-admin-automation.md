@@ -2101,7 +2101,7 @@ pk-admin report roster --show all --ministry 9
 | `report responses` | Response dashboard | `metrics`: the funnel `stages`, the three figures beside it, the `activity` buckets, the `sends` and each list's length (`lists`); null in Testing without a rehearsal |
 | `report financial` | Financial report | The summary over every pledge: `families`, `annual_total`, `frequencies`, `shares` (by share option id), `no_share`, `cannot_give` and the comparison period |
 | `report limitations` | Limitations | `cannot_serve` (Members who cannot participate in ministries) and `cannot_attend` (Families who cannot attend Mass or prayer services) |
-| `report census` | Census changes | `matching`: how many changes the filters keep, split by `routes` (`automatic`, `by_hand`) and `kinds` (`contact`, `moved`, `deceased`, `new_member`), and `statuses`, the page's summary of every change by status; see below |
+| `report census` | Census changes | `matching`: how many changes the filters keep, split by `routes` (`automatic`, `by_hand`) and `kinds` (`contact`, `moved`, `deceased`, `new_member`), and `statuses`, every change of the campaign by status (the counts the Status filter's choices show); see below |
 | `report information` | Additional information | `matching`: how many items match the filters |
 | `report ministry` | Ministry report | `summaries`: each Ministry's DUID (`ministry`), name, state and request counts; with `--ministry` and `--requests`, `matching` is that list's request count |
 
@@ -2198,8 +2198,8 @@ reported, which are carried into ParishSoft automatically or by hand. Like
 the page, Administrators and Staff may run it, from a session of any scope;
 a Ministry leader is refused (`denied`). It prints `filters` (the page's
 choices, as `status`, `history`, `route`, `kind`, `start`, `end` and
-`zone`), `matching`, `routes`, `kinds` and `statuses`: the page's summary,
-every change of the campaign by status key whatever the other filters,
+`zone`), `matching`, `routes`, `kinds` and `statuses`: the counts the Status
+filter's choices show, every change of the campaign by status key whatever the other filters,
 including zeros, with `superseded` and `cancelled` only with `--history`.
 Each row names a Family and often a Member, with their contact details, so
 the rows stay on the page and its downloads. It records the page's
