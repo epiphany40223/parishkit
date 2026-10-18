@@ -216,7 +216,8 @@ REVOKE ALL ON FUNCTION public.stewardship_leader_emails_v1(text, uuid) FROM PUBL
 -- One Administrator's Apply. Only the web login inserts it, for a current
 -- Administrator, under the reviewed configuration and mode (a change since
 -- the review is refused, never silently applied), for the current campaign
--- unless it is archived, and for 1 to 100 distinct addresses that are each
+-- unless it is archived or its delivery is paused (Pause and resume mail
+-- holds every Production message, so nothing is queued meanwhile), and for 1 to 100 distinct addresses that are each
 -- a Ministry leader user leading one of the campaign's Ministries. The guard
 -- records each leader's facts itself, so no form supplies them, and the
 -- count-only user_leader_emails_requested audit event. History is immutable.
@@ -253,6 +254,10 @@ BEGIN
        OR (SELECT count(DISTINCT value) FROM jsonb_array_elements_text(NEW.addresses) value)
            <>NEW.recipient_count THEN
         RAISE EXCEPTION 'Ministry leader email request requires a current Administrator and the reviewed configuration'
+            USING ERRCODE='23514';
+    END IF;
+    IF c.delivery_paused THEN
+        RAISE EXCEPTION 'Ministry leader emails wait while mail is paused'
             USING ERRCODE='23514';
     END IF;
     facts := public.stewardship_leader_email_facts_v1(NEW.addresses);
@@ -299,7 +304,8 @@ FOR EACH ROW EXECUTE FUNCTION public.stewardship_leader_email_recipient_immutabl
 
 -- The cohort is exactly its request's addresses, mode and Testing recipient,
 -- captured under the fenced preparation Task that owns the request, in the
--- current configuration and the mode the request was made in.
+-- current configuration, the mode the request was made in and, in Testing,
+-- the Testing recipient it was made for.
 CREATE FUNCTION public.stewardship_leader_email_cohort_binding_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE request public.stewardship_leader_email_request%ROWTYPE;
@@ -317,7 +323,8 @@ BEGIN
           AND t.state='running' AND t.fence=NEW.fence AND t.worker_id=NEW.worker_id
           AND NEW.actor_id=NEW.worker_id AND t.lease_expires_at>clock_timestamp()
           AND NEW.configuration_id=runtime.active_configuration_id
-          AND NEW.mode=runtime.mode AND NEW.parish_id=p.id)
+          AND NEW.mode=runtime.mode AND NEW.parish_id=p.id
+          AND (runtime.mode<>'testing' OR NEW.testing_recipient=runtime.testing_recipient))
       THEN RAISE EXCEPTION 'Ministry leader email cohort requires current fenced ownership'
         USING ERRCODE='23514'; END IF;
     IF NEW.mode<>request.mode
@@ -460,8 +467,9 @@ FOR EACH ROW EXECUTE FUNCTION public.stewardship_leader_email_prepare_receipt_v1
 
 -- Whether a leader email may be sent now: its cohort is complete, its
 -- address is still a Ministry leader user, and the deployment is still in
--- the mode it was prepared in (a Production one also waits while a restore
--- is under review).
+-- the mode it was prepared in, in Testing with the same Testing recipient.
+-- A Production one also waits while a restore is under review or while the
+-- current campaign's delivery is paused (Pause and resume mail).
 CREATE FUNCTION public.stewardship_leader_email_dispatch_live_v1(message uuid)
 RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
     SELECT EXISTS(SELECT 1 FROM public.stewardship_outbox_message m
@@ -476,6 +484,9 @@ RETURNS boolean LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp
         AND m.routing=CASE c.mode WHEN 'testing' THEN 'testing_override' ELSE 'production' END
         AND m.scope_id=c.parish_id AND m.mode=c.mode AND runtime.mode=m.mode
         AND (m.mode='testing' OR NOT runtime.restore_review_required)
+        AND (m.mode<>'testing' OR c.testing_recipient=runtime.testing_recipient)
+        AND (m.mode='testing' OR NOT EXISTS(SELECT 1 FROM public.stewardship_campaign paused
+             WHERE paused.id=runtime.current_campaign_id AND paused.delivery_paused))
         AND m.family_id IS NULL AND m.campaign_id IS NULL AND m.credential_namespace='none'
         AND (SELECT count(*) FROM public.stewardship_leader_email_recipient
              WHERE cohort_id=c.id)=c.recipient_count)
@@ -533,9 +544,14 @@ BEGIN
           AND proposed->>'reason' LIKE 'smtp_%';
       END IF;
       -- Cancelled unsent only when the address is no Ministry leader user any
-      -- more or the mode changed, or when its preparation failed for good.
+      -- more, the mode or (in Testing) the Testing recipient changed, or when
+      -- its preparation failed for good.
       IF proposed->>'action'='cancel_unsent' AND proposed->>'reason'='recipient_revoked' THEN
-        RETURN runtime.mode<>message.mode OR NOT EXISTS(SELECT 1
+        RETURN runtime.mode<>message.mode
+          OR (message.mode='testing' AND EXISTS(SELECT 1
+            FROM public.stewardship_leader_email_cohort c WHERE c.id=recipient.cohort_id
+              AND c.testing_recipient IS DISTINCT FROM runtime.testing_recipient))
+          OR NOT EXISTS(SELECT 1
           FROM public.stewardship_address_rule rule
           WHERE rule.configuration_id=runtime.active_configuration_id
             AND rule.email=recipient.address AND rule.role='ministry_leader');
@@ -775,10 +791,14 @@ BEGIN
                 RAISE EXCEPTION 'Production delivery is not currently admitted' USING ERRCODE='23514';
             END IF;
             -- A Ministry leader email has no campaign: it is sent only while
-            -- the deployment is in Production and no restore is under review.
+            -- the deployment is in Production, no restore is under review and
+            -- the current campaign's delivery is not paused (the pause holds
+            -- every Production message; the email waits for Resume).
             IF NEW.routing='production' AND NEW.purpose='leader_email' AND NOT EXISTS (
                 SELECT 1 FROM public.stewardship_system_configuration s
                 WHERE s.mode='production' AND NOT s.restore_review_required
+                  AND NOT EXISTS (SELECT 1 FROM public.stewardship_campaign paused
+                      WHERE paused.id=s.current_campaign_id AND paused.delivery_paused)
             ) THEN
                 RAISE EXCEPTION 'Production delivery is not currently admitted' USING ERRCODE='23514';
             END IF;
@@ -1249,6 +1269,7 @@ BEGIN
           AND ((p.proname='stewardship_outbox_state_v1'
                 AND p.prosrc LIKE '%NEW.purpose=''leader_email'' AND NEW.routing=''testing_override''%'
                 AND p.prosrc LIKE '%NEW.routing=''production'' AND NEW.purpose=''leader_email''%'
+                AND p.prosrc LIKE '%WHERE paused.id=s.current_campaign_id AND paused.delivery_paused%'
                 AND p.prosrc LIKE '%(''operational'',''security_event'',''leader_email'') AND NOT EXISTS%')
             OR (p.proname='stewardship_family_smtp_result_v1'
                 AND p.prosrc LIKE '%''security_event'',''leader_email'') OR e.attempt<1%')

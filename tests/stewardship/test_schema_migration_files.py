@@ -391,7 +391,7 @@ FROZEN = {
         "777fe95c886554e65f131c169ce9bd9d1ad72a6b0b54d0c474547372c30241ee"
     ),
     "0117_leader_emails.sql": (
-        "f34b2e1a5d602e88ffcabe373cf3a8d3e78cb863d3f19b4416fed69fe04db4a1"
+        "7ec11fa0b63d1caa0f78560f184ecf974b96479b7328cdd4274166e26af38ca7"
     ),
 }
 

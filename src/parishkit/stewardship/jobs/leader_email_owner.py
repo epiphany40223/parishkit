@@ -14,8 +14,10 @@ specification, "Ministry leader emails"), with three differences:
   attempt sends exactly them (``keeps_content``): the content is compiled
   once, from the request's recorded facts, by the preparation Task;
 - before each submission, the address must still be a user whose role is
-  Ministry leader and the deployment mode the request's, or the unsent email
-  is cancelled; a restore under review holds it.
+  Ministry leader, the deployment mode the request's and, in Testing, the
+  Testing recipient the request's, or the unsent email is cancelled; a
+  restore under review holds it, and so does Pause and resume mail while
+  the current campaign's delivery is paused (a Production email only).
 
 The private mail helper is the weekly report's (``submit_weekly``): a
 closed, one-recipient report mail with no attachment, whose markup
@@ -103,9 +105,9 @@ def _route(store):
 def _capture(row, claim, store):
     """Freeze the request's addresses under the current configuration.
 
-    A request whose deployment mode changed before it was prepared is never
-    sent in the other mode: the refusal fails the preparation Task, so no
-    email is created.
+    A request whose deployment mode (or, in Testing, Testing recipient)
+    changed before it was prepared is never sent under the other one: the
+    refusal fails the preparation Task, so no email is created.
     """
     route = _route(store)
     if route.sender is None or route.reply_to is None:
@@ -113,6 +115,8 @@ def _capture(row, claim, store):
     request = LeaderEmailRequest.objects.get(pk=row.domain_request_id)
     if route.mode.value != request.mode:
         raise PermissionError("The deployment mode changed since the request.")
+    if request.testing_recipient != _testing_recipient():
+        raise PermissionError("The Testing recipient changed since the request.")
     return LeaderEmailCohort.objects.create(
         request=request,
         configuration_id=route.configuration_id,
@@ -127,6 +131,12 @@ def _capture(row, claim, store):
         actor_id=claim.worker_id,
         correlation_id=claim.run_id,
     )
+
+
+def _testing_recipient():
+    """The Testing recipient every email goes to now; None in Production."""
+    runtime = SystemConfiguration.objects.values("mode", "testing_recipient").get()
+    return runtime["testing_recipient"] if runtime["mode"] == "testing" else None
 
 
 def _facts(cohort, mode, *, public_origin):
@@ -182,17 +192,25 @@ def _current_mail(store, cohort, address, semantic_key):
     """The kept content, under the current sender, once the mode is unchanged.
 
     A restore under review holds the email, as it holds campaign mail: what
-    was delivered before the restore is not yet known.
+    was delivered before the restore is not yet known. Pause and resume mail
+    holds a Production email too while the current campaign's delivery is
+    paused, since the pause holds every Production message not yet handed
+    to the provider (admin-portal specification, "Live delivery pause"); it
+    stays pending and is sent after Resume. The outbox state guard refuses
+    the submission in SQL as well.
     """
     from parishkit.stewardship.weekly_delivery import WeeklyDeliveryMail
 
     route = _route(store)
     if route.sender is None or route.reply_to is None:
         raise FamilyDeliveryHeld("Ministry leader mail channel is not configured.")
-    if SystemConfiguration.objects.values_list(
-        "restore_review_required", flat=True
-    ).get():
+    runtime = SystemConfiguration.objects.values(
+        "restore_review_required", "current_campaign__delivery_paused"
+    ).get()
+    if runtime["restore_review_required"]:
         raise FamilyDeliveryHeld("A restore is under review.")
+    if cohort.mode == "production" and runtime["current_campaign__delivery_paused"]:
+        raise FamilyDeliveryHeld("Mail is paused.")
     if route.mode.value != cohort.mode:
         raise PermissionError("Ministry leader email mode changed.")
     recipient = LeaderEmailRecipient.objects.get(cohort=cohort, address=address)
@@ -221,18 +239,29 @@ def _current_mail(store, cohort, address, semantic_key):
 
 
 def _recipient_current(message):
-    """Still a Ministry leader user, in the mode the email was prepared in."""
-    address = (
-        LeaderEmailRecipient.objects.only("address").get(outbox_id=message.pk).address
+    """Still a Ministry leader user, in the mode the email was prepared in.
+
+    In Testing the Testing recipient must also still be the one the email
+    was prepared for: a changed one cancels the unsent email, as a mode
+    change does, rather than sending it to the old address.
+    """
+    recipient = (
+        LeaderEmailRecipient.objects.select_related("cohort")
+        .only("address", "cohort__testing_recipient")
+        .get(outbox_id=message.pk)
     )
     runtime = SystemConfiguration.objects.values(
-        "mode", "active_configuration_id"
+        "mode", "active_configuration_id", "testing_recipient"
     ).get()
     return (
         runtime["mode"] == message.mode
+        and (
+            message.mode != "testing"
+            or recipient.cohort.testing_recipient == runtime["testing_recipient"]
+        )
         and AddressRule.objects.filter(
             configuration_id=runtime["active_configuration_id"],
-            email=address,
+            email=recipient.address,
             role=ROLE,
         ).exists()
     )

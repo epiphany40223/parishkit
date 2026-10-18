@@ -42,6 +42,7 @@ from .authentication import runtime
 from .leader_emails import (
     EMAIL_SORTING,
     SKIP_REASONS,
+    LeaderEmailsChanged,
     leader_rows,
     plan_emails,
     read_facts,
@@ -62,8 +63,8 @@ PREVIEW_SECONDS = 15 * 60
 CHOSEN_LIMIT = 2000
 SCOPES = {"selected", "all"}
 CHANGED = _(
-    "Something changed since this review: the mode, the campaign, a user or "
-    "a leader's Ministries. Nothing was sent."
+    "Something changed since this review: the mode, the campaign, a user, or "
+    "a leader's Ministries or open requests. Nothing was sent."
 )
 CHANGED_FIX = _("Close this, then choose the leaders and review again.")
 NO_CAMPAIGN = _(
@@ -73,6 +74,13 @@ NO_CAMPAIGN = _(
 ARCHIVED = _(
     "The campaign is archived, so its Ministry leaders no longer follow up its "
     "requests and no email can be sent."
+)
+PAUSED = _(
+    "Mail is paused, so no Ministry leader email can be queued now. Nothing was sent."
+)
+PAUSED_FIX = _(
+    "Resume mail on Pause and resume mail first, then choose the leaders and "
+    "review again."
 )
 
 
@@ -100,6 +108,20 @@ def unavailable():
     if campaign.state == "archived":
         return ARCHIVED
     return None
+
+
+def refuse_while_paused():
+    """Refuse a review or Apply while the current campaign's mail is paused.
+
+    Pause and resume mail holds every Production message not yet handed to
+    the provider (admin-portal specification, "Live delivery pause"), so
+    nothing new is queued meanwhile; the request's guard refuses it in SQL
+    too, and a prepared email waits for Resume.
+    """
+    if SystemConfiguration.objects.filter(
+        current_campaign__delivery_paused=True
+    ).exists():
+        raise UserFacingError(PAUSED, fix=PAUSED_FIX)
 
 
 def emails_context(rows, paging, carry):
@@ -175,6 +197,7 @@ def _review(request, service, actor):
     blocked = unavailable()
     if blocked is not None:
         raise UserFacingError(blocked, fix=_("Nothing was sent."))
+    refuse_while_paused()
     facts = read_facts(request.session.session_key)
     with read_transaction():
         configuration, records = _users(service)
@@ -196,6 +219,9 @@ def _review(request, service, actor):
                 "mode": runtime_row.mode,
                 "testing_recipient": runtime_row.testing_recipient if testing else None,
                 "addresses": plan.addresses,
+                # What the review showed each leader's email would state;
+                # Apply is refused when the guard works out anything else.
+                "facts": plan.digest,
             },
             salt=SALT,
         )
@@ -222,7 +248,9 @@ def _confirm(request, actor):
     the answer only has to be a page the dialog accepts. A replay of the
     same review (a double click) records nothing more. A review whose
     configuration, campaign, mode or leaders changed since is refused by
-    the request's guard, and nothing is sent.
+    the request's guard, and one whose Ministries or counts the guard works
+    out differently from the review is refused here; either way nothing is
+    sent. While mail is paused Apply is refused with its plain reason.
     """
     allowed = {"csrfmiddlewaretoken", "action", "preview"}
     if set(request.POST) - allowed or any(
@@ -234,6 +262,7 @@ def _confirm(request, actor):
     )
     if intent["actor"] != str(actor.identity):
         raise PermissionError("The review belongs to another Administrator.")
+    refuse_while_paused()
     try:
         _, created = request_emails(
             actor.identity,
@@ -243,8 +272,9 @@ def _confirm(request, actor):
             campaign_id=UUID(intent["campaign"]),
             mode=intent["mode"],
             testing_recipient=intent["testing_recipient"],
+            reviewed=intent["facts"],
         )
-    except IntegrityError:
+    except (IntegrityError, LeaderEmailsChanged):
         raise UserFacingStale(CHANGED, fix=CHANGED_FIX, reason="stale_page") from None
     count = len(intent["addresses"])
     return HttpResponse(

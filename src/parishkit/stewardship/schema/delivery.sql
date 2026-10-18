@@ -596,10 +596,14 @@ BEGIN
                 RAISE EXCEPTION 'Production delivery is not currently admitted' USING ERRCODE='23514';
             END IF;
             -- A Ministry leader email has no campaign: it is sent only while
-            -- the deployment is in Production and no restore is under review.
+            -- the deployment is in Production, no restore is under review and
+            -- the current campaign's delivery is not paused (the pause holds
+            -- every Production message; the email waits for Resume).
             IF NEW.routing='production' AND NEW.purpose='leader_email' AND NOT EXISTS (
                 SELECT 1 FROM public.stewardship_system_configuration s
                 WHERE s.mode='production' AND NOT s.restore_review_required
+                  AND NOT EXISTS (SELECT 1 FROM public.stewardship_campaign paused
+                      WHERE paused.id=s.current_campaign_id AND paused.delivery_paused)
             ) THEN
                 RAISE EXCEPTION 'Production delivery is not currently admitted' USING ERRCODE='23514';
             END IF;

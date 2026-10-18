@@ -21,6 +21,7 @@ from parishkit.stewardship.accounts import google_account_help
 from parishkit.stewardship.accounts.leader_emails import (
     EMAIL_SORTING,
     LeaderFacts,
+    facts_digest,
     plan_emails,
 )
 from parishkit.stewardship.jobs.leader_email_content import (
@@ -283,3 +284,27 @@ def test_recorded_facts_read_back_in_order():
     assert ministries["bob@example.org"] == ()
     with pytest.raises(ValueError):
         recorded_ministries([RECIPIENTS[0], RECIPIENTS[0]])
+
+
+def test_the_review_digest_matches_only_the_same_recorded_facts():
+    """Apply compares the guard's recorded facts with the reviewed ones.
+
+    The review's plan and the request's recorded facts digest alike exactly
+    when every email would state the same Ministries and counts.
+    """
+    ministries = recorded_ministries(RECIPIENTS[:1])
+    plan = plan_emails(
+        leaders("ann@example.org"),
+        {
+            "ann@example.org": LeaderFacts(
+                "ann@example.org", ministries["ann@example.org"]
+            )
+        },
+    )
+    assert plan.digest == facts_digest(ministries)
+    changed = json.loads(json.dumps(RECIPIENTS[:1]))
+    changed[0]["ministries"][1]["join"] = 1
+    assert plan.digest != facts_digest(recorded_ministries(changed))
+    fewer = json.loads(json.dumps(RECIPIENTS[:1]))
+    del fewer[0]["ministries"][0]
+    assert plan.digest != facts_digest(recorded_ministries(fewer))

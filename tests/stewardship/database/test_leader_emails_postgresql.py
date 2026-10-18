@@ -19,7 +19,9 @@ import pytest
 from django.db import DatabaseError, IntegrityError, connection, transaction
 
 from parishkit.stewardship.accounts.leader_emails import (
+    LeaderEmailsChanged,
     LeaderEmailsRefused,
+    leader_rows,
     read_facts,
     request_emails,
 )
@@ -34,6 +36,7 @@ from parishkit.stewardship.family_delivery import (
     FamilyDeliveryStatus,
 )
 from parishkit.stewardship.jobs.dispatch import claim_hint, execute_hint
+from parishkit.stewardship.jobs.family_mail_dispatch import FamilyDeliveryHeld
 from parishkit.stewardship.jobs.leader_email_models import (
     LeaderEmailCohort,
     LeaderEmailRecipient,
@@ -56,7 +59,7 @@ from parishkit.stewardship.jobs.queues import WorkQueue
 from parishkit.stewardship.jobs.scheduler import scheduler_session
 from parishkit.stewardship.weekly_delivery import WeeklyDeliveryMail
 
-from .auth_builders import signed_in
+from .auth_builders import signed_in, unguarded
 from .campaign_builders import change
 from .test_background_grants_postgresql import task_login
 from .test_leader_import_postgresql import leaders_source
@@ -403,7 +406,7 @@ def test_a_replayed_apply_records_nothing_more(production):
         first, created = request_emails(admin_id(), **arguments)
         again, replayed = request_emails(admin_id(), **arguments)
         assert created and not replayed and again.pk == first.pk == identifier
-        with pytest.raises(ValueError, match="already bound"):
+        with pytest.raises(LeaderEmailsChanged, match="already bound"):
             request_emails(
                 admin_id(), **(arguments | {"addresses": ["leader-4-9@example.org"]})
             )
@@ -536,6 +539,203 @@ def test_a_leader_who_is_no_longer_one_is_not_emailed(production):
     message.refresh_from_db()
     assert message.state == "cancelled" and message.reason == "recipient_revoked"
     assert message.attempt == 0
+
+
+def seed(statement, *parameters):
+    """Change runtime or campaign state as a superuser would (guards skipped)."""
+    with unguarded(), connection.cursor() as cursor:
+        cursor.execute(statement, list(parameters))
+
+
+PAUSE = (
+    "UPDATE stewardship_campaign SET delivery_paused=true,"
+    " paused_at=clock_timestamp(), pause_actor_id=gen_random_uuid(),"
+    " pause_version=pause_version+1"
+    " WHERE id=(SELECT current_campaign_id FROM stewardship_system_configuration)"
+)
+RESUME = "UPDATE stewardship_campaign SET delivery_paused=false"
+
+
+def assert_revoked(message, store):
+    """Mail dispatch cancels the unsent email before any provider attempt."""
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+        execution = claim(message, store)
+        assert begin(message, execution, store) is None
+    message.refresh_from_db()
+    assert message.state == "cancelled" and message.reason == "recipient_revoked"
+    assert message.attempt == 0 and message.submitted_at is None
+
+
+def test_a_switch_to_testing_cancels_a_prepared_production_email(production):
+    """Production to Testing before the send: a real leader's email never goes."""
+    harness, _browser = production
+    store = harness.service.store
+    rows = prepared(store, ["leader-9@example.org"])
+    seed(
+        "UPDATE stewardship_system_configuration SET mode='testing', "
+        "testing_recipient=%s",
+        "tester@example.org",
+    )
+    assert_revoked(rows["leader-9@example.org"].outbox, store)
+
+
+def test_a_switch_to_production_cancels_a_prepared_testing_email(testing):
+    """Testing to Production before the send: the Testing email is cancelled."""
+    store, _browser = testing
+    rows = prepared(store, ["ann@example.org"])
+    seed("UPDATE stewardship_system_configuration SET mode='production'")
+    assert_revoked(rows["ann@example.org"].outbox, store)
+
+
+def test_a_changed_testing_recipient_cancels_a_prepared_email(testing):
+    """The email never goes to the old Testing recipient; nor is a request
+    made for the old one prepared."""
+    store, _browser = testing
+    rows = prepared(store, ["ann@example.org"])
+    seed(
+        "UPDATE stewardship_system_configuration SET testing_recipient=%s",
+        "other-tester@example.org",
+    )
+    assert_revoked(rows["ann@example.org"].outbox, store)
+    seed(
+        "UPDATE stewardship_system_configuration SET testing_recipient=%s",
+        "first-tester@example.org",
+    )
+    recorded(["both@example.org"])
+    seed(
+        "UPDATE stewardship_system_configuration SET testing_recipient=%s",
+        "second-tester@example.org",
+    )
+    (identifier,) = schedule()
+    with pytest.raises(PermissionError, match="Testing recipient changed"):
+        consume(identifier, store)
+    assert LeaderEmailCohort.objects.count() == 1
+
+
+def test_pause_holds_a_prepared_email_until_resume(production):
+    """Pause and resume mail holds a Production leader email, in Python and in
+    SQL; it stays pending, untried, and goes out after Resume."""
+    from parishkit.stewardship.jobs import leader_email_owner
+
+    harness, _browser = production
+    store = harness.service.store
+    rows = prepared(store, ["leader-9@example.org"])
+    row = rows["leader-9@example.org"]
+    message = row.outbox
+    # The mail and render dispatch would compile, read before the pause.
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True), work_transaction():
+        early = leader_email_owner._current_mail(
+            store, row.cohort, row.address, message.semantic_key
+        )
+    seed(PAUSE)
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+        execution = claim(message, store)
+        with pytest.raises(FamilyDeliveryHeld, match="paused"):
+            begin(message, execution, store)
+    message.refresh_from_db()
+    assert message.state == "pending" and message.attempt == 0
+    # SQL holds it too when the Python check is skipped.
+    owner = leader_owner()
+    skipping = owner.__class__(
+        **{name: getattr(owner, name) for name in owner.__dataclass_fields__}
+        | {"current_mail": lambda *args: early}
+    )
+    # The held attempt keeps its claim; the same claim tries again.
+    configuration = SystemConfiguration.objects.get().active_configuration_id
+    with (
+        task_login(ServiceRole.MAIL_DISPATCH, exact=True),
+        pytest.raises(IntegrityError),
+    ):
+        begin_submission(
+            message.pk,
+            execution.claim,
+            store=store,
+            configuration_id=configuration,
+            owner=skipping,
+        )
+    message.refresh_from_db()
+    assert message.state == "pending" and message.attempt == 0
+    seed(RESUME)
+    with task_login(ServiceRole.MAIL_DISPATCH, exact=True):
+        mail, _, attempt = begin(message, execution, store)
+    assert mail.recipients == ("leader-9@example.org",) and attempt == 1
+
+
+def test_no_apply_while_mail_is_paused(production):
+    """The review and Apply refuse in plain words, and the guard refuses in SQL."""
+    _harness, browser = production
+    with web():
+        review = post(browser, EMAILS, {"scope": "all"})
+    preview = re.search(r'name="preview" value="([^"]+)"', review.content.decode())[1]
+    seed(PAUSE)
+    with web():
+        refused_review = post(browser, EMAILS, {"scope": "all"})
+        refused_apply = post(browser, EMAILS, {"action": "confirm", "preview": preview})
+    for response in (refused_review, refused_apply):
+        assert response.status_code == 400
+        assert "Mail is paused" in response.content.decode()
+    with pytest.raises(IntegrityError, match="mail is paused"):
+        recorded(["leader-9@example.org"])
+    assert not LeaderEmailRequest.objects.exists()
+
+
+def test_apply_refuses_counts_that_differ_from_the_review(production, monkeypatch):
+    """Ministries or counts the guard works out differently from the review
+    refuse Apply as a changed page; nothing is recorded or audited."""
+    from parishkit.stewardship.accounts import leader_email_views
+
+    _harness, browser = production
+    real = leader_email_views.read_facts
+
+    def stale(session_key):
+        """The review saw one more request to join than there is now."""
+        from dataclasses import replace
+
+        answer = dict(real(session_key))
+        found = answer["leader-9@example.org"]
+        answer["leader-9@example.org"] = replace(
+            found,
+            ministries=tuple(
+                replace(item, join=item.join + 1) for item in found.ministries
+            ),
+        )
+        return answer
+
+    monkeypatch.setattr(leader_email_views, "read_facts", stale)
+    with web():
+        review = post(browser, EMAILS, {"scope": "all"})
+    monkeypatch.undo()
+    preview = re.search(r'name="preview" value="([^"]+)"', review.content.decode())[1]
+    with web():
+        refused = post(browser, EMAILS, {"action": "confirm", "preview": preview})
+    assert refused.status_code == 409
+    assert "Something changed since this review" in refused.content.decode()
+    assert not LeaderEmailRequest.objects.exists()
+    assert not AuditEvent.objects.filter(
+        event_type="user_leader_emails_requested"
+    ).exists()
+    # The same review read now applies.
+    with web():
+        review = post(browser, EMAILS, {"scope": "all"})
+        preview = re.search(r'name="preview" value="([^"]+)"', review.content.decode())[
+            1
+        ]
+        applied = post(browser, EMAILS, {"action": "confirm", "preview": preview})
+    assert applied.status_code == 200
+    assert LeaderEmailRequest.objects.count() == 1
+
+
+def test_a_leader_user_with_no_name_is_listed_by_email():
+    """A Ministry leader user without a Name is listed under their email."""
+    rows = leader_rows(
+        [
+            {"email": "plain@example.org", "name": "", "role": "ministry_leader"},
+            {"email": "staff@example.org", "name": "", "role": "staff"},
+        ]
+    )
+    assert [(row["email"], row["name"]) for row in rows] == [
+        ("plain@example.org", "plain@example.org")
+    ]
 
 
 def test_sql_refuses_content_other_than_the_kept_content(production, monkeypatch):
@@ -865,6 +1065,21 @@ def test_the_check_block_passes_only_with_everything_installed():
     refusals.append(
         ([dispatch[:start] + dispatch[end:]], "a replaced outbox guard lacks")
     )
+    # The outbox state guard as it was before Pause and resume mail held
+    # leader emails.
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT pg_get_functiondef('public.stewardship_outbox_state_v1()'"
+            "::regprocedure)"
+        )
+        state = cursor.fetchone()[0]
+    paused = (
+        "\n                  AND NOT EXISTS (SELECT 1 FROM public.stewardship_campaign"
+        " paused\n                      WHERE paused.id=s.current_campaign_id AND"
+        " paused.delivery_paused)"
+    )
+    assert state.count(paused) == 1
+    refusals.append(([state.replace(paused, "")], "a replaced outbox guard lacks"))
     for statements, refusal in refusals:
         with (
             pytest.raises(DatabaseError, match=refusal),

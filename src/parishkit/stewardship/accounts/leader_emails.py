@@ -16,9 +16,13 @@ command line (#1622) share these functions:
   records its own count-only audit event.
 - ``plan_emails`` decides, without I/O, who is emailed and who is skipped.
 - ``request_emails`` records the reviewed request once; replaying the same
-  review returns the first request, never a second send.
+  review returns the first request, never a second send. A request whose
+  Ministries or counts, worked out again by its guard, differ from those
+  reviewed (``facts_digest``) is refused, so the email states what the
+  Administrator saw.
 """
 
+import hashlib
 import json
 from dataclasses import dataclass
 from uuid import UUID
@@ -31,6 +35,7 @@ from parishkit.stewardship.jobs.delivery_metadata import STATE_LABELS
 from parishkit.stewardship.jobs.leader_email_content import (
     LeaderMinistry,
     counts_text,
+    recorded_ministries,
 )
 from parishkit.stewardship.jobs.leader_email_models import (
     REQUEST_LIMIT,
@@ -72,6 +77,10 @@ class LeaderEmailsRefused(PermissionError):
     """The definer refused the session: not a live Administrator's."""
 
 
+class LeaderEmailsChanged(Exception):
+    """What Apply would record differs from what was reviewed; nothing is."""
+
+
 def leader_rows(rows):
     """The Ministry leader users of the Users page's rows, with Last emailed.
 
@@ -81,9 +90,15 @@ def leader_rows(rows):
     Outgoing mail's words, "Still sending (queued)" while the request is not
     prepared yet, or "Never". Two queries: every request's addresses, newest
     first (one row per Apply, so the table stays small), and the latest
-    requests' recipient rows with their messages' states.
+    requests' recipient rows with their messages' states. A leader user with
+    no Name (such as one converted from an older sign-in rule) is listed
+    under their email instead, so Email all never skips them silently.
     """
-    leaders = [row for row in rows if row["role"] == ROLE and row["name"]]
+    leaders = [
+        row | {"name": row["name"] or row["email"]}
+        for row in rows
+        if row["role"] == ROLE
+    ]
     wanted = {row["email"] for row in leaders}
     latest = {}
     for request in LeaderEmailRequest.objects.order_by("-created_at", "-pk").values(
@@ -155,6 +170,21 @@ def read_facts(session_key):
     }
 
 
+def facts_digest(ministries):
+    """A digest of what the emails state: each address's Ministries and counts.
+
+    ``ministries`` maps each emailed address to its ``LeaderMinistry`` tuple,
+    as ``read_facts`` (the review) and ``recorded_ministries`` (the request
+    the guard recorded at Apply) both give them, so the two compare equal
+    exactly when every email would say the same thing.
+    """
+    shape = [
+        [email, [[m.duid, str(m.name), m.join, m.leave] for m in ministries[email]]]
+        for email in sorted(ministries)
+    ]
+    return hashlib.sha256(json.dumps(shape).encode()).hexdigest()
+
+
 @dataclass(frozen=True)
 class EmailPlan:
     """Who one Apply emails, who is skipped and why, and how many remain.
@@ -172,6 +202,13 @@ class EmailPlan:
     def addresses(self):
         """The emailed addresses, in the order the request records them."""
         return sorted(item["email"] for item in self.emailed)
+
+    @property
+    def digest(self):
+        """``facts_digest`` of the emailed leaders' reviewed Ministries."""
+        return facts_digest(
+            {item["email"]: item["facts"].ministries for item in self.emailed}
+        )
 
 
 def plan_emails(leaders, facts, chosen=None):
@@ -208,13 +245,18 @@ def request_emails(
     campaign_id,
     mode,
     testing_recipient,
+    reviewed=None,
 ):
     """Record one reviewed request; a replay returns the first one.
 
     The request's database guard checks the Administrator, the reviewed
     configuration, campaign and mode, and each address again, and records
-    each leader's facts and the audit event itself. Returns
-    ``(request, created)``. A replay bound to anything else is refused.
+    each leader's facts and the audit event itself. ``reviewed`` is the
+    review's ``EmailPlan.digest``: when given, facts the guard worked out
+    differently (a ParishSoft refresh changed a leader's Ministries or a
+    count changed since the review) raise ``LeaderEmailsChanged`` and the
+    request is rolled back. Returns ``(request, created)``. A replay bound
+    to anything else raises ``LeaderEmailsChanged`` too.
     """
     if not isinstance(key, UUID) or not isinstance(actor_id, UUID):
         raise ValueError("Leader emails require canonical identities.")
@@ -226,7 +268,7 @@ def request_emails(
                 or sorted(previous.addresses) != sorted(addresses)
                 or previous.configuration_id != configuration_id
             ):
-                raise ValueError("Leader email request is already bound.")
+                raise LeaderEmailsChanged("Leader email request is already bound.")
             return previous, False
         request = LeaderEmailRequest.objects.create(
             id=key,
@@ -240,4 +282,10 @@ def request_emails(
             recipients=[],
             recipient_count=len(addresses),
         )
+        # The guard filled in the facts; the INSERT returned only the key.
+        request.refresh_from_db(fields=["recipients"])
+        if reviewed is not None and reviewed != facts_digest(
+            recorded_ministries(request.recipients)
+        ):
+            raise LeaderEmailsChanged("Leader email facts changed since the review.")
         return request, True
