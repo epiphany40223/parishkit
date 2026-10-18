@@ -3269,11 +3269,25 @@ marks the stages before the current one done, and the state words) and
 `.stage-boxes` in `ui-v1.css`. **Precedent.** Setup's Loading parish data
 and Finishing setup (#1354), Load ParishSoft data
 ([#1404](https://github.com/epiphany40223/parishkit/issues/1404) PR 5),
-and the [Go live page](../admin-portal/spec.md#go-live-page)'s Prepare
-step and Production activation
-([#1585](https://github.com/epiphany40223/parishkit/issues/1585));
-the other stage-progress displays move to it in
-[#1579](https://github.com/epiphany40223/parishkit/issues/1579).
+the [Go live page](../admin-portal/spec.md#go-live-page)'s Prepare step
+and Production activation
+([#1585](https://github.com/epiphany40223/parishkit/issues/1585)), and a
+ParishSoft refresh's Background task page and Refresh from ParishSoft
+([#1579](https://github.com/epiphany40223/parishkit/issues/1579)).
+
+**Every stage-progress display.** Every page that shows a long piece of
+work moving through stages the server reports uses this one component, so
+there is no second box pattern and no stage list in plain lines ("Step 2 of
+3: ..."). A guard test (`test_stage_boxes_guard.py`) fails when a template
+other than the component draws the stage-box classes, or when a live status
+region names the work's phase or stage without drawing the component; a
+template it still allows is listed there with why, and the list only
+shrinks. Work with a single stage of its own does not get boxes, since one
+box would only repeat its status line: a report export reports no phases,
+only waiting, preparing and ready
+([#1579](https://github.com/epiphany40223/parishkit/issues/1579)). Nor do
+the Administrator's own decisions on a page, such as Restore review's held
+emails and release, which are panels of controls rather than server work.
 
 ### Time entry
 
