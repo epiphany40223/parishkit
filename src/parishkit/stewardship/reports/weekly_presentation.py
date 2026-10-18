@@ -57,13 +57,15 @@ def snapshot_context(snapshot, *, page=1, item_id=None):
             raise ObjectDoesNotExist("This item is not part of the report.")
     else:
         visible = values[(page - 1) * PAGE_SIZE : page * PAGE_SIZE]
-    statuses = dict(
-        AdditionalInformationItem.objects.filter(
-            pk__in=[value.item_id for value in visible],
-            submission__campaign_id=snapshot.campaign_id,
-            submission__mode="live",
-        ).values_list("pk", "disposition")
-    )
+    # Each request's current disposition and, for its Family name's Timeline
+    # link (#1570), its Family's record id, in the same one read.
+    statuses, families = {}, {}
+    for pk, disposition, family_id in AdditionalInformationItem.objects.filter(
+        pk__in=[value.item_id for value in visible],
+        submission__campaign_id=snapshot.campaign_id,
+        submission__mode="live",
+    ).values_list("pk", "disposition", "submission__family_id"):
+        statuses[pk], families[pk] = disposition, family_id
     rows = []
     for value in visible:
         current = statuses.get(value.item_id)
@@ -74,6 +76,7 @@ def snapshot_context(snapshot, *, page=1, item_id=None):
         rows.append(
             {
                 "value": value,
+                "family_id": families.get(value.item_id),
                 "captured": DISPOSITIONS[captured],
                 "current": DISPOSITIONS[current],
                 # The stored keys, for the command line's ``digest weekly``

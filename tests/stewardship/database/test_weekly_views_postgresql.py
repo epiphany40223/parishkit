@@ -6,7 +6,9 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
+from django.db import connection
 from django.test import Client
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
 from parishkit.stewardship.audit.models import AuditEvent
@@ -18,6 +20,7 @@ from parishkit.stewardship.reports.weekly_models import WeeklyDigestRecipient
 from ..policy_factory import address
 from .auth_builders import signed_in
 from .campaign_builders import campaign_clock, change
+from .family_link_checks import link_reads
 from .test_background_grants_postgresql import task_login
 from .test_daily_digest_views_postgresql import read
 from .test_response_revisit_postgresql import revisit
@@ -43,8 +46,13 @@ def test_weekly_page_and_detail_preserve_capture_but_show_current_status(
         detail = path + f"items/{snapshot.information[0]}/"
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             for url in (path, detail):
-                _, content = read(browser, url)
+                with CaptureQueriesContext(connection) as queries:
+                    _, content = read(browser, url)
                 assert b"PRIVATE-WEEKLY-DISPATCH-CANARY" in content
+                # The saved Family name opens its Timeline (#1570); its
+                # record id comes with the status read, adding no query.
+                assert b'<h2><a href="/admin/reports/families/' in content
+                assert link_reads(queries) == []
                 assert b"Saved report" in content
                 assert b"Current actionable request" in content
                 assert b"second@example.org" not in content

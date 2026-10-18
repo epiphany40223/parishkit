@@ -9,6 +9,8 @@ on page load (``source_form_summary``), outside its polled status, so the
 10-second poll never pays for the scan.
 """
 
+from dataclasses import replace
+
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, transaction
 from django.http import HttpResponse
@@ -32,6 +34,7 @@ from parishkit.stewardship.campaigns.read_guards import (
 )
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
 from parishkit.stewardship.reports.export_views import SAFE_FAILURES
+from parishkit.stewardship.reports.family_links import link_families
 from parishkit.stewardship.reports.source_form import blocked_families
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.contracts import filters
@@ -186,6 +189,11 @@ def source_form(request):
             result = blocked_families(campaign_id)
             count = result["families"]
             table = paginate(result["rows"], paging, sorting=SORTING)
+            # Each shown Family name opens its Timeline (#1570): one read of
+            # the page's Family record ids, on copies of the rows, since the
+            # scan's rows are cached and shared between requests.
+            rows = link_families(campaign_id, [dict(row) for row in table.rows])
+            table = replace(table, rows=rows)
             return iter(
                 (
                     render_to_string(

@@ -18,7 +18,7 @@
 <div id="weekly-report-page" data-in-place-region>
 {% for row in rows %}
 <section class="panel">
-<h2>{{ row.value.family_name }} — {% translate "Family DUID" %} {{ row.value.family_duid|duid }}</h2>
+{# The shared Family-name link (#1570): the saved name opens the Family's Timeline. #}<h2>{% family_link row.family_id row.value.family_name %} — {% translate "Family DUID" %} {{ row.value.family_duid|duid }}</h2>
 <p>{% translate "Submitted" %}: <time datetime="{{ row.value.submitted_at|date:'c' }}" data-local-instant>{{ row.value.submitted_at|date:'c' }}</time></p>
 <dl><dt>{% translate "Status at capture" %}</dt><dd>{{ row.captured }}</dd>
 <dt>{% translate "Current status" %}</dt><dd>{{ row.current }}</dd></dl>

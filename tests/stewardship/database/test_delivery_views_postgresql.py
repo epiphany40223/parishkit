@@ -54,6 +54,7 @@ from ..policy_factory import address
 from ..test_outbox_validation import rendering
 from .auth_builders import signed_in
 from .campaign_builders import campaign_clock, change
+from .family_link_checks import link_reads, timeline_link
 from .response_builders import activate_response_service, response_source
 from .test_background_grants_postgresql import task_login
 from .test_daily_digest_dispatch_postgresql import allocated as daily_allocated
@@ -524,8 +525,12 @@ def test_outgoing_mail_and_refused_addresses_lead_to_each_other(
         marker = '<a href="/admin/mail/refusals/?duid=1">1 address refused</a>'
         assert html.count(marker) == 2
 
-        listing = browser.get("/admin/mail/refusals/", {"duid": "1"})
+        with CaptureQueriesContext(connection) as queries:
+            listing = browser.get("/admin/mail/refusals/", {"duid": "1"})
         assert listing.status_code == 200
+        # The Family's name opens its Timeline (#1570), its record id read
+        # once for the page's two rows.
+        assert len(link_reads(queries)) == 1
         html = listing.content.decode()
         # Dates first, then the Family's name, then its own DUID column
         # (#932), then the address and the recording email.
@@ -533,7 +538,8 @@ def test_outgoing_mail_and_refused_addresses_lead_to_each_other(
         thead = html.split("<thead>")[1].split("</thead>")[0]
         places = [thead.index(f">{heading}<") for heading in headings]
         assert places == sorted(places)
-        assert f'<th scope="row">{escape(name)}</th>' in html
+        link = timeline_link(harness.campaign, 1, name)
+        assert html.count(f'<th scope="row">{link}</th>') == 2
         assert '<td class="numeric nowrap">1</td>' in html
         for mailbox, refusal in refusals.items():
             message = events[mailbox].message_id
@@ -545,7 +551,7 @@ def test_outgoing_mail_and_refused_addresses_lead_to_each_other(
         refusal = refusals["head@example.org"]
         path = f"/admin/mail/refusals/{refusal.pk}/"
         html = browser.get(path).content.decode()
-        assert escape(name) in html
+        assert f"{refusal.address} · {link} · " in html
         assert (
             f'<a href="/admin/mail/sent/{events["head@example.org"].message_id}/">'
         ) in html

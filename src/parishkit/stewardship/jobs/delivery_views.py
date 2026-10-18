@@ -30,6 +30,7 @@ from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import database_now
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
+from parishkit.stewardship.reports.family_links import link_families
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import (
     MESSAGES,
@@ -624,7 +625,14 @@ def refusal_list(request):
             table=_table(
                 request,
                 data["window"],
-                with_family_names(data["rows"], data["snapshot"], key="family_duid"),
+                # Each Family name opens its Timeline in the current
+                # campaign (#1570): one read of the page's record ids.
+                link_families(
+                    None,
+                    with_family_names(
+                        data["rows"], data["snapshot"], key="family_duid"
+                    ),
+                ),
                 data["has_next"],
                 total=data["total"],
                 sorting=REFUSAL_SORTING,
@@ -645,10 +653,17 @@ def refusal_detail(request, refusal_id):
         with the Family's name from the latest ParishSoft data (#935)."""
         data = read_refusal(refusal_id, request.GET)
         duid = data["refusal"].family_duid
-        named = with_family_names(
-            [dict(family_duid=duid)], current_snapshot(), key="family_duid"
+        named = link_families(
+            None,
+            with_family_names(
+                [dict(family_duid=duid)], current_snapshot(), key="family_duid"
+            ),
         )
-        return data | {"family_name": named[0]["family_name"]}, 1
+        # The name opens the Family's Timeline in the current campaign (#1570).
+        return data | {
+            "family_name": named[0]["family_name"],
+            "family_id": named[0]["family_id"],
+        }, 1
 
     return _page(request, "stewardship/delivery-refusal.html", load, subject=refusal_id)
 
