@@ -333,6 +333,16 @@ earlier request does not delete it or turn omission into a new
 leave/withdrawal action. Recheck the same rule at submission, including the
 linked stale-form reconfirmation requirement.
 
+Directly under each Member's "Ministry participation" heading, before the
+"cannot participate" note and the continue, stop and join choices, one plain
+sentence that is always shown says: "If you choose to join a ministry or stop
+participating in one, that ministry's leaders will see this person's email
+address and phone numbers so they can follow up." It is shown once per Member
+page, never per Ministry, and describes the
+[leader contact rule](../reports/spec.md#ministry-change-summary) for a
+standing request
+([#1625](https://github.com/epiphany40223/parishkit/issues/1625)).
+
 Current memberships appear first (with no visible heading; screen readers get
 a "Current ministries" heading), each stating its choice once as "Continue in
 this ministry" (the default) or "Stop participating in this ministry". Leaving

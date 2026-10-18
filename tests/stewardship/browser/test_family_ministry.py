@@ -52,6 +52,13 @@ def test_mobile_ministry_edit_review_and_definitive_submit(
     expect(
         show(page, page.get_by_text("Ministry participation", exact=True))
     ).to_be_visible()
+    # Read before the choices it describes (#1625): plain text above them.
+    notice = page.get_by_text(
+        "that ministry's leaders will see this person's email address"
+    )
+    expect(notice).to_have_count(1)
+    choir = page.get_by_role("group", name="Choir", include_hidden=True)
+    assert notice.bounding_box()["y"] < choir.bounding_box()["y"]
     if not census:
         assert page.get_by_label("First name (required)").count() == 0
         assert page.get_by_label("Household status").count() == 0
