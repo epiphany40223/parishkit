@@ -585,3 +585,56 @@ def test_each_radio_sits_beside_its_words(page, component_origin, scheme, width)
         assert words["y"] < circle["y"] + circle["height"]
         assert circle["y"] < words["y"] + words["height"]
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+
+
+def hover_look(page, markup):
+    """Hover the one element ``markup`` adds to the page; return its
+    background, text colour and shadow once the colour transition ends."""
+    page.evaluate(
+        "markup => document.querySelector('main').insertAdjacentHTML('beforeend',"
+        " '<p id=\"hover-probe\">' + markup + '</p>')",
+        markup,
+    )
+    probe = page.locator("#hover-probe > *")
+    probe.hover()
+    page.wait_for_timeout(300)
+    look = probe.evaluate(
+        "node => { const style = getComputedStyle(node);"
+        " return [style.backgroundColor, style.color, style.boxShadow]; }"
+    )
+    page.evaluate("document.getElementById('hover-probe').remove()")
+    return look
+
+
+def test_the_aria_disabled_exclusion_leaves_class_hovers_alone(page, component_origin):
+    """The shared hover rule skips aria-disabled buttons with :where(), so
+    it stays as weak as it was before (#1656): the per-class hover looks
+    below still beat it. The expected colours are what main renders."""
+    page.emulate_media(color_scheme="light")
+    page.goto(component_origin + CALENDAR)
+    # Delete: dark red, not the shared accent hover.
+    assert hover_look(
+        page, '<button type="button" class="button-danger">Delete</button>'
+    ) == [
+        "rgb(143, 29, 18)",
+        "rgb(255, 255, 255)",
+        "rgba(16, 24, 40, 0.16) 0px 2px 6px 0px",
+    ]
+    # Icon delete: the error tint with red text, not a filled teal button.
+    icon = hover_look(
+        page,
+        '<button type="button" class="icon-button-danger" aria-label="x">x</button>',
+    )
+    assert icon[0] == "rgb(252, 235, 232)"
+    assert icon[1] != "rgb(255, 255, 255)"
+    # The "i" tip: its own accent, with no shadow.
+    tip = hover_look(
+        page, '<button type="button" class="toggletip-button" aria-label="x">i</button>'
+    )
+    assert tip[0] == "rgb(17, 94, 86)"
+    assert tip[2] == "none"
+    # A link-styled recipient name stays transparent.
+    assert (
+        hover_look(page, '<button type="button" class="recipient-link">A</button>')[0]
+        == "rgba(0, 0, 0, 0)"
+    )

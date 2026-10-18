@@ -650,14 +650,18 @@ button, .button { display: inline-block; vertical-align: middle; border: var(--b
    rule whether they are POST buttons or GET links (.sort-link), so the two
    kinds of heading wrap alike. */
 button, .button, .link-button, .sort-link, input[type=submit], input[type=button] { overflow-wrap: normal; word-break: normal; }
-button:not(:disabled):not([aria-disabled=true]):hover, .button:not([aria-disabled=true]):hover { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--paper); box-shadow: 0 2px 6px rgb(16 24 40 / 16%); }
+/* :where() keeps the aria-disabled exclusion at zero specificity, so the
+   hover rule stays as weak as before and the per-class hover overrides
+   (.button-danger, .icon-button-danger, .toggletip-button, .recipient-link)
+   still win. */
+button:not(:disabled):not(:where([aria-disabled=true])):hover, .button:not(:where([aria-disabled=true])):hover { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--paper); box-shadow: 0 2px 6px rgb(16 24 40 / 16%); }
 button:not(:disabled):active { box-shadow: none; }
 button:disabled { cursor: not-allowed; opacity: .55; box-shadow: none; }
 /* The secondary look comes only from its class ({% button variant="secondary" %}
    or class "button-secondary" in script), never from where a button sits, so
    a button's look is decided where it is drawn (#732). */
 .button-secondary { background: var(--paper); color: var(--accent); border-color: var(--accent); box-shadow: none; }
-.button-secondary:not(:disabled):not([aria-disabled=true]):hover { background: var(--accent-soft); color: var(--accent-strong); box-shadow: none; }
+.button-secondary:not(:disabled):not(:where([aria-disabled=true])):hover { background: var(--accent-soft); color: var(--accent-strong); box-shadow: none; }
 .actions { display: flex; gap: .75rem 1rem; flex-wrap: wrap; align-items: center; }
 /* A button kept focusable but unavailable (aria-disabled; a stepping
    control at the end of its range, #1656) looks as a disabled one does:
