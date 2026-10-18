@@ -1882,12 +1882,15 @@ then:
 - **Values**: one cell listing, each under its own small label,
   **ParishSoft now**, on a Conflict **When the Family answered** (the value
   the Family saw), **Family's answer**, and **Edited value** (only when an
-  Administrator edited the proposed value). ParishSoft now is blank where no
-  verified ParishSoft read exists for the field (today every Family
-  household field), so a Family address never shows a ParishSoft value or a
-  conflict. Values appear in full: Admin and Staff need them to type into
-  ParishSoft, and every view and download is audited. A blank value shows a
-  muted *(blank)*, so it is never an empty line. A blank Family's answer
+  Administrator edited the proposed value). ParishSoft now shows a muted
+  *(not read)* where no verified ParishSoft read exists for the field (today
+  every Family household field), so a Family address never shows a
+  ParishSoft value or a conflict, and is never mistaken for an empty
+  ParishSoft field. Values appear in full: Admin and Staff need them to type
+  into ParishSoft, and every view and download is audited. A blank value
+  that was read shows a muted *(blank)*, so it is never an empty line; this
+  includes When the Family answered where ParishSoft was empty then. The
+  downloads leave both cases as an empty cell. A blank Family's answer
   means the Family removed the value: Staff remove it in ParishSoft, or
   Ignore the row to keep it. A birth date the Family gave as Unknown shows
   *Unknown*.
@@ -1948,7 +1951,12 @@ Admin-edited proposed values. It never resolves by silent last-write-wins.
 ### Census change filters and downloads
 
 The default shows *To do* and *Conflict*, and, for an Administrator, *To
-review* as well. Filters are status (with *Include history*), how the change
+review* as well. The Summary above the filters counts the changes by status
+(history only with *Include history*); it lists *To review*, *To do* and
+*Conflict* even at 0, and any other status only once it has a change, so
+resolving the last Conflict never removes a Summary line and moves the table
+under the pointer ([no layout shift](../ui-conventions/spec.md#no-layout-shift),
+[#1472](https://github.com/epiphany40223/parishkit/issues/1472)). Filters are status (with *Include history*), how the change
 reaches ParishSoft (with *Hide automatic changes* for staff working by
 hand), kind of change (contact details, moved, deceased, new Member), a
 Family name or DUID search, and submitted date. Sorting, paging and filters

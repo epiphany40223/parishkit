@@ -3497,7 +3497,9 @@ cell may list them as labelled values instead (`dl.cell-pairs-wrap`): each
 small muted label on its own line above its value, so no label column widens
 the cell, the values wrapping within a readable minimum width, the heading
 naming the group, and a blank value shown as a muted "(blank)" rather than
-an empty line. A downloaded file gives each labelled value its own column.
+an empty line. A value the system never read (not merely empty at its
+source) shows a muted "(not read)" instead, so the two are never confused.
+A downloaded file gives each labelled value its own column.
 A worklist whose rows are acted on one by one, and which may be wider than
 its box, keeps its Actions column in view at the box's end while the rest
 scrolls sideways beneath it (`sticky-actions`), with its icons two to a
