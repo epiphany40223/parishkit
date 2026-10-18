@@ -404,14 +404,19 @@ hr { border: 0; border-top: 1px solid var(--border); margin-block: 2rem; }
 /* Balanced lines (#1537): a component row of four or five tiles never leaves one tile alone on
    a line. Each track's minimum is 12.5rem while the whole row fits on one line, and otherwise a
    half (four tiles) or a third (five) of the row, so four go 4 or 2 + 2 across and five go 5 or
-   3 + 2. "(W - 100%) * 999" is at most zero once the row is W wide (all its tiles at 12.5rem and
-   the gaps), and huge before. A half under 12.5rem leaves clamp() its 12.5rem minimum, so four
-   tiles stack; five whose third is under 12.5rem (a row under 39rem) stack too, through the
-   max() with the full width, rather than go 2 + 2 + 1. Not a container query, for the WebKit
-   scroll anchoring noted above. Phones still stack. */
+   3 + 2. "(W - 100%) * 100000" is at most zero once the row is W wide (all its tiles at 12.5rem
+   and the gaps), and huge before: one layout unit under W (1/64px in Chromium and WebKit, 1/60px
+   in Firefox) already makes it over 1,500px, past any half or third, so no real row width lands
+   between. (A smaller "* 999" left a band of up to 0.4px under each W where the term lay between
+   12.5rem and a half, and a row there drew 3 + 1 or 2 + 2 + 1.) The huge values are safe: an
+   engine caps a length it cannot hold, and clamp() and min() then pick their other argument. A
+   half under 12.5rem leaves clamp() its 12.5rem minimum, so four tiles stack; five whose third
+   is under 12.5rem (a row under 39rem) stack too, through the max() with the full width, rather
+   than go 2 + 2 + 1. Not a container query, for the WebKit scroll anchoring noted above. Phones
+   still stack. */
 @media (min-width: 40.0625rem) {
-  .stat-tiles:has(> [data-stat]:nth-child(4):last-child) { grid-template-columns: repeat(auto-fit, minmax(clamp(12.5rem, (52.25rem - 100%) * 999, (100% - .75rem) / 2), 1fr)); }
-  .stat-tiles:has(> [data-stat]:nth-child(5):last-child) { grid-template-columns: repeat(auto-fit, minmax(max(clamp(12.5rem, (65.5rem - 100%) * 999, (100% - 1.5rem) / 3), min(100%, (39rem - 100%) * 999)), 1fr)); }
+  .stat-tiles:has(> [data-stat]:nth-child(4):last-child) { grid-template-columns: repeat(auto-fit, minmax(clamp(12.5rem, (52.25rem - 100%) * 100000, (100% - .75rem) / 2), 1fr)); }
+  .stat-tiles:has(> [data-stat]:nth-child(5):last-child) { grid-template-columns: repeat(auto-fit, minmax(max(clamp(12.5rem, (65.5rem - 100%) * 100000, (100% - 1.5rem) / 3), min(100%, (39rem - 100%) * 100000)), 1fr)); }
 }
 .stat-detail { color: var(--muted); font-size: .875rem; }
 /* An unknown value's "—" carries its reason in a toggletip beside it (#1540), its "i" at the

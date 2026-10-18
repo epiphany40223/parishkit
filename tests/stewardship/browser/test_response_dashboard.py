@@ -166,6 +166,52 @@ def test_summary_rows_fit_and_balance(page, component_origin, width):
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
 
 
+# Each row's balance thresholds (in rem) with the lines it draws just under
+# and just over them: four tiles fit on one line from 52.25rem; five from
+# 65.5rem, and three of them from 39rem (#1537).
+THRESHOLDS = (
+    ("Active population", 52.25, [2, 2], [4]),
+    ("Families by stage", 65.5, [3, 2], [5]),
+    ("Families by stage", 39, [1, 1, 1, 1, 1], [3, 2]),
+)
+
+# Sets one Summary row's width and returns how many tiles each of its lines
+# holds, top to bottom.
+ROW_LINES = """([name, width]) => {
+  const row = document.querySelector(
+    `#response-summary [aria-label="${name}"]`);
+  row.style.width = width;
+  const lines = new Map();
+  for (const tile of row.children) {
+    const top = Math.round(tile.getBoundingClientRect().top);
+    lines.set(top, (lines.get(top) || 0) + 1);
+  }
+  return [...lines.keys()].sort((a, b) => a - b).map((top) => lines.get(top));
+}"""
+
+
+@pytest.mark.parametrize("font", ["100%", "150%"])
+def test_summary_rows_balance_at_fractional_widths(page, component_origin, font):
+    """A row whose width is a fraction of a pixel under or over one of its
+    thresholds still never leaves a tile alone on a line (#1537 review).
+
+    Window widths land on whole pixels, but a row's width is often
+    fractional (sidebar, zoom, scrollbar), and the CSS's "(W - 100%) * k"
+    term is only huge once the row is far enough under W. Widths 0.02px
+    and 0.25px either side of each threshold cover the band a too-small k
+    left (up to 0.4px), at the reader's default font size and at 150%.
+    """
+    page.set_viewport_size({"width": 1700, "height": 900})
+    page.goto(component_origin + "/response-dashboard")
+    page.evaluate(f"document.documentElement.style.fontSize = '{font}'")
+    for name, threshold, under, over in THRESHOLDS:
+        for delta in (0.02, 0.25):
+            for sign, expected in (("-", under), ("+", over)):
+                width = f"calc({threshold}rem {sign} {delta}px)"
+                lines = page.evaluate(ROW_LINES, [name, width])
+                assert lines == expected, (name, width, lines)
+
+
 def test_testing_view_without_a_rehearsal_is_accessible(
     page, component_origin, axe_source
 ):
