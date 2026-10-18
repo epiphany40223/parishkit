@@ -1836,7 +1836,8 @@ join that was declined or resolved, a leave a ParishSoft refresh confirmed,
 and a request to a Ministry the form no longer offers follow the publish
 flags too. A Member's answer is the one in the Family's latest live
 response that answers the question for that Member (lists them in its
-`service` answers). Only a later live response that answers it for the
+`service` answers with a true-or-false checkbox value; any other entry is
+not an answer). Only a later live response that answers it for the
 Member without the checkbox lets their standing requests share again; a
 response that leaves the Member out, such as one reporting them moved out
 or deceased, does not, and a Member never answered is not withheld. For a

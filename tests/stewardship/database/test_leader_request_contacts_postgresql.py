@@ -189,10 +189,16 @@ def test_the_closing_check_refuses_the_requests_own_answer(name):
         # Only the Family's latest submission, so one that leaves the Member
         # out (moved out, deceased) clears the answer (review 2 of 2).
         (
-            r"WHERE s\.family_id IN \(",
-            "WHERE s.family_version=(SELECT max(v.family_version) FROM "
+            r"AND s\.family_id IN \(",
+            "AND s.family_version=(SELECT max(v.family_version) FROM "
             "stewardship_submission v WHERE v.family_id=s.family_id "
             "AND v.mode='live') AND s.family_id IN (",
+        ),
+        # Any entry counts as an answer, so a malformed one (no boolean
+        # box) clears an earlier cannot participate (review 2 of 2).
+        (
+            r"WHERE jsonb_typeof\(e\.value->'cannot_serve'\)='boolean'\n\s+AND ",
+            "WHERE ",
         ),
         # Not joined by Family.
         (
@@ -383,7 +389,8 @@ def test_a_cannot_participate_leave_keeps_the_publish_flags(response_service):
 
 def answer(harness, *, leave, cannot_serve):
     """Submit the Family's form again: Member 3 joins nothing and leaves
-    ``leave``, checking the physical-limitations box when ``cannot_serve``."""
+    ``leave``, checking the physical-limitations box when ``cannot_serve``;
+    returns the new submission."""
     form = revisit(harness)
     answers = answers_for(form)
     answers["ministries"]["members"]["3"] = {"join": [], "leave": list(leave)}
@@ -391,7 +398,7 @@ def answer(harness, *, leave, cannot_serve):
         "members": {"3": {"cannot_serve": cannot_serve}},
         "proposed_members": {},
     }
-    respond(harness, form, answers)
+    return respond(harness, form, answers)
 
 
 def history_rows(harness, scope, ministry):
@@ -558,3 +565,38 @@ def test_cannot_participate_outlasts_a_submission_that_leaves_the_member_out(
     assert EMAIL not in json.dumps(join_rows(harness, scope=(4, 9)), default=str)
     leader, staff = history_rows(harness, (9,), 9)
     assert EMAIL not in json.dumps(leader) and EMAIL in json.dumps(staff)
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [{}, None, {"cannot_serve": None}, {"cannot_serve": "true"}],
+    ids=["empty", "null", "null-box", "text-box"],
+)
+def test_a_malformed_later_answer_does_not_clear_cannot_participate(
+    response_service, entry
+):
+    """Review 2 of 2's advisory: Member 3 checks the box, then a later live
+    submission's service entry for them is malformed (forged past the guards,
+    which refuse it). Only an entry whose box is a JSON boolean is an
+    answer, so the earlier box still decides: Choir's (4) leader sees the
+    email Not published, while Staff still see it."""
+    harness, _ = family(response_service, cannot_serve=True)
+    latest = answer(harness, leave=[4], cannot_serve=False)
+    leader = actor(harness, **LEADER_4).identity
+    # The ordinary answer shares again, so only the forged entry can hide.
+    (row,) = sections(packet(harness, leader))[1][4]["rows"]
+    assert row["email_visibility"] == "available"
+    # Submissions are immutable; rewrite this one with the triggers off.
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute("SET LOCAL session_replication_role = replica")
+        cursor.execute(
+            "UPDATE stewardship_submission SET answers=jsonb_set(answers,"
+            "'{service,members,3}',%s::jsonb) WHERE id=%s",
+            [json.dumps(entry), latest.pk],
+        )
+        assert cursor.rowcount == 1
+    (row,) = sections(packet(harness, leader))[1][4]["rows"]
+    assert (row["action"], row["email_visibility"]) == ("leave", "not_published")
+    assert EMAIL not in json.dumps(row)
+    found = sections(packet(harness, actor(harness, ("staff",), ()).identity))[1]
+    assert EMAIL in json.dumps(found[4]["rows"])

@@ -103,6 +103,8 @@ WITH selected AS MATERIALIZED (
     -- submission answers it for them without the box (Administrator,
     -- #1591). A submission that leaves the Member out (reported moved out or
     -- deceased) does not clear it; a Member never answered is not hidden.
+    -- Only an entry whose box is a JSON boolean is an answer, so a
+    -- malformed one (which the guards refuse) cannot clear the box.
     -- One sort over the campaign's live submissions of Families with a
     -- request here, joined by Member, not a lookup per request.
     SELECT DISTINCT ON (s.family_id,g.kind,e.key) s.family_id,g.kind,e.key,
@@ -114,7 +116,8 @@ WITH selected AS MATERIALIZED (
     CROSS JOIN LATERAL jsonb_each(CASE WHEN jsonb_typeof(
         s.answers->'service'->g.grp)='object'
         THEN s.answers->'service'->g.grp END) e
-    WHERE s.family_id IN (SELECT q.family_id FROM stewardship_submission q
+    WHERE jsonb_typeof(e.value->'cannot_serve')='boolean'
+        AND s.family_id IN (SELECT q.family_id FROM stewardship_submission q
         JOIN stewardship_ministry_request r ON r.submission_id=q.id
         JOIN ministries m ON m.duid=r.ministry_duid
         WHERE q.campaign_id=x.id AND q.mode='live')
