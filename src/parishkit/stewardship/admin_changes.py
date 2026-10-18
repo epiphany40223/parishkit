@@ -269,12 +269,19 @@ def _series(entry, label):
     }
 
 
+SKIP_MOVED = (
+    'A "skip" cannot be combined with "date", "time" or "weekday" in the same '
+    "entry. Skip the send and change the digest in separate changes."
+)
+
+
 def _skip(row, skips):
     """Check one saved digest's ``skip`` member for shape (#1658).
 
     A canonical ``YYYY-MM-DD`` slot date on a saved schedule's entry (one
-    with ``id``) that does not delete it, and at most one in a document, as
-    the page skips one send per review. Whether the date is a send of the
+    with ``id``) that does not delete it or change its ``date``, ``time``
+    or ``weekday``, and at most one in a document, as the page skips one
+    send per review. Whether the date is a send of the
     digest that may still be skipped is the review's
     (``accounts.digest_skips.refuse``).
     """
@@ -289,6 +296,19 @@ def _skip(row, skips):
         raise ValueError(
             'A saved digest skips one send, by its "skip" date (YYYY-MM-DD), '
             "once per change."
+        )
+    # A skip names one of the saved digest's sends; moving the digest's sends
+    # in the same entry would make it name a send of different values. The
+    # field problem carries the reason, which the error document lists.
+    if {"date", "time", "weekday"} & set(row):
+        raise InvalidChange(
+            [
+                {
+                    "field": f"schedules.{row['id']}.skip",
+                    "code": "invalid",
+                    "message": SKIP_MOVED,
+                }
+            ]
         )
 
 

@@ -832,6 +832,23 @@ def test_an_unknown_outcome_names_the_request_to_read(monkeypatch):
     assert document["error"]["request_id"] == str(REQUEST)
 
 
+@pytest.mark.parametrize(
+    "moved", [{"weekday": 3}, {"time": "01:30:00"}, {"date": "2054-10-02"}]
+)
+def test_a_digest_skip_with_a_moved_send_is_refused(moved):
+    """``skip`` names a saved send, so it cannot move the digest too (#1658)."""
+    entry = {"id": SCHEDULE, "skip": "2054-10-02", **moved}
+    with pytest.raises(admin_changes.InvalidChange) as raised:
+        admin_changes.parse_changes(json.dumps({"schedules": [entry]}))
+    assert raised.value.fields == [
+        {
+            "field": f"schedules.{SCHEDULE}.skip",
+            "code": "invalid",
+            "message": admin_changes.SKIP_MOVED,
+        }
+    ]
+
+
 def test_a_digest_skip_is_kept_on_its_saved_entry():
     """``skip`` stays on the saved digest's entry, for the review (#1658)."""
     parsed = admin_changes.parse_changes(
