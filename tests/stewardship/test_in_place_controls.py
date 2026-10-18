@@ -1043,6 +1043,21 @@ def test_no_refresh_this_page_instructions():
     assert found == set()
 
 
+def test_no_reload_then_instructions():
+    """No page tells the reader to reload once background work finishes
+    (UX conventions, "Pages that update themselves": controls that
+    background work holds, #1619): Campaign settings and Home follow the
+    hold instead. A refusal's fix ("Reload this page to start again.") is
+    not a wait, so it is not checked here."""
+    pattern = re.compile(r"reload\s+this\s+page\s+then", re.IGNORECASE)
+    found = {
+        path.name
+        for path in (*TEMPLATES.rglob("*.html"), *PACKAGE.rglob("*.py"))
+        if pattern.search(path.read_text())
+    }
+    assert found == set()
+
+
 @pytest.mark.parametrize(
     ("constant", "sentence"),
     [

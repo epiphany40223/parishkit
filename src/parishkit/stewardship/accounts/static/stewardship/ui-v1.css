@@ -558,6 +558,13 @@ label + .help, label + .helptext, .label-row + .help, .label-row + .helptext { m
 .field-error-line:has(> .field-error-size) { display: grid; }
 .field-error-line:has(> .field-error-size) > * { grid-area: 1 / 1; }
 .field-error-size { visibility: hidden; font-weight: 600; }
+/* A sentence that another one replaces in place (a status region's swap)
+   keeps the room of both: each is drawn over an invisible copy of the
+   other, so the swap never moves what follows, however the reader's fonts
+   wrap them (Home's Create the campaign reason, #1619). */
+.sized-text { display: grid; }
+.sized-text > * { grid-area: 1 / 1; }
+.sized-text > [aria-hidden=true] { visibility: hidden; }
 .error { color: var(--error-ink); font-weight: 600; }
 /* Legends float inside the box so a fieldset reads as a titled card. */
 fieldset { border: 1px solid var(--border); border-radius: var(--radius); background: var(--paper); margin-block: 1.25rem; min-width: 0; padding: 1rem 1.25rem 1.25rem; }
