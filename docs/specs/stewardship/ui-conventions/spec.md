@@ -1736,22 +1736,25 @@ Testing rehearsal.
 ### Clear filters
 
 **Rule.** Every Admin filter form (a page's `form#table-filters`, in a
-filter bar or a Filters panel) ends with two buttons side by side:
-**Apply filters**, then **Clear filters** directly after it (in a Filters
-panel both share Apply's grid cell, Clear wrapping under Apply where that
-cell is too narrow, so no row is added). Clear filters
-puts every filter back to the page's default in one step and shows the
-result in place. No filter form names its apply button otherwise (the
-Ministries list's Filter, Background work's Show tasks, Refused addresses'
-Show refusals, Roster changes' Apply and the Timeline's Show lines became
-Apply filters, #1651). **Why.** Clearing each field by hand, or editing the address, is slow and easy to get wrong; a reload or a
-link to the bare page would lose the reader's sort, rows per page and view
+filter bar or a Filters panel) ends with two buttons side by side: **Apply
+filters**, then **Clear filters** directly after it (in a Filters panel
+both share Apply's grid cell, Clear wrapping under Apply where that cell is
+too narrow, so no row is added; in a filter bar whose filters leave too
+little room beside them, such as Sent mail's at 1280 px, Clear likewise
+wraps under Apply in the same item, Apply staying on the fields' row).
+Clear filters puts every filter back to the page's default in one step and
+shows the result in place. No filter form names its apply button otherwise
+(the Ministries list's Filter, Background work's Show tasks, Refused
+addresses' Show refusals, Roster changes' Apply and the Timeline's Show
+lines became Apply filters, #1651). **Why.** Clearing each field by hand,
+or editing the address, is slow and easy to get wrong; a reload or a link
+to the bare page would lose the reader's sort, rows per page and view
 choices (Administrator, pk-local review,
-[#1651](https://github.com/epiphany40223/parishkit/issues/1651)).
-**Shared code.** `components/filter-actions.html` (both buttons), `data-clear-filters` and `data-filter` in
-`ui-v1.js`, the unavailable tip in `admin-menu-v1.js`;
-`test_clear_filters.py` (the guard) and the browser tests of the pages it
-names. **Precedent.** #1651.
+[#1651](https://github.com/epiphany40223/parishkit/issues/1651)). **Shared
+code.** `components/filter-actions.html` (both buttons),
+`data-clear-filters` and `data-filter` in `ui-v1.js`, the unavailable tip
+in `admin-menu-v1.js`; `test_clear_filters.py` (the guard) and the browser
+tests of the pages it names. **Precedent.** #1651.
 
 - **Defaults are the server's.** Clear filters sends the filter form without
   its filters, so the server answers with the page's own unfiltered view,

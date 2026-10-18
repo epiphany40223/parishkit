@@ -715,7 +715,7 @@ button.is-busy[aria-disabled=true], .button.is-busy[aria-disabled=true], input[t
    so its state never moves anything (no layout shift). */
 .filter-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .5rem; vertical-align: bottom; }
 .filter-bar > .filter-actions, details.filter-panel > form > .filter-actions { flex: 0 0 auto; min-width: 0; margin: 0; }
-.filter-actions button { margin: 0; }
+.filter-actions button { margin: 0; white-space: nowrap; }
 .filter-clear { position: relative; display: inline-block; }
 button[data-clear-unavailable][aria-disabled=true], button[data-clear-unavailable][aria-disabled=true]:not(:disabled):hover { cursor: not-allowed; opacity: .55; background: var(--paper); color: var(--accent); box-shadow: none; }
 button.is-busy::after, .button.is-busy::after { content: ""; display: inline-block; width: .85em; height: .85em; margin-inline-start: .5em; vertical-align: -.1em; border: 2px solid currentColor; border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
@@ -1169,6 +1169,13 @@ details.filter-panel[data-filter-panel] > form:not(.filter-bar) > fieldset > div
    taller than a text box; Apply still sits at the fields' foot. */
 .filter-bar.mail-filters { align-items: start; }
 .filter-bar.mail-filters > button { align-self: end; }
+/* Apply filters and Clear filters (#1651) start as wide as Apply alone and
+   grow into the row's room: at 1280 px the five filters leave too little
+   for both side by side, so Clear wraps under Apply in the same cell and
+   Apply stays on the fields' row (no row is added for it). The top margin
+   is the labels' height (1.75rem and their .25rem gap, below), so Apply
+   lines up with the fields' controls, not their labels. */
+.filter-bar.mail-filters > div.filter-actions { flex: 1 1 min-content; min-width: 0; margin-top: 2rem; }
 .filter-bar.mail-filters > div > :is(label, .label-row) { display: flex; align-items: center; min-height: 1.75rem; margin: 0 0 .25rem; }
 /* Sent mail's Production / Testing choice sits at the end of the heading's
    line on a wider screen, out of the flow, so it takes no line of its own
