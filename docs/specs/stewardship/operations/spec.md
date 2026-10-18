@@ -574,6 +574,34 @@ across releases.
 Rollback instructions distinguish application rollback (only when schema is
 compatible) from database restore.
 
+Every upgrade pulls a new release image and none is ever removed by Docker
+itself, so after a successful scripted upgrade or rollback the host prunes
+old release images (#1661). It removes only images of the stewardship
+release repository, one at a time by image ID and without force, so Docker
+also refuses an image a container uses or another repository shares. It
+keeps every image a container on the host uses, running or stopped, the
+release just started, the replaced release (the image an application-only
+[rollback](../../../guides/stewardship-deployment-runbook.md#rollback) moves
+back to), and the newest few other release images (four by default,
+configurable), so a catastrophic rollback under the fail-forward policy
+finds the previous release on the host without a registry pull. It
+then clears Docker's build cache, which holds no images or volumes and which
+a host that only pulls never needs. It never removes a volume, never
+removes an image of another repository and never uses Docker's blanket
+prune commands for images, containers or volumes. It logs each image it
+removes or keeps and the disk space freed, offers a dry run that removes
+nothing, and a pruning failure is a warning that never fails the upgrade.
+It prunes only when the upgrade knows the replaced release as a release
+digest different from the one just started; otherwise (an unreported
+replaced release, or a re-run of the same digest) it skips pruning and
+says so. Any failure while finding what to keep, other than a protected
+image that is not on the host, stops it before anything is removed. The
+dry run is the default until the Administrator has reviewed one Production
+dry-run log; only then does a one-line follow-up (#1671) make real
+removal the default.
+The local laptop environment's deploy does not prune: its images are built
+in its VM and its build cache speeds the next build.
+
 ### Users upgrade from sign-in rules
 
 The [Users revamp](../admin-portal/spec.md#portal-user-management)

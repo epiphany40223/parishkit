@@ -402,20 +402,22 @@ def test_critical_event_warning_is_persistent_and_admin_only(auth_service, googl
 # The Administrator's count with a campaign fell by one: the campaign and its
 # configuration are now read together (admin_context._current_campaign).
 # The deliberate additions are the open counts' query (#585), paid only by
-# a viewer whose menu links Additional information or Ministry follow-up,
+# a viewer whose menu links Census changes (#1590), Additional information or
+# Ministry follow-up,
 # and whether ParishSoft data has been downloaded (#1242), paid only by a
 # viewer whose menu needs it: Administrators (Ministries) and Staff with a
 # campaign (the directory). These fixtures promote no ParishSoft capture,
-# so Additional information is greyed out and Administrators and Staff with
-# the draft no longer pay for open counts. A Ministry leader exists only in
+# so Additional information is greyed out; Administrators and Staff with the
+# draft pay for the open counts again since Census changes is counted (the
+# draft includes the census). A Ministry leader exists only in
 # a campaign that asks about Ministries (#922), so the leader's draft has
 # the Ministry module and a promoted source, a page NAV-1 never measured
 # for leaders: its count is today's, including the open counts' query.
 CHROME_QUERIES = {
     ("administrator", False): (4, 5),
-    ("administrator", True): (7, 7),
+    ("administrator", True): (7, 8),
     ("staff", False): (2, 2),
-    ("staff", True): (4, 5),
+    ("staff", True): (4, 6),
     ("ministry_leader", True): (7, 7),
 }
 # Not menu cost: since #456 the Administrator's chrome also reads whether an

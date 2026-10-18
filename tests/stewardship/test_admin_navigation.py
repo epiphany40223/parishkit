@@ -1173,13 +1173,29 @@ def test_a_ministry_leaders_export_names_the_dashboard_without_a_link():
 def test_open_counts_read_once_per_request_and_only_for_offered_entries(
     monkeypatch,
 ):
-    """One statement for both counts, none without a counted link (#585)."""
+    """One statement for every count, none without a counted link (#585).
+
+    Census changes' groups (#1590) are counted with the page's own status
+    rules: To do and Conflict for Staff, plus To review for an Administrator;
+    nothing published, ignored or superseded.
+    """
     from parishkit.stewardship.accounts import admin_context
     from parishkit.stewardship.reports.ministry_followup import FollowupQuery
 
     statements = []
     # The Ministries the follow-up selection reports it read (#389 L3).
     selected = [9]
+    # Census changes' groups: handling, entity kind, decision, execution and
+    # rows. An automatic change no one reviewed (To review), a By-hand Family
+    # change (To do), a Conflict, and outcomes the default view leaves out.
+    groups = [
+        ["api", "member", "unreviewed", "pending", 2],
+        ["manual", "family", "unreviewed", "pending", 1],
+        ["api", "member", "approved", "conflict", 4],
+        ["api", "member", "approved", "published", 5],
+        ["manual", "member", "ignored", "pending", 6],
+        ["api", "member", "approved", "superseded", 7],
+    ]
 
     class Cursor:
         """Records each statement and answers both counts."""
@@ -1198,6 +1214,7 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
                 3 if statements[-1]["information"] else None,
                 2 if statements[-1]["ministry"] else None,
                 selected if statements[-1]["ministry"] else None,
+                json.dumps(groups) if statements[-1]["census"] else None,
             )
 
     monkeypatch.setattr(
@@ -1206,9 +1223,24 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
         SimpleNamespace(cursor=lambda: Cursor(), in_atomic_block=False),
     )
     active = _campaign("active")
+    census = _campaign("active", modules=("ministry", "census"))
     cases = (
         # Both queues for Staff: every Ministry.
         ("staff", active, {"information_queue": 3, "ministry_report": 2}),
+        # With the census: Staff count To do and Conflict, an Administrator
+        # To review as well.
+        (
+            "staff",
+            census,
+            {"census_changes": 5, "information_queue": 3, "ministry_report": 2},
+        ),
+        (
+            "administrator",
+            census,
+            {"census_changes": 7, "information_queue": 3, "ministry_report": 2},
+        ),
+        # A leader has no Census changes entry, so no census count is read.
+        ("ministry_leader", census, {"ministry_report": 2}),
         # A leader only has Ministry requests, scoped to their Ministry.
         ("ministry_leader", active, {"ministry_report": 2}),
         # Greyed out (no Ministry module) or absent: no count, no query.

@@ -4,6 +4,9 @@
 the Ministry module off, so Ministry follow-up is greyed out with the menu's
 reason, Additional information carries an open count and two emails may not
 have arrived. ``PHONE_PATH`` is the same page; the test reads it at 320 px.
+``CLOSED_PATH`` and ``LEADER_PATH`` are a Staff member's and a Ministry
+leader's Home on a closed campaign with the Ministry module and the census
+(#1590): the campaign-end lists, each with its count.
 """
 
 from types import SimpleNamespace
@@ -31,6 +34,23 @@ CAMPAIGN = SimpleNamespace(
     ),
 )
 COUNTS = {"information_queue": 3}
+CLOSED_PATH = "/home-next-steps-closed"
+LEADER_PATH = "/home-next-steps-leader"
+CLOSED = SimpleNamespace(
+    **(
+        vars(CAMPAIGN)
+        | {
+            "state": "closed",
+            "active_configuration": SimpleNamespace(
+                **(
+                    vars(CAMPAIGN.active_configuration)
+                    | {"values": {"modules": ["financial", "ministry", "census"]}}
+                )
+            ),
+        }
+    )
+)
+CLOSED_COUNTS = {"census_changes": 4, "information_queue": 3, "ministry_report": 2}
 
 
 def components(context, admin):
@@ -70,9 +90,63 @@ def components(context, admin):
             },
         },
     )
-    return {PATH: ("text/html", html)} | health_components(
-        context, admin, chrome, actor, configuration
+    return (
+        {PATH: ("text/html", html)}
+        | health_components(context, admin, chrome, actor, configuration)
+        | closed_components(context, admin)
     )
+
+
+def closed_components(context, admin):
+    """Home on a closed campaign for Staff and for a Ministry leader (#1590).
+
+    The menu is each role's real one, with the counts the chrome would read;
+    Staff also get Roster changes to enter's count, as Home's dashboard
+    reads it.
+    """
+    configuration = SimpleNamespace(mode="production")
+    pages = {}
+    for path, actor in (
+        (CLOSED_PATH, Principal(UUID(int=2), frozenset({"staff"}))),
+        (
+            LEADER_PATH,
+            Principal(UUID(int=3), frozenset({"ministry_leader"}), frozenset({9})),
+        ),
+    ):
+        items = admin_context._navigation_items(
+            actor, False, CLOSED, configuration, parishsoft_data=True
+        )
+        sections, _breadcrumbs = admin_navigation.build(
+            SimpleNamespace(
+                url_name="index", namespace=admin_navigation.NAMESPACE, kwargs={}
+            ),
+            items,
+        )
+        for section in sections:
+            for entry in section["items"]:
+                entry["count"] = (
+                    CLOSED_COUNTS.get(entry["name"]) if entry["url"] else None
+                )
+        chrome = admin | {"admin": False, "sections": sections, "breadcrumbs": []}
+        staff = "staff" in actor.roles
+        pages[path] = (
+            "text/html",
+            render_to_string(
+                "stewardship/home.html",
+                context
+                | {
+                    "admin_chrome": chrome,
+                    "principal": actor,
+                    "configuration": configuration,
+                    "dashboard": {
+                        "campaign": CLOSED,
+                        "refreshed_at": None,
+                        "roster_todo": 5 if staff else None,
+                    },
+                },
+            ),
+        )
+    return pages
 
 
 # Home with System health problems and a critical-problems banner (#1214):

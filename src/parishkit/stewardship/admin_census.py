@@ -64,7 +64,7 @@ def census_model(campaign_id, query, result):
 
     No Family's or Member's name, DUID or value, and no resolver or note,
     reaches the document. The page's summary is a list of (wording, count)
-    pairs with the zero counts left out; it is printed by status key, every
+    pairs with most zero counts left out; it is printed by status key, every
     status the summary covers, zeros included.
     """
     from .reports.census_changes import HISTORY, KINDS, STATUSES

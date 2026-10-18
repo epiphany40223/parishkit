@@ -377,8 +377,48 @@ def _sql_schema(name):
 def test_closed_vocabularies_are_mirrored_in_sql():
     assert _sql_list("failure") == FAILURES
     assert _sql_list("reason") == REASONS
-    for kind in (ContextKind.FAILURE, ContextKind.RECOVERY, ContextKind.DUE_WORK):
+    # Every context kind, so a key added to FIELDS (or to the SQL ARRAY) alone
+    # fails here rather than only in a PostgreSQL test (#1663).
+    for kind in ContextKind:
         assert _sql_schema(kind.value) == FIELDS[kind], kind
+
+
+def _python_boolean_keys():
+    """The non-refusal keys ``sanitize`` accepts a bool for.
+
+    Read from behaviour, not a copy of its list: a key takes a bool only in
+    its boolean branch, because the integer branch rejects ``bool``.
+    """
+    keys = set()
+    for kind in ContextKind:
+        if kind is ContextKind.REFUSAL:
+            continue
+        for key in FIELDS[kind]:
+            try:
+                sanitize(kind, {key: True})
+            except ValueError:
+                continue
+            keys.add(key)
+    return keys
+
+
+def test_boolean_context_keys_are_mirrored_in_sql():
+    """Python and SQL agree on which context keys hold a JSON boolean (#1663)."""
+    text = (SCHEMA / "functions.sql").read_text(encoding="utf-8")
+    group = re.search(
+        r"ELSIF key IN \(([^)]*)\) THEN\s+"
+        r"IF jsonb_typeof\(value\)<>'boolean'",
+        text,
+    )
+    assert group, "the shared boolean branch of stewardship_safe_context_v1"
+    sql_keys = set(re.findall(r"'(\w+)'", group.group(1)))
+    assert sql_keys == _python_boolean_keys()
+    assert sql_keys, "the comparison would pass vacuously"
+    # The refusal schema checks its own keys; its one boolean is ``capped``.
+    refusal = re.findall(
+        r"key='(\w+)' THEN\s+IF jsonb_typeof\(value\)<>'boolean'", text
+    )
+    assert set(refusal) == {"capped"} <= FIELDS[ContextKind.REFUSAL]
 
 
 def test_every_failure_and_reason_has_plain_words():

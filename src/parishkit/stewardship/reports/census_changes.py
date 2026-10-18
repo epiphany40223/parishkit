@@ -77,6 +77,10 @@ STATUSES = {
     "cancelled": "Cancelled",
 }
 HISTORY = frozenset({"superseded", "cancelled"})
+# The open-work statuses the Summary lists even at 0 (#1472), so acting on
+# the last change of one (resolving the last Conflict, say) never removes a
+# Summary line and moves the table under the pointer.
+SUMMARY_ALWAYS = frozenset({"to_review", "to_do", "conflict"})
 # A terminal execution is the outcome, whatever the decision says.
 TERMINAL = {
     "published": "published",
@@ -288,6 +292,54 @@ COLUMNS = (
     "resolution_by",
 )
 
+# The menu's open count (#585, #1590; admin_context.OPEN_COUNTS embeds it):
+# ROWS's rows, by the four columns ``status`` reads, each group with its
+# size, as JSON text. Its FROM and WHERE are ROWS's without the joins that
+# only name a row (they are LEFT joins, so they never add or drop one), so
+# ``open_count`` keeps exactly the rows the page's default view lists.
+# Takes ``%(campaign)s``.
+OPEN_GROUPS = """
+SELECT coalesce(jsonb_agg(jsonb_build_array(
+        g.handling, g.entity_kind, g.decision, g.execution, g.n)), '[]')::text
+FROM (
+    SELECT p.handling, p.entity_kind, p.decision, p.execution, count(*) AS n
+    FROM stewardship_campaign c
+    JOIN stewardship_submission s ON s.campaign_id=c.id AND s.mode='live'
+    JOIN stewardship_proposed_change p ON p.submission_id=s.id
+    JOIN stewardship_family_campaign f ON f.id=s.family_id
+    WHERE c.id=%(campaign)s AND p.handling<>'report-only'
+    GROUP BY 1, 2, 3, 4
+) g
+"""
+
+
+def open_count(groups, *, administrator):
+    """The rows of the page's default Work to do view, from ``OPEN_GROUPS``.
+
+    ``groups`` is the decoded JSON: ``[handling, entity_kind, decision,
+    execution, count]`` lists. Each group's status comes from ``status`` and
+    the default view's choice from ``wanted``, the functions the page itself
+    filters with, so the count cannot drift from what the link opens.
+    """
+    default = CensusQuery()
+    return sum(
+        count
+        for handling, entity_kind, decision, execution, count in groups
+        if wanted(
+            status(
+                {
+                    "handling": handling,
+                    "entity_kind": entity_kind,
+                    "decision": decision,
+                    "execution": execution,
+                }
+            ),
+            default,
+            administrator=administrator,
+        )
+    )
+
+
 # The Review buttons' form values and the decision each records, in order.
 REVIEW_CHOICES = (
     ("approve", "approved"),
@@ -449,6 +501,11 @@ def family_answer(row):
 
 def shape(row):
     """Word one proposal row for the page and the downloads."""
+    # Whether ParishSoft's current value was read and verified: never for a
+    # Family household field today. The page tells a field never read
+    # ("(not read)") from one read empty ("(blank)") (#1472); the downloads
+    # leave both blank.
+    read = bool(row["current_available"]) and row["entity_kind"] != "family"
     shown = row | {
         "status": status(row),
         "automatic": automatic(row),
@@ -458,11 +515,8 @@ def shape(row):
         "edited": display(row["admin_value"]) if row["admin_value_set"] else "",
         # Blank where no verified ParishSoft read exists (every Family
         # household field today) rather than a value that is not there.
-        "parishsoft_now": (
-            display(row["current_value"])
-            if row["current_available"] and row["entity_kind"] != "family"
-            else ""
-        ),
+        "parishsoft_read": read,
+        "parishsoft_now": display(row["current_value"]) if read else "",
         "baseline": (
             display(row["baseline_value"]) if row["baseline_available"] else ""
         ),
@@ -552,7 +606,8 @@ def select(rows, query, *, administrator):
             or needle in str(row["family_duid"])
         )
     ]
-    # The summary counts every status, and history only when it is shown.
+    # The summary counts every status, and history only when it is shown;
+    # it lists a status with no changes only if it is open work.
     counts = {key: 0 for key in STATUSES}
     for row in rows:
         if row["status"] not in HISTORY or query.history:
@@ -560,7 +615,9 @@ def select(rows, query, *, administrator):
     return {
         "rows": kept,
         "summary": [
-            (label, counts[key]) for key, label in STATUSES.items() if counts[key]
+            (label, counts[key])
+            for key, label in STATUSES.items()
+            if counts[key] or key in SUMMARY_ALWAYS
         ],
         "administrator": administrator,
     }

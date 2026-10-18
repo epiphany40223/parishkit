@@ -179,14 +179,7 @@ def roster_rows(campaign_id, principal, show, ministry=""):
     keeps one Ministry's changes. Returns the shown rows and the selection's
     result (for its metadata and its Ministries).
     """
-    result = followup_page(
-        campaign_id,
-        FollowupQuery(state="resolved", history="all"),
-        principal,
-        whole=True,
-        every_member=True,
-    )
-    rows = [row for row in result["rows"] if eligible(row)]
+    rows, result = _ticked(campaign_id, principal)
     ids = [row["id"] for row in rows]
     families = {
         str(pk): family
@@ -195,9 +188,7 @@ def roster_rows(campaign_id, principal, show, ministry=""):
         )
     }
     resolvers = _resolvers(ids)
-    marks = roster_marks(ids)
     for row in rows:
-        mark(row, marks)
         row["family_duid"] = families.get(str(row["id"]))
         row["resolved_by"] = resolvers.get(str(row["id"]), "")
     names = _family_names({row["family_duid"] for row in rows})
@@ -210,6 +201,41 @@ def roster_rows(campaign_id, principal, show, ministry=""):
         and (not ministry or str(row["ministry_duid"]) == ministry)
     ]
     return shown, result
+
+
+def _ticked(campaign_id, principal):
+    """The list's requests with their ticks, and the selection's result.
+
+    Every request is read (``history="all"``) and eligibility keeps the
+    resolved roster outcomes with no resolution source (``roster_rows``
+    says why); each row then carries its current tick (``mark``). Shared by
+    the page and Home's count (``to_enter``), so the two select alike.
+    """
+    result = followup_page(
+        campaign_id,
+        FollowupQuery(state="resolved", history="all"),
+        principal,
+        whole=True,
+        every_member=True,
+    )
+    rows = [row for row in result["rows"] if eligible(row)]
+    marks = roster_marks([row["id"] for row in rows])
+    return [mark(row, marks) for row in rows], result
+
+
+def to_enter(campaign_id, principal):
+    """How many rows the list's default view (Not yet entered) shows (#1590).
+
+    Home's Next steps count with it: the page's own selection, eligibility
+    and ticks, without the names, resolvers and Family numbers only the
+    rows need. Admin and Staff only, as the page (``can_tick``); anyone else
+    is refused here too, so a count never reaches a Ministry leader. The
+    caller handles the page's refusals and read failures.
+    """
+    if not can_tick(principal):
+        raise PermissionError("Roster changes are unavailable.")
+    rows, _ = _ticked(campaign_id, principal)
+    return sum(not row["roster_entered"] for row in rows)
 
 
 def _family_names(duids):

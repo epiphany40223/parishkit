@@ -111,6 +111,50 @@ def test_missing_birth_requires_explicit_unknown_and_back_preserves_it(
     expect(page.locator("#member-3-birth_date")).to_be_focused()
 
 
+@pytest.mark.parametrize("width", [390, 1280])
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+def test_unknown_birth_clears_and_greys_the_date_in_place(
+    page, component_origin, width, scheme
+):
+    """Ticking Unknown empties and disables the date, untick re-enables it (#1674).
+
+    The help under the box is always shown and names why the date is greyed,
+    so ticking moves nothing; browser Back and Back to edit redraw the same
+    state.
+    """
+    page.set_viewport_size({"width": width, "height": 900})
+    page.emulate_media(color_scheme=scheme)
+    start(page, component_origin)
+    date = page.locator("#member-3-birth_date")
+    box = page.locator("#member-3-birth_date-unknown")
+    show(page, date).fill("1980-02-29")
+    help_line = page.locator("#member-3-birth_date-unknown-help")
+    before = help_line.bounding_box()
+    box.check()
+    expect(date).to_have_value("")
+    expect(date).to_be_disabled()
+    assert help_line.bounding_box() == before
+    assert (
+        "member-3-birth_date-unknown-help"
+        in date.get_attribute("aria-describedby").split()
+    )
+    # Greyed by the shared disabled style, not just read-only.
+    assert date.evaluate("e => getComputedStyle(e).cursor") == "not-allowed"
+    review(page)
+    page.go_back()
+    expect(box).to_be_checked()
+    expect(date).to_be_disabled()
+    page.go_forward()
+    page.get_by_role("button", name="Back to edit").click()
+    expect(box).to_be_checked()
+    expect(date).to_be_disabled()
+    show(page, box).uncheck()
+    expect(date).to_be_enabled()
+    expect(date).to_have_value("")
+    expect(date).to_have_js_property("required", True)
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+
+
 def test_future_birth_and_language_other_are_validated_on_blur(page, component_origin):
     start(page, component_origin)
     show(page, page.locator("#member-3-birth_date")).fill("2026-09-14")
@@ -168,6 +212,8 @@ def test_stale_birth_unknown_choice_requires_explicit_resolution(
     ).check()
     expect(page.locator("#member-3-birth_date-unknown")).to_be_enabled()
     expect(page.locator("#member-3-birth_date-unknown")).to_be_checked(checked=use_edit)
+    # A chosen Unknown keeps the birth date greyed (#1674).
+    expect(page.locator("#member-3-birth_date")).to_be_enabled(enabled=not use_edit)
     review(page)
     # Clicking finishes before a fetch necessarily reaches the route callback.
     # Await the second response so this cannot inspect the earlier submission.
@@ -248,8 +294,9 @@ def test_unknown_birth_copy_explains_removal_request(page, component_origin):
         show(
             page,
             page.get_by_text(
-                "Choosing Unknown requests removal of any recorded birth date, "
-                "subject to parish review.",
+                "Choosing Unknown clears and turns off the birth date field. It "
+                "requests removal of any recorded birth date, subject to parish "
+                "review.",
                 exact=True,
             ),
         )

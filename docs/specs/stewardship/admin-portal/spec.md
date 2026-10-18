@@ -281,7 +281,9 @@ New and Edit scheduled email pages below), its fields show only those its mail
 type uses (initial invitation and reminder: date, time and email; daily digest:
 time, email and the **Include Compared with past campaigns** checkbox, off by
 default, which adds the
-[comparison section](../campaign-history/spec.md#digest-section); weekly
+[comparison section](../campaign-history/spec.md#digest-section), and
+clearing it on a saved digest removes that section from later digests
+([#1698](https://github.com/epiphany40223/parishkit/issues/1698)); weekly
 digest: weekday, time and email) and offer only emails of
 that type; the page script clears a field it hides. The send time is a [time
 entry](../ui-conventions/spec.md#time-entry) field. A saved schedule's mail type is shown but cannot
@@ -692,14 +694,21 @@ Notes on the groups:
   [active parishioner family directory](../reports/spec.md#active-parishioner-family-directory) (with Family
   campaign codes and its mailing columns). Reports always show the current
   campaign. Ministry leaders see only their own Ministries in the Ministry
-  entry. Additional information and Ministry requests show their open
-  counts ([#585](https://github.com/epiphany40223/parishkit/issues/585)): for
+  entry. Census changes, Additional information and Ministry requests show
+  their open counts ([#585](https://github.com/epiphany40223/parishkit/issues/585),
+  [#1590](https://github.com/epiphany40223/parishkit/issues/1590)): for
+  Census changes, the rows of its default Work to do view (To do and
+  Conflict, plus To review for an Administrator, who decides automatic
+  changes), counted from the page's own rows with its own status rules; for
   Additional information, the current requests not yet marked "Follow-up
   completed" (its default view also lists completed ones); for Ministry
   requests, the total of its queue's default Unresolved view, read through that
   page's own selection with every filter it applies (only the leader's own
   Ministries for a Ministry leader); where that page would say the follow-up
-  is unavailable, no number shows. Each is a plain number after the entry's
+  is unavailable, no number shows. All three ride on one statement.
+  [Roster changes to enter](#roster-changes-to-enter) is not a menu entry
+  (Ministry requests links it), so its count shows only in Home's Next
+  steps. Each is a plain number after the entry's
   name that screen readers announce as "(N open)". No number shows at zero,
   nor on a greyed-out entry. The counts are read when a page loads, never
   updated in place, so a number never appears or disappears under the
@@ -883,9 +892,9 @@ links chosen by the campaign's state and the viewer's role:
 | --- | --- | --- | --- |
 | Draft in Testing | Continue campaign setup (the Campaign setup stepper's first step not done yet, #1404), Campaign settings, Pages and emails, Dates and mail schedules, Preview and test email (for the initial invitation's current revision), Go-live readiness, Response dashboard | Response dashboard | Ministry requests |
 | Production being activated | Production activation, Sent mail (while the campaign is still a draft, Go-live readiness leads) | Response dashboard | Ministry requests |
-| Active | Response dashboard, Additional information and Ministry requests (with open counts), Family email progress, Sent mail problems (with count) | Response dashboard, Additional information, Ministry requests (with open counts) | Ministry requests (with open count) |
+| Active | Response dashboard, Census changes, Roster changes to enter, Additional information and Ministry requests (each with its count), Family email progress, Sent mail problems (with count) | Response dashboard, Census changes, Roster changes to enter, Additional information, Ministry requests (each with its count) | Ministry requests (with open count) |
 | Mail paused | Pause and resume mail first, then the Active list | As Active | As Active |
-| Closed or archived | Response dashboard, Emailed reports | Response dashboard | Ministry requests |
+| Closed or archived | Response dashboard, Census changes, Roster changes to enter, Additional information, Ministry requests (each with its count), Emailed reports | Response dashboard, Census changes, Roster changes to enter, Additional information, Ministry requests (each with its count) | Ministry requests (with open count) |
 | No current campaign | Create the campaign when the deployment has never had one; otherwise says so, with no next steps | Says so; no next steps | Says so; no next steps |
 
 On a deployment that has never had a campaign (just after setup), Home's next
@@ -958,13 +967,30 @@ activated" is a scheduled campaign, or Production preparation in progress;
 Sent mail problems are the emails that may not have arrived (the
 header's "Not sure it arrived" count), and the step links Sent mail
 filtered to them, counted as "N may not have arrived", or plain Outgoing
-mail while there are none. Preview and
+mail while there are none.
+
+At campaign end the Staff work through four lists, so an active, paused,
+closed or archived campaign offers Administrators and Staff each of them
+with its count ([#1590](https://github.com/epiphany40223/parishkit/issues/1590)),
+and each count is the number of rows its link opens by default: Census
+changes as "N to do" (the menu's count: its Work to do view); Roster changes
+to enter as "N not yet entered" (the page's default Not yet entered view,
+read through the page's own selection, eligibility and ticks); Additional
+information and Ministry requests as "N open" (the menu's counts). Roster
+changes to enter is offered, and greyed with the same reason, exactly as the
+viewer's Ministry requests entry is, and only to Administrators and Staff,
+who alone may open it; when its count cannot be read (the follow-up is
+turned off or unavailable) the link shows no number. A Ministry leader's
+Closed list keeps Ministry requests with its open count, as in Active.
+These steps send no email. Preview and
 test email opens the initial invitation's first email and follows Pages and
 emails' availability. With no current campaign there is no Next steps panel:
 the campaign panel offers Create the campaign or says why there is none.
-Building the list adds no query; Home reads the Today count on its Family
-participation statement, and the invitation's email only for an
-Administrator in a Testing draft.
+Building the list adds no query of its own except the Roster changes to
+enter count, which Home reads (its follow-up selection and ticks) only for
+Administrators and Staff on a campaign past go-live with the Ministry module;
+Home reads the Today count on its Family participation statement, and the
+invitation's email only for an Administrator in a Testing draft.
 
 Problems that need action (failed background tasks, unacknowledged security
 events, out-of-date ParishSoft data as
@@ -6423,6 +6449,8 @@ Its CSV, XLSX and PDF downloads carry the page's columns, without the tick
 ([downloaded files](../ui-conventions/spec.md#downloaded-files)), for every
 row of the chosen Show and Ministry, in the browser's time zone (the PDF in the parish's
 compact date format). The view and each download are audited as counts.
+Home's [Next steps](#home-page) give its default Not yet entered view's
+count (#1590).
 
 The [Ministry change summary](../reports/spec.md#ministry-change-summary)
 does not show the tick: its stored export cannot carry it without replacing

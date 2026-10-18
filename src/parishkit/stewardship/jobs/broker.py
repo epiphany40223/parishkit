@@ -35,6 +35,7 @@ from .models import TaskRun
 from .queues import BROKER_PREFIX, HINT_TASK, ROLE_QUEUES, exchange
 from .scanning import ExecutionHint
 from .scheduler import HintPublicationUnavailable
+from .storage import TaskNotAdmitted
 
 # Failures that leave this process unable to prove its last task's helpers or
 # lease renewal stopped (#386, M5). Each is a BaseException so that no task
@@ -79,6 +80,19 @@ def stop_consumer(error, args, stop):
         with suppress(ValueError):
             task_id = UUID(args[0])
     emit_failure(error, level=logging.CRITICAL, name_class=True, task_id=task_id)
+
+
+def report_failure(error):
+    """Log one consumer failure; a refused claim or effect is INFO (#1659).
+
+    A handler that refuses new work on purpose (Family mail while paused or
+    stopped) leaves the task queued, or running until its lease expires;
+    the pause or stop has its own entries, so the refusal itself is
+    routine. Any other refused transition (TransitionNotAdmitted) is an
+    invariant violation and stays ERROR, like every other exception.
+    """
+    refused = isinstance(error, TaskNotAdmitted)
+    emit_failure(error, level=logging.INFO if refused else logging.ERROR)
 
 
 def exit_if_fatal(status):
@@ -303,7 +317,7 @@ def build_broker(*, endpoint, password, service, handlers, stop=None, queues=Non
                 # one recovers through its lease like any interrupted run.
                 emit_failure(error, level=logging.WARNING)
             except Exception as error:
-                emit_failure(error)
+                report_failure(error)
                 record_sql_timeout(error, args)
             finally:
                 dates.reset(token)
@@ -409,7 +423,7 @@ def consume_hint(args, kwargs, *, service, handlers, stop=None, queues=None):
         except Exception as error:
             # A failed batch rolled back what it had not committed; the
             # hinted task still gets the ordinary path.
-            emit_failure(error)
+            report_failure(error)
         if stop is not None and stop.is_set():
             return False
     options = dict(queue=handler.queue, worker_id=uuid4(), handlers=handlers)

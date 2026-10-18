@@ -139,11 +139,15 @@ def test_active_campaign_steps_counts_and_today(response_service, google):
     listed = steps(html)
     assert [step.split(" — ")[0] for step in listed] == [
         "Response dashboard",
+        "Census changes",
+        "Roster changes to enter",
         "Additional information",
         "Ministry requests",
         "Family email progress",
         "Sent mail",
     ]
+    # No request is resolved yet, so nothing waits to be entered (#1590).
+    assert "Roster changes to enter — 0 not yet entered" in listed
     # The follow-up request the harness made is open in the queue.
     assert "Ministry requests — 2 open" in listed
     assert 'href="/admin/mail/sent/"' in html

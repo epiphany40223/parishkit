@@ -27,6 +27,7 @@ from parishkit.parishsoft import DEFAULT_API_BASE_URL
 ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "tools" / "stewardship-upgrade.sh"
 HOST = ROOT / "tools" / "stewardship-upgrade-host.sh"
+PRUNE = ROOT / "tools" / "stewardship-prune-images.sh"
 REPO = "ghcr.io/example/stewardship"
 OFFICIAL_REPO = "ghcr.io/epiphany40223/parishkit/stewardship"
 UUID = "00000000-0000-4000-8000-000000000000"
@@ -63,8 +64,8 @@ def executable_stub(bin_dir, name, body):
 
 
 def test_both_halves_parse():
-    """`bash -n` accepts the local script and the uploaded host script."""
-    for script in (SCRIPT, HOST):
+    """`bash -n` accepts the local script and the uploaded host scripts."""
+    for script in (SCRIPT, HOST, PRUNE):
         assert subprocess.run(["bash", "-n", str(script)]).returncode == 0, script
         assert os.access(script, os.X_OK), script
         assert script.read_text().startswith("#!/usr/bin/env bash\n"), script
@@ -79,7 +80,7 @@ def test_shellcheck_is_clean():
             pytest.fail("the CI runner lacks shellcheck")
         pytest.skip("shellcheck is not installed")
     result = subprocess.run(
-        ["shellcheck", "-s", "bash", str(SCRIPT), str(HOST)],
+        ["shellcheck", "-s", "bash", str(SCRIPT), str(HOST), str(PRUNE)],
         capture_output=True,
         text=True,
     )
@@ -177,11 +178,17 @@ def test_a_rollback_refuses_the_schema_change_override(tmp_path):
     result, calls, _ = run_local(
         tmp_path / "zero", "--rollback", env={"STEWARDSHIP_SCHEMA_CHANGE": "0"}
     )
+    # Only the host half: this stand-in reports no replaced release, so the
+    # image pruning (#1661) is skipped.
     assert result.returncode == 0 and len(calls) == 1
 
 
 def test_a_valid_digest_uploads_the_host_script_once(tmp_path):
-    """One ssh call, the arguments in order, the host half on its stdin."""
+    """One host-half ssh call, the arguments in order, the host half on its stdin.
+
+    This stand-in reports no replaced release, so the image pruning
+    (#1661), which test_prune_images_script.py pins, is skipped.
+    """
     image = f"{OFFICIAL_REPO}@sha256:" + "d" * 64
     result, calls, stdin = run_local(tmp_path)
     assert result.returncode == 0, result.stderr

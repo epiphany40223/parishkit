@@ -743,6 +743,39 @@ roll back. Every step is timed, and the log is also kept on the host as
 `/var/log/stewardship-upgrade-TIMESTAMP.log`, with the backup's result
 appended to `/var/log/stewardship-backup.log`.
 
+After a successful upgrade or rollback it prunes old release images (#1661,
+the operations specification's
+[Production upgrades](../specs/stewardship/operations/spec.md#production-upgrades)
+rules) with
+[`tools/stewardship-prune-images.sh`](../../tools/stewardship-prune-images.sh),
+uploaded and run the same way. Only images of `STEWARDSHIP_IMAGE_REPO` are
+candidates; it keeps every image a container uses, the release just
+started, the replaced release the run reported, and the
+`STEWARDSHIP_KEEP_RELEASES` newest others (default 4), removes the rest by
+image ID, then clears Docker's build cache (`STEWARDSHIP_KEEP_BUILD_CACHE=1`
+keeps it). It prints each image removed or kept and the space freed, and
+keeps that log on the host as `/var/log/stewardship-prune-TIMESTAMP.log`.
+For now `STEWARDSHIP_PRUNE` defaults to `dry-run`, which lists what it would
+remove and removes nothing: the first real prune happens only after the
+Administrator has reviewed one Production dry-run log, and then a one-line
+follow-up (#1671) makes `on` the default. Until then
+`STEWARDSHIP_PRUNE=on` removes; `STEWARDSHIP_PRUNE=off` skips pruning.
+It prunes only when the host half's last line reports the replaced release
+as a digest of `STEWARDSHIP_IMAGE_REPO`; when that line is missing,
+reworded or empty, it warns and removes nothing. A re-run with the digest
+already running replaced the release with itself, so the release before it
+is not known by name; that run says so and skips pruning, and the next
+upgrade prunes. A failed lookup of what to keep (other than an image that
+is simply not on the host) stops the pruning before anything is removed. A
+pruning failure prints a warning and the upgrade still exits 0. To preview
+or prune without an upgrade, run it on the
+host directly (`--keep N`, `--protect IMAGE`, `--dry-run`,
+`--keep-build-cache`; its header lists them):
+
+```sh
+ssh HOST bash -s -- --dry-run < tools/stewardship-prune-images.sh
+```
+
 It does not do everything an upgrade may need. The one-time steps a
 release may require before its grants run, the
 [worker connection limit](#worker-connection-limit-339) and the
@@ -1246,6 +1279,10 @@ newer release had is neither started nor reported. The required backup
 before `web` stops runs in the current image, whose schema it matches. If
 the previous image's `retarget-image` refuses, the cause is the deployment
 field case above; the script leaves the maintenance page up and says so.
+The previous release's image is normally still on the host, since the
+[scripted upgrade](#scripted-upgrade)'s image pruning keeps the replaced
+release and the newest few others; if it was removed, the rollback's pull
+fetches it again.
 The rollback has not yet been rehearsed on a host; that is tracked in
 issue #460 and belongs on the
 [local laptop environment](../specs/stewardship/local-environment/spec.md)

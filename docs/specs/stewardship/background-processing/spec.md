@@ -292,6 +292,31 @@ retry allowance, and any other running task recovers through its lease as
 usual. Holds are logged at INFO or WARNING, never as an ERROR task
 failure; a mismatch with no installer running keeps its ordinary ERROR.
 
+### Refused claims
+
+A handler's admission may refuse a task's new work on purpose: Family and
+other mail refuses a new send while sending is paused or stopped (an outage
+pause, a SYSTEMIC stop), and other handlers refuse work their domain does
+not admit at that moment. It does so at the claim and again at the effect,
+just before the task's first domain write. A refused claim leaves the task
+queued, unchanged, for a later hint. A refused effect comes after the claim
+committed, so the task stays running until its lease expires and is then
+recovered as [abandoned work](#durable-scheduling-and-task-execution). The
+consumer logs either refusal as one `task_failed` process-log line at INFO
+with `failure_kind` `task_not_admitted`, never as an ERROR and never as
+`filesystem_unavailable`; the pause or stop itself is reported by its own
+entries ([#1659](https://github.com/epiphany40223/parishkit/issues/1659)). A
+Family bulk batch that meets either refusal rolls that item back, claim
+included, and leaves it queued for the one-at-a-time path without a
+`task_failed` line.
+
+Any other refused transition (complete, fail, retry, cancel, lease expiry,
+recovery) contradicts the handler's own evidence, such as a Family delivery
+completed before its dispatch is delivered, so it keeps an ERROR
+`task_failed` line with `failure_kind` `task_transition_refused`. Every other
+exception a consumer meets keeps its ERROR `task_failed` line and its own
+category, so a real filesystem failure is still `filesystem_unavailable`.
+
 ### Worker queues and processes
 
 Each consumer process executes one message at a time. The `worker` container

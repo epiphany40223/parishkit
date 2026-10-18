@@ -1166,6 +1166,31 @@ filtered rows, in the same statement as the total and the page (schema
 migration 0100), so the counts follow the filters in place, and paging and
 sorting leave them unchanged.
 
+Each item's page shows a **Contact details** section for its Family
+([#1595](https://github.com/epiphany40223/parishkit/issues/1595)), so Staff
+can reply without looking the Family up in ParishSoft: the Family record's
+email addresses and phones, then those of each active head of household
+(the heads the page's Family name lists), each under its own name. Other
+Members, such as children and inactive heads, are deliberately not listed:
+the heads are who Staff reply to. The details come
+from the same ParishSoft data the page names the Family from. The values are
+operational contact, as Administrators and Staff see it on Ministry requests
+([Ministry change summary](#ministry-change-summary)): ParishSoft's publish
+flags do not hide them. Source text that is not a valid address is shown
+with "not a valid address; fix in ParishSoft", as the
+[directory](#active-parishioner-family-directory) shows it, and a detail
+with no value reads "None recorded". A Family the data no longer has shows
+no details and says so; if the data is replaced while the page is read, the
+section says to reload the page. Who sees the section is exactly who may
+open the page, Administrators and Staff (`ADDITIONAL_FOLLOWUP`), checked
+again by the contact read itself; Ministry leaders still cannot open the
+page. Only the item page reads the details, never the queue, its exports,
+the weekly digest or `followup information-show`, and the page's
+`information_viewed` access audit covers them; the audit records no contact
+values. The section reads the snapshot's Family, head Member and contact
+rows directly, as the directory's Family head emails do, so it needed no
+schema change.
+
 Editing is audited and uses optimistic concurrency. Clearing a completed
 follow-up needs its confirmation box ticked, and Save waits until it is. A
 Save that reaches the server without it is refused at that box
@@ -1952,12 +1977,18 @@ then:
   first click.
 - **What changed**: the field's plain label (Mobile phone, Home address,
   Moved to another household, Deceased, New Member, and so on).
-- **ParishSoft now**, **Family's answer**, and **Edited value** (only when an
-  Administrator edited the proposed value). ParishSoft now is blank where no
-  verified ParishSoft read exists for the field (today every Family
-  household field), so a Family address never shows a ParishSoft value or a
-  conflict. Values appear in full: Admin and Staff need them to type into
-  ParishSoft, and every view and download is audited. A blank Family's answer
+- **Values**: one cell listing, each under its own small label,
+  **ParishSoft now**, on a Conflict **When the Family answered** (the value
+  the Family saw), **Family's answer**, and **Edited value** (only when an
+  Administrator edited the proposed value). ParishSoft now shows a muted
+  *(not read)* where no verified ParishSoft read exists for the field (today
+  every Family household field), so a Family address never shows a
+  ParishSoft value or a conflict, and is never mistaken for an empty
+  ParishSoft field. Values appear in full: Admin and Staff need them to type
+  into ParishSoft, and every view and download is audited. A blank value
+  that was read shows a muted *(blank)*, so it is never an empty line; this
+  includes When the Family answered where ParishSoft was empty then. The
+  downloads leave both cases as an empty cell. A blank Family's answer
   means the Family removed the value: Staff remove it in ParishSoft, or
   Ignore the row to keep it. A birth date the Family gave as Unknown shows
   *Unknown*.
@@ -1972,8 +2003,9 @@ then:
   ParishSoft together and mark both entered.
 - **Status**, derived from the row's decision and execution as below.
 - **Submitted**, in browser-local time.
-- **Recorded by**, **Recorded at** and **Note**: the latest *Entered in
-  ParishSoft*, *Ignore* or *Reopen* on the row
+- **Last recorded**: one cell listing, each under its own small label, **By**,
+  **At** and **Note** (the files' Recorded by, Recorded at and Note): the
+  latest *Entered in ParishSoft*, *Ignore* or *Reopen* on the row
   ([manual census resolution](#manual-census-resolution)), or *Approve*,
   *Ignore*, *Back to To review*, *Save value* or *Clear edit* on an Automatic row
   ([automatic census review](#automatic-census-review)): the person's
@@ -1983,7 +2015,20 @@ then:
 - **Actions**, last: the row's action icons
   ([manual census resolution](#manual-census-resolution),
   [automatic census review](#automatic-census-review)), only those the row
-  allows the reader.
+  allows the reader, two to a line.
+
+The two labelled cells keep the table readable
+([#1472](https://github.com/epiphany40223/parishkit/issues/1472)): with a
+column each for these six values, every column was squeezed into a strip of
+single letters. The table follows the shared
+[table fit](../ui-conventions/spec.md#table-fit-and-row-height) rules: no
+column narrower than its longest word, the labelled values at a readable
+minimum width, and, where the table is wider than the page (a phone, or a
+laptop beside the Admin menu with long values), it scrolls sideways inside
+its own box while the Actions column stays in view at its end. A stacked
+card layout on a phone was considered and not taken: it would drop the
+sortable headings and the table's reading order for screen readers, and
+staff enter census changes into ParishSoft at a desktop.
 
 A terminal execution decides the status first, since it is the outcome
 whatever the decision says: *published* is **Published**,
@@ -2004,7 +2049,12 @@ Admin-edited proposed values. It never resolves by silent last-write-wins.
 ### Census change filters and downloads
 
 The default shows *To do* and *Conflict*, and, for an Administrator, *To
-review* as well. Filters are status (with *Include history*), how the change
+review* as well. The Summary above the filters counts the changes by status
+(history only with *Include history*); it lists *To review*, *To do* and
+*Conflict* even at 0, and any other status only once it has a change, so
+resolving the last Conflict never removes a Summary line and moves the table
+under the pointer ([no layout shift](../ui-conventions/spec.md#no-layout-shift),
+[#1472](https://github.com/epiphany40223/parishkit/issues/1472)). Filters are status (with *Include history*), how the change
 reaches ParishSoft (with *Hide automatic changes* for staff working by
 hand), kind of change (contact details, moved, deceased, new Member), a
 Family name or DUID search, and submitted date. Sorting, paging and filters
@@ -2019,7 +2069,8 @@ number of changes and the privacy line
 ([#926](https://github.com/epiphany40223/parishkit/issues/926)); like the
 PDF, it does not list the filters. `pk-admin export census` writes these
 same files through the same writer.
-The files have the page's columns in the page's order: Family, ParishSoft
+The files have the page's columns in the page's order, each labelled value
+of Values and Last recorded in a column of its own: Family, ParishSoft
 status (the page's
 [Not in ParishSoft](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
 badge in a column of its own, with Family blank, for a Family the data no

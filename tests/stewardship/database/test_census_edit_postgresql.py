@@ -386,7 +386,8 @@ def test_the_worklist_edits_in_place_for_an_administrator_only(
     response, body = search(browser, ROUTE, form)
     assert response.status_code == 200
     assert b"now has an edited value." in body
-    assert b"<td>Corrected</td>" in body and b"<td>Requested</td>" in body
+    assert b"<dt>Edited value</dt><dd>Corrected</dd>" in body
+    assert b"<dd>Requested</dd>" in body
     assert b"resolve=clear_edit&amp;" in body
     name = fresh(name)
     response, body = search(

@@ -136,6 +136,15 @@ class FailureKind(StrEnum):
     CREDENTIAL = "credential_unavailable"
     CONFIGURATION = "configuration_unavailable"
     FILESYSTEM = "filesystem_unavailable"
+    # A handler's admission refused a task's claim or effect on purpose
+    # (#1659), such as while Family mail is paused or stopped: an expected
+    # state logged at INFO, never a failure of the filesystem or anything
+    # else. See jobs.storage.TaskNotAdmitted.
+    TASK_NOT_ADMITTED = "task_not_admitted"
+    # A handler's admission refused any other task transition (complete,
+    # fail, retry, cancel, lease expiry, recovery): an invariant violation
+    # still logged at ERROR. See jobs.storage.TransitionNotAdmitted.
+    TASK_TRANSITION_REFUSED = "task_transition_refused"
     UNEXPECTED = "unexpected_failure"
     # Operator refusals the runbooks name. The formatter drops free text, and
     # Event names are mirrored by a SQL constraint, so these ride on the
