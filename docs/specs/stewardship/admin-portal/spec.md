@@ -3436,10 +3436,16 @@ live.
   Download from ParishSoft, Save the downloaded records, Check the new data
   and Make the new data current, the phases the refresh's worker reports,
   each marked not started, in progress, done or failed in words.
-  - *Not loaded* (no load under way since the campaign was created): "This
-    campaign's ParishSoft data hasn't been loaded yet.", every stage not
-    started, and the primary **Load the campaign's ParishSoft data**.
-  - *Loading* (the newest refresh since the campaign was created is
+  The step's state follows only the campaign's *full* refreshes, those
+  requested since the campaign was created. A quick (delta) refresh, such as
+  a scheduled one, is never "the load": it neither shows the step as
+  loading nor hides an earlier full load's failure or success
+  ([#1587](https://github.com/epiphany40223/parishkit/issues/1587)).
+  - *Not loaded* (no full refresh under way or finished since the campaign
+    was created): "This campaign's ParishSoft data hasn't been loaded
+    yet.", every stage not started, and the primary **Load the campaign's
+    ParishSoft data**.
+  - *Loading* (the newest full refresh since the campaign was created is
     queued, running or waiting to retry): "Loading the campaign's
     ParishSoft data…", the stages following the run, with the records
     checked on the line after them, and no button at all, not even
@@ -3448,13 +3454,28 @@ live.
     re-reads itself in place, so the stepper, the action row and this
     region show the next state with no reload. The poll calls a run that
     succeeded loaded only when the campaign has its Families, as the page
-    does; a run that succeeded and left none reads as not loaded, so the
-    region never says loaded just before the re-read says otherwise.
+    does; a run that succeeded and left none reads as *Loaded, no Families*
+    (below), so the region never says loaded just before the re-read says
+    otherwise.
   - *Loaded* (the campaign has its Families, the step's completion): "The
     campaign's ParishSoft data is loaded.", every stage done, the line after
     them giving the campaign's Family count and the data's age ("as of",
     in the browser's time zone), and the action row's primary **Continue
     to** the next step not done yet, a link.
+  - *Loaded, no Families* (the newest full refresh succeeded, yet the
+    campaign has no Families, because ParishSoft reported no active
+    Parishioner Families for it): "The campaign's ParishSoft data loaded,
+    but no Families matched. Check that ParishSoft has active Parishioner
+    Families, then load again.", with **See the load** (the run's
+    Background task) and **Refresh from ParishSoft** (which shows what
+    the load found). Every stage is done, since the load ran and finished;
+    the line after the boxes is empty; and there is no button at all, not
+    the plain Load again (a load did run) and not Continue (the later
+    steps need Families). Once ParishSoft has the Families, the next full
+    refresh, scheduled or run from Refresh from ParishSoft outside the
+    stepper, loads them. The other Campaign setup pages show the same
+    sentences, with the same Refresh from ParishSoft link, in place of the
+    load offer.
   - *Failed* (as above): "The campaign's ParishSoft data did not load.",
     with **See what went wrong**, which opens the run's Background task,
     the stage the run stopped in marked failed, and the primary **Try

@@ -11,9 +11,12 @@ from .stepper_components import (
     CONTENT,
     EDITOR,
     LOAD,
+    LOAD_EMPTY,
     LOAD_FAILED,
+    LOAD_RUN,
     LOAD_STATUS,
     LOAD_STATUS_DONE,
+    LOAD_STATUS_EMPTY,
     LOAD_STATUS_RUNNING,
     LOADED,
     LOADING,
@@ -23,7 +26,15 @@ from .stepper_components import (
 from .test_artwork_dialog import png, slot
 from .test_components import axe_violations, shown_step_list
 from .test_in_place import MARK, MARKED
-from .waits import available, greyed, has_attribute, has_text, hidden, visible
+from .waits import (
+    available,
+    eventually,
+    greyed,
+    has_attribute,
+    has_text,
+    hidden,
+    visible,
+)
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -232,7 +243,7 @@ def assert_no_refresh_wording(page):
     assert page.get_by_text(QUEUE, exact=False).count() == 0
 
 
-@pytest.mark.parametrize("width", [320, 1280])
+@pytest.mark.parametrize("width", [320, 660, 1024, 1280])
 def test_load_step_loads_then_continues_in_place(
     page, component_origin, axe_source, width
 ):
@@ -342,8 +353,8 @@ class Polls(list):
         self.done = True
 
 
-def answer_polls(page, origin):
-    """Answer the step's status polls: running until ``finish``, then done.
+def answer_polls(page, origin, done=LOAD_STATUS_DONE):
+    """Answer the step's status polls: running until ``finish``, then ``done``.
 
     Returns the ``Polls`` answered.
     """
@@ -352,7 +363,7 @@ def answer_polls(page, origin):
     def answer(route):
         """Serve the running status until the test finishes the run."""
         polls.append(route.request.url)
-        shown = LOAD_STATUS_DONE if polls.done else LOAD_STATUS_RUNNING
+        shown = done if polls.done else LOAD_STATUS_RUNNING
         route.fulfill(response=route.fetch(url=origin + shown, method="GET"))
 
     page.route(lambda url: url.split("?")[0] == origin + LOAD_STATUS, answer)
@@ -383,12 +394,24 @@ def assert_state_colours(page, boxes, waiting):
     light = (background(done), background(active), background(rest))
     assert light[2] == waiting
     assert len(set(light)) == 3, light
-    page.emulate_media(color_scheme="dark")
+    scheme(page, "dark")
     try:
         dark = (background(done), background(active), background(rest))
         assert len(set(dark)) == 3 and dark[:2] != light[:2], (light, dark)
     finally:
-        page.emulate_media(color_scheme="light")
+        scheme(page, "light")
+
+
+def scheme(page, name):
+    """Emulate the device colour scheme ``name`` and wait for the page to take it.
+
+    The Admin dark tokens hang off ``html[data-theme]``, which admin-gate-v1.js
+    sets from a ``matchMedia`` change listener that runs after
+    ``emulate_media`` returns. Reading colours before it runs sees the old
+    scheme's, as WebKit often did (#1638).
+    """
+    page.emulate_media(color_scheme=name)
+    eventually(page, "document.documentElement.dataset.theme", name)
 
 
 # Every live region's text, keyed by the node, kept on the page for a
@@ -451,7 +474,7 @@ def answer_load(page, origin, first, reread=None):
     return address
 
 
-@pytest.mark.parametrize("width", [320, 1280])
+@pytest.mark.parametrize("width", [320, 660, 1024, 1280])
 def test_failed_load_says_so_and_try_again_loads_again(page, component_origin, width):
     """After a failed load the step says so, with Try again (#1404 PR 5).
 
@@ -491,5 +514,50 @@ def test_failed_load_says_so_and_try_again_loads_again(page, component_origin, w
     assert_same_box(above, summary.bounding_box())
     assert_same_box(below, back.bounding_box())
     assert_spoken_once(page, "Loading the campaign's ParishSoft data.")
+    assert page.evaluate(MARKED) == "kept"
+    assert failures == []
+
+
+@pytest.mark.parametrize("width", [320, 400, 641, 660, 700, 760, 1024, 1280, 1600])
+def test_load_with_no_families_has_its_own_state(page, component_origin, width):
+    """A full load that matched no Families says so, in place (#1587).
+
+    Its wording, links to the run and Refresh from ParishSoft, every box done, no
+    button of any kind (not the plain Load again, not Continue); the summary
+    line, boxes and the action row below keep their places from loading to
+    this state, in the poll's answer and after the page's in-place re-read,
+    at phone, narrow desktop (just above the 40rem breakpoint) and wide widths.
+    """
+    failures = []
+    page.on("pageerror", lambda error: failures.append(str(error)))
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(answer_load(page, component_origin, LOAD, LOAD_EMPTY))
+    page.evaluate(MARK)
+    region = page.locator("#refresh-run")
+    summary = region.locator("[data-campaign-load-summary]")
+    row = page.locator("[data-campaign-step-actions]")
+    back = row.locator("[data-campaign-step-back]")
+    polls = answer_polls(page, component_origin, LOAD_STATUS_EMPTY)
+    start = region.get_by_role("button", name="Load the campaign's ParishSoft data")
+    start.click()
+    has_text(summary, "Loading the campaign's ParishSoft data…")
+    first_box = region.locator("[data-load-stage]").first.bounding_box()
+    above, below = summary.bounding_box(), back.bounding_box()
+    polls.finish()
+    contains(summary, "The campaign's ParishSoft data loaded, but no Families matched.")
+    assert summary.get_by_role("link", name="See the load").get_attribute(
+        "href"
+    ) == reverse("admin:background_task_page", args=[LOAD_RUN])
+    assert summary.get_by_role("link", name="Refresh from ParishSoft").get_attribute(
+        "href"
+    ) == reverse("admin:source_refresh")
+    assert [state for _key, state in stage_states(page)] == ["done"] * 4
+    assert region.get_by_role("button").count() == 0
+    assert row.get_by_role("link", name="Continue to Share options").count() == 0
+    assert_no_refresh_wording(page)
+    assert_same_box(above, summary.bounding_box())
+    assert_same_box(first_box, region.locator("[data-load-stage]").first.bounding_box())
+    assert_same_box(below, back.bounding_box())
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert page.evaluate(MARKED) == "kept"
     assert failures == []

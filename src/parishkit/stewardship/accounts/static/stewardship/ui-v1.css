@@ -961,13 +961,20 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
    after the stage boxes (records checked, or the Family count) is reserved
    in every state, so its text coming and going moves nothing below it. */
 .campaign-load-count { min-height: 1lh; }
-/* Its summary line keeps room for its longest wording (failed, with See
-   what went wrong) on a phone, where each state's wording wraps
-   differently, so the boxes below never move when the state changes.
+/* Its summary line shares one grid cell with invisible, aria-hidden copies
+   of every state's wording (with all its links), so the cell is as tall as
+   the longest wording at every width, zoom and engine's text metrics, and
+   the boxes below never move when the state changes. A fixed line count
+   cannot do this: Firefox wraps the no-Families wording to six lines at
+   320px where Chromium and WebKit wrap it to five (#1618). The cell keeps
+   the paragraph's bottom margin; the summary stretches to fill the cell.
    Likewise the line after the boxes keeps two lines on a phone, where the
    Family count with the data's age wraps, so the action row below never
    moves down when the load ends. */
-@media (max-width: 40rem) { .campaign-load-summary { min-height: 3lh; } .campaign-load-count { min-height: 2lh; } }
+.campaign-load-summary-slot { display: grid; margin-block: 0 1rem; }
+.campaign-load-summary-slot > * { grid-area: 1 / 1; margin: 0; }
+.campaign-load-summary-ghost { visibility: hidden; }
+@media (max-width: 40rem) { .campaign-load-count { min-height: 2lh; } }
 /* Its button's slot (source-refresh.html) is one grid cell holding the
    button, when there is one, over invisible copies of both its labels
    (Load and Try again), so it is as tall as the taller button at every width
