@@ -135,6 +135,7 @@ sections:
     "Hub header strip": [ADM-03, RPT-03]
     "Hub tabs": [ADM-03, RPT-03]
     "Hub content tabs": [ADM-03, RPT-03]
+    "Family and Member tabs": [ADM-03, RPT-03]
     "System health": [ADM-13]
     "System health page": [ADM-13]
     "Health dashboard": [ADM-13]

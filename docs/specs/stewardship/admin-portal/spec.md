@@ -6713,7 +6713,8 @@ The hub is built in slices, each its own pull request; each subsection below
 says which slice delivers it:
 
 1. **Slice 1:** the header strip, the tab row and the Timeline tab.
-2. **Slice 2:** the Family tab and the Member tabs (census).
+2. **Slice 2:** the Family tab and the Member tabs' census fields. The
+   Member tabs' Ministry joins and leaves follow in a later slice.
 3. **Slice 3:** the Financial tab.
 4. **Slice 4:** the Cannot participate and Additional information tab.
 
@@ -6782,7 +6783,8 @@ information", with the tabs in this order:
    Family removed, marked as moved or as deceased is shown clearly, with the
    same marks the Family's census answers use, so the tab never reads as a
    current Member's. Shown when census or Ministry stewardship is part of the
-   campaign.
+   campaign, and only once the Family has submitted a response, since the
+   Members come from it ([Family and Member tabs](#family-and-member-tabs)).
 4. **Financial**: the Family's financial information. Shown when Financial
    stewardship is part of the campaign.
 5. **Cannot participate and Additional information**. Shown when Ministry
@@ -6798,7 +6800,10 @@ built yet is drawn as an
 soon", rather than left out. The Administrator, the hub's main reader, sees
 its whole shape from the first slice, and each later slice only turns its
 tabs on. Member tabs are the exception: naming each Member needs the census
-read that slice 2 adds, so slice 1 draws none, and slice 2 adds them.
+read that slice 2 adds, so slice 1 draws none, and slice 2 adds them. In a
+campaign with Ministry stewardship but no census, each Member tab is drawn
+unavailable ("Coming soon") until the slice that shows Ministry joins and
+leaves lands.
 
 Administrators and Staff both see every tab, since both review these
 streams; Ministry leaders cannot open the page. Within the Timeline tab each
@@ -6831,8 +6836,71 @@ holds a second comparison that could drift from the review worklist:
   streams.
 
 The tabs show; they do not act. Review decisions stay on the review
-worklist, which each row links to. Each slice specifies its tab's columns and
+worklist, which each panel links to. Each slice specifies its tab's columns and
 reads here before it is built, and adds a query-count test for its panel.
+
+### Family and Member tabs
+
+**Slice 2.** The Family tab and each Member tab show the census fields of
+the Family's latest live census response, read through the
+[census stream](../review-pipeline/spec.md#census-stream)'s stage mapping
+(`pipeline.census_placement`). Only Production (live) responses are read, as
+on the Timeline tab.
+
+**Which changes.** A field's change is the census change row that is in
+force for it, by the same rule the Family form uses when a Family answers
+again (`responses.effective.proposal_index`): the rows of the latest
+response that carries census answers, and for a Member's No longer in this
+household, Deceased and Death date requests the newest row of any of the
+Family's live responses, since those survive a later response that no longer
+shows the Member. A row kept only for history (superseded or cancelled) is
+no change. A field with no change in force is unchanged: the Family's answer
+matched ParishSoft when it answered, so its one value is both the Baseline
+and the Family's answer.
+
+**Members.** One tab per Member, in this order: each existing Member of the
+response, by Member DUID, then each Member whose only rows are kept requests
+from an earlier response (ParishSoft no longer lists the Member in this
+Family), then each Member the Family added, by name. A Member's tab is
+labelled with the Member's name, "Last, first"
+([Family and Member names](../ui-conventions/spec.md#family-and-member-names)),
+from the Family's answer, else the ParishSoft record the Family answered
+from; its address key is the tab's place in that order (`member-1`,
+`member-2`, ...), so no Member identifier enters the address or the browser
+history. Before the Family's first response there are no Member tabs, and
+the Family tab says it has no census answers yet.
+
+**Marks.** A Member tab opens with the Member's mark, as a badge, when the
+Member is not a current Member: **New Member** (the Family added the
+Member; not in ParishSoft yet), **No longer in this household**,
+**Deceased**, or **Not in ParishSoft** (ParishSoft no longer lists the
+Member in this Family). A moved or deceased Member's other fields were not
+asked on the form, so the tab shows only the request's own fields and says
+so.
+
+**Columns.** Each tab's changed fields are one table: **Field**,
+**Baseline** (the change's baseline value, "(not read)" where ParishSoft
+held none, "(blank)" for an empty one), **Family's answer**, **Reviewer's
+value** (drawn only when a change on the tab has one) and **Stage**, the
+stage's chip with its word ([pipeline vocabulary](../review-pipeline/spec.md#pipeline-vocabulary));
+an Entered incorrectly chip takes the Error look
+([status indicators](../ui-conventions/spec.md#status-indicators)), and a
+failed update attempt adds "Last update failed". Unchanged fields follow in
+a closed **Show unchanged** disclosure with **Field** and **Value**. A New
+Member's tab shows the addition's stage once, above a table of **Field** and
+**Family's answer**. The Not seen in ParishSoft flag is shown once the
+census stream records it
+([#1683](https://github.com/epiphany40223/parishkit/issues/1683)). Each
+panel links to [Census changes](../reports/spec.md#pending-census-changes), where
+the changes are reviewed.
+
+**Reads.** When census is part of the campaign the page reads two
+statements more, whichever tab is chosen, since the Member tabs' labels need
+them: the latest live response (with the Member names of the ParishSoft
+records the Family answered from) and its changes in force. With Ministry
+stewardship but no census only the first is read. Both use the web login's
+existing grants, and the page's one audited view covers them; nothing new is
+audited.
 
 ## System health
 
