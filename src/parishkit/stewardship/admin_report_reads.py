@@ -49,8 +49,10 @@ from uuid import UUID
 from .admin_reads import NotAvailable, ReadModel, Unavailable, _held, _recheck
 
 # The report pages ``report list`` names, by URL name, with their commands.
-# The Response dashboard shows both the funnel and the statistics and daily
-# table (#1537), so it has two, each listed as its own row.
+# The Response dashboard shows the stage counts (``report responses``, the
+# read its funnel chart once drew) and the statistics and daily table
+# (``report participation``) (#1537), so it has two, each listed as its own
+# row.
 REPORT_COMMANDS = {
     "response_dashboard": ("report responses", "report participation"),
     "campaign_comparison": ("report comparison",),
