@@ -67,8 +67,9 @@ def background_counts(page):
     """Answer the header's Background work poll as the page drew it.
 
     The component server does not serve that endpoint, so the header's 30 s
-    poll fails and shows "Background status unavailable", which wraps the
-    header to a second row at 1280 px and moves the whole page down. The
+    poll fails and shows "Background status unavailable", which used to wrap
+    the header to a second row at 1280 px and move the whole page down (the
+    sentence now replaces the pill's text in place, #1643). The
     Not current tests wait about 30 s for three failed checks, so whether
     that line had appeared by the time they measured was a race (seen in
     all three engines in CI). The counts match the fixture's "1 (running:

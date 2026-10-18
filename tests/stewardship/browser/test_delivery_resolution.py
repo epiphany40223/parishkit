@@ -107,7 +107,9 @@ def test_warning_polls_durable_count_and_survives_unavailable_response(
             expect(warning).to_be_visible()
             expect(warning).to_contain_text("1,234")
         if value == "bad":
-            assert page.locator("[data-background-total]").inner_text() == "0"
+            # The failure sentence covers the counts (#1643); the counts
+            # themselves still hold the last good total.
+            assert page.locator("[data-background-total]").text_content() == "0"
         if index == 0:
             warning.evaluate("""element => {
                 window.warningMutations = 0;

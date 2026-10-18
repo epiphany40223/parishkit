@@ -171,6 +171,17 @@ a:hover { text-decoration-thickness: .15em; }
 .site-header > .help { font-size: .875rem; }
 [data-background-indicator], [data-presence-indicator] { display: inline-block; min-height: 44px; margin-block: .25rem; padding: .6rem .9rem; line-height: 1.4; border: 1px solid var(--border); border-radius: 999px; background: var(--paper-soft); color: var(--ink); font-size: .875rem; font-weight: 550; text-decoration: none; }
 [data-background-indicator]:hover, [data-presence-indicator]:hover { border-color: var(--accent); color: var(--accent-strong); }
+/* Each pill's counts, its "status unavailable" sentence and an invisible
+   copy of that sentence (.pill-size, as .field-error-size does for field
+   errors) share one grid cell. The copy always reserves the sentence's
+   size, so a failed poll (ui-v1.js un-hides the sentence, and the counts
+   give way to it) changes the pill's text, never its size, and nothing in
+   the header or below it moves (#1643). visibility: hidden also drops the
+   counts from the accessibility tree, so the link's name is the sentence. */
+:is([data-background-indicator], [data-presence-indicator]) { display: inline-grid; align-items: center; }
+:is([data-background-indicator], [data-presence-indicator]) > * { grid-area: 1 / 1; }
+.pill-size { visibility: hidden; }
+:is([data-background-indicator], [data-presence-indicator]):has(> :is([data-background-unavailable], [data-presence-unavailable]):not([hidden])) > :first-child { visibility: hidden; }
 /* The header's Find a Family box (#561): a search field whose results drop
    down beneath it over the page, ordinary links in a panel. On narrow
    screens it takes a full row under the brand. */

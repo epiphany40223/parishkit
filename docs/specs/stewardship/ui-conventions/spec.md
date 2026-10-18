@@ -794,8 +794,15 @@ on a complete-gate hint keeps its one line's height while empty instead of
 hiding it (#959); a field that a choice makes inapplicable stays in
 place, greyed, rather than disappearing, through `data-enabled-when` (#959)
 or `data-locked-when` (open #957) ([conditional
-fields](#conditional-fields)). **Precedent.** #736 and its review
-(Administrator, 2026-10-08), #563, open #957, #959.
+fields](#conditional-fields)); each Admin header status pill (Background
+work, Families on the form now) always reserves the size of its short failure
+text ("Background work: unavailable", "Families on the form:
+unavailable"), so a failed poll swaps the pill's text for it without moving
+the header or the page; the "Open the list to retry." hint is visually
+hidden at the end of the link, so its accessible name starts with the
+visible words, and is also in the tooltip (#1643).
+**Precedent.** #736 and its review (Administrator, 2026-10-08), #563,
+open #957, #959, #1643.
 
 Clarification for disclosures. A disclosure moves only content after
 its toggle when it opens or closes, which this rule allows: the toggle
