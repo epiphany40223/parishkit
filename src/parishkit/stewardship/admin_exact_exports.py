@@ -1,7 +1,8 @@
 """Exact daily export commands of the Admin command line (ADM-11 PR 8h).
 
-An exact export is the Participation page's export of the current figures,
-for when no complete generation is ready yet: the page freezes the current
+An exact export is the latest-data export of the current figures (once the
+Participation page's form; since #1537 only this command requests one),
+for when no complete generation is ready yet: the command freezes the current
 inputs into an ``ExactExportRequest``, a background task calculates them and
 then hands off to an ordinary export record (``ExactExportResolution``),
 whose file the export lifecycle (PR 8b) downloads. These commands use the
@@ -134,7 +135,7 @@ def read_exact(caller, service, request_id):
 
 
 def create_exact(caller, service, *, scope, fmt, zone, request_key, context):
-    """``export exact create``: the Participation page's exact-export form.
+    """``export exact create``: the latest-data export (no page form, #1537).
 
     For the current campaign; no current campaign is ``not_available``, and
     no current inputs to freeze (no promoted source) is ``not_available``.

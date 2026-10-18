@@ -1,7 +1,8 @@
-"""The response dashboard's options, shaping and page, without a database (#477).
+"""The Response dashboard's funnel shaping and page, without a database (#477, #1537).
 
-The metrics are the synthetic response-metrics rows the chart tests use; the
-view's admission, guard and audit are covered against PostgreSQL in
+The funnel is the synthetic response-metrics rows the chart tests use, and
+the statistics and daily chart the digest test document's; the view's
+admission, guard and audit are covered against PostgreSQL in
 ``database/test_response_dashboard_postgresql.py``.
 """
 
@@ -9,6 +10,7 @@ import re
 from dataclasses import replace
 from datetime import timedelta
 from types import SimpleNamespace
+from urllib.parse import urlsplit
 from uuid import UUID
 
 import pytest
@@ -16,36 +18,96 @@ from django.http import QueryDict
 from django.template.loader import render_to_string
 from django.urls import reverse
 
-from parishkit.stewardship.reports.directories import DirectoryQuery
-from parishkit.stewardship.reports.directory_views import LINK_PRESETS
+from parishkit.stewardship import observability
+from parishkit.stewardship.reports import workspace_views
+from parishkit.stewardship.reports.chart_specs import participation_chart
+from parishkit.stewardship.reports.digest_presentation import (
+    participation_table_context,
+)
+from parishkit.stewardship.reports.facts import FactUnavailable
 from parishkit.stewardship.reports.response_dashboard import (
-    DIRECTORY_PRESETS,
     HOURLY_SPAN,
-    LISTS,
     DashboardQuery,
     at_grain,
     chosen_grain,
-    family_lists,
-    figures,
-    page_context,
+    funnel_panels,
     tiles,
+)
+from parishkit.stewardship.reports.statistics import StatisticsUnavailable
+from parishkit.stewardship.reports.workspace import ReportQuery
+from parishkit.stewardship.reports.workspace_views import (
+    daily_table,
+    mode_links,
+    scope_links,
+    statistics_panel,
 )
 from parishkit.stewardship.web.dates import using
 
 from .test_chart_specs import metrics
+from .test_daily_digest_content import document
 from .test_response_metrics import START
 
-CAMPAIGN = SimpleNamespace(
-    pk=UUID(int=477), active_configuration=SimpleNamespace(name="Sample campaign")
-)
 PATH = reverse("admin:response_dashboard")
-DIRECTORY = reverse("admin:family_directory")
-# The dashboard region its switches refresh in place and land on (#519).
+# The one region every choice of the page refreshes in place and lands on
+# (#519, #1537).
 REGION = "response-dashboard"
 
 
-def test_query_accepts_only_its_closed_vocabulary():
-    """Mode and grain are the only parameters, each from a fixed list."""
+def page_context(query=None, funnel=..., *, can_test=True, value=None):
+    """The context the view gives the template, from synthetic values.
+
+    ``funnel`` is the mode's metrics (None: a Testing view with no
+    rehearsal; by default the chart tests' metrics). A Production view also
+    carries the statistics, the daily chart and table, and the export.
+    """
+    query = query or ReportQuery()
+    value = value or document()
+    chart = value.participation
+    campaign = SimpleNamespace(
+        pk=chart.campaign_id,
+        active_configuration=SimpleNamespace(
+            name=chart.campaign_name, values=SimpleNamespace(modules=["financial"])
+        ),
+        state="active",
+    )
+    context = {
+        "campaign": campaign,
+        "query": query,
+        "testing": query.mode == "testing",
+        "can_test": can_test,
+        "mode_links": mode_links(query),
+        "metrics": None,
+    }
+    funnel = metrics() if funnel is ... else funnel
+    if funnel is not None:
+        context |= funnel_panels(funnel)
+    if query.mode == "testing":
+        return context
+    presented = participation_table_context(chart)
+    return context | {
+        **presented,
+        "scope_links": scope_links(query),
+        "selection": SimpleNamespace(updating=False, expected=True),
+        "statistics": value.statistics,
+        **statistics_panel(value.statistics),
+        "export_key": UUID(int=10),
+        "export_allowed": True,
+        "row_count": len(chart.days),
+        **daily_table(chart, presented, query),
+        "daily_chart": participation_chart(chart),
+    }
+
+
+def render(*args, **kwargs):
+    """The Response dashboard page as the view renders it."""
+    with using("us_long"):
+        return render_to_string(
+            "stewardship/response-dashboard.html", page_context(*args, **kwargs)
+        )
+
+
+def test_cli_query_accepts_only_its_closed_vocabulary():
+    """``report responses`` takes mode and grain, each from a fixed list."""
     assert DashboardQuery.parse(QueryDict("")) == DashboardQuery("production", "auto")
     assert DashboardQuery.parse(QueryDict("mode=testing&grain=day")) == (
         DashboardQuery("testing", "day")
@@ -55,16 +117,8 @@ def test_query_accepts_only_its_closed_vocabulary():
             DashboardQuery.parse(QueryDict(invalid))
 
 
-def test_query_urls_leave_defaults_out_and_keep_the_other_choice():
-    """Switching mode keeps the grain and switching grain keeps the mode."""
-    query = DashboardQuery("testing", "day")
-    assert DashboardQuery().url() == PATH
-    assert query.url(mode="production") == PATH + "?grain=day"
-    assert query.url(grain="hour") == PATH + "?mode=testing&grain=hour"
-
-
 def test_grain_is_hourly_for_a_short_span_and_daily_after():
-    """Auto picks by what the chart spans; a reader's choice always wins."""
+    """Auto picks by what the series spans; a reader's choice always wins."""
     value = metrics()
     assert chosen_grain(value, "auto") == "hour"
     assert chosen_grain(value, "day") == "day"
@@ -88,10 +142,9 @@ def test_regrouping_reuses_the_rows_and_keeps_the_totals():
     )
 
 
-def test_tiles_and_figures_carry_every_count():
-    """One tile per stage with its share of Invited; three figures beside them."""
-    value = metrics()
-    shown = tiles(value)
+def test_tiles_carry_every_stage_count():
+    """One tile per stage with its share of Invited and its note."""
+    shown = tiles(metrics())
     assert [(tile.key, tile.text, tile.details, tile.bar) for tile in shown] == [
         ("invited", "4", (), (4, 4)),
         (
@@ -104,24 +157,24 @@ def test_tiles_and_figures_carry_every_count():
         ("progressed", "3", ("75% compared with invited",), (3, 4)),
         ("submitted", "3", ("75% compared with invited",), (3, 4)),
     ]
-    assert [count for _label, count in figures(value)] == [0, 0, 1]
 
 
-def render(query=None, value=None, *, can_test=True):
-    """The dashboard page as the view renders it, from synthetic metrics."""
-    with using("us_long"):
-        context = page_context(
-            CAMPAIGN, query or DashboardQuery(), value, can_test=can_test
-        )
-        return render_to_string("stewardship/response-dashboard.html", context)
-
-
-def test_page_shows_tiles_figures_and_both_charts():
-    """Counts first, then the two charts, each with its summary and table."""
-    page = render(value=metrics())
+def test_page_shows_the_funnel_then_the_statistics_chart_and_export():
+    """Families by stage, the funnel, the statistics, the daily chart and
+    the small export panel, in that order, in one in-place region (#1537)."""
+    page = render()
     assert "<h1>Response dashboard</h1>" in page
-    assert "Sample campaign — Production" in page
-    assert re.findall(r'<span class="stat-value">(\d+)</span>', page) == [
+    headings = re.findall(r"<h2[^>]*>([^<—]+)", page)
+    assert [heading.strip() for heading in headings] == [
+        "Families by stage",
+        "Response funnel",
+        "Current active population statistics",
+        "Daily participation",
+        "Export",
+    ]
+    assert f'<div id="{REGION}" data-in-place-region' in page
+    # The stage tiles come first, then the statistics' own tiles.
+    assert re.findall(r'<span class="stat-value">([^<]+)</span>', page)[:5] == [
         "4",
         "5",
         "4",
@@ -129,86 +182,142 @@ def test_page_shows_tiles_figures_and_both_charts():
         "3",
     ]
     assert "125% compared with invited" in page
-    assert "Includes mail-scanner prefetches" in page
-    assert "<dt>Submitted more than once</dt><dd>1</dd>" in page
-    assert 'id="response-funnel-spec"' in page and 'id="response-activity-spec"' in page
-    assert page.count('class="chart-table"') == 2
-    # The page loads the chart engine and carries no inline script or style.
-    assert "stewardship/chart-v1.js" in page
+    # No "Also counted" figures, no Lists of Families, no activity chart.
+    for gone in ("Also counted", "Submitted more than once", "Lists of Families"):
+        assert gone not in page
+    assert 'id="response-activity-spec"' not in page and "By hour" not in page
+    # The funnel labels its bars, so it has no exact-values table; the
+    # page's only table is the daily one.
+    assert 'id="response-funnel-spec"' in page
+    assert 'class="chart-table"' not in page
+    assert page.count("<table") == 1 and "exact daily values" in page
+    # No inline script or style.
     assert not re.search(r"<script(?![^>]*\bsrc=)(?![^>]*application/json)", page)
     assert " style=" not in page and "<style" not in page
-    # The grain choice marks the one shown; the Admin sees the mode switch.
-    # Each is an in-place link that refreshes the dashboard region (ui-v1.js,
-    # #519); its fragment lands an ordinary load there too.
-    hour = f'<a href="{PATH}?grain=hour#{REGION}" data-in-place="grain-hour"'
-    assert hour + ' aria-current="page">By hour' in page
-    day = f'<a href="{PATH}?grain=day#{REGION}" data-in-place="grain-day">By day'
-    assert day in page
-    production = f'<a href="{PATH}#{REGION}" data-in-place="mode-production"'
+
+
+def test_statistics_panel_has_one_data_as_of_line():
+    """ "Data as of" the counting moment, in browser-local time (#1537); the
+    other time lines, the pledge periods and Technical details are gone."""
+    value = document()
+    page = render(value=value)
+    instant = value.statistics.observed_at.isoformat()
+    time = f'<time datetime="{instant}" data-local-instant>{instant}</time>'
+    assert f"<p>Data as of {time}</p>" in page
+    for gone in (
+        "Counted at",
+        "ParishSoft data as of",
+        "Upcoming pledge period",
+        "Comparison period",
+        "Giving observed at",
+        "Technical details",
+        "Families eligible right now and their latest answers.",
+    ):
+        assert gone not in page, gone
+    # No "UTC" label: the browser shows the time in its own zone.
+    panel = page[page.index('id="participation-statistics"') :]
+    assert "UTC" not in panel[: panel.index("</section>")]
+
+
+def test_export_panel_is_small_with_xlsx_first():
+    """One sentence, the format menu (XLSX first and chosen, no PNG) and
+    Generate export; no latest-data export (#1537)."""
+    page = render()
+    panel = page[page.index('id="participation-export"') :]
+    assert "<p>Exports the daily participation data on this page.</p>" in panel
+    assert re.findall(r'<option value="(\w+)"', panel) == ["xlsx", "csv", "pdf"]
+    assert '<option value="xlsx" selected>' in panel
+    assert reverse("admin:report_export_create") in panel
+    assert reverse("admin:report_export_create").startswith("/admin/reports/responses/")
+    for gone in (
+        "Queue export",
+        "Export with the latest data",
+        "Statistics cards are not part",
+        "dates ascending",
+        "Sensitive",
+    ):
+        assert gone not in panel, gone
+
+
+def test_choices_are_in_place_links_carrying_the_view():
+    """The Production / Testing rehearsal pair (Administrators only) and the
+    Chart population pair each link to this page and land on its region; a
+    mode link keeps the population, sort and size (#1535, #1537)."""
+    query = ReportQuery(scope="current", sort="date_asc", size="25")
+    page = render(query)
+    common = "scope=current&amp;page=1&amp;sort=date_asc&amp;size=25&amp;timezone=UTC"
+    production = f'<a href="{PATH}?{common}#{REGION}" data-in-place="mode-production"'
     assert production + ' aria-current="page">Production' in page
-    testing = f'<a href="{PATH}?mode=testing#{REGION}" data-in-place="mode-testing"'
-    assert testing + ">Testing rehearsal" in page
-    assert f'<div id="{REGION}" data-in-place-region>' in page
-    # The lists behind the counts are links with their lengths (#477, PR 5);
-    # in Production they open the directory's presets (#933).
-    submitted = "?response=submitted&amp;responses=yes&amp;sort=submitted"
-    assert f'<a href="{DIRECTORY}{submitted}">Families that submitted</a>: 3' in page
-    quality = f'<a href="{DIRECTORY}?check=anything">ParishSoft data to check</a> <'
-    assert quality in page
-    assert f"{PATH}submitted/" not in page
-    # No Family name or DUID reaches the page: counts only.
-    assert "family_duid" not in page
+    testing = (
+        f'<a href="{PATH}?scope=current&amp;page=1&amp;mode=testing&amp;sort=date_asc'
+        f'&amp;size=25&amp;timezone=UTC#{REGION}" data-in-place="mode-testing">'
+        "Testing rehearsal"
+    )
+    assert testing in page
+    current = f'<a href="{PATH}?{common}#{REGION}" data-in-place="scope-current"'
+    assert current + ' aria-current="page">Current population' in page
+    # The Chart population sits in the Daily participation panel.
+    chart = page[page.index('id="participation-chart"') :]
+    assert 'id="participation-scope"' in chart
+    assert page.index('id="dashboard-mode"') < page.index('id="response-stages"')
+    # Staff are never offered Testing.
+    staff = render(can_test=False)
+    assert "Testing rehearsal" not in staff and "mode=testing" not in staff
 
 
-def test_staff_page_has_no_testing_switch():
-    """Testing data is for Administrators; Staff are not offered the switch."""
-    page = render(value=metrics(), can_test=False)
-    assert "Testing rehearsal" not in page and "mode=testing" not in page
-
-
-def test_testing_page_says_so_and_handles_no_rehearsal():
-    """The Testing view is labelled; with no rehearsal it says why it is empty."""
-    query = DashboardQuery("testing")
-    page = render(query, metrics())
-    assert "Sample campaign — Testing rehearsal" in page
-    assert 'class="notice"' in page and "never counted in Production" in page
-    testing = f'<a href="{PATH}?mode=testing#{REGION}" data-in-place="mode-testing"'
-    assert testing + ' aria-current="page">Testing' in page
-    empty = render(query, None)
-    assert "no Testing responses to show" in empty
+def test_testing_view_shows_the_rehearsal_funnel_only():
+    """Families by stage and the funnel show the rehearsal; the Production
+    panels are left out with one line saying why (#1537)."""
+    page = render(ReportQuery(mode="testing"))
+    assert "never counted in Production" in page
+    assert "Families by stage" in page and 'id="response-funnel-spec"' in page
+    reason = (
+        '<p id="production-only">Population statistics, daily participation and '
+        "the export count Production responses only. Choose Production to see "
+        "them.</p>"
+    )
+    assert reason in page
+    for gone in ("participation-statistics", "participation-chart", "export-format"):
+        assert gone not in page
+    testing = f'<a href="{PATH}?scope=historical&amp;page=1&amp;mode=testing'
+    assert testing in page and 'aria-current="page">Testing rehearsal' in page
+    # With no rehearsal the view says there is nothing to show.
+    empty = render(ReportQuery(mode="testing"), None)
+    assert "no Testing responses to show" in empty and reason in empty
     assert "stat-tile" not in empty and "data-chart=" not in empty
-    # No figures, no Testing notice: there is nothing it could qualify.
     assert "never counted in Production" not in empty
+    # Production never says it.
+    assert 'id="production-only"' not in render()
 
 
-def test_page_charts_are_named_by_their_headings_not_drawn_titles():
-    """The panel heading names each chart; the drawn title is left out."""
-    shaped = page_context(CAMPAIGN, DashboardQuery(), metrics())
-    funnel, activity = shaped["charts"]
-    assert "title" not in funnel.spec and "title" not in activity.spec
-    page = render(value=metrics())
+def test_funnel_is_named_by_its_heading_not_a_drawn_title():
+    """The panel heading names the chart; the drawn title is left out, and
+    so is the count axis, since each bar carries its count (#1537); the
+    emailed chart keeps both."""
+    from parishkit.stewardship.reports.chart_specs import funnel_chart
+
+    shown = funnel_panels(metrics())["funnel"].spec
+    assert "title" not in shown and shown["encoding"]["x"]["axis"] is None
+    emailed = funnel_chart(metrics()).spec
+    assert "title" in emailed and emailed["encoding"]["x"]["axis"]
+    page = render()
     assert '<h2 id="funnel-heading">Response funnel</h2>' in page
-    assert '<h2 id="activity-heading">Response activity by hour</h2>' in page
     assert 'data-chart-title="Response funnel"' in page
 
 
 def test_no_invitations_yet_says_so_instead_of_shares():
     """With nothing invited a share means nothing, so the page says why."""
     rows = tuple(replace(row, invited_at=None) for row in metrics().families)
-    page = render(value=metrics(families=rows))
+    page = render(funnel=metrics(families=rows))
     assert "No invitations have been delivered yet." in page
     assert "compared with invited" not in page
-    assert "No invitations" not in render(value=metrics())
+    assert "No invitations" not in render()
 
 
 def test_tiles_draw_their_share_of_invited_as_bars():
-    """Each tile's share bar runs against Invited and is hidden from AT (#720).
-
-    Invited's own bar is full; a share past 100% (link followed, 5 of 4)
-    keeps its count, which the browser draws as a full bar. With nothing
-    invited there is no share, so no tile has a bar.
-    """
-    page = render(value=metrics())
+    """Each stage tile's share bar runs against Invited and is hidden from
+    AT (#720); with nothing invited no stage tile has a bar."""
+    page = render(ReportQuery(mode="testing"))
     bars = re.findall(
         r'<span class="stat-bar" aria-hidden="true">'
         r'<progress value="(\d+)" max="(\d+)"></progress></span></li>',
@@ -216,52 +325,65 @@ def test_tiles_draw_their_share_of_invited_as_bars():
     )
     assert bars == [("4", "4"), ("5", "4"), ("4", "4"), ("3", "4"), ("3", "4")]
     rows = tuple(replace(row, invited_at=None) for row in metrics().families)
-    assert "<progress" not in render(value=metrics(families=rows))
+    uninvited = render(ReportQuery(mode="testing"), metrics(families=rows))
+    assert "<progress" not in uninvited
 
 
-def test_lists_open_the_directory_with_closed_presets():
-    """Each link is a directory preset the directory accepts in GET.
+def test_daily_table_links_keep_the_mode_and_population():
+    """A daily-table navigator or heading keeps the page's view (#1537)."""
+    query = ReportQuery(scope="current", size="5")
+    links = [urlsplit(href).query for href in scope_links(query).values()]
+    assert all("mode" not in link for link in links)
+    assert ("mode", "testing") in ReportQuery(mode="testing").carried()
 
-    The presets reproduce every response list (#933): the Response choice
-    that lists the same funnel rows, its columns and its default order, which
-    the directory keeps because the sorted column is shown. A Testing view's
-    links are the same presets plus ``mode=testing``, so the directory reads
-    the same rehearsal (the directory's Testing switch).
-    """
-    shown = family_lists(DashboardQuery(), metrics())
-    assert set(DIRECTORY_PRESETS) == set(LISTS)
-    assert [item["count"] for item in shown] == [3, 1, 1, 1, None]
-    queries = []
-    for item in shown:
-        path, _, preset = item["url"].partition("?")
-        values = QueryDict(preset)
-        assert path == DIRECTORY and set(values) <= LINK_PRESETS
-        query = DirectoryQuery.parse(values)
-        assert query.sort == values.get("sort", "name")
-        queries.append(query)
-    assert [(query.response, query.responses, query.check) for query in queries] == [
-        ("submitted", "yes", "any"),
-        ("started", "yes", "any"),
-        ("never-opened", "yes", "any"),
-        ("more-than-once", "yes", "any"),
-        ("any", "no", "anything"),
-    ]
-    assert [query.sort for query in queries] == [
-        "submitted",
-        "name",
-        "name",
-        "submissions_desc",
-        "name",
-    ]
-    testing = family_lists(DashboardQuery("testing"), metrics())
-    for production, item in zip(shown, testing, strict=True):
-        path, _, preset = item["url"].partition("?")
-        values = QueryDict(preset)
-        assert path == DIRECTORY and set(values) <= LINK_PRESETS
-        query = DirectoryQuery.parse(values)
-        assert query.mode == "testing"
-        assert query == replace(
-            DirectoryQuery.parse(QueryDict(production["url"].partition("?")[2])),
-            mode="testing",
-        )
-        assert item["count"] == production["count"]
+
+def test_unreadable_statistics_leave_the_funnel_and_say_so():
+    """When the statistics or daily facts cannot be read, the Production
+    view still shows the funnel and says the other panels are unavailable
+    (#1537), with no zero assumed."""
+    context = page_context(ReportQuery(mode="testing")) | {
+        "query": ReportQuery(),
+        "testing": False,
+        "participation_unavailable": True,
+    }
+    with using("us_long"):
+        page = render_to_string("stewardship/response-dashboard.html", context)
+    assert "Families by stage" in page and 'id="response-funnel-spec"' in page
+    assert '<p id="production-unavailable">' in page
+    assert "no zero values have been assumed" in page
+    for gone in ("participation-statistics", "participation-chart", "export-format"):
+        assert gone not in page
+    assert 'id="production-unavailable"' not in render()
+
+
+@pytest.mark.parametrize(
+    ("error", "cause"),
+    [(FactUnavailable("x"), "facts"), (StatisticsUnavailable("x"), "statistics")],
+)
+def test_swallowed_participation_errors_are_logged(monkeypatch, caplog, error, cause):
+    """The in-page degradation keeps its debug log, so a real code fault
+    hidden as "unavailable" stays visible (#1537)."""
+    from contextlib import ExitStack
+
+    def fail(*args, **kwargs):
+        raise error
+
+    monkeypatch.setattr(workspace_views, "guarded_participation", fail)
+    monkeypatch.setattr(observability, "debug_logging_enabled", lambda: True)
+    with caplog.at_level("DEBUG", logger="parishkit.stewardship.debug"):
+        result = workspace_views._participation(ExitStack(), None, None, ReportQuery())
+    assert result == (None, cause)
+    assert [r.exc_info[1] for r in caplog.records] == [error]
+
+
+def test_no_parishsoft_data_wording_differs_from_a_pending_chart():
+    """No ParishSoft data yet is not a wait of a few minutes (#1537)."""
+    context = page_context(ReportQuery(mode="testing")) | {
+        "query": ReportQuery(),
+        "testing": False,
+        "participation_unavailable": True,
+        "participation_cause": "statistics",
+    }
+    with using("us_long"):
+        page = render_to_string("stewardship/response-dashboard.html", context)
+    assert "none is available yet" in page and "few minutes" not in page

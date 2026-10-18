@@ -1,4 +1,9 @@
-"""Native requester controls over immutable queued participation calculations."""
+"""Native requester controls over immutable queued participation calculations.
+
+A latest-data export is requested with ``export exact create`` (the command
+line); the Response dashboard's page offers only the export of the chart
+shown (#1537). Its status page and actions stay here.
+"""
 
 from uuid import UUID, uuid4
 
@@ -16,20 +21,17 @@ from parishkit.stewardship.jobs.queue_wait import queue_wait
 from parishkit.stewardship.jobs.storage import TaskRetryConflict
 from parishkit.stewardship.source.snapshot_models import SourceSnapshot
 from parishkit.stewardship.storage import StorageInvariantError
-from parishkit.stewardship.web.dates import parish_zone, unasked_zone
 from parishkit.stewardship.web.responses import campaign_response
 
 from .exact_models import ExactExportRequest
 from .exact_services import (
     cancel_exact_export,
-    create_exact_export,
     exact_export_ended,
     exact_export_status,
     retry_exact_export,
 )
 from .export_services import (
     ExportConflict,
-    ExportRequestBound,
     admit_campaign,
     authorize,
 )
@@ -41,11 +43,11 @@ from .workspace import ReportQuery
 
 def _gone(request, job):
     """The fixed "no longer available" page for an ended latest-data export,
-    linking back to Participation as the export's page does."""
+    linking back to the Response dashboard as the export's page does."""
     report_url = ReportQuery(
         scope=job.population_scope, timezone=job.browser_timezone
     ).url()
-    return gone_page(request, "participation", report_url)
+    return gone_page(request, "response_dashboard", report_url)
 
 
 def _redirect(identifier):
@@ -53,41 +55,6 @@ def _redirect(identifier):
     response = redirect("admin:report_export", request_id=identifier)
     response["Cache-Control"] = "no-store"
     return response
-
-
-@require_POST
-def create(request, campaign_id):
-    """Freeze current inputs server-side, even before a ready chart exists."""
-    try:
-        service = runtime()
-        principal = _principal(request, service.store)
-        values = _body(
-            request,
-            {"population_scope", "format", "request_key"},
-            optional={"browser_timezone"},
-        )
-        job = create_exact_export(
-            service.store,
-            principal.identity,
-            campaign_id=campaign_id,
-            population_scope=values["population_scope"],
-            format=values["format"],
-            # The page asks for no zone (#1127): the one it was drawn in,
-            # else the parish's.
-            browser_timezone=unasked_zone(
-                values.get("browser_timezone"), parish_zone()
-            ),
-            request_key=UUID(values["request_key"]),
-        )
-        return _redirect(job.pk)
-    except ExportRequestBound:
-        return _error(request, campaign_id=campaign_id, status=409, bound=True)
-    except (PermissionError, ObjectDoesNotExist):
-        return denial()
-    except (*SAFE_FAILURES, StorageInvariantError):
-        return _error(request, campaign_id=campaign_id, status=503)
-    except ValueError:
-        return _error(request, campaign_id=campaign_id, status=400)
 
 
 @require_GET
@@ -128,10 +95,11 @@ def detail(request, request_id):
                 admit_campaign(campaign_id, mutating=True)
             except PermissionError:
                 mutable = False
-            # An exact export belongs to the participation report (#196).
+            # An exact export belongs to the Response dashboard, whose
+            # daily chart it exports (#196, #1537).
             admin_navigation.place(
                 request,
-                parent="participation",
+                parent="response_dashboard",
                 flow="export",
                 step="download" if state.get("export_id") else "prepare",
             )

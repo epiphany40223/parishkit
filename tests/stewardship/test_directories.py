@@ -31,6 +31,21 @@ from parishkit.stewardship.reports.directories import (
     selection_parameters,
 )
 
+# The directory's closed link presets for each list of Families (reports
+# spec, "Response filters"), which the Response dashboard's Lists of
+# Families panel linked to until #1537 removed it; saved links still open.
+RESPONSE_LIST_PRESETS = {
+    "submitted": {"response": "submitted", "responses": "yes", "sort": "submitted"},
+    "started": {"response": "started", "responses": "yes"},
+    "not-opened": {"response": "never-opened", "responses": "yes"},
+    "more-than-once": {
+        "response": "more-than-once",
+        "responses": "yes",
+        "sort": "submissions_desc",
+    },
+    "data-quality": {"check": "anything"},
+}
+
 
 def test_directory_filters_preserve_private_post_state():
     """Friendly codes canonicalize; page state never becomes identifying URLs."""
@@ -578,12 +593,11 @@ def test_page_address_keeps_only_link_safe_presets():
         LINK_PRESETS,
         page_address,
     )
-    from parishkit.stewardship.reports.response_dashboard import DIRECTORY_PRESETS
 
     route = reverse("admin:family_directory")
     assert page_address(route, DirectoryQuery(), postal=False) == route
-    # Each dashboard link's own query comes back unchanged.
-    for preset in DIRECTORY_PRESETS.values():
+    # Each list's link query comes back unchanged.
+    for preset in RESPONSE_LIST_PRESETS.values():
         query = DirectoryQuery.parse(QueryDict(urlencode(preset)))
         address = page_address(route, query, postal=False)
         assert QueryDict(address.partition("?")[2]).dict() == preset

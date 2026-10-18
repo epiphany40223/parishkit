@@ -261,7 +261,6 @@ LEDGER = {
     # The aggregate report reads (PR 8c): counts and summaries only; the
     # rows behind them are the Family-level exports (PR 8e and 8f).
     "reports": command("report list"),
-    "participation": command("report participation"),
     # The Campaign comparison page (#1018): its figures for a day.
     "campaign_comparison": command("report comparison"),
     # Its download form (#1018, slice 6): the same capture and export.
@@ -302,7 +301,9 @@ LEDGER = {
     "ministry_report": command("report ministry", "export ministry", "followup list"),
     # A packet of the chosen Ministries' Members and contacts: an export.
     "ministry_packet": command("export ministry-packet"),
-    "response_dashboard": command("report responses"),
+    # The Response dashboard shows the funnel and, since #1537, the
+    # statistics and daily table that were Participation's.
+    "response_dashboard": command("report responses", "report participation"),
     "family_directory": command("export directory", "export postal"),
     # The one-Family timeline is Family-level, so it is a file only: the
     # page's export form (PR 8g) and ``export family-timeline``.
@@ -325,16 +326,17 @@ LEDGER = {
     # Both directory exports are privileged (#547), as above.
     "family_directory_export": command("export directory", "export postal"),
     # The export lifecycle (PR 8b): the status page and its buttons, and the
-    # Participation page's export form. The download's grant is issued and
-    # consumed inside ``export download``.
-    "report_export_create": command("export create"),
-    # The export pages also serve an exact request (report_exact_create's
-    # redirect), whose commands are the export exact ones (PR 8h).
+    # Response dashboard's export form. The download's grant is issued and
+    # consumed inside ``export download``. The latest-data export lost its
+    # page form with #1537; its command stays, beside the page's one export
+    # form, as the other way to export the daily figures.
+    "report_export_create": command("export create", "export exact create"),
+    # The export pages also serve an exact request (made by ``export exact
+    # create``), whose commands are the export exact ones (PR 8h).
     "report_export": command("export status", "export exact status"),
     "report_export_cancel": command("export cancel", "export exact cancel"),
     "report_export_retry": command("export retry", "export exact retry"),
     "report_export_download": command("export download"),
-    "report_exact_create": command("export exact create"),
     # The digests (PR 8d): the retained reports an emailed digest links to,
     # and the manual weekly report.
     "daily_digest_snapshot": command("digest daily"),

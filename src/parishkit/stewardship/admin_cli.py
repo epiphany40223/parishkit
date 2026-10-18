@@ -2396,7 +2396,7 @@ def export_postal(args, preamble, runtime, context):
 
 
 def export_exact_create(args, preamble, runtime, context):
-    """Request an exact daily export, as the page's form does (PR 8h)."""
+    """Request an exact daily export of the latest data (PR 8h)."""
     from .admin_exact_exports import create_exact
 
     return create_exact(
@@ -2520,7 +2520,7 @@ def report_list(args, preamble, runtime, context):
 
 
 def report_participation(args, preamble, runtime, context):
-    """The Participation page's statistics and daily table (PR 8c)."""
+    """The Response dashboard's statistics and daily table (PR 8c)."""
     from .admin_report_reads import read_participation
 
     return read_participation(context["caller"], runtime, scope=args.scope)
@@ -6185,7 +6185,7 @@ def _report_specs():
         # The exact daily exports (PR 8h, ``admin_exact_exports``).
         CommandSpec(
             "export exact create",
-            "Request an exact daily export, as the Participation page does.",
+            "Request an exact daily export of the latest data.",
             export_exact_create,
             "full",
             True,
@@ -6301,7 +6301,7 @@ def _report_specs():
         ),
         CommandSpec(
             "report participation",
-            "Show the Participation report's statistics and daily counts.",
+            "Show the Response dashboard's statistics and daily counts.",
             report_participation,
             "read_only",
             False,

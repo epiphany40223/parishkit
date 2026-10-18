@@ -427,7 +427,7 @@ def test_campaign_without_the_module_is_denied_and_unlinked(response_service, go
         response, body = get(browser, route)
         assert response.status_code == 409
         assert b"does not include Financial stewardship" in body
-        response, body = get(browser, reverse("admin:participation"))
+        response, body = get(browser, reverse("admin:response_dashboard"))
         assert response.status_code == 200 and route.encode() not in body
 
 
@@ -764,7 +764,7 @@ def test_native_page_filters_privately_and_denies_leaders(
         for invalid in ({"sort": "annual_pledge"}, {"size": "250"}, {"size": "all"}):
             assert search(browser, route, invalid)[0].status_code == 400
         # The campaign reports page offers the entry only with the module enabled.
-        _, body = get(browser, reverse("admin:participation"))
+        _, body = get(browser, reverse("admin:response_dashboard"))
         assert route.encode() in body
 
     # Two different routes to the same recovery page. The shared guard answers

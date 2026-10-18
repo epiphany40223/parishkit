@@ -108,7 +108,8 @@ def test_the_weekly_report_in_progress_is_shown_unavailable():
         # their export were retired (#1157), and the packet moved from the
         # summary page to its own include (#1133).
         ("ministry-packet.html", "ministry-export-locked", 1, 1),
-        ("participation.html", "participation-export-locked", 2, 1),
+        # The Response dashboard's one export button (#1537).
+        ("response-dashboard.html", "participation-export-locked", 1, 1),
         ("information.html", "information-locked", 4, 1),
         # Save, Save and next, and (#1331) the bulk bar and both kinds of box.
         ("ministry-followup.html", "followup-locked", 6, 1),
@@ -150,12 +151,11 @@ def test_a_held_roster_tick_is_shown_unavailable_with_why(entered):
 
 
 def test_participation_exports_without_their_data_are_shown_unavailable():
-    """With no chart, or no data for a new export, each export button is
-    drawn disabled, named by the sentence that says why."""
-    text = (TEMPLATES / "participation.html").read_text()
+    """With no chart the Response dashboard's export button is drawn
+    disabled, named by the sentence that says why."""
+    text = (TEMPLATES / "response-dashboard.html").read_text()
     for reason, label in [
         ("participation-chart-export-unavailable", "Generate export"),
-        ("participation-exact-export-unavailable", "Queue export with the latest data"),
     ]:
         assert text.count(f'id="{reason}"') == 1
         assert (

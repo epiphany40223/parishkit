@@ -1908,7 +1908,7 @@ checks that every other ledger route is named here.
 | `campaign_step_continue` ([#1404](https://github.com/epiphany40223/parishkit/issues/1404)) | Permanent: the browser [Campaign setup stepper](../admin-portal/spec.md#create-the-campaign)'s own progress (a step kept as is, then the next step page, or one Pages and emails item kept as is, then Pages and emails, #1404 PR 6b); the command line applies settings directly and has no stepper |
 | `held_emails` ([#757](https://github.com/epiphany40223/parishkit/issues/757)) | Permanent: held-email decisions stay in the browser. The exemption predates [#1547](https://github.com/epiphany40223/parishkit/issues/1547), when they needed a recent Google sign-in that the decision guard (migration 0017) checked; since migration 0114 the guard binds only a live session of the actor |
 | `automation_access`, `automation_approval`, `automation_sessions` (revoke) and `automation_notices` (acknowledgement) (new) | Permanent: these pages are the human side of the interface (PR 2); `sessions` takes the page's filter and sort for one's own sessions (#621) |
-| `response_dashboard` ([#517](https://github.com/epiphany40223/parishkit/issues/517)) | `report responses` with counts (PR 8c) |
+| `response_dashboard` ([#517](https://github.com/epiphany40223/parishkit/issues/517)) | `report responses` with counts (PR 8c), and `report participation` for the statistics and daily table it absorbed from Participation ([#1537](https://github.com/epiphany40223/parishkit/issues/1537)) |
 
 The inventory's `status presence` is folded into `status` as its
 `presence.count`, because a word cannot be both a command and an area in
@@ -2702,7 +2702,6 @@ deleted when the export ends, so nothing regenerates it.
 | URL names | Command or exemption |
 | --- | --- |
 | `reports` | `report list` (PR 8c) |
-| `participation` | `report participation` (PR 8c) |
 | `campaign_comparison` | `report comparison [--day N]` ([#1018](https://github.com/epiphany40223/parishkit/issues/1018) slice 3, [campaign history](../campaign-history/spec.md#command-line)): aggregates only, with the small-count protection |
 | `campaign_comparison_export` | `export comparison [--day N] --format F [--timezone Z]` ([#1018](https://github.com/epiphany40223/parishkit/issues/1018) slice 6, [downloads](../campaign-history/spec.md#downloads-and-sharing)): the page's download form, through the same capture (`comparison_exports.read_capture`) and service (`create_comparison_export`), with the page's `campaign_comparison_exported` and `admin_cmd_export_comparison`; without `--timezone` the file's request time uses the parish's time zone ([#1161](https://github.com/epiphany40223/parishkit/issues/1161)) |
 | `daily_digest_chart`, `daily_digest_download` | Permanent: PNG images; the data is in the matching report or digest read |
@@ -2720,8 +2719,7 @@ deleted when the export ends, so nothing regenerates it.
 | `limitations_export` | `export limitations [--show S] [--format F] [--timezone Z]` (PR 8h, [#463](https://github.com/epiphany40223/parishkit/issues/463)): the page's download through the page's own writer (`limitation_views.export_body`), with #752's audit fields |
 | `census_changes`, `census_changes_export` | `report census`, counts ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the rows through `export census` (PR 8h, [#463](https://github.com/epiphany40223/parishkit/issues/463)). A row's Entered in ParishSoft, Ignore and Reopen ([#528](https://github.com/epiphany40223/parishkit/issues/528)) post to `census_changes`; their command is `census resolve PROPOSAL_ID --action entered\|ignored\|reopened` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), through the same `census_resolution` service. An Automatic row's Review (Approve, Ignore, Back to To review; ADM-09) posts there too; its command is `census review PROPOSAL_ID --decision approved\|ignored\|unreviewed` ([#528](https://github.com/epiphany40223/parishkit/issues/528)), through the same `census_review` service. The Review's Edit value and Clear edit (ADM-09.04) are `census edit PROPOSAL_ID --value TEXT\|- \| --clear`, and its Use the Family's value anyway (ADM-09.03) is `census resolve-conflict PROPOSAL_ID` ([#1434](https://github.com/epiphany40223/parishkit/issues/1434)), through the same service |
 | `census_publication`, `census_publication_confirmation`, `census_publication_retries` (new, [#528](https://github.com/epiphany40223/parishkit/issues/528); not built yet) | `census publish-check`, `census publish-plan`, `census publish-confirm` and `census publish-rerun`: the [Publish to ParishSoft](../reports/spec.md#publish-to-parishsoft) page's Check ParishSoft, plan, Apply and Run again, through the same `publication_tasks` and `publication_plans` services; see [the commands](#publish-to-parishsoft-commands) |
-| `report_export_create`, `report_export`, `report_export_cancel`, `report_export_retry`, `report_export_download` | `export create`, `export status --watch`, `export cancel`, `export retry`, `export download --stream` (PR 8b; `report_export_regenerate` and `export regenerate` were removed by [#1398](https://github.com/epiphany40223/parishkit/issues/1398)); an exact request's status, cancel and retry, which these pages also serve, are `export exact status --watch`, `export exact cancel` and `export exact retry` (PR 8h) |
-| `report_exact_create` | `export exact create` (PR 8h); the handed-off file through `export fetch` |
+| `report_export_create`, `report_export`, `report_export_cancel`, `report_export_retry`, `report_export_download` | `export create` (and `export exact create`, the latest-data export, whose page form [#1537](https://github.com/epiphany40223/parishkit/issues/1537) removed), `export status --watch`, `export cancel`, `export retry`, `export download --stream` (PR 8b; `report_export_regenerate` and `export regenerate` were removed by [#1398](https://github.com/epiphany40223/parishkit/issues/1398)); an exact request's status, cancel and retry, which these pages also serve, are `export exact status --watch`, `export exact cancel` and `export exact retry` (PR 8h) |
 | `daily_digest_snapshot` | `digest daily SNAPSHOT_ID` (PR 8d) |
 | `weekly_digest_snapshot`, `weekly_digest_item` | `digest weekly SNAPSHOT_ID`: each item's identifier and states; an item's text stays on the page (PR 8d) |
 | `weekly_digest_manual` | `digest weekly-request` (PR 8d) |
@@ -2766,7 +2764,10 @@ events through the page's audit function; where the page's event counts
 the rows it displayed, the command's counts 0. A read the page answers
 with 503 (its database, guard or inputs failing, or a value it could not
 shape) is `unavailable` (exit 3, retry). `report participation` prints the `fact_set_id` that
-`export create --fact-set` takes. Reading the current campaign only (no
+`export create --fact-set` takes. `report list` lists the Response
+dashboard twice, once per command (`report responses` and `report
+participation`), since the page shows both reads
+([#1537](https://github.com/epiphany40223/parishkit/issues/1537)). Reading the current campaign only (no
 `--campaign` until #145), the summaries without search or filtered rows,
 and the stored keys for share options are defaults, pending
 Administrator confirmation; the
@@ -2960,9 +2961,12 @@ service also refuses a non-Administrator, so a Staff member could not
 export Testing through it even if one could reach it. With no active
 rehearsal the command is `stale_version` (the page's 409) and nothing is
 made.
-The exact daily export commands (PR 8h) are the Participation page's
-exact-export form and its status page, through the page's own services
-(`reports.exact_services`): `export exact create` freezes the current
+The exact daily export commands (PR 8h) are the latest-data export and its
+status page, through the services the page used
+(`reports.exact_services`); since
+[#1537](https://github.com/epiphany40223/parishkit/issues/1537) the Response
+dashboard offers no latest-data form, so `export exact create` is the only
+way to request one. `export exact create` freezes the current
 campaign's inputs (`--scope`, `--format`, `--timezone`, keyed), `export
 exact status` is the status page's passive read with no view event, as the
 page records none, `--watch` following it until the calculation has handed
@@ -3055,7 +3059,7 @@ window, so there is no `export regenerate`; it was removed with the page's
 Regenerate ([#1398](https://github.com/epiphany40223/parishkit/issues/1398)).
 `export status` admits passively
 like the status page (any session) and records nothing, as the page
-records nothing. `export create` (the Participation page's form, for the
+records nothing. `export create` (the Response dashboard's form, for the
 generation its `--fact-set` names), `export comparison` (the Campaign
 comparison page's download form, for the current campaign on `--day`),
 `export cancel` and `export retry` admit as the pages' form posts do, so

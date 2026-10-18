@@ -48,7 +48,7 @@ STEPS = {
             "go_live",
             "response_dashboard",
         ),
-        "staff": ("response_dashboard", "participation"),
+        "staff": ("response_dashboard",),
         "ministry_leader": ("ministry_report",),
     },
     "activating": {
@@ -69,8 +69,8 @@ STEPS = {
     "paused": _ACTIVE
     | {"administrator": ("delivery_control", *_ACTIVE["administrator"])},
     "closed": {
-        "administrator": ("participation", "emailed_reports"),
-        "staff": ("participation",),
+        "administrator": ("response_dashboard", "emailed_reports"),
+        "staff": ("response_dashboard",),
         "ministry_leader": ("ministry_report",),
     },
 }

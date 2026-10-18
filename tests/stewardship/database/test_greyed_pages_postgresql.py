@@ -118,16 +118,16 @@ def test_no_parishsoft_data_leads_to_the_refresh(auth_service, google):
     assert "ParishSoft data has not been downloaded yet, so no Family" in shown
     assert f'href="/admin/{_path("source_form")}"' not in shown
     assert 'id="source-form-link-tip"' not in shown
-    # Participation greys the directory for the data, and Limitations
-    # because this draft has no Ministry stewardship.
+    # The Response dashboard greys the directory for the data, and
+    # Limitations because this draft has no Ministry stewardship.
     # A streamed report: read through an abortable transport.
-    participation, body = read(browser, f"/admin/{_path('participation')}")
-    assert participation.status_code == 200
+    dashboard, body = read(browser, f"/admin/{_path('response_dashboard')}")
+    assert dashboard.status_code == 200
     body = body.decode()
     _greyed_link(body, "family_directory", reason)
     _greyed_link(body, "limitations_report", navigation.MINISTRY_MISSING)
     _greyed_link(body, "information_queue", reason)
-    assert f'<a href="/admin/{_path("response_dashboard")}">' in body
+    assert "<h1>Response dashboard</h1>" in body
 
 
 def test_no_parishsoft_data_for_staff_has_no_way_on(auth_service, google):

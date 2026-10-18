@@ -1,4 +1,10 @@
-"""Native exact exports reuse real policy, workers, retained facts and grants."""
+"""Native exact exports reuse real policy, workers, retained facts and grants.
+
+Since #1537 no page offers the latest-data export: it is requested with
+``export exact create``, through ``exact_services.create_exact_export``,
+which these tests call as the command does. Its status page and buttons
+are the shared export page's.
+"""
 
 # ruff: noqa: F811 -- imported fixture dependencies are injected by pytest name.
 
@@ -7,7 +13,7 @@ from uuid import UUID, uuid4
 import pytest
 from django.urls import reverse
 
-from parishkit.stewardship.accounts.models import PortalSession
+from parishkit.stewardship.accounts.models import PortalSession, PortalUser
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.dispatch import execute_hint
 from parishkit.stewardship.jobs.queues import WorkQueue
@@ -30,6 +36,23 @@ from .test_taskrun_postgresql import act
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
+def request_exact(store, campaign_id, values, email="admin@example.org"):
+    """Request a latest-data export as ``email``, as ``export exact create``
+    does (#1537); the address of its status page."""
+    from parishkit.stewardship.reports.exact_services import create_exact_export
+
+    job = create_exact_export(
+        store,
+        PortalUser.objects.get(email=email).pk,
+        campaign_id=campaign_id,
+        population_scope=values["population_scope"],
+        format=values["format"],
+        browser_timezone=values["browser_timezone"],
+        request_key=UUID(values["request_key"]),
+    )
+    return reverse("admin:report_export", args=[job.pk])
+
+
 def test_native_exact_retry_handoff_and_expiry(
     http_scenario,
     monkeypatch,
@@ -39,7 +62,7 @@ def test_native_exact_retry_handoff_and_expiry(
     """One prepared corpus covers the complete immutable-input requester flow."""
     setup, browser = http_scenario
     store, _, facts, _ = setup
-    path = reverse("admin:report_exact_create")
+    campaign = facts.campaign_id
     values = {
         "population_scope": "current",
         "format": "xlsx",
@@ -47,19 +70,14 @@ def test_native_exact_retry_handoff_and_expiry(
         "request_key": str(uuid4()),
     }
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        assert browser.get(path).status_code == 405
-        assert browser.post(path, values).status_code == 403
         for invalid in (
-            values | {"source_id": str(uuid4())},
             values | {"population_scope": "all"},
-            values | {"request_key": "bad-key"},
+            values | {"format": "docx"},
         ):
-            assert post(browser, path, invalid).status_code == 400
+            with pytest.raises(ValueError):
+                request_exact(store, campaign, invalid)
         assert not ExactExportRequest.objects.exists()
-        response = post(browser, path, values)
-        assert response.status_code == 302
-        status_path = response["Location"]
-        assert response["Cache-Control"] == "no-store"
+        status_path = request_exact(store, campaign, values)
         original_activity = list(
             PortalSession.objects.values_list("id", "last_activity_at", "version")
         )
@@ -87,7 +105,7 @@ def test_native_exact_retry_handoff_and_expiry(
     with monkeypatch.context() as patch:
         patch.setattr(exact_services, "current_inputs", no_recapture)
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-            assert post(browser, path, values)["Location"] == status_path
+            assert request_exact(store, campaign, values) == status_path
     failed = act(_status(job.task), "claim")
     act(failed, "permanent_failure")
     retry_key = uuid4()
@@ -141,9 +159,7 @@ def test_native_exact_retry_handoff_and_expiry(
     assert b"Regenerate" not in expired
     # A later request can reuse ready facts but still owns a distinct renderer.
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        waiting = post(browser, path, values | {"request_key": str(uuid4())})[
-            "Location"
-        ]
+        waiting = request_exact(store, campaign, values | {"request_key": str(uuid4())})
     pending = ExactExportRequest.objects.exclude(pk=job.pk).get()
     with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
         assert execute_hint(
@@ -161,7 +177,7 @@ def test_native_exact_retry_handoff_and_expiry(
             and b"This export is no longer available." in body
         )
         # One still queued, whose page and commands the gate below holds.
-        held = post(browser, path, values | {"request_key": str(uuid4())})["Location"]
+        held = request_exact(store, campaign, values | {"request_key": str(uuid4())})
 
     from django.db import connection, transaction
 
@@ -183,8 +199,9 @@ def test_native_exact_retry_handoff_and_expiry(
         cursor.execute("ALTER TABLE stewardship_campaign_work_gate ENABLE TRIGGER USER")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         assert b"Other campaign work" in read(browser, held)[1]
+        with pytest.raises(PermissionError):
+            request_exact(store, campaign, values | {"request_key": str(uuid4())})
         for endpoint, payload in (
-            (path, values | {"request_key": str(uuid4())}),
             (export_action(held, "cancel"), {}),
             (export_action(held, "retry"), {"request_key": str(uuid4())}),
         ):
@@ -212,7 +229,7 @@ def test_native_exact_cancel_and_other_requester_denial(
     google[0]["email"] = "staff@example.org"
     google[0]["sub"] = "synthetic-staff-subject"
     browser, _ = signed_in()
-    path = reverse("admin:report_exact_create")
+    campaign = facts.campaign_id
     values = {
         "population_scope": "historical",
         "format": "csv",
@@ -220,8 +237,8 @@ def test_native_exact_cancel_and_other_requester_denial(
         "request_key": str(uuid4()),
     }
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        owned = post(browser, path, values)["Location"]
-        other = post(admin, path, values | {"request_key": str(uuid4())})["Location"]
+        owned = request_exact(store, campaign, values, "staff@example.org")
+        other = request_exact(store, campaign, values | {"request_key": str(uuid4())})
         assert read(browser, other)[0].status_code == 403
         assert post(browser, export_action(other, "cancel")).status_code == 403
         assert (
@@ -270,7 +287,8 @@ def test_native_exact_cancel_and_other_requester_denial(
     )
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         assert read(browser, owned)[0].status_code == 403
-        assert post(browser, path, values).status_code == 403
+        with pytest.raises(PermissionError):
+            request_exact(store, campaign, values, "staff@example.org")
         assert post(browser, export_action(owned, "cancel")).status_code == 403
         assert (
             post(

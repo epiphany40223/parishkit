@@ -75,7 +75,6 @@ SLASHLESS = (
     ("campaign/production/cancellation", "production_withdrawal"),
     ("reports", "reports"),
     ("reports/responses", "response_dashboard"),
-    ("reports/participation", "participation"),
     ("reports/comparison", "campaign_comparison"),
     ("reports/financial", "financial_report"),
     ("reports/limitations", "limitations_report"),

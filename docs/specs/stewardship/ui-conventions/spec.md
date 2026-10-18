@@ -418,10 +418,8 @@ never scrolls to show it (Administrator, pk-local review of
   refuses an in-place control whose fragment names no region there.
 - **Controls.** A link that shows another view of the page (`a[data-in-place]`:
   each segment of a [binary choice](#binary-choices), such as the
-  [participation report](../reports/spec.md#campaign-statistics)'s Chart
-  population, which refreshes its statistics, chart and export panels; the
-  [response dashboard](../reports/spec.md#response-dashboard)'s mode and
-  grain, the
+  [Response dashboard](../reports/spec.md#response-dashboard)'s mode and
+  Chart population, each of which refreshes the page's one region; the
   [Family timeline](../reports/spec.md#family-timeline)'s mode and When sort,
   the page links of a mail delivery's
   evidence and attempt history, an information item's and a Ministry
@@ -1091,7 +1089,7 @@ the resend admission refuses it; Queue new manual report while an earlier
 Weekly Admin digest is still being prepared or delivered (checked when the
 page opens); and Upload on Hosted files while the library is full. A button
 the server draws disabled because other campaign work holds the page (report
-exports, follow-up saves, Participation) names that notice too.
+exports, follow-up saves, the Response dashboard) names that notice too.
 
 The same applies wherever the page already knows the refusal, whatever the
 reason: other campaign work holding the action, or a missing prerequisite the
@@ -1661,10 +1659,9 @@ browser tests of each page that draws one. **Precedent.**
 (Administrator, 2026-10-17), from the Response dashboard's Production |
 Testing rehearsal.
 
-- **Where.** The Participation page's Chart population (Historical as of
-  day | Current population), the Response dashboard's Responses shown
-  (Production | Testing rehearsal) and Activity grouped by (By hour | By
-  day), the Family timeline's Records shown (Production | Testing
+- **Where.** The Response dashboard's Responses shown (Production |
+  Testing rehearsal) and Chart population (Historical as of day | Current
+  population), the Family timeline's Records shown (Production | Testing
   rehearsal), the
   [family directory](../reports/spec.md#active-parishioner-family-directory)'s Responses shown
   (Production | Testing rehearsal), above its Filters panel, and
@@ -3100,7 +3097,11 @@ Admin tables share one component, so paging, sorting, selection and styling
 behave the same everywhere. A long table has a row navigator above and below
 it: the rows shown and "Page N of M", a rows-per-page choice (25, 50, 100, 250
 or All, where the table's source allows it), Previous and Next, and a
-page-number field. A page number past the end shows the last page.
+page-number field. A page number past the end shows the last page. A summary
+table that follows its chart may offer 5 as a smaller first size and default
+to it, since the chart already shows the whole series (the Response
+dashboard's daily table,
+[#1537](https://github.com/epiphany40223/parishkit/issues/1537)).
 
 Column headings sort the table on the server. Each sortable heading is a
 control that sorts by that column; choosing the sorted column again reverses
@@ -3188,9 +3189,9 @@ table, including none. A response the
 server refuses (a malformed filter's 400, a denial, an unavailable report) is
 shown as returned; a POST is never sent twice, since each report read is
 audited. While a request is in flight, repeating the same submission is
-ignored. The participation report's Chart population reshapes its
-statistics, chart and exports rather than one table, so it is a
-[binary choice](#binary-choices) whose links refresh all three panels
+ignored. The Response dashboard's Chart population reshapes its chart,
+table and export rather than one table, so it is a
+[binary choice](#binary-choices) whose links refresh the page's region
 instead. When
 the fetch fails or returns another page (a sign-in), the ordinary page load happens and its fragment lands on the table rather than at
 the top. The link preparation history keeps only the fragment and always
@@ -3671,8 +3672,11 @@ what the report holds. Troubleshooting uses the page's Technical details and
 the audit log, not a download; the recorded exceptions are the System logs
 export and the command line's Census changes JSON Lines below. Every data export is offered as CSV, XLSX and PDF unless a
 recorded technical or design reason says otherwise (Administrator decision,
-2026-10-10); a page may add a format, such as the participation chart's PNG
-or System logs' JSON Lines. An export form is its format menu and its
+2026-10-10); a page may add a format, such as System logs' JSON Lines. The
+Response dashboard's export drops the participation chart's PNG
+([#1537](https://github.com/epiphany40223/parishkit/issues/1537)): its page
+holds more than one chart, and the PNG is still accepted from the command
+line. An export form is its format menu and its
 button; it carries no explanation of how each format writes dates or money
 (Administrator decision, 2026-10-17,
 [#1538](https://github.com/epiphany40223/parishkit/issues/1538)). **Shared code.** `reports/pdf_design.py` and
@@ -3753,7 +3757,7 @@ deliveries. Any other download (campaign dates, contact dates, no times at
 all) asks nothing: its form sends the browser's zone in a hidden
 `data-browser-zone` field, which sets the file's frame times (Captured at,
 Requested at, Source as of), and the file names that zone. The one exception
-is Participation: its export forms post the page's own `query.timezone`, the
+is the Response dashboard: its export form posts the page's own `query.timezone`, the
 zone the page was drawn in, which `report-v1.js` fills with the browser's
 (the [participation graph](../reports/spec.md#participation-graph)). The
 server falls back to the parish's time zone rather than refusing a missing or
