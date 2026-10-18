@@ -51,7 +51,7 @@
 </div>
 {% include "stewardship/table-navigator.html" with table=table label=pages_label %}
 </div>
-{# The download (#1653): a closed disclosure below the list, as every report's export (UX conventions, "Compact pages"), so its form takes no room above the table. #}<details class="export-panel"><summary id="roster-export-heading">{% translate "Download this list (CSV, XLSX or PDF)" %}</summary>
+{# The download (#1653): a closed disclosure below the list, as every report's export (UX conventions, "Page help"), so its form takes no room above the table. #}<details class="export-panel"><summary id="roster-export-heading">{% translate "Download this list (CSV, XLSX or PDF)" %}</summary>
 <form id="table-export" data-table-sync method="post" action="{% url 'admin:ministry_roster_export' %}">{% csrf_token %}<input type="hidden" name="show" value="{{ show }}"><input type="hidden" name="ministry" value="{{ ministry }}">
 <label for="roster-format">{% translate "Format" %}</label><select id="roster-format" name="format">{% export_format_options "csv" "xlsx" "pdf" %}</select>
 <label for="roster-timezone">{% translate "Timezone" %}</label><select id="roster-timezone" name="timezone" data-information-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
