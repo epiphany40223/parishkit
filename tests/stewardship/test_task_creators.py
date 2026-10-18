@@ -148,10 +148,10 @@ SITES = {
             "reports/directory_export_views.py",
         },
     ),
+    # The Response dashboard requests no latest-data export (#1537): only
+    # the command line does.
     "reports/exact_services.py::create_exact_export": site(
-        "report_exact_export",
-        WEB,
-        {"admin_exact_exports.py", "reports/exact_ui.py"},
+        "report_exact_export", WEB, {"admin_exact_exports.py"}
     ),
     "reports/exact_services.py::retry_exact_export": site(
         "report_exact_export",
