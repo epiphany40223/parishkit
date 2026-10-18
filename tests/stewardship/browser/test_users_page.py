@@ -504,3 +504,35 @@ def test_edit_review_waits_for_a_change(page, component_origin):
     page.get_by_role("group", name="Role").get_by_label("Staff").check()
     eventually(page, REVIEW_HELD, False)
     assert review.is_enabled()
+
+
+def test_google_account_guidance_shows_where_sign_in_fails(page, component_origin):
+    """The one Google Account guidance reaches a stuck leader and the Admin (#1593).
+
+    The Admin sign-in page and the generic Admin refusal show it with
+    Google's help link opening in a new tab; a Family refusal does not. On
+    Users, the line under the table counts the Ministry leader who never
+    signed in, and the About panel repeats the guidance for the
+    Administrator to pass on.
+    """
+    from parishkit.stewardship.accounts.google_account_help import (
+        HELP_URL,
+        LINK_LABEL,
+    )
+
+    for path in ("/login", "/denied-admin"):
+        page.goto(component_origin + path)
+        guidance = page.locator("[data-google-account-help]")
+        visible(guidance.get_by_text("It doesn't have to be a Gmail address"))
+        link = guidance.get_by_role("link", name=str(LINK_LABEL))
+        assert link.get_attribute("href") == HELP_URL, path
+        assert link.get_attribute("target") == "_blank", path
+    page.goto(component_origin + "/denied")
+    assert page.locator("[data-google-account-help]").count() == 0
+    page.goto(component_origin + LIST)
+    assert page.locator("#users-never-signed-in").inner_text() == (
+        "1 Ministry leader has never signed in."
+    )
+    about = page.locator("details[data-about-page]")
+    about.locator("summary").click()
+    visible(about.locator("[data-google-account-help]"))

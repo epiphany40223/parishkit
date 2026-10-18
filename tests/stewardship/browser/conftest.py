@@ -1740,6 +1740,8 @@ def component_origin():
         ("/availability", "availability", {"setup": True, "admin": True}),
         ("/family-maintenance", "family-maintenance", {"message": "Back by 3 PM."}),
         ("/denied", "denied", {"retry_path": "/admin/login"}),
+        # The generic Admin refusal, with the Google Account guidance (#1593).
+        ("/denied-admin", "denied", {"retry_path": "/admin/login", "admin": True}),
         ("/denied-code", "denied", {"retry_path": "/", "kind": "code"}),
         ("/denied-link", "denied", {"retry_path": "/", "kind": "link"}),
         (

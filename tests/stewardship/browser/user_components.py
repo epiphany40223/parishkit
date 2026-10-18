@@ -88,6 +88,7 @@ from parishkit.stewardship.accounts.user_views import (
     PREFIX,
     UserForm,
     _entry_context,
+    never_signed_in,
     review_lines,
     table_rows,
 )
@@ -286,6 +287,7 @@ def _list(
                 "new_url": NEW,
                 "delete_url": delete,
                 "delete_reason": OWN_DELETE,
+                "never_signed_in": never_signed_in(rows),
                 "leaders": leader_table,
                 "leaders_unreachable": 2 if leaders else 0,
                 "import_url": import_url,

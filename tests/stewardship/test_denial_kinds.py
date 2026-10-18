@@ -66,3 +66,19 @@ def test_access_gate_rate_limits_and_outages_use_the_family_route(status):
     assert response.status_code == status and response["Retry-After"] == "5"
     assert TEXTS["unavailable"] in response.content
     assert b'href="/"' in response.content
+
+
+def test_only_the_generic_admin_refusal_carries_the_google_account_guidance():
+    """Every Admin refusal alike explains a missing Google Account (#1593).
+
+    The guidance is the same for every reason, so it reveals no check; the
+    temporary-unavailability page and Family refusals do not show it.
+    """
+    from parishkit.stewardship.accounts.google_account_help import HELP_URL
+
+    marker = f'href="{HELP_URL}"'.encode()
+    assert marker in login_denial(admin=True, status=403).content
+    unavailable = login_denial(admin=True, status=503, kind="unavailable")
+    assert marker not in unavailable.content
+    for kind in TEXTS:
+        assert marker not in login_denial(status=403, kind=kind).content

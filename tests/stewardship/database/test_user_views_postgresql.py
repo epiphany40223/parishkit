@@ -154,6 +154,29 @@ def test_the_own_row_note_counts_every_page(auth_service, google):
     )
 
 
+def test_the_page_counts_leaders_who_never_signed_in(auth_service, google):
+    """The line under the table counts Ministry leaders never signed in (#1593).
+
+    Staff without a sign-in are not counted; the About panel carries the
+    shared Google Account guidance for the Administrator to pass on.
+    """
+    add_rules(
+        auth_service.store,
+        address("lee@example.org", ("ministry_leader",)),
+        address("lou@example.org", ("ministry_leader",)),
+        address("staff@example.org", ("staff",)),
+    )
+    convert(auth_service.store)
+    browser, login = signed_in()
+    assert login.status_code == 302
+    body = page(browser)
+    assert (
+        '<p class="help" id="users-never-signed-in">'
+        "2 Ministry leaders have never signed in.</p>"
+    ) in body
+    assert body.count("data-google-account-help") == 1
+
+
 @pytest.mark.parametrize("role", ["staff", "ministry_leader"])
 def test_other_roles_get_none_of_the_users_routes(auth_service, google, role):
     """Who may sign in, and changing it, is Administrator-only."""
