@@ -468,6 +468,12 @@ UNGROUPED_REASONS = {
         "debug_logging_allowed",
         "admin_cmd_system_debug_allow",
     ),
+    # Clear the halt (#530): no group is about the mail sender's halt;
+    # System health's Mail tile shows it.
+    "Clearing a halted mail sender; System health shows the mail senders": (
+        "mail_halt_cleared",
+        "admin_cmd_system_mail_clear",
+    ),
     "Reviewing a restore from backup, an operator's recovery": (
         "restore_review_started",
         "restore_review_released",

@@ -6252,11 +6252,11 @@ time, and the
 `system health` command. Three of the four actions have landed: **Take a
 backup now** (PR 3), **Accept this change once** (PR 5a to 5c, with its
 example Families) and **Turn off debug logging** (PR 6a
-and 6b, with Testing's **Allow debug logging again** in PR 6c). For
-**Clear the halt** (PR 4) no panel offers a button yet; its problem sentence
-names the runbook step instead, and that step, listed under
-[runbook steps the page replaces](#runbook-steps-the-page-replaces), remains
-the way to do it. A halt's kind arrives with PR 4.
+and 6b, with Testing's **Allow debug logging again** in PR 6c). **Clear
+the halt** landed in two parts: PR 4a added its server side and its
+commands (`system mail-clear-preview` and `system mail-clear`), and PR 4b
+the Mail tile's control, drawn while a mail sender is halted. All four
+actions have landed.
 
 ### System health page
 
@@ -6436,9 +6436,9 @@ existing kind, the split of a grouped process problem, and `severity` and
 Working summaries in a fixed order (see
 [why sends are waiting](#why-sends-are-waiting)), one line for both mail
 senders while they agree, and its explanations moved into toggletips and
-"About this page". A halt's kind and **Clear the halt** wait for ADM-13
-PR 4, which adds halt identities, so the Mail tile has no action region
-yet. Slice 4 delivered the ParishSoft refresh tile: its Working summaries
+"About this page". ADM-13 PR 4b added the Mail tile's action region,
+**Clear the halt**, whose preview names the halt's kind from PR 4a's halt
+records. Slice 4 delivered the ParishSoft refresh tile: its Working summaries
 in a fixed order (see the
 [ParishSoft refresh panel](#parishsoft-refresh-panel)), the refused
 counts inside the refusal's own problem item, listed last so Accept this
@@ -6911,9 +6911,10 @@ The same problem never appears twice in ways that disagree.
   the group's count, ahead of the System logs button. A problem counts as
   current while its group has not ended, by the banner's own #633 check.
   The banner therefore stays at its one query, and an ended group reads
-  "ended" with no tile link. `mail_provider_failed` links no tile until
-  ADM-13 PR 4 adds halt identities, because that one query cannot tell
-  whether a halt is current. The mapping (`BANNER_PROBLEMS`) sits beside
+  "ended" with no tile link. `mail_provider_failed` links no tile: that
+  one query cannot tell whether a halt is current, and reading the halt
+  records (ADM-13 PR 4a) would add a query to every Admin page for a link
+  System health's Mail tile already gives. The mapping (`BANNER_PROBLEMS`) sits beside
   the registry in `system_health.py`. The table's `source_invalid` is the
   event recorded as `source_refresh_invalid`.
 - **An action that resolves a problem clears its banner entries.** When an
@@ -6937,8 +6938,11 @@ The same problem never appears twice in ways that disagree.
     are exactly the entries any preview of that refusal showed. The
     preview's binding therefore names the refusal rather than carrying
     entry ids.
-  - **Clear the halt** (ADM-13 PR 4) acknowledges the halt's
-    `mail_provider_failed` entries.
+  - **Clear the halt** (ADM-13 PR 4b) acknowledges the halt's
+    `mail_provider_failed` entries: the CRITICAL entries of that event from
+    ten minutes before the halt began (the outcome that caused it is
+    stored a moment before the consumer halts) up to the preview, whose
+    signed binding carries their ids (at most 500).
   - **Take a backup now** and **Turn off debug logging** acknowledge
     nothing: an overdue backup ends only when a backup finishes (the
     banner then reads "ended"), and debug logging raises no CRITICAL
@@ -7156,8 +7160,8 @@ from its [service status record](#service-status-records):
 - **Held at Gmail's limit**, until the time shown.
 - **Waiting for the daily limit.**
 - **Halted:** a fault that waiting cannot fix stopped all sending. The panel
-  shows when the halt began and its kind, taken from the stored outcome of
-  the delivery attempt that caused it (see
+  shows when the halt began and its kind, from its halt record, which copies
+  the kind from the outcome that caused the halt (see
   [clear a halted mail sender](#clear-a-halted-mail-sender)), and offers
   **Clear the halt**.
 - **Not running:** no consumer has reported for more than three minutes. The
@@ -7457,6 +7461,8 @@ checks.
   ([#1547](https://github.com/epiphany40223/parishkit/issues/1547)). The
   action records the session's sign-in instant, and its SQL guard binds the
   row to that session as `stewardship_delivery_control_guard_v1` does.
+  **Clear the halt**, built after #1547, records no sign-in instant: its
+  guard checks only the live session.
 - **Preview, then confirm:** each action first shows a preview built by the
   server, then a confirm button. Where the preview depends on a state that
   can change (a halt, a refusal), the confirmation carries the signed
@@ -7643,31 +7649,60 @@ The other consumer may have had one message in flight, so a halt can affect
 up to two messages, each of either kind (see the
 [Family mail dispatch guide](../../../guides/stewardship-family-mail-dispatch.md#two-mail-consumers)).
 
-**How it works.** Today the halt lives inside the container: a marker file
-that only a restart removes. Instead:
+**How it works.** Before ADM-13 PR 4 the halt lived only inside the
+container: a marker file that only a restart removes. Now:
 
 1. Each halt has an identity: a new UUID that the consumer creates when it
-   decides to halt, together with that moment's time. It is written to the
-   marker file, to the stored outcome of the attempt that caused it, and to
-   the consumer's [service status record](#service-status-records). Today
-   the bulk path writes the marker before it stores the outcome, and the
-   one-message path stores the outcome first; creating the identity at the
-   decision lets both paths write the same value in either order. A
-   consumer halted by the other's marker takes on the identity in the
-   marker, so both consumers share one halt.
-2. Confirming records a clear signal (a new row: the halt identity it
-   clears, who, when and the session's sign-in instant).
-3. Each mail consumer reads the newest clear signal in its idle and
-   heartbeat loop and in its check before each new send, at most every 15
-   seconds. It acts only on a signal naming its current halt: it removes
-   the marker file only when the identity matches, resets its outage circuit
-   so that exactly one message is sent as a probe (as after an outage
-   cooldown), and writes a WARNING log line saying that an Administrator
-   cleared the halt. A consumer that is not halted, or whose halt is newer
-   than the signal, ignores it.
-4. If the fault is still there, the probe meets it again, and the sender
+   decides to halt, with its kind. The consumer reads the kind from the
+   outcome it has just observed (the same result the delivery attempt
+   stores): a SYSTEMIC refusal before `DATA` is the first kind, an
+   uncertain result with SYSTEMIC health the second. The identity and kind
+   are written into the marker file, which is created only if it does not
+   exist yet, so two consumers that halt at the same moment share the first
+   one's identity. A consumer halted by the other's marker takes on the
+   identity in the marker, so both consumers share one halt. The identity
+   is not written into the delivery attempt's stored outcome: that would
+   change the guarded delivery journal on the send path, and the halt
+   record below carries everything the page needs.
+2. **The halt record.** From its idle loop, on a short connection of its
+   own and never inside a send's transaction, each halted consumer records
+   its halt (a `stewardship_mail_halt` row: the identity, the kind and when
+   the halt began). Both consumers may try; the first row stands. The row
+   is written at most about 30 seconds after the halt, so the page may show
+   **Halted** (from the [service status records](#service-status-records))
+   a moment before **Clear the halt** can be used. The current halt is the
+   newest halt record with no clear signal that began while a mail consumer
+   that reported within three minutes, and reports **Halted**, was running
+   (no earlier than a minute before its status record started). Taking the
+   newest *uncleared* halt means that if the two consumers ever hold
+   different halts (for example when one could not write or read the
+   marker), clearing one leaves the other's halt current, so it can be
+   cleared next without a restart. A restart clears the marker; a halt
+   record left from before it began before the new process started, so it
+   is not current once that process reports. For up to three minutes the
+   old process's status record may still name it, and a clear of it then
+   changes nothing (step 4).
+3. Confirming records a clear signal (a `stewardship_mail_halt_clear` row:
+   the halt identity it clears, who, when and the session). There is at
+   most one per halt. It records no sign-in instant: the Administrator
+   removed the recent sign-in requirement
+   ([#1547](https://github.com/epiphany40223/parishkit/issues/1547)) before
+   this action was built.
+4. Each mail consumer reads the clear signal for its current halt in its
+   idle loop, which runs about every 30 seconds while no message is
+   running (a halted consumer sends nothing, so it is idle). It acts only
+   on a signal naming its current halt: it removes the marker file only
+   when the marker's identity matches, in one step (it renames the marker
+   aside, checks it, and puts back one that names another halt, so it never
+   removes a marker the other consumer has just created), resets its outage
+   circuit so that it sends one probe email (one probe email per consumer,
+   as after an outage cooldown),
+   and writes a WARNING log line saying that an Administrator cleared the
+   halt. A consumer that is not halted, or whose halt is newer than the
+   signal, ignores it.
+5. If the fault is still there, the probe meets it again, and the sender
    halts again under a new identity.
-5. Clearing never resends, re-plans or re-issues anything, and changes no
+6. Clearing never resends, re-plans or re-issues anything, and changes no
    Family's link or code. The messages that met the fault keep their
    outcome: a failed one stays failed until an Administrator uses **Retry
    failed delivery** on Outgoing mail, and a `delivery_unknown` one is
@@ -7676,12 +7711,17 @@ that only a restart removes. Instead:
 
 **Mailbox check.** The web process holds no Google Workspace credential, so
 the check runs in `mail-dispatch`. Opening the preview records a mailbox
-check request (a new row). The `mail-dispatch` main process claims it and
-runs it through its private provider-check helper (`provider_check_worker`):
-it signs in to Gmail with the current credential as the integration's
-delegated user (`delegated_email`), sends no mail, stops at its time limit
-(logged as every time limit is), and stores the helper's outcome, which is
-one of three:
+check request (a `stewardship_mailbox_check` row: who, when, the session
+and its state), unless one is still live, or a passed one still allows a
+clear (below), which the preview then shows instead. One check is live at a
+time: waiting or running, and less than two
+minutes old. Requests are made only while a halt is current. The
+`mail-dispatch` main process claims a waiting request in its idle loop
+(about every 30 seconds) and runs it through its private provider-check
+helper (`provider_check_worker`): it signs in to Gmail with the current
+credential as the integration's delegated user (`delegated_email`), sends
+no mail, stops at its 20-second time limit (logged as every time limit is),
+and stores the helper's outcome, which is one of three:
 
 - **Passed:** Google accepted the credential and the delegation.
 - **Refused:** Google refused the credential or its delegation. A revoked
@@ -7692,39 +7732,96 @@ one of three:
 - **Unavailable:** an outage, the time limit, or a failure the check could
   not explain.
 
-The check runs even while the consumers are halted, because it sends
-nothing. On the page it appears in place: "Checking the mailbox…" while it
+The check sends nothing, so it runs while the consumers are halted, and
+only then: the main process claims a request only while a mail consumer in
+the container is halted, as it knows locally (itself, or the other one,
+whose marker it has not followed yet) or as the database says (a
+`mail-dispatch` status record that reported Halted within three minutes,
+so a halt the second process holds without a marker can still be cleared
+without a restart). A request left from before a restart or a clear is
+never run, so it cannot hold up normal sending; it stops being live after
+two minutes, and the page by then says nothing is halted. On the page it appears in place: "Checking the mailbox…" while it
 runs, then its result in words. A check not answered within two minutes
-says that the mail sender did not answer. **Check again** starts a new one.
+says that the mail sender did not answer, and that a sender answers only
+while it is running and halted (so a check never claimed because nothing
+is halted ends there, not in a spinner); a request it never claimed stays
+waiting and is no longer live. **Check again** starts a new one.
 A passed check proves only that signing in works. It cannot show that Gmail
 accepts the sending address, or rule out a fault after `DATA`; the preview
 says so, and the probe message after a clear is what tests those.
 
-**Preview.** When the halt began and its kind, how many messages are
-waiting, whether mail is also paused by an Administrator (clearing does not
-resume a paused send), and the mailbox check. For a halt of the second
-kind, it also lists the `delivery_unknown` messages since the halt began,
-with a link to settle them on Outgoing mail.
+**Preview.** When the halt began and its kind, how many emails in Outgoing
+mail are waiting to be sent, whether mail is also paused by an
+Administrator (clearing does not resume a paused send), and the mailbox
+check. It also lists the emails in `delivery_unknown` that are not settled
+yet, with a link to settle them on Outgoing mail.
 
-**Unavailable when** (greyed, with the reason): no consumer is halted; the
-mailbox check is running, failed, or passed more than five minutes ago; or
-any `delivery_unknown` message from the halt's attempts, or later ones, is
-not settled yet. Requiring settlement first means the Administrator decides
-about every message Gmail may have accepted before sending starts again, so
-nothing is sent twice by mistake.
+**Unavailable when** (greyed, with the reason): no consumer is halted, or
+its halt is not recorded yet; the mailbox check is running, did not pass,
+did not answer, or passed more than five minutes ago; or any email in
+Outgoing mail is in `delivery_unknown` and not settled yet. Requiring settlement first
+means the Administrator decides about every message Gmail may have accepted
+before sending starts again, so nothing is sent twice by mistake. The rule
+covers every unsettled `delivery_unknown` email, not only the halt's
+own: the bulk send commits several submissions before it sends any, so no
+time window reliably separates the halt's attempts from earlier ones.
 
-**Checks (server):** the [shared rules](#shared-rules-for-health-actions);
-the halt matches the one the preview showed; a mailbox check that started
-after the halt began passed within the last five minutes; and no
-`delivery_unknown` message from the halt's attempts or later is unsettled.
+**Checks (server):** the [shared rules](#shared-rules-for-health-actions),
+without a recent sign-in; the halt matches the one the preview showed and
+is still current; the newest mailbox check was claimed after the halt
+began and passed within the last five minutes (a later check that was
+refused, unavailable or still running cancels an earlier pass); and no email in Outgoing mail is in
+`delivery_unknown`. The clear signal's guard repeats each check in the
+signal's own transaction, serialized by a transaction advisory lock, so two
+confirmations cannot both clear a halt.
 
-**Confirmation:** a confirm button. Nothing typed.
+**Confirmation:** a confirm button. Nothing typed. The preview's signed
+binding names the halt; a repeated confirmation returns the first clear.
 
-**Audit:** `mail_halt_cleared`.
+**Audit:** `mail_halt_cleared`, with the clear signal as subject (and from
+the command line `admin_cmd_system_mail_clear`). Requesting a mailbox check
+records no audit event, as opening any other preview records none.
+
+**Command line:** `system mail-clear-preview` and `system mail-clear
+--token …` (see the automation spec's
+[action inventory](../admin-automation/spec.md#operations)).
 
 **Not changed:** outage pauses and Gmail limit holds still lift by
 themselves, and recreating `mail-dispatch` on the server still clears a
 halt.
+
+**Delivery.** ADM-13 PR 4 lands in two parts: **4a** the halt identities,
+the halt record, the clear signal and the mailbox check request with their
+guards (frozen migration 0115), the consumers recording halts, reading the
+signal and running the check, `mail_halt_cleared` and the two commands;
+**4b** the **Clear the halt** control in the Mail tile with its preview, the
+in-place mailbox check, and the critical-problems banner's acknowledgement
+of the halt's `mail_provider_failed` entries.
+
+**Where it appears.** In the [Mail tile](#health-tiles)'s details, right
+after its problems, and only while a mail consumer that is running reports
+**Halted** (the conditional-fields rule); the page reads the halt records
+only then, so other reads gain no query. Until the halt is recorded (up to
+about 30 seconds) the button is greyed with that reason; right after a
+clear, while a sender still reports **Halted**, it says the halt was cleared
+and the senders start again within about 30 seconds; and when a sender has
+reported Halted for more than two minutes with no halt recorded, it says
+to restart the mail sender and links the
+[mail-provider outage runbook](../../../guides/stewardship-launch-runbooks.md#mail-provider-outage),
+rather than promising 30 seconds for ever (two more reads, only in that
+case). **Clear the halt** opens the preview in place: when the halt began and its kind, the waiting
+and unsettled emails (with a link to settle them on Outgoing mail),
+whether mail is also paused, and the mailbox check, which opening it asks
+for. The check's line and the two buttons, **Check again** and **Confirm:
+clear the halt**, follow the page's 10-second status read in place: the
+line says "Checking the mailbox…", then its result, and Confirm stays
+greyed with its reason (reserved lines, so nothing moves) until every
+condition holds. The preview names the halt it reviews; once the status
+shows another halt or none, it is marked "This changed since you looked"
+and both buttons are held for good: a later status read never draws usable
+buttons under the note, and the reader reopens the preview. Confirm's answer, and every refusal in the
+service's own words, are drawn in the same region. No step needs a recent
+sign-in (#1547), so there is no step-up.
 
 #### Accept a large ParishSoft change once
 
@@ -8084,8 +8181,8 @@ and credential installers) writes when it starts and then every 60 seconds:
 - whether debug logging is in effect;
 - for a mail consumer, its sender state (running, paused after an outage,
   held at Gmail's limit, waiting for the daily limit, halted), when that
-  state began, when it ends if known, and, for a halt, its identity and
-  kind.
+  state began, and when it ends if known. A halt's identity and kind are
+  in its halt record instead (see below).
 
 Each service's database login may write only its own service's rows, and
 the web login reads them. The installers' logins gain a write grant they do
@@ -8111,9 +8208,10 @@ statement or one-second lock limit is recorded as a timeout under the
 [timeout rule](../operations/spec.md#observability-and-health), naming no
 task; an installer's goes to the process log only, as that rule's listed
 exception. Any other failed write is logged once (`service_status_failed`).
-Neither stops the process. The halt identity and kind are added by
-[clear a halted mail sender](#clear-a-halted-mail-sender) (PR 4), which
-defines them.
+Neither stops the process. A halt's identity and kind are not part of the
+record: they are in the halt record that
+[clear a halted mail sender](#clear-a-halted-mail-sender) (PR 4a) defines,
+so this table and its guard did not change.
 
 The page groups the rows by service, process and target. In each group the
 newest-started row that reported within three minutes stands for it, so the

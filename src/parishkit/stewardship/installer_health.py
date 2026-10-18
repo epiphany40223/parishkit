@@ -2,6 +2,7 @@
 
 import json
 import os
+from contextlib import suppress
 from time import monotonic
 
 from .accounts.key_files import read_private, write_private
@@ -25,6 +26,70 @@ def mark_stopped(path):
     """Create a private stop marker for the other processes in this container."""
     private_directory(path.parent, create=True)
     write_private(path, b"stopped")
+
+
+def claim_stop(path, value):
+    """Create a private stop marker holding ``value`` unless one exists.
+
+    Returns what the marker holds afterwards: ``value`` when this call
+    created it, otherwise the other process's contents (None if they cannot
+    be read yet, for example while that process is still writing them).
+    The exclusive create means two processes that stop at the same moment
+    share the first one's marker (ADM-13 PR 4a: one halt identity).
+    """
+    private_directory(path.parent, create=True)
+    try:
+        descriptor = os.open(
+            path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600
+        )
+    except FileExistsError:
+        try:
+            return read_private(path)
+        except Exception:
+            return None
+    with os.fdopen(descriptor, "wb") as stream:
+        stream.write(value)
+        stream.flush()
+        os.fsync(stream.fileno())
+    return value
+
+
+def read_stop(path):
+    """The stop marker's contents, or None when it is absent or unreadable."""
+    try:
+        return read_private(path)
+    except Exception:
+        return None
+
+
+def release_stop(path, owns):
+    """Remove the stop marker at ``path`` only if ``owns(contents)`` is true.
+
+    Returns whether it was removed. A read followed by an unlink could
+    delete a marker the other process created in between (after its own
+    lift and a probe that halted again), so the check and the removal are
+    one step: the marker is first renamed aside to a name only this process
+    uses, which atomically takes whatever marker is there, and is then
+    read. A marker that names something else is linked back, unless a newer
+    marker already exists, which then stands; either way the aside name is
+    removed. Meanwhile a reader finds no marker, as just after a lift.
+    """
+    aside = path.with_name(f".{path.name}.lifting-{os.getpid()}")
+    try:
+        os.rename(path, aside)
+    except FileNotFoundError:
+        return False
+    try:
+        value = read_stop(aside)
+        if value is not None and owns(value):
+            return True
+        # Another process's marker (possibly still being written through
+        # its open descriptor, which the rename keeps): put it back.
+        with suppress(FileExistsError):
+            os.link(aside, path)
+        return False
+    finally:
+        aside.unlink(missing_ok=True)
 
 
 def clear_stopped(path):

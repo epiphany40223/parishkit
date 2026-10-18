@@ -27,6 +27,7 @@
 <div class="health-band" id="{{ tile.details_id }}" role="region" aria-label="{{ tile.details_label }}" data-health-band data-label="{{ tile.details_label }}" data-label-not-current="{{ tile.details_label_not_current }}"{% if not tile.open %} hidden{% endif %}>
 {% if tile.loaded %}{% include tile.panel %}{% else %}<div data-live-mirror-target="{{ tile.anchor }}-problems" data-live-mirror-hold>{% include "stewardship/system-health-tile-problems.html" %}</div>
 {% if tile.key == "source" %}{# Accept this change once, right under the refused change's counts and only while that refusal can be accepted or was accepted (or a step's result is); an open preview is marked changed once a poll shows another refusal (data-live-keyed). #}<div data-live-keyed="accept-change">{% include "stewardship/system-health-accept.html" %}</div>
+{% elif tile.key == "mail" %}{# Clear the halt (ADM-13 PR 4b), right after the Mail tile's problems and only while a mail sender is halted (or a step's result is); an open preview is marked changed once a poll shows another halt (data-live-keyed). #}<div data-live-keyed="clear-halt">{% include "stewardship/system-health-clear-halt.html" %}</div>
 {% elif tile.key == "backups" %}{% include "stewardship/system-health-backup-now.html" %}
 {% elif tile.key == "debug" %}{% include "stewardship/system-health-debug-off.html" %}{% endif %}
 <div data-live-mirror-target="{{ tile.anchor }}-panel" data-live-mirror-hold>{% include tile.panel %}</div>{% endif %}

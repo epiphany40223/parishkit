@@ -522,6 +522,19 @@ def test_mail_dispatch_reads_tokens_only_through_the_claimed_token_definer():
             assert not tokens & runtime_functions(role, target=target)
 
 
+def test_mail_dispatch_reads_only_which_sender_is_halted():
+    """Clear the halt (ADM-13 PR 4a, #530): mail dispatch reads the status
+    records' service, sender state and report time to see a halt the second
+    consumer holds with no marker, and nothing else of them."""
+    _, columns = runtime_grants(ServiceRole.MAIL_DISPATCH)
+    assert columns["stewardship_service_status"]["SELECT"] == {
+        "id",
+        "service",
+        "sender_state",
+        "reported_at",
+    }
+
+
 def test_web_records_and_the_worker_reads_large_change_acceptances():
     """Accept a large ParishSoft change once (ADM-13 PR 5, #530): web
     inserts and reads acceptances (System health's button, PR 5b), the

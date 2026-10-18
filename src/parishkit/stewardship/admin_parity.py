@@ -360,6 +360,9 @@ LEDGER = {
     # refresh-accept``, ``system debug-off`` and ``system debug-allow`` are
     # their commands (each row's guard binds the command session as it does a
     # browser session), and ``system health`` shows their progress.
+    # Clear the halt's commands, ``system mail-clear-preview`` and ``system
+    # mail-clear``, come first (ADM-13 PR 4a); its button posts here with
+    # PR 4b. Neither needs a recent sign-in (#1547).
     "system_health": command(
         "system health",
         "system backup-now",
@@ -367,6 +370,8 @@ LEDGER = {
         "system refresh-accept",
         "system debug-off",
         "system debug-allow",
+        "system mail-clear-preview",
+        "system mail-clear",
     ),
     "system_health_status": command("system health"),
     # Families the form cannot open (#774): counts and DUIDs only.

@@ -74,6 +74,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "system refresh-accept",
         "system debug-off",
         "system debug-allow",
+        "system mail-clear-preview",
+        "system mail-clear",
     }
     changes = {
         "schedule preview",
@@ -499,6 +501,32 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert allow["audit_event"] == "admin_cmd_system_debug_allow"
     assert allow["result_fields"] == ["switch_id", "created", "cleared_at"]
     assert {option["name"] for option in allow["options"]} >= {"--switch"}
+    # Clear the halt (ADM-13 PR 4a): a preview that asks for a mailbox check
+    # and records no audit event, then its token's confirmation, which
+    # always asks. Neither needs a recent sign-in (#1547).
+    review = entries["system mail-clear-preview"]
+    assert review["scope"] == "full" and not review["changes_state"]
+    assert review["audit_event"] is None and not review["prompts"]
+    assert not review["fresh_gated"]
+    assert {option["name"] for option in review["options"]} >= {"--no-wait"}
+    assert review["result_fields"] == [
+        "halt",
+        "mailbox_check",
+        "waiting",
+        "unsettled",
+        "unsettled_ids",
+        "delivery_paused",
+        "reason",
+        "preview",
+    ]
+    clear = entries["system mail-clear"]
+    assert clear["scope"] == "full" and clear["changes_state"]
+    assert clear["prompts"] and not clear["fresh_gated"] and not clear["request_key"]
+    assert clear["audit_event"] == "admin_cmd_system_mail_clear"
+    assert {option["name"]: option for option in clear["options"]}["--token"][
+        "required"
+    ]
+    assert clear["result_fields"] == ["clear_id", "halt_id", "created", "created_at"]
     for name in ("send progress", "go-live progress", "system health"):
         watch = {option["name"] for option in entries[name]["options"]}
         assert {"--watch", "--timeout"} <= watch, name
@@ -841,6 +869,7 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_system_debug_off",
         "admin_cmd_system_refresh_accept",
         "admin_cmd_system_debug_allow",
+        "admin_cmd_system_mail_clear",
         "admin_cmd_schedule_confirm",
         "admin_cmd_config_request_cancel",
         "admin_cmd_refresh_start",

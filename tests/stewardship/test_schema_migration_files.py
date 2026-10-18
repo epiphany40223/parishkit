@@ -375,6 +375,9 @@ FROZEN = {
     "0114_no_sign_in_age.sql": (
         "4948755ee2960e59f422a4253d637afc8f9e02b1d161e6608ea90bc977c8f9c0"
     ),
+    "0115_mail_halt_clear.sql": (
+        "517dcb53a4790e92c58addd1f0cd65809f1c7dfdaef405f6a178332e93e63198"
+    ),
 }
 
 

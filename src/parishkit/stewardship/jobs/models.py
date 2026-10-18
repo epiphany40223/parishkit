@@ -215,6 +215,7 @@ from .family_mail_models import (  # noqa: E402,F401
     FamilyMailPreparation,
     FamilyMailTest,
 )
+from .mail_halt_models import MailboxCheck, MailHalt, MailHaltClear  # noqa: E402,F401
 from .operational_models import (  # noqa: E402,F401
     OperationalCohort,
     OperationalIncident,

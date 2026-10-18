@@ -307,9 +307,21 @@ to `DATA`, for example), becomes
 4. If the outage is long during the live campaign and reminders would bunch
    up, pause delivery (below) and resume when the provider is back.
 5. After a systemic failure, once the fault is fixed (the smoke check says
-   `valid`), restart campaign sending: `restart mail-dispatch` on the
-   deployment's Compose file and project name. Nothing else clears that
-   stop. After an outage of unavailable results no restart is needed:
+   `valid`), restart campaign sending. An Administrator can clear the halt
+   without the server: settle every **Not sure it arrived** message first
+   ([below](#messages-in-delivery_unknown)), then run `pk-admin system mail-clear-preview`, which asks the
+   mail sender for its own mailbox check, and `pk-admin system mail-clear
+   --token …` once it passes (the
+   [automation guide](stewardship-admin-automation.md#system-mail-clear-preview-and-system-mail-clear)
+   describes both), or System health's **Clear the halt** in the Mail
+   tile, which runs the same check and asks the same. One
+   probe email per consumer is then sent; if the fault is still there,
+   sending halts again. If System health still shows a halted mail sender
+   but the preview says nothing is halted (a halt the sender could not
+   record, for example one from a marker an older release wrote), restart
+   `mail-dispatch` as below. Otherwise `restart mail-dispatch` on the deployment's
+   Compose file and project name, which also clears the halt. After an
+   outage of unavailable results no restart is needed:
    sending resumes by itself within about 10 minutes of the provider
    recovering.
 6. If you paused in step 4, first settle every **Not sure it arrived** message
