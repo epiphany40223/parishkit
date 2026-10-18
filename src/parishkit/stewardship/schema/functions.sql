@@ -8217,10 +8217,6 @@ CREATE FUNCTION public.stewardship_setup_mail_live_v1(attempt_id uuid, attempt_v
         JOIN public.stewardship_address_rule rule
             ON rule.configuration_id=base.id AND rule.email=owner.email
             AND rule.roles @> '["administrator"]'::jsonb
-        -- Only a load that succeeded (#1353): a failed one is bound while
-        -- setup collects again.
-        JOIN public.stewardship_task_run original ON original.id=attempt.source_task_id
-            AND original.state='succeeded'
         JOIN public.stewardship_setup_sealed_credential candidate
             ON candidate.id=$3 AND candidate.attempt_id=attempt.id
             AND candidate.version=$4 AND candidate.fingerprint=$5
@@ -8231,7 +8227,10 @@ CREATE FUNCTION public.stewardship_setup_mail_live_v1(attempt_id uuid, attempt_v
         JOIN public.stewardship_setup_draft_section testing
             ON testing.attempt_id=attempt.id AND testing.step='testing'
             AND testing.scrubbed_at IS NULL
-        WHERE attempt.id=$1 AND attempt.version=$2 AND attempt.state='collecting'
+        -- A test needs only its own inputs (#1578): no load, and no exact
+        -- draft version ($2 stays for its callers and binds nothing), so
+        -- saving another step keeps a queued test live.
+        WHERE attempt.id=$1 AND attempt.state='collecting'
             AND mail.scope_digest=encode(sha256(jsonb_send(jsonb_build_object(
                 'sender',candidate.settings->>'sender',
                 'reply_to',candidate.settings->>'reply_to',
@@ -8401,13 +8400,23 @@ BEGIN
             ON credential.id=delivery.credential_id AND credential.scrubbed_at IS NULL
             AND credential.version=delivery.credential_version
             AND credential.fingerprint=delivery.fingerprint
+        JOIN public.stewardship_setup_draft_section mail
+            ON mail.attempt_id=attempt.id AND mail.step='mail'
+            AND mail.scrubbed_at IS NULL
         JOIN public.stewardship_setup_draft_section testing
             ON testing.attempt_id=attempt.id AND testing.step='testing'
             AND testing.scrubbed_at IS NULL
+        -- Bound to its own inputs (#1578): the exact credential and the mail
+        -- and Testing settings sealed with it, as the live check binds them.
         WHERE delivery.id=NEW.mail_delivery_id AND delivery.attempt_id=attempt.id
-            AND delivery.attempt_version=intent.attempt_version-1
-            AND delivery.candidate_digest=request.candidate_digest
+            AND credential.target='google_workspace'
             AND delivery.state='accepted'
+            AND mail.scope_digest=encode(sha256(jsonb_send(jsonb_build_object(
+                'sender',credential.settings->>'sender',
+                'reply_to',credential.settings->>'reply_to',
+                'delegated_email',credential.settings->>'delegated_email'))),'hex')
+            AND testing.scope_digest=encode(sha256(jsonb_send(jsonb_build_object(
+                'testing_recipient',credential.settings->>'recipient'))),'hex')
             AND NEW.testing_recipient=testing.values->>'testing_recipient'
             AND NEW.testing_recipient=credential.settings->>'recipient') THEN
         RAISE EXCEPTION 'Setup readiness requires exact accepted Testing mail'
@@ -8430,11 +8439,13 @@ BEGIN
         JOIN public.stewardship_setup_draft_section slack
             ON slack.attempt_id=attempt.id AND slack.step='slack'
             AND slack.scrubbed_at IS NULL
+        -- Bound to its own inputs (#1578): the exact credential and the
+        -- channel sealed with it.
         WHERE delivery.id=NEW.slack_delivery_id AND delivery.attempt_id=attempt.id
-            AND delivery.attempt_version=intent.attempt_version-1
-            AND delivery.candidate_digest=request.candidate_digest
+            AND credential.target='slack'
             AND delivery.state='accepted'
-            AND credential.settings->>'channel_id'=slack.values->>'channel_id') THEN
+            AND slack.scope_digest=encode(sha256(jsonb_send(jsonb_build_object(
+                'enabled',true,'channel_id',credential.settings->>'channel_id'))),'hex')) THEN
         RAISE EXCEPTION 'Setup readiness requires the exact accepted Slack test'
             USING ERRCODE='23514';
     END IF;
@@ -8862,10 +8873,6 @@ CREATE FUNCTION public.stewardship_setup_slack_live_v1(attempt_id uuid, attempt_
         JOIN public.stewardship_address_rule rule
             ON rule.configuration_id=base.id AND rule.email=owner.email
             AND rule.roles @> '["administrator"]'::jsonb
-        -- Only a load that succeeded (#1353): a failed one is bound while
-        -- setup collects again.
-        JOIN public.stewardship_task_run original ON original.id=attempt.source_task_id
-            AND original.state='succeeded'
         JOIN public.stewardship_setup_sealed_credential candidate
             ON candidate.id=$3 AND candidate.attempt_id=attempt.id
             AND candidate.version=$4 AND candidate.fingerprint=$5
@@ -8873,7 +8880,10 @@ CREATE FUNCTION public.stewardship_setup_slack_live_v1(attempt_id uuid, attempt_
         JOIN public.stewardship_setup_draft_section slack
             ON slack.attempt_id=attempt.id AND slack.step='slack'
             AND slack.scrubbed_at IS NULL
-        WHERE attempt.id=$1 AND attempt.version=$2 AND attempt.state='collecting'
+        -- A test needs only its own inputs (#1578): no load, and no exact
+        -- draft version ($2 stays for its callers and binds nothing), so
+        -- saving another step keeps a queued test live.
+        WHERE attempt.id=$1 AND attempt.state='collecting'
             AND slack.scope_digest=encode(sha256(jsonb_send(jsonb_build_object(
                 'enabled',true,'channel_id',candidate.settings->>'channel_id'))),'hex')
     );
