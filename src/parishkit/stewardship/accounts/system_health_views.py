@@ -114,6 +114,8 @@ def _context(health, extra, *, loaded):
         "debug_actor": extra["debug_actor"],
         "accept_actor": extra["accept_actor"],
         "refused_attempt": extra["refused_attempt"],
+        # Clear the halt (ADM-13 PR 4b): None unless a mail sender is halted.
+        "clear_halt": extra.get("clear_halt"),
         "poll_interval": POLL_MILLISECONDS,
     }
 
@@ -237,6 +239,11 @@ _ACTION_FIELDS = {
     "debug_off_confirm": {"action", "key"},
     "debug_allow_preview": {"action"},
     "debug_allow_confirm": {"action", "key"},
+    # Clear the halt (PR 4b, named clear_*): the preview, Check again and
+    # Confirm, which carries the preview's signed binding.
+    "clear_preview": {"action"},
+    "clear_check": {"action", "token"},
+    "clear_confirm": {"action", "token"},
 }
 # What a refusal is answered with (HTTP status; the words are the region's,
 # or the review dialog fragment's).
@@ -253,6 +260,7 @@ _REGIONS = (
     ("accept_", "accept"),
     ("debug_off_", "debug_off"),
     ("debug_allow_", "debug_off"),
+    ("clear_", "clear"),
 )
 # The actions confirmed in the shared review dialog (UX conventions, "A
 # confirmation when Review would only repeat the page", #1356), by their
@@ -292,6 +300,8 @@ def _step(action, request, service):
             request, service, token=request.POST.get("token", "")
         )
         return {"requested": row, "created": created, "refresh": refresh}
+    if action in {"clear_preview", "clear_check", "clear_confirm"}:
+        return _clear_step(action, request, service)
     if action == "debug_allow_preview":
         preview = health_actions.preview_debug_allow(request, service.store)
         return {"allow": True, "preview": preview}
@@ -315,6 +325,26 @@ def _step(action, request, service):
     # nothing.
     _principal(request, service.store, activity=True)
     return None
+
+
+def _clear_step(action, request, service):
+    """One of Clear the halt's steps (ADM-13 PR 4b), through the service
+    functions ``pk-admin system mail-clear-preview`` and ``system
+    mail-clear`` share (``mail_halt_clear``). None needs a recent sign-in
+    (#1547). The preview asks mail dispatch for a mailbox check when it
+    needs one; Check again asks for a new one; Confirm records the clear
+    signal for the halt the preview's binding names."""
+    from parishkit.stewardship import mail_halt_clear
+
+    if action == "clear_preview":
+        _, preview = mail_halt_clear.preview_clear(request, service.store)
+        return {"preview": preview}
+    if action == "clear_check":
+        return {"preview": mail_halt_clear.check_again(request, service.store)}
+    row, created = mail_halt_clear.clear_halt(
+        request, service.store, token=request.POST.get("token", "")
+    )
+    return {"cleared": row, "created": created}
 
 
 def _act(request):
@@ -344,6 +374,7 @@ def _act(request):
     """
     from parishkit.config import ConfigError
     from parishkit.stewardship import system_health as health_actions
+    from parishkit.stewardship.mail_halt_clear import ClearRefused
     from parishkit.stewardship.storage import StaleRecordError
 
     from .admin_editing import error_response
@@ -371,12 +402,16 @@ def _act(request):
         except health_actions.DebugAllowProduction:
             # Only the server operator clears the switch in Production.
             result = {"refused": "production"}
-        except health_actions.ActionRefused:
+        except (health_actions.ActionRefused, ClearRefused):
             # The database refused it for a reason signing in again would
             # not fix; the service function logged why.
             result = {"refused": "denied"}
-        except StaleRecordError:
+        except StaleRecordError as error:
             result = {"refused": "busy"}
+            if region == "clear":
+                # Clear the halt says which check no longer holds, in the
+                # service function's own plain words (mail_halt_clear.REASONS).
+                result["refusal_text"] = str(error)
         except ConfigError:
             # A ValueError too, but the system's configuration, not the
             # form: the outer handler answers it as unavailable (503).

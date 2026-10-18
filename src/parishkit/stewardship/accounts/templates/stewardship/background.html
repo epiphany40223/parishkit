@@ -4,7 +4,7 @@
 <h1>{% translate "Background work" %}</h1>
 {% aboutpage "background-work" %}<p>{% translate "Work the system does behind the scenes, such as ParishSoft refreshes, email preparation and report exports. Select a task to see what it is doing, or why it failed." %}</p>
 <p>{% translate "Most tasks start and finish on their own. A task waiting to try again hit a temporary problem, such as ParishSoft or the email provider not answering, and retries automatically. A task that stopped unexpectedly lost its background process, for example when the server restarted; the system recovers it on its own." %}</p>
-<p>{% translate "Last activity is the last time a running task reported that it was still working. Opening or refreshing this page does not extend your sign-in." %}</p>{% endaboutpage %}
+<p>{% translate "Last activity is the last time a running task reported that it was still working. The list updates itself every 30 seconds while this page is open, keeping the view you chose. Opening or watching this page does not extend your sign-in." %}</p>{% endaboutpage %}
 <p id="background-counts" data-table-sync>{% translate "Running:" %} {{ work.counts.active|number }} · {% translate "Waiting to start:" %} {{ work.counts.queued|number }} · {% translate "Waiting to try again:" %} {{ work.counts.retry_wait|number }} · {% translate "Stopped unexpectedly:" %} {{ work.counts.abandoned|number }}</p>
 <form id="table-filters" data-table-sync method="get" class="filter-bar">
   <div><label for="task-state">{% translate "Task state" %}</label>
@@ -31,7 +31,7 @@
   <tbody>
   {% for task in table.rows %}<tr>
     <th scope="row"><a href="{% url 'admin:background_task_page' task.id %}">{{ task.name }}</a>{% if task.refresh_label %} ({{ task.refresh_label }}){% endif %}{% if task.type == 'setup_source_load' %}<br><a href="{% url 'admin:setup_source_progress' task.id %}">{% translate "Open the setup load progress page" %}</a>{% endif %}</th>
-    <td>{% include "stewardship/task-state.html" with state=task.state %}{% if task.name != task.type %}<details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Task type" %}</dt><dd><code>{{ task.type }}</code></dd></dl></details>{% endif %}</td>
+    <td>{% include "stewardship/task-state.html" with state=task.state %}{% if task.name != task.type %}<details class="technical-details" id="task-type-{{ task.id }}" data-keep-open><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Task type" %}</dt><dd><code>{{ task.type }}</code></dd></dl></details>{% endif %}</td>
     <td>{{ task.phase_text }}</td>
     <td>{% if task.progress.total %}{{ task.progress.display|out_of }}<br><progress value="{{ task.progress.current }}" max="{{ task.progress.total }}" aria-label="{% translate 'Task progress' %}"></progress>{% else %}{% translate "Waiting for progress details." %}{% endif %}</td>
     <td>{% if task.heartbeat_at %}<time datetime="{{ task.heartbeat_at }}" data-local-instant data-compact>{{ task.heartbeat_at }}</time>{% else %}—{% endif %}</td>
@@ -42,6 +42,6 @@
 </div>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 </div>
-{# Refresh keeps the table's filters, sort, size and page, follows later table choices (data-table-sync), and refreshes the table and counts in place (ui-v1.js, a[data-in-place], #519). #}
-<p><a id="background-refresh" data-table-sync data-in-place data-in-place-message="{% translate 'List refreshed.' %}" href="{% url 'admin:background' %}?{{ table.current_query }}#{{ table.anchor }}">{% translate "Refresh current work" %}</a></p>
+{# The page updates itself (#1586): every 30 seconds ui-v1.js re-reads the address shown (so its filters, sort, size and page) quietly in place through this hidden link, which names the table's region, and refreshes the table and counts; an opened Technical details stays open (data-keep-open). The page has no Refresh link. #}
+<a hidden data-in-place data-in-place-quiet data-reread-every="30000" href="{% url 'admin:background' %}#{{ table.anchor }}">{% translate "Check for updates" %}</a>
 {% endblock %}

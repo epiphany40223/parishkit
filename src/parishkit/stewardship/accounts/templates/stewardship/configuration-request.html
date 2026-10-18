@@ -3,10 +3,10 @@
 {% block head %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
 {% block content %}
 <h1>{% translate "Change status" %}</h1>
-{# Refresh status re-reads this region in place (ui-v1.js, a[data-in-place], #519); live-status-v1.js watches the fresh one while it is still pending. #}
+{# live-status-v1.js updates this region by itself while the change is pending; the page has no Refresh link (#1586). #}
 <div id="change-status" data-in-place-region>{% include 'stewardship/configuration-request-status.html' %}</div>
 {% comment %}
   "Return to" leads to the page the change was confirmed on (the same page
   the breadcrumb trail names), or Home when this sign-in does not know it.
-{% endcomment %}<p><a href="{% url 'admin:configuration_request' receipt.request_id %}#change-status" data-in-place="refresh" data-in-place-message="{% translate 'Status refreshed.' %}">{% translate "Refresh status" %}</a>{% if admin_chrome.back %} · <a href="{{ admin_chrome.back.url }}">{% blocktranslate with page=admin_chrome.back.label %}Return to {{ page }}{% endblocktranslate %}</a>{% else %} · <a href="/admin/">{% translate "Administration" %}</a>{% endif %}</p>
+{% endcomment %}<p>{% if admin_chrome.back %}<a href="{{ admin_chrome.back.url }}">{% blocktranslate with page=admin_chrome.back.label %}Return to {{ page }}{% endblocktranslate %}</a>{% else %}<a href="/admin/">{% translate "Administration" %}</a>{% endif %}</p>
 {% endblock %}

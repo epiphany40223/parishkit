@@ -1,10 +1,10 @@
 """Pages for the shared in-place mechanism's own tests (#519).
 
 Background work and Families on the form now are served at their real
-addresses, because their Refresh links name those addresses and the
-mechanism follows a data-in-place link only within the same page: the plain
-page, the page each Refresh link leads to (with changed counts, so the
-refresh is visible) and the background table's page 2.
+addresses, because their periodic re-reads (#1586) read those addresses and
+the mechanism follows a data-in-place link only within the same page: the
+plain page, the answers a test routes those re-reads to (with changed
+counts, so the update is visible) and the background table's page 2.
 
 A small test-only page exercises form[data-in-place] POSTs, which PR 1 of
 #519 does not yet put on a real Admin page: it is the real Admin chrome and
@@ -34,6 +34,16 @@ from parishkit.stewardship.web.tables import window_table
 NOW = datetime(2026, 9, 10, 12, tzinfo=UTC)
 BACKGROUND = reverse("admin:background")
 PRESENCE = reverse("admin:presence")
+# Routed answers to a periodic re-read of each page: more work and more
+# Families than the page first showed.
+BACKGROUND_LATER = "/in-place-background-later"
+PRESENCE_LATER = "/in-place-presence-later"
+# Background work showing every task (two rows, each with its own Technical
+# details), and the routed answer to its re-read with one more running.
+BACKGROUND_ALL = f"{BACKGROUND}?state=all"
+BACKGROUND_ALL_LATER = "/in-place-background-all-later"
+# A Rows per page choice of 25, and the routed answer to its re-read.
+BACKGROUND_25_LATER = "/in-place-background-25-later"
 FORM = "/in-place-form"
 # Where each fixture POST answers (status, Location or None, body). The
 # conftest adds the answers whose bodies are rendered pages.
@@ -158,11 +168,13 @@ def task(number):
     }
 
 
-def background_page(number, active):
-    """The background page ``number`` of 51 tasks, with ``active`` running."""
+def background_page(number, active, size=50, tasks=1, state="nonterminal"):
+    """The background page ``number`` of 51 tasks, with ``active`` running,
+    ``size`` rows per page and ``tasks`` rows drawn, in Task state
+    ``state``."""
     table = window_table(
-        PageWindow(number, 50),
-        [task(number)],
+        PageWindow(number, size),
+        [task(number + index * 100) for index in range(tasks)],
         number == 1,
         total=(51, False),
         sorting=TASK_SORTING,
@@ -173,9 +185,16 @@ def background_page(number, active):
             "counts": {"active": active, "queued": 0, "retry_wait": 0, "abandoned": 0}
         },
         "states": ("nonterminal", "all"),
-        "selected_state": "nonterminal",
+        "selected_state": state,
         "table": table,
     }
+
+
+def size_query(table, size):
+    """The query a Rows per page choice of ``size`` reads: the navigator form's
+    carried fields, the size and page 1 (ui-v1.js resets the page)."""
+    fields = [*table.carried_fields, (table.size_name, size), (table.page_name, 1)]
+    return "&".join(f"{name}={value}" for name, value in fields)
 
 
 def presence_page(count):
@@ -242,11 +261,27 @@ def components(context, admin):
         f"{BACKGROUND}?{first.current_query}": html(
             "stewardship/background.html", refreshed
         ),
-        # Page 2 is also where its own Refresh link leads.
+        BACKGROUND_LATER: html("stewardship/background.html", refreshed),
+        # The table's Next leads to page 2.
         f"{BACKGROUND}?{first.next_query}": html(
             "stewardship/background.html", second_context
         ),
+        BACKGROUND_ALL: html(
+            "stewardship/background.html",
+            background_page(1, 1, tasks=2, state="all")[1],
+        ),
+        BACKGROUND_ALL_LATER: html(
+            "stewardship/background.html",
+            background_page(1, 2, tasks=2, state="all")[1],
+        ),
+        f"{BACKGROUND}?{size_query(first, 25)}": html(
+            "stewardship/background.html", background_page(1, 1, size=25)[1]
+        ),
+        BACKGROUND_25_LATER: html(
+            "stewardship/background.html", background_page(1, 2, size=25)[1]
+        ),
         PRESENCE: html("stewardship/presence.html", presence_context),
+        PRESENCE_LATER: html("stewardship/presence.html", presence_page(2)[1]),
         f"{PRESENCE}?{shown.size_name}={shown.size_value}&{shown.sort_name}="
         f"{shown.sort}": html("stewardship/presence.html", presence_page(2)[1]),
         FORM: form_page("In-place form", 0),

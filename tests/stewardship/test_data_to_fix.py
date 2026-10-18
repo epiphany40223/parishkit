@@ -385,7 +385,7 @@ def _view(monkeypatch, principal, *, query="", current=None):
 
 
 def test_a_ministry_leader_gets_the_shared_denial(monkeypatch):
-    """403 from the shared denial, never Outgoing mail's error page."""
+    """403 from the shared denial, never Sent mail's error page."""
     from parishkit.stewardship.accounts.authentication import denial
 
     response = _view(monkeypatch, LEADER)

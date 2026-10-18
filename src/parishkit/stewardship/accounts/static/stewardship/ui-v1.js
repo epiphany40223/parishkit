@@ -111,13 +111,17 @@
       const scope = input.form || root;
       const known = Boolean(zone) && zone !== "Etc/Unknown";
       const hint = known ? "" : input.dataset.zoneMissingHint || "";
-      const note = scope.querySelector("[data-browser-zone-note]");
+      // A note can be a toggletip (Sent mail's From, #1562): it shows its "i"
+      // the same way, and the fields are described by its bubble, never by
+      // the button's "More information".
+      const noteNode = scope.querySelector("[data-browser-zone-note]");
+      const note = noteNode?.querySelector(".toggletip-bubble") || noteNode;
       const gateHint = scope.querySelector("[data-complete-hint]");
       input.value = known ? zone : "";
       scope.querySelectorAll("[data-browser-zone-name]").forEach((node) => {
         node.textContent = input.value;
       });
-      if (note) note.hidden = !known;
+      if (noteNode) noteNode.hidden = !known;
       scope.querySelectorAll("[data-zone-dependent]").forEach((field) => {
         field.disabled = !known;
       });
@@ -270,6 +274,34 @@
   // family-v1.js after this runs, so they are never wired here at all;
   // that script manages their marks.)
   const blurMarked = new WeakSet();
+  // A field with a shared format rule (data-field-rule; the server's
+  // web/field_rules.py gives it the same pattern and words) also says its
+  // refusal at the field when left: in its reserved error line ("<id>_error",
+  // file-size-field.html), which keeps its height while empty so the message
+  // coming or going moves nothing, and is a polite live region (#1577). The
+  // words are the rule's data-missing-hint, or data-empty-hint for an empty
+  // required field. The message follows the value while the mark stands and
+  // goes once the value is valid. A server's message in the same line is
+  // cleared on the first edit, as for any field.
+  const ruleLine = (field) => field.hasAttribute("data-field-rule") && field.id
+    && document.getElementById(`${field.id}_error`);
+  const sayRule = (field, invalid) => {
+    const line = ruleLine(field);
+    if (!line) return;
+    const message = !invalid ? ""
+      : (field.validity.valueMissing && field.dataset.emptyHint)
+        || field.dataset.missingHint || field.validationMessage;
+    // Unchanged words stay untouched: rewriting the live region on every
+    // keystroke would make a screen reader read them again.
+    if (line.hidden === !message && line.textContent === message) return;
+    line.hidden = !message;
+    line.replaceChildren(Object.assign(document.createElement("li"), {textContent: message}));
+    const ids = (field.getAttribute("aria-describedby") || "").split(/\s+/)
+      .filter((id) => id && id !== line.id);
+    if (message) ids.push(line.id);
+    if (ids.length) field.setAttribute("aria-describedby", ids.join(" "));
+    else field.removeAttribute("aria-describedby");
+  };
   const wireValidity = (root) => {
     root.querySelectorAll("input, select, textarea").forEach((field) => {
       if (field.getAttribute("aria-invalid") === "true") field.setAttribute("data-field-error", "");
@@ -278,7 +310,8 @@
         else if (blurMarked.has(field) && field.validity.valid) {
           field.setAttribute("aria-invalid", "false");
           blurMarked.delete(field);
-        }
+          sayRule(field, false);
+        } else if (blurMarked.has(field)) sayRule(field, true);
       };
       field.addEventListener("input", edited);
       field.addEventListener("change", edited);
@@ -286,7 +319,10 @@
         if (!field.willValidate) return;
         const invalid = field.hasAttribute("data-field-error") || !field.validity.valid;
         field.setAttribute("aria-invalid", String(invalid));
-        if (invalid && !field.hasAttribute("data-field-error")) blurMarked.add(field);
+        if (invalid && !field.hasAttribute("data-field-error")) {
+          blurMarked.add(field);
+          sayRule(field, true);
+        }
       });
     });
   };
@@ -1016,12 +1052,12 @@
   //   itself a form[data-in-place] because its options reshape far more of
   //   the page than a table;
   // - a[data-in-place]: a link that shows another view of this page (the
-  //   response dashboard's mode and grain, a list's Refresh, and the
-  //   participation report's Chart population pair, #1535, whose links sit
-  //   in a data-table-sync node so each refresh redraws them with the
-  //   current sort, size and zone). Its value, if
-  //   any, is a stable key that finds the link again in the fresh page, for
-  //   focus and to announce the view now shown ("By day");
+  //   Response dashboard's mode and Chart population pairs, #1535, #1537,
+  //   whose links sit in the region they refresh, so each refresh redraws
+  //   them with the current sort, size and zone; a page's periodic
+  //   re-read). Its value, if any, is a stable key that finds the link
+  //   again in the fresh page, for focus and to announce the view now shown
+  //   ("Testing rehearsal");
   // - form[data-in-place]: a form whose answer is this page again, such as a
   //   POST whose server redirects back here (Post/Redirect/Get). A POST
   //   saves a change unless the form is marked data-in-place-read (System
@@ -1033,7 +1069,7 @@
   //   fresh page applied (syncFilters).
   // A data-in-place link or form names the region it changes by its URL's
   // fragment, or else by the region it sits in. Its data-in-place-message
-  // ("List refreshed.") is announced before the region's row count.
+  // ("Saved.") is announced before the region's row count.
   // A submit button marked data-in-place-moves (a follow-up item's Save and
   // next, #534) may be answered by a redirect to another page that draws the
   // same region (the next item): that page's regions are swapped in and the
@@ -1043,7 +1079,7 @@
   // button is marked data-in-place-native instead, so the browser submits
   // it natively and loads the queue once.
   // A page script can follow an a[data-in-place] link on the reader's behalf
-  // (the participation report applying this browser's time zone as it
+  // (the Response dashboard applying this browser's time zone as it
   // loads, report-v1.js) by marking the link data-in-place-quiet. The regions
   // are swapped, but focus is not moved and nothing is announced, since the
   // reader did not act, and the address (or, should the fetch fail, the
@@ -1071,7 +1107,17 @@
   // another control's answer or a redraw: Hosted files' Upload panel keeps a
   // chosen file and a typed name across a sort, a page or a deletion, which
   // a fresh copy would discard (#519).
+  // A page whose filter form is marked data-in-place-views (Sent mail,
+  // #1562) keeps, in each history entry, how to draw the view it shows: the
+  // POST body of the read that drew it (never its CSRF token), or none
+  // for a view drawn from its address or by a save. A form marked data-in-place-push (a
+  // row's Recipient) adds a history entry for its answer instead of
+  // replacing the address, and Back or Forward redraws that entry's view in
+  // place (the popstate handler below), so a private filter that never
+  // reaches a URL still has a Back. A reload draws the page from its
+  // address, so it shows that view, its filter fields with it.
   const REGIONS = "[data-in-place-region][id], [data-table-region][id]";
+  const VIEWS_FORM = "form#table-filters[data-in-place-views]";
   const ownedElsewhere = (other, region) => other !== region
     && other.hasAttribute("data-in-place-own");
   // The control whose answer is being swapped in, while refreshRegions swaps
@@ -1197,7 +1243,7 @@
   };
   // What the live region says (owner as for focusAfter). A data-in-place
   // control says its message
-  // ("List refreshed.") and the rows now shown, or names the view now shown
+  // ("Saved.") and the rows now shown, or names the view now shown
   // (its fresh link's text, "By day"). A table control says the sorted
   // column and its direction after a heading, otherwise the navigator's own
   // "Showing 26–50 of 120 · Page 2 of 5". A filter changes every table on
@@ -1607,7 +1653,10 @@
   // options.owner is the data-in-place link or form behind the control (null
   // for a table control; see focusAfter); options.form is the
   // form a saving data-in-place POST came from (a form="…" submitter can sit
-  // outside it).
+  // outside it). options.filters makes the filter form show the answer's
+  // filters (syncFilters), as a data-in-place-filters owner does;
+  // options.popped marks a Back or Forward redraw (see VIEWS_FORM), whose
+  // history entry is left as it is.
   const refreshTable = async (region, control, url, init, fallback, options = {}) => {
     if (saving) {
       // The control was ignored; say why rather than doing nothing visibly.
@@ -1698,29 +1747,53 @@
     if (event.persisted) unloading = false;
   });
   // How to find the focused element again after a quiet refresh replaces
-  // the region it is in: its id, else its tag, link target and text. Null
-  // when focus is not in an in-place region.
+  // the region it is in: its id, else its nearest ancestor with an id (the
+  // region itself at most) and its position among that ancestor's elements
+  // of the same tag, link target and text. The position matters because a
+  // paged table draws its navigator twice (two Next links alike) and every
+  // row has its own Technical details summary: the first match would move
+  // focus to another copy (#1586 review). Null when focus is not in an
+  // in-place region.
   const heldFocus = () => {
     const node = document.activeElement;
     if (!(node instanceof Element) || !node.closest(REGIONS)) return null;
-    return node.id ? {id: node.id}
-      : {tag: node.tagName, href: node.getAttribute("href"), text: node.textContent};
+    if (node.id) return {id: node.id};
+    const anchor = node.parentElement?.closest("[id]");
+    if (!anchor) return null;
+    const held = {anchor: anchor.id, tag: node.tagName, href: node.getAttribute("href"),
+      text: node.textContent};
+    held.index = heldMatches(anchor, held).indexOf(node);
+    return held;
   };
+  // The elements under ``anchor`` that look like the held one (see heldFocus).
+  const heldMatches = (anchor, held) => [...anchor.querySelectorAll(held.tag)]
+    .filter((node) => node.getAttribute("href") === held.href && node.textContent === held.text);
   // Focus the fresh element matching ``held`` without scrolling, unless
-  // focus already moved somewhere still on the page.
+  // focus already moved somewhere still on the page. An element that cannot
+  // be found again at the same place is not replaced by another copy.
   const refocusHeld = (held) => {
     if (!held || (document.activeElement && document.activeElement !== document.body)) return;
+    const anchor = held.id ? null : document.getElementById(held.anchor);
     const match = held.id ? document.getElementById(held.id)
-      : [...document.querySelectorAll(held.tag)].find((node) => node.closest(REGIONS)
-        && node.getAttribute("href") === held.href && node.textContent === held.text);
+      : anchor && heldMatches(anchor, held)[held.index];
     match?.focus({preventScroll: true});
   };
   const refreshRegions = async (region, control, url, init, fallback, options, controller, form) => {
     const owner = options.owner || null;
+    // A periodic re-read (options.background, #1586) never hands the page
+    // to the browser: the reader did not act, so a failed read is only
+    // reported back (with the answer, or null when there was none) and the
+    // page stays as it is.
+    const background = options.background || null;
     // Every way out below that hands the page to the browser (a full load,
     // a page shown as returned) marks it leaving, so no box resubmits, and
     // marks a box's state as failed.
     const leave = (act) => {
+      if (background) {
+        region.removeAttribute("aria-busy");
+        background.failed(response || null);
+        return;
+      }
       leaving = true;
       if (isBox(control)) failedState.set(control, sentState.get(control));
       act();
@@ -1756,7 +1829,7 @@
       // fall back: the fallback's own navigation would hijack theirs. A
       // saving POST's note is still shown: beforeunload also fires for a
       // download link, and that page stays.
-      if (unloading && !form) return;
+      if (unloading && !form && !background) return;
       if (form) showUnreachable(form);
       else leave(fallback);
       return;
@@ -1855,7 +1928,7 @@
       swappingFor = null;
     }
     if (!anywhere) syncControls(parsed);
-    if (owner?.hasAttribute("data-in-place-filters")) syncFilters(parsed);
+    if (owner?.hasAttribute("data-in-place-filters") || options.filters) syncFilters(parsed);
     // A report's filters refused at a field (#1332) are drawn again with
     // that field marked, but the filter form keeps its element and the
     // values typed (syncControls), so the marks and messages are copied
@@ -1898,6 +1971,28 @@
     // that draws its own address (a[data-page-address], System logs' link
     // to its filters, #536) puts that in the address bar: the server built
     // it from only the filters a link may carry, never an identifier.
+    // On a page that keeps its views in history (data-in-place-views, see
+    // REGIONS) the entry also records this view, unless this answer is
+    // itself a Back or Forward redraw, whose entry already holds it.
+    const views = !anywhere && !refused && !options.popped
+      && Boolean(document.querySelector(VIEWS_FORM));
+    const setAddress = (href) => {
+      if (!views) {
+        window.history.replaceState(window.history.state, "", href);
+        return;
+      }
+      // Only a read's body is kept, as only a read is safe to send again:
+      // the filter form or a table control (no owner) or a form marked
+      // data-in-place-read (a row's Recipient). A save on the same page
+      // (Sent mail's bulk Preview and Confirm) keeps none, so Back or
+      // Forward to its entry draws the address by GET (#1571).
+      const read = !owner || owner.hasAttribute("data-in-place-read");
+      const body = read && init.method === "POST" && init.body instanceof URLSearchParams
+        ? [...init.body].filter(([name]) => name !== "csrfmiddlewaretoken") : null;
+      const state = {...(window.history.state || {}), inPlaceView: body};
+      if (owner?.hasAttribute("data-in-place-push")) window.history.pushState(state, "", href);
+      else window.history.replaceState(state, "", href);
+    };
     if (!anywhere && response.redirected) {
       // A form may name one-time answer parameters (data-in-place-forget,
       // space-separated) that say what just happened, such as a notice; they
@@ -1905,13 +2000,13 @@
       const address = new URL(withFragment(response.url, id), document.baseURI);
       (owner?.getAttribute("data-in-place-forget") || "").split(/\s+/).filter(Boolean)
         .forEach((name) => address.searchParams.delete(name));
-      window.history.replaceState(window.history.state, "", address.href);
+      setAddress(address.href);
     } else if (!anywhere && init.method !== "POST") {
-      window.history.replaceState(window.history.state, "", options.quiet ? keepHash(url) : url);
+      setAddress(options.quiet ? keepHash(url) : url);
     } else if (!anywhere && !refused && address) {
       const href = new URL(address, window.location.href);
       if (href.origin === window.location.origin && href.pathname === window.location.pathname) {
-        window.history.replaceState(window.history.state, "", keepHash(href.href));
+        setAddress(keepHash(href.href));
       }
     } else if (!anywhere && !refused) {
       // A follow-up queue names its remembered view by an opaque token
@@ -1921,6 +2016,7 @@
     }
     if (options.quiet && !refused) {
       refocusHeld(held);
+      background?.ok();
       return;
     }
     // A refusal's summary (now in the region) takes focus, as it does on an
@@ -2101,7 +2197,39 @@
     refreshTable(region, control, action.href, init, load, {owner, form: save ? form : null})
       .finally(settle);
   }, true);
-  // An in-place review (Outgoing mail's bulk review, #382; Past campaigns'
+  // Back or Forward within a page that keeps its views in history
+  // (VIEWS_FORM, #1562) redraws the entry's view in place: its recorded
+  // POST body with the filter form's current CSRF token, or else its
+  // address by GET. Quietly, as the reader did not choose a control here:
+  // focus stays where it is. The filter form shows the view's filters
+  // (options.filters). Should no answer come, the page reloads from its
+  // address, which draws that address's view.
+  window.addEventListener("popstate", (event) => {
+    const filters = document.querySelector(VIEWS_FORM);
+    const region = document.querySelector("[data-table-region][id]");
+    if (!filters || !region) return;
+    const body = event.state?.inPlaceView;
+    const reload = () => window.location.reload();
+    const options = {quiet: true, filters: true, popped: true};
+    // A body naming an action is a save (a bulk Preview or Confirm), never
+    // re-sent even if one was recorded: the address is drawn instead.
+    if (Array.isArray(body) && !body.some(([name]) => name === "action")) {
+      const fields = new URLSearchParams(body);
+      const token = filters.querySelector("input[name=csrfmiddlewaretoken]")?.value;
+      if (token) fields.set("csrfmiddlewaretoken", token);
+      const action = new URL(filters.getAttribute("action") || "", document.baseURI);
+      refreshTable(region, filters, action.href, {method: "POST", body: fields}, reload, options);
+    } else {
+      refreshTable(region, filters, window.location.href, {method: "GET"}, reload, options);
+    }
+  });
+  // A load (a reload, or a return the back/forward cache did not keep)
+  // draws the page from its address, so its entry forgets any view a POST
+  // drew there: Back and Forward then agree with what this load shows.
+  if (window.history.state?.inPlaceView && document.querySelector(VIEWS_FORM)) {
+    window.history.replaceState({...window.history.state, inPlaceView: null}, "");
+  }
+  // An in-place review (Sent mail's bulk review, #382; Past campaigns'
   // import, #1018) shows what its form's last Review would change, in an
   // element marked data-review-of="<form id>", with Apply. Editing that form again makes
   // the review out of date, and Apply would still apply the reviewed values,
@@ -2759,6 +2887,136 @@
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "visible") reread("a[data-reread-on-show][data-in-place]");
   });
+
+  // Pages that update themselves (UX conventions, #1586). A page whose state
+  // changes without the reader's own action (Background work, Families on
+  // the form now) carries one hidden a[data-reread-every="<ms>"][data-in-place]
+  // link, outside its regions, whose fragment names the region to re-read.
+  // Every <ms> (at least 5 s) while the tab is visible, the page's own
+  // address (so the filters, sort, size and page shown) is re-read quietly
+  // through the in-place mechanism: every region is swapped, focus is found
+  // again, nothing is announced, the address keeps its fragment, and a view
+  // that is passive never extends the sign-in. A read is skipped (and tried
+  // at the next tick) while the reader is busy: another in-place request is
+  // in flight, the reader is mid-edit in a region (see readerBusy), text
+  // is selected or a dialog is open. Hidden tabs are not read; the page catches up at once when shown
+  // again or brought back from the back/forward cache. A failed read never
+  // navigates: after three in a row, a line after the link says the page is
+  // not current, and the next read that works removes it; a refusal (signed
+  // out, access removed, or an answer from another page) stops the reads
+  // and says so.
+  const REREAD_MIN_MS = 5000;
+  const REREAD_FAILURES = 3;
+  // Said when a read is refused; live-status-v1.js says the same.
+  const UPDATES_REFUSED = "Couldn't check for updates. Reload the page or sign in again.";
+  let rereadTimer = 0;
+  let rereadFailures = 0;
+  let rereadStopped = false;
+  const rereadLink = () => document.querySelector("a[data-reread-every][data-in-place][href]");
+  const rereadProblem = (text) => {
+    // Say ``text`` on the line after the link (created on first use), or
+    // hide the line when ``text`` is empty.
+    const link = rereadLink();
+    if (!link) return;
+    let line = document.querySelector("[data-reread-problem]");
+    if (!line && !text) return;
+    if (!line) {
+      line = document.createElement("p");
+      line.className = "notice";
+      line.setAttribute("role", "status");
+      line.setAttribute("data-reread-problem", "");
+      link.after(line);
+    }
+    line.textContent = text;
+    line.hidden = !text;
+  };
+  // Input types the reader types into; focus in one means they may be
+  // mid-entry, so a re-read waits (a select or button merely focused after
+  // its choice was applied does not).
+  const TEXT_ENTRY = new Set(["text", "search", "number", "date", "datetime-local", "time",
+    "month", "week", "email", "url", "tel", "password"]);
+  const isTextEntry = (node) => node instanceof HTMLTextAreaElement
+    || (node instanceof HTMLInputElement && TEXT_ENTRY.has(node.type))
+    || (node instanceof HTMLElement && node.isContentEditable);
+  // Whether a control in an in-place region shows a change the page has not
+  // applied: its value differs from the one the server drew (controlValue).
+  const unapplied = () => [...document.querySelectorAll(REGIONS)].some((region) =>
+    [...region.querySelectorAll("input, select, textarea")].some((node) =>
+      node.type !== "hidden" && controlValue(node, true) !== controlValue(node, false)));
+  const readerBusy = () => {
+    // Whether a periodic re-read would get in the reader's way now: another
+    // in-place request is in flight, the reader is mid-edit in a region the
+    // re-read replaces (focus in a text-entry field there, or a control
+    // there with an unapplied change), text is selected, or a dialog is
+    // open. Controls outside the regions are never replaced, so they never
+    // hold a read (UX conventions, "Pages that update themselves").
+    const active = document.activeElement;
+    const selection = window.getSelection ? window.getSelection() : null;
+    return Boolean(tableRequest || saving
+      || (active && active.closest(REGIONS) && isTextEntry(active))
+      || unapplied()
+      || (selection && !selection.isCollapsed)
+      || document.querySelector("dialog[open]"));
+  };
+  const scheduleReread = () => {
+    // Arm the next re-read at the link's pace, unless the page has none,
+    // reads were stopped by a refusal, or the tab is hidden.
+    window.clearTimeout(rereadTimer);
+    const link = rereadLink();
+    const pace = Number(link?.getAttribute("data-reread-every"));
+    if (!link || rereadStopped || !(pace > 0) || document.visibilityState !== "visible") return;
+    rereadTimer = window.setTimeout(rereadNow, Math.max(pace, REREAD_MIN_MS));
+  };
+  const rereadNow = () => {
+    // Re-read the page's own address quietly now, or wait for the next tick
+    // while the reader is busy.
+    const link = rereadLink();
+    const id = link?.getAttribute("href").split("#")[1];
+    const region = id && document.getElementById(id);
+    if (rereadStopped || !isRegion(region) || document.visibilityState !== "visible") return;
+    if (readerBusy()) {
+      scheduleReread();
+      return;
+    }
+    const here = new URL(window.location.href);
+    here.hash = region.id;
+    // Whether this read reported back (ok or failed); an aborted read
+    // (the reader's own choice overtook it) reports nothing.
+    let settled = false;
+    const background = {
+      ok: () => {
+        settled = true;
+        rereadFailures = 0;
+        rereadProblem("");
+        scheduleReread();
+      },
+      failed: (response) => {
+        settled = true;
+        // A refusal (an error status a retry cannot fix, or an answer that
+        // is another page, such as the sign-in page) stops the reads.
+        const elsewhere = response && response.redirected
+          && new URL(response.url).pathname !== window.location.pathname;
+        if (elsewhere || (response && [400, 401, 403, 404, 410].includes(response.status))) {
+          rereadStopped = true;
+          rereadProblem(UPDATES_REFUSED);
+          return;
+        }
+        rereadFailures += 1;
+        if (rereadFailures >= REREAD_FAILURES) rereadProblem("Couldn't check for updates — retrying.");
+        scheduleReread();
+      },
+    };
+    refreshTable(region, link, here.href, {method: "GET"}, () => {},
+      {owner: link, quiet: true, background}).finally(() => {
+      if (!settled) scheduleReread();
+    });
+  };
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") rereadNow();
+    else window.clearTimeout(rereadTimer);
+  });
+  window.addEventListener("pageshow", (event) => { if (event.persisted) rereadNow(); });
+  scheduleReread();
 
   // A control's value for the rules below (data-show-when and
   // data-required-when). A checkbox counts as its value only while it is

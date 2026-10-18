@@ -22,12 +22,7 @@ from parishkit.stewardship.accounts.integration_forms import (
     FOLDER_LINK_PATTERN,
     IntegrationForm,
 )
-from parishkit.stewardship.accounts.parish_views import (
-    WEBSITE_EMPTY,
-    WEBSITE_PATTERN,
-    WEBSITE_REFUSAL,
-    ParishForm,
-)
+from parishkit.stewardship.accounts.parish_views import WEBSITE, ParishForm
 from parishkit.stewardship.accounts.setup_forms import SetupParishForm
 from parishkit.stewardship.backup_drive import folder_id_from_url
 from parishkit.stewardship.schema_primitives import typed
@@ -82,13 +77,13 @@ def browser_match(pattern, value):
 def test_the_website_pattern_admits_every_website_the_server_admits(value):
     """The browser never refuses a website the configuration would store."""
     if admitted(lambda text: typed(text, "url"), value):
-        assert browser_match(WEBSITE_PATTERN, value)
+        assert browser_match(WEBSITE.pattern, value)
 
 
 def test_the_website_pattern_refuses_credentials_queries_and_fragments():
     """What the browser catches at once: a user name, a query, a fragment."""
     for value in WEBSITES[-4:]:
-        assert not browser_match(WEBSITE_PATTERN, value)
+        assert not browser_match(WEBSITE.pattern, value)
 
 
 @pytest.mark.parametrize("form_class", [ParishForm, SetupParishForm])
@@ -97,13 +92,13 @@ def test_a_refused_website_is_shown_at_its_field(form_class):
     words the browser's hint uses, and draw the pattern."""
     form = form_class()
     attrs = form.fields["website"].widget.attrs
-    assert attrs["pattern"] == WEBSITE_PATTERN
-    assert attrs["data-missing-hint"] == WEBSITE_REFUSAL
-    assert attrs["data-empty-hint"] == WEBSITE_EMPTY
+    assert attrs["pattern"] == WEBSITE.pattern
+    assert attrs["data-missing-hint"] == WEBSITE.message
+    assert attrs["data-empty-hint"] == WEBSITE.empty
     form.cleaned_data = {"website": "https://example.org/?a=1"}
     with pytest.raises(forms.ValidationError) as refused:
         form.clean_website()
-    assert refused.value.messages == [str(WEBSITE_REFUSAL)]
+    assert refused.value.messages == [str(WEBSITE.message)]
 
 
 @pytest.mark.parametrize("value", FOLDERS)

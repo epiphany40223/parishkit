@@ -48,10 +48,11 @@ def test_current_query_keeps_filters_sort_size_and_page():
     assert table.current_query == table.query(table.number)
 
 
-def test_background_refresh_keeps_the_view_and_refreshes_in_place():
-    """Refresh current work carries the state filter, sort, size and page,
-    names the table region as its fragment, and is a sync node, so a later
-    sort or page change updates it; the work counts follow it too."""
+def test_background_updates_itself_in_place():
+    """Background work has no Refresh link (#1586): a hidden periodic
+    re-read link names the table region as its fragment (ui-v1.js re-reads
+    the address shown, so the filter, sort, size and page are kept), the
+    work counts follow it, and an opened Technical details stays open."""
     task = {
         "id": str(UUID(int=1)),
         "type": "source_refresh",
@@ -81,17 +82,23 @@ def test_background_refresh_keeps_the_view_and_refreshes_in_place():
             "table": table,
         },
     )
-    link = re.search(r'<a id="background-refresh"[^>]*>', page).group(0)
-    assert "data-table-sync" in link and "data-in-place" in link
-    assert 'data-in-place-message="List refreshed."' in link
-    assert 'href="/admin/system/background/?state=all&amp;sort=-created' in link
-    assert "size=25&amp;page=2#table" in link
+    assert "Refresh current work" not in page
+    link = re.search(r"<a [^>]*data-reread-every[^>]*>", page).group(0)
+    assert link == (
+        '<a hidden data-in-place data-in-place-quiet data-reread-every="30000" '
+        'href="/admin/system/background/#table">'
+    )
     assert '<p id="background-counts" data-table-sync>' in page
+    assert (
+        f'<details class="technical-details" id="task-type-{task["id"]}" '
+        "data-keep-open>"
+    ) in page
 
 
-def test_presence_refresh_refreshes_the_list_in_place():
-    """Refresh list keeps size and sort (page 1, as before), lands on the
-    table, and the count and time outside the table follow it."""
+def test_presence_updates_itself_in_place():
+    """Families on the form now has no Refresh list link (#1586): a hidden
+    periodic re-read link names the table, and the count and time outside
+    the table follow it."""
     table = window_table(
         PageWindow(1, 50),
         [],
@@ -104,9 +111,12 @@ def test_presence_refresh_refreshes_the_list_in_place():
         "stewardship/presence.html",
         {"presence": {"count": 0, "as_of": NOW}, "table": table},
     )
-    link = re.search(r'<a id="table-refresh"[^>]*>', page).group(0)
-    assert "data-table-sync" in link and "data-in-place" in link
-    assert link.endswith('?size=50&amp;sort=-heartbeat#table">')
+    assert "Refresh list" not in page
+    link = re.search(r"<a [^>]*data-reread-every[^>]*>", page).group(0)
+    assert link == (
+        '<a hidden data-in-place data-in-place-quiet data-reread-every="30000" '
+        'href="/admin/mail/presence/#table">'
+    )
     assert '<p id="presence-count" data-table-sync>' in page
     assert '<p id="presence-as-of" data-table-sync>' in page
 
@@ -122,7 +132,7 @@ HOSTED = {
     "backup-status-lines.html": ("integration-settings.html",),
     # Refresh from ParishSoft shows the run it requested (#521).
     "background-task-status.html": ("background-task.html", "source-refresh.html"),
-    # Outgoing mail's bulk review region (#382 M4): Confirm and Continue
+    # Sent mail's bulk review region (#382 M4): Confirm and Continue
     # sit inside it, and the bulk panel draws it.
     "delivery-bulk-review.html": ("delivery-bulk.html",),
     # The roster tick (#528): on the request page, and on each row of
@@ -204,7 +214,12 @@ def test_every_in_place_control_names_its_region_as_a_fragment():
                     passed = re.search(r"\bregion_id=([\"'])([\w-]+)\1", include)
                     region = passed.group(2) if passed else named.group(1)
                     assert region, (path.name, include)
-                    assert names_region(host, region), (path.name, region)
+                    # A shared table's region is drawn with its anchor,
+                    # "table" for a table with no prefix (the directory's
+                    # and the roster's binary choices, #1535).
+                    assert names_region(host, region) or (
+                        region == "table" and names_region(host, "{{ table.anchor }}")
+                    ), (path.name, region)
     assert found >= 8
 
 
@@ -294,8 +309,8 @@ def test_family_test_check_and_send_are_in_place():
     assert 'data-in-place-message-from="family-test-sent"' in send.group(0)
     assert 'id="family-test-sent" tabindex="-1" data-in-place-focus' in region
     assert "family-test-available" in region
-    refresh = re.search(r'<a [^>]*>{% translate "Refresh status" %}</a>', text)
-    assert "data-in-place-only" in refresh.group(0)
+    # The recent tests update by themselves; there is no Refresh link (#1586).
+    assert "Refresh status" not in text
 
 
 def test_campaign_test_send_is_in_place_and_live():
@@ -491,51 +506,46 @@ def test_acknowledgements_act_in_place():
     assert "data-in-place-anywhere" not in form
 
 
-def test_participation_options_apply_in_place():
-    """The Chart population (#519 PR 5, #1535) is a binary choice whose
-    links land on the statistics, inside a data-table-sync node that every
-    answer redraws, and the statistics, chart and export panels are regions,
-    so every panel the scope reshapes is refreshed together. The chart keeps
-    its daily table's own region inside it, and no form opts out of the
-    in-place filter path any more. No Apply button is left."""
-    text = (TEMPLATES / "participation.html").read_text()
-    options = re.search(r'<div id="participation-options"[^>]*>', text).group(0)
-    assert "data-table-sync" in options and "data-report-options" in options
-    choice = re.search(
+def test_response_dashboard_choices_apply_in_place():
+    """The Response dashboard (#1537) is one region holding every panel, the
+    report options (its zone) and both binary choices (#519 PR 5, #1535):
+    Responses shown and the Chart population each land on it, so every
+    answer redraws the page's links with the view now shown. The daily
+    table keeps its own region inside the chart panel, and no form opts out
+    of the in-place filter path any more. No Apply button is left."""
+    text = (TEMPLATES / "response-dashboard.html").read_text()
+    region = re.search(r'<div id="response-dashboard"[^>]*>', text).group(0)
+    assert names_region(text, "response-dashboard")
+    assert "data-report-options" in region and "data-report-zone" in region
+    choices = re.findall(
         r"\{% include \"stewardship/components/segmented-choice\.html\""
         r"[^%]*%\}",
         text,
-    ).group(0)
-    assert 'region_id="participation-statistics"' in choice
-    assert 'first_key="scope-historical"' in choice
-    assert 'second_key="scope-current"' in choice
+    )
+    assert len(choices) == 2
+    assert all('region_id="response-dashboard"' in choice for choice in choices)
+    keys = " ".join(choices)
+    for key in ("mode-production", "mode-testing", "scope-historical", "scope-current"):
+        assert f'_key="{key}"' in keys, key
     assert "Apply report options" not in text and '<select id="scope"' not in text
-    for region in (
-        "participation-statistics",
-        "participation-chart",
-        "participation-export",
-    ):
-        assert names_region(text, region), region
     chart = text.split('id="participation-chart"', 1)[1]
     assert "data-table-region" in chart.split('id="participation-export"', 1)[0]
     for path in TEMPLATES.rglob("*.html"):
         assert "data-filter-reload" not in path.read_text(), path.name
 
 
-def test_live_status_pages_refresh_and_dismiss_in_place():
-    """Refresh on the live-status pages and an integration's Dismiss act in
-    place (#519 PR 7a): each is a data-in-place control whose region wraps
-    the page's live-status element, so live-status-v1.js can watch the
-    fresh one, and whose message says what was done."""
-    for name, region, words in (
-        ("credential-status.html", "credential-progress", "Refresh status"),
-        ("family-email-progress.html", "send-progress", "Refresh progress"),
-        ("campaign-mail-families.html", "family-tests", "Refresh status"),
+def test_live_status_pages_update_themselves_and_dismiss_in_place():
+    """The live-status pages have no Refresh link (#1586): each region still
+    wraps the page's live-status element, so an in-place answer (Send, a
+    Retry) brings a fresh one live-status-v1.js watches. An integration's
+    Dismiss acts in place (#519 PR 7a)."""
+    for name, region in (
+        ("credential-status.html", "credential-progress"),
+        ("family-email-progress.html", "send-progress"),
+        ("campaign-mail-families.html", "family-tests"),
     ):
         text = (TEMPLATES / name).read_text()
-        link = re.search(rf'<a [^>]*>{{% translate "{words}" %}}</a>', text).group(0)
-        assert f'#{region}" ' in link and 'data-in-place="refresh"' in link, name
-        assert "data-in-place-message=" in link, name
+        assert 'data-in-place="refresh"' not in text, name
         body = text.split(f'<div id="{region}" data-in-place-region>', 1)[1]
         assert "data-live-status" in body or "progress-status.html" in body, name
     settings = (TEMPLATES / "integration-settings.html").read_text()
@@ -545,28 +555,22 @@ def test_live_status_pages_refresh_and_dismiss_in_place():
     assert '#integration-status" ' in form and 'data-in-place="dismiss"' in form
 
 
-def test_remaining_live_status_refreshes_are_in_place():
-    """Refresh on Background task, Change status and both report export pages
-    re-reads the page in place (#519 PR 7b): each link names a region that
-    wraps the page's live-status element, so live-status-v1.js watches the
-    fresh one, and says what it did. The export pages' campaign-work notice
-    is a region of its own, drawn even when empty, so it comes and goes with
-    the buttons it explains."""
-    for name, region, words, message in (
-        ("background-task.html", "task-status", "Refresh task", "Task refreshed."),
-        (
-            "configuration-request.html",
-            "change-status",
-            "Refresh status",
-            "Status refreshed.",
-        ),
-        ("report-export.html", "export-status", "Refresh status", "Status refreshed."),
-        ("report-exact.html", "export-status", "Refresh status", "Status refreshed."),
+def test_remaining_live_status_pages_update_themselves():
+    """Background task, Change status and both report export pages have no
+    Refresh link (#1586); each region wraps the page's live-status element,
+    so live-status-v1.js watches the one an in-place answer brings. The
+    export pages' Retry and Cancel no longer hand focus to a Refresh link.
+    Their campaign-work notice is a region of its own, drawn even when
+    empty, so it comes and goes with the buttons it explains."""
+    for name, region in (
+        ("background-task.html", "task-status"),
+        ("configuration-request.html", "change-status"),
+        ("report-export.html", "export-status"),
+        ("report-exact.html", "export-status"),
     ):
         text = (TEMPLATES / name).read_text()
-        link = re.search(rf'<a [^>]*>{{% translate "{words}" %}}</a>', text).group(0)
-        assert f'#{region}"' in link and 'data-in-place="refresh"' in link, name
-        assert f"data-in-place-message=\"{{% translate '{message}' %}}\"" in link
+        assert 'data-in-place="refresh"' not in text, name
+        assert 'data-in-place-fallback="refresh"' not in text, name
         head = text.split(f'<div id="{region}" data-in-place-region>', 1)[1]
         head = head.split("</div>", 1)[0]
         # The region holds the live-status element itself, or only the
@@ -582,11 +586,11 @@ def test_remaining_live_status_refreshes_are_in_place():
             ), name
 
 
-def test_refresh_task_keeps_the_history_view():
-    """Refresh task keeps the Task history's sort, size and page, and follows
-    later table choices (data-table-sync). The latest retry and the technical
-    details are regions too, the details' list inside the disclosure, so a
-    refresh never closes it."""
+def test_task_page_regions_survive_its_quiet_refresh():
+    """The task page has no Refresh task link (#1586); when its task ends it
+    re-reads its own address quietly (#869). The latest retry and the
+    technical details are regions, the details' list inside the disclosure,
+    so that refresh never closes it."""
     events = [
         {
             "version": 1,
@@ -621,10 +625,7 @@ def test_refresh_task_keeps_the_history_view():
         "stewardship/background-task.html",
         {"task": task, "work": {"events": events}, "history": history},
     )
-    link = re.search(r'<a id="task-refresh"[^>]*>', page).group(0)
-    assert "data-table-sync" in link
-    assert f'href="/admin/system/background/{task["id"]}/?' in link
-    assert "sort=-version" in link and "page=2#task-status" in link
+    assert "Refresh task" not in page and 'id="task-refresh"' not in page
     assert '<div id="task-latest" data-in-place-region>' in page
     details = page.split('<details class="technical-details">', 1)[1]
     assert details.split("</details>", 1)[0].count(
@@ -912,3 +913,166 @@ def test_hosted_file_upload_is_in_place():
     from parishkit.stewardship.accounts.hosted_file_views import UploadForm
 
     assert "data-in-place-focus" in UploadForm().fields["file"].widget.attrs
+
+
+# Page-refresh controls the go-live redesign removes (#1586 slice 2), kept
+# here until then (#1585) so a new one elsewhere still fails.
+GO_LIVE_REFRESH = {
+    "go-live-readiness.html": {"Refresh readiness preview"},
+    "go-live-cleanup.html": {"Refresh cleanup progress"},
+    "go-live-links.html": {"Refresh preparation progress"},
+    "production-progress.html": {"Refresh Production progress"},
+}
+# Wording of a control that re-reads the page's own state.
+REREAD_WORDING = re.compile(
+    r"^(?:Refresh|Reload|Re-read|Check for updates|Check again|Check status|"
+    r"Update now|Update status|Get latest)\b",
+    re.IGNORECASE,
+)
+# Controls with that wording that are not page refreshes, with why.
+NOT_PAGE_REFRESH = {
+    # Actions that start a ParishSoft download.
+    "Refresh from ParishSoft",
+    "Refresh now",
+    # A refusal page's way back to the item it refused (another page).
+    "Reload this request",
+    "Reload this item",
+    # Asks the email provider again which held emails went out (an action).
+    "Check again for emails that may have gone out",
+    # The Family portal's closed-campaign page (not an Admin page).
+    "Check again",
+}
+# A control's opening and closing: a link, a button, the {% button %} tag,
+# or an <input> (its label is its value).
+CONTROL = re.compile(
+    r"<(?P<tag>a|button)\b(?P<attrs>[^>]*)>(?P<inner>.*?)</(?P=tag)>"
+    r"|\{%\s*button\b(?P<battrs>.*?)%\}(?P<binner>.*?)\{%\s*endbutton\s*%\}"
+    r"|<input\b(?P<iattrs>(?:[^>{]|\{[{%].*?[%}]\})*)>",
+    re.IGNORECASE | re.DOTALL,
+)
+# A translated literal, either quote, optionally saved "as" a variable.
+TRANSLATE = re.compile(
+    r"\{%\s*(?:translate|trans)\s+(?P<q>[\"'])(?P<text>.*?)(?P=q)"
+    r"(?:\s+as\s+(?P<var>\w+))?[^%]*%\}",
+    re.DOTALL,
+)
+# A blocktranslate's text, optionally saved "asvar".
+BLOCK = re.compile(
+    r"\{%\s*blocktrans(?:late)?\b(?P<args>[^%]*)%\}(?P<text>.*?)"
+    r"\{%\s*endblocktrans(?:late)?\s*%\}",
+    re.DOTALL,
+)
+# The source tree, for labels built in Python (button and link labels).
+PACKAGE = TEMPLATES.parents[2]
+PYTHON_LABEL = re.compile(
+    r"(?:gettext(?:_lazy)?|pgettext(?:_lazy)?|_)\(\s*(?:[\"'][^\"']*[\"']\s*,\s*)?"
+    r"(?P<q>[\"'])(?P<text>[^\"']+)(?P=q)"
+    r"|[\"'](?:label|button|link_text|action_label)[\"']\s*:\s*(?P<q2>[\"'])"
+    r"(?P<text2>[^\"']+)(?P=q2)"
+)
+
+
+def control_labels(text):
+    """Every visible control's label in a template source ``text``: the
+    translated literals inside it (either quote, translate or
+    blocktranslate), a variable a translate ... as saved, the plain text,
+    and an input's value. A hidden link (the periodic re-read's own, a live
+    status's follow link) is not a visible control."""
+    saved = {m["var"]: m["text"] for m in TRANSLATE.finditer(text) if m["var"]}
+    for m in BLOCK.finditer(text):
+        var = re.search(r"\basvar\s+(\w+)", m["args"])
+        if var:
+            saved[var.group(1)] = m["text"]
+    labels = []
+    for m in CONTROL.finditer(text):
+        attrs = m["attrs"] or m["battrs"] or m["iattrs"] or ""
+        if re.search(r"(?<![\w-])hidden(?![\w-])", attrs):
+            continue
+        if m["iattrs"] is not None:
+            value = re.search(r"\bvalue=(?P<q>[\"'])(?P<v>.*?)(?P=q)", attrs, re.DOTALL)
+            inner = value["v"] if value else ""
+        else:
+            inner = m["inner"] if m["inner"] is not None else m["binner"]
+        labels += [t["text"] for t in TRANSLATE.finditer(inner) if not t["var"]]
+        labels += [b["text"] for b in BLOCK.finditer(inner)]
+        labels += [
+            saved[v] for v in re.findall(r"\{\{\s*(\w+)\s*\}\}", inner) if v in saved
+        ]
+        plain = re.sub(r"\{[%{#].*?[%}#]\}|<[^>]*>", " ", inner, flags=re.DOTALL)
+        labels.append(plain)
+    return {" ".join(label.split()) for label in labels} - {""}
+
+
+def test_control_labels_reads_every_way_a_label_is_written():
+    """The guard below sees a label however a template writes it."""
+    source = (
+        "<a href='x'>{% translate 'Refresh A' %}</a>"
+        '<button>{% trans "Refresh B" %}</button>'
+        "{% button type='submit' %}{% blocktranslate %}Refresh C{% endblocktranslate %}"
+        "{% endbutton %}"
+        '{% translate "Refresh D" as label %}<a href="y">{{ label }}</a>'
+        '<input type="submit" value="{% translate \'Refresh E\' %}">'
+        "<a href='z'>Check for updates</a>"
+        '<a hidden href="w">{% translate "Refresh hidden" %}</a>'
+        '<a href="v">{% translate "Refresh F" %}</a> <a href="u">'
+        '{% translate "Refresh G" %}</a>'
+    )
+    labels = {label for label in control_labels(source) if REREAD_WORDING.match(label)}
+    assert labels == {
+        "Refresh A",
+        "Refresh B",
+        "Refresh C",
+        "Refresh D",
+        "Refresh E",
+        "Check for updates",
+        "Refresh F",
+        "Refresh G",
+    }
+
+
+def test_no_manual_page_refresh_controls():
+    """Admin pages update themselves (UX conventions, "Pages that update
+    themselves", #1586): no template draws a visible link, button or input,
+    and no Python code builds a label, with wording that re-reads the page's
+    own state ("Refresh…", "Check for updates", …), other than the go-live
+    pages slice 2 converts (#1585). The controls in NOT_PAGE_REFRESH are not
+    page refreshes. Every occurrence in a file counts."""
+    found = {}
+    for path in sorted(TEMPLATES.rglob("*.html")):
+        for label in control_labels(path.read_text()):
+            if REREAD_WORDING.match(label) and label not in NOT_PAGE_REFRESH:
+                found.setdefault(path.name, set()).add(label)
+    assert found == GO_LIVE_REFRESH
+    built = {}
+    for path in sorted(PACKAGE.rglob("*.py")):
+        if "migrations" in path.parts or "tests" in path.parts:
+            continue
+        for m in PYTHON_LABEL.finditer(path.read_text()):
+            label = m["text"] or m["text2"]
+            # A message (a sentence ending in a stop) is not a control label.
+            sentence = label.rstrip().endswith((".", "?", "!"))
+            exempt = sentence or label in NOT_PAGE_REFRESH
+            if REREAD_WORDING.match(label) and not exempt:
+                built.setdefault(path.name, set()).add(label)
+    assert built == {}
+    for path in TEMPLATES.rglob("*.html"):
+        text = path.read_text()
+        assert "data-live-restart" not in text, path.name
+        assert "data-live-refresh-label" not in text, path.name
+        # The periodic re-read's own link is never a visible control.
+        for tag in re.findall(r"<a\b[^>]*\bdata-reread-every\b[^>]*>", text):
+            assert re.search(r"(?<![\w-])hidden(?![\w-])", tag), path.name
+
+
+def test_refused_updates_say_the_same_in_both_scripts():
+    """A refused automatic read (the sign-in ended) says one sentence on
+    every page, whether a status region or a periodic re-read was refused
+    (UX conventions, "Pages that update themselves", #1586)."""
+    scripts = TEMPLATES.parents[1] / "static/stewardship"
+    said = {
+        re.search(r'const UPDATES_REFUSED = "([^"]+)";', (scripts / name).read_text())[
+            1
+        ]
+        for name in ("ui-v1.js", "live-status-v1.js")
+    }
+    assert said == {"Couldn't check for updates. Reload the page or sign in again."}

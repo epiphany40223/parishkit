@@ -396,7 +396,44 @@ hr { border: 0; border-top: 1px solid var(--border); margin-block: 2rem; }
 .band-panes > [data-pane]:not([data-shown]) { visibility: hidden; }
 .band-year select { width: auto; max-width: 100%; }
 .stat-label { font-weight: 600; }
-.stat-value { font-size: 1.75rem; font-weight: 650; line-height: 1.2; font-variant-numeric: tabular-nums; }
+/* Every value's line is 2.1rem tall (#1537), whatever its size. A tile drawn by the component
+   (data-stat) keeps its value on one line, drawn smaller when it is long (StatTile.fit), so a
+   fresh answer's wider figure never wraps and makes its row taller in place, moving everything
+   below under the reader's pointer. A one-line value must also stay inside its tile, so a row
+   of component tiles has a wider minimum column (12.5rem, not 10rem): the row drops to three
+   or two across before a tile is too narrow for its value. In rem, so it scales with the
+   reader's font size; min() keeps a row in a narrower container from overflowing it. In
+   Linux's wide fonts each size then fits its longest value (9, 13 and 17 characters, such as
+   "$9,999,999.99" at 13) inside the tile at every width. Not sized to the tile with container
+   units: a size container makes WebKit's scroll anchoring jump the page when an in-place
+   answer replaces it. Tiles still drawn by hand keep wrapping until they move onto the
+   component (#1540). */
+.stat-value { font-size: 1.75rem; font-weight: 650; line-height: 2.1rem; font-variant-numeric: tabular-nums; }
+.stat-tiles:has(> [data-stat]) { grid-template-columns: repeat(auto-fit, minmax(min(12.5rem, 100%), 1fr)); }
+.stat-tile[data-stat] .stat-value { white-space: nowrap; }
+.stat-value-long { font-size: 1.25rem; }
+.stat-value-longest { font-size: 1rem; }
+/* On a phone even one tile per column of two is too narrow for a one-line value, so every
+   .stat-tiles row stacks, those still drawn by hand (home, campaign comparison, financial
+   report, ministry follow-up) as well as the component's. */
+@media (max-width: 40rem) { .stat-tiles, .stat-tiles:has(> [data-stat]) { grid-template-columns: 1fr; } }
+/* Balanced lines (#1537): a component row of four or five tiles never leaves one tile alone on
+   a line. Each track's minimum is 12.5rem while the whole row fits on one line, and otherwise a
+   half (four tiles) or a third (five) of the row, so four go 4 or 2 + 2 across and five go 5 or
+   3 + 2. "(W - 100%) * 100000" is at most zero once the row is W wide (all its tiles at 12.5rem
+   and the gaps), and huge before: one layout unit under W (1/64px in Chromium and WebKit, 1/60px
+   in Firefox) already makes it over 1,500px, past any half or third, so no real row width lands
+   between. (A smaller "* 999" left a band of up to 0.4px under each W where the term lay between
+   12.5rem and a half, and a row there drew 3 + 1 or 2 + 2 + 1.) The huge values are safe: an
+   engine caps a length it cannot hold, and clamp() and min() then pick their other argument. A
+   half under 12.5rem leaves clamp() its 12.5rem minimum, so four tiles stack; five whose third
+   is under 12.5rem (a row under 39rem) stack too, through the max() with the full width, rather
+   than go 2 + 2 + 1. Not a container query, for the WebKit scroll anchoring noted above. Phones
+   still stack. */
+@media (min-width: 40.0625rem) {
+  .stat-tiles:has(> [data-stat]:nth-child(4):last-child) { grid-template-columns: repeat(auto-fit, minmax(clamp(12.5rem, (52.25rem - 100%) * 100000, (100% - .75rem) / 2), 1fr)); }
+  .stat-tiles:has(> [data-stat]:nth-child(5):last-child) { grid-template-columns: repeat(auto-fit, minmax(max(clamp(12.5rem, (65.5rem - 100%) * 100000, (100% - 1.5rem) / 3), min(100%, (39rem - 100%) * 100000)), 1fr)); }
+}
 .stat-detail { color: var(--muted); font-size: .875rem; }
 /* An unknown value's "—" carries its reason in a toggletip beside it (#1540), its "i" at the
    size it has elsewhere. The 1.75rem button is centred in the value's 2.1rem line from its top,
@@ -679,12 +716,11 @@ button.is-busy::after, .button.is-busy::after { content: ""; display: inline-blo
 /* System health's dashboard (#1214; admin-portal spec "Health dashboard").
    Every state look comes from the .status-* classes above, never a fixed
    colour. Nothing here changes size on a poll:
-   - The overall line keeps one height (room for a 44-pixel button): its
-     counted and Not current forms are both drawn and one is shown, and
-     Refresh System health keeps its space while hidden. Where the line is
-     too narrow for the Not current form and the button side by side (a
-     phone, or a narrow window beside the menu), the button needs a second
-     line, so that height is reserved too. The line's width decides this
+   - The overall line keeps one height: its counted and Not current forms
+     are both drawn and one is shown (there is no Refresh button, #1586).
+     Where the line is too narrow for the Not current form on one line (a
+     phone, or a narrow window beside the menu), it wraps after its word,
+     so that second line's height is reserved too. The line's width decides this
      (a container query), not the window's, because the menu takes part of
      a wide window. Nothing is clipped, so a focus ring or enlarged text
      still shows.
@@ -703,17 +739,15 @@ button.is-busy::after, .button.is-busy::after { content: ""; display: inline-blo
 .health-overall > span { display: inline-flex; align-items: center; gap: .5rem; color: var(--status-ink); }
 .health-overall .level-icon { width: 1.5rem; height: 1.5rem; }
 .health-last { font-weight: 400; font-size: .85em; }
-.health-restart { flex: none; margin: 0; }
 .health-checked { margin-block: 0 1rem; }
-/* On a narrow line the Not current form wraps after its word, and the
-   button takes the next line; the line reserves that height in every
-   state. The longest form and the button need about 39rem side by side. */
+/* On a narrow line the Not current form wraps after its word; the line
+   reserves two lines of the heading (at most 1.4rem, line height 1.3) in
+   every state. */
 @container (max-width: 42rem) {
-  .health-line { flex-wrap: wrap; height: 7.25rem; align-content: flex-start; }
+  .health-line { flex-wrap: wrap; height: 4rem; align-content: flex-start; }
   .health-overall { height: auto; min-height: 3rem; white-space: normal; line-height: 1.3; }
   .health-overall > span { flex-wrap: wrap; row-gap: 0; }
 }
-[data-health-dashboard]:not([data-not-current]) .health-restart { visibility: hidden; }
 [data-health-dashboard]:not([data-not-current]) .health-unknown,
 [data-health-dashboard][data-not-current] .health-counted { display: none !important; }
 
@@ -865,6 +899,11 @@ td > :last-child { margin-bottom: 0; }
 .calendar-month td { height: 4.5rem; vertical-align: top; font-size: .875rem; }
 .calendar-month td[aria-current="date"] { background: var(--accent-soft); }
 .calendar-day { display: block; font-weight: 650; }
+/* A campaign day's Add (#1521) sits on the number's line, at its end, with a
+   target at least 24px square (WCAG 2.2 SC 2.5.8). The grid is drawn once,
+   so it never moves anything later. */
+.calendar-day-head { display: flex; justify-content: space-between; align-items: center; gap: .25rem; }
+.calendar-add { display: inline-flex; align-items: center; justify-content: center; min-width: 1.5rem; min-height: 1.5rem; padding-inline: .2rem; font-size: .8125rem; }
 .calendar-marker { display: block; color: var(--accent-strong); font-weight: 600; }
 .calendar-month ul { list-style: none; margin: 0; padding: 0; }
 .calendar-month li { margin-block: .15rem; }
@@ -1049,6 +1088,42 @@ details.filter-panel[data-filter-panel] > form:not(.filter-bar) > fieldset > div
 /* A field as wide as its longest choice, so a long option reads whole
    (Limitations' Show, #227); it still shrinks to the row on a phone. */
 .filter-bar > div.fit { flex: 0 1 auto; }
+/* Sent mail's five filters share one row beside the Admin menu at desktop
+   width (#1562): each grows from a short basis instead of starting at
+   its widest choice. */
+.filter-bar.mail-filters > div { flex: 1 1 7.5rem; min-width: 6.5rem; }
+/* From and Through are wide enough for the empty "mm/dd/yyyy" placeholder
+   beside the calendar button, with Linux's wider fonts too. They drop the
+   desktop short-field rule's end margin: the bar's gap spaces them, and
+   that margin kept Apply off the row at 1280 px with those fonts. */
+.filter-bar.mail-filters > div.short { flex: 0 1 10rem; min-width: 10rem; margin-inline-end: 0; }
+.filter-bar.mail-filters > div > :is(input, select) { width: 100%; }
+/* Every label sits on one line of the toggletip's height, and the fields
+   line up at their tops, so Recipient's label (with its toggletip) and the
+   plain labels share one baseline although a date control is a little
+   taller than a text box; Apply still sits at the fields' foot. */
+.filter-bar.mail-filters { align-items: start; }
+.filter-bar.mail-filters > button { align-self: end; }
+.filter-bar.mail-filters > div > :is(label, .label-row) { display: flex; align-items: center; min-height: 1.75rem; margin: 0 0 .25rem; }
+/* Sent mail's Production / Testing choice sits at the end of the heading's
+   line on a wider screen, out of the flow, so it takes no line of its own
+   and the first rows start on a laptop screen (#227, #1562); the heading
+   and its About summary are short enough to leave it the room. The line
+   is at least the pair's height (its segments and their border), so the
+   filter bar below never meets it. On a phone it keeps its own line under
+   the heading. */
+@media (min-width: 40rem) {
+  .mail-title { position: relative; min-height: calc(var(--button-min-height) + 2 * var(--button-border-width)); }
+  .mail-title > #delivery-mode { position: absolute; inset-block-start: 0; inset-inline-end: 0; }
+  .mail-title > #delivery-mode .segmented-choice { margin: 0; }
+}
+/* A row's Recipient is a link-styled button posting the private recipient
+   (#1562): it reads as a link in its cell, never as a portal button. The
+   resting selector names .data-table so it outranks the table's compact
+   button rule (.data-table button), as the hover selector outranks the
+   portal hover: otherwise the rest look had that rule's padding and the
+   hover look had none, and the name moved under the pointer (#736). */
+.data-table .recipient-link, .recipient-link:not(:disabled):hover { min-height: 0; margin: 0; padding: 0; border: 0; vertical-align: baseline; background: none; box-shadow: none; color: var(--link); line-height: inherit; text-align: start; }
 .filter-bar button { margin: 0; }
 /* A filter bar's hint row with the server's refusal over the gate's hint
    (.hint-row-messages, the Family directory's Exact Family code, #1332)
@@ -1553,24 +1628,32 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
 /* The one segmented-pair look (ui-conventions spec, "Binary choices",
    #1535): a visible label and two segments, the chosen one filled. A binary
    choice (components/segmented-choice.html) draws its segments as links,
-   the chosen one aria-current="page"; the Basic / Advanced mode toggle
-   (#1121, components/editor-mode.html) draws them as radios, each covering
-   its segment, invisible, so the native radio group keeps its keyboard
-   behaviour (arrow keys) and its accessible name. Both segments are always
+   or, on a page whose filters are private POST state, as one button in
+   each of two small forms, the chosen one aria-current="page"; the Basic /
+   Advanced mode toggle (#1121, components/editor-mode.html) draws them as
+   radios, each covering its segment, invisible, so the native radio group
+   keeps its keyboard behaviour (arrow keys) and its accessible name. Both
+   segments are always
    bold and fixed in size, so choosing one changes only colours and never
    moves anything (no layout shift). */
 fieldset.editor-mode, .segmented-choice { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; margin-block: 0 1rem; }
 fieldset.editor-mode { padding: 0; border: 0; border-radius: 0; background: none; }
 fieldset.editor-mode > legend { float: none; width: auto; margin: 0; padding: 0; font-size: 1rem; }
 .editor-mode-options, .segmented-choice-options { display: inline-flex; border: var(--button-border-width) solid var(--accent); border-radius: var(--radius-small); overflow: hidden; }
-.editor-mode-options label:has(> input[type=radio]), .segmented-choice-options a { display: inline-flex; align-items: center; min-height: var(--button-min-height); margin: 0; padding: .5rem 1.25rem; color: var(--accent); font-weight: 650; text-decoration: none; }
-.editor-mode-options label + label, .segmented-choice-options a + a { border-inline-start: var(--button-border-width) solid var(--accent); }
+.editor-mode-options label:has(> input[type=radio]), .segmented-choice-options :is(a, button) { display: inline-flex; align-items: center; min-height: var(--button-min-height); margin: 0; padding: .5rem 1.25rem; color: var(--accent); font-weight: 650; text-decoration: none; }
+.editor-mode-options label + label, .segmented-choice-options a + a, .segmented-choice-options form + form > button { border-inline-start: var(--button-border-width) solid var(--accent); }
 .editor-mode-options label:has(> input[type=radio]) > input { inset: 0; width: 100%; height: 100%; opacity: 0; }
-.editor-mode-options label:has(> input:checked), .segmented-choice-options a[aria-current=page] { background: var(--accent); color: var(--paper); }
-.editor-mode-options label:has(> input:focus-visible), .segmented-choice-options a:focus-visible { outline: 3px solid var(--focus); outline-offset: -6px; }
+.editor-mode-options label:has(> input:checked), .segmented-choice-options :is(a, button)[aria-current=page], .segmented-choice-options button[aria-current=page]:not(:disabled):hover { background: var(--accent); color: var(--paper); }
+.editor-mode-options label:has(> input:focus-visible), .segmented-choice-options :is(a, button):focus-visible { outline: 3px solid var(--focus); outline-offset: -6px; }
 /* The ring sits inside the segment, so on the chosen (accent) segment it
    is drawn in --paper, which keeps 3:1 on --accent in both schemes (#1264). */
-.editor-mode-options label:has(> input:checked:focus-visible), .segmented-choice-options a[aria-current=page]:focus-visible { outline-color: var(--paper); }
+.editor-mode-options label:has(> input:checked:focus-visible), .segmented-choice-options :is(a, button)[aria-current=page]:focus-visible { outline-color: var(--paper); }
+/* A POST segment's form gives way to its button, which drops the shared
+   button look (radius, shadow, its own border and hover colours): only the
+   pair's outline and divider frame it, as they frame a link. */
+.segmented-choice-options form { display: contents; }
+.segmented-choice-options button { border: 0; border-radius: 0; background: none; box-shadow: none; line-height: inherit; }
+.segmented-choice-options button:not(:disabled):hover:not([aria-current=page]) { background: none; border-color: var(--accent); color: var(--accent); box-shadow: none; }
 /* The Basic panel is a <fieldset> so one disabled attribute keeps its
    controls unsent while Advanced is shown; it draws no box of its own. */
 fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0; background: none; }
@@ -1718,3 +1801,12 @@ fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0;
 .user-roles .choice { margin-block: .5rem; }
 .user-roles .choice label { display: inline; font-weight: 600; }
 .user-roles .choice .help { margin: .1rem 0 0 1.75rem; }
+/* A field with a shared format rule (web/field_rules.py, #1577) is marked
+   as the Admin leaves it, often by clicking the next field: its error
+   border keeps the field's size, as invalid schedule row controls do (the
+   second pixel is a shadow), so the click never lands on moved content. */
+input[data-field-rule][aria-invalid=true] { border-width: 1px; box-shadow: inset 0 0 0 1px var(--error-border); }
+input[data-field-rule][aria-invalid=true]:focus { box-shadow: inset 0 0 0 1px var(--error-border), 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+@media (forced-colors: active) {
+  input[data-field-rule][aria-invalid=true]:not(:focus-visible) { outline: 1px solid CanvasText; outline-offset: -2px; }
+}

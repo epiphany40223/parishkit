@@ -207,7 +207,7 @@ def test_removing_an_integration_counts():
     ],
 )
 def test_the_bulk_mail_actions_count(monkeypatch, query, expected):
-    """Outgoing mail's bulk actions: each action's own fields, from one table."""
+    """Sent mail's bulk actions: each action's own fields, from one table."""
     monkeypatch.setattr(delivery_views, "runtime", lambda: SimpleNamespace(store=None))
     monkeypatch.setattr(delivery_views, "_principal", lambda *_, **__: None)
     context, status = delivery_views._bulk(form_post(query))

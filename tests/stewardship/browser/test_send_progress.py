@@ -47,7 +47,7 @@ def test_progress_pages_are_accessible_at_phone_and_desktop_widths(
             assert "emails finished" in name
         # Counts change on every poll, so the region itself never speaks.
         assert page.locator(REGION).get_attribute("aria-live") is None
-        assert page.get_by_role("link", name="Outgoing mail").count() >= 1
+        assert page.get_by_role("link", name="Sent mail").count() >= 1
 
 
 def test_the_running_page_follows_the_send_and_announces_only_its_end(
@@ -125,14 +125,16 @@ def test_polls_every_five_seconds_and_announces_only_quarter_changes(
     assert len(polls) >= 3 and all(4.5 <= gap < 8 for gap in gaps), gaps
 
 
-# Counts each poll timer the page arms (its 5-second fixed pace), so a test
-# can wait until the page has read a poll's answer and scheduled the next
-# one before it moves the clock again.
+# Counts each poll timer the page arms (its 5-second fixed pace, and the
+# 30-second pace past its limit), so a test can wait until the page has read
+# a poll's answer and scheduled the next one before it moves the clock again.
 COUNT_ARMED_POLLS = """() => {
     const setTimeout = window.setTimeout;
     window.armedPolls = 0;
+    window.slowPolls = 0;
     window.setTimeout = function (callback, delay, ...rest) {
         if (delay === 5000) window.armedPolls += 1;
+        if (delay === 30000) window.slowPolls += 1;
         return setTimeout.call(window, callback, delay, ...rest);
     };
 }"""
@@ -146,16 +148,17 @@ def test_watching_outlasts_the_old_hour_while_the_send_progresses(
 
     A page opened up to an hour before a send must follow it to the end.
     Each poll that brings new counts restarts the 3-hour limit; once the
-    counts stop changing for that long, watching stops and the message
-    names this page's own refresh link.
+    counts stop changing for that long, the page slows to one check every
+    30 seconds rather than stopping (it has no Refresh link, #1586), and
+    says nothing under the region.
 
     The clock is paused and only moves when the test moves it, and each
     jump waits until the page has re-armed its poll timer: the page arms the
     next poll only after the previous answer arrives, so jumping earlier
     would skip that timer (#425). The ``during_a_poll`` case deliberately
     jumps 150 minutes while the fourth poll is in flight, as a computer
-    waking from sleep would: the page must still check once more before it
-    stops, because that answer predates the jump.
+    waking from sleep would: the page must still check once more at its pace before it
+    slows, because that answer predates the jump.
     """
     from playwright.sync_api import expect
 
@@ -193,7 +196,8 @@ def test_watching_outlasts_the_old_hour_while_the_send_progresses(
     expect(page.get_by_text("530 of 1,100 emails finished (48%)")).to_be_visible()
     assert problem.is_hidden()
     # Unchanged counts no longer renew the limit: 40 + 150 minutes later the
-    # page stops watching, after one last poll that still shows no change.
+    # page slows down, after one last poll at its pace that still shows no
+    # change.
     if jump == "between_polls":
         poll(40, 4)
         page.clock.fast_forward(150 * 60 * 1000)
@@ -208,8 +212,11 @@ def test_watching_outlasts_the_old_hour_while_the_send_progresses(
         assert problem.is_hidden()
         page.clock.fast_forward(5000)
     recorded(page, polls, 5)
-    expect(problem).to_have_text("Still working. Use Refresh progress to check again.")
-    page.clock.fast_forward(60 * 60 * 1000)
-    page.evaluate("() => true")  # One round trip after the clock jump.
-    assert len(polls) == 5
+    eventually(page, "window.slowPolls", 1)
+    assert page.evaluate("window.armedPolls") == 4
+    # Every 30 seconds from then on, with nothing said under the region.
+    page.clock.fast_forward(30 * 1000)
+    recorded(page, polls, 6)
+    eventually(page, "window.slowPolls", 2)
+    assert problem.is_hidden()
     assert page.evaluate("window.armedPolls") == 4

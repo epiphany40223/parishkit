@@ -186,7 +186,7 @@ identifiers and UTC instants only: no Family names, email addresses, codes
 or other personal data. A read-only session can run every one of them. Each
 records the same view event in System logs as its page (`status` the home
 page's, `task list` and `task show` Background work's, `send progress` and
-`send history` Outgoing mail's, `system health` System health's);
+`send history` Sent mail's, `system health` System health's);
 `schedule show`, `go-live readiness` and `go-live progress` record none,
 like their pages. `system health` needs an Administrator's session, as its
 page does.
@@ -250,7 +250,7 @@ Each send has `kind`, `active`, `paused`, `stalled`, `held`, `total`,
 `unprepared`, `unplanned`, `waiting`, `unreachable` and `not_needed`,
 `rate_per_minute`, `started_at`, `last_settled_at`, `finished_at`,
 `finish_at` and `minutes_left`. In `send history` each also has `send` (the
-value Outgoing mail's send filter takes), `number`, `mode`, `cycle`,
+value Sent mail's send filter takes), `number`, `mode`, `cycle`,
 `scheduled_at`, `replaced`, `current`, `earlier`, `live`, `cancelled` and
 `minutes`.
 
@@ -441,6 +441,51 @@ cleared returns it (`created` false). It prints `switch_id`, `created` and
 
 ```text
 pk-admin system debug-allow
+```
+
+### `system mail-clear-preview` and `system mail-clear`
+
+System health's **Clear the halt**, in the Mail tile,
+for a mail sender halted by a fault that waiting cannot fix, once the
+cause is fixed (the
+[mail-provider outage runbook](stewardship-launch-runbooks.md#mail-provider-outage)
+describes when). Both need a full-scope session; neither needs a recent
+sign-in.
+
+`system mail-clear-preview` asks the mail sender to check that the
+mailbox still signs in (unless a check is already running, or one passed
+in the last five minutes), waits for it (at most two minutes; `--no-wait`
+prints at once), and prints `halt` (`halt_id`, `kind`: `before_data` or
+`after_data`, `began_at`), `mailbox_check` (`status`: `waiting`, `running`,
+`passed`, `refused`, `unavailable` or `unanswered`), `waiting` (emails
+waiting to be sent), `unsettled` and `unsettled_ids` (emails in
+`delivery_unknown`, which must be settled first, as `delivery resolve`
+does), `delivery_paused`, `reason` (why the halt cannot be cleared now:
+`checking`, `check_failed`, `check_needed`, `unsettled`; null when it can)
+and `preview.token`, the signed binding, valid for 15 minutes and for this
+Administrator only (null with a reason). It records no audit event. It is
+refused (exit 1, `stale_version`) while no mail sender is halted, or its
+halt is not recorded yet (within about 30 seconds of the halt).
+
+`system mail-clear --token TOKEN` clears that halt. It always prompts (or
+takes `--yes`) with what clearing does. It records the clear signal (the
+token's key names it, so a repeat returns the first, `created` false) and
+`mail_halt_cleared` with `admin_cmd_system_mail_clear`. Like the page,
+it also acknowledges the halt's own entries in the critical-problems banner
+that the preview saw (`critical_events_acknowledged`, with the clear signal
+as its subject). It prints
+`clear_id`, `halt_id`, `created` and `created_at`. Both mail senders act on
+it within about 30 seconds and send one probe email per consumer (so up to
+two); if the fault is still there, sending halts again under a new halt. A halt that changed
+since the preview, an expired token, a mailbox check that no longer
+allows it or an email that became `delivery_unknown` is exit 1,
+`stale_version`: review again. With `--token -` the token is read from
+standard input, so add `--yes`. Follow it with `system health --watch 60`
+(the mail senders).
+
+```text
+pk-admin system mail-clear-preview
+pk-admin system mail-clear --token TOKEN
 ```
 
 ### Watching and errors
@@ -1871,9 +1916,9 @@ switch, confirming Production, withdrawal, key changes), System logs record an
 automation notice; confirming Production and withdrawal are marked
 irreversible and also email and post to Slack.
 
-## Outgoing mail
+## Sent mail
 
-The delivery commands read Outgoing mail and Refused addresses as their
+The delivery commands read Sent mail and Refused addresses as their
 pages do, and resolve a delivery as its page's form does. Each read records
 the pages' view event in System logs; any session may run them.
 `delivery resolve` needs a full-scope session. No document names a
@@ -1883,7 +1928,8 @@ open it on the page.
 
 ```sh
 pk-admin delivery list --state delivery_unknown
-pk-admin delivery list --search 1234
+pk-admin delivery list --recipient 1234
+pk-admin delivery list --state needs_attention --purpose daily_digest --from 2026-10-01
 pk-admin delivery show MESSAGE_ID
 pk-admin delivery resolve MESSAGE_ID --action accept --expected-version 3 --note - < note.txt
 pk-admin delivery refusals
@@ -1895,11 +1941,19 @@ pk-admin delivery bounce-report MESSAGE_ID --address ADDRESS \
     --note - --yes < note.txt
 ```
 
-`delivery list` takes the page's `--state`, `--send` (send history's `send`
-value), `--search` (an exact Family DUID or delivery id, as input only),
-`--page`, `--size` and `--sort`. `--sort` takes the page's tokens:
+`delivery list` takes Sent mail's filters: `--recipient` (a Family DUID, an
+email address or a delivery id, as input only), `--purpose` (`initial`,
+`reminder`, `receipt`, `family_test`, `daily_digest`, `weekly_digest`,
+`operational` or `security_event`), `--state` (a state, or the groups
+`needs_attention`, `not_delivered` and `still_sending`, as the page
+defines them), `--mode`
+(`production` or `testing`; both when left out), `--from` and `--to` (whole
+days, in the time zone `--zone` names, the parish's time zone by default),
+`--send` (send history's `send` value), `--page`, `--size` and `--sort`. The
+list includes operational and security notices, as the page does. `--sort` takes the page's tokens:
 `changed` (when the email last changed; the default is `-changed`, latest
-first), `name`, `duid`, `purpose`, `mode`, `state` and `attempts`, and also
+first), `name` (emails to Administrators last, by their Name or address),
+`duid`, `purpose`, `mode`, `state` and `attempts`, and also
 `created`. `delivery refusals` takes `--duid`, and its `--sort` takes
 `refused`, `name` (the Family's name, as `delivery list`), `duid`
 (the default), `address` and `id`.
@@ -1907,8 +1961,8 @@ first), `name`, `duid`, `purpose`, `mode`, `state` and `attempts`, and also
 | Field | What it holds |
 | --- | --- |
 | `deliveries`, `delivery` | Each message's `id`, `campaign_id`, `purpose`, `mode`, `state`, `version`, `attempt`, `task_id`, `created_at`, `updated_at`, `finished_at` |
-| `refused` | `delivery list`, in each of `deliveries`: how many of the email's refused addresses are still unresolved, as Outgoing mail marks it (0 for none) |
-| `state`, `send`, `page`, `size`, `sort`, `has_next`, `matching`, `matching_capped` | `delivery list`: the filters and the page of rows |
+| `refused` | `delivery list`, in each of `deliveries`: how many of the email's refused addresses are still unresolved, as Sent mail marks it (0 for none) |
+| `state`, `purpose`, `mode`, `start`, `end`, `send`, `page`, `size`, `sort`, `has_next`, `matching`, `matching_capped` | `delivery list`: the filters (never the recipient) and the page of rows |
 | `task` | `delivery show`: the latest task's `id`, `state`, `version` and `retry_sequence` |
 | `actions`, `retry_unavailable` | `delivery show`: the resolutions the page offers now, and whether a retry is refused by the campaign's resend rule |
 | `events` | `delivery show`: the history's `version`, `at`, `state`, `action`, `attempt` and `result` (a stored code) |
@@ -2097,9 +2151,9 @@ pk-admin report roster --show all --ministry 9
 | Command | The page | What it prints |
 | --- | --- | --- |
 | `report list` | Campaign reports | `campaign_id` (null without a current campaign) and `reports`: each report your menu offers, with `command`, `page` and `available` (false while the menu greys it out) |
-| `report participation` | Participation | `status` (`current`, `updating` or `unavailable`), `fact_set_id` (for `export create --fact-set`), the figures' source and dates, `statistics` (the active Families, Members, email, responses and, with Financial stewardship, pledge totals, including the comparison pledges of every Family, `comparison_pledge_all`) and `days`, the daily table |
+| `report participation` | Response dashboard (statistics and daily table) | `status` (`current`, `updating` or `unavailable`), `fact_set_id` (for `export create --fact-set`), the figures' source and dates, `statistics` (the active Families, Members, email, responses and, with Financial stewardship, pledge totals, including the comparison pledges of every Family, `comparison_pledge_all`) and `days`, the daily table |
 | `report comparison` | Campaign comparison | `day` and `date` (the comparison day: the current campaign's last complete day, or `--day`), `status`, `last_year`, `current` (the current campaign's figures at the day and so far, and its renewal of last year's Families), `years` (each imported year's figures at the day and final figures, renewal and, for a final year, its pledge distribution) and `averages` (the imported years' mean of each figure at the day); see below |
-| `report responses` | Response dashboard | `metrics`: the funnel `stages`, the three figures beside it, the `activity` buckets, the `sends` and each list's length (`lists`); null in Testing without a rehearsal |
+| `report responses` | Response dashboard (Families by stage) | `metrics`: the funnel `stages`, the three figures beside it, the `activity` buckets, the `sends` and each list's length (`lists`), which the page no longer shows; null in Testing without a rehearsal |
 | `report financial` | Financial report | The summary over every pledge: `families`, `annual_total`, `frequencies`, `shares` (by share option id), `no_share`, `cannot_give` and the comparison period |
 | `report limitations` | Limitations | `cannot_serve` (Members who cannot participate in ministries) and `cannot_attend` (Families who cannot attend Mass or prayer services) |
 | `report census` | Census changes | `matching`: how many changes the filters keep, split by `routes` (`automatic`, `by_hand`) and `kinds` (`contact`, `moved`, `deceased`, `new_member`), and `statuses`, the page's summary of every change by status; see below |
@@ -2391,7 +2445,7 @@ is exit 1 (`not_available`).
 
 ## Report exports
 
-A report export (the Participation page's **Export**, and the export of
+A report export (the Response dashboard's **Export**, and the export of
 every other report page) is a file the server makes in the background. From
 the command line, getting one takes three steps: request it, wait until it
 is ready, and fetch it. Each step does what the export's status page does
@@ -2406,7 +2460,7 @@ pk-admin export fetch EXPORT_ID
 pk-admin exports clean
 ```
 
-- `export create` requests a Participation export, as the page's export
+- `export create` requests a participation export, as the Response dashboard's export
   form does: `--fact-set` names the participation figures to export (the
   page exports the ones it shows; take their `fact_set_id` from
   `report participation`), `--format` is `csv`, `png`, `pdf` or `xlsx`,
@@ -2554,8 +2608,9 @@ pk-admin export postal --format xlsx --timezone America/New_York
 
 #### Exact daily exports
 
-When the Participation page has no complete figures ready yet, its exact
-export calculates today's figures first and then makes the file. From the
+An exact (latest-data) export calculates today's figures first and then
+makes the file; the Response dashboard does not offer it, so the command
+line is the way to request one. From the
 command line it takes two steps more than `export create`: follow the
 calculation, then fetch the export it hands off to.
 
@@ -3239,7 +3294,7 @@ Each change is recorded in System logs as on the page
   offered `resend` is `delivery resend`.
 - `pk-admin/1` (#944): additive. `config request cancel`, which prompts.
 - `pk-admin/1` (#931): a change of meaning, kept on version 1.
-  `delivery list --sort` follows the reworked Outgoing mail page: the
+  `delivery list --sort` follows the reworked Sent mail page: the
   Family DUID token is `duid` (it was `recipient`, which is now refused),
   the new `name` sorts by the Family's name from the latest ParishSoft
   data, and the default is `-changed`, the latest change first (it was
@@ -3622,3 +3677,18 @@ Each change is recorded in System logs as on the page
   `automation_fresh_gate` event and the `fresh_gated` and `irreversible`
   notices keep their names and now mark a privileged command an automation
   session ran.
+- `pk-admin/1` (ADM-13 PR 4a, #530): additive. `system mail-clear-preview
+  [--no-wait]` (asks for a mailbox check, records no event) and `system
+  mail-clear --token TOKEN` (always prompts; its event), Clear the halt
+  ahead of System health's button. Neither needs a recent sign-in (#1547).
+- `pk-admin/1` (ADM-13 PR 4b, #530): additive. `system mail-clear` also
+  acknowledges the halt's critical-problems banner entries the preview saw,
+  as System health's Clear the halt does.
+- `pk-admin/1` (#1562, migration 0116): a change of meaning, kept on
+  version 1. `delivery list` follows Sent mail: `--search` is replaced by
+  `--recipient`, which also takes an email address; `--purpose`, `--mode`,
+  `--from`, `--to` and `--zone` are new, `--state` gains `needs_attention`,
+  `not_delivered` and `still_sending`, and the list now includes
+  operational and security notices. The document adds `purpose`, `mode`,
+  `start` and `end`; each row keeps its `mode` and `attempt`. Its only
+  readers are the Administrator and the operator, who keep no legacy forms.

@@ -106,6 +106,8 @@ def test_read_admission_refuses_a_campaign_that_is_not_current(monkeypatch, curr
         "size=7",
         "size=1000",
         "size=",
+        "mode=live",
+        "mode=testing&mode=testing",
     ],
 )
 def test_queries_are_bounded_nonidentifying_and_closed(query):
@@ -116,16 +118,38 @@ def test_queries_are_bounded_nonidentifying_and_closed(query):
 def test_campaign_links_preserve_only_validated_state():
     value = ReportQuery.parse(
         QueryDict(
-            "scope=current&timezone=America%2FDetroit&inactive=yes&page=2&sort=date_desc"
+            "scope=current&timezone=America%2FDetroit&inactive=yes&grain=day"
+            "&page=2&sort=date_asc&mode=testing"
         )
     )
     url = value.url(page=3)
-    assert "scope=current" in url and "page=3" in url
-    assert "timezone=America%2FDetroit" in url and "sort=date_desc" in url
-    # The removed inactive subtotal's parameter still loads, and is dropped.
-    assert "inactive" not in url
+    assert url.startswith("/admin/reports/responses/?")
+    assert "scope=current" in url and "page=3" in url and "mode=testing" in url
+    assert "timezone=America%2FDetroit" in url and "sort=date_asc" in url
+    # The removed inactive subtotal's and activity grain's parameters still
+    # load, and are dropped (#728, #1537).
+    assert "inactive" not in url and "grain" not in url
+    assert "mode=" not in value.url(mode="production")
     assert "timezone=" not in ReportQuery.parse(QueryDict()).url()
     assert "timezone=UTC" in ReportQuery.parse(QueryDict("timezone=UTC")).url()
+
+
+def test_daily_table_opens_newest_first_with_five_rows():
+    """The defaults (#1534, #1537): newest first, 5 rows, Production; the
+    address leaves each default out, and a saved oldest-first link still
+    opens oldest first."""
+    default = ReportQuery.parse(QueryDict())
+    assert (default.sort, default.size, default.mode) == (
+        "date_desc",
+        "5",
+        "production",
+    )
+    assert default.url() == "/admin/reports/responses/?scope=historical&page=1"
+    assert ReportQuery.parse(QueryDict("sort=date_asc")).sort == "date_asc"
+    # 5 is offered beside the shared sizes; the old default 50 still loads.
+    for size in ("5", "25", "50", "100", "250", "all"):
+        assert ReportQuery.parse(QueryDict(f"size={size}")).size == size
+    assert "size=50" in ReportQuery.parse(QueryDict("size=50")).url()
 
 
 @pytest.mark.parametrize("consume", [False, True])
@@ -241,36 +265,27 @@ def test_live_presentation_is_the_digest_presentation_without_population_mixing(
     ]
 
 
-def test_statistics_panel_draws_reach_and_keeps_the_other_cards_as_tiles():
-    """Responded and email reach become the progress chart (#720); the
-    other cards stay tiles in their order. Without an observation nothing
-    is drawn and every card is a tile reading "—" with the reason, never
-    zero (#1540)."""
+def test_statistics_panel_is_the_active_population_row_only():
+    """The Summary's Active population row: four tiles in order, no progress
+    chart and no responded or email-reach tiles (#1537). Without an
+    observation every tile reads "—" with the reason, never zero (#1540)."""
     statistics = document().statistics
     panel = statistics_panel(statistics)
+    assert set(panel) == {"tiles"}
     assert [tile.label for tile in panel["tiles"]] == [
         "Active Families",
         "Active Members",
         "Current annual pledges",
         "Last year's pledges (all Families)",
     ]
-    assert [row[0] for row in panel["progress"].table.rows] == [
-        "Families that have responded",
-        "Families with eligible email",
-        "Families with deliverable email",
-    ]
     missing = statistics_panel(
         replace(statistics, active=None, comparison_pledge_all=MoneyAmount(None))
     )
-    assert missing["progress"] is None
     assert [(tile.key, tile.text) for tile in missing["tiles"]] == [
         (key, "—")
         for key in (
             "active_families",
             "active_members",
-            "eligible_email",
-            "deliverable_email",
-            "responses",
             "annual_pledges",
             "comparison_pledges_all",
         )
@@ -278,6 +293,11 @@ def test_statistics_panel_draws_reach_and_keeps_the_other_cards_as_tiles():
     assert {tile.unknown_reason for tile in missing["tiles"]} == {
         "No ParishSoft data has been loaded for this campaign yet."
     }
+    without_giving = statistics_panel(replace(statistics, financial_enabled=False))
+    assert [tile.key for tile in without_giving["tiles"]] == [
+        "active_families",
+        "active_members",
+    ]
 
 
 def test_each_unknown_pledge_total_gives_the_reason_for_its_cause():
@@ -358,11 +378,12 @@ def test_zero_pledge_total_is_a_number_not_text():
 
 
 def test_daily_table_size_is_carried_only_when_not_default():
-    """Existing report links stay unchanged; a chosen size survives navigation."""
+    """The default size and sort stay out of links; chosen ones survive."""
     assert "size=" not in ReportQuery.parse(QueryDict()).url()
-    chosen = ReportQuery.parse(QueryDict("size=all&sort=date_desc"))
+    assert "sort=" not in ReportQuery.parse(QueryDict()).url()
+    chosen = ReportQuery.parse(QueryDict("size=all&sort=date_asc"))
     assert chosen.size == "all" and "size=all" in chosen.url(page=1)
-    assert chosen.sort == "date_desc" and "sort=date_desc" in chosen.url()
+    assert chosen.sort == "date_asc" and "sort=date_asc" in chosen.url()
     # The shared table carries the sort itself, so the filters leave it out.
     assert all(name != "sort" for name, _ in chosen.carried())
 
@@ -397,5 +418,17 @@ def test_daily_table_sorts_every_column_on_the_server():
         "stewardship/table-navigator.html",
         {"table": context["table"], "label": "Daily table pages"},
     )
-    assert "Page 1 of 1" in html
     assert '<input type="hidden" name="sort" value="-first">' in html
+    # 5 rows by default, and 5 is the first rows-per-page choice (#1537).
+    assert context["table"].size == 5
+    assert [value for value, _label, _chosen in context["table"].size_choices] == [
+        "5",
+        "25",
+        "50",
+        "100",
+        "250",
+        "all",
+    ]
+    # Without a sort the newest date comes first (#1534).
+    newest = daily_table(chart, presented, ReportQuery.parse(QueryDict()))
+    assert newest["table"].rows[0][0].local_date == max(by_date)

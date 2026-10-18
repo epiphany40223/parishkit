@@ -27,7 +27,7 @@
   unless the state does, so an unchanged poll leaves the region alone:
   "Last checked" sits outside it, and how long ago the last backup
   finished is counted in the browser (time[data-live-since]).
-{% endcomment %}<div data-live-status="system-health"{% if status_url %} data-live-url="{{ status_url }}"{% endif %} data-live-interval="{{ poll_interval }}" data-live-refresh-label="{% translate 'Refresh System health' %}" data-live-announce="{{ dashboard.announcement }}" data-live-pending data-live-not-current data-health-state="{{ dashboard.state }}">
+{% endcomment %}<div data-live-status="system-health"{% if status_url %} data-live-url="{{ status_url }}"{% endif %} data-live-interval="{{ poll_interval }}" data-live-announce="{{ dashboard.announcement }}" data-live-pending data-live-not-current data-health-state="{{ dashboard.state }}">
 <h2 class="health-overall" id="health-overall"><span class="health-counted status-{{ dashboard.state }}">{% include "stewardship/components/level-icon.html" with level=dashboard.icon %} <span class="status-word">{% if dashboard.errors %}{% blocktranslate count count=dashboard.errors|length trimmed %}{{ count }} error{% plural %}{{ count }} errors{% endblocktranslate %}{% if dashboard.warnings %} {% blocktranslate count count=dashboard.warnings|length trimmed %}and {{ count }} warning{% plural %}and {{ count }} warnings{% endblocktranslate %}{% endif %}{% elif dashboard.warnings %}{% blocktranslate count count=dashboard.warnings|length trimmed %}{{ count }} warning{% plural %}{{ count }} warnings{% endblocktranslate %}{% else %}{% translate "All working" %}{% endif %}</span></span><span class="health-unknown status-unknown">{% include "stewardship/components/level-icon.html" with level="unknown" %} <span class="status-word">{% translate "Not current" %}</span> <span class="health-last">{% translate "Not checked since" %} <time data-local-instant data-time-only data-health-last></time></span></span></h2>
 <span hidden data-live-key="accept-change" data-live-key-value="{{ refused_attempt|default:'' }}"></span>
 {% for tile in dashboard.tiles %}{% if not tile.loaded %}<template data-live-mirror="{{ tile.anchor }}-summary">{% include "stewardship/system-health-tile-summary.html" %}</template>
@@ -35,7 +35,11 @@
 <template data-live-mirror="{{ tile.anchor }}-panel">{% include tile.panel %}</template>
 {% endif %}{% endfor %}{# The action buttons as of this update (data-live-mirror); the polled copies leave their CSRF tokens empty for the script to fill. #}
 <template data-live-mirror="accept-offer">{% include 'stewardship/system-health-accept-offer.html' with mirrored=True %}</template>
-<template data-live-mirror="accept-button">{% include 'stewardship/system-health-accept-button.html' with mirrored=True %}</template>
+<span hidden data-live-key="clear-halt" data-live-key-value="{{ clear_halt.halt.halt_id|default:'' }}"></span>
+<template data-live-mirror="clear-halt-offer">{% include 'stewardship/system-health-clear-halt-offer.html' with mirrored=True %}</template>
+<template data-live-mirror="clear-halt-button">{% include 'stewardship/system-health-clear-halt-button.html' with mirrored=True %}</template>
+{% if clear_halt.halt %}<template data-live-mirror="clear-halt-check-{{ clear_halt.halt.halt_id }}">{% include 'stewardship/system-health-clear-halt-check.html' %}</template>
+{% endif %}<template data-live-mirror="accept-button">{% include 'stewardship/system-health-accept-button.html' with mirrored=True %}</template>
 <template data-live-mirror="backup-now-button">{% include 'stewardship/system-health-backup-button.html' with mirrored=True %}</template>
 <template data-live-mirror="debug-off-button">{% include 'stewardship/system-health-debug-button.html' with mirrored=True %}</template>
 </div>

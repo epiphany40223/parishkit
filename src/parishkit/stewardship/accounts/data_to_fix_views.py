@@ -174,9 +174,9 @@ def _form_cannot_open(principal, campaign_id):
 
 
 def _refused_addresses(principal, campaign_id):
-    """Outgoing mail's unresolved refusals, and the Families they belong to.
+    """Sent mail's unresolved refusals, and the Families they belong to.
 
-    One query over the same set behind Outgoing mail's link-line count. The
+    One query over the same set behind Sent mail's link-line count. The
     refusals belong to Families, not to a campaign, so this needs none.
     """
     from parishkit.stewardship.jobs.delivery_reads import unresolved_refusals
@@ -374,7 +374,7 @@ def data_to_fix(request):
         return response
     # Answered as the report pages answer (ui-conventions, request errors):
     # the shared denial, and the report error page for an outage or a bad
-    # address, never Outgoing mail's error page, whose links Staff cannot
+    # address, never Sent mail's error page, whose links Staff cannot
     # open.
     except PermissionError:
         return denial()

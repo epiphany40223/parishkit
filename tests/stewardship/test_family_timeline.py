@@ -304,7 +304,7 @@ def test_administrator_page_shows_summary_and_timeline():
     assert "signs this browser in" not in page and "data-open-form-notice" not in page
     assert "Campaign email can reach this Family" in page
     assert "Ministry stewardship, <time" in page
-    assert f'<a href="/admin/mail/outgoing/{INVITATION.id}/">Invitation</a>' in page
+    assert f'<a href="/admin/mail/sent/{INVITATION.id}/">Invitation</a>' in page
     assert page.count("<tbody>") == 1 and page.count("<tr>") == 1 + len(TIMELINE.events)
     # Newest first: the receipt (the latest event) leads, the invitation ends.
     rows = re.findall(r'<tr><td><time datetime="([^"]+)"', page)
@@ -347,7 +347,7 @@ def test_staff_page_is_the_reduced_view():
     assert "<code>ABCD-EFGH</code>" in page and "data-open-form" in page
     for absent in (
         "data-in-place=",
-        "/admin/mail/outgoing/",
+        "/admin/mail/sent/",
         "Timeline</h2>",
         "Campaign email can reach",
         "Furthest step",

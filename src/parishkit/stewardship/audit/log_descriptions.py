@@ -297,6 +297,10 @@ DESCRIPTIONS = {
         "An automation session cleared the debug-off switch in Testing, as "
         "System health's Allow debug logging again does."
     ),
+    "admin_cmd_system_mail_clear": _(
+        "An automation session cleared a halted mail sender, as System "
+        "health's Clear the halt does."
+    ),
     "admin_cmd_portal_maintenance_set": _(
         "An automation session closed or reopened the Family portal for "
         "maintenance, as the Family portal availability page does."
@@ -406,8 +410,7 @@ DESCRIPTIONS = {
         "shows."
     ),
     "admin_cmd_export_exact_create": _(
-        "An automation session requested an exact daily export, as the "
-        "Participation page's exact-export form does."
+        "An automation session requested an exact daily export of the latest data."
     ),
     "admin_cmd_export_exact_cancel": _(
         "An automation session cancelled an exact daily export, as its status "
@@ -472,15 +475,19 @@ DESCRIPTIONS = {
         "by the server operator), so services started with debug logging may "
         "log in debug form again."
     ),
+    "mail_halt_cleared": _(
+        "An Administrator cleared a halted mail sender after a passing mailbox "
+        "check; one email is sent as a probe, and sending resumes if it succeeds."
+    ),
     "source_drop_accepted": _(
         "An Administrator accepted a refused large ParishSoft change once, so "
         "the next full refresh may go through if no count falls further."
     ),
     "background_viewed": _("An Administrator opened Background work."),
-    "delivery_viewed": _("An Administrator opened Outgoing mail."),
+    "delivery_viewed": _("An Administrator opened Sent mail."),
     "delivery_bulk_resolved": _(
         "An Administrator retried failed emails, or recorded uncertain emails "
-        "as not sent, several at a time on Outgoing mail. Each email also has "
+        "as not sent, several at a time on Sent mail. Each email also has "
         "its own entry."
     ),
     "family_directory_viewed": _(
@@ -490,7 +497,9 @@ DESCRIPTIONS = {
         "Someone opened the active parishioner family directory with mailing columns."
     ),
     "ministry_report_viewed": _("Someone opened a Ministry report."),
-    "participation_viewed": _("Someone opened the participation report."),
+    "participation_viewed": _(
+        "Someone opened the participation statistics and daily chart."
+    ),
     "campaign_comparison_viewed": _(
         "Someone opened the campaign comparison report (or ran report comparison)."
     ),
@@ -581,7 +590,7 @@ DESCRIPTIONS = {
     ),
     "delivery_unknown": _(
         "The mail provider did not confirm whether an email was accepted; "
-        "review it on Outgoing mail before it is retried."
+        "review it on Sent mail before it is retried."
     ),
     "campaign_boundary_lag": _(
         "A scheduled campaign start or close ran later than planned; the "

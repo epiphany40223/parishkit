@@ -1692,7 +1692,7 @@ set aside, and an address refused for now stays. In the transaction that
 records the outcome, an address refused permanently also becomes a
 recipient refusal of the accepted attempt, exactly as that attempt's own
 permanent refusal would: later email to the Family leaves it out until it
-is cleared or ParishSoft's address changes, and Outgoing mail and Refused
+is cleared or ParishSoft's address changes, and Sent mail and Refused
 addresses show it against that email. A refusal that cannot be recorded
 never loses the outcome: the recording runs in a savepoint, and its failure
 is logged at ERROR and leaves one durable CRITICAL
@@ -2306,22 +2306,25 @@ sets (the Administrator chooses it; there is no preset time), send:
   each stage's Families compared with the first stage, which the digest
   names "Email invites sent" (the dashboard's "Invited": Families whose
   invitation email was delivered, so fewer than the campaign totals'
-  Families when some have no usable email address), and "Submitted more
-  than once" with its share of Submitted, which its percentage names ("2%
-  of Submitted"), after the campaign totals, with no caption. The digest
-  leaves out the "Link followed" stage
-  ([#1016](https://github.com/epiphany40223/parishkit/issues/1016)) and the
-  other two figures reported beside the funnel ("Invitations not sent
-  (already responded)" and "Submitted without a delivered invitation"); the
+  Families when some have no usable email address), after the campaign
+  totals, with no caption. The digest leaves out the "Link followed" stage
+  ([#1016](https://github.com/epiphany40223/parishkit/issues/1016)) and all
+  three figures reported beside the funnel ("Invitations not sent (already
+  responded)", "Submitted without a delivered invitation" and "Submitted
+  more than once",
+  [#1532](https://github.com/epiphany40223/parishkit/issues/1532)); the
   [Response dashboard](../reports/spec.md#response-funnel) and
   `pk-admin report responses` still show them
   ([#969](https://github.com/epiphany40223/parishkit/issues/969)). The email
-  shows every stage and figure as a row with a share bar; the saved report
-  page shows the stages as a table and the figure with its share. The section
+  shows every stage as a row with a share bar; the saved report page shows
+  the stages as a table. A report compiled before #1532 and retained for a
+  retry still carries its "Submitted more than once" row. The section
   has no charts: the Administrator removed its Response funnel and Response
   activity charts
-  ([#1370](https://github.com/epiphany40223/parishkit/issues/1370)), which the
-  [Response dashboard](../reports/spec.md#response-dashboard) still draws. A
+  ([#1370](https://github.com/epiphany40223/parishkit/issues/1370)). The
+  [Response dashboard](../reports/spec.md#response-dashboard) no longer
+  draws them either: its stage tiles give the funnel's counts, shares and
+  bars ([#1537](https://github.com/epiphany40223/parishkit/issues/1537)). A
   digest compiled before that removal keeps its retained chart images, so a
   retry of it still sends them, but its saved page no longer draws them. The
   compiling worker counts the funnel and the page counts it again from the
@@ -2336,7 +2339,7 @@ sets (the Administrator chooses it; there is no preset time), send:
   inline accessible image plus textual summary; and
 - when its schedule includes it (off by default), the
   [Compared with past campaigns](../campaign-history/spec.md#digest-section)
-  section after the report's button: this campaign on the report day
+  section after the Response dashboard button: this campaign on the report day
   beside last year and the imported years' average, from the same pinned
   facts, retained with the digest so its saved page shows it unchanged.
 
@@ -2344,9 +2347,14 @@ The report day is the schedule slot's local date: the campaign day before the
 scheduled send. A late, retried or recovery send never moves it. Every figure
 in the email, its table and its chart comes from the report day's end-of-day
 row of one exact ready `CampaignDailyFactSet`, so the text always matches the
-chart's last point. One plain line states this, for example "All data is as
-of the end of October 6, 2026 (EDT)." It is body text in the body's size and
-colour, not small muted print
+chart's last point. The email's opening line states this, for example
+"Here is yesterday’s report; all data is as of the end of October 6, 2026
+(EDT)." ([#1532](https://github.com/epiphany40223/parishkit/issues/1532));
+a recovery digest names its dates instead: "Here is the report for October
+4, 2026 through October 6, 2026; all data is as of …". The saved report page
+states it as "All data is as of the end of October 6, 2026 (EDT).", since
+it is not "yesterday" when read later. It is body text in the body's size
+and colour, not small muted print
 ([#1016](https://github.com/epiphany40223/parishkit/issues/1016)). The zone
 abbreviation is the one in
 force at the end of the report day (EST after daylight saving time ends). The
@@ -2376,12 +2384,16 @@ for the limit loses the end of the Administrator's text, never what is
 appended. The default subject
 "{{ campaign_name }} — daily report" (weekly: "— weekly report") reads
 "Annual campaign — daily report, October 6, 2026 (Example Parish)". The body has no title
-or name line; it starts with the as-of line, the only place that names the
-time zone (a recovery digest starts it with the dates it covers). Any
-Administrator-written intro stays above the report. The default intro is
-"Here is yesterday’s report."; it no longer says that Testing responses are
-never included, and content saved from an earlier default keeps its text
-until the Administrator resets it to the default. **Campaign totals** follow, one line per
+or name line; it starts with the opening line, the only place that names
+the time zone, with an "Open the Response dashboard" link right-aligned on
+the same line (a two-cell presentation table, so it adds no height; the
+link does not wrap). Any Administrator-written intro stays above the
+report. The default intro is empty, because the compiled opening line
+already says "Here is yesterday’s report" (#1532). An intro still holding
+an earlier default, current or retired ("Here is yesterday’s report.",
+whose saved text is kept until the Administrator resets it), is left out
+of the email when it is sent, so the sentence is not said twice; an edited
+intro is kept. **Campaign totals** follow, one line per
 figure: its label, a bar drawn with table cells (so it shows in every mail
 program, with images off too), and the exact value, for example "Families
 that have responded — 10 out of 93 (10.8%)". Families that have responded are
@@ -2390,10 +2402,20 @@ against the busiest campaign day so far, which is stated beside the number; a
 bar is never drawn full unless the share is complete. Pledges have no bar,
 since their only comparison is a live figure. The chart follows (its date axis
 names no zone), with alt text carrying the same totals, then the day-by-day
-table of the last seven campaign days (every covered date of a recovery
-digest, however many), and the button to the saved report, drawn like the
-Admin portal's primary button (its accent colour, radius, padding and bold
-label, as a table cell so every mail program shows it). There is no small
+table of the last five campaign days (every covered date of a recovery
+digest, however many), and an "Open the Response dashboard" button, drawn
+like the Admin portal's primary button (its accent colour, radius, padding
+and bold label, as a table cell so every mail program shows it). The table
+gives each day two rows: the date across the table, then that day's first
+submissions, participation and pledges under their column headings, so it
+fits a 320px phone without scrolling sideways, which mail programs cannot
+do for a table ([#1559](https://github.com/epiphany40223/parishkit/issues/1559)).
+The text part keeps one line per day. Both
+dashboard links go to the
+[Response dashboard](../reports/spec.md#response-dashboard), its Testing
+view in a Testing digest; the text part lists the link after the opening
+line and at the end. The email does not link its own saved copy, which
+stays on Reports › Emailed reports. There is no small
 print: the ParishSoft connection is on the saved report page. The digest validator
 admits only the compiler's closed set of inline styles, bar colours and table
 attributes, so this markup cannot carry anything else.

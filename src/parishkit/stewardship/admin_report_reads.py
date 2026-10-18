@@ -5,15 +5,16 @@ functions the page itself uses, and prints counts and aggregates only:
 
 - ``report list`` is the reports root: the current campaign and the reports
   the reader's Admin menu offers (``admin_context._navigation_items``);
-- ``report participation`` is the Participation page
-  (``guarded_participation`` and ``calculate_statistics``), with the
+- ``report participation`` is the Response dashboard's statistics and daily
+  table (``guarded_participation`` and ``calculate_statistics``), with the
   ``fact_set_id`` that ``export create --fact-set`` takes;
 - ``report comparison`` is the Campaign comparison page
   (``comparison_reads.read_comparison``) for its comparison day or
   ``--day N``, with the small-count protection of output that leaves the
   Admin portal (``comparison.outside_document``);
-- ``report responses`` is the response dashboard (``dashboard_context``'s
-  ``response_metrics``);
+- ``report responses`` is the Response dashboard's funnel
+  (``response_dashboard.read_metrics``), with the activity series and the
+  lists' lengths the page no longer shows (#1537);
 - ``report financial`` and ``report limitations`` are the summaries of the
   financial detail and Limitations reports (``financial_page``,
   ``limitations_report``), without their Family and Member rows;
@@ -48,15 +49,16 @@ from uuid import UUID
 from .admin_reads import NotAvailable, ReadModel, Unavailable, _held, _recheck
 
 # The report pages ``report list`` names, by URL name, with their commands.
+# The Response dashboard shows both the funnel and the statistics and daily
+# table (#1537), so it has two, each listed as its own row.
 REPORT_COMMANDS = {
-    "response_dashboard": "report responses",
-    "participation": "report participation",
-    "campaign_comparison": "report comparison",
-    "financial_report": "report financial",
-    "limitations_report": "report limitations",
-    "census_changes": "report census",
-    "information_queue": "report information",
-    "ministry_report": "report ministry",
+    "response_dashboard": ("report responses", "report participation"),
+    "campaign_comparison": ("report comparison",),
+    "financial_report": ("report financial",),
+    "limitations_report": ("report limitations",),
+    "census_changes": ("report census",),
+    "information_queue": ("report information",),
+    "ministry_report": ("report ministry",),
 }
 
 
@@ -65,7 +67,7 @@ class ReportList(ReadModel):
     """The reports root: the campaign reports open on, and the reports offered.
 
     ``campaign_id`` is the current campaign when it can be reported, else
-    None (the root then opens Participation, greyed out). ``reports`` has
+    None (the root then opens the Response dashboard, greyed out). ``reports`` has
     one row per report the reader's Admin menu offers: ``command``, the
     report's ``page`` (its URL name) and ``available``, false while the menu
     greys it out (no current campaign, a module the campaign does not
@@ -78,7 +80,7 @@ class ReportList(ReadModel):
 
 @dataclass(frozen=True)
 class ParticipationReport(ReadModel):
-    """The Participation page: one generation's statistics and daily table.
+    """The Response dashboard's statistics and daily table (``report participation``).
 
     ``status`` is the page's: ``current``, ``updating`` (an older complete
     generation is shown while a newer one is prepared) or ``unavailable``
@@ -139,7 +141,7 @@ class ResponseReport(ReadModel):
     rehearsal (the page then shows no figures). Otherwise it holds the
     stage counts in funnel order, the three figures beside the funnel, the
     activity buckets at ``grain``, the Family email sends marked on them
-    (each by its Outgoing mail ``send`` token) and each list's length
+    (each by its Sent mail ``send`` token) and each list's length
     (``lists``; the data-quality list has none on the page either).
     """
 
@@ -494,12 +496,12 @@ def read_report_list(caller, service):
         )
         reports = [
             {
-                "command": REPORT_COMMANDS[item.name],
+                "command": command,
                 "page": item.name,
                 "available": item.reason is None,
             }
             for item in items
-            if item.name in REPORT_COMMANDS
+            for command in REPORT_COMMANDS.get(item.name, ())
         ]
         _recheck(caller, service.store, actor)
         return ReportList(campaign_id=current, reports=reports)
@@ -553,7 +555,7 @@ def day_rows(document):
 
 
 def participation_model(campaign_id, query, selection, statistics):
-    """The command's projection of the Participation page's read."""
+    """The command's projection of the Response dashboard's participation read."""
     document = selection.document
     days = day_rows(document)
     financial = statistics.financial_enabled
@@ -585,7 +587,7 @@ def participation_model(campaign_id, query, selection, statistics):
 
 
 def read_participation(caller, service, *, scope):
-    """``report participation``: the Participation page's generation and statistics.
+    """``report participation``: the Response dashboard's generation and statistics.
 
     ``scope`` is the page's option, parsed by the page's ``ReportQuery`` (a
     refusal is ``invalid``). Records the page's
@@ -669,11 +671,10 @@ def read_comparison(caller, service, *, day=None):
 # ----------------------------------------------------------- responses
 
 
-def response_model(campaign_id, query, context):
-    """The command's projection of the response dashboard's page context."""
+def response_model(campaign_id, query, metrics):
+    """The command's projection of the Response dashboard's funnel read."""
     from .reports.response_dashboard import list_counts
 
-    metrics = context["metrics"]
     if metrics is None:
         return ResponseReport(campaign_id=campaign_id, mode=query.mode, metrics=None)
     return ResponseReport(
@@ -715,11 +716,12 @@ def response_model(campaign_id, query, context):
 
 
 def read_responses(caller, service, *, mode, grain):
-    """``report responses``: the response dashboard, counts only.
+    """``report responses``: the Response dashboard's funnel, counts only.
 
-    ``mode`` and ``grain`` are the page's options, parsed by its
-    ``DashboardQuery``; Testing is for Administrators, as on the page.
-    Records the page's ``response_dashboard_viewed`` once the read ends.
+    ``mode`` and ``grain`` are parsed by ``DashboardQuery``; Testing is for
+    Administrators, as on the page. ``grain`` buckets the activity series,
+    which the page no longer draws (#1537). Records the page's
+    ``response_dashboard_viewed`` once the read ends.
     """
     from .admin_reads import query as parameters
     from .reports.response_dashboard import (
@@ -727,19 +729,21 @@ def read_responses(caller, service, *, mode, grain):
         _admit_mode,
         _audit,
         _principal,
-        dashboard_context,
+        at_grain,
+        chosen_grain,
+        read_metrics,
     )
 
     query = DashboardQuery.parse(parameters(mode=mode, grain=grain))
 
     def read(guard, actor, campaign_id):
-        """The page's one guarded read of the funnel, shaped as the page."""
+        """The page's one guarded read of the funnel, at the chosen grain."""
         # The page repeats its Testing rule inside the guard, too.
         _admit_mode(actor, query)
-        context = dashboard_context(
-            campaign_id, query, can_test="administrator" in actor.roles
-        )
-        return response_model(campaign_id, query, context), None
+        metrics = read_metrics(campaign_id, query.mode)
+        if metrics is not None:
+            metrics = at_grain(metrics, chosen_grain(metrics, query.grain))
+        return response_model(campaign_id, query, metrics), None
 
     return _report(
         caller,

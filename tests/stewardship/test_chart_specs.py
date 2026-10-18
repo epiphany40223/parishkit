@@ -33,14 +33,12 @@ from parishkit.stewardship.reports.chart_specs import (
     label_room,
     ministry_followup,
     participation_chart,
-    population_progress,
     quiet_slots,
     round_ticks,
     share,
     stage_label,
     whole_dollars,
 )
-from parishkit.stewardship.reports.money import MoneyAmount
 from parishkit.stewardship.reports.participation import ParticipationDay
 from parishkit.stewardship.reports.response_metrics import (
     ActivityBucket,
@@ -51,7 +49,6 @@ from parishkit.stewardship.reports.response_metrics import (
     activity_series,
     stage_counts,
 )
-from parishkit.stewardship.reports.statistics import PopulationStatistics
 from parishkit.stewardship.web.dates import using
 from parishkit.stewardship.web.design_tokens import (
     CHART_COLORS,
@@ -59,7 +56,6 @@ from parishkit.stewardship.web.design_tokens import (
     COLORS,
     hex6,
 )
-from parishkit.stewardship.web.report_markup import TRACK
 
 from .test_comparison_charts import comparison
 from .test_participation_rendering import document as participation
@@ -523,69 +519,6 @@ def test_information_followup_without_matching_requests_draws_nothing():
     )
 
 
-def test_population_progress_draws_each_card_against_active_families():
-    """Responded and email reach are progress bars against active Families (#720).
-
-    The axis ends at the active Families, a grey track shows the rest, and
-    the label, name, summary and table keep the cards' exact wording. The
-    value is the second line of each bar's axis label, and every layer reads
-    the rows untransformed, so the bars keep the cards' order.
-    """
-    active = PopulationStatistics(1000, 2345, 900, 800, 2, MoneyAmount(0))
-    chart = population_progress(active)
-    assert (chart.key, chart.title) == (
-        "active-population",
-        "Responses and email reach",
-    )
-    spec = json.loads(json.dumps(chart.spec))
-    assert spec["encoding"]["x"]["scale"] == {"domain": [0, 1000], "nice": False}
-    assert spec["encoding"]["x"]["axis"]["titlePadding"] == 8
-    rows = spec["data"]["values"]
-    assert [(row["label"], row["tick"]) for row in rows] == [
-        (
-            "Families that have responded",
-            "Families that have responded — 2 out of 1,000 (0.2%)",
-        ),
-        (
-            "Families with eligible email",
-            "Families with eligible email — 900 out of 1,000 (90%)",
-        ),
-        (
-            "Families with deliverable email",
-            "Families with deliverable email — 800 out of 1,000 (80%)",
-        ),
-    ]
-    assert rows[0]["name"] == "Families that have responded: 2 out of 1,000 (0.2%)"
-    y = spec["encoding"]["y"]
-    assert (y["field"], y["sort"]) == ("tick", {"field": "order"})
-    assert y["axis"]["labelExpr"] == "split(datum.label, ' — ')"
-    track, bar = spec["layer"]
-    assert track["mark"] == {"type": "bar", "color": TRACK, "aria": False}
-    assert track["encoding"]["x"] == {"field": "total", "type": "quantitative"}
-    assert bar["encoding"]["description"] == {"field": "name"}
-    assert not any("transform" in layer for layer in spec["layer"])
-    assert chart.summary == (
-        "Responses and email reach: Families that have responded 2 out of 1,000 "
-        "(0.2%), Families with eligible email 900 out of 1,000 (90%), Families "
-        "with deliverable email 800 out of 1,000 (80%)."
-    )
-    assert chart.table.headings == (
-        "Responses and email reach",
-        "Families",
-        "Share of active Families",
-    )
-    assert chart.table.rows[0] == ("Families that have responded", "2", "0.2%")
-
-
-def test_population_progress_without_families_or_observation():
-    """No active Families dashes every share; no observation draws nothing."""
-    chart = population_progress(PopulationStatistics(0, 0, 0, 0, 0, MoneyAmount(0)))
-    assert chart.spec["encoding"]["x"]["scale"]["domain"] == [0, 1]
-    assert {row[2] for row in chart.table.rows} == {"—"}
-    assert chart.spec["data"]["values"][0]["text"] == "0 out of 0 (—)"
-    assert population_progress(None) is None
-
-
 def test_ministry_followup_draws_each_state_against_all_requests():
     """Resolved or closed and Unresolved are progress bars against every
     current request of the matching Ministries (#720), each bar's value on
@@ -813,7 +746,7 @@ def page_charts():
 
     The response dashboard's funnel and activity (by hour and by day), the
     Financial stewardship summary's count bars,
-    the Participation page's progress bars and daily chart, and the
+    the Response dashboard's daily chart, and the
     Campaign comparison's day-by-day, final-figures and pledge-band charts.
     """
     built = comparison()
@@ -826,7 +759,6 @@ def page_charts():
         activity_chart(metrics()),
         activity_chart(metrics(grain="day")),
         *financial_charts(financial_summary(), CHOICES),
-        population_progress(PopulationStatistics(4, 2, 1, 1, 0, MoneyAmount(0))),
         participation_chart(participation()),
         *charts.day_charts(built),
         *charts.final_charts(built),
@@ -887,8 +819,8 @@ def test_every_page_chart_compiles_without_warnings(capfd):
     the container width warned that fit-y was dropped, #1325). A step
     height still warns, so the check can fail."""
     documents = page_charts()
-    # Every kind of chart is here: 2 + 1 + 2 + 1 + 1 + 3 + 2 + 3.
-    assert len(documents) == 15
+    # Every kind of chart is here: 2 + 1 + 2 + 1 + 3 + 2 + 3.
+    assert len(documents) == 14
     for document in documents:
         assert page_warnings(document.spec, capfd) == [], document.key
     # A bar chart (here the funnel and the final figures) given back a step

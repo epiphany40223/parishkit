@@ -9,7 +9,9 @@ reads even while it is closed), so screen-reader users lose nothing.
 
 Checkbox fields and fields that already use their own template keep their
 help visible: their layouts place the help beside the box, and their help is
-short enough to read in place.
+short enough to read in place. The one exception is a field with a shared
+format rule (``web.field_rules.apply``): its field group, with a reserved
+error line, draws a tip itself, so the field keeps both.
 """
 
 from django import forms
@@ -49,16 +51,22 @@ class TipBoundField(BoundField):
 
 def eligible(field):
     """Whether the field's layout can take a tip beside its label."""
-    return field.template_name is None and not isinstance(
-        field.widget, forms.CheckboxInput
-    )
+    own_template = field.template_name is not None and not ruled(field)
+    return not own_template and not isinstance(field.widget, forms.CheckboxInput)
+
+
+def ruled(field):
+    """Whether the field has a shared format rule (``web.field_rules``)."""
+    return getattr(field, "field_rule", None) is not None
 
 
 def add(field, tip, hint=""):
     """Show ``tip`` behind the field's "i" button and ``hint`` under its label."""
     field.tip = tip
     field.help_text = hint
-    field.template_name = TIP_TEMPLATE
+    # A ruled field's group, with its reserved error line, draws the tip too.
+    if not ruled(field):
+        field.template_name = TIP_TEMPLATE
     field.bound_field_class = TipBoundField
 
 

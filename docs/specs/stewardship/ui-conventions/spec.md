@@ -46,6 +46,7 @@ when it lands.
   [step bars](#step-bars), [charts](#charts).
 - Admin interaction: [JavaScript requirement](#javascript-requirement),
   [in-place controls](#in-place-controls),
+  [pages that update themselves](#pages-that-update-themselves),
   [no layout shift](#no-layout-shift),
   [disclosures](#disclosures),
   [prerequisite gates](#prerequisite-gates),
@@ -417,19 +418,14 @@ never scrolls to show it (Administrator, pk-local review of
   refuses an in-place control whose fragment names no region there.
 - **Controls.** A link that shows another view of the page (`a[data-in-place]`:
   each segment of a [binary choice](#binary-choices), such as the
-  [participation report](../reports/spec.md#campaign-statistics)'s Chart
-  population, which refreshes its statistics, chart and export panels; the
-  [response dashboard](../reports/spec.md#response-dashboard)'s mode and
-  grain, the
+  [Response dashboard](../reports/spec.md#response-dashboard)'s mode and
+  Chart population, each of which refreshes the page's one region; the
   [Family timeline](../reports/spec.md#family-timeline)'s mode and When sort,
-  "Refresh current work" on "Background work", "Refresh list" on
-  "Families on the form now", the page links of a mail delivery's
+  the page links of a mail delivery's
   evidence and attempt history, an information item's and a Ministry
   follow-up request's history, and a weekly information report, and the
-  Refresh links of the key replacement status, Family email progress,
-  Family test, Background task, Change status, report export and
-  latest-data export pages; Refresh task also keeps the task history's
-  sort and page) or a form whose answer is the page again
+  hidden periodic re-read links of
+  [pages that update themselves](#pages-that-update-themselves)) or a form whose answer is the page again
   (`form[data-in-place]`, such as a POST whose server redirects back to the
   page: Save follow-up on an information item and on a
   [Ministry follow-up request](../admin-portal/spec.md#follow-up-workflows); System logs'
@@ -441,11 +437,13 @@ never scrolls to show it (Administrator, pk-local review of
   Compare on day, which refreshes everything below it)
   names its region by its
   URL's fragment. A POST form saves a change unless it is marked
-  `data-in-place-read` (the System logs cross-links only read): a read may
+  `data-in-place-read` (the System logs cross-links and the family
+  directory's Responses shown segments only read): a read may
   be cancelled by a newer choice and, with no answer at all, falls back to
   the ordinary submission. A form or link marked `data-in-place-filters`
   sets the page's filters from outside its filter form (a System logs
-  cross-link), so after the swap the filter
+  cross-link, a [binary choice](#binary-choices) beside a filter form), so
+  after the swap the filter
   form's visible fields, and any disclosure in it, show what the fresh page
   applied, and the next Apply, sort or page keeps them; every other swap
   leaves filters typed but not yet applied alone. A region a
@@ -499,9 +497,9 @@ never scrolls to show it (Administrator, pk-local review of
   (no answer, a refusal, another page), and never sends a state that
   failed again until the reader changes the box or its own request succeeds, so
   a server that cannot answer gets one attempt and the fallback, not a
-  loop (Automation access's "Include ended sessions"). "Refresh current work" keeps
-  the reader's state filter, sort, rows per page and page; "Refresh list"
-  keeps sort and rows per page and returns to the first page. A form's
+  loop (Automation access's "Include ended sessions"). The periodic re-read
+  of Background work and Families on the form now re-reads the address
+  shown, so it keeps the reader's filter, sort, rows per page and page. A form's
   submit button belongs to its form even outside it (`form="…"`); a table's
   sort heading or navigator inside a `form[data-in-place]` (a selection form
   around its table) is still a table control. A POST form should carry a
@@ -533,7 +531,7 @@ never scrolls to show it (Administrator, pk-local review of
   history. A resolution posts in place: it lands on the Admin evidence,
   whose heading takes focus, and lists the state and recipient lines,
   history, forms and bounce panel to replace too. An export's Retry and
-  Cancel swap its status panel and hand focus to Refresh status below.
+  Cancel swap its status panel and hand focus to the panel's heading.
   Preview and test email's Send this test email posts in place too: its
   notices and form are one region and Recent test results another, whose
   heading takes focus. The list updates by itself while a test is on its
@@ -565,7 +563,18 @@ never scrolls to show it (Administrator, pk-local review of
   happened ("By day", "List refreshed." and the rows now shown). A view
   choice replaces the address, and a followed redirect sets it to the
   redirect's page, so reload, bookmarks and Back never re-send a POST and do
-  not step through choices. The Refresh links of Go-live readiness
+  not step through choices. A row control that lists one subject's items in
+  place (a list's recipient, whose identifier is private filter state and
+  never in a URL) is followed like a link instead: its answer adds a history
+  entry, each entry keeps the view it shows in the browser's history state
+  (a read's body only, without its CSRF token, or nothing for a view drawn
+  from its address or by a save, so Back or Forward never re-sends a save),
+  and Back or Forward redraws that view in place, its filter fields with it.
+  The identifier lives only in the tab's session history (history.state),
+  never in the address. A reload draws the page from its address, so the
+  list and the filter fields agree
+  ([#1562](https://github.com/epiphany40223/parishkit/issues/1562)). The
+  Refresh links of Go-live readiness
   ("Readiness preview refreshed."), Testing cleanup, Prepare Family links
   and Production activation ("Progress refreshed.") re-read their page's
   own address this way rather than reloading it; Prepare Family links keeps
@@ -620,8 +629,8 @@ never scrolls to show it (Administrator, pk-local review of
   ahead. A save with no answer still shows its note then, since a download
   link also starts leaving the page and the page stays. On Send to chosen
   Families, Check these Families and Send these Family tests act in place.
-  That page's Refresh status replaces only the recent tests (and the critical-problems
-  banner), so Family DUIDs typed but not yet checked are kept, and after
+  That page's recent tests update by themselves only inside their status region, so
+  Family DUIDs typed but not yet checked are kept, and after
   Send the requested notice takes focus. A file upload is
   sent in place as the multipart body a native submission sends: on
   [Hosted files](../hosted-files/spec.md#admin-page), Upload follows its
@@ -651,7 +660,7 @@ never scrolls to show it (Administrator, pk-local review of
   `parishkit:swap` event on it lets any other script do the same. A page
   that watches background work (`live-status-v1.js`) stops watching a
   status region an in-place refresh replaced, and watches the fresh one
-  while it is still pending, so a Refresh or Dismiss that brings back work
+  while it is still pending, so a Dismiss or an action that brings back work
   in progress keeps updating by itself; there is always one watcher per
   status region. A quiet follow-up refresh (a settled status re-reading its
   page in place) keeps focus: a focused element in a region it replaces is
@@ -671,8 +680,9 @@ never scrolls to show it (Administrator, pk-local review of
   marked `data-live-keyed` with that name is marked changed the same way
   (System health's
   [Accept this change once](../admin-portal/spec.md#accept-a-large-parishsoft-change-once),
-  in its tile's details under the refused change it answers). A Refresh reads out the region's coarse status sentence
-  when it changed, as a poll does. Dismiss refreshes only an integration's
+  in its tile's details under the refused change it answers). An in-place
+  swap reads out the region's coarse status sentence when it changed, as a
+  poll does. Dismiss refreshes only an integration's
   status line: if it brings back a new key change in progress (another
   Administrator started one), the settings form and notes below it keep the
   state the page was loaded with until the next load.
@@ -681,7 +691,7 @@ never scrolls to show it (Administrator, pk-local review of
   ([#1429](https://github.com/epiphany40223/parishkit/issues/1429)): every
   settings editor reviews in the [review dialog](#review-dialog) (#750), and
   Change status never follows back to a settings page. Two of its rules stay
-  for the in-place reviews that remain (Outgoing mail's bulk review and Past
+  for the in-place reviews that remain (Sent mail's bulk review and Past
   campaigns' import). Editing the form after a review, or while its Review is
   in flight, withdraws the review (`data-review-of`), so Apply never applies
   values other than those shown: Apply is removed, the rest stays in place
@@ -763,6 +773,82 @@ never scrolls to show it (Administrator, pk-local review of
   (the Parish website's included) stays on the form; a stale page or an
   out-of-date preview is refused in the dialog, and the form is not
   redrawn, so it is refused again until the page is reloaded.
+
+### Pages that update themselves
+
+**Rule.** An Admin page that shows state that can change updates itself
+where the reader is, and has no manual page-refresh link or button. A
+browser reload lands on the same page and view with the current status.
+**Why.** The Administrator asked why pages still had Refresh links
+("Shouldn't all pages be auto-refreshing?") and that a reload while waiting
+"should just go right back to where it was, with the updated status"
+([#1586](https://github.com/epiphany40223/parishkit/issues/1586),
+2026-10-17). **Shared code.** `live-status-v1.js` status regions and
+`ui-v1.js`'s periodic quiet re-read (`a[data-reread-every]`), both built on
+the [in-place controls](#in-place-controls); no other mechanism.
+**Precedent.** System health (#1214), Family email progress, #869, #1353.
+
+- **Passive reads only.** Every automatic read is one the page already
+  makes: a status region's passive status read
+  ([admin portal](../admin-portal/spec.md#background-indicators)'s
+  rule for pages that follow background work), or a quiet in-place re-read
+  of the page's own address when that view is itself passive (Background
+  work, Families on the form now). A read never extends the sign-in and
+  never records an audited view.
+- **Pace.** While background work is pending a status region reads fast
+  (2 s backing off to 10 s, or the fixed pace the page asks for). A page
+  whose state changes without the reader's own action re-reads every 30
+  seconds (Background work, Families on the form now). A watch that passes
+  its time limit (an hour, or the page's own) slows to every 30 seconds
+  instead of stopping, so a page left open never goes quiet while it still
+  says "running". Reads pause while the tab is hidden, and the page catches
+  up at once when it is shown again (`visibilitychange`) or comes back from
+  the back/forward cache (`pageshow`).
+- **The reader keeps their place.** An update never moves focus or scroll
+  and never replaces a control the reader is editing. For a page's
+  periodic re-read, a control is being edited while it is inside a region
+  the re-read replaces and either has focus as a text-entry field (a text,
+  search, number, date or time box, or a text area) or shows a change not
+  yet applied (its value differs from the one the page drew). While a
+  control is being edited, text is selected, or a dialog is open, the
+  re-read waits for the next tick. A choice that was applied (Rows per
+  page, which keeps focus on the fresh choice) or a link or button that
+  merely has focus does not hold it, and neither does a control outside
+  the regions (a filter bar), which the re-read never replaces. Focus
+  returns to the same element in the fresh copy: by its id, or else by its
+  nearest ancestor's id and its position among the elements alike there,
+  so focus on the bottom navigator's Next or on one row's Technical
+  details stays there, never on a twin. A status region waits while a
+  form control inside it (a button included) has focus or was edited, or
+  text in it is selected (`live-status-v1.js`). A disclosure the reader
+  opened inside a re-read region is marked `details[data-keep-open][id]`,
+  so it stays open.
+  A screen reader hears only meaningful changes, politely (a status
+  region's coarse sentence when it changes); a table's periodic re-read
+  announces nothing, since its visible count and time say what changed.
+- **No manual refresh.** There is no Refresh link or button that re-reads
+  the page's own state. Controls that start work (Refresh from ParishSoft,
+  Refresh now) are actions, not page refreshes, and stay. When reads fail,
+  the page says so under the region it could not read and keeps trying: a
+  status region at once ("Couldn't check status — retrying."), and System
+  health and a table's periodic re-read after three failures in a row, so
+  one blip says nothing; the line goes away on the next read that works. A
+  read that is refused (the sign-in ended, or access was removed)
+  stops the updates and says so in the same words on every page
+  ("Couldn't check for updates. Reload the page or sign in again."); the
+  Admin session's own dialog offers to sign in again. A failed automatic read never navigates.
+- **Reload.** The page's address always identifies what is shown: view
+  choices replace the address, and an in-place POST follows its
+  Post/Redirect/Get redirect and puts that GET address in the address bar
+  ([in-place controls](#in-place-controls)), so a POST is never the current
+  history entry. A browser reload therefore re-renders the same page and
+  view on the server with the current status (no resubmit prompt, no
+  other step, no blank or expired state), keeps the sort, filters, page
+  and other choices the address carries, and resumes updating if work is
+  still pending.
+- **Go-live pages.** Go-live readiness, Testing cleanup, Prepare Family
+  links and Production activation still have their Refresh links until the
+  go-live redesign applies this rule there (#1586 slice 2).
 
 ### No layout shift
 
@@ -1021,7 +1107,7 @@ the resend admission refuses it; Queue new manual report while an earlier
 Weekly Admin digest is still being prepared or delivered (checked when the
 page opens); and Upload on Hosted files while the library is full. A button
 the server draws disabled because other campaign work holds the page (report
-exports, follow-up saves, Participation) names that notice too.
+exports, follow-up saves, the Response dashboard) names that notice too.
 
 The same applies wherever the page already knows the refusal, whatever the
 reason: other campaign work holding the action, or a missing prerequisite the
@@ -1080,6 +1166,29 @@ rule to match (no "@" in the Family portal maintenance message).
 The server stays the authority: it checks every save, and its refusal is
 shown at the field as above, even when the browser would have allowed the
 value (a wrong computer clock, for example).
+
+A format rule both sides check is written once, as a shared format rule
+(`web/field_rules.py`, `FieldRule`): a regular expression with its
+plain-language refusal and error code. The server matches the whole value
+against it and refuses in those words; the field carries the same
+expression as its `pattern`, the same words as `data-missing-hint` (and
+`data-empty-hint` for an empty required field) and `data-field-rule`. A
+rule admits nothing the field's own server check refuses and refuses
+nothing it admits (a URL rule's host is exactly the server's URL validator's:
+a name, an IP address, `localhost`, a trailing dot, so a value saved earlier
+never blocks an unrelated save), and shares that check's error code, so a
+field has one code; so the browser never admits what the server refuses, nor
+words a refusal differently. A ruled field keeps a reserved error line
+(`file-size-field.html`): when the Admin leaves it invalid, the page script
+shows the rule's words there, and they go once the value is valid; the line
+keeps its height, so nothing moves. Its form uses the complete-before-submit
+gate ([prerequisite gates](#prerequisite-gates)), so Save, Review or Save
+and continue waits, with the same words as its reason, while any field is
+invalid. Each rule has accepted and refused examples in one shared table
+(`tests/stewardship/fixtures/field_rule_cases.json`), run through the
+server's form field and through every browser engine. A server rule the
+browser does not check yet is a gap
+([#1577](https://github.com/epiphany40223/parishkit/issues/1577)).
 
 A report's filters follow the same rule (#1332). A filter the server
 refuses at one field (a request built by hand, or a browser whose check did
@@ -1568,20 +1677,35 @@ browser tests of each page that draws one. **Precedent.**
 (Administrator, 2026-10-17), from the Response dashboard's Production |
 Testing rehearsal.
 
-- **Where.** The Participation page's Chart population (Historical as of
-  day | Current population), the Response dashboard's Responses shown
-  (Production | Testing rehearsal) and Activity grouped by (By hour | By
-  day), and the Family timeline's Records shown (Production | Testing
-  rehearsal). The family directory's Responses shown and the roster
-  changes' Show are still menus in their filter forms; their conversion is
-  tracked in #1535.
+- **Where.** The Response dashboard's Responses shown (Production |
+  Testing rehearsal) and Chart population (Historical as of day | Current
+  population), the Family timeline's Records shown (Production | Testing
+  rehearsal), the
+  [family directory](../reports/spec.md#active-parishioner-family-directory)'s Responses shown
+  (Production | Testing rehearsal), above its Filters panel, and
+  [Roster changes to enter](../admin-portal/spec.md#roster-changes-to-enter)'s
+  Show (Not yet entered | All, including entered), above its Ministry
+  filter.
 - **Links.** Each segment is a link to the page's own address with that
   choice (`a[data-in-place]`, marked `aria-current="page"` when chosen), so
   each view has a real address that a reload or bookmark keeps. The link
   carries the page's other view state (a table's sort and page size, the
   browser's time zone), and the pair is redrawn with every in-place answer
   (`data-table-sync` or inside a region), so its links always match the
-  page shown.
+  page shown. On a page whose filters are private POST state (the family
+  directory), a link cannot carry them, so each segment is instead a small
+  POST form holding the applied filters as hidden fields, as a POST table's
+  navigator does, with one button marked `aria-current="page"` when chosen;
+  it looks and acts the same, and the address bar then shows the page's own
+  link-safe address.
+- **Beside a filter form.** When the page also has a filter form, the pair
+  sits outside it, before it, and each segment carries the filters the page
+  shows (not ones typed but not yet applied) and goes back to the first
+  page; the form carries the choice as a hidden field, so its Apply keeps
+  it. Applying the filters in place redraws the pair with the new filters,
+  and choosing a segment sets the form to what the new view applied
+  (`data-in-place-filters`). The choice is a mode of the page, not a filter,
+  so the Filters panel's count leaves it out.
 - **In place.** Choosing a segment refreshes the page's regions without a
   reload or a scroll jump ([in-place controls](#in-place-controls)); the
   address is replaced, focus stays on the segment just chosen, and the view
@@ -1602,7 +1726,11 @@ Testing rehearsal.
   or more (Appearance).
 - **Guard.** A template test refuses an Admin template's `<select>` with
   exactly two written options, unless it is listed as an exception with
-  its reason. A menu built from a loop is checked in review.
+  its reason. A menu built from a loop cannot be counted that way, so the
+  test also checks each converted page by name: it draws the shared pair
+  and has no menu for that choice, and its view no longer hands the
+  template the choice's options. Any other menu built from a loop is
+  checked in review.
 
 ### Basic and Advanced modes
 
@@ -2501,7 +2629,9 @@ two ways of reading to a screen reader. **Precedent.**
   leaves out; it never repeats a figure another tile or the page already
   shows, as for [chart captions](#charts). A tile has no heading of its
   own: the label is not a heading, and the row is named by its panel's
-  heading.
+  heading. A panel with more than one row names each row with its own short
+  label instead, so a screen reader tells the rows apart
+  ([#1537](https://github.com/epiphany40223/parishkit/issues/1537)).
 - **Trend.** Where a comparison exists, a tile may end with one trend
   line, written in words with an arrow ("↑ 12.5% more"), never colour
   alone.
@@ -2518,7 +2648,24 @@ two ways of reading to a screen reader. **Precedent.**
   "UTC" label ([dates and times](#dates-and-times)).
 - **No layout shift.** The tiles of a row stretch to one height. An
   in-place update replaces their contents and keeps the row's tiles, so
-  nothing below moves ([no layout shift](#no-layout-shift)).
+  nothing below moves ([no layout shift](#no-layout-shift)). A value is
+  always one line of one height: it never wraps, a long value (ten
+  characters or more) is drawn smaller instead, and on a phone the tiles
+  stack, so a wider figure in a fresh answer cannot make its row taller
+  ([#1537](https://github.com/epiphany40223/parishkit/issues/1537)). A
+  value also always stays inside its tile, at every window width and
+  font size: a row puts fewer tiles across rather than make a tile too
+  narrow for its value. Every row of tiles stacks on a phone, including
+  those not yet drawn by the shared code.
+- **Balanced lines.** A row of four or five tiles drawn by the shared
+  component never leaves one tile alone on a line, at any row width: four
+  go 4 or 2 + 2 across, five go 5 or 3 + 2, and either stacks when even
+  that is too narrow
+  ([#1537](https://github.com/epiphany40223/parishkit/issues/1537)). The
+  rows still drawn by hand (Home, Campaign comparison, Financial
+  stewardship and Ministry requests) do not follow it yet; they pick it up
+  when they move onto the component
+  ([#1540](https://github.com/epiphany40223/parishkit/issues/1540)).
 - **Shared code.** The helper's `tile()` builds each tile and the include
   draws a row of them. A guard test fails when a template outside
   `components/` draws stat-tile markup by hand; the templates not yet
@@ -2742,7 +2889,10 @@ learned once. **Shared code.**
   schedule's next occurrence, as
   [New and Edit scheduled email](../admin-portal/spec.md#new-and-edit-scheduled-email)
   does. The shared zone note beside the fields names the zone the times
-  are typed in. The
+  are typed in. A compact filter bar may carry that note as a toggletip on
+  its first date's label instead of a line of its own (Sent mail's From,
+  [#1562](https://github.com/epiphany40223/parishkit/issues/1562)); like
+  the note, its "i" shows only once the browser reports a known zone. The
   [ParishSoft refresh schedule](../admin-portal/spec.md#parishsoft-refresh-schedule-settings)
   is the recorded exception: its times are typed and shown in its schedule
   zone (decision 18).
@@ -2987,7 +3137,11 @@ Admin tables share one component, so paging, sorting, selection and styling
 behave the same everywhere. A long table has a row navigator above and below
 it: the rows shown and "Page N of M", a rows-per-page choice (25, 50, 100, 250
 or All, where the table's source allows it), Previous and Next, and a
-page-number field. A page number past the end shows the last page.
+page-number field. A page number past the end shows the last page. A summary
+table that follows its chart may offer 5 as a smaller first size and default
+to it, since the chart already shows the whole series (the Response
+dashboard's daily table,
+[#1537](https://github.com/epiphany40223/parishkit/issues/1537)).
 
 Column headings sort the table on the server. Each sortable heading is a
 control that sorts by that column; choosing the sorted column again reverses
@@ -3006,11 +3160,13 @@ exporting keeps the order the table shows.
 Page, size and sort are query parameters (`page`, `size`, `sort`), optionally
 prefixed so two tables on one page keep their own place, and every navigator
 link, heading and filter form keeps the page's filters and the others' choices.
-Reports whose filters are private (the active parishioner family directory, System logs and the
-campaign reports) keep them in POST state: their navigator and headings are
+Reports whose filters are private (the active parishioner family directory, System logs, the
+campaign reports and Sent mail's Recipient) keep them in POST state: their navigator and headings are
 small CSRF-protected forms that carry the filters as hidden fields, so no
-private value reaches a URL. System logs also accept a link carrying only its
-non-private filters ([Logs](../admin-portal/spec.md#logs)). A control on
+private value reaches a URL. System logs and Sent mail also accept a link
+carrying only their non-private filters ([Logs](../admin-portal/spec.md#logs),
+[Sent mail](../admin-portal/spec.md#sent-mail)), and refuse one carrying a
+private value. A control on
 another page that opens such a report narrowed by a private value (Edit
 user's "Sign-in activity", narrowed to one Google identity) is a link-styled
 button posting a small CSRF form with that value as a hidden field, never a
@@ -3075,9 +3231,9 @@ table, including none. A response the
 server refuses (a malformed filter's 400, a denial, an unavailable report) is
 shown as returned; a POST is never sent twice, since each report read is
 audited. While a request is in flight, repeating the same submission is
-ignored. The participation report's Chart population reshapes its
-statistics, chart and exports rather than one table, so it is a
-[binary choice](#binary-choices) whose links refresh all three panels
+ignored. The Response dashboard's Chart population reshapes its chart,
+table and export rather than one table, so it is a
+[binary choice](#binary-choices) whose links refresh the page's region
 instead. When
 the fetch fails or returns another page (a sign-in), the ordinary page load happens and its fragment lands on the table rather than at
 the top. The link preparation history keeps only the fragment and always
@@ -3314,7 +3470,10 @@ only a DUID has it in its `class`.
 
 The same file also reads every table's column headings: each heading that
 names a DUID is one of the two above and comes right after its name's
-heading (Family or Member; Census changes heads its Member column Who). The
+heading (Family or Member; Census changes heads its Member column Who, and
+Sent mail heads its Family column Recipient, since it also names the
+Administrators that reports and notices go to,
+[#1562](https://github.com/epiphany40223/parishkit/issues/1562)). The
 one DUID column apart from its name is the recorded exception below.
 
 The follow-up queue on Ministry requests also has no Submitted column (Administrator
@@ -3435,7 +3594,7 @@ installed function body.
 (Administrator, 2026-10-13, on #1131). Family pages use it since #1216's
 first change, and the Family-code directory, Census changes and Family
 timeline downloads have the ParishSoft status column (or detail) since its
-second. The Family timeline, Outgoing mail, Refused addresses, Testing
+second. The Family timeline, Sent mail, Refused addresses, Testing
 submissions, the chosen-Family send page and "Families on the form now"
 word a blank surname "Name not recorded in ParishSoft" since that second
 change. Since its third (frozen migration 0094), the installed selections
@@ -3535,7 +3694,7 @@ the shared chart's "Nothing to show yet." row, which sits in the collapsed
 Exact values table under a chart whose visible summary and page say what it
 covers.
 Empty states drawn by `{% if %}…{% else %}` follow the same rule and are
-reviewed by hand. **Precedent.** Outgoing mail, Background work and Hosted
+reviewed by hand. **Precedent.** Sent mail, Background work and Hosted
 files' empty rows;
 [#227](https://github.com/epiphany40223/parishkit/issues/227).
 
@@ -3558,8 +3717,11 @@ what the report holds. Troubleshooting uses the page's Technical details and
 the audit log, not a download; the recorded exceptions are the System logs
 export and the command line's Census changes JSON Lines below. Every data export is offered as CSV, XLSX and PDF unless a
 recorded technical or design reason says otherwise (Administrator decision,
-2026-10-10); a page may add a format, such as the participation chart's PNG
-or System logs' JSON Lines. An export form is its format menu and its
+2026-10-10); a page may add a format, such as System logs' JSON Lines. The
+Response dashboard's export drops the participation chart's PNG
+([#1537](https://github.com/epiphany40223/parishkit/issues/1537)): its page
+holds more than one chart, and the PNG is still accepted from the command
+line. An export form is its format menu and its
 button; it carries no explanation of how each format writes dates or money
 (Administrator decision, 2026-10-17,
 [#1538](https://github.com/epiphany40223/parishkit/issues/1538)). **Shared code.** `reports/pdf_design.py` and
@@ -3640,7 +3802,7 @@ deliveries. Any other download (campaign dates, contact dates, no times at
 all) asks nothing: its form sends the browser's zone in a hidden
 `data-browser-zone` field, which sets the file's frame times (Captured at,
 Requested at, Source as of), and the file names that zone. The one exception
-is Participation: its export forms post the page's own `query.timezone`, the
+is the Response dashboard: its export form posts the page's own `query.timezone`, the
 zone the page was drawn in, which `report-v1.js` fills with the browser's
 (the [participation graph](../reports/spec.md#participation-graph)). The
 server falls back to the parish's time zone rather than refusing a missing or
@@ -3731,7 +3893,7 @@ the longer of its two sentences from the start, so nothing moves
 server's clock, and checks again when it is shown again (such as by Back)
 and whenever its status is redrawn, so a copy shown at or after the end
 shows Download unavailable at once. The server stays authoritative: after
-the end, the page's next load, Refresh status, Download or Retry answers
+the end, the page's next load or status read, Download or Retry answers
 the fixed page, as the in-place controls show any other refusal, so the
 server never draws the status page in that state. A failed export's Retry
 is not held this way; its "Retry is available until" time says when it

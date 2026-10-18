@@ -14,7 +14,6 @@ from parishkit.stewardship.reports.directories import (
     DIRECTORY_SORTING,
     INACTIVE,
     MISSING_NAME,
-    MODES,
     REACH,
     REASONS,
     RESPONSES,
@@ -28,10 +27,11 @@ from parishkit.stewardship.reports.directory_views import (
     FIELD_LINES,
     page_address,
 )
-from parishkit.stewardship.reports.response_dashboard import DIRECTORY_PRESETS
 from parishkit.stewardship.source.family_names import family_heads_name
 from parishkit.stewardship.web.filter_errors import FilterError, error_context
 from parishkit.stewardship.web.tables import report_table
+
+from ..test_directories import RESPONSE_LIST_PRESETS
 
 
 def _table(rows, total, mailing, query=None):
@@ -290,8 +290,8 @@ def preset_pages(values, counted):
     """
     pages = {}
     for preset in (
-        *DIRECTORY_PRESETS.values(),
-        *(preset | {"mode": "testing"} for preset in DIRECTORY_PRESETS.values()),
+        *RESPONSE_LIST_PRESETS.values(),
+        *(preset | {"mode": "testing"} for preset in RESPONSE_LIST_PRESETS.values()),
     ):
         query = DirectoryQuery.parse(QueryDict(urlencode(preset)))
         testing = query.mode == "testing"
@@ -316,7 +316,6 @@ def preset_pages(values, counted):
             + len(dates)
             + len(counts)
             + int(checks),
-            "modes": MODES,
             "can_test": True,
             "testing_responses": testing,
             "export_headings": export_headings(

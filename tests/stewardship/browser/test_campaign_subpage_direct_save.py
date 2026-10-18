@@ -268,7 +268,7 @@ def test_a_save_send_work_blocks_links_outgoing_mail(page, component_origin):
     refusal = {
         "message": "A scheduled email is being sent right now.",
         "fix": "Wait for it to finish, then save again.",
-        "link": {"url": "/admin/deliveries/", "label": "Outgoing mail"},
+        "link": {"url": "/admin/deliveries/", "label": "Sent mail"},
     }
 
     def blocked(route):
@@ -291,8 +291,8 @@ def test_a_save_send_work_blocks_links_outgoing_mail(page, component_origin):
     available(save)
     save.click()
     line = page.locator("#campaign-step-status")
-    has_text(line, f"{refusal['message']} {refusal['fix']} Outgoing mail")
-    link = line.get_by_role("link", name="Outgoing mail")
+    has_text(line, f"{refusal['message']} {refusal['fix']} Sent mail")
+    link = line.get_by_role("link", name="Sent mail")
     visible(link)
     assert link.get_attribute("href") == "/admin/deliveries/"
     assert page.url == component_origin + EDIT_DIRECT

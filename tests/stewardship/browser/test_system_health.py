@@ -108,7 +108,7 @@ NAMES = [
 TOPS = """() => [...document.querySelectorAll('[data-health-toggle]')]
     .map((b) => b.getBoundingClientRect().top + window.scrollY)"""
 # The overall line's shown form (the other is display: none), and the
-# fixed-height line that holds it and Refresh System health.
+# fixed-height line that holds it (there is no Refresh button, #1586).
 LINE = "#health-overall > span:visible"
 HOLDER = """() => {
     const box = document.querySelector('.health-line').getBoundingClientRect();
@@ -608,9 +608,9 @@ def test_the_page_says_when_it_is_not_current_and_recovers_in_place(
 ):
     """After three failed checks the line reads Not current with when it
     last checked, every tile turns Not current with its last known state,
-    nothing opens, closes or moves, and the announcer says so once.
-    Refresh System health checks again at once and brings the counted
-    states back."""
+    nothing opens, closes or moves, and the announcer says so once. The
+    page has no Refresh button (#1586): it keeps checking, and the first
+    check that works brings the counted states back."""
     page.set_viewport_size({"width": 1280, "height": 900})
     failures = []
 
@@ -622,8 +622,7 @@ def test_the_page_says_when_it_is_not_current_and_recovers_in_place(
     page.route(f"{component_origin}{STALE_STATUS}", fail)
     page.goto(component_origin + STALE)
     kept = _not_reloaded(page)
-    restart = page.get_by_role("button", name="Refresh System health")
-    expect(restart).to_be_hidden()
+    expect(page.get_by_role("button", name="Refresh System health")).to_have_count(0)
     _toggle(page, "backups").click()
     _away(page)
     line = page.evaluate(HOLDER)
@@ -639,7 +638,6 @@ def test_the_page_says_when_it_is_not_current_and_recovers_in_place(
     expect(last).to_have_text(
         page.evaluate("(stamp) => ParishDates.time(new Date(stamp))", stamp)
     )
-    expect(restart).to_be_visible()
     for tile in TILES:
         expect(_word(page, tile)).to_have_text("Not current")
         expect(
@@ -655,7 +653,8 @@ def test_the_page_says_when_it_is_not_current_and_recovers_in_place(
     )
     assert same_place(page.evaluate(HOLDER), line)
     assert same_place(page.evaluate(TOPS), tops)
-    # Current again, from the button, with the troubled state it reads.
+    # Current again, from the poll's own retry, with the troubled state it
+    # reads.
     # Count what the announcer is given: the sentence once, not twice.
     page.evaluate("""() => {
         window.announced = 0;
@@ -664,8 +663,7 @@ def test_the_page_says_when_it_is_not_current_and_recovers_in_place(
                 {childList: true, characterData: true, subtree: true});
     }""")
     page.unroute(f"{component_origin}{STALE_STATUS}")
-    restart.click()
-    expect(dashboard).not_to_have_attribute("data-not-current", "")
+    expect(dashboard).not_to_have_attribute("data-not-current", "", timeout=30000)
     expect(page.locator(LINE)).to_have_text("3 errors and 1 warning")
     expect(_word(page, "mail")).to_have_text("Error")
     expect(page.locator(ANNOUNCER)).to_have_text(
@@ -676,18 +674,17 @@ def test_the_page_says_when_it_is_not_current_and_recovers_in_place(
     expect(page.get_by_role("region", name="Backups details")).to_be_visible()
     # A poll never opens a tile, even one that turned Error.
     expect(_band(page, "mail")).to_be_hidden()
-    expect(restart).to_be_hidden()
     assert kept()
 
 
 # The fragment of the troubled page, whatever its ?loaded= says.
 TROUBLED_ROUTE = f"**{STATUS}*"
-# The line box and the restart button, in the viewport.
-RESTART = """() => {
+# The line box and the overall line's heading, in the viewport.
+INSIDE = """() => {
     const line = document.querySelector('.health-line').getBoundingClientRect();
-    const button = document.querySelector('.health-restart').getBoundingClientRect();
+    const said = document.querySelector('#health-overall').getBoundingClientRect();
     return {line: [line.left, line.top, line.right, line.bottom],
-            button: [button.left, button.top, button.right, button.bottom]};
+            said: [said.left, said.top, said.right, said.bottom]};
 }"""
 
 
@@ -696,9 +693,9 @@ def test_not_current_takes_over_troubled_tiles_and_the_line_fits(
     page, component_origin, width
 ):
     """Open Error and Warning bands, and their rows' notches, take the Not
-    current border and lose their start bars; the Not current line and its
-    button fit the line's fixed box, beside the menu too, so neither is cut
-    off nor overlaps the tiles."""
+    current border and lose their start bars; the Not current line fits the
+    line's fixed box, beside the menu too, so it is neither cut off nor
+    overlaps the tiles."""
     page.set_viewport_size({"width": width, "height": 900})
     page.route(
         TROUBLED_ROUTE,
@@ -728,20 +725,17 @@ def test_not_current_takes_over_troubled_tiles_and_the_line_fits(
             f"health-{tile}",
         )
         assert notch == neutral
-    box = page.evaluate(RESTART)
-    line, button = box["line"], box["button"]
-    assert line[0] <= button[0] and button[2] <= line[2]
-    assert line[1] <= button[1] and button[3] <= line[3]
+    box = page.evaluate(INSIDE)
+    line, said = box["line"], box["said"]
+    assert line[0] <= said[0] and said[2] <= line[2] + 1
+    assert line[1] <= said[1] and said[3] <= line[3] + 1
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
 
 
-def test_a_poll_that_gives_up_turns_not_current_and_refresh_starts_it_again(
-    page, component_origin
-):
-    """After an hour of watching the poll stops: the line turns Not current
-    with no other notice. Refresh System health starts a fresh watch that
-    checks at once, brings the counted state back, says it once, and keeps
-    polling."""
+def test_a_poll_past_its_hour_slows_down_and_stays_current(page, component_origin):
+    """After an hour of watching the poll slows to every 30 seconds rather
+    than stopping (#1586): the line stays current, with no notice, and
+    every later check still brings the page up to date."""
     page.clock.install()
     page.goto(component_origin + STEADY)
     kept = _not_reloaded(page)
@@ -751,23 +745,20 @@ def test_a_poll_that_gives_up_turns_not_current_and_refresh_starts_it_again(
     first = checked.get_attribute("datetime")
     page.clock.fast_forward(11_000)
     expect(checked).not_to_have_attribute("datetime", first)
-    page.clock.fast_forward(61 * 60 * 1000)
-    expect(dashboard).to_have_attribute("data-not-current", "")
-    expect(page.locator(".live-status-problem")).to_be_hidden()
-    expect(page.locator(ANNOUNCER)).to_contain_text("System health is not current")
-    expect(page.get_by_role("button", name="Refresh System health")).to_be_attached()
-    # The hour's jump also ends the component's Admin session, whose modal
-    # "Sign in again" dialog makes the rest of the page inert, so the button
-    # is clicked from script.
-    page.evaluate("document.querySelector('[data-live-restart]').click()")
-    expect(dashboard).not_to_have_attribute("data-not-current", "")
-    expect(page.locator(LINE)).to_have_text("All working")
-    expect(page.locator(ANNOUNCER)).to_have_text("System health: all working.")
-    # The fresh watch polls on.
     stamp = checked.get_attribute("datetime")
-    page.clock.fast_forward(11_000)
+    page.clock.fast_forward(61 * 60 * 1000)
     expect(checked).not_to_have_attribute("datetime", stamp)
     expect(dashboard).not_to_have_attribute("data-not-current", "")
+    expect(page.locator(".live-status-problem")).to_be_hidden()
+    # Ten seconds is no longer the pace; thirty is.
+    stamp = checked.get_attribute("datetime")
+    page.clock.fast_forward(11_000)
+    page.evaluate("() => true")  # One round trip after the clock jump.
+    assert checked.get_attribute("datetime") == stamp
+    page.clock.fast_forward(20_000)
+    expect(checked).not_to_have_attribute("datetime", stamp)
+    expect(dashboard).not_to_have_attribute("data-not-current", "")
+    expect(page.locator(LINE)).to_have_text("All working")
     assert kept()
 
 
@@ -783,8 +774,8 @@ def test_a_refused_check_turns_not_current_at_once(page, component_origin):
     dashboard = page.locator("[data-health-dashboard]")
     expect(dashboard).to_have_attribute("data-not-current", "", timeout=60000)
     expect(page.locator(".live-status-problem")).to_be_hidden()
-    box = page.evaluate(RESTART)
-    assert box["button"][3] <= box["line"][3]
+    box = page.evaluate(INSIDE)
+    assert box["said"][3] <= box["line"][3] + 1
 
 
 def _routed(page, component_origin, answers, shown=None):

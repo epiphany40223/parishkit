@@ -27,7 +27,7 @@ def counted_refusal():
 
 
 def test_the_mail_error_page_records_its_code_and_refusal(recorded):  # noqa: F811
-    """Outgoing mail's error page: its code, and the refusal it shows."""
+    """Sent mail's error page: its code, and the refusal it shows."""
     answer(delivery_views._error(ErrorCode.INVALID, 400, counted_refusal()))
     answer(delivery_views._error(ErrorCode.DENIED, 403))
     first, second = (record.context() for record in recorded)
@@ -52,7 +52,9 @@ def test_a_refused_bulk_action_records_its_refusal(
         delivery_views, "_bulk", lambda _: ({"_refusal": counted_refusal()}, 400)
     )
     monkeypatch.setattr(delivery_views, "_page", lambda *_, **__: page)
-    answer(delivery_views.delivery_list(request_for("/admin/mail/outgoing/")))
+    # A bulk action names its action; any other POST is a filtered read.
+    request = request_for("/admin/mail/sent/", data={"action": "preview"})
+    answer(delivery_views.delivery_list(request))
     (record,) = recorded
     context = record.context()
     if own_error:

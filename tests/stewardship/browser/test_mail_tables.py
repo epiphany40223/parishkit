@@ -1,6 +1,6 @@
 """Readable Admin mail tables in a real browser (#931).
 
-Outgoing mail names each Family beside its DUID, and Family email history
+Sent mail names each Family beside its DUID, and Family email history
 has fewer, wider columns. At phone width a table scrolls inside its own
 region and the page never scrolls sideways; at desktop width no date or
 time cell wraps. Layout is the same in every engine, so Chromium suffices.
@@ -85,53 +85,86 @@ def test_a_desktop_never_wraps_dates(page, component_origin, axe_source, path):
     assert_accessible(page, axe_source)
 
 
-def test_outgoing_mail_shows_the_family_name_and_duid_apart(page, component_origin):
-    """When leads (#932's order); the name opens the email; Family and the
-    DUID, its own column, both sort. When is one time, as in a log."""
+def test_sent_mail_names_each_recipient(page, component_origin):
+    """When leads (#932's order) and opens the email; Recipient names the
+    Family, its DUID in the next column, or the Administrator by Users-page
+    Name, else address, and lists everything sent to them (#1562). When is
+    one time, as in a log; Mode and Provider attempts are gone."""
     table = open_at(page, component_origin, OUTGOING, 1280)
     headings = table.locator("thead th")
     assert [text.split("\n")[0].strip() for text in headings.all_inner_texts()] == [
         "When",
-        "Family",
+        "Recipient",
         "Family DUID",
         "Purpose",
-        "Mode",
-        "State",
-        "Provider attempts",
+        "Delivery",
     ]
-    # When is the default sort, newest first, so its link reverses it.
+    # When is the default sort, newest first, so its heading reverses it.
+    # The headings are POST forms: the filters are private state (#1562).
     assert headings.nth(0).get_attribute("aria-sort") == "descending"
-    assert "sort=changed" in headings.nth(0).locator(".sort-link").get_attribute("href")
-    assert "sort=name" in headings.nth(1).locator(".sort-link").get_attribute("href")
-    assert "sort=duid" in headings.nth(2).locator(".sort-link").get_attribute("href")
+    for column, sort in ((0, "changed"), (1, "name"), (2, "duid")):
+        field = headings.nth(column).locator("form input[name=sort]")
+        assert field.get_attribute("value") == sort
     rows = table.locator("tbody tr")
-    assert [rows.nth(i).locator("th").inner_text() for i in range(3)] == [
+    assert [rows.nth(i).locator("td").first.inner_text() for i in range(4)] == [
         "Castellanos, Maximiliana and Bartholomew",
         "Not in ParishSoft",
-        "Administrator report",
+        "Morgan Administrator",
+        "pat@example.org",
     ]
-    # The DUID cell follows the When cell.
-    assert [rows.nth(i).locator("td").nth(1).inner_text() for i in range(3)] == [
+    assert [rows.nth(i).locator("td").nth(1).inner_text() for i in range(4)] == [
         "12345",
         "4021",
         "—",
+        "—",
     ]
-    # When: the one time of the email's current state, on one line.
-    when = rows.nth(0).locator("td").first
+    assert [rows.nth(i).locator("td").nth(2).inner_text() for i in range(4)] == [
+        "Initial invitation",
+        "Initial invitation",
+        "Daily Administrator report",
+        "Security notice",
+    ]
+    # When: the one time of the email's current state, on one line, heading
+    # the row and opening that email's page.
+    when = rows.nth(0).locator("th")
     assert when.locator("time").count() == 1
     assert when.evaluate("node => node.getClientRects().length") == 1
+    assert when.locator("a").get_attribute("href").startswith("/admin/mail/sent/")
     assert "Changed" not in table.inner_text()
+
+    # Recipient lists everything sent to that recipient, in the same mode:
+    # a link-styled button posting it, never a link (#1562).
+    def posted(row, name):
+        """The recipient and mode a row's Recipient button posts."""
+        form = (
+            rows.nth(row)
+            .locator("form")
+            .filter(has=page.get_by_role("button", name=name))
+        )
+        assert form.get_attribute("method") == "post"
+        return [
+            form.locator(f"input[name={field}]").get_attribute("value")
+            for field in ("recipient", "mode")
+        ]
+
+    assert posted(0, "Castellanos, Maximiliana and Bartholomew") == [
+        "12345",
+        "production",
+    ]
+    assert posted(2, "Morgan Administrator") == ["morgan@example.org", "production"]
+    assert table.locator("a[href*=recipient]").count() == 0
+    # It reads as a link in its cell: link colour, no button box.
+    button = rows.nth(2).get_by_role("button", name="Morgan Administrator")
+    assert button.evaluate("node => getComputedStyle(node).borderTopStyle") == "none"
+    assert (
+        button.evaluate("node => getComputedStyle(node).backgroundColor")
+        == "rgba(0, 0, 0, 0)"
+    )
     # A Family the latest data no longer has shows the shared badge (#1216),
     # boxed so it does not read as a name.
-    gone = rows.nth(1).locator('th .status-badge[data-source-status="missing"]')
+    gone = rows.nth(1).locator('td .status-badge[data-source-status="missing"]')
     assert gone.inner_text() == "Not in ParishSoft"
     assert gone.evaluate("node => getComputedStyle(node).borderTopStyle") == "solid"
-    assert (
-        rows.nth(0)
-        .get_by_role("link", name="Castellanos, Maximiliana and Bartholomew")
-        .get_attribute("href")
-        .startswith("/admin/mail/outgoing/")
-    )
 
 
 def test_family_email_history_puts_the_dates_first(page, component_origin):

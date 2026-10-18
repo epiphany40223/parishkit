@@ -188,11 +188,16 @@ def funnel_summary(stages, phrases=STAGE_PHRASES):
 def funnel_chart(metrics, *, keys=STAGES, labels=STAGE_LABELS, phrases=STAGE_PHRASES):
     """The response funnel: one bar per stage, labelled with its count.
 
-    ``keys`` selects the stages drawn, in funnel order, and ``labels`` and
-    ``phrases`` name them in the bars and the summary: the dashboard draws
-    all five with their own names, the daily digest only its four
-    (``digest_funnel.DIGEST_STAGES``, #1016) under its own names. Shares
-    are always of the first stage, Invited.
+    No page or email draws it any more: the daily digest dropped its chart
+    (#1370) and the Response dashboard's stage tiles replaced the page's
+    (#1537). It is kept, with ``funnel_summary`` and ``STAGE_PHRASES``, as
+    the chart engine's bar-chart test document (the browser ``/charts``
+    fixture, ``test_chart_rendering``, ``test_chart_specs``) and so the
+    funnel can come back if the Administrator asks for it.
+
+    ``keys`` selects the stages drawn, in funnel order (all five by
+    default), and ``labels`` and ``phrases`` name them in the bars and the
+    summary. Shares are always of the first stage, Invited.
     """
     if tuple(stage.key for stage in metrics.stages) != STAGES or not (
         keys[0] == "invited" and set(keys) <= set(STAGES)
@@ -802,34 +807,6 @@ def information_followup(counts, total):
     )
 
 
-# The statistics drawn as progress against active Families (#720), in the
-# order the cards listed them: (card label, PopulationStatistics field).
-PROGRESS = (
-    ("Families that have responded", "responses"),
-    ("Families with eligible email", "eligible_email"),
-    ("Families with deliverable email", "deliverable_email"),
-)
-
-
-def population_progress(active):
-    """The Participation statistics' progress bars against active Families.
-
-    ``active`` is ``CampaignStatistics.active``, the current active
-    population's counts. Without an observation there is nothing to draw:
-    ``None`` is returned and the cards say Unavailable, never zero.
-    """
-    if active is None:
-        return None
-    return count_bars(
-        "active-population",
-        "Responses and email reach",
-        [(label, getattr(active, field)) for label, field in PROGRESS],
-        total=active.families,
-        compared="Share of active Families",
-        progress=True,
-    )
-
-
 # Ministry requests' follow-up bars (#720), in drawing order: (bar label,
 # count in ``ministry_followup.request_totals``).
 FOLLOW_UP = (
@@ -862,7 +839,7 @@ def ministry_followup(totals):
     )
 
 
-# The Participation page's daily chart (#720 slice 2c): each panel's plot
+# The Response dashboard's daily chart (#720 slice 2c): each panel's plot
 # height in CSS pixels, and the fixed width of every panel's value-axis
 # column (tick labels and title), so the stacked plots line up on the shared
 # date axis whatever their tick labels' widths ("$1.6M" against "12").
@@ -1010,7 +987,7 @@ def participation_panel(
 
 
 def participation_chart(document):
-    """The Participation page's daily chart, drawn by the chart engine (#720).
+    """The Response dashboard's daily chart, drawn by the chart engine (#720).
 
     It is the same design as the static drawing the exports and the daily
     email keep (``charts._draw``): stacked panels on one shared date axis,

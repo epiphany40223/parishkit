@@ -25,7 +25,7 @@ _CLOSED = frozenset({"closed", "archived", "purging", "purge_cleanup_failed"})
 # The spec's table, by state and role: menu entry names in order. Two names
 # are not plain menu entries: ``campaign_mail`` is Preview and test email for
 # the initial invitation's current revision, offered while Pages and emails
-# is, and ``mail_problems`` is Outgoing mail filtered to emails that may not
+# is, and ``mail_problems`` is Sent mail filtered to emails that may not
 # have arrived, with their count.
 _ACTIVE = {
     "administrator": (
@@ -48,7 +48,7 @@ STEPS = {
             "go_live",
             "response_dashboard",
         ),
-        "staff": ("response_dashboard", "participation"),
+        "staff": ("response_dashboard",),
         "ministry_leader": ("ministry_report",),
     },
     "activating": {
@@ -69,8 +69,8 @@ STEPS = {
     "paused": _ACTIVE
     | {"administrator": ("delivery_control", *_ACTIVE["administrator"])},
     "closed": {
-        "administrator": ("participation", "emailed_reports"),
-        "staff": ("participation",),
+        "administrator": ("response_dashboard", "emailed_reports"),
+        "staff": ("response_dashboard",),
         "ministry_leader": ("ministry_report",),
     },
 }
@@ -182,7 +182,7 @@ def _test_email(catalog, revision):
 
 
 def _mail_problems(deliveries, unknown):
-    """Outgoing mail, filtered to emails that may not have arrived when some are."""
+    """Sent mail, filtered to emails that may not have arrived when some are."""
     if deliveries is None:
         return None
     label = str(deliveries["label"])

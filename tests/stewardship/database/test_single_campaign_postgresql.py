@@ -23,15 +23,15 @@ def test_report_roots_show_no_archived_campaign(auth_service, google):
     """With no current campaign, the report roots say so (rule 10).
 
     The reports root and Ministry requests never open the archived campaign:
-    the root opens Participation, and both, greyed menu entries, say so in
+    the root opens the Response dashboard, and both, greyed menu entries, say so in
     the menu's words (#1128).
     """
     setup(auth_service.store)
     browser, _ = signed_in()
     response = browser.get(reverse("admin:reports"))
     assert response.status_code == 302
-    assert response["Location"] == reverse("admin:participation")
-    for name in ("participation", "ministry_report"):
+    assert response["Location"] == reverse("admin:response_dashboard")
+    for name in ("response_dashboard", "ministry_report"):
         response = browser.get(reverse(f"admin:{name}"))
         assert response.status_code == 409
         assert response.json()["refusal"]["message"] == "No current campaign."
@@ -67,7 +67,6 @@ def test_access_is_checked_before_the_current_campaign(auth_service, google, rol
         google[0].update(email="reader@example.org", sub="reader-subject")
         browser, _ = signed_in()
     for name in (
-        "participation",
         "campaign_comparison",
         "financial_report",
         "response_dashboard",

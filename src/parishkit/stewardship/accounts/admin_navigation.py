@@ -192,7 +192,7 @@ PAGES = {
     "family_email_progress": Page("mail", _("Family email progress")),
     # The permanent record of every send (#432), listed beside the live panel.
     "family_email_sends": Page("mail", _("Family email history")),
-    "deliveries": Page("mail", _("Outgoing mail")),
+    "deliveries": Page("mail", _("Sent mail")),
     "delivery": Page("mail", _("Mail message"), "deliveries"),
     "delivery_refusals": Page("mail", _("Refused addresses"), "deliveries"),
     "delivery_refusal": Page("mail", _("Refused address"), "delivery_refusals"),
@@ -205,8 +205,7 @@ PAGES = {
     # Responses and reports. Every report is a menu entry of its own. The
     # reports root only redirects to the current campaign's report (or shows
     # that there is none), so it stands alone, outside the menu.
-    "reports": Page("reports", _("Participation"), entry="participation"),
-    "participation": Page("reports", _("Participation")),
+    "reports": Page("reports", _("Response dashboard"), entry="response_dashboard"),
     "campaign_comparison": Page("reports", _("Campaign comparison")),
     "financial_report": Page("reports", _("Financial stewardship")),
     "limitations_report": Page("reports", _("Limitations")),
@@ -514,7 +513,6 @@ MENU = (
     Entry("presence", _ADMIN),
     # Responses and reports
     Entry("response_dashboard", Capability.CAMPAIGN_REPORT, _campaign),
-    Entry("participation", Capability.CAMPAIGN_REPORT, _campaign),
     Entry("campaign_comparison", Capability.CAMPAIGN_REPORT, _campaign),
     Entry("financial_report", Capability.FINANCIAL_DETAIL, FINANCIAL),
     Entry("limitations_report", Capability.CAMPAIGN_REPORT, MINISTRY),
@@ -747,7 +745,6 @@ NON_PAGES = frozenset(
         # New and Edit scheduled email's test of an unsaved edit (#446), a
         # POST the page script makes.
         "schedule_email_test",
-        "report_exact_create",
         "report_export_cancel",
         "report_export_create",
         "report_export_download",

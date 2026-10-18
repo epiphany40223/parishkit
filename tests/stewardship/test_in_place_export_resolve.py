@@ -39,14 +39,15 @@ def in_place_form(text, key):
 def test_export_commands_post_in_place(name, key, route, message):
     """Retry export and Cancel export are data-in-place POSTs to their own
     routes that land on the status panel; the button is usually gone once
-    the request is taken, so focus falls back to Refresh status below."""
+    the request is taken, so focus falls back to the panel (the page has no
+    Refresh status link since #1586)."""
     text = (TEMPLATES / name).read_text()
     form = in_place_form(text, key)
     assert f"action=\"{{% url 'admin:{route}' job.pk %}}#export-status\"" in form
     assert names_region(text, "export-status")
     assert f"data-in-place-message=\"{{% translate '{message}' %}}\"" in form
-    assert 'data-in-place-fallback="refresh"' in form
-    assert 'data-in-place="refresh"' in text
+    assert "data-in-place-fallback" not in form
+    assert 'data-in-place="refresh"' not in text
 
 
 def test_an_export_page_offers_no_regenerate():

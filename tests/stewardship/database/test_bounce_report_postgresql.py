@@ -128,7 +128,7 @@ def test_report_sets_the_address_aside_audits_and_replays(scenario):
     # The same key with another intent is refused.
     with pytest.raises(ValueError, match="already bound"):
         report(scenario, command_id=command, note="Another note")
-    # Outgoing mail's and Refused addresses' readers see it, with its kind.
+    # Sent mail's and Refused addresses' readers see it, with its kind.
     assert email_refusals(message.pk) == [
         dict(id=command, address=ADDRESS, kind="reported_bounce")
     ]
@@ -390,7 +390,7 @@ def test_a_cleared_report_on_the_same_email_answers_409(scenario, google):
             verified=True,
         )
     browser, _ = signed_in()
-    path = f"/admin/mail/outgoing/{status.message_id}/bounce-report/"
+    path = f"/admin/mail/sent/{status.message_id}/bounce-report/"
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         assert browser.get(path.removesuffix("bounce-report/")).status_code == 200
         answer = browser.post(
@@ -407,7 +407,7 @@ def test_the_page_reports_in_place_with_csrf(scenario, google):
     panel lists it; without the CSRF header nothing is recorded."""
     _, status, _ = scenario
     browser, _ = signed_in()
-    path = f"/admin/mail/outgoing/{status.message_id}/"
+    path = f"/admin/mail/sent/{status.message_id}/"
     values = dict(command_id=str(uuid4()), address=ADDRESS, note=NOTE, observed="yes")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         page = browser.get(path)

@@ -332,3 +332,24 @@ def test_long_subject_keeps_the_date_and_names():
     )
     assert len(subject) <= 247
     assert subject.endswith("…, October 5, 2026 (Annual campaign, Example Parish)")
+
+
+def test_an_untouched_daily_intro_is_left_out_and_an_edited_one_kept():
+    """The compiled opening line says "Here is yesterday’s report" (#1532).
+
+    An intro still holding that earlier default is left out of the daily
+    email, so the sentence is not said twice; an edited intro stays above
+    the report.
+    """
+    old = "<p>Here is yesterday’s report.</p>"
+    values = arguments()
+    values["template"] = DigestTemplate("Report", old, "Here is yesterday’s report.")
+    result = render_digest_envelope(**values)
+    assert (result.html, result.text) == ("<p>Required report.</p>", "Required report.")
+    edited = "<p>Here is yesterday’s report, team.</p>"
+    values["template"] = DigestTemplate(
+        "Report", edited, "Here is yesterday’s report, team."
+    )
+    result = render_digest_envelope(**values)
+    assert result.html == edited + "<p>Required report.</p>"
+    assert result.text.startswith("Here is yesterday’s report, team.\n\n")

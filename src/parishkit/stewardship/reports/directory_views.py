@@ -47,7 +47,6 @@ from .directories import (
     CHECKS,
     DIRECTORY_SORTING,
     FIND_MINIMUM,
-    MODES,
     PAGE_SIZE,
     REACH,
     REASONS,
@@ -89,8 +88,9 @@ def _principal(request, store, *, read_only=False):
 
 # Closed, non-private values a link may carry (GET): the reach presets (such
 # as "no campaign mail can reach"), the mailing-columns preset and, for the
-# response dashboard's "Lists of Families" links (#933), the Response and
-# ParishSoft data to check choices, the response columns, the sort and the
+# family directory's response presets (#933; the Response dashboard no longer
+# links them), the Response and ParishSoft data to check choices, the
+# response columns, the sort and the
 # mode (Testing links are admitted for Administrators only). Each is a
 # closed vocabulary ``DirectoryQuery.parse`` checks; search text and exact
 # codes stay POST only.
@@ -261,10 +261,13 @@ def directory(request, campaign_id):
             # Every closed choice was accepted before the code was checked,
             # so the sort sent is one the selection knows. The mode sent is
             # still admitted: a reader may not ask for Testing responses
-            # even on a refused page.
+            # even on a refused page. It is kept in the query too, so the
+            # mode choice agrees with the filter form's hidden mode field.
             refusal = error
             admit_mode(principal, error.query.mode)
-            query = DirectoryQuery.parse({"sort": error.query.sort})
+            query = DirectoryQuery.parse(
+                {"sort": error.query.sort, "mode": error.query.mode}
+            )
         admit_mode(principal, query.mode)
         admit_report_read(campaign_id)
         _audit(
@@ -382,7 +385,6 @@ def directory(request, campaign_id):
                     "reaches": REACH,
                     "responses": RESPONSES,
                     "checks": CHECKS,
-                    "modes": MODES,
                     "can_test": can_test,
                     "testing_responses": query.mode == "testing",
                     "date_columns": dates,

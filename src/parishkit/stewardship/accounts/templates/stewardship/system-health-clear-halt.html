@@ -1,0 +1,46 @@
+{% load i18n stewardship %}{% comment %}
+  Clear the halt (ADM-13 PR 4b), in the Mail tile's details right after its
+  problems, outside the polled status region, so a poll never discards an
+  open preview. The #clear-halt in-place region is always drawn, so a
+  step's answer always has a region to swap in, but it shows nothing while
+  no mail sender is halted: without a step result it holds only a
+  data-live-mirror-target that the polled region keeps current with
+  system-health-clear-halt-offer.html. Its forms post to the System health
+  page itself, which answers with this page; ui-v1.js swaps this region in
+  place, and data-live-recheck reads the status again at once, so the
+  tile's words follow without waiting for the next poll.
+
+  ``clear`` holds the step's result: ``preview`` (a
+  mail_halt_clear.ClearPreview: when the halt began and its kind, the
+  waiting and unsettled emails, whether delivery is also paused, and the
+  signed binding), ``cleared`` (the clear signal just recorded, or the
+  first one when Confirm was repeated), or ``refused`` (``busy``: a check
+  no longer holds or the halt changed, in the service's words
+  ``refusal_text``; ``denied``; ``invalid``). The preview names the halt it
+  reviews (data-live-keep-for); once a poll shows another halt (or none)
+  in the region's data-live-key, live-status-v1.js marks it changed on its
+  reserved line and holds both buttons. The mailbox check's outcome and
+  Confirm follow the poll in place (system-health-clear-halt-check.html).
+  No step needs a recent sign-in (#1547).
+{% endcomment %}<div id="clear-halt" data-in-place-region data-live-recheck="system-health">{% if not clear %}<div data-live-mirror-target="clear-halt-offer" data-live-mirror-hold>{% include 'stewardship/system-health-clear-halt-offer.html' %}</div>
+{% else %}<section class="panel" aria-labelledby="clear-halt-heading">
+<h3 id="clear-halt-heading">{% translate "Clear the halt" %}</h3>
+{% if clear.preview %}{% with preview=clear.preview %}<div data-clear-preview data-live-keep-for="{{ preview.halt.halt_id }}">
+<p>{% translate "Sending halted at" %} <time datetime="{{ preview.halt.began_at|instant }}" data-local-instant>{{ preview.halt.began_at|instant }}</time>. {% if preview.halt.kind == "after_data" %}{% translate "The fault came after an email was handed to Gmail, so Gmail may have accepted it: it is marked Not sure it arrived and must be settled first." %}{% else %}{% translate "The email provider refused the email before it was sent, so it was not sent: it is a failed delivery, which you can retry on Sent mail once sending works." %}{% endif %}</p>
+<ul>
+<li>{% blocktranslate count count=preview.waiting trimmed %}{{ count }} email is waiting to be sent.{% plural %}{{ count }} emails are waiting to be sent.{% endblocktranslate %}</li>
+{% if preview.paused %}<li><strong>{% translate "Mail is also paused by an Administrator." %}</strong> {% translate "Clearing the halt does not resume it; use Pause and resume mail for that." %}</li>{% endif %}
+<li data-clear-unsettled="{{ preview.unsettled }}">{% if preview.unsettled %}{% blocktranslate count count=preview.unsettled trimmed %}{{ count }} email may have arrived and is not settled yet.{% plural %}{{ count }} emails may have arrived and are not settled yet.{% endblocktranslate %} <a href="{% url 'admin:deliveries' %}?state=delivery_unknown">{% translate "Settle them on Sent mail" %}</a>{% else %}{% translate "No email is waiting to be settled." %}{% endif %}</li>
+</ul>
+<p class="reserve-lines-wrap" role="status" data-live-stale-note="{% translate 'This changed since you looked; review it again.' %}"></p>
+<form id="clear-halt-check-form" method="post" action="{% url 'admin:system_health' %}#clear-halt" data-in-place="clear-check" data-in-place-message="{% translate 'Checking the mailbox again.' %}">{% csrf_token %}<input type="hidden" name="token" value="{{ preview.token }}"></form>
+<form id="clear-halt-confirm-form" method="post" action="{% url 'admin:system_health' %}#clear-halt" data-in-place="clear-confirm" data-in-place-message="{% translate 'Halt cleared.' %}">{% csrf_token %}<input type="hidden" name="token" value="{{ preview.token }}"></form>
+<div data-live-mirror-target="clear-halt-check-{{ preview.halt.halt_id }}" data-live-mirror-hold>{% include 'stewardship/system-health-clear-halt-check.html' %}</div>
+</div>{% endwith %}
+{% else %}{% if clear.cleared %}<p data-clear-done>{% translate "Halt cleared. Both mail senders start again within about 30 seconds (this tile shows it within about a minute) and send one email as a probe; if the fault is still there, sending halts again and this tile says so." %}</p>
+{% elif clear.refused == "busy" %}<p class="notice" data-clear-refused="changed">{% if clear.refusal_text %}{{ clear.refusal_text }}{% else %}{% translate "This changed since you looked; review it again." %}{% endif %} {% translate "Nothing was cleared." %}</p>
+{% elif clear.refused == "denied" %}<p class="notice notice-error" data-clear-refused="denied">{% translate "The server refused this, so nothing was cleared. System logs record why; ask the server operator to check the database grants." %}</p>
+{% elif clear.refused == "invalid" %}<p class="notice notice-error" data-clear-refused="invalid">{% if clear.refusal_text %}{{ clear.refusal_text }}{% else %}{% translate "That request could not be read. Nothing was cleared; review it again." %}{% endif %}</p>
+{% endif %}
+<div data-live-mirror-target="clear-halt-button" data-live-mirror-hold>{% include 'stewardship/system-health-clear-halt-button.html' %}</div>{% endif %}
+</section>{% endif %}</div>

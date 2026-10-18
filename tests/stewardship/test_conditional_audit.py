@@ -108,7 +108,9 @@ def test_the_weekly_report_in_progress_is_shown_unavailable():
         # their export were retired (#1157), and the packet moved from the
         # summary page to its own include (#1133).
         ("ministry-packet.html", "ministry-export-locked", 1, 1),
-        ("participation.html", "participation-export-locked", 2, 1),
+        # The Response dashboard's export button (#1537), and its unavailable
+        # stand-in without a chart, which then names both reasons.
+        ("response-dashboard.html", "participation-export-locked", 2, 1),
         ("information.html", "information-locked", 4, 1),
         # Save, Save and next, and (#1331) the bulk bar and both kinds of box.
         ("ministry-followup.html", "followup-locked", 6, 1),
@@ -150,18 +152,17 @@ def test_a_held_roster_tick_is_shown_unavailable_with_why(entered):
 
 
 def test_participation_exports_without_their_data_are_shown_unavailable():
-    """With no chart, or no data for a new export, each export button is
-    drawn disabled, named by the sentence that says why."""
-    text = (TEMPLATES / "participation.html").read_text()
-    for reason, label in [
-        ("participation-chart-export-unavailable", "Generate export"),
-        ("participation-exact-export-unavailable", "Queue export with the latest data"),
-    ]:
-        assert text.count(f'id="{reason}"') == 1
-        assert (
-            f'{{% button type="submit" enabled=False aria-describedby="{reason}" %}}'
-            f'{{% translate "{label}" %}}'
-        ) in text
+    """With no chart the Response dashboard's export button is drawn
+    disabled, named by the sentence that says why, and also by the locked
+    notice while other campaign work holds exports."""
+    text = (TEMPLATES / "response-dashboard.html").read_text()
+    reason = "participation-chart-export-unavailable"
+    assert text.count(f'id="{reason}"') == 1
+    assert (
+        '{% button type="submit" enabled=False aria-describedby=export_allowed'
+        f'|yesno:"{reason},{reason} participation-export-locked" %}}'
+        '{% translate "Generate export" %}'
+    ) in text
 
 
 def test_family_portal_message_error_is_shown_at_the_field():

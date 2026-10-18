@@ -77,10 +77,10 @@ CAMPAIGN = SimpleNamespace(
     active_configuration=SimpleNamespace(values={"modules": ["financial", "ministry"]}),
 )
 
-# A Participation-style line of links to other report pages (#1242).
+# A Response dashboard-style line of links to other report pages (#1242).
 LINKS = (
     "{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}"
-    '{% block content %}<h1>Participation</h1><p id="report-links">'
+    '{% block content %}<h1>Response dashboard</h1><p id="report-links">'
     '{% menu_link "information_queue" "Additional information" %} · '
     '{% menu_link "limitations_report" "Limitations" %} · '
     '{% menu_link "family_directory" "Active parishioner family directory" %}'
@@ -143,7 +143,7 @@ def components(context, admin):
         actor, True, CAMPAIGN, SimpleNamespace(mode="testing"), state.parishsoft_data
     )
     match = SimpleNamespace(
-        url_name="participation", namespace=admin_navigation.NAMESPACE, kwargs={}
+        url_name="response_dashboard", namespace=admin_navigation.NAMESPACE, kwargs={}
     )
     links_sections, links_trail = admin_navigation.build(match, empty)
     links = (

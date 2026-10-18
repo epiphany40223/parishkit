@@ -224,7 +224,7 @@ def test_collapsed_groups_are_remembered_and_reopening_forgets_them(
     sidebar = _sidebar(page)
     group = sidebar.locator('details[data-menu-group="mail"]')
     title = group.locator("summary")
-    outgoing = sidebar.get_by_role("link", name="Outgoing mail")
+    outgoing = sidebar.get_by_role("link", name="Sent mail")
     # Every group starts open, and loading the page stores nothing.
     expect(group).to_have_attribute("open", "")
     visible(outgoing)
@@ -239,14 +239,14 @@ def test_collapsed_groups_are_remembered_and_reopening_forgets_them(
     assert _expanded(page, MAIL_TITLE) is False
     eventually(page, "() => localStorage.getItem('pk-admin-menu-group:mail')", "closed")
     page.reload()
-    hidden(_sidebar(page).get_by_role("link", name="Outgoing mail"))
+    hidden(_sidebar(page).get_by_role("link", name="Sent mail"))
     # Only the group key and its state are stored.
     assert page.evaluate("Object.keys(localStorage)") == ["pk-admin-menu-group:mail"]
     _sidebar(page).locator('details[data-menu-group="mail"] > summary').click()
     visible(outgoing)
     eventually(page, "() => localStorage.length", 0)
     page.reload()
-    visible(_sidebar(page).get_by_role("link", name="Outgoing mail"))
+    visible(_sidebar(page).get_by_role("link", name="Sent mail"))
     assert not failures
 
 

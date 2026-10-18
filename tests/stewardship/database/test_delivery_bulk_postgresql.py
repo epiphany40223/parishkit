@@ -1,4 +1,4 @@
-"""Outgoing mail's bulk actions under the real web login and guards (#382 M4).
+"""Sent mail's bulk actions under the real web login and guards (#382 M4).
 
 Each bulk action selects by the rules each message's own page uses,
 previews an exact count, and resolves every message through the ordinary
@@ -85,9 +85,17 @@ def preview_unsent(browser, purpose="all"):
 
 
 def outgoing(browser, **values):
-    """Post one bulk form to Outgoing mail as the signed-in Administrator."""
+    """Post one bulk form to Sent mail as the signed-in Administrator."""
     with web_login():
         return post(browser, reverse("admin:deliveries"), values)
+
+
+def listed(browser, state):
+    """The ids Sent mail lists under Delivery ``state``, in its default mode."""
+    with web_login():
+        page = browser.get(reverse("admin:deliveries"), {"state": state})
+    assert page.status_code == 200
+    return {row["id"] for row in page.context["table"].rows}
 
 
 def bulk_events():
@@ -158,6 +166,9 @@ def test_confirm_all_not_sent_previews_then_skips_what_changed(family_test):  # 
     assert not DeliveryResolution.objects.filter(action="confirm_unsent").exists()
 
     second = uncertain_test(family_test)
+    # Needs attention (#1562) lists an uncertain email; on a Testing
+    # system the page shows Testing email by default.
+    assert second.pk in listed(browser, "needs_attention")
     preview = preview_unsent(browser).context["bulk_review"]
     assert preview["count"] == 1
     done = outgoing(browser, action="confirm", preview=preview["token"], note=NOTE)
@@ -178,6 +189,10 @@ def test_confirm_all_not_sent_previews_then_skips_what_changed(family_test):  # 
     assert AuditEvent.objects.filter(
         subject_id=resolution.pk, event_type="delivery_resolution_confirm_unsent"
     ).exists()
+    # Recorded as not sent, it is settled: Failed still lists it, but
+    # Needs attention no longer does (#1562).
+    assert second.pk in listed(browser, "permanent_failure")
+    assert second.pk not in listed(browser, "needs_attention")
     # Confirming the same preview again replays: nothing new is resolved.
     again = outgoing(browser, action="confirm", preview=preview["token"], note=NOTE)
     result = again.context["bulk_result"]
@@ -187,6 +202,18 @@ def test_confirm_all_not_sent_previews_then_skips_what_changed(family_test):  # 
     # Nothing qualifies any more.
     empty = preview_unsent(browser)
     assert empty.status_code == 409 and empty.context["bulk_errors"]
+    # A bulk form carries the applied Recipient, which is never in the
+    # address it posts to, so the answer's list keeps it (#1562).
+    kept = outgoing(
+        browser,
+        action="confirm",
+        preview=preview["token"],
+        note=NOTE,
+        recipient="nobody@example.org",
+    )
+    assert kept.status_code == 200
+    assert kept.context["recipient"] == "nobody@example.org"
+    assert kept.context["table"].rows == []
 
 
 def test_a_preview_belongs_to_its_administrator_and_expires(family_test, monkeypatch):  # noqa: F811

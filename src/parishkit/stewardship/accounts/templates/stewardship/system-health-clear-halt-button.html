@@ -1,0 +1,17 @@
+{% load i18n stewardship %}{% comment %}
+  Clear the halt's button (ADM-13 PR 4b), drawn only while a mail sender is
+  halted (``clear_halt``, a mail_halt_clear.ClearState, is None otherwise):
+  offered once the halt is recorded, and greyed with its reason in the
+  moment before it is (up to about 30 seconds after the halt). With no halt
+  (after a step's result, when the halt has since been cleared) one line
+  says so. While a sender still reports Halted with no halt current, the
+  line follows ``clear_halt.phase``: the clear just recorded (clearing), the
+  halt not recorded yet (unrecorded), or neither for too long (stuck: restart). Shared by the section's offer (system-health-clear-halt-offer.html),
+  the region's button after a step's result, and their copies in the polled
+  status region (template[data-live-mirror]); ``mirrored`` (the polled copy)
+  leaves the CSRF token empty for live-status-v1.js to fill.
+{% endcomment %}{% if clear_halt and clear_halt.halt %}<form method="post" action="{% url 'admin:system_health' %}#clear-halt" data-in-place="clear-preview" data-in-place-fallback="clear-confirm" data-in-place-message="{% translate 'Review clearing the halt.' %}"><input type="hidden" name="csrfmiddlewaretoken" value="{% if not mirrored %}{{ csrf_token }}{% endif %}"><input type="hidden" name="action" value="clear_preview">{% button type="submit" %}{% translate "Clear the halt" %}{% endbutton %}</form>
+{% elif clear_halt %}<p>{% button type="button" disabled aria-describedby="clear-halt-reason" %}{% translate "Clear the halt" %}{% endbutton %}</p>
+<p class="help" id="clear-halt-reason" data-clear-state="{{ clear_halt.phase }}">{% if clear_halt.phase == "clearing" %}{% translate "The halt was cleared; the mail senders start again within about 30 seconds, and this tile shows it within about a minute." %}{% elif clear_halt.phase == "stuck" %}{% translate "A mail sender reports Halted but no halt is recorded for it. If this lasts more than a minute, restart the mail sender on the server." %} <a href="{{ health.runbooks.mail_outage }}">{% translate "Mail-provider outage runbook" %}</a>{% else %}{% translate "The mail sender has not recorded this halt yet; it does within about 30 seconds." %}{% endif %}</p>
+{% else %}<p class="help" data-clear-state="none">{% translate "No mail sender is halted." %}</p>
+{% endif %}

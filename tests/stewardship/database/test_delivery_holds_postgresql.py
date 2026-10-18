@@ -1,4 +1,4 @@
-"""Outgoing mail's sending limit note under the real web login (#382 M3a).
+"""Sent mail's sending limit note under the real web login (#382 M3a).
 
 The note reads the mail consumers' service status records and the Family
 emails waiting on a longer retry backoff, through columns the web login
@@ -29,7 +29,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 
 def holds(now=None):
-    """Read the note's facts as the Outgoing mail page does (at ``now``)."""
+    """Read the note's facts as the Sent mail page does (at ``now``)."""
     with web_login():
         return read_sending_holds(now or database_now())
 

@@ -1,41 +1,75 @@
-{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}{# The response dashboard (#477): reports/response_dashboard.py builds the context. Data first; the explanation sits in the About panel at the end. #}
+{% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}{# The Response dashboard (#477, #1537): reports/workspace_views.py builds the context. Data first; the explanation sits in the About panel. #}
 {% block title %}{% translate "Response dashboard" %}{% endblock %}
-{% block head %}{% include 'stewardship/components/chart-scripts.html' %}{% endblock %}
+{% block head %}
+{% include 'stewardship/components/chart-scripts.html' %}
+<script src="{% static 'stewardship/report-v1.js' %}" defer></script>
+{% endblock %}
 {% block content %}
 <h1>{% translate "Response dashboard" %}</h1>
-{% aboutpage "response-dashboard" %}<p>{% translate "Each stage counts Families, once each, up to the moment shown as Counted at. Shares are compared with the Families invited; a Family can follow its link or submit without a delivered invitation, so a share can pass 100%." %}</p>
+{% aboutpage "response-dashboard" %}<p>{% translate "The Summary's Families by stage row counts each Family once per stage. Shares are compared with the Families invited; a Family can follow its link or submit without a delivered invitation, so a share can pass 100%." %}</p>
 <p>{% translate "A mail scanner that opens a Family's personal link counts as a link follow, so that stage includes such prefetches. A Family that submitted counts as having opened the form and progressed, since a submission passes every step; other progress is recorded from ParishKit 1.2.0 on." %}</p>
-<p>{% translate "The activity chart counts each Family the first time it followed its link, opened the form or submitted, in the campaign's time zone. The dashed lines mark when each invitation and reminder was scheduled." %}</p>{% endaboutpage %}
-<p><a href="{% url 'admin:participation' %}">{% translate "Participation" %}</a></p>
-{# The mode and grain binary choices (components/segmented-choice.html, #1535) refresh this region in place (ui-v1.js, a[data-in-place]); their real href, with this region's fragment, is the request the script makes. #}
-<div id="response-dashboard" data-in-place-region>
-<p>{{ campaign.active_configuration.name }} — {% if testing %}{% translate "Testing rehearsal" %}{% else %}{% translate "Production" %}{% endif %}</p>
-{% if can_test %}{% include "stewardship/components/segmented-choice.html" with choice_id="dashboard-mode" region_id="response-dashboard" label=_("Responses shown") first_key="mode-production" first_label=_("Production") first_href=production_url second_key="mode-testing" second_label=_("Testing rehearsal") second_href=testing_url chosen=testing|yesno:"mode-testing,mode-production" %}{% endif %}
+<p>{% translate "The statistics count the Families who are eligible right now and their latest answers; repeat submissions do not increase participation, and Testing responses are excluded. The daily chart is calculated separately in the background, so it can lag a little behind the statistics; when it is being updated, the latest complete chart is shown." %}</p>
+{% if 'financial' in campaign.active_configuration.values.modules %}<p>{% translate "Last year's pledges (all Families) adds up every ParishSoft pledge in the comparison period and funds, for every Family, whatever its status today." %}</p>{% endif %}
+<p>{% translate "Historical as of day counts, for each day, every Family that had become eligible by then, including Families that later became inactive. Current population uses today's eligible Families for every day." %}</p>{% endaboutpage %}
+{# Each link is greyed out with the menu's reason while its page is unavailable (rule 6, #1242). #}
+<p>{% menu_link "information_queue" _("Additional information") %}{% if 'financial' in campaign.active_configuration.values.modules %} · {% menu_link "financial_report" _("Financial stewardship") %}{% endif %} · {% menu_link "limitations_report" _("Limitations") %} · {% menu_link "family_directory" _("Active parishioner family directory") %}</p>
+{# One in-place region (ui-v1.js, #519): the Production / Testing rehearsal and Chart population binary choices (components/segmented-choice.html, #1535) and the daily table's controls each redraw all of it, so every link carries the view now shown. The exports hold campaign dates, never exact action times, so the page asks for no time zone (#1127): report-v1.js puts this browser's zone in the address (in place, on first load) and in this region's choice links; data-report-zone is the zone the page was drawn in, and the exports' frame times (Source as of, Requested) use it. #}
+<div id="response-dashboard" data-in-place-region data-report-options data-report-zone="{{ query.timezone }}">
+{% if can_test %}{% include "stewardship/components/segmented-choice.html" with choice_id="dashboard-mode" region_id="response-dashboard" label=_("Responses shown") first_key="mode-production" first_label=_("Production") first_href=mode_links.production second_key="mode-testing" second_label=_("Testing rehearsal") second_href=mode_links.testing chosen=testing|yesno:"mode-testing,mode-production" %}{% endif %}
 {% if testing and metrics %}<p class="notice">{% translate "Testing rehearsal: responses and test emails from the campaign's current rehearsal only. They are never counted in Production." %}</p>{% endif %}
 {% if metrics %}
-<p>{% translate "Counted at" %} <time datetime="{{ metrics.as_of|instant }}" data-local-instant>{{ metrics.as_of|instant }}</time></p>
-<section class="panel" aria-labelledby="stages-heading">
-<h2 id="stages-heading">{% translate "Families by stage" %}</h2>
+{# One Summary panel of two stat-tile rows (#1540; Administrator, 2026-10-18, #1537): the active population, read in Production only, then Families by stage. Two rows in one panel, so each is named by its own label (ui-conventions "Stat tiles"). The tiles give every funnel count, share and bar, so the page draws no funnel chart, and the responses the old "Responses and email reach" chart drew are the Submitted tile. #}
+<section class="panel" id="response-summary" aria-labelledby="summary-heading">
+<h2 id="summary-heading">{% translate "Summary" %}</h2>
+{% if statistics %}{% if campaign.state == 'archived' %}<p class="notice">{% translate "Archived campaign: its Family information is kept as it was in the last ParishSoft data it used, not from a later campaign." %}</p>{% endif %}
+{# Without an observation every tile reads "—" with its reason, never zero. #}
+{% include "stewardship/components/stat-tiles.html" with tiles=tiles tiles_label=_("Active population") %}{% endif %}
 {% if not invited %}<p>{% translate "No invitations have been delivered yet. The counts below fill in as the first invitations go out." %}</p>{% endif %}
-{# One stat tile per stage (#1540): response_dashboard.tiles() builds them, each bar its share of Invited (#720). #}{% include "stewardship/components/stat-tiles.html" with tiles=tiles tiles_labelledby="stages-heading" %}
-<h3>{% translate "Also counted" %}</h3>
-<dl>{% for label, count in figures %}<dt>{{ label }}</dt><dd>{{ count|number }}</dd>{% endfor %}</dl>
-</section>
-<section class="panel" aria-labelledby="lists-heading">
-<h2 id="lists-heading">{% translate "Lists of Families" %}</h2>
-<ul>{% for item in lists %}<li>{# Each list opens the directory, greyed out while the menu greys it (#1242). #}{% with n=forloop.counter|stringformat:"s" %}{% menu_link "family_directory" item.title href=item.url control_id="family-list-"|add:n %}{% endwith %}{% if item.count is not None %}: {{ item.count|number }}{% endif %}{% if item.description %} <span class="help">({{ item.description }})</span>{% endif %}</li>{% endfor %}</ul>
-</section>
-<section class="panel" aria-labelledby="funnel-heading">
-<h2 id="funnel-heading">{{ charts.0.title }}</h2>
-{% include 'stewardship/components/chart.html' with chart=charts.0 %}
-</section>
-<section class="panel" aria-labelledby="activity-heading">
-<h2 id="activity-heading">{{ charts.1.title }}</h2>
-{% include "stewardship/components/segmented-choice.html" with choice_id="dashboard-grain" region_id="response-dashboard" label=_("Activity grouped by") first_key="grain-hour" first_label=_("By hour") first_href=hour_url second_key="grain-day" second_label=_("By day") second_href=day_url chosen="grain-"|add:metrics.grain %}
-{% include 'stewardship/components/chart.html' with chart=charts.1 %}
+{# One stat tile per stage: response_dashboard.tiles() builds them, each bar its share of Invited (#720). #}
+{% include "stewardship/components/stat-tiles.html" with tiles=stage_tiles tiles_label=_("Families by stage") %}
+{# The page's one time line (#1537): the moment the statistics were counted, in this browser's time. #}
+{% if statistics %}<p>{% translate "Data as of" %} <time datetime="{{ statistics.observed_at|date:'c' }}" data-local-instant>{{ statistics.observed_at|date:'c' }}</time></p>{% endif %}
 </section>
 {% else %}
 <section class="panel empty-state"><p>{% translate "This campaign has no Testing rehearsal now, so there are no Testing responses to show. Choose Production to see live responses." %}</p></section>
+{% endif %}
+{% if testing %}
+{# The statistics, the daily chart and the export count Production responses only, so a Testing view leaves them out and says why (conditional fields, #1537). #}
+<p id="production-only">{% translate "Population statistics, daily participation and the export count Production responses only. Choose Production to see them." %}</p>
+{% elif participation_unavailable %}
+{# The statistics or daily facts could not be read from their inputs: the Families by stage row above still shows (#1537), and no zero is assumed. #}
+{% if participation_cause == "statistics" %}<p id="production-unavailable">{% translate "Population statistics, daily participation and the export need ParishSoft data, and none is available yet; no zero values have been assumed. They appear after the first ParishSoft update completes." %}</p>
+{% else %}<p id="production-unavailable">{% translate "Population statistics, daily participation and the export are unavailable right now; no zero values have been assumed. Refresh this page in a few minutes." %}</p>{% endif %}
+{% else %}
+<section class="panel" id="participation-chart">
+<h2>{% translate "Daily participation" %} — {% if query.scope == 'historical' %}{% translate "Historical as of day" %}{% else %}{% translate "Current population" %}{% endif %}</h2>
+{# The Chart population changes only the daily chart, its table and the export, so it sits in this panel, under its heading (#1534). #}
+{% include "stewardship/components/segmented-choice.html" with choice_id="participation-scope" region_id="response-dashboard" label=_("Chart population") first_key="scope-historical" first_label=_("Historical as of day") first_href=scope_links.historical second_key="scope-current" second_label=_("Current population") second_href=scope_links.current chosen="scope-"|add:query.scope %}
+{% if selection.updating %}<p class="notice" role="status">{% translate "Updating — the latest complete chart is shown below when available. It may not yet include the newest ParishSoft data or responses counted above. Refresh this page to check progress." %}</p>{% endif %}
+{% if chart %}
+{% if chart.days %}
+{# The daily chart drawn in the browser (#720): stacked panels on one date axis, each date's figures in its tooltip. The daily table below is its exact values, so the chart adds no Exact values table of its own and does not show its summary, which would repeat the table (it stays the view's description). The exports and the daily email keep the static drawing. #}
+{% with chart=daily_chart %}{% include 'stewardship/components/chart.html' with no_table=True %}{% endwith %}
+<div id="{{ table.anchor }}" data-table-region>
+{% translate "Daily table pages" as navigator_label %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
+<div class="table-scroll" tabindex="0" role="region" aria-labelledby="daily-table-caption"><table class="data-table"><caption id="daily-table-caption">{{ chart.scope_label }} — {% translate "exact daily values" %}</caption><thead><tr>{% for key, heading in columns %}{% sort_heading table key heading %}{% endfor %}</tr></thead><tbody>{% for day, row in table.rows %}<tr>{% for value in row %}<td>{{ value }}</td>{% endfor %}</tr>{% empty %}<tr><td colspan="4">{% translate "No campaign dates to show." %}</td></tr>{% endfor %}</tbody></table></div>
+{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
+</div>
+{% else %}<p>{% translate "There are no campaign dates to display yet." %}</p>{% endif %}
+{% else %}<p>{% translate "Participation chart unavailable. No complete report is ready for this population yet; no zero values have been assumed. The chart is calculated in the background; refresh this page in a few minutes." %}</p>{% endif %}
+</section>
+{# A small export panel (#1537): one sentence, the format menu (XLSX first and chosen, #1190) and the button. Without a chart, or while other campaign work holds exports, the button is still drawn, unavailable and named by the sentence that says why (#563); the server refuses a forged request all the same. #}
+<section class="panel" id="participation-export" aria-labelledby="participation-export-heading"><h2 id="participation-export-heading">{% translate "Export" %}</h2>
+<p>{% translate "Exports the daily participation data on this page." %}</p>
+{% if not export_allowed %}<p class="notice" id="participation-export-locked">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so new exports are unavailable until it finishes or is cancelled; going live can take days. Files that are ready can still be downloaded." %}</p>{% endif %}
+{% if chart %}
+<form method="post" action="{% url 'admin:report_export_create' %}">{% csrf_token %}
+<input type="hidden" name="fact_set_id" value="{{ chart.fact_set_id }}"><input type="hidden" name="browser_timezone" value="{{ query.timezone }}"><input type="hidden" name="request_key" value="{{ export_key }}">
+<label for="export-format">{% translate "Export format" %}</label><select id="export-format" name="format">{% export_format_options "csv" "xlsx" "pdf" %}</select>
+{% button type="submit" enabled=export_allowed aria-describedby=export_allowed|yesno:",participation-export-locked" %}{% translate "Generate export" %}{% endbutton %}</form>
+{% else %}<p id="participation-chart-export-unavailable">{% translate "Exports of the chart become available once a complete chart has been calculated." %}</p>
+{% button type="submit" enabled=False aria-describedby=export_allowed|yesno:"participation-chart-export-unavailable,participation-chart-export-unavailable participation-export-locked" %}{% translate "Generate export" %}{% endbutton %}{% endif %}
+</section>
 {% endif %}
 </div>
 {% endblock %}

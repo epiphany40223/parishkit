@@ -820,11 +820,14 @@ def delivery_bulk(
 
     def _observe(result):
         """React to one outcome as the single path does (circuit and limits)."""
-        if circuit.observe(result.health):
+        if circuit.observe(
+            result.health, uncertain=result.status is FamilyDeliveryStatus.UNKNOWN
+        ):
             if circuit.stopped:
                 LOG.critical(
                     "Family mail provider refused this configuration; further "
-                    "sending is stopped until the mail worker restarts."
+                    "sending is stopped until an Administrator clears the halt "
+                    "or the mail worker restarts."
                 )
             else:
                 LOG.log(

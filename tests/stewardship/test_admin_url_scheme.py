@@ -254,8 +254,8 @@ SLASHLESS_EXPECTED = {
     "/admin/mail/controls": "/admin/mail/controls/",
     "/admin/mail/family-progress": "/admin/mail/family-progress/",
     "/admin/mail/family-history": "/admin/mail/family-history/",
-    "/admin/mail/outgoing": "/admin/mail/outgoing/",
-    f"/admin/mail/outgoing/{T}": f"/admin/mail/outgoing/{T}/",
+    "/admin/mail/sent": "/admin/mail/sent/",
+    f"/admin/mail/sent/{T}": f"/admin/mail/sent/{T}/",
     "/admin/mail/refusals": "/admin/mail/refusals/",
     f"/admin/mail/refusals/{T}": f"/admin/mail/refusals/{T}/",
     "/admin/mail/family-portal": "/admin/mail/family-portal/",
@@ -271,7 +271,6 @@ SLASHLESS_EXPECTED = {
     # Responses and reports pages without their trailing slash (NAV-11).
     "/admin/reports": "/admin/reports/",
     "/admin/reports/responses": "/admin/reports/responses/",
-    "/admin/reports/participation": "/admin/reports/participation/",
     "/admin/reports/comparison": "/admin/reports/comparison/",
     "/admin/reports/financial": "/admin/reports/financial/",
     "/admin/reports/limitations": "/admin/reports/limitations/",
@@ -319,6 +318,10 @@ OLD_ADDRESSES = (
     f"/admin/configuration/requests/{T}",
     # Mail and Family portal (NAV-8).
     "/admin/deliveries",
+    # Outgoing mail, renamed Sent mail (#1562), with its email pages.
+    "/admin/mail/outgoing/",
+    f"/admin/mail/outgoing/{T}/",
+    f"/admin/mail/outgoing/{T}/resolution/",
     f"/admin/deliveries/{T}/resolve",
     "/admin/deliveries/family-sends",
     "/admin/family-portal",
@@ -335,6 +338,12 @@ OLD_ADDRESSES = (
     f"/admin/reports/{T}/participation/export",
     f"/admin/reports/{T}/families/",
     f"/admin/reports/{T}/families/{T}/",
+    # Participation, merged into the Response dashboard (#1537), and its
+    # export actions.
+    "/admin/reports/participation/",
+    "/admin/reports/participation",
+    "/admin/reports/participation/exports/",
+    "/admin/reports/participation/exact-exports/",
     f"/admin/reports/{T}/ministries/follow-up/{T}/update",
     # Campaign images' separate review pages: reviews happen on the page
     # itself now (#750).
@@ -557,9 +566,9 @@ def test_old_digest_addresses_are_gone():
 def test_old_response_list_addresses_are_gone():
     """The response list pages are 404, not redirected (#933, #864).
 
-    The dashboard's "Lists of Families" links open the family directory's
-    presets instead; the old addresses, with or without their trailing
-    slash or download suffix, resolve to nothing.
+    The family directory's presets replace them (the dashboard's former
+    "Lists of Families" panel is gone, #1537); the old addresses, with or
+    without their trailing slash or download suffix, resolve to nothing.
     """
     for key in ("submitted", "started", "not-opened", "more-than-once", "data-quality"):
         for old in (
@@ -571,22 +580,27 @@ def test_old_response_list_addresses_are_gone():
                 resolve(old)
 
 
-def test_new_digest_emails_link_their_emailed_report_pages():
-    """New emails link the Emailed reports addresses, which open the reports."""
+def test_new_digest_emails_link_their_report_pages():
+    """The weekly email links its Emailed reports address; the daily the dashboard.
+
+    The daily email links the Response dashboard instead of its own saved
+    copy (#1532), which stays reachable from Emailed reports.
+    """
     from types import SimpleNamespace
 
+    from parishkit.stewardship.reports.daily_digest import response_dashboard_url
     from parishkit.stewardship.reports.links import report_url
 
     sent = SimpleNamespace(snapshot_id=TASK)
-    for document, name in (
-        (DailyDigestDocument, "daily_digest_snapshot"),
-        (WeeklyDigestDocument, "weekly_digest_snapshot"),
-    ):
-        path = document.report_path.fget(sent)
-        assert resolve(path).url_name == name, path
-        assert path == reverse(f"admin:{name}", args=[TASK])
-        assert path.startswith("/admin/reports/emailed/")
-        assert report_url("https://parish.example", path).endswith(path)
+    path = WeeklyDigestDocument.report_path.fget(sent)
+    assert resolve(path).url_name == "weekly_digest_snapshot", path
+    assert path == reverse("admin:weekly_digest_snapshot", args=[TASK])
+    assert path.startswith("/admin/reports/emailed/")
+    assert report_url("https://parish.example", path).endswith(path)
+    assert not hasattr(DailyDigestDocument, "report_path")
+    url = response_dashboard_url("https://parish.example", "production")
+    assert url == "https://parish.example/admin/reports/responses/"
+    assert resolve("/admin/reports/responses/").url_name == "response_dashboard"
 
 
 def test_every_export_shares_one_page():

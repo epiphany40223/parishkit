@@ -1067,14 +1067,22 @@ def _request_key(args, context):
 
 
 def delivery_list(args, preamble, runtime, context):
-    """One page of Outgoing mail, filtered and sorted as the page (PR 9)."""
+    """One page of Sent mail, filtered and sorted as the page (PR 9, #1562)."""
     from .admin_operations import read_deliveries
     from .admin_reads import query
+    from .web.dates import parish_zone
 
     parameters = query(
         state=args.state,
         send=args.send,
-        q=args.search,
+        recipient=args.recipient,
+        purpose=args.purpose,
+        mode=args.mode,
+        start=args.start,
+        end=args.end,
+        # The days are in --zone, else the parish's zone: a host command has
+        # no browser (#1562). Sent only with a day, as the page's form.
+        zone=(args.zone or parish_zone()) if args.start or args.end else None,
         page=args.page,
         size=args.size,
         sort=args.sort,
@@ -2041,6 +2049,43 @@ def system_refresh_accept(args, preamble, runtime, context):
     return refresh_accept(context["caller"], runtime, token=token, context=context)
 
 
+def system_mail_clear_preview(args, preamble, runtime, context):
+    """Review clearing the halted mail sender, as System health's Clear the
+    halt preview (ADM-13 PR 4a).
+
+    Asks mail dispatch for a mailbox check when none is live and none passed
+    recently, as opening the page's preview does, and waits for it (at most
+    two minutes, or not at all with ``--no-wait``). Prints the halt, the
+    waiting and unsettled emails, the check and ``preview.token``, the
+    signed binding ``system mail-clear`` takes, while the halt can be
+    cleared. Records no audit event, as the page's preview records none.
+    """
+    from .mail_halt_clear import mail_clear_preview
+
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime)
+    return mail_clear_preview(context["caller"], runtime, wait=not args.no_wait)
+
+
+def system_mail_clear(args, preamble, runtime, context):
+    """Clear the halted mail sender, as System health's Clear the halt
+    confirmation does (ADM-13 PR 4a).
+
+    It always prompts with what clearing does before any transaction, after
+    checking the token. The token's key names the clear signal, so a
+    repeat returns the first. No recent sign-in is needed (#1547).
+    """
+    from .admin_changes import TOKEN_LIMIT
+    from .mail_halt_clear import clear_prompt_lines, mail_clear
+
+    # The role first (#1341): denied before any input, lookup or prompt.
+    _role_first(context, runtime)
+
+    token = _input(args.token, context, TOKEN_LIMIT)
+    confirm(context, clear_prompt_lines(runtime, token, context["caller"]))
+    return mail_clear(context["caller"], runtime, token=token, context=context)
+
+
 def system_debug_allow(args, preamble, runtime, context):
     """Allow debug logging again, as System health's button does in Testing
     (ADM-13 PR 6c).
@@ -2359,7 +2404,7 @@ def export_postal(args, preamble, runtime, context):
 
 
 def export_exact_create(args, preamble, runtime, context):
-    """Request an exact daily export, as the page's form does (PR 8h)."""
+    """Request an exact daily export of the latest data (PR 8h)."""
     from .admin_exact_exports import create_exact
 
     return create_exact(
@@ -2483,7 +2528,7 @@ def report_list(args, preamble, runtime, context):
 
 
 def report_participation(args, preamble, runtime, context):
-    """The Participation page's statistics and daily table (PR 8c)."""
+    """The Response dashboard's statistics and daily table (PR 8c)."""
     from .admin_report_reads import read_participation
 
     return read_participation(context["caller"], runtime, scope=args.scope)
@@ -3160,11 +3205,14 @@ def _task_retry_options(parser):
     _request_key_option(parser)
 
 
-# Outgoing mail's state filter. Spelled out because the parser is built
+# Sent mail's state filter. Spelled out because the parser is built
 # before Django is set up, when ``jobs.delivery_metadata`` cannot be
 # imported; a test keeps it equal to ``delivery_metadata.STATES``.
 DELIVERY_STATES = (
     "all",
+    "needs_attention",
+    "not_delivered",
+    "still_sending",
     "delivery_unknown",
     "permanent_failure",
     "pending",
@@ -3172,6 +3220,19 @@ DELIVERY_STATES = (
     "submitting",
     "delivered",
     "cancelled",
+)
+# Sent mail's Purpose filter, spelled out for the same reason; a test keeps
+# it equal to ``delivery_metadata.PURPOSE_CHOICES``.
+DELIVERY_PURPOSES = (
+    "all",
+    "initial",
+    "reminder",
+    "receipt",
+    "family_test",
+    "daily_digest",
+    "weekly_digest",
+    "operational",
+    "security_event",
 )
 # The resolutions ``delivery resolve`` offers (``admin_operations``); a test
 # keeps them equal.
@@ -3230,6 +3291,26 @@ def _refresh_accept_options(parser):
         "--token",
         required=True,
         help="preview.token from system refresh-accept-preview, or - for "
+        "standard input (then answer the prompt with --yes)",
+    )
+
+
+def _mail_clear_preview_options(parser):
+    """Options of ``system mail-clear-preview``: whether to wait for the
+    mailbox check."""
+    parser.add_argument(
+        "--no-wait",
+        action="store_true",
+        help="print the preview at once, without waiting for the mailbox check",
+    )
+
+
+def _mail_clear_options(parser):
+    """Options of ``system mail-clear``: the preview's token."""
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from system mail-clear-preview, or - for "
         "standard input (then answer the prompt with --yes)",
     )
 
@@ -3714,13 +3795,33 @@ def _files_rename_options(parser):
 
 
 def _delivery_list_options(parser):
-    """Options of ``delivery list``: Outgoing mail's filters."""
+    """Options of ``delivery list``: Sent mail's filters (#1562)."""
     parser.add_argument("--state", choices=DELIVERY_STATES, help="default all")
+    parser.add_argument("--purpose", choices=DELIVERY_PURPOSES, help="default all")
+    parser.add_argument(
+        "--mode", choices=("production", "testing"), help="default both modes"
+    )
+    parser.add_argument(
+        "--from",
+        dest="start",
+        metavar="YYYY-MM-DD",
+        help="the first day listed (by when each email last changed)",
+    )
+    parser.add_argument(
+        "--to",
+        dest="end",
+        metavar="YYYY-MM-DD",
+        help="the last day listed, whole",
+    )
+    parser.add_argument(
+        "--zone", help="the time zone of --from and --to; default the parish's"
+    )
     parser.add_argument(
         "--send", help="one Family email send (send history's send value)"
     )
     parser.add_argument(
-        "--search", help="an exact Family DUID or delivery ID, as the page's search"
+        "--recipient",
+        help="a Family DUID, an email address or a delivery ID, as the page's",
     )
     _page_options(parser)
 
@@ -4681,6 +4782,7 @@ def _read_specs():
         TaskList,
         TaskShow,
     )
+    from .mail_halt_clear import MailClear, MailClearPreview
     from .system_health import (
         BackupNow,
         DebugAllow,
@@ -4855,6 +4957,33 @@ def _read_specs():
             fresh_gated=True,
             prompts=True,
         ),
+        # Clear the halt (ADM-13 PR 4a): the page's preview, which asks
+        # for a mailbox check and records no audit event, then its
+        # confirmation with the preview's token, prompting. Neither needs a
+        # recent sign-in (#1547), so neither is fresh-gated.
+        CommandSpec(
+            "system mail-clear-preview",
+            "Review clearing a halted mail sender, after a mailbox check, as "
+            "System health does.",
+            system_mail_clear_preview,
+            "full",
+            False,
+            MailClearPreview.field_names(),
+            3,
+            options=(_mail_clear_preview_options,),
+            audit_event=None,
+        ),
+        CommandSpec(
+            "system mail-clear",
+            "Clear a reviewed halted mail sender, as System health does.",
+            system_mail_clear,
+            "full",
+            True,
+            MailClear.field_names(),
+            3,
+            options=(_mail_clear_options,),
+            prompts=True,
+        ),
         CommandSpec(
             "go-live progress",
             "Show the Production activation page.",
@@ -4957,7 +5086,7 @@ def _operation_specs():
         ),
         CommandSpec(
             "delivery list",
-            "List Outgoing mail, without recipients.",
+            "List Sent mail, without recipients.",
             delivery_list,
             "read_only",
             False,
@@ -6100,7 +6229,7 @@ def _report_specs():
         # The exact daily exports (PR 8h, ``admin_exact_exports``).
         CommandSpec(
             "export exact create",
-            "Request an exact daily export, as the Participation page does.",
+            "Request an exact daily export of the latest data.",
             export_exact_create,
             "full",
             True,
@@ -6216,7 +6345,7 @@ def _report_specs():
         ),
         CommandSpec(
             "report participation",
-            "Show the Participation report's statistics and daily counts.",
+            "Show the Response dashboard's statistics and daily counts.",
             report_participation,
             "read_only",
             False,

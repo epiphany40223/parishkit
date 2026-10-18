@@ -248,9 +248,9 @@ def test_native_page_and_downloads(response_service, google, settings):
         # The re-posted forms carry the Show choice.
         response, body = search(browser, route, {"members_sort": "-latest"})
         assert response.status_code == 200 and b'name="show" value="any"' in body
-        _, body = get(browser, reverse("admin:participation"))
+        _, body = get(browser, reverse("admin:response_dashboard"))
         assert route.encode() in body
-        # The campaign reports page links the response dashboard too (#477).
+        # The dashboard's own choices name its address (#477, #1537).
         assert route.replace("limitations", "responses").encode() in body
         # The old address is gone, with no redirect (no legacy Admin URLs).
         assert browser.get("/admin/reports/talents/").status_code == 404

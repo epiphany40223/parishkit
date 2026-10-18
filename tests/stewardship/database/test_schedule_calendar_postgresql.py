@@ -1,10 +1,12 @@
-"""The read-only Campaign calendar against the real configuration (#469).
+"""The Campaign calendar against the real configuration (#469, #1521).
 
 The draft's Initial invitation (October 1) and reminder (October 25) come
 from the New and Edit scheduled email tests' setup; the calendar lists them
-with the same names, statuses and Edit pages as the scheduled emails list.
+with the same names, statuses and Edit pages as the scheduled emails list,
+and its Add on a day opens New scheduled email with that send date.
 """
 
+import re
 from datetime import timedelta
 from html import unescape
 from types import SimpleNamespace
@@ -12,14 +14,17 @@ from uuid import uuid4
 
 import pytest
 
-from parishkit.stewardship.accounts import schedule_calendar_views
+from parishkit.stewardship.accounts import campaign_wizard, schedule_calendar_views
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
+from parishkit.stewardship.campaigns.models import ScheduleDefinition
 
 from ..policy_factory import address
 from .auth_builders import signed_in
 from .campaign_builders import change
 from .test_admin_navigation_postgresql import flow_steps
-from .test_schedule_entry_postgresql import LIST, definition
+from .test_campaign_views_postgresql import apply, post
+from .test_parish_views_postgresql import token
+from .test_schedule_entry_postgresql import LIST, NEW, definition, entry
 from .test_schedule_entry_postgresql import setup as draft_with_schedules
 from .test_schedule_views_postgresql import pending
 
@@ -116,3 +121,97 @@ def test_an_admin_without_configure_is_refused(auth_service, google, role):
     response = browser.get(CALENDAR)
     assert response.status_code == 403
     assert "data-calendar-send" not in response.content.decode()
+
+
+def test_add_on_a_day_opens_new_with_that_date_and_returns_here(
+    auth_service, google, monkeypatch
+):
+    """The calendar's Add (#1521) is New with the day filled in; Apply comes back.
+
+    The day is the only thing filled in, so the review is New's: a reminder
+    added from it is reviewed and applied exactly as from the list, and the
+    calendar keeps the reserved status line the dialog ends on.
+
+    Outside the campaign wizard (``shown`` says so here, as a live campaign
+    would): inside it New saves directly, with no Cancel or review dialog
+    of its own (#1404 PR 4b).
+    """
+    monkeypatch.setattr(campaign_wizard, "shown", lambda *_, **__: False)
+    store = auth_service.store
+    _, emails = draft_with_schedules(store)
+    browser, _ = signed_in()
+    calendar = unescape(browser.get(CALENDAR).content.decode())
+    assert f'data-add-url="{NEW}"' in calendar
+    assert 'data-add-name="Add an email on {date}"' in calendar
+    assert re.search(
+        r'<p class="review-outcome" id="schedules-outcome" role="status" '
+        r'tabindex="-1" data-review-outcome></p>',
+        calendar,
+    )
+    response = browser.get(f"{NEW}?date=2054-10-12")
+    assert response.status_code == 200
+    page = unescape(response.content.decode())
+    # Drawn as a reminder on that day (the page script would clear a date
+    # with no mail type).
+    assert re.search(
+        r'<input type="date" name="schedule-date" value="2054-10-12"', page
+    )
+    assert '<option value="reminder" selected>' in page
+    # Cancel and the dialog's return are the calendar; Apply still confirms
+    # on the list, and the page posts to its own path.
+    assert f'<a href="{CALENDAR}">Cancel</a>' in page
+    dialog = page[page.index('<dialog id="schedule-review"') :]
+    assert f'data-review-return="{CALENDAR}"' in dialog
+    assert 'data-review-outcome="schedules-outcome"' in dialog
+    assert f'<form method="post" action="{LIST}" data-review-apply>' in dialog
+    assert f'action="{NEW}" id="schedule-entry-form"' in page
+    # Plain New is unchanged: blank, back to the list.
+    plain = unescape(browser.get(NEW).content.decode())
+    assert 'name="schedule-date" value=' not in plain
+    assert f'<a href="{LIST}">Cancel</a>' in plain
+    review = post(
+        browser,
+        NEW,
+        entry(
+            store,
+            kind="reminder",
+            date="2054-10-12",
+            time="9am",
+            template_version=emails["reminder"]["id"],
+        ),
+    )
+    assert review.status_code == 200, review.content
+    apply(store, post(browser, LIST, {"action": "confirm", "preview": token(review)}))
+    assert ScheduleDefinition.objects.filter(
+        kind="reminder",
+        current_revision__isnull=False,
+        current_revision__values__date="2054-10-12",
+    ).exists()
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "date=2054-13-01",
+        "date=20541012",
+        "date=",
+        "date=2054-10-12&date=2054-10-13",
+        "date=2054-10-12&sort=when",
+    ],
+)
+def test_new_refuses_an_add_day_that_is_not_one_date(auth_service, google, query):
+    """Only one ISO day is taken; anything else is an unknown address."""
+    draft_with_schedules(auth_service.store)
+    browser, _ = signed_in()
+    before = ConfigurationChangeRequest.objects.count()
+    assert browser.get(f"{NEW}?{query}").status_code == 400
+    assert ConfigurationChangeRequest.objects.count() == before
+
+
+def test_edit_takes_no_add_day(auth_service, google):
+    """Edit's date is the saved schedule's; ?date= is refused there."""
+    draft_with_schedules(auth_service.store)
+    browser, _ = signed_in()
+    reminder = definition("reminder")
+    path = f"/admin/campaign/schedules/{reminder.pk}/"
+    assert browser.get(f"{path}?date=2054-10-12").status_code == 400

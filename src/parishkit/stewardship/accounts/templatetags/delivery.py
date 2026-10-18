@@ -18,6 +18,12 @@ LABELS = STATE_LABELS | {
     "weekly_digest": _("Weekly Administrator report"),
     "receipt": _("Submission receipt"),
     "family_test": _("Selected-Family test"),
+    "operational": _("Operational notice"),
+    "security_event": _("Security notice"),
+    # Sent mail's grouped Delivery choices (#1562, STATE_GROUPS).
+    "needs_attention": _("Needs attention"),
+    "not_delivered": _("Not delivered"),
+    "still_sending": _("Still sending"),
     "production": _("Production"),
     "testing": _("Testing"),
     "note": _("Evidence note"),

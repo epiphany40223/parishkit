@@ -1425,7 +1425,7 @@ expected-redirect table in
 golden files, and the updated Parish data and change suites.
 ADM-12.11 (NAV-8) moves the Mail and Family portal pages under `/admin/mail/`
 (Pause and resume mail at `controls/`, Family email progress and its status
-fragment, Family email history, Outgoing mail and one message with its
+fragment, Family email history, Sent mail and one message with its
 `resolution/` action, Refused addresses and one address with its
 `clearance/` action, Family portal availability and Families on the form
 now), each old address and no-slash form redirecting. Pause and resume
@@ -1601,7 +1601,7 @@ Specification: [System health](../../specs/stewardship/admin-portal/spec.md#syst
 - [x] ADM-13.01 — PR 1: add service status records and record every drop count with a refused refresh (migration).
 - [x] ADM-13.02 — PR 2: add the read-only System health page, with its read command or its pending exemption.
 - [x] ADM-13.03 — PR 3: add Take a backup now through a durable request and request mode (migration), with its command or its pending exemption.
-- [ ] ADM-13.04 — PR 4: add Clear the halt with halt identities, the mailbox check and the clear signal (migration), with its commands or their pending exemption.
+- [x] ADM-13.04 — PR 4: add Clear the halt with halt identities, the mailbox check and the clear signal (migration), with its commands or their pending exemption. It lands as ADM-13.16 (PR 4a) and ADM-13.17 (PR 4b).
 - [x] ADM-13.05 — PR 5: add Accept this change once, bound to every recorded count, with example Families (migration), with its commands or their pending exemption.
 - [x] ADM-13.06 — PR 6: add the debug-off switch, its in-process override, its host clear command and Allow debug logging again (Testing only, refused in Production) (migration), with its command or its pending exemption.
 - [x] ADM-13.07 — specify the System health dashboard (#1214): the overall status line, the tiles, the problem registry, opening and closing tiles, Home and the critical-problems banner, and the delivery slices.
@@ -1613,6 +1613,8 @@ Specification: [System health](../../specs/stewardship/admin-portal/spec.md#syst
 - [x] ADM-13.13 — dashboard slice 5: the Backups and Debug logging tiles: their Working summaries in a fixed order, the Backups page findings as Warning items of the tile's problems, and panels that repeat none of their tiles' problems.
 - [x] ADM-13.14 — dashboard slice 6: the page-load and services tiles: their summaries and states chosen in one place, each page-load finding as its tile's problem item with its link drawn only while relevant, a Version panel that repeats none of its problems, and Accept this change once's step-up notice only while the sign-in is stale.
 - [x] ADM-13.15 — dashboard slice 7: Home and the critical-problems banner.
+- [x] ADM-13.16 — PR 4a: the halt identities in the marker, the halt record, the clear signal and the mailbox check request with their guards and grants (frozen migration 0115), the consumers recording halts and reading the signal, the mailbox check in mail-dispatch, `mail_halt_cleared`, and `system mail-clear-preview` and `system mail-clear`.
+- [x] ADM-13.17 — PR 4b: the Clear the halt button in the Mail tile, with its preview, the in-place mailbox check and the critical-problems banner's acknowledgement of the halt's `mail_provider_failed` entries.
 
 Evidence: In progress. ADM-13.00 is this docs-only change: the Admin portal
 specification's System health section (panels, actions, service status
@@ -1773,3 +1775,27 @@ the operator's count-only clear with `stewardship_debug_off_clear_v2()`,
 returning the cleared switch's id, so the operator's `debug_logging_allowed`
 names the switch too, checked by
 `tests/stewardship/database/test_debug_off_switch_postgresql.py`.
+ADM-13.16 (PR 4a, the server side of Clear the halt) adds the frozen
+forward migration `0115_mail_halt_clear.sql` (`stewardship_jobs.0033`):
+the halt record (mail dispatch writes it), the clear signal and the
+mailbox check request (the web writes them, for an Administrator with a
+live session and no recent sign-in, #1547), each with its invoker guard,
+and their grants through `runtime_grants`. The consumers name each halt in
+the stop marker, record it and lift it from their idle loop
+(`jobs/mail_halt.py`, `DeliveryCircuit.lift`), and the main process runs
+the mailbox check through the provider-check helper; the shared service
+functions (`mail_halt_clear.py`) back `pk-admin system mail-clear-preview`
+and `system mail-clear` and record `mail_halt_cleared`. It is checked by
+`tests/stewardship/database/test_mail_halt_clear_postgresql.py`,
+`tests/stewardship/test_mail_halt.py`, `tests/stewardship/test_mail_consumers.py`,
+`tests/stewardship/test_admin_cli.py`, the users swap test and the
+regenerated schema baseline.
+ADM-13.17 (PR 4b) adds Clear the halt to the Mail tile
+(`system-health-clear-halt*.html`, `system_health_views._clear_step`): the
+section only while a running mail sender reports Halted, the preview from
+`mail_halt_clear.preview_clear`, Check again, and Confirm through
+`clear_halt`, which now also acknowledges the halt's critical-problems
+banner entries; the mailbox check and Confirm follow the polled status in
+place. ADM-13.04 is complete. It is checked by
+`tests/stewardship/database/test_mail_halt_clear_page_postgresql.py` and
+`tests/stewardship/browser/test_system_health_clear_halt.py`.

@@ -794,7 +794,7 @@ def test_a_crash_after_a_limit_refusal_keeps_its_hold_marking(
     monkeypatch.setattr(family_mail_dispatch, "LIMIT_RETRY_SECONDS", fast)
     monkeypatch.setattr(f"{TASKS}.LIMIT_RETRY_SECONDS", fast)
 
-    def crash(self, health):
+    def crash(self, health, *, uncertain=False):
         """Die once the outcome is settled, before anything else is written."""
         raise RuntimeError("synthetic crash after settlement")
 

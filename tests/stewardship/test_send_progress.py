@@ -209,10 +209,10 @@ def test_a_running_send_polls_with_a_labelled_progress_bar():
     tag = region(html)
     assert "data-live-pending" in tag
     assert f'data-live-interval="{POLL_MILLISECONDS}"' in tag
-    # Three hours without new counts, renewed by each change, and the
-    # stop message names this page's own refresh link.
+    # Three hours without new counts, renewed by each change, before the
+    # pace slows; the page has no Refresh link to name (#1586).
     assert 'data-live-give-up="10800000"' in tag
-    assert 'data-live-refresh-label="Refresh progress"' in tag
+    assert "data-live-refresh-label" not in tag
     assert 'data-live-announce="Family email send in progress, 25% done."' in tag
     # The counts change every poll, so the region itself is not aria-live.
     assert "aria-live" not in tag and 'role="status"' not in tag
@@ -227,16 +227,15 @@ def test_a_running_send_polls_with_a_labelled_progress_bar():
     assert "about 6 minutes" in html
     # Each kind links to its own filtered list.
     assert (
-        'href="/admin/mail/outgoing/?state=delivery_unknown">Review emails that may'
-        in html
+        'href="/admin/mail/sent/?state=delivery_unknown">Review emails that may' in html
     )
-    assert 'href="/admin/mail/outgoing/?state=permanent_failure">Review failed' in html
+    assert 'href="/admin/mail/sent/?state=permanent_failure">Review failed' in html
     assert "failed before they were prepared" not in html
     assert "<script" not in html
 
 
 def test_a_finished_send_is_one_line_with_no_bar_and_the_page_keeps_checking():
-    """Moment in time: no send in progress, a summary line, Outgoing mail."""
+    """Moment in time: no send in progress, a summary line, Sent mail."""
     html = render(
         progress(
             counts(
@@ -253,7 +252,7 @@ def test_a_finished_send_is_one_line_with_no_bar_and_the_page_keeps_checking():
     assert "No Family email send is in progress right now" in html
     assert "Last send: Invitation email, finished <time" in html
     assert "1,090 sent, 4 failed, 1 not sure it arrived, 10 not sent." in html
-    assert 'href="/admin/mail/outgoing/">Outgoing mail</a>' in html
+    assert 'href="/admin/mail/sent/">Sent mail</a>' in html
     assert "<progress" not in html and "emails finished" not in html
     # Still checking, so the next send appears by itself.
     assert "data-live-pending" in region(html)

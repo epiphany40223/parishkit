@@ -18,7 +18,7 @@ from django.urls import reverse
 from parishkit.stewardship.accounts import admin_navigation as navigation
 
 NOW = datetime(2054, 10, 1, tzinfo=UTC)
-OUTGOING = f'<a href="{reverse("admin:deliveries")}">Outgoing mail</a>'
+OUTGOING = f'<a href="{reverse("admin:deliveries")}">Sent mail</a>'
 
 
 def _production_progress(complete):
@@ -44,14 +44,14 @@ def _production_progress(complete):
 
 @pytest.mark.parametrize("complete", [False, True])
 def test_production_activation_links_outgoing_mail(complete):
-    """Both "see Outgoing mail" messages link Outgoing mail once preparation shows."""
+    """Both "see Sent mail" messages link Sent mail once preparation shows."""
     html = _production_progress(complete)
-    link = f'<a href="{reverse("admin:deliveries")}">Outgoing mail</a>'
+    link = f'<a href="{reverse("admin:deliveries")}">Sent mail</a>'
     # The outcomes note always shows; the completion note only once complete.
     assert html.count(link) == (2 if complete else 1)
     assert f"for that, see {link}." in html
-    assert "See Outgoing mail" not in html
-    assert "see Outgoing mail" not in html
+    assert "See Sent mail" not in html
+    assert "see Sent mail" not in html
 
 
 def _greyed(name):
@@ -165,7 +165,7 @@ def _choices(**choices):
     ],
 )
 def test_pause_and_resume_mail_links_outgoing_mail(context, words):
-    """Each message that sends the reader to Outgoing mail links it."""
+    """Each message that sends the reader to Sent mail links it."""
     campaign = SimpleNamespace(
         active_configuration=None, delivery_paused=True, paused_at=NOW, pause_reason=""
     )

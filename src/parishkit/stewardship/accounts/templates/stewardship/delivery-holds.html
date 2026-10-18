@@ -1,8 +1,8 @@
 {% load i18n stewardship %}{% comment %}
-  Outgoing mail's note on why Family email is waiting on a sending limit
+  Sent mail's note on why Family email is waiting on a sending limit
   (#382 M3a), from jobs.delivery_reads.read_sending_holds: the mail sender
   states System health shows, in its words, and the emails on a longer
-  retry backoff. Outgoing mail draws it once per page load, outside its
+  retry backoff. Sent mail draws it once per page load, outside its
   in-place regions, so it never appears or vanishes under the pointer.
 {% endcomment %}{% if holds %}<aside class="notice" id="delivery-holds" aria-labelledby="delivery-holds-heading">
 <h2 id="delivery-holds-heading">{% translate "Some Family email is waiting on a sending limit" %}</h2>

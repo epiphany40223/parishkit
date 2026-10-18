@@ -320,6 +320,45 @@ def test_a_refused_website_is_shown_at_its_field(auth_service, google):
     assert not ConfigurationChangeRequest.objects.exists()
 
 
+@pytest.mark.parametrize(
+    "stored",
+    [
+        "https://192.168.1.10/",
+        "https://[2001:db8::1]:8443/",
+        "https://localhost:3000/",
+        "https://example.org./",
+    ],
+)
+def test_a_stored_host_never_blocks_an_unrelated_save(auth_service, google, stored):
+    """A website and giving link already saved with an IP address, localhost
+    or a trailing dot (the server's URL validator admits them) do not stop
+    the Administrator changing another setting (#1577)."""
+    store = auth_service.store
+    browser, _ = signed_in()
+    version = store.active()
+    record = version.document()["sections"]["parish"][0]
+    change(
+        store,
+        version,
+        uuid4(),
+        [
+            {
+                "operation": "update",
+                "section": "parish",
+                "id": record["id"],
+                "values": {"website": stored, "online_giving_url": stored},
+            }
+        ],
+    )
+    response = post(
+        browser,
+        fields(store, online_giving_url=stored, date_format="eu_long"),
+    )
+    assert response.status_code == 200, response.content
+    assert b"aria-invalid" not in response.content
+    assert token(response)
+
+
 def test_a_stored_alias_is_kept_and_a_new_zone_is_stored_canonically(
     monkeypatch, request
 ):
