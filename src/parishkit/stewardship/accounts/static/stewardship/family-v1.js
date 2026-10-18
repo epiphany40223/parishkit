@@ -743,7 +743,10 @@
         if (["first_name", "last_name"].includes(definition.name)) retitle("member-" + member.id, memberName(member, index));
         const changed = definition.changed || (definition.kind === "phone" ? !Phone.same(value, original) :
           canonical(value, definition.name) !== canonical(original, definition.name));
+        // A proposed Member has no parish record, so comparing with one only
+        // marks every field (#1675); the empty line keeps its place.
         status.textContent = definition.conflict ? "Your requested change is awaiting parish review." :
+          member.proposed ? "" :
           changed ? "Changed from parish records." : !definition.available ? "Not available in parish records." : "";
       }
       input.addEventListener("input", () => { update(); input.setCustomValidity(""); });
@@ -2242,7 +2245,8 @@
           "Unknown — request parish review of removing any recorded birth date" :
           (definition.kind === "phone" ? Phone.format(value) :
             definition.kind === "date" && value ? calendarDate(value) : value) || "Not provided", list);
-        if (changed) {
+        // A proposed Member's values are all new, as its panel already says (#1675).
+        if (changed && !member.proposed) {
           display.classList.add("changed");
           node("span", " — Changed from parish records", display);
         }
