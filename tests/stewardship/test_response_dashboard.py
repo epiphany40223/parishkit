@@ -331,16 +331,12 @@ def test_testing_view_shows_the_rehearsal_stages_only():
     assert 'id="production-only"' not in render()
 
 
-def test_page_draws_no_funnel_chart_but_the_email_keeps_it():
+def test_page_draws_no_funnel_chart():
     """The Families by stage tiles give the funnel's counts, shares and bars,
-    so the page draws no funnel chart (#1537); the emailed daily report's
-    funnel keeps its title and count axis."""
-    from parishkit.stewardship.reports.chart_specs import funnel_chart
-
+    so the page draws no funnel chart (#1537); the emailed daily report has
+    drawn none since #1370."""
     assert set(funnel_panels(metrics())) == {"metrics", "stage_tiles", "invited"}
     assert "response-funnel" not in render()
-    emailed = funnel_chart(metrics()).spec
-    assert "title" in emailed and emailed["encoding"]["x"]["axis"]
 
 
 def test_no_invitations_yet_says_so_instead_of_shares():

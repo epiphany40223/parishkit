@@ -649,10 +649,11 @@ installed SQL function `stewardship_family_response_v1` (migration 0050,
 dashboard, the digest and the
 [directory's Response filter](#response-filters) all read, so their counts
 cannot drift apart. The
-[Response dashboard](#response-dashboard) shows its stages as stat tiles,
-the [chart engine](#chart-engine) draws the funnel for the emailed daily
-report, `pk-admin report responses`
-reports the activity series, and the
+[Response dashboard](#response-dashboard) shows its stages as stat tiles
+(no funnel chart is drawn anywhere, neither on the page nor in the emailed
+daily report, which dropped its chart in
+[#1370](https://github.com/epiphany40223/parishkit/issues/1370)),
+`pk-admin report responses` reports the activity series, and the
 directory's [Response filters](#response-filters) list the Families behind
 the counts; the
 [Family timeline](#family-timeline) shows what happened with one Family; and
@@ -789,9 +790,11 @@ heading, and the page sends `Cache-Control: no-store`. Top to bottom:
    The page draws no funnel chart and no "Responses and email reach" chart:
    the Families by stage tiles give the funnel's counts and shares and draw
    its bars, and the responses that chart drew are the Submitted tile, so
-   both were removed as redundant (the emailed daily report keeps its funnel
-   image; `pk-admin report participation` still reports the email reach
-   counts).
+   both were removed as redundant (`pk-admin report participation` still
+   reports the email reach counts). The emailed daily report has drawn no
+   funnel chart since
+   [#1370](https://github.com/epiphany40223/parishkit/issues/1370), so no
+   funnel chart remains anywhere; the Administrator can ask for one back.
 4. **Daily participation**: the Chart population choice, the daily chart
    and its table ([participation graph](#participation-graph)).
 5. **Export**: one sentence, "Exports the daily participation data on this
