@@ -62,7 +62,7 @@
 {% if not testing_responses %}<td>{% if row.responded %}{% translate "Yes" %}{% if row.family_id in staff_entered %} <small>({% translate "entered by Staff" %})</small>{% endif %}{% else %}{% translate "No" %}{% endif %}</td>{% endif %}
 {% if mailing %}<td>{{ row.addressee }}</td>
 <td>{% for line in row.address_lines %}{{ line }}{% if not forloop.last %}<br>{% endif %}{% endfor %}</td>{% endif %}
-<td class="contact-details"><details><summary>{% translate "Contact details for" %} {{ row.display_name }}</summary>
+<td class="contact-details"><details><summary>{% translate "Contact details" %}<span class="visually-hidden"> {% translate "for" %} {{ row.display_name }}</span></summary>
 <dl><dt>{% translate "Envelope number" %}</dt><dd>{{ row.envelope|default_if_none:'Unavailable' }}</dd>
 <dt>{% translate "Active Family heads and emails" %}</dt><dd class="head-emails">{% for group in row.head_emails %}{{ group.names }} — {% if group.value is None %}{% translate "No email on file" %}{% elif group.valid %}<a href="mailto:{{ group.value|urlencode:'@' }}">{{ group.value }}</a>{% else %}{{ group.value }} <small>({% translate "not a valid address; fix in ParishSoft" %})</small>{% endif %}{% if not forloop.last %}<br>{% endif %}{% empty %}{% translate "No active head" %}{% endfor %}</dd>
 <dt>{% translate "Family and active Member phones" %}</dt><dd>{% for phone in row.phones %}{{ phone.owner }} — {{ phone.kind }}: {{ phone.value|phone }}{% if not forloop.last %}<br>{% endif %}{% empty %}{% translate "No phone available" %}{% endfor %}</dd>

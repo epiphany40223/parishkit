@@ -114,11 +114,12 @@ def test_list_has_one_line_of_dates_and_actions_only_on_unsent_rows(
     visible(main.locator(".campaign-dates", has_text="Campaign dates:"))
     new = page.get_by_role("link", name="New scheduled email")
     assert new.get_attribute("href") == NEW
+    # The weekly digest sits at its next send (that Monday), not last (#1652).
     assert names(page) == [
         "Initial invitation",
+        "Weekly Admin digest",
         "Reminder 1",
         "Reminder 2",
-        "Weekly Admin digest",
     ]
     heading = page.locator('th[data-sort-column="when"]')
     assert "(your time)" not in heading.inner_text()
@@ -127,7 +128,7 @@ def test_list_has_one_line_of_dates_and_actions_only_on_unsent_rows(
     assert sent.locator("input[type=checkbox]").count() == 0
     assert sent.get_by_role("button").count() == 0
     assert sent.get_by_role("link", name="Edit Initial invitation").count() == 0
-    reminder = rows(page).nth(1)
+    reminder = rows(page).nth(2)
     edit = reminder.get_by_role("link", name="Edit Reminder 1")
     assert edit.get_attribute("title") == "Edit Reminder 1"
     assert edit.get_attribute("href").startswith("/admin/campaign/schedules/")
@@ -144,7 +145,7 @@ def test_row_action_icons_are_the_same_size(page, component_origin, width):
     """The Edit link and Delete button draw as equal squares (#879 pattern)."""
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + LIST)
-    reminder = rows(page).nth(1)
+    reminder = rows(page).nth(2)
     edit = reminder.get_by_role("link", name="Edit Reminder 1").bounding_box()
     delete = reminder.get_by_role("button", name="Delete Reminder 1").bounding_box()
     sizes = [(round(b["width"], 1), round(b["height"], 1)) for b in (edit, delete)]
@@ -155,7 +156,8 @@ def test_row_action_icons_are_the_same_size(page, component_origin, width):
 
 
 def test_when_heading_sorts_the_table_in_place(page, component_origin):
-    """Sending order reversed and back, without a reload."""
+    """Time order reversed and back, without a reload; the digest stays at its
+    next send either way (#1652)."""
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + LIST)
     failures = watch(page)
@@ -164,15 +166,20 @@ def test_when_heading_sorts_the_table_in_place(page, component_origin):
         page.locator('th[data-sort-column="when"]'), "aria-sort", "descending"
     )
     assert names(page) == [
-        "Weekly Admin digest",
         "Reminder 2",
         "Reminder 1",
+        "Weekly Admin digest",
         "Initial invitation",
     ]
     assert "sort=-when" in page.url
     page.locator('th[data-sort-column="when"] .sort-link').click()
     has_attribute(page.locator('th[data-sort-column="when"]'), "aria-sort", "ascending")
-    assert names(page)[0] == "Initial invitation"
+    assert names(page) == [
+        "Initial invitation",
+        "Weekly Admin digest",
+        "Reminder 1",
+        "Reminder 2",
+    ]
     assert page.evaluate("window.notReloaded === true")
     assert not failures
 
@@ -212,7 +219,7 @@ def test_delete_asks_in_a_dialog_then_redraws_the_table_in_place(
     # Applied: the table is redrawn without that reminder, nothing reloads.
     has_count(rows(page), 3)
     hidden(dialog(page))
-    assert names(page) == ["Initial invitation", "Reminder 1", "Weekly Admin digest"]
+    assert names(page) == ["Initial invitation", "Weekly Admin digest", "Reminder 1"]
     assert page.locator(f'button[value="{identifier}"]').count() == 0
     eventually(page, "document.activeElement.id === 'schedule-table-title'")
     visible(page.locator("main > [role=status]", has_text="Deleted Reminder 1."))
@@ -230,8 +237,8 @@ def test_delete_selected_names_the_count(page, component_origin):
     page.locator("input[data-select-all]").check()
     boxes = page.locator("input[data-select-row]")
     assert boxes.count() == 3
-    # Keep the digest: tick only the two reminders.
-    boxes.nth(2).uncheck()
+    # Keep the digest (the first unsent row): tick only the two reminders.
+    boxes.nth(0).uncheck()
     bulk.click()
     visible(dialog(page))
     assert dialog(page).locator("h2").inner_text() == "Delete 2 scheduled emails?"

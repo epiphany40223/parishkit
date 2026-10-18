@@ -955,7 +955,9 @@ def test_admin_presence_poll_is_passive_and_shows_service_failure(
     expect(page.locator("[data-presence-unavailable]")).to_have_js_property(
         "hidden", False
     )
-    assert page.locator("[data-presence-count]").inner_text() == "1,234"
+    # The failure sentence takes the pill's place (#1643), but the last good
+    # count stays in the page; it is never overwritten with zero.
+    assert page.locator("[data-presence-count]").text_content() == "1,234"
 
 
 def axe_violations(page, axe_source):

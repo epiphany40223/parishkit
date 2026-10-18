@@ -122,17 +122,17 @@ def test_rows_show_each_email_by_its_readable_name():
     assert described[0].email == rows[0]["values"]["subject"]
 
 
-def test_when_sorts_sending_order_or_its_reverse():
-    """The default is sending order; ``-when`` reverses it, digests first."""
+def test_when_sorts_chronologically_or_the_reverse():
+    """Time order, a digest at its next send (#1652); ``-when`` reverses it."""
     described = schedule_rows(saved(emails()), VALUES, {}, NOW)
     labels = [
         row.label for row in whole_table(described, sorting=SORTING, sort="when").rows
     ]
     assert labels == [
         "Initial invitation",
+        "Weekly Admin digest",
         "Reminder 1",
         "Reminder 2",
-        "Weekly Admin digest",
     ]
     backwards = whole_table(described, sorting=SORTING, sort="-when").rows
     assert [row.label for row in backwards] == list(reversed(labels))

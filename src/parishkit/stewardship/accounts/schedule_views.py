@@ -83,10 +83,11 @@ def _list(request, state, campaign, editable, sort, *, end_live=False):
 
     The rows are the saved schedules in sending order, described from the
     counts-only work summary (``schedule_table``); ``sort`` is the When
-    heading's token. ``refresh_url`` is this page's own address, sort
-    included, from which the confirmation dialog redraws the table after a
-    deletion is applied. ``end_live`` says a live campaign's end date may
-    still change (#912), so the dates line links to Campaign settings.
+    heading's token, which orders them by when they next send (#1652).
+    ``refresh_url`` is this page's own address, sort included, from which
+    the confirmation dialog redraws the table after a deletion is applied.
+    ``end_live`` says a live campaign's end date may still change (#912),
+    so the dates line links to Campaign settings.
     """
     configuration = state[0]
     values = campaign.active_configuration.values
