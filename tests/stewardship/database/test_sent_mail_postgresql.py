@@ -154,6 +154,14 @@ def region(html, element_id):
     return html[start : html.index("</div>", start)]
 
 
+def shown_mode(html):
+    """The mode whose Production / Testing segment is current (#1575)."""
+    match = re.search(
+        r'<button type="submit" name="mode" value="(\w+)" aria-current="page">', html
+    )
+    return match and match.group(1)
+
+
 def listed(html, ids):
     """The ids in ``ids`` whose email page Sent mail's ``html`` links."""
     return {each for each in ids if f'href="/admin/mail/sent/{each}/"' in html}
@@ -340,10 +348,11 @@ def test_sent_mail_filters_by_recipient_purpose_delivery_and_mode(
     assert status == 200
     modes = region(html, "delivery-mode")
     assert '<input type="hidden" name="purpose" value="reminder">' in modes
-    assert '<input type="hidden" name="mode" value="testing">' in modes
+    assert '<button type="submit" name="mode" value="testing">' in modes
+    assert '<input type="hidden" name="mode"' not in modes
     assert 'name="recipient" value="first.head@example.org"' in modes
     assert 'name="page"' not in modes
-    assert 'id="mode-production" aria-current="true"' in modes
+    assert shown_mode(modes) == "production"
     (address,) = re.findall(r'<a href="([^"]*)" data-page-address hidden>', html)
     assert "purpose=reminder" in address
     assert "recipient" not in address and "first.head" not in address
@@ -469,9 +478,9 @@ def test_a_testing_system_shows_testing_email_by_default(response_service, googl
     browser, _ = signed_in()
     status, html = sent_mail(browser)
     assert status == 200 and listed(html, {testing}) == {testing}
-    assert 'id="mode-testing" aria-current="true"' in html
+    assert shown_mode(html) == "testing"
     status, html = sent_mail(browser, state="delivery_unknown")
-    assert status == 200 and 'id="mode-testing" aria-current="true"' in html
+    assert status == 200 and shown_mode(html) == "testing"
     status, html = sent_mail(browser, mode="production")
     assert status == 200 and listed(html, {testing}) == set()
 

@@ -42,13 +42,10 @@ POSTS = {CLEAR: (303, CLEARED, ""), BOUNCE: (303, REPORTED, "")}
 LIST_ACTION = "/deliveries-names"
 
 
-def mode_choices(shown, *kept):
-    """The Production / Testing choices' fields, as the view draws them."""
-    view = [("size", "25"), ("sort", "-changed")]
-    return [
-        (mode, [*kept, *view, ("mode", mode)], mode == shown)
-        for mode in ("production", "testing")
-    ]
+def mode_fields(*kept):
+    """The fields each Production / Testing segment posts besides its mode,
+    as the view draws them (#1575): the applied filters, size and sort."""
+    return dict([*kept, ("size", "25"), ("sort", "-changed")])
 
 
 def sent_table(*args, **kwargs):
@@ -67,7 +64,7 @@ LIST_FILTERS = dict(
     end="",
     zone="",
     mode="production",
-    mode_choices=mode_choices("production"),
+    mode_fields=mode_fields(),
     page_address=LIST_ACTION + "?size=25&sort=-changed",
 )
 
@@ -211,7 +208,7 @@ def components(now):
             **LIST_FILTERS
             | dict(
                 mode="testing",
-                mode_choices=mode_choices("testing"),
+                mode_fields=mode_fields(),
                 page_address=LIST_ACTION + "?mode=testing&size=25&sort=-changed",
             ),
         ),
@@ -234,8 +231,7 @@ def components(now):
             **LIST_FILTERS
             | dict(
                 recipient="12345",
-                mode_choices=mode_choices(
-                    "production",
+                mode_fields=mode_fields(
                     ("recipient", "12345"),
                     ("state", "needs_attention"),
                 ),

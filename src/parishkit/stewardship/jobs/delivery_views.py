@@ -49,7 +49,7 @@ from parishkit.stewardship.web.tables import (
 
 from . import delivery_bulk
 from .delivery_admin import clear_recipient_refusal, report_recipient_bounce
-from .delivery_metadata import DELIVERY_SORTING, MODES, PURPOSE_CHOICES, STATES
+from .delivery_metadata import DELIVERY_SORTING, PURPOSE_CHOICES, STATES
 from .delivery_reads import (
     ACTION_LABELS,
     REFUSAL_SORTING,
@@ -315,18 +315,16 @@ def _page_address(request, parameters, table):
     return f"{request.path}?{urlencode(fields)}"
 
 
-def _mode_choices(parameters, table, shown):
-    """Sent mail's Production / Testing choices: this view in each mode (#1562).
+def _mode_fields(parameters, table):
+    """The fields each Production / Testing segment posts, by name.
 
-    Each is the hidden fields of a small POST form, keeping the applied
-    filters (the Recipient too), size and sort, and starting again at page
-    1, as a new filter does. Returns ``[(mode, fields, current)]``, where
-    ``current`` says whether ``shown`` is that mode.
+    Sent mail's mode choice is the shared segmented pair (#1575), each
+    segment a small POST form: these keep the applied filters (the
+    Recipient too, private filter state that never reaches a URL), size and
+    sort, and start again at page 1, as a new filter does. The component
+    leaves out the applied ``mode``; each segment's button sends its own.
     """
-    kept = [
-        (name, value) for name, value in _carried(parameters) if name != "mode"
-    ] + table.view_fields
-    return [(mode, [*kept, ("mode", mode)], mode == shown) for mode in MODES]
+    return dict(_carried(parameters) + table.view_fields)
 
 
 def _recipient_fields(row, mode):
@@ -412,7 +410,7 @@ def delivery_list(request):
             end=values.get("end", ""),
             zone=values.get("zone", ""),
             mode=values["mode"],
-            mode_choices=_mode_choices(parameters, table, values["mode"]),
+            mode_fields=_mode_fields(parameters, table),
             send=data["send"],
             holds=read_sending_holds(database_now()),
             # The link line's count (#935), drawn once per page load.

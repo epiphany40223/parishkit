@@ -225,23 +225,33 @@ def test_filters_apply_in_place(page, component_origin):
 
 
 def test_the_mode_choices_switch_in_place(page, component_origin):
-    """Testing redraws the list in place: its choice becomes current, the
-    filter form's hidden mode follows, and nothing above the table moves."""
+    """The choice is the shared segmented pair (#1575), a group named by its
+    visible label. Testing redraws the list in place: its segment becomes
+    current and keeps focus, the filter form's hidden mode follows, and
+    nothing above the table moves."""
+    from playwright.sync_api import expect
+
     sent = answer_with(page, component_origin, "/deliveries-testing")
     open_list(page, component_origin)
-    choices = page.locator("#delivery-mode")
+    choices = page.locator("#delivery-mode").get_by_role("group", name="Emails shown")
+    assert choices.evaluate("node => node.classList.contains('segmented-choice')")
     assert (
         choices.get_by_role("button", name="Production").get_attribute("aria-current")
-        == "true"
+        == "page"
+    )
+    assert (
+        choices.get_by_role("button", name="Testing").get_attribute("aria-current")
+        is None
     )
     before = page.evaluate(PLACES)
     choices.get_by_role("button", name="Testing").click()
     eventually(
         page,
-        "document.querySelector('#delivery-mode [aria-current=true]').textContent",
+        "document.querySelector('#delivery-mode [aria-current=page]').textContent",
         "Testing",
     )
     assert page.evaluate(MARKED) == "kept"
+    expect(choices.get_by_role("button", name="Testing")).to_be_focused()
     assert sent and sent[0]["mode"] == ["testing"]
     assert (
         page.locator("#table-filters input[name=mode]").get_attribute("value")
