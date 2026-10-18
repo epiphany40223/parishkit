@@ -27,10 +27,11 @@ A Ministry leader gets the values the Member publishes in ParishSoft and
 Member's latest version, not withdrawn) the leader gets the requesting
 Member's own email and phones, since asking to join or leave is consent to
 be contacted about it (Administrator decision, 2026-10-17, #1591; frozen
-migration 0117). A Member whom the Family's latest live response marks
-as unable to participate in any ministries keeps the publish flags on every
-one of their requests, current or history, whatever the roster shows
-(Administrator decision, 2026-10-18, applied per Member). Python never
+migration 0117). A Member whose latest live answer (from the Family's
+newest response that answers for them) marks them as unable to participate
+in any ministries keeps the publish flags on every one of their requests,
+current or history, whatever the roster shows (Administrator decision,
+2026-10-18, applied per Member). Python never
 widens or narrows it: it only renders the visibility the SQL returns.
 """
 
