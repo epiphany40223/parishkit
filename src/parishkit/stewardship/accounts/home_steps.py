@@ -7,7 +7,8 @@ own menu, so a next step is offered exactly when its menu entry is, greys out
 with the menu's own reason when the entry does, and is left out when the
 viewer's role has no such entry. Nothing here runs a query: the menu (with
 its open counts and the outgoing-mail warning count) is the chrome's, and the
-Today counts ride on Home's existing statements (``admin_dashboard``).
+Today counts and Roster changes to enter's count come with Home's dashboard
+(``admin_dashboard``).
 """
 
 from typing import NamedTuple
@@ -22,22 +23,29 @@ from .admin_navigation import PAGES
 # closed keeps the list sensible if one ever does.
 _CLOSED = frozenset({"closed", "archived", "purging", "purge_cleanup_failed"})
 
-# The spec's table, by state and role: menu entry names in order. Two names
-# are not plain menu entries: ``campaign_mail`` is Preview and test email for
-# the initial invitation's current revision, offered while Pages and emails
-# is, and ``mail_problems`` is Sent mail filtered to emails that may not
-# have arrived, with their count.
+# The spec's table, by state and role: menu entry names in order. Three
+# names are not plain menu entries: ``campaign_mail`` is Preview and test
+# email for the initial invitation's current revision, offered while Pages
+# and emails is; ``mail_problems`` is Sent mail filtered to emails that may
+# not have arrived, with their count; and ``ministry_roster`` is Roster
+# changes to enter, offered while Ministry requests is, with its count.
+# The four lists Staff work through at campaign end (#1590), each with its
+# count, follow the Response dashboard while the campaign runs and after it
+# closes.
+_WORK = (
+    "response_dashboard",
+    "census_changes",
+    "ministry_roster",
+    "information_queue",
+    "ministry_report",
+)
 _ACTIVE = {
-    "administrator": (
-        "response_dashboard",
-        "information_queue",
-        "ministry_report",
-        "family_email_progress",
-        "mail_problems",
-    ),
-    "staff": ("response_dashboard", "information_queue", "ministry_report"),
+    "administrator": (*_WORK, "family_email_progress", "mail_problems"),
+    "staff": _WORK,
     "ministry_leader": ("ministry_report",),
 }
+# What each menu count means, after the number: the page's default view.
+_NOTES = {"census_changes": _("to do")}
 STEPS = {
     "testing": {
         "administrator": (
@@ -69,8 +77,8 @@ STEPS = {
     "paused": _ACTIVE
     | {"administrator": ("delivery_control", *_ACTIVE["administrator"])},
     "closed": {
-        "administrator": ("response_dashboard", "emailed_reports"),
-        "staff": ("response_dashboard",),
+        "administrator": (*_WORK, "emailed_reports"),
+        "staff": _WORK,
         "ministry_leader": ("ministry_report",),
     },
 }
@@ -121,7 +129,14 @@ def role(roles):
 
 
 def next_steps(
-    state, viewer_role, menu, *, test_email=None, mail_unknown=None, setup_next=None
+    state,
+    viewer_role,
+    menu,
+    *,
+    test_email=None,
+    mail_unknown=None,
+    setup_next=None,
+    roster_todo=None,
 ):
     """Home's Next steps for ``state`` and ``viewer_role``, as ``Step`` rows.
 
@@ -133,6 +148,8 @@ def next_steps(
     chrome's count of emails that may not have arrived, and ``setup_next``
     the Campaign setup stepper's first step not done yet (or None), which
     leads an Administrator's Testing list as Continue campaign setup.
+    ``roster_todo`` is Roster changes to enter's not-yet-entered count
+    (``admin_dashboard.roster_todo``), or None when Home could not read it.
     """
     steps = []
     if setup_next is not None and state == "testing" and viewer_role == "administrator":
@@ -151,6 +168,8 @@ def next_steps(
             step = _test_email(menu.get("content_catalog"), test_email)
         elif name == "mail_problems":
             step = _mail_problems(menu.get("deliveries"), mail_unknown)
+        elif name == "ministry_roster":
+            step = _roster(menu.get("ministry_report"), viewer_role, roster_todo)
         else:
             entry = menu.get(name)
             step = entry and Step(
@@ -159,7 +178,9 @@ def next_steps(
                 entry["reason"],
                 entry.get("count"),
                 # The menu shows a queue's count only while it is a link.
-                _("open") if entry["url"] and entry.get("count") is not None else None,
+                _NOTES.get(name, _("open"))
+                if entry["url"] and entry.get("count") is not None
+                else None,
             )
         if step:
             steps.append(step)
@@ -179,6 +200,27 @@ def _test_email(catalog, revision):
     if not catalog["url"]:
         return Step(label, None, catalog["reason"])
     return Step(label, reverse("admin:campaign_mail", args=[revision]))
+
+
+def _roster(ministry, viewer_role, count):
+    """Roster changes to enter, while the viewer's Ministry requests is offered.
+
+    The list hangs below Ministry requests (its breadcrumb parent), so it is
+    greyed with that entry's reason while that entry is greyed, and left out
+    when the viewer has none. Only Administrators and Staff may open it; the
+    page refuses anyone else, so no one else is offered it here either.
+    """
+    if ministry is None or viewer_role not in {"administrator", "staff"}:
+        return None
+    label = str(PAGES["ministry_roster"].label)
+    if not ministry["url"]:
+        return Step(label, None, ministry["reason"])
+    return Step(
+        label,
+        reverse("admin:ministry_roster"),
+        count=count,
+        note=None if count is None else _("not yet entered"),
+    )
 
 
 def _mail_problems(deliveries, unknown):
@@ -253,6 +295,7 @@ def home(context):
             test_email=dashboard.get("test_email"),
             mail_unknown=chrome.get("delivery_unknown"),
             setup_next=dashboard.get("setup_next"),
+            roster_todo=dashboard.get("roster_todo"),
         ),
         "today": today(dashboard),
     }

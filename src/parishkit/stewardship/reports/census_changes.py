@@ -292,6 +292,54 @@ COLUMNS = (
     "resolution_by",
 )
 
+# The menu's open count (#585, #1590; admin_context.OPEN_COUNTS embeds it):
+# ROWS's rows, by the four columns ``status`` reads, each group with its
+# size, as JSON text. Its FROM and WHERE are ROWS's without the joins that
+# only name a row (they are LEFT joins, so they never add or drop one), so
+# ``open_count`` keeps exactly the rows the page's default view lists.
+# Takes ``%(campaign)s``.
+OPEN_GROUPS = """
+SELECT coalesce(jsonb_agg(jsonb_build_array(
+        g.handling, g.entity_kind, g.decision, g.execution, g.n)), '[]')::text
+FROM (
+    SELECT p.handling, p.entity_kind, p.decision, p.execution, count(*) AS n
+    FROM stewardship_campaign c
+    JOIN stewardship_submission s ON s.campaign_id=c.id AND s.mode='live'
+    JOIN stewardship_proposed_change p ON p.submission_id=s.id
+    JOIN stewardship_family_campaign f ON f.id=s.family_id
+    WHERE c.id=%(campaign)s AND p.handling<>'report-only'
+    GROUP BY 1, 2, 3, 4
+) g
+"""
+
+
+def open_count(groups, *, administrator):
+    """The rows of the page's default Work to do view, from ``OPEN_GROUPS``.
+
+    ``groups`` is the decoded JSON: ``[handling, entity_kind, decision,
+    execution, count]`` lists. Each group's status comes from ``status`` and
+    the default view's choice from ``wanted``, the functions the page itself
+    filters with, so the count cannot drift from what the link opens.
+    """
+    default = CensusQuery()
+    return sum(
+        count
+        for handling, entity_kind, decision, execution, count in groups
+        if wanted(
+            status(
+                {
+                    "handling": handling,
+                    "entity_kind": entity_kind,
+                    "decision": decision,
+                    "execution": execution,
+                }
+            ),
+            default,
+            administrator=administrator,
+        )
+    )
+
+
 # The Review buttons' form values and the decision each records, in order.
 REVIEW_CHOICES = (
     ("approve", "approved"),
