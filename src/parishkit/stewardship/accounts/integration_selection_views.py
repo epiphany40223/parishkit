@@ -250,7 +250,8 @@ def confirm_finish(request, service, actor, target):
     under the work lock, for a key change of this page's integration only;
     a switch that would now change the loaded ParishSoft organization is
     refused in the dialog. The answer is the change's status, which the
-    dialog follows until it is applied.
+    dialog follows until it is applied. It is a privileged confirm, like
+    the page's other one and ``pk-admin integration key finish-switching``.
     """
     if request.FILES:
         raise ValueError("Credential selection accepts no files.")
@@ -272,6 +273,7 @@ def confirm_finish(request, service, actor, target):
             salt=SALT + str(request_id),
             current_scope=scope,
             request_schema=_preview_schema(request, request_id),
+            privileged=True,
         )
     except OrganizationLocked:
         raise _locked() from None
