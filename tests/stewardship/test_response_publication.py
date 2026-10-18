@@ -15,7 +15,9 @@ from parishkit.stewardship.responses.comparison import phone_record
 from parishkit.stewardship.responses.publication import (
     MEMBER_CONTACT_FIELDS,
     Outcome,
+    decode_member_value,
     dry_run_summary,
+    encode_member_value,
     payload_digest,
     plan_entity,
 )
@@ -259,9 +261,9 @@ def test_a_whitespace_only_value_is_blank():
 def test_a_value_the_put_schema_refuses_is_by_hand():
     """The API would refuse it with HTTP 400, so it is never planned.
 
-    A phone under ten characters, a first name over thirty and a gender
-    longer than one character (the census holds ``Female``) are reported By
-    hand; the entity's other changes are still written.
+    A phone under ten characters and a first name over thirty are reported
+    By hand, and so is gender while its codes are unconfirmed (#1603); the
+    entity's other changes are still written.
     """
     rows = [
         proposal("home_phone", phone_record("555-0101"), None),
@@ -277,6 +279,60 @@ def test_a_value_the_put_schema_refuses_is_by_hand():
         "last_name": Outcome.WRITE,
     }
     assert plan.payload == {"lastName": "L" * 50}
+
+
+def test_gender_codes_are_provisional_and_by_hand():
+    """Gender encodes to one character but is never planned until confirmed.
+
+    The recorded schema allows one character and lists no codes, so the
+    codes are a guess (#1603): every gender change is By hand while
+    ``GENDER_CODES_CONFIRMED`` is false, and the entity's other changes
+    are still written.
+    """
+    assert publication.GENDER_CODES_CONFIRMED is False
+    assert encode_member_value("gender", "Female") == "F"
+    assert encode_member_value("gender", "Male") == "M"
+    assert encode_member_value("gender", "Unspecified") is None
+    rows = [proposal("gender", "Male", "Female"), proposal("last_name", "Lee", None)]
+    plan = plan_entity("member", 1, rows, payload(gender="F"))
+    assert outcomes(plan) == {"gender": Outcome.BY_HAND, "last_name": Outcome.WRITE}
+    assert plan.payload == {"lastName": "Lee"}
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [("F", "Female"), ("M", "Male"), ("Female", "Female"), (" FEMALE ", "Female")],
+)
+def test_a_gender_code_reads_as_its_census_word(raw, expected):
+    """A one-character code compares as its census word; a word reads as now."""
+    assert decode_member_value("gender", raw) == expected
+
+
+@pytest.mark.parametrize("raw", [["F"], {}, 1])
+def test_a_non_text_gender_read_is_unreadable_not_a_crash(raw):
+    """A gender that is not text raises the same ValueError as any unreadable
+    value, so it is reported as unreadable (never an unhashable TypeError)."""
+    with pytest.raises(ValueError, match="cannot be read"):
+        decode_member_value("gender", raw)
+
+
+def test_confirmed_gender_codes_plan_the_code(monkeypatch):
+    """Once confirmed, a gender change sends its code and compares by word.
+
+    The read's ``F`` equals the Family's ``Female`` baseline, so a change to
+    Male plans ``M``; Unspecified has no code and stays By hand.
+    """
+    monkeypatch.setattr(publication, "GENDER_CODES_CONFIRMED", True)
+    current = payload(gender="F")
+    plan = plan_entity("member", 1, [proposal("gender", "Male", "Female")], current)
+    assert outcomes(plan) == {"gender": Outcome.WRITE}
+    assert plan.payload == {"gender": "M"}
+    assert plan.planned_digest == payload_digest({**current, "gender": "M"})
+    plan = plan_entity(
+        "member", 1, [proposal("gender", "Unspecified", "Female")], current
+    )
+    assert outcomes(plan) == {"gender": Outcome.BY_HAND}
+    assert plan.payload is None and not plan.blocked
 
 
 def test_matching_value_is_already_in_parishsoft():
