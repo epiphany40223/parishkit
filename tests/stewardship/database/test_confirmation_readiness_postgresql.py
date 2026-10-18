@@ -2,6 +2,7 @@
 
 # ruff: noqa: F811 -- imported fixture dependencies are injected by pytest name.
 
+from contextlib import contextmanager
 from datetime import timedelta
 from time import time
 from types import SimpleNamespace
@@ -21,7 +22,7 @@ from parishkit.stewardship.accounts.confirmation_preview import collect_preview
 from parishkit.stewardship.accounts.confirmation_readiness import collect_readiness
 from parishkit.stewardship.accounts.models import PortalSession, PortalUser
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
-from parishkit.stewardship.accounts.sessions import database_now, issue_admin
+from parishkit.stewardship.accounts.sessions import database_now
 from parishkit.stewardship.campaigns.activation_models import ProductionTokenPreparation
 from parishkit.stewardship.campaigns.activation_tasks import token_handler
 from parishkit.stewardship.campaigns.activation_tokens import TASK_TYPE
@@ -29,6 +30,9 @@ from parishkit.stewardship.campaigns.catchup_tasks import catchup_handler
 from parishkit.stewardship.campaigns.confirmation_models import ProductionConfirmation
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.models import ActivationCatchUpDemand
+from parishkit.stewardship.campaigns.production_models import (
+    ProductionTransitionEvent,
+)
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.dispatch import execute_hint
@@ -38,6 +42,7 @@ from parishkit.stewardship.jobs.storage import _status
 from parishkit.stewardship.storage import StaleRecordError
 
 from . import test_setup_preparation_postgresql as setup_inputs
+from .auth_builders import unguarded
 from .preview_builders import assert_out_of_date, previews_aged
 from .test_activation_views_postgresql import (  # noqa: F401
     bootstrapped,
@@ -80,6 +85,28 @@ def prepare(ready_links):
         preparation.transition_id,
         preparation.pk,
     )
+
+
+@contextmanager
+def completion_hidden(request_id):
+    """Hide cleanup's completion event of ``request_id``, then restore it.
+
+    Only a superuser could (the events are append-only): a test then sees a
+    confirmation refused while cleanup is incomplete, with every other input
+    current. Run it outside ``web_login()``, which cannot set replica mode.
+    """
+    statement = (
+        "UPDATE public.stewardship_production_event SET action=%s"
+        " WHERE request_id=%s AND action=%s"
+    )
+    with unguarded(), connection.cursor() as cursor:
+        cursor.execute(statement, ["hidden", request_id, "complete"])
+        assert cursor.rowcount == 1
+    try:
+        yield
+    finally:
+        with unguarded(), connection.cursor() as cursor:
+            cursor.execute(statement, ["complete", request_id, "hidden"])
 
 
 def test_current_post_cleanup_readiness_is_bounded_and_detects_impact_changes(
@@ -135,10 +162,12 @@ def test_current_post_cleanup_readiness_is_bounded_and_detects_impact_changes(
 
 
 @pytest.mark.parametrize("active", [False, True])
-def test_fresh_confirmation_atomically_activates_and_replays(
-    request, monkeypatch, active
-):
-    """Use real restricted SQL; no direct runtime or campaign update grant is added."""
+def test_confirmation_atomically_activates_and_replays(request, monkeypatch, active):
+    """Use real restricted SQL; no direct runtime or campaign update grant is added.
+
+    The Admin signed in before cleanup completed and confirms with that
+    sign-in (#1547); with cleanup's completion hidden, nothing is confirmed.
+    """
     start = database_now().date() + timedelta(days=-2 if active else 2)
     original_campaign, original_schedule = (
         setup_inputs.first_campaign,
@@ -167,7 +196,7 @@ def test_fresh_confirmation_atomically_activates_and_replays(
     links = request.getfixturevalue("ready_links")
     browser = links[0]
     preparation, arguments = prepare(links)
-    login, service = arguments[:2]
+    login = arguments[0]
     campaign = preparation.transition.campaign
     request_id = preparation.transition.pk
     path = reverse("admin:production_confirmation", args=[request_id, preparation.pk])
@@ -183,7 +212,6 @@ def test_fresh_confirmation_atomically_activates_and_replays(
         page = browser.get(path)
         assert page.status_code == 200, page.content
         assert page["Cache-Control"] == "no-store"
-        assert not page.context["fresh"]
         assert page.context["preview"] is None
         assert flow_steps(page.content) == (GO_LIVE, "Confirm Production")
         assert browser.head(path).status_code == 200
@@ -198,22 +226,22 @@ def test_fresh_confirmation_atomically_activates_and_replays(
         )
         preview, verified, token = verify_preview(*arguments)
         assert verified and token and not preview.problems
-        with pytest.raises(PermissionError, match="after cleanup"):
-            confirm(*arguments, token=token, typed="Production")
-        stale = {"action": "confirm", "preview": token, "typed": "Production"}
-        # A stale form meets the fresh sign-in check: nothing is confirmed.
-        assert post(browser, path, stale).status_code == 403
-        assert not ProductionConfirmation.objects.exists()
-        issue_admin(
-            login,
-            login.portal_session.principal_id,
-            store=service.store,
-            authenticated_at=database_now(),
-        )
-        browser.cookies["pk_admin"] = login.session.session_key
+    # The Admin's only sign-in predates cleanup's completion, which no longer
+    # matters (#1547); completed cleanup still does.
+    completed = ProductionTransitionEvent.objects.get(
+        request_id=request_id, action="complete"
+    ).created_at
+    assert login.portal_session.authenticated_at < completed
+    with (
+        completion_hidden(request_id),
+        web_login(),
+        pytest.raises(ProductionTransitionEvent.DoesNotExist),
+    ):
+        confirm(*arguments, token=token, typed="Production")
+    assert not ProductionConfirmation.objects.exists()
+    with web_login():
         page = post(browser, path, {"action": "verify"})
         assert page.status_code == 200, page.content
-        assert page.context["fresh"]
         token = page.context["confirmation_token"]
         values = {"action": "confirm", "preview": token, "typed": "Production"}
         assert post(browser, path, values | {"typed": "Testing"}).status_code == 400
@@ -225,6 +253,7 @@ def test_fresh_confirmation_atomically_activates_and_replays(
         assert response.status_code == 302, response.content
         assert post(browser, path, values).status_code == 302
         receipt = ProductionConfirmation.objects.get()
+        assert receipt.authenticated_at == login.portal_session.authenticated_at
         assert confirm(*arguments, token=token, typed="Production").pk == receipt.pk
         with monkeypatch.context() as patch:
             patch.setattr(signing, "time", SimpleNamespace(time=lambda: time() + 301))

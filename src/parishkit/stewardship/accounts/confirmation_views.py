@@ -7,42 +7,19 @@ from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
 from parishkit.stewardship.campaigns.domain import Percentage
-from parishkit.stewardship.campaigns.production_models import ProductionTransitionEvent
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.refusals import unexpected_fields
 
 from . import admin_navigation, confirmation_commands, confirmation_progress
-from .admin_caller import AdminCaller, is_automation
+from .admin_caller import AdminCaller
 from .admin_editing import principal
 from .authentication import runtime
 from .confirmation_readiness import collect_readiness
 from .go_live_views import PROBLEMS
 from .installation_lock import ConfigurationBusy
 from .integration_views import ERRORS, _checked
-from .sessions import require_fresh
 from .setup_views import _closed, error_response
-
-
-def _fresh_after_cleanup(request, transition_id):
-    """Show reauthentication guidance without treating a browser flag as proof.
-
-    A full-scope automation caller meets the after-cleanup rule once cleanup
-    is complete, as ``confirmation_commands`` and the SQL guard accept
-    (ADM-11 PR 5).
-    """
-    try:
-        instant = require_fresh(request, record=False)
-    except PermissionError:
-        return False
-    completed = (
-        ProductionTransitionEvent.objects.filter(
-            request_id=transition_id, action="complete"
-        )
-        .latest("created_at")
-        .created_at
-    )
-    return is_automation(request) or instant >= completed
 
 
 @require_http_methods(["GET", "HEAD", "POST"])
@@ -90,9 +67,6 @@ def confirmation(request, campaign_id, request_id, preparation_id):
             "preview": preview,
             "origin_verified": verified,
             "confirmation_token": token,
-            "fresh": _fresh_after_cleanup(request, request_id),
-            # Step-up returns here; the sign-in view revalidates the path.
-            "here": request.path,
             "problems": [
                 PROBLEMS[code]
                 for code in (preview.problems if preview else state.problems)

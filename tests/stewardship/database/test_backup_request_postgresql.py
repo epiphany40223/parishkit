@@ -1,7 +1,8 @@
 """Take a backup now's requests under the real logins and guard (ADM-13 PR 3).
 
-The web login records a request only for a freshly signed-in Administrator,
-one at a time; only the backup login moves it forward; nobody deletes it.
+The web login records a request only for a signed-in Administrator's live
+session (any sign-in age, #1547), one at a time; only the backup login moves
+it forward; nobody deletes it.
 Request mode, the host cron's five-minute poll, stays silent with nothing to
 do, waits out a bulk send and another backup, and claims, runs and settles a
 waiting request; a scheduled run completes one too. The web reads the
@@ -72,16 +73,15 @@ def owner_request(*, age=timedelta(0), state="waiting", **values):
     )
 
 
-def test_the_web_records_one_request_for_a_fresh_administrator(auth_service, google):
-    """Fresh sign-in, one at a time, every time the database's."""
+def test_the_web_records_one_request_for_an_administrator(auth_service, google):
+    """The session's own sign-in, one at a time, every time the database's."""
     signed_in()
     first = insert()
     assert first.state == "waiting" and first.held_at is None
     # A second while the first waits is refused, whoever asks.
     with pytest.raises(DatabaseError, match="already waiting or running"):
         insert()
-    # A stale sign-in is refused: move the session's sign-in back past the
-    # five-minute window (the owner may; the guard refuses it for others).
+    # A sign-in instant other than the session's recorded one is refused.
     BackupRequest.objects.filter(pk=first.pk).update(state="expired", finished_at=now())
     current = session()
     with pytest.raises(DatabaseError, match="fresh Administrator"):
@@ -634,41 +634,25 @@ def test_a_lapsed_request_is_never_held_again(auth_service):
     assert request.held_at is None and request.state == "waiting"
 
 
-def test_a_live_automation_session_stands_in_for_a_fresh_sign_in(auth_service, google):
-    """A full-scope command session records a request though its sign-in is
-    older than five minutes, as the other fresh-gated guards admit (ADM-11
-    PR 5); once the session ends, the same insert is refused."""
-    from parishkit.stewardship.accounts import automation_sessions as automation
-    from parishkit.stewardship.accounts.automation_models import AutomationSession
-
+def test_a_live_session_of_any_sign_in_age_records_a_request(auth_service, google):
+    """A live session signed in three hours ago records a request (#1547);
+    once idle for over an hour, the same session is refused."""
     from .auth_builders import unguarded
-    from .automation_builders import command, paired
-    from .test_automation_sessions_postgresql import owner
 
-    _, secret, row = paired(auth_service)
-    caller = command(auth_service, secret)
-    login = caller.portal_session
-    # Ten minutes old for both, as fresh_v1 requires them equal.
-    older = row.authenticated_at - timedelta(minutes=10)
+    signed_in()
+    login = session()
     with unguarded():
-        AutomationSession.objects.filter(pk=row.pk).update(authenticated_at=older)
-        PortalSession.objects.filter(pk=login.pk).update(authenticated_at=older)
-
-    def ask():
-        """Insert a request for the command login, as the web."""
-        with task_login(ServiceRole.WEB, exact=True), transaction.atomic():
-            return BackupRequest.objects.create(
-                id=uuid4(),
-                actor_id=row.principal_id,
-                session_id=login.pk,
-                authenticated_at=older,
-            )
-
-    assert ask().state == "waiting"
+        PortalSession.objects.filter(pk=login.pk).update(
+            authenticated_at=now() - timedelta(hours=3), last_activity_at=now()
+        )
+    assert insert().state == "waiting"
     BackupRequest.objects.update(state="expired", finished_at=now())
-    automation.revoke(row.pk, owner(auth_service), reason="revoked_by_owner")
+    with unguarded():
+        PortalSession.objects.filter(pk=login.pk).update(
+            last_activity_at=now() - timedelta(minutes=61)
+        )
     with pytest.raises(DatabaseError, match="fresh Administrator"):
-        ask()
+        insert()
 
 
 def test_request_mode_never_combines_with_a_users_upgrade_resume(command):

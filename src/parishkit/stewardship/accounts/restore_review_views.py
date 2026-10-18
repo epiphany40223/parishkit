@@ -8,10 +8,9 @@ send), lets the Administrator settle each group, and releases the site.
 
 Every step posts to this page, which answers with the page itself so
 ui-v1.js swaps the review region in place; release answers with a redirect
-to Home, which ends the review. Settling and releasing need a Google sign-in
-within five minutes: a stale one is answered in place with the "Confirm with
-Google" step-up, and the SQL guards check it again. No step shows or changes
-a Family code or link.
+to Home, which ends the review. The SQL guards check again that the
+Administrator's session is live. No step shows or changes a Family code or
+link.
 
 After release, holds nobody decided stay in force. The Held emails page
 (``held_emails``, ``/admin/mail/held-emails/``, #757) lists every restore's
@@ -38,12 +37,7 @@ from .access_gate import status_page
 from .admin_editing import error_response
 from .admin_editing import principal as admin_principal
 from .authentication import runtime
-from .sessions import (
-    FreshAuthenticationRequired,
-    authenticated_admin,
-    freshness,
-    require_fresh,
-)
+from .sessions import authenticated_admin, sign_in_instant
 
 # The form fields each step accepts; anything else is refused unread.
 _FIELDS = {
@@ -56,7 +50,7 @@ _FIELDS = {
 }
 # An in-place refusal's HTTP status, by the reason the region states.
 _REFUSALS = {
-    "reauthenticate": 403,
+    "signed_out": 403,
     "changed": 409,
     "blocked": 409,
     "needs_holds": 409,
@@ -73,8 +67,8 @@ _HELD_FIELDS = {
 }
 
 
-def _fresh_or_refused(error):
-    """The guard's 42501 is a sign-in that lapsed between check and write."""
+def _signed_out(error):
+    """The guard's 42501 is a session that ended between check and write."""
     return getattr(error.__cause__, "sqlstate", None) == "42501"
 
 
@@ -124,9 +118,6 @@ def restore_review(request):
             "step": step,
             "release_ready": not refusal,
             "release_refusal": refusal,
-            # Settling and releasing need a recent sign-in: until then their
-            # buttons are unavailable, named by the step-up notice (#1331).
-            "fresh": freshness(request)[0],
             "page_url": reverse("admin:maintenance"),
         },
         status=status,
@@ -149,8 +140,6 @@ def _answer(step):
     """
     try:
         return step()
-    except FreshAuthenticationRequired:
-        return {"refused": "reauthenticate"}
     except StaleRecordError:
         return {"refused": "changed"}
     except review.ReleaseRefused as error:
@@ -163,17 +152,16 @@ def _answer(step):
         # so the page never reads their wording: the reasons a person can act
         # on (emails still needing a hold, a purge or campaign change
         # running, a refused resend) are checked first in Python and named
-        # above. What reaches here is a fresh sign-in that lapsed between
-        # check and write (42501), or a change that landed in between
-        # (another step, more emails to hold), which the refreshed page then
-        # shows.
-        if _fresh_or_refused(error):
-            return {"refused": "reauthenticate"}
+        # above. What reaches here is a session that ended between check
+        # and write (42501), or a change that landed in between (another
+        # step, more emails to hold), which the refreshed page then shows.
+        if _signed_out(error):
+            return {"refused": "signed_out"}
         return {"refused": "changed"}
     except DatabaseError as error:
-        if not _fresh_or_refused(error):
+        if not _signed_out(error):
             raise
-        return {"refused": "reauthenticate"}
+        return {"refused": "signed_out"}
     except (ValueError, TypeError, KeyError) as error:
         # A stale form's unexpected fields say so in the region (#1401).
         # ``_error`` is for the refusal log only: a template cannot read it.
@@ -199,9 +187,9 @@ def _step(request, principal, state):
     if action == "list":
         added = review.list_held_emails(actor_id=actor, correlation_id=uuid4())
         return {"listed": added}
-    # Every other step settles or releases: it needs a fresh sign-in first,
-    # so the step-up comes before the Administrator writes a note.
-    signed_in = require_fresh(request)
+    # Every other step settles or releases, recording the session's
+    # sign-in instant, which the guards bind to the live session.
+    signed_in = sign_in_instant(request)
     session = request.portal_session
     if action in {"group-preview", "group-confirm"}:
         return _group_step(request, state.groups, actor, signed_in)
@@ -299,9 +287,6 @@ def held_emails(request):
         {
             "held": state,
             "step": step,
-            # Deciding needs a recent sign-in: until then the buttons are
-            # unavailable, named by the step-up notice (#1331).
-            "fresh": freshness(request)[0],
             "page_url": reverse("admin:held_emails"),
         },
         status=status,
@@ -327,9 +312,8 @@ def _held_step(request, actor, state):
         raise unexpected_fields(request.POST, allowed=allowed)
     if action == "cancel":
         return {}
-    # A decision needs a fresh sign-in first, so the step-up comes before
-    # the Administrator writes a note.
-    signed_in = require_fresh(request)
+    # A decision records the session's sign-in instant, as above.
+    signed_in = sign_in_instant(request)
     return _group_step(
         request, state.groups, actor.identity, signed_in, after_release=True
     )

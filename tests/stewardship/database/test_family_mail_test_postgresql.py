@@ -418,7 +418,7 @@ def test_worker_issues_a_missing_credential_that_signs_in_only_within_dates(
     assert FamilySession.objects.filter(rehearsal_epoch_id=epoch_id).exists()
 
 
-def test_intake_refuses_production_ineligible_families_and_stale_sign_in(
+def test_intake_refuses_production_ineligible_families_and_a_forged_sign_in(
     family_test, monkeypatch
 ):
     """Web preparation and the SQL ticket guard refuse independently."""
@@ -446,12 +446,12 @@ def test_intake_refuses_production_ineligible_families_and_stale_sign_in(
             == 400
         )
     assert not FamilyMailTest.objects.exists()
-    # A stale Google sign-in is refused by web, and a forged timestamp is
-    # refused by SQL against the actual session record.
+    # A forged sign-in timestamp is refused by SQL against the actual
+    # session record. (A sign-in of any age is admitted, #1547.)
     with monkeypatch.context() as patch:
         patch.setattr(
             intake,
-            "require_fresh",
+            "sign_in_instant",
             lambda request: (
                 request.portal_session.authenticated_at - timedelta(minutes=1)
             ),
@@ -465,29 +465,6 @@ def test_intake_refuses_production_ineligible_families_and_stale_sign_in(
         assert response.status_code == 503, response.content
     assert not FamilyMailTest.objects.exists()
     assert not TaskRun.objects.filter(task_type=TASK_TYPE).exists()
-    # A real session whose Google sign-in is older than five minutes: web
-    # refuses, and SQL refuses the genuinely matching but stale timestamp too.
-    age_session(timedelta(minutes=10))
-    with web_login():
-        response = post(
-            browser, path, {"action": "confirm", "preview": token, "acknowledge": "on"}
-        )
-    assert response.status_code == 403
-    with monkeypatch.context() as patch:
-        patch.setattr(
-            intake,
-            "require_fresh",
-            lambda request: request.portal_session.authenticated_at,
-        )
-        with web_login():
-            response = post(
-                browser,
-                path,
-                {"action": "confirm", "preview": token, "acknowledge": "on"},
-            )
-        assert response.status_code == 503, response.content
-    assert not FamilyMailTest.objects.exists()
-    age_session(-timedelta(minutes=10))
     # Production offers no chosen-Family test at all.
     from .response_builders import activate_response_service
 
@@ -1286,70 +1263,26 @@ def test_scheduler_hints_a_prepared_family_test_message_under_its_grants(
 PAGE = {"HTTP_ACCEPT": "text/html,*/*;q=0.8", "HTTP_SEC_FETCH_MODE": "navigate"}
 
 
-def test_stale_sign_in_keeps_the_review_and_never_looks_sent(family_test):
-    """A stale sign-in is explained before and after Send; nothing is lost.
-
-    The page says a Google confirmation is needed before offering Send. A
-    submit that still arrives stale says nothing was sent and keeps the
-    reviewed DUIDs server-side, so after the step-up the same review returns
-    for the Admin to confirm; a real send then shows a one-time confirmation.
-    """
+def test_an_old_sign_in_sends_and_shows_the_confirmation(family_test):
+    """A sign-in older than five minutes sends at once (#1547): the review
+    offers Send, and a real send then shows a one-time confirmation."""
     harness, browser, path, sample = family_test
-    page = review(browser, path, [1])
-    assert page.context["fresh"] and b"Send these Family tests" in page.content
-    token = page.context["confirm"]["preview"].value()
     age_session(timedelta(minutes=10))
     try:
         page = review(browser, path, [1])
-        assert not page.context["fresh"]
-        assert page.context["signed_in_minutes"] >= 10
-        assert b"Confirm with Google" in page.content
-        # Send is shown unavailable, named by the sign-in reason (#563),
-        # with no confirm form to post.
-        assert b'name="action" value="confirm"' not in page.content
-        assert (
-            b'disabled aria-describedby="family-test-fresh-reason">'
-            b"Send these Family tests" in page.content
-        )
-        # The old signed review still reaches the server, stale: refused and
-        # explained, with the DUIDs kept for after the step-up.
+        assert b"Confirm with Google" not in page.content
+        assert b'name="action" value="confirm"' in page.content
+        token = page.context["confirm"]["preview"].value()
         with web_login():
-            refused = browser.post(
+            response = post(
+                browser,
                 path,
-                {
-                    "action": "confirm",
-                    "preview": token,
-                    "acknowledge": "on",
-                    "csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value,
-                },
-                **PAGE,
+                {"action": "confirm", "preview": token, "acknowledge": "on"},
             )
-        assert refused.status_code == 403
-        assert b"Nothing was done or sent." in refused.content
-        assert b"will be shown again when you return" in refused.content
-        assert not FamilyMailTest.objects.exists()
+            assert response.status_code == 302
+            page = browser.get(path)
     finally:
-        # The Google step-up refreshes this same session's sign-in time.
         age_session(-timedelta(minutes=10))
-    # Another template's page leaves the saved selection for its own page.
-    other = path.replace(path.split("/")[-2], str(uuid4()))
-    with web_login():
-        assert browser.get(other).status_code != 200
-        page = browser.get(path)
-    assert page.status_code == 200
-    assert page.context["restored"] and page.context["fresh"]
-    assert [row["duid"] for row in page.context["families"]] == [1]
-    assert page.context["sendable"] and page.context["sent"] is None
-    token = page.context["confirm"]["preview"].value()
-    # The restore is used once; a later visit starts empty.
-    with web_login():
-        assert not browser.get(path).context["restored"]
-    with web_login():
-        response = post(
-            browser, path, {"action": "confirm", "preview": token, "acknowledge": "on"}
-        )
-        assert response.status_code == 302
-        page = browser.get(path)
     assert page.context["sent"] == 1 and page.context["refresh"]
     assert b'data-live-status="family-tests" data-live-pending' in page.content
     assert str(page.context["items"][0]["label"]).startswith("Queued")

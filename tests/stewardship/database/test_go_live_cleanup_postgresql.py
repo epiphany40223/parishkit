@@ -2,11 +2,9 @@
 
 # ruff: noqa: F811 -- imported fixtures are injected by pytest name.
 
-from datetime import timedelta
-
 import pytest
 from django.core import signing
-from django.db import DatabaseError, connection, transaction
+from django.db import DatabaseError, connection
 from django.db.models import F
 from django.urls import reverse
 
@@ -657,18 +655,6 @@ def test_chosen_family_test_blocks_cleanup_until_settled_then_is_deleted(
     family = FamilyCampaign.objects.filter(
         campaign=campaign, portal_eligible=True, email_deliverable=True
     ).order_by("family_duid")[0]
-    # The fixture's login predates the five-minute window; make the session's
-    # Google sign-in genuinely fresh with the guards suspended only for this
-    # disposable fixture statement, so the real freshness checks run unchanged.
-    with transaction.atomic(), connection.cursor() as cursor:
-        cursor.execute("ALTER TABLE stewardship_portal_session DISABLE TRIGGER USER")
-        cursor.execute(
-            "UPDATE stewardship_portal_session SET authenticated_at=clock_timestamp(),"
-            "last_activity_at=clock_timestamp() WHERE id=%s",
-            [request.portal_session.pk],
-        )
-        cursor.execute("ALTER TABLE stewardship_portal_session ENABLE TRIGGER USER")
-    request.portal_session.refresh_from_db()
     with web_login():
         preview = intake.prepare(
             request, service, campaign.pk, template.record_id, (family.family_duid,)
@@ -720,22 +706,20 @@ def test_chosen_family_test_blocks_cleanup_until_settled_then_is_deleted(
     assert not FamilyMailTest.objects.filter(family_id__isnull=False).exists()
 
 
-def test_cleanup_needs_a_fresh_sign_in_and_records_it(
+def test_an_old_sign_in_starts_cleanup_and_records_it(
     ready_cleanup, settings, real_limiter
 ):
-    """A stale sign-in sees the step-up, not Start, and starts nothing (#547).
+    """A sign-in older than five minutes sees Start and starts cleanup (#1547).
 
-    The page offers "Confirm with Google" in place of the Start button, a
-    posted Start is refused with the step-up page returning to readiness, and
-    once fresh the request records the session's actual fresh sign-in.
+    The same form posted again returns the one request it started, which
+    records the session's Google sign-in instant.
     """
     from django.test import Client
 
     from parishkit.stewardship.accounts.authentication import AuthRuntime
     from parishkit.stewardship.accounts.models import PortalSession
-    from parishkit.stewardship.accounts.sessions import FreshAuthenticationRequired
 
-    from .auth_builders import stale_sign_in, unguarded
+    from .auth_builders import stale_sign_in
     from .test_setup_views_postgresql import post
 
     request, service, campaign = ready_cleanup
@@ -745,45 +729,17 @@ def test_cleanup_needs_a_fresh_sign_in_and_records_it(
     browser = Client(enforce_csrf_checks=True)
     browser.cookies["pk_admin"] = request.session.session_key
     path = reverse("admin:go_live")
+    stale_sign_in()
     with web_login():
         assert browser.get(path).status_code == 200
         response = post(browser, path, {"action": "verify"})
+        assert response.status_code == 200
+        assert "fresh" not in response.context
+        assert b"cleanup-fresh-reason" not in response.content
         token = response.context["cleanup_token"]
-        assert token and response.context["fresh"] is True
-    stale_sign_in()
-    with web_login():
-        response = post(browser, path, {"action": "verify"})
-        assert response.status_code == 200 and response.context["fresh"] is False
-        # Start is in view but unavailable, named by the step-up (#1331).
-        assert (
-            b'disabled aria-describedby="cleanup-fresh-reason">'
-            b"Start Testing cleanup</button>"
-        ) in response.content
-        assert b'name="preview_token"' not in response.content
-        assert b"Confirm with Google" in response.content
-        values = {"action": "cleanup", "preview_token": token, "acknowledge": "yes"}
-        refused = browser.post(
-            path,
-            values | {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value},
-            HTTP_ACCEPT="text/html",
-        )
-        assert refused.status_code == 403
-        assert f'name="next" value="{path}"'.encode() in refused.content
-        with pytest.raises(FreshAuthenticationRequired):
-            go_live_commands.start_cleanup(
-                request, service, campaign.pk, preview_token=token, acknowledge=True
-            )
-        assert not ProductionTransitionRequest.objects.exists()
-    # Undo the ageing, as a step-up would refresh this same session in place.
-    with unguarded():
-        PortalSession.objects.filter(pk=request.portal_session.pk).update(
-            authenticated_at=F("authenticated_at") + timedelta(minutes=6)
-        )
-    with web_login():
-        token = post(browser, path, {"action": "verify"}).context["cleanup_token"]
+        assert token
         values = {"action": "cleanup", "preview_token": token, "acknowledge": "yes"}
         assert post(browser, path, values).status_code == 302
-        # The same form posted again returns the one request it started.
         assert post(browser, path, values).status_code == 302
     started = ProductionTransitionRequest.objects.get()
     assert (

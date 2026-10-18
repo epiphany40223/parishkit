@@ -149,7 +149,7 @@ and verify its fingerprint; a reload signal alone is insufficient. The installer
 does not mount the Docker socket or get authority to restart other services.
 
 Phase 2 connects provider-specific validation/testing, handoff-key provisioning,
-whole-service startup and current-Admin/CSRF/fresh-Google web admission. The
+whole-service startup and current-Admin/CSRF web admission. The
 internal orchestrator requires the compiled target-specific validator; it never
 supplies a production always-successful validator. Initial installation follows
 the [runtime setup protocol](stewardship-runtime.md), including explicit host-side
@@ -186,9 +186,7 @@ An Administrator replaces the ParishSoft API key, the Google Workspace
 service-account key or the Slack bot token on that integration's settings page,
 in the same form as its settings. No server step is needed:
 
-1. Saving requires a Google sign-in within the last five minutes; otherwise the
-   Admin is sent through the step-up confirmation first and pastes the key
-   again. The key is sealed for the target's installer immediately and is never
+1. Saving seals the key for the target's installer immediately; it is never
    shown again.
 2. The same web request records the configuration request that will select the
    new fingerprint, together with any changed settings the key was checked
@@ -220,7 +218,7 @@ selection applies. If the selection fails for good (for example `stale_base`,
 when another settings change on the same base was applied first), the page
 shows an error saying what is stopped, with a **Finish switching to the new
 key** button. That page repeats the key's original selection on the current
-settings, and any fresh Administrator may confirm it. Only the key-scope
+settings, and any Administrator may confirm it. Only the key-scope
 settings saved with the key (what the provider checked it against, such as the
 organization ID or the Slack channel) are carried over, merged onto the current
 settings, so a newer change to anything else, such as the refresh schedule,

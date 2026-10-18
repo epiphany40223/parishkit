@@ -11,8 +11,8 @@ address. Automation access is rendered through the
 view's own ``access_context`` for every query its headings and "Include
 ended sessions" box lead to, two choices deep, so sorting and the box
 refresh in place exactly as on the server (#621). The approval page is
-served in each of its states: a stale sign-in, code entry, the review and
-the approved result.
+served in each of its states: code entry, the review and the approved
+result. The LOCAL sign-in page is served at its real address too.
 """
 
 import re
@@ -96,7 +96,7 @@ def _revoked(query):
     return ACCESS + "?" + "&".join(filter(None, (query, "revoked=1")))
 
 
-def _access_page(context, admin, query, *, own_live=True, fresh=True, refresh=None):
+def _access_page(context, admin, query, *, own_live=True, refresh=None):
     """Automation access for one query, built by the view's own context.
 
     The own session ("launch <assistant>", the older of the two live ones)
@@ -135,7 +135,6 @@ def _access_page(context, admin, query, *, own_live=True, fresh=True, refresh=No
             ),
         ] + ([] if own_live else [own])
     page = views.access_context(state, ME, everyone, ended)
-    page["fresh"] = fresh
     if refresh:
         page["refresh_url"] = refresh
     html = render_to_string(
@@ -205,27 +204,12 @@ def components(context, admin):
             )
             assert 'name="revoked"' in html
             responses[canonical(_revoked(shown))] = ("text/html", html)
-    responses["/automation-access-stale"] = (
-        "text/html",
-        _access_page(context, admin, "", fresh=False)[0],
-    )
-    # LOCAL has no Google: the step-up names the laptop command and records
-    # this page's return path for the local sign-in (#613).
-    local = context | {"local_environment": True}
-    state = views._access_state(QueryDict(""))
-    responses["/automation-access-stale-local"] = (
-        "text/html",
-        render_to_string(
-            "stewardship/automation-access.html",
-            local
-            | {"admin_chrome": admin}
-            | views.access_context(state, ME, [], [])
-            | {"fresh": False},
-        ),
-    )
+    # LOCAL's sign-in page, which the laptop command's link opens (#613).
     responses[LOCAL_SIGN_IN] = (
         "text/html",
-        render_to_string("stewardship/local-sign-in.html", local),
+        render_to_string(
+            "stewardship/local-sign-in.html", context | {"local_environment": True}
+        ),
     )
 
     def home(rows):
@@ -264,7 +248,6 @@ def components(context, admin):
             | {"admin_chrome": admin}
             | {
                 "back": ACCESS,
-                "next": APPROVAL,
             }
             | extra,
         )
@@ -276,20 +259,11 @@ def components(context, admin):
         "days": 30,
         "host_digest": "0123456789ab" + "c" * 52,
     }
-    responses[APPROVAL] = ("text/html", approval(state="enter", fresh=True))
-    responses["/automation-approval-stale"] = (
-        "text/html",
-        approval(state="enter", fresh=False),
-    )
-    responses["/automation-approval-stale-local"] = (
-        "text/html",
-        approval(state="enter", fresh=False, local_environment=True),
-    )
+    responses[APPROVAL] = ("text/html", approval(state="enter"))
     responses["/automation-approval-review"] = (
         "text/html",
         approval(
             state="review",
-            fresh=True,
             code="ABCD-EFGH",
             pending=pending,
             scope_label="Full",

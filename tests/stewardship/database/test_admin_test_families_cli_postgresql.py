@@ -5,8 +5,8 @@ the Send to chosen Families page's own functions, on the restricted web
 login, over the ``family_test`` fixture of test_family_mail_test_postgresql.py
 (source-backed Families and an invitation used by a schedule). The real
 message goes only to the Testing recipient, rendered later by the worker;
-these commands only write tickets. A live full-scope session stands in for
-the page's fresh sign-in (PR 5a) and leaves the fresh-gate trail (PR 5b).
+these commands only write tickets. A live full-scope session admits them
+and leaves the ``automation_fresh_gate`` trail (PR 5b).
 """
 
 import csv
@@ -119,7 +119,7 @@ def test_chosen_families_are_previewed_then_sent_once(admin, family_test):  # no
         ],
     }
     assert ticket.requested_by_id == row.principal_id
-    # The session's sign-in stood in for the page's fresh sign-in.
+    # The ticket records the session's sign-in instant.
     assert ticket.reauthenticated_at == row.authenticated_at
     assert trail() == (1, 1, 1)
     [event] = AuditEvent.objects.filter(event_type=EVENT)

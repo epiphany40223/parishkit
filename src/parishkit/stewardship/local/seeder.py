@@ -1289,7 +1289,7 @@ def prepare_step(request, configuration):
     receipts
     meet readiness; then the real go-live flow runs under the Admin session,
     each verify followed at once by its act: readiness and cleanup, link
-    preparation, a fresh sign-in, and the Production confirmation, whose
+    preparation, a new sign-in, and the Production confirmation, whose
     worker task activates the campaign as ``scheduled`` because the start is
     still in the future.
     """
@@ -1357,9 +1357,6 @@ def prepare_step(request, configuration):
         campaign=campaign, portal_eligible=True, email_eligible=True
     ).exists():
         raise SeedRefused("No Portal-eligible Family with an email was found.")
-    # Sending needs a fresh sign-in (five minutes); the waits above may have
-    # used it up, so step up again, as an Admin would on the page.
-    seed_web.sign_in_admin(web, request.admin_email)
     seed_web.sample_mail(
         web, service, campaign.pk, _initial_revision(service, campaign)
     )
@@ -1370,7 +1367,6 @@ def prepare_step(request, configuration):
     )
     settle(since)
     # 3. The real go-live: readiness and cleanup.
-    seed_web.sign_in_admin(web, request.admin_email)
     status = seed_web.start_go_live(web, service, campaign.pk)
     transition_id = status.request_id
 
@@ -1385,8 +1381,8 @@ def prepare_step(request, configuration):
 
     timed("cleanup", "the Testing cleanup to complete", cleaned)
     settle(since)
-    # Link preparation, then a fresh sign-in (confirmation needs one after
-    # cleanup) and the Production confirmation.
+    # Link preparation, then a new sign-in (no longer required since #1547)
+    # and the Production confirmation.
     seed_web.prepare_links(web, service, campaign.pk, transition_id)
 
     def prepared():
@@ -1416,7 +1412,6 @@ def prepare_step(request, configuration):
         .order_by("-created_at")
         .first()
     )
-    seed_web.sign_in_admin(web, request.admin_email)
     seed_web.confirm_production(
         web, service, campaign.pk, transition_id, preparation.pk
     )
@@ -1547,8 +1542,6 @@ def import_leader_user(request, web, service):
         LOGGER.warning("no ParishSoft Ministry leader without a user to import")
         return None
     since = datetime.now(UTC) - timedelta(minutes=1)
-    # The Apply needs a fresh sign-in; the refresh wait may have aged it.
-    seed_web.sign_in_admin(web, request.admin_email)
     seed_web.import_leader(web, service, leaders, email)
     wait_until(
         "the leader import to be installed",
@@ -1894,8 +1887,6 @@ def testing_step(request, configuration):
     )
     settle(since)
     revision = _initial_revision(service, campaign)
-    # Sending needs a fresh sign-in (five minutes); the waits may have aged it.
-    seed_web.sign_in_admin(web, request.admin_email)
     seed_web.sample_mail(web, service, campaign.pk, revision)
     timed(
         "sample_mail",
@@ -1915,7 +1906,6 @@ def testing_step(request, configuration):
     chosen = testing_families(campaign)
     if not chosen:
         raise SeedRefused("No Portal-eligible Family with an email was found.")
-    seed_web.sign_in_admin(web, request.admin_email)
     try:
         tickets = seed_web.family_tests(
             web, service, campaign.pk, revision, [duid for duid, _ in chosen]

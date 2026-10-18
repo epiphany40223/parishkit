@@ -19,8 +19,8 @@ acknowledgement hides only what was listed.
 ``events acknowledge`` is the pages' POST: admitted with the page's own
 capability (``MANAGE_USERS`` for a security event, ``SYSTEM_LOGS`` for the
 banner), recording activity and so needing a full-scope session, through
-the views' request-free ``acknowledge_now``. The pages ask for no recent
-sign-in and no confirmation, so it is neither fresh-gated nor prompting.
+the views' request-free ``acknowledge_now``. The pages ask for no
+confirmation, so it is neither privileged nor prompting.
 It records the page's own event and ``admin_cmd_events_acknowledge`` in the
 page's transaction, only when something was acknowledged.
 """

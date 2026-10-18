@@ -218,29 +218,16 @@ def test_a_pasted_private_key_is_refused_or_never_shown_back(auth_service, googl
         )
 
 
-def test_a_stale_sign_in_steps_up_after_the_code_then_reviews(auth_service, google):
-    """Time at the key machine costs a Google step-up, not the proof."""
+def test_an_old_sign_in_proves_reviews_and_confirms_a_key(auth_service, google):
+    """A sign-in older than five minutes replaces the key end to end (#1547)."""
     store = auth_service.store
     browser, _ = signed_in()
     private, public = keypair()
-    page = post(browser, URL, {"action": "challenge", "public_key": public})
-    code = backup_sealing.open_proof(challenge_of(page), private)
     stale_sign_in()
-    held = post(
-        browser,
-        URL,
-        {"action": "preview", "intent": field(page, "intent"), "code": code},
-    )
-    assert held.status_code == 200 and b"Code accepted" in held.content
-    assert b'name="preview"' not in held.content
-    # Still stale: the page keeps asking, and keeps the proved change.
-    assert b"Code accepted" in browser.get(URL).content
-    signed_in(browser)
-    review = browser.get(URL)
+    review = replace_key(browser, private, public)
+    assert review.status_code == 200
     fingerprint = backup_sealing.parse_public_key(public).fingerprint
     assert fingerprint.encode() in review.content
-    # The change is used once: reloading shows the ordinary page.
-    assert b"Code accepted" not in browser.get(URL).content
     apply(
         store,
         post(browser, URL, {"action": "confirm", "preview": field(review, "preview")}),
@@ -248,28 +235,18 @@ def test_a_stale_sign_in_steps_up_after_the_code_then_reviews(auth_service, goog
     assert configured(store) == [{"public_key": public}]
 
 
-def test_confirming_needs_a_recent_sign_in(auth_service, google):
-    """A review left open past the fresh window cannot be confirmed."""
+def test_a_review_confirms_after_the_sign_in_ages(auth_service, google):
+    """Time at the key machine between review and confirm costs nothing."""
+    store = auth_service.store
     browser, _ = signed_in()
     private, public = keypair()
     review = replace_key(browser, private, public)
     stale_sign_in()
-    response = post(
-        browser, URL, {"action": "confirm", "preview": field(review, "preview")}
+    apply(
+        store,
+        post(browser, URL, {"action": "confirm", "preview": field(review, "preview")}),
     )
-    assert response.status_code == 403
-    assert not ConfigurationChangeRequest.objects.exists()
-
-
-def test_starting_a_key_change_needs_a_recent_sign_in(auth_service, google):
-    """The Google step-up comes before the offline proof, not after it."""
-    browser, _ = signed_in()
-    _, public = keypair()
-    stale_sign_in()
-    assert b"replacing the key needs a Google sign-in" in browser.get(URL).content
-    response = post(browser, URL, {"action": "challenge", "public_key": public})
-    assert response.status_code == 403
-    assert "PKBKP1:" not in response.content.decode()
+    assert configured(store) == [{"public_key": public}]
 
 
 def test_a_proof_is_bound_to_its_administrator_and_settings(auth_service, google):

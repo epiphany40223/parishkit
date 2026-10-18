@@ -26,14 +26,13 @@ and what the newest refresh found (``source.workgroups.current_evidence``).
   the request's own durable transaction. A repeat returns the original
   request and records nothing new.
 
-None is fresh-gated or prompts, as the page asks for no recent sign-in and
-shows no confirmation dialog: the reviewed token is the confirmation. Once
-the change is applied, a clear stops every exclusion at once; a new name
-applies only from the next ParishSoft refresh that reads it, and until then
-the Families the newest refresh found in the previous WorkGroup are still
-excluded (``source.workgroups.applied_evidence``, #1305). ``workgroup show``
-reports that applied set as ``excluding`` beside the page's ``state``
-(#1313).
+None is privileged or prompts, as the page shows no confirmation dialog: the
+reviewed token is the confirmation. Once the change is applied, a clear stops
+every exclusion at once; a new name applies only from the next ParishSoft
+refresh that reads it, and until then the Families the newest refresh found in
+the previous WorkGroup are still excluded
+(``source.workgroups.applied_evidence``, #1305). ``workgroup show`` reports
+that applied set as ``excluding`` beside the page's ``state`` (#1313).
 """
 
 from dataclasses import dataclass

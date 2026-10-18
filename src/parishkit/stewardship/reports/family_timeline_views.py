@@ -438,22 +438,13 @@ def export(request, campaign_id, family_id):
     Administrator may export it (``create_timeline_export`` rechecks inside its
     lock). The form carries the page's mode, the format, the time zone and a
     one-time request key; anything else is refused. The file can hold the
-    Family's live code, so, as for the Family directory's export (#547), it
-    needs a Google sign-in within five minutes: otherwise the step-up page,
-    which returns to this timeline, and nothing is made.
+    Family's live code.
     """
     from uuid import UUID
 
-    from parishkit.stewardship.accounts import admin_navigation
-    from parishkit.stewardship.accounts.admin_editing import step_up_response
-    from parishkit.stewardship.accounts.sessions import (
-        FreshAuthenticationRequired,
-        require_fresh,
-    )
-
     from .export_services import ExportRequestBound
     from .export_ui import _redirect
-    from .timeline_exports import MODES, create_timeline_export
+    from .timeline_exports import create_timeline_export
 
     try:
         service = runtime()
@@ -470,17 +461,6 @@ def export(request, campaign_id, family_id):
         ):
             return private_response("Invalid timeline export.\n", status=400)
         admit_report_read(campaign_id)
-        try:
-            require_fresh(request)
-        except FreshAuthenticationRequired:
-            # Back to the view the form was posted from: the Testing
-            # rehearsal stays in Testing (an unknown mode is refused below,
-            # after the sign-in, so it returns to Production here).
-            mode = parameters["mode"] if parameters["mode"] in MODES else "production"
-            return step_up_response(
-                timeline_url(family_id, mode),
-                admin_navigation.PAGES["family_timeline"].label,
-            )
         result = create_timeline_export(
             service.store,
             principal.identity,

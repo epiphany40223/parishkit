@@ -511,9 +511,6 @@ CHECKOUT_READERS = {
     "tests/stewardship/database/test_mail_send_report_postgresql.py": (
         "docs/guides/stewardship-mail-send-report.md"
     ),
-    "tests/stewardship/browser/test_automation.py": None,
-    # The LOCAL step-up's laptop command, shown as page text (#619).
-    "tests/stewardship/browser/test_local_step_up.py": None,
 }
 CHECKOUT_DIRECTORIES = ("docs", "tools", "scripts", "deploy", ".github")
 

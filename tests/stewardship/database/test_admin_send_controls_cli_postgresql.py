@@ -176,7 +176,7 @@ def test_a_pause_and_resume_from_the_command_line(scheduled, monkeypatch):
     [control] = DeliveryControlCommand.objects.all()
     assert result["command_id"] == str(control.pk)
     assert control.action == "pause" and control.reason == "Wrong reminder"
-    # The command session stood in for the recent sign-in.
+    # The command session's sign-in is recorded.
     row = session_row(secret)
     assert AutomationLogin.objects.filter(
         portal_session_id=control.session_id, automation_session=row

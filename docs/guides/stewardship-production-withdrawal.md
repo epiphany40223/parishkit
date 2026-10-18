@@ -10,9 +10,9 @@ controls validation, reviews and protected delivery.
 
 ## Increment boundary
 
-Deliver the current-Admin pre-start withdrawal workflow: fresh Google
-authentication, reason and irreversible-cleanup acknowledgement; exact future
-live-work inventory; safe cancellation and blockers; atomic return to draft and
+Deliver the current-Admin pre-start withdrawal workflow: a live Admin session
+(any sign-in age since #1547), reason and irreversible-cleanup
+acknowledgement; exact future live-work inventory; safe cancellation and blockers; atomic return to draft and
 Testing with structural unlock, readiness invalidation and immutable audit.
 Reject after start even when the boundary worker is delayed. Preserve all prior
 Testing cleanup and activation history. Repeated go-live must use a new complete
@@ -39,7 +39,7 @@ deployment, release or retained database deletion are part of this increment.
 
 The native current-Admin workflow binds its reason, irreversible-cleanup consent,
 campaign/runtime versions and exact work inventory into a five-minute signed
-preview. Fresh Google authentication and independent SQL checks gate the final
+preview. A live Admin session and independent SQL checks gate the final
 immutable receipt. One transaction cancels safely unsent scheduled work through
 the shared reconciliation owner, changes Production/scheduled to Testing/draft,
 unlocks structural edits and invalidates readiness. Unknown acceptance (including

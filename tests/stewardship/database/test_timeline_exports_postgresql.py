@@ -157,7 +157,7 @@ def test_the_page_and_the_command_export_the_same_timeline(
     argv = (*argv, "--yes")
     code, document = run(*argv, "--format", "csv", "--timezone", "UTC")
     assert code == 0, document
-    # The session stood in for the page's recent sign-in.
+    # The full-scope session's use is recorded once.
     assert gates.count() == 1
     by_command = ExportRequest.objects.get(pk=document["result"]["export"]["id"])
     for field in ("report", "campaign_id", "parameters", "format", "browser_timezone"):
@@ -241,9 +241,8 @@ def test_the_page_and_the_command_export_the_same_timeline(
     assert code == 1 and document["error"]["code"] == "not_available", document
 
 
-def test_the_timeline_export_needs_a_fresh_sign_in(request, auth_service, google):
-    """A stale sign-in queues nothing and returns to the timeline (#547); after
-    the step-up the same form queues the export."""
+def test_an_old_sign_in_queues_the_timeline_export(request, auth_service, google):
+    """A sign-in older than five minutes queues the export (#1547)."""
     harness, families = rehearsed_timeline(request)
     page = reverse("admin:family_timeline", args=[families[1]])
     browser, _ = signed_in()
@@ -254,24 +253,6 @@ def test_the_timeline_export_needs_a_fresh_sign_in(request, auth_service, google
         "request_key": str(uuid4()),
     }
     stale_sign_in()
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        refused = post(browser, page + "exports/", fields, HTTP_ACCEPT="text/html")
-    assert refused.status_code == 403
-    body = refused.content.decode()
-    assert "Confirm with Google" in body and "Nothing was done" in body
-    assert f'name="next" value="{page}"' in body
-    # From the Testing rehearsal view, the step-up returns to that view.
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        testing = post(
-            browser,
-            page + "exports/",
-            fields | {"mode": "testing", "request_key": str(uuid4())},
-            HTTP_ACCEPT="text/html",
-        )
-    assert testing.status_code == 403
-    assert f'name="next" value="{page}?mode=testing"' in testing.content.decode()
-    assert not ExportRequest.objects.filter(report="family_timeline").exists()
-    signed_in(browser)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         assert post(browser, page + "exports/", fields).status_code == 302
     assert ExportRequest.objects.filter(report="family_timeline").count() == 1

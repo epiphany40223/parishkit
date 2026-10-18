@@ -156,9 +156,8 @@ def credential(target, state):
 
 @pytest.mark.parametrize("width", [320, 1280])
 def test_finishing_setup_moves_on_in_place(page, component_origin, axe_source, width):
-    """Each step moves on without a reload, the step-up notice appears in
-    place when it is needed, and completion shows Continue, drops Cancel
-    setup and stops."""
+    """Each step moves on without a reload, and completion shows Continue,
+    drops Cancel setup and stops."""
     from .test_components import axe_violations
 
     page.set_viewport_size({"width": width, "height": 900})
@@ -169,7 +168,7 @@ def test_finishing_setup_moves_on_in_place(page, component_origin, axe_source, w
         prepared=False,
         credentials=[credential("parishsoft", "testing")],
         # A sign-in older than five minutes, before Google Workspace's
-        # credential started: the step-up notice is needed.
+        # credential started: it still installs, with no notice (#1547).
         authenticated_at=now - timedelta(minutes=10),
     )
     completed = {"overall": "completed"}
@@ -180,7 +179,6 @@ def test_finishing_setup_moves_on_in_place(page, component_origin, axe_source, w
     )
     page.goto(component_origin + "/setup-installation")
     page.evaluate(MARK)
-    assert page.locator("[data-step-up-notice]").count() == 0
     details = page.locator("details", has_text="Technical details")
     summary = details.locator("summary")
     summary.focus()
@@ -190,7 +188,7 @@ def test_finishing_setup_moves_on_in_place(page, component_origin, axe_source, w
     step = page.locator('[data-finishing-step="parishsoft"]')
     has_text(step.locator(".stage-status"), "In progress")
     visible(step.get_by_text("Checking the credential with the provider."))
-    visible(page.locator("[data-step-up-notice]"))
+    assert "sign-in" not in page.locator("main").inner_text()
     focused(summary)
     assert page.evaluate(MARKED) == "kept"
     assert same_place(place(page, "h1"), above)
@@ -200,7 +198,6 @@ def test_finishing_setup_moves_on_in_place(page, component_origin, axe_source, w
     visible(page.get_by_role("heading", name="Setup is complete"))
     visible(page.locator(".setup-actions").get_by_role("link", name="Continue"))
     assert page.get_by_role("button", name="Cancel initial setup").count() == 0
-    assert page.locator("[data-step-up-notice]").count() == 0
     has_text(page.locator("[data-live-announcer]"), "Setup is complete.")
     focused(summary)
     assert page.evaluate(MARKED) == "kept"

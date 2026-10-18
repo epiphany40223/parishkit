@@ -72,8 +72,8 @@ class MutableRecord(DurableRecord):
 
     immutable_fields = ("id", "created_at")
     write_once_fields = ()
-    # Instants that may only advance, such as a session's step-up
-    # reauthentication. The concrete SQL guard also bounds them by its clock.
+    # Instants that may only advance, such as a session's sign-in instant.
+    # The concrete SQL guard also bounds them by its clock.
     forward_only_fields = ()
     updated_at = UTCDateTimeField(db_default=Now(), editable=False)
     version = models.PositiveBigIntegerField(default=1, editable=False)

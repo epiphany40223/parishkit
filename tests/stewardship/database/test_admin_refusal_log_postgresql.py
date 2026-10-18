@@ -16,7 +16,6 @@ import pytest
 from django.test import Client, RequestFactory
 from django.urls import resolve
 
-from parishkit.stewardship.accounts.admin_editing import step_up_response
 from parishkit.stewardship.accounts.models import PortalUser
 from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.audit.models import OperationalLog
@@ -102,21 +101,6 @@ def test_a_permission_refusal_is_a_warning(two_admins, google):  # noqa: F811
     assert entry.actor_id == user_id("staff@example.org")
     assert entry.context["codes"] == ["denied"]
     assert entry.context["reason"] == "denied"
-
-
-def test_a_step_up_answer_is_written_at_info():
-    """A fresh-gated action's first answer, through the hook (spec: INFO)."""
-    actor = uuid4()
-    request = RequestFactory().post(SESSIONS)
-    request.resolver_match = resolve(SESSIONS)
-    request.principal = Principal(actor, roles=frozenset({"administrator"}))
-    response = AdminRefusalMiddleware(lambda _: step_up_response("/admin/", "Home"))(
-        request
-    )
-    assert response.status_code == 403
-    (entry,) = entries()
-    assert entry.level == "INFO" and entry.actor_id == actor
-    assert entry.context["reason"] == "fresh_authentication_required"
 
 
 def test_a_greyed_out_menu_page_opened_directly_is_not_recorded(

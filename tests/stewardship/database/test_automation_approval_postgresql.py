@@ -1,8 +1,7 @@
 """The automation approval page, in a browser signed in with Google (ADM-11).
 
-The page an Administrator opens from the command line's link: it needs a
-fresh sign-in, offering "Confirm with Google" rather than refusing when the
-sign-in is older than five minutes; it gives a wrong code and another
+The page an Administrator opens from the command line's link: any live
+sign-in approves, however old (#1547); it gives a wrong code and another
 Administrator's pairing the same reply; it shows the request (label escaped,
 scope as plain text, the host prefix) with a confused-deputy warning; and it
 lets the scope and lifetime be lowered, never raised.
@@ -88,24 +87,21 @@ def test_the_page_lowers_but_never_raises_scope_or_lifetime(auth_service, google
     assert (row.expires_at - database_now()).days < 3
 
 
-def test_a_stale_sign_in_gets_the_confirm_step_not_a_refusal(auth_service, google):
-    """Older than five minutes: Confirm with Google, and no code is accepted."""
+def test_an_old_sign_in_approves_without_a_step_up(auth_service, google):
+    """A sign-in older than five minutes approves at once (#1547), through the
+    SQL guard, which records the browser session's own sign-in instant."""
     browser, _ = signed_in()
     _, code = start(auth_service)
     stale_sign_in()
     page = browser.get(PAGE)
-    assert page.status_code == 200
-    assert b"Confirm with Google" in page.content
-    assert b'name="code" autocomplete="off" spellcheck="false" maxlength="16" ' in (
-        page.content
-    )
+    assert page.status_code == 200 and b"Confirm with Google" not in page.content
     (field,) = re.findall(rb'<input id="automation-code"[^>]*>', page.content)
-    assert b" required " in field and b" disabled " in field
+    assert b" disabled" not in field
     review = lookup(browser, code)
-    assert review.status_code == 200 and b"Confirm with Google" in review.content
-    assert b"launch &lt;assistant&gt;" not in review.content
-    assert approve(browser, code).status_code == 200
-    assert not AutomationSession.objects.exists()
+    assert review.status_code == 200 and b"launch &lt;assistant&gt;" in review.content
+    approved = approve(browser, code)
+    assert approved.status_code == 200 and b"Session approved" in approved.content
+    assert AutomationSession.objects.get().scope == "full"
 
 
 def test_staff_never_reach_the_page(two_admins, google):  # noqa: F811

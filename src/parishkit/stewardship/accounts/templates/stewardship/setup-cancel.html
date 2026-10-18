@@ -10,7 +10,7 @@
 <p><a href="{% url 'admin:setup' %}">{% translate "Check setup status" %}</a></p>
 {% else %}
 <p class="visually-hidden" role="status" data-live-announcer="setup-finishing"></p>
-<div data-live-mirror-target="setup-step-up">{% if reauthenticate %}{% include 'stewardship/setup-finishing-step-up.html' %}{% endif %}</div>
+
 {% include 'stewardship/setup-finishing-status.html' %}
 <details><summary>{% translate "Technical details" %}</summary>
 <p>{% translate "Configuration checkpoint" %}: {{ checkpoint|default:'—' }}</p>

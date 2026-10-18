@@ -2,10 +2,10 @@
 
 The command shows the page's preview at the prompt and records the request
 through the page's own ``request_backup`` on the restricted web login. The
-request's guard admits the full-scope automation session as the fresh
-sign-in (a session whose sign-in is older than five minutes here), and the
-command records ``backup_requested`` with its own
-``admin_cmd_system_backup_now`` and the fresh gate's trail.
+request's guard admits the live full-scope automation session (whose
+sign-in is older than five minutes here), and the command records
+``backup_requested`` with its own ``admin_cmd_system_backup_now`` and the
+``automation_fresh_gate`` trail.
 """
 
 from datetime import timedelta
@@ -44,8 +44,8 @@ def count(event):
 def test_a_backup_is_requested_from_the_command_line(admin):
     """The prompt shows the preview; the request, its events and a safe repeat."""
     _, secret, row = paired(admin.service)
-    # The session's sign-in is ten minutes old: only the automation session
-    # stands in for a fresh one.
+    # The session's sign-in is ten minutes old: any age is admitted while
+    # the full-scope automation session is live.
     older = row.authenticated_at - timedelta(minutes=10)
     with unguarded():
         AutomationSession.objects.filter(pk=row.pk).update(authenticated_at=older)

@@ -813,38 +813,18 @@ def test_retried_exports_read_current_head_emails_after_compaction(
     assert abs(details[HEAD_EMAILS_DETAIL] - as_of) < timedelta(milliseconds=1)
 
 
-def test_directory_export_needs_a_fresh_sign_in(live_response_service, google):
-    """A stale sign-in queues nothing and returns to the page the form came from.
+def test_an_old_sign_in_queues_a_directory_export(live_response_service, google):
+    """A sign-in older than five minutes queues exactly one export (#1547).
 
-    After the step-up the same form queues exactly one export, and posting it
-    again returns that export rather than a second one (#547).
+    Posting the same form again returns that export rather than a second one.
     """
     harness = live_response_service
     browser, _ = signed_in()
-    route = reverse("admin:family_directory")
     export = reverse("admin:family_directory_export")
     fields = DirectoryQuery(exact_code=harness.code).form_values() | dict(
         format="csv", browser_timezone="UTC", request_key=str(uuid4())
     )
     stale_sign_in()
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        for path, mailing, back in (
-            (export, "no", route),
-            (export, "yes", route + "?mailing=yes"),
-        ):
-            values = dict(fields)
-            values["mailing"] = mailing
-            refused = post(browser, path, values, HTTP_ACCEPT="text/html")
-            assert refused.status_code == 403
-            page = refused.content.decode()
-            assert "Confirm with Google" in page and "Nothing was done" in page
-            assert f'name="next" value="{back}"' in page
-            assert (
-                "you will then return to Active parishioner family directory." in page
-            )
-            assert harness.code not in page
-        assert not ExportRequest.objects.exists()
-    signed_in(browser)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         created = post(browser, export, fields)
         assert created.status_code == 302

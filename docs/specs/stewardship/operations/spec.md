@@ -948,7 +948,7 @@ execution/resume of one recovery operation is idempotent and cannot emit
 duplicate grants/events. Preserve prior configuration and audit history.
 
 Matching database activation also revokes all administration-portal sessions
-and pending administrative OAuth/reauthentication state, records a parish-owned
+and pending administrative OAuth state, records a parish-owned
 audit with operator identity/reason, target, operation ID, and before/after
 digests/roles, and creates a persistent unacknowledged security event. Queue
 operational notifications to preexisting Admins and the replacement address
@@ -1183,13 +1183,12 @@ and checks the expected ParishSoft organization without mutation. The mode
 stays as restored: the restore gate, not Testing, keeps the scheduler, ordinary
 worker admission, production outbox dispatch and Family mail off. Before
 exposing any web route, restore invalidates
-all restored administration and Family sessions, pending OAuth state, and
-cached reauthentication evidence, and revokes every
+all restored administration and Family sessions and pending OAuth state,
+and revokes every
 [automation session](../admin-automation/spec.md#session-rules) (`restore`,
 as `revoke-automation-sessions` does in the v1 manual restore).
-Fresh Google login is required for Admin,
-Staff, and Ministry leaders; neither a saved cookie nor a previously fresh
-reauthentication timestamp survives restore. Before `web` starts, the
+A new Google sign-in is required for Admin,
+Staff, and Ministry leaders; no saved cookie survives restore. Before `web` starts, the
 operator runs `pk-stewardship restore-begin --backup-at SET_NAME` in the
 `admin-recovery` profile. It records a `restore_begin` runtime transition that
 sets the durable `restore_review_required` gate with a new restore id and the
@@ -1605,10 +1604,9 @@ refusal, with a closed reason code saying which, so a new kind needs no
 migration. A refusal is a 400, 403, 404, 409, 410 or 422 answer to a request
 that resolved to an Admin page: a field or form error, a stale page,
 unexpected or duplicated form fields, an expired or altered
-[review](../ui-conventions/spec.md#review-dialog) preview, a denial, an
-action that needs a fresh sign-in, or a CSRF failure. A page that answers
-a refusal in place with 200 (an action's region showing the step-up
-notice, or Automation access refusing a pairing code) marks its answer as
+[review](../ui-conventions/spec.md#review-dialog) preview, a denial, or a
+CSRF failure. A page that answers a refusal in place with 200 (such as
+Automation access refusing a pairing code) marks its answer as
 a refusal, and it is recorded without a status. A 404 for an address
 that names no Admin page is not input and is not recorded. A control drawn
 [unavailable](../ui-conventions/spec.md#prerequisite-gates) is not a
@@ -1625,9 +1623,11 @@ before it becomes a page for people, so no view makes a logging call of its
 own. The reason comes from what the refusal already carries: its closed
 `ErrorCode` values and field identifiers; a closed reason code on the
 refusal itself, which the shared refusals fix (`stale_page`,
-`unexpected_fields`, `expired_preview`, `bad_signature`,
-`fresh_authentication_required`, `csrf_failed`, `denied`, and `gone` for a
-retired action or another campaign's address), or which a refusal names
+`unexpected_fields`, `expired_preview`, `bad_signature`, `csrf_failed`,
+`denied`, and `gone` for a retired action or another campaign's address;
+`fresh_authentication_required` stays in the set only so entries written
+before [#1547](https://github.com/epiphany40223/parishkit/issues/1547)
+still read, and nothing emits it now), or which a refusal names
 for itself (such as `campaign_zone_not_parish`, `image_too_large` or the
 Off-site backups page's Test access refusals); and the error codes of a
 refused form: Django's own (`required`, `invalid_choice`, `max_length`
@@ -1734,11 +1734,10 @@ the command line agree:
 | --- | --- |
 | `denied` (the fixed reason of `UserFacingDenied` and of the access checks' refusals), `csrf_failed`, and each reason whose cause is server state or configuration rather than the input | WARNING |
 | `unclassified` | WARNING when the exception is a `PermissionError` or any subclass of it, INFO otherwise |
-| Every other reason, `fresh_authentication_required` included | INFO |
+| Every other reason | INFO |
 
-Python keeps the WARNING reasons in one closed set. A step-up request is
-INFO although it is a 403: it is the ordinary first answer to every
-fresh-gated action. `audit.log_contract.REQUIRED` requires `reason` on a
+Python keeps the WARNING reasons in one closed set.
+`audit.log_contract.REQUIRED` requires `reason` on a
 WARNING entry
 ([what went wrong](../background-processing/spec.md#what-went-wrong-and-recovery)).
 
@@ -1759,10 +1758,8 @@ advisory lock is held, so it agrees with the database time the writer
 trigger stamps on the row, rather than with the transaction's start, which
 may come before a lock wait. The 30th entry of a budget in a window carries
 `capped: true`; later refusals of that
-level in that window have the process-log line only. Step-up requests count
-against the INFO budget: every durable row is kept for good, so every
-durable row is bounded, and an Administrator who meets 30 step-ups in 10
-minutes has nothing more to learn from a 31st. The count and the insert run
+level in that window have the process-log line only. Every durable row is
+kept for good, so both budgets bound them. The count and the insert run
 in one short transaction that first takes a transaction advisory lock for
 that actor and level, so concurrent requests are serialised and the cap is
 exact. The count reads only that actor's refusal entries in the window,
@@ -1809,14 +1806,10 @@ stops before closing the response loses the record, line included.
 
 **Not duplicated.** Refusals that already leave a record keep it and get no
 second one: refused sign-ins (`admin_login_refused` and the sampled
-`admin_login_denied`), including a step-up sign-in by the wrong account,
-and refused automation sessions (`automation_session_refused`). The code
+`admin_login_denied`) and refused automation sessions (`automation_session_refused`). The code
 that writes such a record marks the request or response as already
 recorded, and the hook skips a marked one, so each of those paths gives
-its own record and no `admin_input_refused` entry or line. A completed
-step-up stays recorded as `admin_step_up` or `automation_fresh_gate`; the
-refused request that asked for it is new information and is recorded, with
-reason `fresh_authentication_required`. Debug logging is unchanged, and the
+its own record and no `admin_input_refused` entry or line. Debug logging is unchanged, and the
 browser sends no report of its own: the server already knows every refusal
 it makes.
 
@@ -2218,7 +2211,7 @@ Required suites include:
   Family path, including stale submit and repeat visit;
 - browser and authorization tests proving that user changes (New, Edit,
   Delete and Import Ministry leaders) save only through Review and Apply,
-  without reauthentication, while enforcing CSRF, optimistic concurrency,
+  while enforcing CSRF, optimistic concurrency,
   current-Admin authorization, last-Administrator protection, and complete
   audit records; that the Users tables sort in place; and that their pages
   have no horizontal page scroll at 320 px and 1280 px;

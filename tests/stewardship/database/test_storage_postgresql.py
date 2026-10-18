@@ -1005,7 +1005,7 @@ def test_insert_and_update_use_database_clock(portal_session, monkeypatch):
 def test_session_bindings_are_immutable_in_service_and_sql(portal_session, field):
     """The same attribution UUID cannot be rebound to a new login identity.
 
-    Step-up may advance ``authenticated_at``, but never move it backwards.
+    ``authenticated_at`` may only advance, never move backwards.
     """
     value = {
         "principal_id": uuid4(),
@@ -1029,10 +1029,10 @@ def test_session_bindings_are_immutable_in_service_and_sql(portal_session, field
 
 
 def test_session_authentication_advances_only_to_a_past_instant(portal_session):
-    """Step-up moves the verified instant forward in place, never into the future."""
+    """The verified instant moves forward in place, never into the future."""
     later = portal_session.authenticated_at + timedelta(minutes=10)
 
-    def step_up(record):
+    def advance(record):
         """Advance both instants, as the chronology CHECK requires."""
         record.authenticated_at = record.last_activity_at = later
 
@@ -1042,7 +1042,7 @@ def test_session_authentication_advances_only_to_a_past_instant(portal_session):
         expected_version=1,
         actor_id=None,
         correlation_id=uuid4(),
-        change=step_up,
+        change=advance,
     )
     assert changed.authenticated_at == later
     future = datetime(2100, 1, 1, tzinfo=UTC)

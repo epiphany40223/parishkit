@@ -103,8 +103,8 @@ REASONS = frozenset(
     }
 )
 # Reasons recorded at WARNING: denials, CSRF failures and causes that are
-# server state or configuration rather than the input. Every other reason,
-# a step-up request included, is INFO; ``unclassified`` is WARNING only for
+# server state or configuration rather than the input. Every other reason
+# is INFO; ``unclassified`` is WARNING only for
 # a PermissionError (see ``audit.refusals.level_of``).
 WARNING_REASONS = frozenset(
     {

@@ -372,6 +372,9 @@ FROZEN = {
     "0113_census_handling_registry.sql": (
         "a6c031014875eea7c98aa66a488e9f38e417ad8c3dbf38992622590e852cda1c"
     ),
+    "0114_no_sign_in_age.sql": (
+        "4948755ee2960e59f422a4253d637afc8f9e02b1d161e6608ea90bc977c8f9c0"
+    ),
 }
 
 

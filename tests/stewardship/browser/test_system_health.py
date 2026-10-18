@@ -7,17 +7,13 @@ import pytest
 from .system_health_components import (
     ACCEPT_CHANGED,
     ACCEPT_DONE,
-    ACCEPT_FRESH,
     ACCEPT_LAPSED,
     ACCEPT_LATE,
-    ACCEPT_LOCAL_FRESH,
-    ACCEPT_LOCAL_STALE,
+    ACCEPT_OFFERED,
     ACCEPT_PAGE,
     ACCEPT_PREVIEW,
     ACCEPT_SETTLED,
     ACCEPT_STALE,
-    ACCEPT_STEP_UP,
-    ACCEPT_STEP_UP_LATE,
     ALLOW_CLEARED,
     ALLOW_CLEARED_STATUS,
     ALLOW_PAGE,
@@ -29,14 +25,14 @@ from .system_health_components import (
     BACKUP_PAGE,
     BACKUP_PREVIEW,
     BACKUP_REQUESTED,
-    BACKUP_STEP_UP,
+    BACKUP_SIGNED_OUT,
     DATED,
     DEBUG_LIVE,
     DEBUG_PAGE,
     DEBUG_PREVIEW,
     DEBUG_SET,
+    DEBUG_SIGNED_OUT,
     DEBUG_STATUS,
-    DEBUG_STEP_UP,
     DEBUG_TILE,
     HEALTHY,
     MAIL,
@@ -1158,8 +1154,9 @@ def test_a_requested_backups_progress_follows_under_its_button(page, component_o
 
 
 def test_refusals_show_in_the_dialog(page, component_origin):
-    """A stale sign-in offers the step-up, a race says so; never raw JSON."""
-    _routed(page, component_origin, {"preview": (403, BACKUP_STEP_UP)})
+    """An ended session says to sign in again, a race says so; never raw
+    JSON."""
+    _routed(page, component_origin, {"preview": (403, BACKUP_SIGNED_OUT)})
     page.goto(component_origin + BACKUP_PAGE + "#health-backups")
     kept = _not_reloaded(page)
     page.locator("#backup-now").get_by_role(
@@ -1167,12 +1164,12 @@ def test_refusals_show_in_the_dialog(page, component_origin):
     ).click()
     dialog = _dialog(page, "Take a backup now?")
     error = dialog.locator("[data-confirm-error]")
-    expect(error.get_by_role("button", name="Confirm with Google")).to_be_visible()
-    expect(error).to_contain_text("For security, taking a backup now")
-    # Only the sentence is the alert, never the Confirm control with it.
-    expect(error.locator('p[role="alert"]')).to_contain_text("For security")
+    alert = error.locator('p[role="alert"][data-backup-refused="signed_out"]')
+    expect(alert).to_contain_text("Your sign-in has ended")
+    expect(alert).to_contain_text("Nothing was requested.")
+    expect(alert.get_by_role("link", name="Sign in again")).to_be_visible()
+    # Only the sentence is the alert, never the region around it.
     assert error.get_attribute("role") is None
-    assert error.locator('[role="alert"] button').count() == 0
     expect(dialog.get_by_role("button", name="Apply")).to_be_hidden()
     # The title first, as for any review, so the reader hears what it is.
     expect(dialog.locator("[data-review-title]")).to_be_focused()
@@ -1400,13 +1397,13 @@ def test_turning_off_debug_logging_updates_the_tile_and_both_buttons_at_once(
     assert kept()
 
 
-def test_a_stale_sign_in_offers_the_step_up_in_the_debug_dialog(page, component_origin):
-    """The shared "For security" notice and Confirm with Google, in the
-    dialog."""
+def test_an_ended_session_is_said_in_the_debug_dialog(page, component_origin):
+    """The shared signed-out sentence and its Sign in again link, in the
+    dialog (#1547)."""
     _routed(
         page,
         component_origin,
-        {"debug_off_preview": (403, DEBUG_STEP_UP)},
+        {"debug_off_preview": (403, DEBUG_SIGNED_OUT)},
         shown=DEBUG_PAGE,
     )
     page.goto(component_origin + BACKUP_PAGE)
@@ -1415,8 +1412,10 @@ def test_a_stale_sign_in_offers_the_step_up_in_the_debug_dialog(page, component_
     region.get_by_role("button", name="Turn off debug logging", exact=True).click()
     dialog = _dialog(page, "Turn off debug logging?")
     error = dialog.locator("[data-confirm-error]")
-    expect(error.get_by_role("button", name="Confirm with Google")).to_be_visible()
-    expect(error).to_contain_text("For security, turning off debug logging")
+    alert = error.locator('p[role="alert"][data-debug-off-refused="signed_out"]')
+    expect(alert).to_contain_text("Your sign-in has ended")
+    expect(alert).to_contain_text("Nothing was changed.")
+    expect(alert.get_by_role("link", name="Sign in again")).to_be_visible()
     expect(dialog.get_by_role("button", name="Apply")).to_be_hidden()
     assert kept()
     assert '"errors"' not in page.content()
@@ -2204,38 +2203,6 @@ def test_a_page_load_tiles_toggletip_moves_no_row(page, component_origin):
     assert same_place(band.bounding_box()["height"], height)
 
 
-@pytest.mark.parametrize("width", [320, 1280])
-def test_a_stale_sign_in_greys_accept_this_change_once(
-    page, component_origin, axe_source, width
-):
-    """#1331 item 18: on a page drawn with a stale sign-in, the offer shows
-    the shared step-up notice and greys its button, naming the notice; the
-    polled copy is the same whatever the sign-in, so a poll leaves both in
-    place."""
-    page.set_viewport_size({"width": width, "height": 900})
-    page.goto(component_origin + ACCEPT_STEP_UP)
-    region = page.locator("#accept-change")
-    notice = region.locator("[data-step-up-notice][data-accept-step-up]")
-    expect(notice).to_be_visible()
-    expect(notice).to_contain_text("accepting this change needs")
-    button = region.get_by_role("button", name="Accept this change once")
-    expect(button).to_be_disabled()
-    expect(button).to_have_attribute("aria-describedby", "accept-change-fresh-reason")
-    expect(page.locator("#accept-change-fresh-reason")).to_be_visible()
-    assert "needs a recent Google sign-in" not in region.inner_text()
-    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
-    assert _axe(page, axe_source) == []
-    page.evaluate(
-        "document.querySelector('[data-accept-step-up]').dataset.kept = 'yes'"
-    )
-    _away(page)
-    checked = page.locator("time[data-live-checked]")
-    first = checked.get_attribute("datetime")
-    expect(checked).not_to_have_attribute("datetime", first, timeout=30000)
-    assert notice.get_attribute("data-kept") == "yes"
-    expect(button).to_be_disabled()
-
-
 def _polls(page, count=2):
     """Wait for ``count`` successful status checks."""
     checked = page.locator("time[data-live-checked]")
@@ -2244,60 +2211,22 @@ def _polls(page, count=2):
         expect(checked).not_to_have_attribute("datetime", first, timeout=30000)
 
 
-STEP_UP_KEY = "localStorage.getItem('pk-local-step-up')"
-
-
-def test_only_the_shown_step_up_records_a_return_path(page, component_origin):
-    """#1385: in LOCAL, Accept this change once's offer is drawn with and
-    without its step-up, and CSS shows one. With a recent sign-in the
-    hidden step-up copy writes no return path, on load or after a poll;
-    with a stale one the shown step-up records System health's address."""
-    page.goto(component_origin + ACCEPT_LOCAL_FRESH)
-    page.evaluate("localStorage.removeItem('pk-local-step-up')")
-    page.reload()
-    expect(page.get_by_role("button", name="Accept this change once")).to_be_enabled()
-    expect(page.locator("[data-local-step-up]")).to_be_hidden()
-    _polls(page, 1)
-    assert page.evaluate(STEP_UP_KEY) is None
-    page.goto(component_origin + ACCEPT_LOCAL_STALE)
-    visible(page.locator("#accept-change [data-local-step-up]"))
-    saved = page.evaluate(STEP_UP_KEY)
-    assert saved is not None and '"next":"/admin/system/health/"' in saved
-
-
-def test_a_page_drawn_fresh_never_turns_stale_on_a_poll(page, component_origin):
-    """The sign-in is judged once, when the page is drawn (#1159): polls
-    never bring the step-up notice to a fresh page; a sign-in that ages
-    later gets the step-up answer when the button is used."""
-    page.set_viewport_size({"width": 1280, "height": 900})
-    page.goto(component_origin + ACCEPT_FRESH)
+@pytest.mark.parametrize("width", [320, 1280])
+def test_accept_this_change_once_is_offered_and_polls_keep_it(
+    page, component_origin, axe_source, width
+):
+    """An open refusal's offer is one enabled button, whenever the
+    Administrator signed in (#1547): no sign-in notice names it, it fits
+    and passes axe, and polls bringing the same refusal leave it enabled."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + ACCEPT_OFFERED)
     region = page.locator("#accept-change")
     button = region.get_by_role("button", name="Accept this change once")
+    expect(button).to_have_count(1)
     expect(button).to_be_enabled()
-    expect(region.locator("[data-step-up-notice]")).to_be_hidden()
+    assert "sign-in" not in region.inner_text()
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    assert _axe(page, axe_source) == []
     _away(page)
     _polls(page)
     expect(button).to_be_enabled()
-    expect(region.locator("[data-step-up-notice]")).to_be_hidden()
-
-
-def test_a_step_up_form_swapped_in_by_a_poll_takes_the_pages_token(
-    page, component_origin
-):
-    """A poll that brings a refusal to a stale page swaps in the offer with
-    its step-up notice; the Confirm with Google form's empty CSRF field
-    takes the page's own token, so it posts a valid one."""
-    page.set_viewport_size({"width": 1280, "height": 900})
-    page.goto(component_origin + ACCEPT_STEP_UP_LATE)
-    region = page.locator("#accept-change")
-    expect(region.locator("[data-step-up-notice]")).to_have_count(0)
-    # The tile is Working, so closed; a poll never opens it.
-    _toggle(page, "source").click()
-    _away(page)
-    notice = region.locator("[data-step-up-notice][data-accept-step-up]")
-    expect(notice).to_be_visible(timeout=30000)
-    expect(
-        region.get_by_role("button", name="Accept this change once")
-    ).to_be_disabled()
-    token = notice.locator('form input[name="csrfmiddlewaretoken"]')
-    expect(token).to_have_value("component-token")
