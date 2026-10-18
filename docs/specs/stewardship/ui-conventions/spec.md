@@ -1456,11 +1456,18 @@ Recorded exceptions (Administrator decision, 2026-10-11):
   Save with a new key pasted submits natively (`data-review-native`).
   Integrations' other changes use the dialog.
 
-Operational actions that are not editors (going live, Confirm Production,
-cancelling go-live, pausing and resuming mail, fixing many emails at once,
-test email sends, a manual ParishSoft refresh, Family portal maintenance) keep
-the flows their own sections describe; whether any of them moves to the
-dialog is decided on [#750](https://github.com/epiphany40223/parishkit/issues/750).
+Going live uses the dialog for each of its consequential actions: **Start
+go-live** and **Confirm Production** (full reviews, Confirm Production with
+the typed word inside the dialog), **Stop go-live** (a confirmation) and
+**Cancel go-live** (a full review, with its reason inside the dialog), as
+the [Go live page](../admin-portal/spec.md#go-live-page) describes
+(Administrator decision, 2026-10-17, on
+[#1585](https://github.com/epiphany40223/parishkit/issues/1585); built in
+its slices 2 to 5). Other operational actions that are not editors
+(pausing and resuming mail, fixing many emails at once, test email sends, a
+manual ParishSoft refresh, Family portal maintenance) keep the flows their
+own sections describe; whether any of them moves to the dialog is decided
+on [#750](https://github.com/epiphany40223/parishkit/issues/750).
 System health's Take a backup now, Turn off debug logging and Allow debug
 logging again confirm in the dialog
 ([#1356](https://github.com/epiphany40223/parishkit/issues/1356)), since
