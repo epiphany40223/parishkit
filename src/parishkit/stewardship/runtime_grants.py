@@ -379,6 +379,12 @@ MEMBER_NAMES_FOR_FUNCTION = "stewardship_member_names_for_v1(text, text, uuid)"
 # deliberately: one call already returns everything, so repeated calls
 # disclose nothing more; the audit and the digest check are the protections.
 LEADERS_WITHOUT_USER_FUNCTION = "stewardship_leaders_without_user_v1(text, uuid)"
+# The Users page's Email Ministry leaders review (#1592): each Ministry
+# leader user's campaign Ministries and their open request counts. Like the
+# leaders list it takes no address, answers only a live Administrator
+# session and audits every call with the number of leaders; it returns no
+# parishioner data, only counts and Ministry names.
+LEADER_EMAILS_FUNCTION = "stewardship_leader_emails_v1(text, uuid)"
 # One email's recipient addresses for its Mail message page (#1024): web
 # reads them, for an Administrator only, without any grant on the email's
 # rendering (its subject and body).
@@ -539,6 +545,8 @@ CLOSURE_FUNCTIONS = {
         (ADDRESS_DELIVERIES_FUNCTION, PAGE_RECIPIENTS_FUNCTION),
         ("stewardship_jobs", "0034_sent_mail_recipients"),
     ),
+    # The Email Ministry leaders review (0120, #1592).
+    LEADER_EMAILS_FUNCTION: ("stewardship_jobs", "0035_leader_emails"),
 }
 
 
@@ -621,6 +629,16 @@ CLOSURE_TABLES = {
     "stewardship_campaign_setup_review": (
         "stewardship_accounts",
         "0025_campaign_setup_review",
+    ),
+    # Ministry leader emails (0120, #1592): web records requests and lists
+    # recipients, the worker prepares them and mail dispatch sends them.
+    **dict.fromkeys(
+        (
+            "stewardship_leader_email_request",
+            "stewardship_leader_email_cohort",
+            "stewardship_leader_email_recipient",
+        ),
+        ("stewardship_jobs", "0035_leader_emails"),
     ),
 }
 
@@ -733,7 +751,9 @@ def runtime_functions(role, *, target=None):
     identities and Member names for the users upgrade (#952), and web reads
     them for that upgrade's read-only preview, one typed address's Member
     names for the New user page's Name default, and the ParishSoft Ministry
-    leaders who are no user yet for the Users page's import. Web reads the
+    leaders who are no user yet for the Users page's import, and each
+    Ministry leader user's Ministries and open request counts for its Email
+    Ministry leaders review (#1592). Web reads the
     campaign comparison report's aggregates (#1018), and so does the general
     worker, for the daily digest's Compared with past campaigns section.
     The general worker also reads the archive's parts of each live answer
@@ -774,6 +794,7 @@ def runtime_functions(role, *, target=None):
                 MEMBER_NAMES_FUNCTION,
                 MEMBER_NAMES_FOR_FUNCTION,
                 LEADERS_WITHOUT_USER_FUNCTION,
+                LEADER_EMAILS_FUNCTION,
                 RECIPIENTS_FUNCTION,
                 COMPARISON_FUNCTION,
                 ARCHIVE_RENEWAL_FUNCTION,
@@ -1128,6 +1149,9 @@ def runtime_grants(role, *, target=None):
 
         add_digest_web_grants(tables, columns)
         add_weekly_web_grants(tables, columns)
+        from .jobs.leader_email_grants import add_leader_email_web_grants
+
+        add_leader_email_web_grants(tables, columns)
         from .reports.archive_grants import add_archive_web_grants
 
         add_archive_web_grants(tables, columns)

@@ -3063,6 +3063,44 @@ def users_import_leaders(args, preamble, runtime, context):
     )
 
 
+def users_email_leaders(args, preamble, runtime, context):
+    """Review or confirm Email Ministry leaders, as the Users page does (#1622).
+
+    ``--preview`` takes ``--all`` or ``--email`` (repeatable), never both:
+    unlike the import's listing, there is nothing to read without a choice,
+    as the page's Email selected needs a ticked leader. ``--confirm`` sends
+    outbound mail, so, like ``send confirm`` and ``delivery resend``, it
+    prompts with the review's count and mode (``--yes`` answers it) after
+    checking the Administrator role and before any transaction.
+    """
+    from .accounts.policy import Capability
+    from .admin_users import (
+        TOKEN_LIMIT,
+        confirm_leader_emails,
+        leader_emails_prompt_lines,
+        preview_leader_emails,
+    )
+
+    if args.confirm:
+        if args.token is None or args.all or args.email:
+            raise UsageError("--confirm takes only --token (and --yes).")
+        # The role first (#1339): Staff is denied before any read or prompt.
+        _role_first(context, runtime, Capability.MANAGE_USERS)
+        token = _input(args.token, context, TOKEN_LIMIT)
+        confirm(context, leader_emails_prompt_lines(token))
+        return confirm_leader_emails(
+            context["caller"], runtime, token=token, context=context
+        )
+    if args.token is not None or args.all == bool(args.email):
+        raise UsageError("--preview takes --all or --email, not both, and no --token.")
+    if args.yes:
+        # The review sends nothing and asks nothing; --yes answers Apply.
+        raise UsageError("--yes goes with --confirm.")
+    return preview_leader_emails(
+        context["caller"], runtime, everyone=args.all, emails=args.email or []
+    )
+
+
 def users_preview_upgrade(args, preamble, runtime, context):
     """The read-only users upgrade preview of Portal users (#952 slice 2)."""
     from .admin_reads import read_users_upgrade
@@ -3211,6 +3249,7 @@ def _task_retry_options(parser):
 DELIVERY_STATES = (
     "all",
     "needs_attention",
+    "needs_review",
     "not_delivered",
     "still_sending",
     "delivery_unknown",
@@ -3225,6 +3264,7 @@ DELIVERY_STATES = (
 # it equal to ``delivery_metadata.PURPOSE_CHOICES``.
 DELIVERY_PURPOSES = (
     "all",
+    "family",
     "initial",
     "reminder",
     "receipt",
@@ -4673,6 +4713,31 @@ def _users_import_options(parser):
         "--email",
         action="append",
         help="with --preview: one leader's address to import (repeatable)",
+    )
+    parser.add_argument(
+        "--token",
+        help="with --confirm: preview.token from --preview, or - for standard input",
+    )
+
+
+def _users_email_options(parser):
+    """Options of ``users email-leaders``: review whom, or confirm a review."""
+    mode = parser.add_mutually_exclusive_group(required=True)
+    mode.add_argument(
+        "--preview",
+        action="store_true",
+        help="review emailing the chosen Ministry leader users (sends nothing)",
+    )
+    mode.add_argument(
+        "--confirm", action="store_true", help="apply a reviewed send (--token)"
+    )
+    parser.add_argument(
+        "--all", action="store_true", help="with --preview: every Ministry leader user"
+    )
+    parser.add_argument(
+        "--email",
+        action="append",
+        help="with --preview: one Ministry leader user's address (repeatable)",
     )
     parser.add_argument(
         "--token",
@@ -6583,10 +6648,11 @@ def _users_specs():
     ``portal_users_viewed``. ``users preview`` and ``users confirm`` change
     users as the Users page does (slice 5) and need a full-scope session, as
     does ``users import-leaders``, the page's leaders table and import
-    (slice 6).
+    (slice 6), and ``users email-leaders``, its Email Ministry leaders
+    review and Apply (#1622).
     """
     from .admin_reads import UsersList, UsersUpgradePreview
-    from .admin_users import LeaderImport, UsersConfirm, UsersPreview
+    from .admin_users import LeaderEmails, LeaderImport, UsersConfirm, UsersPreview
 
     return (
         CommandSpec(
@@ -6641,6 +6707,18 @@ def _users_specs():
             LeaderImport.field_names(),
             11,
             options=(_users_import_options,),
+        ),
+        CommandSpec(
+            "users email-leaders",
+            "Email chosen Ministry leader users how to sign in, after a preview.",
+            users_email_leaders,
+            "full",
+            True,
+            LeaderEmails.field_names(),
+            11,
+            options=(_users_email_options,),
+            # Apply queues outbound mail, as test sample and send confirm do.
+            prompts=True,
         ),
     )
 

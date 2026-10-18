@@ -31,10 +31,14 @@ DELIVERY_PURPOSES = (
     "weekly_digest",
     "operational",
     "security_event",
+    "leader_email",
 )
 # Purposes routed to Administrators as operational mail: no campaign, no
 # Family, no credential namespace and no Testing redirection.
 ADMINISTRATOR_PURPOSES = ("operational", "security_event")
+# Ministry leader emails (#1592) belong to no campaign either, but are routed
+# like campaign mail: to the Testing recipient in Testing.
+PARISH_PURPOSES = ADMINISTRATOR_PURPOSES + ("leader_email",)
 DELIVERY_ACTIONS = ("created", "prepared", "hold", "release_hold") + tuple(
     action.value for action in DeliveryAction
 )
@@ -170,7 +174,14 @@ class OutboxMessage(MutableRecord, DeliveryCommand):
                         family=None,
                     )
                     | (
-                        ~models.Q(purpose__in=ADMINISTRATOR_PURPOSES)
+                        models.Q(purpose="leader_email", family=None, campaign=None)
+                        & (
+                            models.Q(routing="testing_override", mode="testing")
+                            | models.Q(routing="production", mode="production")
+                        )
+                    )
+                    | (
+                        ~models.Q(purpose__in=PARISH_PURPOSES)
                         & models.Q(campaign__isnull=False)
                         & (
                             models.Q(routing="testing_override", mode="testing")
@@ -192,6 +203,7 @@ class OutboxMessage(MutableRecord, DeliveryCommand):
                             "weekly_digest",
                             "operational",
                             "security_event",
+                            "leader_email",
                         ],
                         family=None,
                     )

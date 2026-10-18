@@ -276,6 +276,8 @@ ACTIVITY_TYPES = {
         "admin_cmd_test_families",
         "mail_provider_failed",
         "retry_refusal_unrecorded",
+        "user_leader_emails_requested",
+        "admin_cmd_users_email_leaders",
     ),
     "parishsoft": (
         "source_promoted",
@@ -407,6 +409,7 @@ UNGROUPED_REASONS = {
         "system_health_viewed",
         "system_logs_viewed",
         "talents_report_viewed",
+        "user_leader_emails_reviewed",
         "user_leaders_listed",
         "user_names_looked_up",
         "weekly_digest_viewed",

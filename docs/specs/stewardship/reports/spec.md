@@ -1892,8 +1892,10 @@ ParishSoft** tick; it is read and set on
 [Roster changes to enter](../admin-portal/spec.md#roster-changes-to-enter).
 Ministry leaders never see the tick anywhere
 ([follow-up workflows](../admin-portal/spec.md#follow-up-workflows)).
-The contact details are read through the installed selections, with no
-schema change: `stewardship_ministry_report_v4`, read for one Ministry and
+The contact details are read through the installed selections (no schema
+change for #1157; frozen migration 0119 changed their leader rule for
+[#1591](https://github.com/epiphany40223/parishkit/issues/1591), below):
+`stewardship_ministry_report_v4`, read for one Ministry and
 request kind with every version, gives a join request's gender (a
 ParishSoft code read as its census word, as the
 [Family form](../parishioner-portal/spec.md#existing-member-census) reads
@@ -1913,8 +1915,52 @@ cannot read (one removed from the campaign whose requests were all withdrawn)
 shows no details and says so.
 
 Leader phone and email values honor ParishSoft publish flags and show "Not
-published" rather than leaking a value. Admin/Staff may see operational source
-contact. Mailing address/demographics are visible to a Ministry's leaders as
+published" rather than leaking a value, with one exception (Administrator
+decision, 2026-10-17, "show own contacts" on
+[#1591](https://github.com/epiphany40223/parishkit/issues/1591)): asking to
+join or leave a Ministry is consent to be contacted about it, so on a
+Member's standing request that Ministry's leaders see the requesting
+Member's own email and phones even when ParishSoft does not publish them.
+A request stands while the Member's latest version of it is neither
+withdrawn (cancelled) nor replaced; an earlier version shown with the
+history option follows that latest version, as its details already do.
+For a Member the Family added on the form, the values are the ones the
+Family entered with the request. A Member whose latest live answer in the
+campaign marks them as unable to participate in any ministries (the form's
+physical-limitations checkbox, recorded as `cannot_serve` in the response's
+`service` answers; their leaves show as "Leave (cannot participate)") shares
+nothing unpublished with any Ministry's leaders on any
+of their requests, current or in history, in any state (Administrator
+decision, 2026-10-18, on
+[#1591](https://github.com/epiphany40223/parishkit/issues/1591), applied per
+Member). This holds whatever the roster shows: a cannot-participate
+response adds leaves only for the Ministries the Member is on, so an earlier
+join that was declined or resolved, a leave a ParishSoft refresh confirmed,
+and a request to a Ministry the form no longer offers follow the publish
+flags too. A Member's answer is the one in the Family's latest live
+response that answers the question for that Member (lists them in its
+`service` answers with a true-or-false checkbox value; any other entry is
+not an answer). Only a later live response that answers it for the
+Member without the checkbox lets their standing requests share again; a
+response that leaves the Member out, such as one reporting them moved out
+or deceased, does not, and a Member never answered is not withheld. For a
+Member the Family added, the answer is the one for the form's own entry for
+that person: such a Member is not linked to the ParishSoft record Staff
+create for them later, so a later answer for that ParishSoft Member does
+not cover their earlier added-Member requests
+([#1670](https://github.com/epiphany40223/parishkit/issues/1670)). Both
+selections read the same answer, so the request page, Export these
+requests and the packet agree.
+Every other Member's standing requests share as above. Nothing else
+widens: a Member with no standing request to the Ministry (so every other
+Member of the Family), a withdrawn request and other Ministries' requests
+keep the publish flags, and
+a leader still reads only the Ministries they lead. The rule is enforced in
+the SQL selections themselves (`stewardship_ministry_report_v3`, which v4
+reads, and `stewardship_ministry_packet_v1`), so the request page, Export
+these requests and the packet agree in every format. Admin/Staff may see
+operational source contact. Mailing address/demographics are visible to a
+Ministry's leaders as
 explicitly authorized for this workflow. Birth date itself is not shown when
 age suffices.
 
@@ -2008,7 +2054,10 @@ Outcome filter offers it; a request already resolved that way keeps its label
 ([#1131](https://github.com/epiphany40223/parishkit/issues/1131)).
 
 For Ministry leaders, every email and phone value in the packet follows the
-Ministry report selection's ParishSoft publish-flag rule and renders `Not published`
+Ministry report selection's leader contact rule
+([Ministry change summary](#ministry-change-summary)): published values, and the
+requesting Member's own on a standing request other than a
+cannot-participate leave; any other renders `Not published`
 instead of the source value. Admin/Staff retain the operational-contact access
 defined by that rule. This privacy policy applies identically to screen, CSV,
 XLSX, and PDF output.
@@ -2072,9 +2121,9 @@ then:
   *Unknown*.
 - **How it reaches ParishSoft**: *Automatic* for a field the
   [handling registry](../data/spec.md#proposed-changes) marks API-writable,
-  *By hand* for every other row. A Family address, a death date, and any
-  answer that removes a recorded value are *By hand*, because ParishSoft's API
-  cannot carry them (see the
+  *By hand* for every other row. A Family address, a death date, a gender,
+  and any answer that removes a recorded value are *By hand*, because
+  ParishSoft's API cannot carry them (see the
   [handling registry](../data/spec.md#proposed-changes) and the
   [data workflow](../data/spec.md#review-and-publication)). A deceased
   Member has two rows, *Deceased* and *Death date*: Staff enter them in
@@ -2288,8 +2337,7 @@ the value publication writes instead of the Family's answer. The Family's
 answer is never changed and stays in its column, with the edit in *Edited
 value* beside it. The field starts with the value publication would write
 now (the edit, else the Family's answer): a date field no later than the
-campaign's today for a birth date, the census choices for Gender,
-and otherwise text no longer than ParishSoft's request schema takes for the
+campaign's today for a birth date, and otherwise text no longer than ParishSoft's request schema takes for the
 field (First name 30 characters, Email address 150, a phone 25). **Save
 value** is unavailable until the value differs from the one shown, with its
 reason in a reserved line ([prerequisite
@@ -2301,8 +2349,7 @@ Both record with an ordinary Confirm, being reversible, and the answer is
 the page, redrawn in place, with the notice naming the row. The value is read as the Family form reads its
 own answer (a phone must be a whole number, email addresses are checked and
 joined, a required name cannot be blank) and must fit ParishSoft's request
-schema as publication will send it; Gender is held to its census choices
-only, since its ParishSoft encoding is not settled yet. Save value is also
+schema as publication will send it. Save value is also
 unavailable, with its reason, while the browser can tell the value is not
 allowed (blank, too long, or a date after today). A value the server refuses
 is answered with the reason at the field in the dialog, and the field is

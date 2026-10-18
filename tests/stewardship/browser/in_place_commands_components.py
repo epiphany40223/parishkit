@@ -19,6 +19,8 @@ from uuid import UUID, uuid4
 from django.template.loader import render_to_string
 from django.urls import reverse
 
+from parishkit.stewardship.jobs.delivery_metadata import mode_split
+
 from .delivery_components import components as delivery_components
 
 
@@ -147,7 +149,12 @@ def components(context, admin):
         values = base | {"delivery": email} | changes
         return render_to_string(
             "stewardship/delivery.html",
-            context | {"admin_chrome": admin | {"delivery_unknown": 1}} | values,
+            context
+            | {
+                "admin_chrome": admin
+                | {"delivery_unknown": mode_split({"production": 1}, "production")}
+            }
+            | values,
         )
 
     def recorded(action, state, outcome=None):

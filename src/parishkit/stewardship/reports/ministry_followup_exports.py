@@ -234,8 +234,10 @@ def queue_document(result, contacts, query, *, parish_name, requested_at, zone):
         (
             "Contacts",
             "Publication flags and contact values are from the ParishSoft data "
-            "as of the source time above. Ministry leaders receive only "
-            "published email and phone values.",
+            "as of the source time above. Ministry leaders receive the email "
+            "and phones of each Member who asked to join or leave their "
+            "Ministry, except a Member who cannot participate in any "
+            "ministries, and otherwise only published values.",
         ),
         (
             "Addresses",

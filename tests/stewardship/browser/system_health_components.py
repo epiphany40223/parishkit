@@ -296,6 +296,7 @@ def health(
         send_active=False,
         planning_held=False,
         retry_waiting=4 if troubled else 0,
+        retry_waiting_other=0,
         next_retry_at=now + timedelta(minutes=3) if troubled else None,
         daily_sent=1612 if troubled else 240,
         daily_limit=1600,

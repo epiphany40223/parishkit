@@ -63,6 +63,8 @@ ROLE_FIRST = {
     "integration backup-key confirm": None,
     # Pause and resume mail's Confirm (PR 7b, #463).
     "send confirm": None,
+    # The Email Ministry leaders Apply (#1622); its --confirm path.
+    "users email-leaders": Capability.MANAGE_USERS,
 }
 
 # The prompting commands Staff may run, as on their pages.
@@ -153,7 +155,11 @@ def test_the_role_is_checked_before_any_input_lookup_or_prompt(name, monkeypatch
     for module, attribute in LATER:
         monkeypatch.setattr(module, attribute, unexpected)
     with pytest.raises(PermissionError):
-        handler(name)(Namespace(), None, Untouchable(), {"caller": None})
+        # A command whose preview prompts for nothing (``users email-leaders``)
+        # prompts only with ``--confirm --token``; the other options are the
+        # usage check's, which runs before the role check.
+        arguments = Namespace(confirm=True, token="-", all=False, email=[])
+        handler(name)(arguments, None, Untouchable(), {"caller": None})
     assert calls == [(True, ROLE_FIRST[name])]
 
 

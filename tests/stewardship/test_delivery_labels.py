@@ -66,6 +66,7 @@ def test_delivery_states_use_the_family_timeline_words():
         "All",
         # Sent mail's grouped choices (#1562).
         "Needs attention",
+        "Not sure it arrived — review needed",  # #1576
         "Not delivered",
         "Still sending",
         "Not sure it arrived",

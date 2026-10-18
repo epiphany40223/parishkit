@@ -430,6 +430,11 @@ def provision_roles(configuration, deployment_id):
                         identifier
                     )
                 )
+        # The System logs search's trigram indexes (#765, migration file
+        # 0117) need pg_trgm. Creating an extension needs CREATE on the
+        # database, which no service login holds (revoked above), so the
+        # operator installs it here; the migration then only notices it.
+        cursor.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public")
         # Migration owns only the application schema, not the database/roles.
         cursor.execute("ALTER SCHEMA public OWNER TO pk_stewardship_migration")
     return {"database_roles_provisioned": True}

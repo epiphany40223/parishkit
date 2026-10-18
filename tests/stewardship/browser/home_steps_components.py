@@ -17,6 +17,7 @@ from django.template.loader import render_to_string
 from parishkit.stewardship.accounts import admin_context, admin_navigation
 from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.campaigns.domain import Percentage
+from parishkit.stewardship.jobs.delivery_metadata import mode_split
 
 PATH = "/home-next-steps"
 CAMPAIGN = SimpleNamespace(
@@ -51,6 +52,8 @@ CLOSED = SimpleNamespace(
     )
 )
 CLOSED_COUNTS = {"census_changes": 4, "information_queue": 3, "ministry_report": 2}
+# Emails that may not have arrived: two in Production, one in Testing.
+UNKNOWN = mode_split({"production": 2, "testing": 1}, "production")
 
 
 def components(context, admin):
@@ -70,7 +73,11 @@ def components(context, admin):
     for section in sections:
         for entry in section["items"]:
             entry["count"] = COUNTS.get(entry["name"]) if entry["url"] else None
-    chrome = admin | {"sections": sections, "breadcrumbs": [], "delivery_unknown": 2}
+    chrome = admin | {
+        "sections": sections,
+        "breadcrumbs": [],
+        "delivery_unknown": UNKNOWN,
+    }
     html = render_to_string(
         "stewardship/home.html",
         context

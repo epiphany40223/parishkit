@@ -272,6 +272,11 @@ PAGES = {
     "user_leader_import": Page(
         "users", _("Import Ministry leaders"), "users", linkable=False
     ),
+    # Answers only the Email Ministry leaders table's review and its Apply
+    # (#1592).
+    "user_leader_emails": Page(
+        "users", _("Email Ministry leaders"), "users", linkable=False
+    ),
     # Every live interactive Admin session, each with Sign out (#953).
     "signed_in_sessions": Page("users", _("Signed-in sessions")),
     # The Administrator's own automation sessions (ADM-11), and the approval

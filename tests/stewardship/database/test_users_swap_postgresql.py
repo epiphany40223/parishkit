@@ -375,7 +375,7 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # 0087's confirmation guard in place, which 0087's (``CLOSURE_CREATED``),
 # 0090's (``CLOSURE_RERUN``) and 0108's (``CLOSURE_ALTERED``) files bring back
 # older, so ``CLOSURE_REPLACED`` runs 0112's file again afterwards. Its derived
-# guard lacks 0113's phrase, so ``CLOSURE_REPLACED_ONLY`` then puts 0113's
+# guard lacks 0118's phrase, so ``CLOSURE_REPLACED_ONLY`` then puts 0118's
 # guard back last.
 # 0103 (#1330) creates nothing: it replaces 0091's campaign pointer function
 # in place. No closure file installs that function again, and 0091's
@@ -393,14 +393,26 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # 0113 (#1596) creates nothing: it replaces the derived guard in place (the
 # corrected census handling, on 0112's body) and re-marks open rows. 0112's
 # rerun (``CLOSURE_REPLACED``) puts 0112's guard back, so
-# ``CLOSURE_REPLACED_ONLY``, which runs after it, runs 0113's replacement
-# statement alone; the one-time correction does not run again.
+# ``CLOSURE_REPLACED_ONLY``, which runs after it, runs the latest
+# replacement statement alone (0118's, below); the one-time correction does
+# not run again.
 # 0115 (#530) creates three tables (in CLOSURE_TABLES) and their guards
 # (``CLOSURE_CREATED``), and replaces nothing.
 # 0116 (#1562) creates Sent mail's two recipient reads (in
 # runtime_grants.CLOSURE_FUNCTIONS), which go, and an index on the outbox
 # renderings, which stays: its file makes the index only when missing, so it
 # installs whole again.
+# 0117 (#765) creates only the pg_trgm extension and six indexes, each only
+# when missing, and replaces nothing; the swap drops none of them, so
+# nothing is registered.
+# 0118 (#1603) creates nothing either: it replaces the derived guard in place
+# (gender By hand, on 0113's body) and re-marks open gender rows. Its body
+# keeps 0113's rules, so ``CLOSURE_REPLACED_ONLY`` runs 0118's replacement
+# statement alone, in place of 0113's.
+# 0119 (#1591) creates nothing: it replaces the baseline packet selection
+# and 0064's report selection in place, which 0094's rerun
+# (``CLOSURE_REPLACED``) brings back older, so ``CLOSURE_REPLACED`` runs
+# 0119's file after it.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -640,6 +652,28 @@ CLOSURE_CREATED = {
         ),
         ("stewardship_jobs", "0034_sent_mail_recipients"),
     ),
+    # 0120 (#1592) creates the Ministry leader email tables (in
+    # CLOSURE_TABLES) and these functions, and replaces the four outbox
+    # guards and the two task-type maps in place with bodies that keep every
+    # earlier rule, so its file installs whole again, after 0077's file has
+    # put the older task maps back.
+    **dict.fromkeys(
+        (
+            "public.stewardship_leader_email_facts_v1(jsonb)",
+            "public.stewardship_leader_emails_v1(text,uuid)",
+            "public.stewardship_leader_email_request_guard_v1()",
+            "public.stewardship_leader_email_cohort_immutable_v1()",
+            "public.stewardship_leader_email_recipient_immutable_v1()",
+            "public.stewardship_leader_email_cohort_binding_v1()",
+            "public.stewardship_leader_email_render_v1(jsonb,uuid,uuid,text,jsonb)",
+            "public.stewardship_leader_email_recipient_binding_v1()",
+            "public.stewardship_leader_email_prepare_write_v1(text,jsonb)",
+            "public.stewardship_leader_email_prepare_receipt_v1()",
+            "public.stewardship_leader_email_dispatch_live_v1(uuid)",
+            "public.stewardship_leader_email_dispatch_write_v1(text,jsonb,jsonb)",
+        ),
+        ("stewardship_jobs", "0035_leader_emails"),
+    ),
 }
 
 
@@ -713,6 +747,9 @@ CLOSURE_ALTERED = {
 # 0110 (#558) replaces the baseline financial selection that 0094's file,
 # run again above for the limitations report, puts back without the
 # browser-zone days, so its entry comes after 0094's.
+# 0119 (#1591) replaces the packet and report selections that 0094's file
+# puts back without the requesting Member's consent, so their entry comes
+# after 0094's, whose rerun the limitations report alone now triggers.
 CLOSURE_REPLACED = {
     "public.stewardship_debug_off_switch_guard_v1()": (
         ("stewardship_jobs", "0031_debug_allow"),
@@ -722,13 +759,9 @@ CLOSURE_REPLACED = {
         ("stewardship_audit", "0003_retry_refusal_log"),
         "'retry_refusal'",
     ),
-    **dict.fromkeys(
-        (
-            "public.stewardship_limitations_report_v1(uuid,jsonb)",
-            "public.stewardship_ministry_report_v3"
-            "(uuid,jsonb,boolean,bigint[],integer,text,integer,integer)",
-        ),
-        (("stewardship_reports", "0026_source_status_names"), NAME_NOT_RECORDED),
+    "public.stewardship_limitations_report_v1(uuid,jsonb)": (
+        ("stewardship_reports", "0026_source_status_names"),
+        NAME_NOT_RECORDED,
     ),
     "public.stewardship_campaign_comparison_v1(uuid,date,numeric[],uuid)": (
         ("stewardship_reports", "0027_canonical_timezone"),
@@ -741,6 +774,15 @@ CLOSURE_REPLACED = {
     "public.stewardship_financial_report_v1(uuid,jsonb,integer,integer)": (
         ("stewardship_reports", "0030_financial_local_days"),
         "CASE WHEN zoned THEN",
+    ),
+    **dict.fromkeys(
+        (
+            "public.stewardship_ministry_packet_v1"
+            "(uuid,bigint[],boolean,boolean,bigint[])",
+            "public.stewardship_ministry_report_v3"
+            "(uuid,jsonb,boolean,bigint[],integer,text,integer,integer)",
+        ),
+        (("stewardship_reports", "0031_leader_request_contacts"), "AS consented"),
     ),
     **dict.fromkeys(
         (
@@ -844,12 +886,13 @@ def rerun_old_bodies(cursor, migrations):
 # put an earlier body back, when that file also creates tables and so cannot
 # run whole twice: only its replacement statement runs again, unless the body
 # already has the phrase. 0096 (#528) replaced the derived guard after 0090,
-# and 0113 (#1596) replaces it last, after 0108's and 0112's reruns; its body
-# keeps 0096's, 0108's and 0112's rules, so only the latest replacement runs.
+# 0113 (#1596) and 0118 (#1603) replace it last, after 0108's and 0112's
+# reruns; 0118's body keeps 0096's, 0108's, 0112's and 0113's rules, so only
+# the latest replacement runs.
 CLOSURE_REPLACED_ONLY = {
     "stewardship_response_derived_guard_v1": (
-        ("stewardship_responses", "0011_census_handling_registry"),
-        "OR expected_submitted IN ('null'::jsonb",
+        ("stewardship_responses", "0012_gender_by_hand"),
+        "'suffix','gender','marital_status'",
     ),
     # 0109 (#1398) widens 0106's safe context with the export report and
     # format keys; the reruns above bring back 0106's, and 0109's discard
@@ -1434,6 +1477,15 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
             # Clear the halt's halt records (0115, #530): mail dispatch
             # records them; web only reads them.
             "stewardship_mail_halt": ("pk_stewardship_mail_dispatch", "INSERT"),
+            # Ministry leader emails (0120, #1592): web records the request;
+            # the worker writes the cohort and recipient rows.
+            **dict.fromkeys(
+                (
+                    "stewardship_leader_email_cohort",
+                    "stewardship_leader_email_recipient",
+                ),
+                ("pk_stewardship_worker", "INSERT"),
+            ),
         }
         for table in CLOSURE_TABLES:
             login, privilege = writers.get(table, ("pk_stewardship_web", "INSERT"))

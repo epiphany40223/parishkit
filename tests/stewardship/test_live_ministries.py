@@ -67,7 +67,9 @@ def test_only_the_config_installer_may_read_the_catalog_function():
     # automation session ended, #1547) and reads a
     # user's role-derived Ministry scope (#922), the users upgrade
     # preview's identities and Member names, New user's Name lookup and the
-    # Users page's ParishSoft leaders without a user (#952) and, for an
+    # Users page's ParishSoft leaders without a user (#952) and its Email
+    # Ministry leaders review's leader users, Ministries and open request
+    # counts (#1592; no address, no parishioner data) and, for an
     # Administrator, one email's recipient addresses (#1024) and each one's
     # latest outcome and any follow-up retry (#806) and records a reported
     # bounce (#806 slice 4), the campaign comparison report's aggregates
@@ -84,6 +86,7 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         "stewardship_member_names_v1()",
         "stewardship_member_names_for_v1(text, text, uuid)",
         "stewardship_leaders_without_user_v1(text, uuid)",
+        "stewardship_leader_emails_v1(text, uuid)",
         "stewardship_delivery_recipients_v1(uuid, uuid)",
         "stewardship_campaign_comparison_v1(uuid, date, numeric[], uuid)",
         "stewardship_campaign_archive_renewal_v1(uuid, uuid, integer)",

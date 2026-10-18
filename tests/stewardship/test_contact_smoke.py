@@ -153,7 +153,8 @@ def test_the_probe_reports_names_types_shapes_and_encodings_but_no_values():
         "source": "gender",
         "type": "string",
         "shape": "a",
-        "encoder_matches_read": True,
+        # Gender is by hand (#1603): publication never writes it.
+        "encoder_matches_read": None,
         "sendable": True,
     }
     assert fields["dateOfBirth"]["shape"] == "9999-99-99"
@@ -200,8 +201,7 @@ def test_the_encoder_check_and_the_schema_check_name_their_fields():
     assert fields["emailAddress"]["encoder_matches_read"] is False
     assert fields["emailAddress"]["separators"] == [", "]
     assert fields["gender"]["sendable"] is False
-    # A whole word is not the code the encoder sends (#1603).
-    assert fields["gender"]["encoder_matches_read"] is False
+    assert fields["gender"]["encoder_matches_read"] is None
     assert "encoder_matches_read" not in fields["homePhone"]
     assert result["unsendable"] == ["dateOfBirth", "gender", "homePhone"]
     assert "homePhone" in result["unsettled"]

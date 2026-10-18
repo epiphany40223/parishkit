@@ -212,6 +212,10 @@ DESCRIPTIONS = {
         "An automation session confirmed a reviewed import of ParishSoft "
         "Ministry leaders as users, which became a configuration request."
     ),
+    "admin_cmd_users_email_leaders": _(
+        "An automation session applied a reviewed Email Ministry leaders, "
+        "queuing one email to each Ministry leader it listed."
+    ),
     "admin_cmd_delivery_bounce_report": _(
         "An automation session reported that a delivered email bounced at "
         "one address, as the email's Mail message page does."
@@ -869,8 +873,8 @@ DESCRIPTIONS = {
     ),
     "census_handling_corrected": _(
         "An upgrade moved open census changes that ParishSoft cannot take "
-        "automatically (a death date, a Family address, or an answer that "
-        "removes a value) to By hand. Count is how many."
+        "automatically (a gender, a death date, a Family address, or an "
+        "answer that removes a value) to By hand. Count is how many."
     ),
     "census_publication_planned": _(
         "The server checked approved census changes against ParishSoft and "
@@ -956,6 +960,12 @@ DESCRIPTIONS = {
     ),
     "user_leader_imported": _(
         "A ParishSoft Ministry leader was imported as a Ministry leader user."
+    ),
+    "user_leader_emails_reviewed": _(
+        "An Administrator reviewed emailing Ministry leaders that they can sign in."
+    ),
+    "user_leader_emails_requested": _(
+        "An Administrator asked to email Ministry leaders that they can sign in."
     ),
     "system_logs_exported": _("An Administrator downloaded the system logs."),
     "export_cancelled": _("A report download was cancelled."),

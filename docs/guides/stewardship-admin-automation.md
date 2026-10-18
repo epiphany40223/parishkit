@@ -223,7 +223,7 @@ your roles would not show on the page is `null`.
 | `ministry_catalog` | Counts of recent catalog `refreshes`, `missing` and `retired` Ministries |
 | `security_events`, `automation_notices` | How many are unacknowledged for you |
 | `recent_failures` | Tasks failed in the last day: `id`, `type`, `updated_at` |
-| `tasks` | Background work counts by state, `active`, and `delivery_unknown` |
+| `tasks` | Background work counts by state, `active`, `delivery_unknown` (uncertain campaign emails in both modes, archived campaigns too), and the status bar's two Not sure it arrived — review needed counts: `delivery_review` in the operating `mode` and `delivery_review_other` in the other mode (each what Sent mail lists for `--state needs_review` in that mode) |
 | `presence` | `count`: Families on the portal now |
 
 ### `task list` and `task show TASK_ID`
@@ -323,7 +323,8 @@ the page may split between two tiles, so its `severity` is the worse of
 the two), the
 `processes` with their state, version and mail sender state,
 `missing_services`, `versions`, `schema_current`, the reasons Family email
-waits (`delivery_paused`, `planning_held`, `retry_waiting`), the 24-hour
+waits (`delivery_paused`, `planning_held`, `retry_waiting` in the
+operating `mode` and `retry_waiting_other` in the other mode), the 24-hour
 send count `daily_sent`, the `daily_limit` Family email stops at and
 `daily_resume_at`, when that count falls below the limit again (null while
 it is below), the open `incidents`, the ParishSoft `refresh` outcome, a refused load's
@@ -1944,9 +1945,10 @@ pk-admin delivery bounce-report MESSAGE_ID --address ADDRESS \
 `delivery list` takes Sent mail's filters: `--recipient` (a Family DUID, an
 email address or a delivery id, as input only), `--purpose` (`initial`,
 `reminder`, `receipt`, `family_test`, `daily_digest`, `weekly_digest`,
-`operational` or `security_event`), `--state` (a state, or the groups
-`needs_attention`, `not_delivered` and `still_sending`, as the page
-defines them), `--mode`
+`operational` or `security_event`, or the group `family`: invitations and
+reminders), `--state` (a state, or the groups `needs_attention`,
+`needs_review`, `not_delivered` and `still_sending`, as the page defines
+them), `--mode`
 (`production` or `testing`; both when left out), `--from` and `--to` (whole
 days, in the time zone `--zone` names, the parish's time zone by default),
 `--send` (send history's `send` value), `--page`, `--size` and `--sort`. The
@@ -2967,6 +2969,52 @@ pk-admin users import-leaders --confirm --token -
 | `preview` | `token`, which `--confirm` takes, or `null` with nobody to import |
 | `created`, `request` | With `--confirm`: as `users confirm` prints them |
 
+`users email-leaders` is the Users page's
+[Email Ministry leaders](../specs/stewardship/admin-portal/spec.md#email-ministry-leaders):
+one email to each chosen Ministry leader user saying they can sign in, and
+the open requests in each of their Ministries. It needs a full-scope
+session. `--preview` reviews emailing every Ministry leader user (`--all`)
+or the chosen addresses (`--email`, repeatable; one of the two is
+required) and sends nothing. `--confirm --token` applies the review, as
+the page's Apply does: the emails are queued, and the background engine
+sends them. Like `send confirm`, `--confirm` first asks you to type `yes`,
+showing how many leaders are emailed and the mode; `--yes` answers it, and
+is required with `--token -` (otherwise exit 2, `usage`) or when no terminal
+can answer (otherwise exit 4, `confirmation_required`); nothing is queued. The review
+binds the Testing recipient only by a digest, so the printed token does
+not carry its address. A review lasts fifteen minutes, and the page and the command
+line can apply each other's reviews. Applying the same review again sends
+nothing more; each new review and its Apply sends again, so check Last
+emailed on the Users page first.
+
+```sh
+pk-admin users email-leaders --preview --all
+pk-admin users email-leaders --preview --email ann@example.org
+pk-admin users email-leaders --confirm --token TOKEN
+pk-admin users email-leaders --confirm --token - --yes
+```
+
+| `users email-leaders` field | What it holds |
+| --- | --- |
+| `mode` | `testing` or `production`, the mode the review was made in |
+| `note` | In Testing, that every email goes to the Testing recipient instead of the leader (its address stays on the page); otherwise `null` |
+| `emailed` | Each leader who will be emailed, by Name: `email`, `name` and the `ministries` the email lists, each with its `duid`, `name` and the open `join` and `leave` request counts |
+| `skipped` | Each chosen address left out: `email` and `reason` (`not_leader`, no Ministry leader user now; `no_ministry`, leads none of the campaign's Ministries in ParishSoft) |
+| `remaining` | Chosen leaders past one Apply's limit of 100, left for another review |
+| `preview` | `token`, which `--confirm` takes, or `null` with nobody to email |
+| `created`, `request_id`, `recipient_count` | With `--confirm`: whether this Apply recorded the request (`false` when the same review was applied before), its ID, and how many leaders it emails |
+
+No document names a parishioner. Each review is recorded in System logs
+(`user_leader_emails_reviewed`) and each Apply
+(`user_leader_emails_requested` and `admin_cmd_users_email_leaders`), with
+the number of leaders, never an address. While Production mail is paused
+both are exit 1 (`not_available`) and nothing is queued; so is
+`--preview` with no current campaign with Ministries or with the campaign
+archived. A review that no longer matches (the campaign, mode or Testing
+recipient changed, a leader is no longer one, or a leader's Ministries or
+counts changed) is exit 1 (`stale_version`), as is an expired one; review
+again. Another Administrator's review is `denied`.
+
 ## Security events and critical problems
 
 `events list` reads what the Admin home page asks you to acknowledge: the
@@ -3693,3 +3741,7 @@ Each change is recorded in System logs as on the page
   operational and security notices. The document adds `purpose`, `mode`,
   `start` and `end`; each row keeps its `mode` and `attempt`. Its only
   readers are the Administrator and the operator, who keep no legacy forms.
+- `pk-admin/1` (#1622): additive. `users email-leaders --preview` and
+  `--confirm`, the Users page's Email Ministry leaders review and Apply
+  (full scope, the page's audit events and `admin_cmd_users_email_leaders`;
+  `--confirm` prompts, `--yes` answers it).

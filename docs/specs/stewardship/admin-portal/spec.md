@@ -965,9 +965,12 @@ no such entry. A count follows the link as text. "Production being
 activated" is a scheduled campaign, or Production preparation in progress;
 "Mail paused" is Production with live mail paused, in any state not closed.
 Sent mail problems are the emails that may not have arrived (the
-header's "Not sure it arrived" count), and the step links Sent mail
-filtered to them, counted as "N may not have arrived", or plain Outgoing
-mail while there are none.
+header's "Not sure it arrived — review needed" counts), and the step links Sent mail
+filtered to the operating mode's, counted as "N may not have arrived", or
+plain Sent mail while that mode has none. When the other mode has some, a
+second link follows, "N in Testing may not have arrived" (or in
+Production), filtered to that mode; each count is exactly the list its
+link opens ([#1576](https://github.com/epiphany40223/parishkit/issues/1576)).
 
 At campaign end the Staff work through four lists, so an active, paused,
 closed or archived campaign offers Administrators and Staff each of them
@@ -1103,6 +1106,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `user_delete` | Delete user | Users | Administrator | (new, #952) | (none) | `/admin/users/deletion/` (POST only) | The table's confirmation dialog posts here. |
 | `user_name_suggestions` | (not a page) | New user | Administrator | (new, #952) | (none) | `/admin/users/new/names/` (POST only, JSON) | Read-only Name suggestions from ParishSoft. |
 | `user_leader_import` | Import Ministry leaders | Users | Administrator | (new, #952) | (none) | `/admin/users/leaders/import/` (POST only) | Review of the chosen ParishSoft Ministry leaders, shown in the review dialog on Users; applies through Users. |
+| `user_leader_emails` | Email Ministry leaders | Users | Administrator | (new, #1592) | (none) | `/admin/users/leader-emails/` (POST only) | Review of the chosen Ministry leader users' emails, shown in the review dialog on Users; its Apply posts here too and queues the emails. |
 | `user_rules` | Review sign-in rules | Portal users | Administrator | Review login rule change | `/admin/users/rules` (POST only) | (none) | Retired by #952: removed with the rule tables when Users lands; its old address is not kept (#864). |
 | `rule_request` | (not a page) | Portal users | Administrator | Rule change (status) | `/admin/users/rules/requests/<request>` (JSON) | (none) | Retired by #952 with the autosave queue; a user change's status is its Change status page. |
 | `assignments` | Review Ministry assignment | Portal users | Administrator | Assignments | `/admin/users/assignments` (POST only) | (none) | Retired by #922: removed with Ministry assignments. |
@@ -1458,7 +1462,22 @@ Administrators have two always-visible indicators:
   evidence-note, delivered-resolution, recorded-unsent and acknowledged-resend
   actions defined by the
   [delivery workflow](../background-processing/spec.md#family-invitations-and-reminders);
-  it never displays credentials or sealed substitutions.
+  it never displays credentials or sealed substitutions. Its count is the
+  emails of the system's operating mode that Sent mail lists under its
+  Delivery choice Not sure it arrived — review needed: Not sure it arrived,
+  of a kind an Administrator can resolve (not an operational or security
+  notice) in a campaign that is not archived. An email nobody can resolve
+  would otherwise keep the warning up for good. It links Sent mail filtered
+  to them in that mode, so the count is exactly the list it opens: both
+  read Sent mail's one filter definition. When the other mode also has
+  some, a second, separate link ("Not sure it arrived in Testing: N", or in
+  Production) opens them in that mode; the two are never added into one
+  number ([#1576](https://github.com/epiphany40223/parishkit/issues/1576)).
+  The warning shows while either has some, and each link while its own
+  count does. The other mode's link comes first, so when the operating
+  mode's count, the one an Administrator usually clears, drops to 0, its
+  link disappears without moving the other under the pointer
+  ([no layout shift](../ui-conventions/spec.md#no-layout-shift)).
 
 Family clients heartbeat while a form is actively visible, at no more than one
 request every 30 seconds. Expired/closed/ineligible sessions disappear. Worker
@@ -4377,7 +4396,9 @@ due counts. It atomically sets the Campaign's durable delivery-pause control and
 holds every production message that has not begun provider submission. Family
 access and live submissions continue; their receipts are accepted but held.
 Nothing is rerouted to the Testing recipient. Operational notifications and
-explicit readiness/test-recipient sends remain allowed.
+explicit readiness/test-recipient sends remain allowed. The pause also holds
+[Ministry leader emails](#email-ministry-leaders), which belong to no
+campaign, and refuses new ones until resume.
 
 Messages already `submitting` may have reached the provider and
 `delivery_unknown` messages retain their reconciliation workflow, including an
@@ -4534,7 +4555,10 @@ its outbox message state, or, before preparation, by its occurrence:
   failed ([#482](https://github.com/epiphany40223/parishkit/issues/482)).
   Once an Admin retries that preparation, the email counts as remaining
   until the retry fails again.
-- **Not sure it arrived**: delivery unknown, linked to Sent mail. Counts
+- **Not sure it arrived**: delivery unknown, linked to Sent mail. The
+  review links below the counts (emails that may not have arrived, failed
+  emails) name the current mode, the one these counts read, so Sent mail
+  opens in it ([#1576](https://github.com/epiphany40223/parishkit/issues/1576)). Counts
   and links use the plain state words of
   [the Timeline](../reports/spec.md#timeline).
 - **Remaining**: pending, waiting to retry or submitting, or not yet
@@ -4822,9 +4846,13 @@ a phone, without sideways scrolling) holds:
   email (or, as before, the emails of the Family record with that id).
   Anything else is refused with the page's field error. A Testing email's
   routed address (the Testing recipient) is not searched.
-- **Purpose**: All, or one kind (Initial invitation, Reminder, Submission
-  receipt, Selected-Family test, Daily Administrator report, Weekly
-  Administrator report, Operational notice, Security notice).
+- **Purpose**: All; Family invitations and reminders (Initial invitation
+  and Reminder together, the Family email
+  [System health](#system-health)'s Waiting to retry counts,
+  [#1632](https://github.com/epiphany40223/parishkit/issues/1632)); or one
+  kind (Initial invitation, Reminder, Submission receipt, Selected-Family
+  test, Daily Administrator report, Weekly Administrator report,
+  Operational notice, Security notice).
 - **From** and **Through**: whole days in the browser's zone, as on
   [System logs](#logs). From starts at that day's midnight and Through
   includes its whole day; the server converts both to UTC bounds with the
@@ -4838,7 +4866,7 @@ a phone, without sideways scrolling) holds:
   ("From and Through are days in this computer's time zone: …") as a tip
   rather than a line of its own, so the bar stays compact (#227); like the
   note, it shows only once the browser reports a known zone.
-- **Delivery**: All; three grouped choices; then each single state as
+- **Delivery**: All; four grouped choices; then each single state as
   before. The groups overlap on purpose: they are filters, not a partition.
   - **Needs attention**: what an Administrator can still act on: Not sure
     it arrived (`delivery_unknown`), and Failed (`permanent_failure`) unless
@@ -4848,6 +4876,11 @@ a phone, without sideways scrolling) holds:
     operational or security notice) in a campaign that is not archived.
     One set-based condition: the campaign join and one correlated lookup of
     the latest resolution per candidate, through its history index.
+  - **Not sure it arrived — review needed**: the Not sure it arrived part
+    of Needs attention (`delivery_unknown`, of a kind whose page offers
+    resolutions, in a campaign that is not archived). The status bar's and
+    Home's counts link it ([Background indicators](#background-indicators),
+    [#1576](https://github.com/epiphany40223/parishkit/issues/1576)).
   - **Not delivered**: emails that finished without being delivered, Failed
     and Not sent (cancelled) (`permanent_failure`, `cancelled`). Not sure it
     arrived is not in it, since such an email may have arrived; a Delivered
@@ -5724,6 +5757,116 @@ Administrator decided that sign-in needs an explicit user), and importing
 automatically at each refresh (that would create accounts silently; the
 Administrator sees and confirms who gets access).
 
+### Email Ministry leaders
+
+Importing leaders sends nothing, and nothing else tells a Ministry leader
+that they can sign in, where, with which Google Account, or that requests
+are waiting for them
+([#1592](https://github.com/epiphany40223/parishkit/issues/1592)). Below the
+leaders table, a third section, **Email Ministry leaders**, lets an
+Administrator send each chosen Ministry leader user one email that says so.
+It is sent **by hand only** (Administrator decision, 2026-10-17, on #1592):
+only when an Administrator applies this section's review, never on import,
+on a schedule or after any other change, and never to Staff or
+Administrators, who see every Ministry and have no "Staff copy". A scheduled
+"new requests in your Ministries" email is not built.
+
+The section's table lists every user whose role is Ministry leader, in the
+[shared column order](../ui-conventions/spec.md#table-column-order): the
+selection checkbox, Name (the row header), Email, Last successful sign-in
+(as the users table shows it) and **Last emailed**: when this section last
+emailed that address, and how that email has ended so far, in the words
+Outgoing mail uses for a delivery state ("Delivered", "Not sure it
+arrived" and the rest), "Cancelled: the mode or Testing recipient changed"
+when the mode or Testing recipient changed between Apply and the emails'
+preparation (nothing was sent), or "Never". A Ministry leader user with no Name is
+listed under their email, so the table never hides them. The table follows the shared
+[Admin tables](../ui-conventions/spec.md#admin-tables): Name, Email, Last
+successful sign-in and Last emailed sort on the server, Name by default,
+and it pages and refreshes in place. Its bulk bar is the shared one:
+**Email selected** is available only while a row is ticked, and the
+bar's reserved reason line says why when it is not, so ticking a row moves
+nothing. There is deliberately no Email all button: the Administrator
+chooses the leaders to email (`pk-admin users email-leaders --all` still
+plans every leader). With no Ministry leader user, the table says so and
+the button is unavailable. The section shows nothing to email while there
+is no current campaign with Ministries, or the current campaign is archived (its
+leaders no longer sign in to work it, #527); its line says why.
+
+Email selected opens the **Email Ministry leaders** review in
+the [review dialog](../ui-conventions/spec.md#review-dialog). It is a full
+review, because it shows what the page does not: for each leader who will
+be emailed, their Ministries in the current campaign with each one's open
+requests to join and to leave, read now and counted as the email will state
+them: when the counts worked out again at Apply differ (a ParishSoft
+refresh or a new request since the review), Apply is refused as a changed
+page and nothing is queued. It then lists anyone chosen but skipped, and why: no longer a
+Ministry leader user, or leading none of the campaign's Ministries in
+ParishSoft (their email would have nothing to show). In Testing mode the
+review says that every email goes to the Testing recipient instead, naming
+that address. One Apply emails at most 100 leaders; when more are chosen, the review emails
+the first 100 by Name and says how many remain for another Apply. With
+nobody left to email the review says so and offers no Apply. **Apply**
+queues one email per listed leader, then the section is redrawn in place,
+and its status line, above the table, says the emails were queued. Each
+Apply is one request: replaying it (a double click, a resent request)
+queues nothing more, while a new Apply emails the chosen leaders again, so
+Last emailed is the place to check first. A review lasts fifteen minutes,
+as every review does. While
+[Pause and resume mail](#live-delivery-pause) has the current campaign's
+delivery paused in Production, the review and Apply are refused with that
+reason and nothing is queued; an email already queued waits and is sent
+after resume. A replayed Apply that lands during the pause says instead
+that its first Apply's emails are queued and held. An expired review gets
+the shared expired-review refusal.
+
+Each email is one message to one leader, with fixed wording that Pages and
+emails does not edit. Its subject names the parish. It says that the
+leader can sign in to the parish's stewardship portal as a Ministry leader
+to see and follow up the requests parishioners made in the campaign to join
+or leave the Ministries they lead, and links the Admin portal's sign-in
+page at the deployment's public address. It names the address the leader
+signs in with, the one the email was sent to, followed by the shared
+[Google Account guidance](#login-and-denial-behavior) for an address that
+is not a Gmail address
+([#1593](https://github.com/epiphany40223/parishkit/issues/1593)), with
+Google's help link. It lists each of the leader's Ministries with its open
+requests to join and to leave, or "No open requests", counted as Home's
+[My Ministries panel](#home-page) counts them, then links
+[Ministry requests](../reports/spec.md#ministry-change-summary), and it
+ends with the guidance's line on whom to ask when sign-in still fails. It
+names no parishioner and carries no contact or request detail: email is not
+an audited channel (rejected on #1592). How the emails are prepared,
+routed in Testing and retried is
+[background processing's](../background-processing/spec.md#ministry-leader-emails).
+
+Every route is Administrator-only (`Capability.MANAGE_USERS`) and checks
+that again after building its answer. The web login reads the leaders'
+Ministries and counts through one SECURITY DEFINER function,
+`stewardship_leader_emails_v1`, which, like the
+[leaders table's](#parishsoft-ministry-leaders-without-a-user), answers only
+the caller's live Admin session whose user is an Administrator now, takes no
+address, and records its own `user_leader_emails_reviewed` audit event with
+the number of leaders and never an address. Posted addresses only choose
+among the leaders it returns. Apply records one Ministry leader email
+request. Its database guard admits it only from the web login, for a
+current Administrator, for at most 100 distinct addresses that are each a
+current Ministry leader user leading one of the campaign's Ministries,
+while the campaign is not archived and its delivery is not paused. The guard works out each leader's Ministries and counts itself, with
+the same function, so no form supplies them, and it records the
+`user_leader_emails_requested` audit event with the count. The signed
+review binds the Testing recipient only by its digest, never the address
+(the review is signed, not encrypted); Apply refuses the review as changed
+when the current Testing recipient's digest differs. On the command
+line it is `pk-admin users email-leaders`
+([admin automation](../admin-automation/spec.md#users-and-follow-up),
+[#1622](https://github.com/epiphany40223/parishkit/issues/1622)), through
+the same functions and guard.
+
+Rejected: emailing every ParishSoft leader, users or not (access needs an
+explicit user), putting request details in the email, sending at import or
+on a schedule, and a Staff copy (Administrator decision of 2026-10-17).
+
 ### Upgrade from sign-in rules
 
 The release that introduces users converts the old sign-in rules once, as the
@@ -6066,10 +6209,16 @@ Members can share a name and the request says which Member is meant: email
 and phones for either kind; for a join request the Family's known primary
 address, gender and age; for a leave request the Member's current role in the
 Ministry. Who sees it is exactly who may open the request: Administrators,
-Staff, and the leaders of the request's Ministry. A Ministry leader sees only
-the email addresses and phone numbers the Member allows to be shared, and
-"Not published" for the others; Administrators and Staff see operational
-contact. A Member the Family added on the form says so, since the details
+Staff, and the leaders of the request's Ministry. A Ministry leader sees the
+requesting Member's own email and phones on a standing request, since asking
+is consent to be contacted (Administrator decision, 2026-10-17,
+[#1591](https://github.com/epiphany40223/parishkit/issues/1591)), except on
+any request of a Member whom the Family's latest response says cannot
+participate in any ministries, and otherwise only the values the Member allows to be shared, with "Not
+published" for the others; Administrators and Staff see operational
+contact. The exact rule is the
+[Ministry change summary's](../reports/spec.md#ministry-change-summary).
+A Member the Family added on the form says so, since the details
 are what the Family entered. Where the details come from, and the rule for a
 request the report cannot read, are in the
 [Ministry change summary](../reports/spec.md#ministry-change-summary). The
@@ -6126,7 +6275,8 @@ reason and a link back to the queue, before any contact detail is read.
 Each download is audited as `ministry_followup_exported` with its count, the
 sorted Ministry DUIDs in the file (`ministry_duids`, which the log's Ministry
 filter finds) and whether its contacts were operational or
-publish-restricted (`ministry_operational`); never names, contact values,
+publish-restricted (`ministry_operational`; restricted means the leader
+rule, including #1591's requesting-Member values); never names, contact values,
 filters or search text.
 
 The queue's columns follow the shared
@@ -7348,9 +7498,15 @@ reason ends (if known), and a link to act on it:
   [mail sender panel](#mail-sender-panel).
 - **Planning is held:** the same reasons, in the same words, for which
   [Family email progress](#family-email-progress) shows **Held**.
-- **Waiting to retry:** how many messages wait to retry after a temporary
-  refusal, and when the next retry is due, linking Sent mail filtered to
-  Waiting to retry.
+- **Waiting to retry:** how many Family invitations and reminders of the
+  operating mode wait to retry after a temporary refusal, and when the next
+  retry is due, linking Sent mail filtered to Waiting to retry, Family
+  invitations and reminders, in that mode. The count reads Sent mail's own
+  filter, so it is exactly the rows the link lists
+  ([#1632](https://github.com/epiphany40223/parishkit/issues/1632)). When the other mode
+  also has some, a separate **Waiting to retry in Testing** (or in
+  Production) line counts them and links Sent mail in that mode; the two
+  counts are never added together ([#1576](https://github.com/epiphany40223/parishkit/issues/1576)).
 
 When nothing is waiting, the panel says "Nothing is holding Family email
 back". During a send it links Family email progress, which counts the
@@ -8597,13 +8753,17 @@ Only Admins access the combined log screen. It supports:
   128 characters, of reviewed fields only), never key names, actor
   addresses, the "what went wrong" sentence or credentials. The search text
   is a private filter: it travels only in POST bodies, like the
-  [Find a Family](#admin-navigation) search, never in a link. It has no
-  text index: it reads the entries in the date range, which the page says.
-  Every log read (page or export) runs under the 60-second interactive
-  statement limit; a read it stops is recorded as a timeout (what, limit,
-  time taken) and answered with the page's unavailable message. A trigram
-  index is a schema change left until the log needs one
-  ([#765](https://github.com/epiphany40223/parishkit/issues/765));
+  [Find a Family](#admin-navigation) search, never in a link. Trigram
+  indexes ([#765](https://github.com/epiphany40223/parishkit/issues/765))
+  find the entries for a phrase holding three letters or digits in a row
+  without reading the others; a shorter phrase has nothing to look up and
+  reads the entries in the date range, which the page says. With From or
+  Through set, an audit record's details are looked up only for the records
+  in that range ([#1574](https://github.com/epiphany40223/parishkit/issues/1574)).
+  What a search finds is the same either way. Every log read (page or export) runs under
+  the 60-second interactive statement limit; a read it stops is recorded as
+  a timeout (what, limit, time taken) and answered with the page's
+  unavailable message;
 - bookmarkable views (#536): a GET may carry only the filters that are not
   private (the Show choices, Activity, type, Ministry, From and Through with
   their zone, rows per page and sort). The search text, identifiers (actor,

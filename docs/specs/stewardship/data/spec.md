@@ -1129,7 +1129,8 @@ ParishSoft capability registry, not guessed in views. The initial registry is:
 | --- | --- |
 | Family home/mailing contact/address fields | Manual until a verified address read exists; the v2 Family contact PUT accepts them, but they cannot be read back to confirm ([Review and publication](#review-and-publication)) |
 | Member first/middle/last/nickname/maiden names | ParishSoft v2 Member contact PUT |
-| Member birth date, language, gender | ParishSoft v2 Member contact PUT where semantically sufficient |
+| Member birth date, language | ParishSoft v2 Member contact PUT where semantically sufficient |
+| Member gender | Manual: the v2 Member contact PUT accepts a one-character `gender` but the write never changes the Member ([#1603](https://github.com/epiphany40223/parishkit/issues/1603)) |
 | Member death date | Manual, with the deceased-status request: writing `dateOfDeath` leaves the Member Active |
 | Member email and home/mobile/work phone | ParishSoft v2 Member contact PUT |
 | Any answer that removes a recorded value | Manual: the API cannot clear a field |
@@ -1153,6 +1154,18 @@ Family PUT's `primaryPhone` writes what a Family read returns as
 `familyHomePhone`, so publication maps each written field to the field it is
 read back from rather than assuming the names match. Family address blocks
 cannot be read back at all.
+
+A second live test the same day
+([#1603](https://github.com/epiphany40223/parishkit/issues/1603)) sent a
+Member contact PUT holding only `gender` and read the Member back from every
+v2 read that returns it (as `sex`). A one-character code (`F`, `U`) or `""`
+was accepted with HTTP 200 but left the Member's value unchanged in every
+read, also ten seconds later; an unknown code (`X`) gave HTTP 500 and a
+whole word (`Female`) HTTP 400. Reads return the one-character code (`M`),
+not the census word. Gender therefore cannot be published, and is `manual`
+like prefix, suffix and marital status; a forward migration re-marks the
+open gender changes recorded before it in the same way, with the same
+count-only `census_handling_corrected` audit event.
 
 Handling is therefore decided per value, not only per field: a change to an
 API-writable field is `manual` when the Family's answer removes the value (a
@@ -1468,6 +1481,20 @@ The unique `(idempotency scope, mode, semantic idempotency key)` constraint
 applies to every OutboxMessage, including operational messages whose scope is
 the deployment rather than a Campaign. Provider attempts update the one row;
 concurrent producers cannot create duplicate semantic mail.
+
+A [Ministry leader email](../background-processing/spec.md#ministry-leader-emails)
+(purpose `leader_email`,
+[#1592](https://github.com/epiphany40223/parishkit/issues/1592)) is the only
+Testing-routed message that belongs to no Campaign: its scope is the parish,
+its Campaign and Family are empty, and its routing is `testing_override` in
+Testing and `production` in Production. Three immutable records own it:
+`LeaderEmailRequest` (one Administrator's Apply: its actor, configuration,
+mode, Testing recipient, the chosen addresses and, filled in by its database
+guard, each leader's Ministries with their open join and leave counts),
+`LeaderEmailCohort` (the request's addresses frozen by its fenced preparation
+Task) and `LeaderEmailRecipient` (one address, its outbox message and the
+compiled subject and bodies it sends). None holds a parishioner's name or
+contact.
 
 Terminal outbox outcomes stop automatic scheduling. The sole explicit retry
 exception is a still-applicable `permanent_failure` returning to `pending`
@@ -2083,15 +2110,10 @@ current authorization/filter snapshot.
    [#1600](https://github.com/epiphany40223/parishkit/issues/1600)). As
    defence in depth for the [handling registry](#proposed-changes), a change
    the registry no longer marks API-writable is reported *By hand* and never
-   planned too, whatever its stored handling says. Gender
-   is sent as a one-character code (Male `M`, Female `F`) because the
-   schema allows one character, and a one-character code read back
-   compares as its census word. The schema records no codes, so these are
-   provisional and every gender change stays *By hand* until the human-run
-   smoke test confirms the codes ParishSoft accepts and returns; Unspecified
-   has no code and stays *By hand*
-   ([#1603](https://github.com/epiphany40223/parishkit/issues/1603)). Only
-   `approved` decisions are planned. An approved proposal that
+   planned too, whatever its stored handling says, so a gender change is
+   never planned and its read is never compared, whatever code ParishSoft
+   returns ([#1603](https://github.com/epiphany40223/parishkit/issues/1603)).
+   Only `approved` decisions are planned. An approved proposal that
    reconciliation already holds in `conflict` counts as a conflict until it
    is re-reviewed, and one whose field the fresh read lacks cannot be
    checked, which blocks its entity; a read that lacks only other fields

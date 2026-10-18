@@ -298,7 +298,7 @@ def read_status(caller, service, *, audit=True):
     from .accounts.presence import active_count
     from .audit.schemas import Action
     from .campaigns.work_locks import read_transaction
-    from .jobs.delivery_metadata import unknown_count
+    from .jobs.delivery_metadata import mode_split, uncertain_by_mode, unknown_count
     from .jobs.task_reads import counts
 
     def step():
@@ -315,7 +315,15 @@ def read_status(caller, service, *, audit=True):
                 # them for this Administrator.
                 notices = open_notices(actor, limit=0)["total"]
             if allows(actor, Capability.BACKGROUND_WORK):
-                tasks = counts(now) | {"delivery_unknown": unknown_count()}
+                # delivery_unknown is every mode's uncertain campaign emails,
+                # as before; delivery_review and delivery_review_other are the
+                # status bar's two "review needed" counts (#1576).
+                review = mode_split(uncertain_by_mode(), config.mode)
+                tasks = counts(now) | {
+                    "delivery_unknown": unknown_count(),
+                    "delivery_review": review["count"],
+                    "delivery_review_other": review["other"],
+                }
             if allows(actor, Capability.CONFIGURE):
                 presence = {"count": active_count(config, now)}
         model = Status.build(config, data, now, tasks, presence, notices)

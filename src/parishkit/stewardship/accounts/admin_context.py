@@ -17,7 +17,7 @@ from parishkit.stewardship.audit.critical_events import sign as critical_sign
 from parishkit.stewardship.audit.critical_events import summary as critical_summary
 from parishkit.stewardship.campaigns.credential_models import CampaignCredentialState
 from parishkit.stewardship.campaigns.models import Campaign
-from parishkit.stewardship.jobs.delivery_metadata import alert_counts
+from parishkit.stewardship.jobs.delivery_metadata import alert_counts, mode_split
 from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun
 from parishkit.stewardship.observability import (
     Event,
@@ -159,7 +159,13 @@ def portal_chrome(request):
             .isoformat(),
             "background": counts,
             "find_family": _find_family(actor, items, campaign),
-            "delivery_unknown": delivery_unknown,
+            # Emails that may not have arrived: the operating mode's count,
+            # which the warning shows and links, and the other mode's,
+            # linked on its own (#1576); None for a viewer who is not an
+            # Administrator.
+            "delivery_unknown": None
+            if delivery_unknown is None
+            else mode_split(delivery_unknown, configuration.mode),
             # Presence has its own passive endpoint. Do not repeat its current
             # epoch/population/session reads on every ordinary Admin page.
             "presence_count": None,

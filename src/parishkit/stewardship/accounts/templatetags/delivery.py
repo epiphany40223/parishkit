@@ -22,6 +22,9 @@ LABELS = STATE_LABELS | {
     "security_event": _("Security notice"),
     # Sent mail's grouped Delivery choices (#1562, STATE_GROUPS).
     "needs_attention": _("Needs attention"),
+    "needs_review": _("Not sure it arrived — review needed"),
+    # Sent mail's grouped Purpose choice (PURPOSE_GROUPS, #1632).
+    "family": _("Family invitations and reminders"),
     "not_delivered": _("Not delivered"),
     "still_sending": _("Still sending"),
     "production": _("Production"),

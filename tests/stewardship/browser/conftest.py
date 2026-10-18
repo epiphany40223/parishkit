@@ -67,6 +67,7 @@ from parishkit.stewardship.accounts.share_forms import (
     default_share_options,
 )
 from parishkit.stewardship.campaigns.domain import Percentage
+from parishkit.stewardship.jobs.delivery_metadata import mode_split
 from parishkit.stewardship.jobs.views import EVENT_SORTING, TASK_SORTING
 from parishkit.stewardship.reports.chart_assets import VENDORED
 from parishkit.stewardship.source.data_age import Connection
@@ -2219,7 +2220,12 @@ def component_origin():
             "text/html",
             render_to_string(
                 f"stewardship/{template}.html",
-                context | {"admin_chrome": admin | {"delivery_unknown": 1}} | extra,
+                context
+                | {
+                    "admin_chrome": admin
+                    | {"delivery_unknown": mode_split({"production": 1}, "production")}
+                }
+                | extra,
             ),
         )
     responses.update(digest_components(context, admin))

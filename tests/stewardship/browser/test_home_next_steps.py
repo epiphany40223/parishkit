@@ -66,7 +66,14 @@ def test_next_steps_link_their_pages_and_never_shift(
     for index in (1, 2, 4):
         assert listed.nth(index).get_by_role("link").count() == 0
     mail = panel.get_by_role("link", name="Sent mail", exact=True)
-    expect(mail).to_have_attribute("href", "/admin/mail/sent/?state=delivery_unknown")
+    expect(mail).to_have_attribute(
+        "href", "/admin/mail/sent/?state=needs_review&mode=production"
+    )
+    # The other mode's emails: a separate link with its own count (#1576).
+    other = panel.get_by_role("link", name="1 in Testing may not have arrived")
+    expect(other).to_have_attribute(
+        "href", "/admin/mail/sent/?state=needs_review&mode=testing"
+    )
     before = page.evaluate(BOXES)
     for step in panel.get_by_role("link").all():
         step.hover()

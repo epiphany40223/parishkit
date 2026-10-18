@@ -52,8 +52,14 @@ def test_only_current_admin_sees_operational_tasks(
     assert response["Cache-Control"] == "no-store"
     if detail == "counts":
         if status == 200:
-            assert set(response.json()) == {"as_of", "counts", "delivery_unknown"}
+            assert set(response.json()) == {
+                "as_of",
+                "counts",
+                "delivery_unknown",
+                "delivery_unknown_other",
+            }
             assert response.json()["delivery_unknown"] == 0
+            assert response.json()["delivery_unknown_other"] == 0
             assert response.json()["counts"]["queued"] == 1
         assert not AuditEvent.objects.filter(event_type="background_viewed").exists()
         return

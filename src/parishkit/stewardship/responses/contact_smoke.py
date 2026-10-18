@@ -15,7 +15,8 @@ deployed worker against one chosen test Member
    field, whether the record carries it, under which spelling, its JSON type
    and, for dates, phones and gender, its character shape (digits as ``9``,
    letters as ``a``); whether the publication encoder reproduces the value
-   as read (``encoder_matches_read``); whether the value as read satisfies
+   as read (``encoder_matches_read``; None for a field publication never
+   writes, gender included); whether the value as read satisfies
    the recorded PUT schema; which encoding fields were blank, so are still
    unsettled; and the record's top-level key names. No values.
 2. **Round trip** (only when asked, and only when the chosen marker field
@@ -69,19 +70,21 @@ MARKERS = {
 }
 DEFAULT_FIELD = "pager"
 # Fields whose encoding is still provisional in the publication encoder: a
-# blank one on the test Member leaves its encoding unsettled.
+# blank one on the test Member leaves its encoding unsettled. Gender is not
+# one: it is by hand (the live test of 2026-10-17 found a gender PUT never
+# changes the Member, #1603), so it has no encoding, but its shape is still
+# reported as a record of what the read returns.
 ENCODING_FIELDS = (
     "cellPhone",
     "dateOfBirth",
     "dateOfDeath",
     "emailAddress",
     "fax",
-    "gender",
     "homePhone",
     "pager",
     "workPhone",
 )
-SHAPED = frozenset(ENCODING_FIELDS) - {"emailAddress"}
+SHAPED = (frozenset(ENCODING_FIELDS) | {"gender"}) - {"emailAddress"}
 # Record keys ParishSoft may change on every write (audit stamps). They are
 # reported apart and never fail confirmation; any other key that changes does.
 VOLATILE_KEYS = frozenset(
