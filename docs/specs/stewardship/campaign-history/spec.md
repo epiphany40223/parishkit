@@ -1070,6 +1070,8 @@ last ready one with the participation graph's **Updating** notice, and
 brings the new figures in by itself once they are ready, as the Response
 dashboard does
 ([pages that update themselves](../ui-conventions/spec.md#pages-that-update-themselves)).
+A page that refuses the day asked for (a 400) still shows the notice but
+does not follow, since its own re-read would only be refused again.
 
 ### Downloads and sharing
 
