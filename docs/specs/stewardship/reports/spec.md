@@ -1097,6 +1097,29 @@ filtered rows, in the same statement as the total and the page (schema
 migration 0100), so the counts follow the filters in place, and paging and
 sorting leave them unchanged.
 
+Each item's page shows a **Contact details** section for its Family
+([#1595](https://github.com/epiphany40223/parishkit/issues/1595)), so Staff
+can reply without looking the Family up in ParishSoft: the Family record's
+email addresses and phones, then those of each active head of household
+(the heads the page's Family name lists), each under its own name. They come
+from the same ParishSoft data the page names the Family from. The values are
+operational contact, as Administrators and Staff see it on Ministry requests
+([Ministry change summary](#ministry-change-summary)): ParishSoft's publish
+flags do not hide them. Source text that is not a valid address is shown
+with "not a valid address; fix in ParishSoft", as the
+[directory](#active-parishioner-family-directory) shows it, and a detail
+with no value reads "None recorded". A Family the data no longer has shows
+no details and says so; if the data is replaced while the page is read, the
+section says to reload the page. Who sees the section is exactly who may
+open the page, Administrators and Staff (`ADDITIONAL_FOLLOWUP`), checked
+again by the contact read itself; Ministry leaders still cannot open the
+page. Only the item page reads the details, never the queue, its exports,
+the weekly digest or `followup information-show`, and the page's
+`information_viewed` access audit covers them; the audit records no contact
+values. The section reads the snapshot's Family, head Member and contact
+rows directly, as the directory's Family head emails do, so it needed no
+schema change.
+
 Editing is audited and uses optimistic concurrency. Clearing a completed
 follow-up needs its confirmation box ticked, and Save waits until it is. A
 Save that reaches the server without it is refused at that box
