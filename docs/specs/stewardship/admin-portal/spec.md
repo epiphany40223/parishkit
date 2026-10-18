@@ -6378,8 +6378,9 @@ Ministry"), Reviewer's value and Last contact, in the
 they replaced Status and Outcome), then the request
 page's contact details (Email, Phones, Known primary Family address, Gender,
 Age, Current Ministry role; blank where a detail does not apply to the
-request's kind). A Ministry leader's file says Accepted where Staff's says
-To enter by hand or Entered by hand, as on the page. It has no Submitted
+request's kind). A Ministry leader's file says Accepted (or Accepted
+(edited), or Added by the parish) where Staff's says To enter by hand or
+Entered by hand, as on the page. It has no Submitted
 column (Administrator decision, 2026-10-13, on
 [#1157](https://github.com/epiphany40223/parishkit/issues/1157)); the request
 page still shows when a request was submitted. Its Report information sheet
@@ -6505,9 +6506,12 @@ reads "Added in its place: Join Adult Choir". A request belongs to a Family
 response, so Add needs the Member's Family to have a live response in the
 campaign that lists the Member; Add attaches the request to that Family's
 latest response. Add is refused, in plain words in its dialog, for a DUID
-ParishSoft's data does not hold, a Family with no live response, and a
-Member who already has a current request for that Ministry (use that
-request's own icons instead). Ministry leaders never Add: a leader who sees
+no Family response lists or ParishSoft's data no longer lists as a current
+Member of that Family, a DUID two Families' responses list, a Member who
+already has a current request carrying that Ministry forward (use that
+request's own icons instead), and a Member and Ministry added on that
+response before and withdrawn. An Edit into a Ministry the Member already
+has a current request for is refused the same way. Ministry leaders never Add: a leader who sees
 a mistaken request ignores it with a note, and Staff add the right one.
 
 **Bulk decisions**: the selection bar offers Accept, Ignore, Back to review

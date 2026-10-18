@@ -26,10 +26,11 @@ row someone else changed first is a ``StaleDecision``, never a guess.
 """
 
 from dataclasses import replace
+from types import SimpleNamespace
 from uuid import UUID
 
-from django.db import IntegrityError, transaction
-from django.db.models import Max
+from django.db import IntegrityError, connection, transaction
+from django.db.models import Max, Q
 
 from parishkit.stewardship.accounts.policy import Capability, allows, current_principal
 from parishkit.stewardship.audit.schemas import Action as AuditAction
@@ -42,6 +43,7 @@ from parishkit.stewardship.pipeline import (
     ROLES,
     Action,
     Decision,
+    Stage,
     Stream,
     allowed_actions,
     ministry_placement,
@@ -252,19 +254,36 @@ class MinistryDecisions:
         )
         if action is Action.ENTERED_BY_HAND:
             return self._entered(principal, target, version, key, current, offered)
-        intent = self._intent(target, version, decision, notes)
-        previous = target.revisions.filter(actor_id=principal.identity, request_key=key)
-        previous = previous.first()
+        previous = target.revisions.filter(
+            actor_id=principal.identity, request_key=key
+        ).first()
         if previous is not None:
+            # A replay: the revision this key wrote, compared with what the
+            # post asks, before any rule about the request as it is now
+            # (which that revision itself changed).
+            intent = self._intent(previous.request, version, decision, notes)
             if any(getattr(previous, name) != value for name, value in intent.items()):
                 raise ValueError("This request key is already bound.")
             return 0
         if target.version != version or action not in offered:
             raise StaleRecordError("The Ministry request changed.")
+        if (
+            action is Action.BACK_TO_REVIEW
+            and current.stage is Stage.IGNORED
+            and not decision.note
+        ):
+            raise ValueError("Reopening an ignored request needs a note.")
+        intent = self._intent(target, version, decision, notes)
         if action is Action.EDIT:
             authorize_ministry(
                 self.store, principal.identity, intent["reviewed_ministry_duid"]
             )
+            if _current_request(target, intent["reviewed_ministry_duid"], target.pk):
+                raise DecisionRefusal(
+                    "edit_exists",
+                    "This Member already has a request for that Ministry. Use "
+                    "that request's own icons instead.",
+                )
         write_revision(principal.identity, target, intent, key, system)
         return 1
 
@@ -273,8 +292,9 @@ class MinistryDecisions:
 
         Notes carry forward unchanged (they are the request page's); the
         decision's own note is ``decision_note``. Back to review reopens a
-        request as In progress, or withdraws one the parish added; reopening
-        an ignored request needs a note, as its dialog asks.
+        request as In progress, or withdraws one the parish added (the note
+        an ignored request's reopening needs is checked by the caller, on
+        the locked stage).
         """
         action = decision.action
         state, outcome, reviewed = "resolved", None, None
@@ -289,9 +309,6 @@ class MinistryDecisions:
                 raise ValueError("Choose another Ministry to edit into.")
         elif action is Action.BACK_TO_REVIEW:
             state = "cancelled" if target.parish_added else "in_progress"
-            ignored = target.outcome not in ACCEPTED_OUTCOMES
-            if ignored and not decision.note:
-                raise ValueError("Reopening an ignored request needs a note.")
         else:
             raise ValueError("Ministry requests do not take that decision.")
         return {
@@ -378,17 +395,12 @@ class MinistryDecisions:
             if previous is not None:
                 return f"{self.namer(previous.pk) or 'The request'} was already added."
             response = _latest_response(self.campaign_id, member)
-            if (
-                MinistryRequest.objects.filter(
-                    submission__family_id=response.family_id,
-                    submission__campaign_id=self.campaign_id,
-                    submission__mode="live",
-                    entity_kind="member",
-                    entity_key=member,
-                    ministry_duid=ministry,
-                )
-                .exclude(state__in=("cancelled", "superseded"))
-                .exists()
+            _still_listed(response, member)
+            if _current_request(
+                SimpleNamespace(
+                    submission=response, entity_kind="member", entity_key=member
+                ),
+                ministry,
             ):
                 raise DecisionRefusal(
                     "add_exists",
@@ -409,11 +421,17 @@ class MinistryDecisions:
                         parish_added=True,
                         added_in_place_of=in_place_of,
                     )
-            except IntegrityError:
+            except IntegrityError as error:
+                # Only the request identity's uniqueness: a withdrawn request
+                # for this Member and Ministry already sits on that response.
+                # Any other refusal is the guard's, and not the reader's to fix.
+                if getattr(error.__cause__, "sqlstate", None) != "23505":
+                    raise
                 raise DecisionRefusal(
-                    "add_exists",
-                    "A request for this Member and Ministry was already made on "
-                    "the Family's latest response, so it cannot be added again.",
+                    "add_withdrawn",
+                    "A request for this Member and Ministry was added on the "
+                    "Family's latest response and withdrawn, so it cannot be "
+                    "added there again. Record it in ParishSoft directly.",
                 ) from None
             (target,) = _targets(self.store, actor, {request.pk: request.version})
             write_revision(
@@ -435,6 +453,52 @@ class MinistryDecisions:
                 _system(),
             )
         return f"{self.namer(request.pk) or 'The request'} added."
+
+
+def _current_request(target, ministry, exclude=None):
+    """Whether the Member already has a current request for ``ministry``.
+
+    Current means not cancelled or replaced; its Ministry is the one it
+    carries forward (an Edit's, else the Family's), so an Edit or an Add
+    never leaves two requests about one Member and Ministry (#1684). The
+    migration's guards check the same.
+    """
+    found = MinistryRequest.objects.filter(
+        submission__family_id=target.submission.family_id,
+        submission__campaign_id=target.submission.campaign_id,
+        submission__mode="live",
+        entity_kind=target.entity_kind,
+        entity_key=target.entity_key,
+    ).exclude(state__in=("cancelled", "superseded"))
+    if exclude is not None:
+        found = found.exclude(pk=exclude)
+    return found.filter(
+        Q(reviewed_ministry_duid=ministry)
+        | Q(reviewed_ministry_duid__isnull=True, ministry_duid=ministry)
+    ).exists()
+
+
+def _still_listed(response, member):
+    """Refuse an Add for a Member ParishSoft no longer lists in the Family.
+
+    The same standing the worklist filters on
+    (``stewardship_member_source_status_v1``, #1217), read from the current
+    ParishSoft data, so Add never makes a request nobody may act on.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT stewardship_member_source_status_v1("
+            "(SELECT snapshot_id FROM stewardship_source_current),%s,f.family_duid) "
+            "FROM stewardship_family_campaign f WHERE f.id=%s",
+            [member, response.family_id],
+        )
+        found = cursor.fetchone()
+    if found is None or found[0] != "current":
+        raise DecisionRefusal(
+            "add_not_in_parishsoft",
+            "ParishSoft's data no longer lists that Member in their Family, or "
+            "lists them as inactive or deceased, so no request can be added.",
+        )
 
 
 def _member_key(fields):

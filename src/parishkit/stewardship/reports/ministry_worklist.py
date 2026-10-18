@@ -306,8 +306,8 @@ def _asked_again(rows):
 
     A Family's later response that repeats a decided request's action for
     the same Member and Ministry creates no request (#1684); it is found
-    here, read for the rows shown: the latest such response's time, by
-    request id.
+    here, read for the rows shown: the latest such response after the
+    decision in force, by request id.
     """
     ids = [
         row["id"] for row in rows if row["state"] in ("resolved", "closed_no_response")
@@ -322,7 +322,7 @@ def _asked_again(rows):
             "JOIN stewardship_submission later ON later.family_id=s.family_id "
             "AND later.campaign_id=s.campaign_id AND later.mode='live' "
             "AND later.family_version>s.family_version "
-            "WHERE r.id=ANY(%s::uuid[]) "
+            "WHERE r.id=ANY(%s::uuid[]) AND later.submitted_at>r.resolved_at "
             "AND later.answers#>ARRAY['ministries',CASE WHEN r.entity_kind='member' "
             "THEN 'members' ELSE 'proposed_members' END,r.entity_key,r.action] "
             "@> to_jsonb(r.ministry_duid) GROUP BY r.id",
@@ -619,9 +619,11 @@ def worklist_context(
         "table": table,
         "total": len(shown),
         "add_ministries": _ministry_choices(result),
+        # Every ignored request of the view, whatever its stage or page,
+        # since Add is used from any of them (#1684).
         "add_replaceable": [
-            (row["id"], row["name"])
-            for row in decorated
+            (str(row["id"]), f"{row['member_label']} — {row['ministry_name']}")
+            for row in rows
             if row["placement"].stage is Stage.IGNORED
         ],
         "members_choices": MEMBERS if not leader else None,

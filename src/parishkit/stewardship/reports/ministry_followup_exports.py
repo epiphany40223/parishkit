@@ -166,6 +166,15 @@ def _contact_values(details, action):
     )
 
 
+def _reviewer_value(row):
+    """The Ministry a request carries forward in place of the Family's
+    answer: an Edit's, or one the parish added (#1684); else blank."""
+    kind = "Join" if row["action"] == "join" else "Leave"
+    if row.get("reviewed_ministry_name"):
+        return f"{kind} {row['reviewed_ministry_name']}"
+    return f"{kind} {row['ministry_name']}" if row.get("parish_added") else ""
+
+
 def queue_document(result, contacts, query, *, parish_name, requested_at, zone):
     """The file's one detached document: report details and one row a request.
 
@@ -210,12 +219,7 @@ def queue_document(result, contacts, query, *, parish_name, requested_at, zone):
                 # them to this reader.
                 row["stage_label"],
                 row["decision_label"],
-                (
-                    f"{'Join' if row['action'] == 'join' else 'Leave'} "
-                    f"{row['reviewed_ministry_name']}"
-                )
-                if row.get("reviewed_ministry_name")
-                else "",
+                _reviewer_value(row),
                 instant(row["last_contact_at"]) or NO_CONTACT,
             )
             + _contact_values(details, row["action"])

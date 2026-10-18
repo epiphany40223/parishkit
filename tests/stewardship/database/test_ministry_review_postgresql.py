@@ -78,6 +78,18 @@ def decide(harness, principal, action, *targets, note="", fields=None, key=None)
     return notice
 
 
+def withdraw_leave(harness):
+    """The Family answers again asking only to join Food pantry, which
+    withdraws the leave of Ministry 4; the join's same-intent successor."""
+    form = revisit(harness)
+    answers = answers_for(form)
+    answers["ministries"]["members"]["3"] = {"join": [9], "leave": []}
+    respond(harness, form, answers)
+    current = MinistryRequest.objects.exclude(state__in=["superseded", "cancelled"])
+    assert not current.filter(ministry_duid=4).exists()
+    return current.get(ministry_duid=9)
+
+
 def view(harness, principal, **values):
     """The worklist's rows for ``principal``, every stage, by request id."""
     query = WorklistQuery.parse({"stage": "all"} | values)
@@ -163,6 +175,26 @@ def test_edit_moves_the_request_into_another_leaders_scope(response_service):
         decide(harness, staff, "edit", join, fields={"value": ["9"]})
     with pytest.raises(ValueError):
         decide(harness, staff, "edit", join, fields={"value": ["77"]})
+    # Member 3 still has a current request about Ministry 4 (the leave), so
+    # a second one carrying it forward is refused, in Python and in SQL.
+    with pytest.raises(DecisionRefusal) as refused:
+        decide(harness, staff, "edit", join, fields={"value": ["4"]})
+    assert refused.value.code == "edit_exists"
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        pytest.raises(DatabaseError, match="not valid for this request"),
+        work_transaction(),
+    ):
+        MinistryWorkflowRevision.objects.create(
+            request=join,
+            actor_id=staff.identity,
+            request_key=uuid4(),
+            expected_version=join.version,
+            state="resolved",
+            outcome="joined",
+            reviewed_ministry_duid=4,
+        )
+    join = withdraw_leave(harness)
     decide(harness, staff, "edit", join, fields={"value": ["4"]})
     assert (join.state, join.outcome, join.reviewed_ministry_duid) == (
         "resolved",
@@ -206,8 +238,53 @@ def test_a_leader_edits_only_into_a_ministry_they_lead(response_service):
             outcome="joined",
             reviewed_ministry_duid=4,
         )
+    join = withdraw_leave(harness)
     decide(harness, both, "edit", join, fields={"value": ["4"]})
     assert join.reviewed_ministry_duid == 4
+    # Roster changes to enter lists the Ministry to enter: the edited one.
+    from parishkit.stewardship.reports.ministry_roster_views import roster_rows
+
+    staff = actor(harness, {"staff"}, ())
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True), transaction.atomic():
+        rows, _ = roster_rows(harness.campaign.pk, staff, "all")
+    (row,) = [found for found in rows if found["id"] == str(join.pk)]
+    assert (row["ministry_duid"], row["ministry_name"]) == (4, "Choir")
+
+
+def test_replays_and_a_family_answer_after_back_to_review(response_service):
+    """Posting the same Back to review again replays it, as does withdrawing
+    an added request twice; a request sent back to review is open again, so
+    the Family's next answer carries it forward as before."""
+    harness = setup(response_service)
+    staff = actor(harness, {"staff"}, ())
+    join, leave = requests()
+    decide(harness, staff, "accept", join)
+    key = uuid4()
+    decide(harness, staff, "back_to_review", join, key=key)
+    assert join.state == "in_progress"
+    count = MinistryWorkflowRevision.objects.count()
+    join.version -= 1
+    decide(harness, staff, "back_to_review", join, key=key)
+    assert MinistryWorkflowRevision.objects.count() == count
+    successor = withdraw_leave(harness)
+    assert successor.pk != join.pk and successor.state == "in_progress"
+    # A leader never inserts a parish-added request, even straight in SQL.
+    pantry = actor(harness, {"ministry_leader"}, (9,))
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        pytest.raises(DatabaseError, match="parish adds needs Staff"),
+        work_transaction(),
+    ):
+        MinistryRequest.objects.create(
+            submission=successor.submission,
+            entity_kind="member",
+            entity_key="3",
+            ministry_duid=4,
+            action="join",
+            state="new",
+            actor_id=pantry.identity,
+            parish_added=True,
+        )
 
 
 def test_the_sql_guard_refuses_unpaired_reopens(response_service):
@@ -267,6 +344,16 @@ def test_staff_add_a_request_in_place_of_an_ignored_one(response_service):
     latest = respond(harness, form, answers)
     leave.refresh_from_db()
     assert leave.state == "cancelled"
+    # Only an ignored request of the same Member can be replaced, never
+    # one the Family withdrew.
+    with pytest.raises(DecisionRefusal) as refused:
+        decide(
+            harness,
+            staff,
+            "add",
+            fields=fields | {"value_in_place_of": [str(leave.pk)]},
+        )
+    assert refused.value.code == "add_in_place_of"
     key = uuid4()
     assert decide(harness, staff, "add", fields=fields, key=key).endswith(" added.")
     added = MinistryRequest.objects.get(parish_added=True)
@@ -293,10 +380,17 @@ def test_staff_add_a_request_in_place_of_an_ignored_one(response_service):
         decide(harness, staff, "add", fields=fields)
     assert refused.value.code == "add_exists"
     assert MinistryRequest.objects.count() == count
-    # Back to review withdraws an added request.
-    decide(harness, staff, "back_to_review", added)
+    # Back to review withdraws an added request; the same post replays.
+    key = uuid4()
+    decide(harness, staff, "back_to_review", added, key=key)
     assert added.state == "cancelled"
     assert str(added.pk) not in view(harness, staff)
+    added.version -= 1
+    decide(harness, staff, "back_to_review", added, key=key)
+    # Withdrawn on that response, it cannot be added there again.
+    with pytest.raises(DecisionRefusal) as refused:
+        decide(harness, staff, "add", fields=fields)
+    assert refused.value.code == "add_withdrawn"
 
 
 def test_family_asked_again_creates_no_second_request(response_service):
