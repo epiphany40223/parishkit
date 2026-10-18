@@ -289,6 +289,15 @@ first user is the planned
 [Campaign calendar editing](../admin-portal/spec.md#editing-from-the-calendar)
 ([#1521](https://github.com/epiphany40223/parishkit/issues/1521)).
 
+A checkbox or radio button sits on the same line as its own label, the
+box or circle first and the words beside it, and any help or reason for
+that one choice goes under the words, never between the control and its
+label. **Shared code.** The stylesheet lays out every form or fieldset
+`div` that holds one checkbox or radio and its `label` this way (and a
+`label` wrapping its control), so a template never adds its own rule
+(#1656, Edit scheduled email's Apply this edit to and Delete this
+scheduled email).
+
 Client validation improves feedback but never replaces server validation.
 Browser-local timezone conversion uses UTC ISO timestamps supplied by the
 server. The Admin portal [requires
@@ -510,6 +519,17 @@ never scrolls to show it (Administrator, pk-local review of
   new state through a live-status announcer (`data-live-announcer`) is marked
   `data-in-place-spoken` instead and announces nothing on success, so two
   live regions never speak at once (Load ParishSoft data, #1404 PR 5).
+- **Views the page script draws.** A view drawn by the page script from data
+  the page already holds (from #1656, the
+  [Campaign calendar](../admin-portal/spec.md#campaign-calendar)'s month)
+  changes with no request at all: the script redraws it, focus stays on the
+  control, the new view is announced, and the address's parameter for
+  that view is replaced (never added to the history), so reload, bookmarks
+  and returning to the page keep it. Its stepping controls (Previous, Next)
+  sit before the view's name, so a longer name moves neither, and at the end
+  of the range the control stays in place, focusable but unavailable, with
+  its reason in a reserved line ([prerequisite
+  gates](#prerequisite-gates)).
 - **Request.** The browser fetches exactly the request the control would
   have made, follows the server's Post/Redirect/Get redirect, and replaces
   every region the fetched page shares with this one, plus the counts,
@@ -954,7 +974,12 @@ only content after the toggle ([no layout shift](#no-layout-shift)).
 **Rule.** A button is unavailable until its prerequisites are met and there
 is something for it to do, and while it is unavailable a short visible reason
 says what is missing. A Review button is unavailable until the form differs
-from what is saved. The server still checks every submission. **Why.** A
+from what is saved. The server still checks every submission. An unavailable
+button looks the same whether it is `disabled` or kept focusable with
+`aria-disabled` (a stepping control at the end of its range): greyed, with
+the not-allowed pointer and no hover change. The busy (progress) pointer is
+only for a button whose request is in flight (`is-busy`, `aria-busy` on it
+or its form), never for one that is merely unavailable (#1656). **Why.** A
 button that is available but refuses afterwards wastes a round trip and reads
 as an error; a button greyed out with no reason reads as broken. **Shared
 code.** `ui-v1.js`: `data-require-complete` with `data-complete-hint` and
@@ -1687,7 +1712,8 @@ Testing rehearsal.
   (Production | Testing rehearsal), above its Filters panel, and
   [Roster changes to enter](../admin-portal/spec.md#roster-changes-to-enter)'s
   Show (Not yet entered | All, including entered), above its Ministry
-  filter.
+  filter, and the [Campaign calendar](../admin-portal/spec.md#campaign-calendar)'s
+  Show (Upcoming emails | Include past emails), above Every email by date.
 - **Links.** Each segment is a link to the page's own address with that
   choice (`a[data-in-place]`, marked `aria-current="page"` when chosen), so
   each view has a real address that a reload or bookmark keeps. The link

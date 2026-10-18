@@ -2186,11 +2186,14 @@
     noteSent(form); // the change gate's record of what was sent (#921)
     const submitter = event.submitter;
     submitter?.setAttribute("aria-disabled", "true");
+    // In flight, not unavailable (ui-v1.css): the busy pointer, not greyed.
+    submitter?.setAttribute("aria-busy", "true");
     // A save shows its button busy, as an ordinary submission does.
     if (save && !saving) submitter?.classList.add("is-busy");
     const settle = () => {
       inFlight.delete(form);
       submitter?.removeAttribute("aria-disabled");
+      submitter?.removeAttribute("aria-busy");
       submitter?.classList.remove("is-busy");
       reconcileBoxes();
     };
@@ -2634,6 +2637,7 @@
     submitControls(form).forEach((node) => {
       node.classList.remove("is-busy");
       node.removeAttribute("aria-disabled");
+      if (!form.contains(node)) node.removeAttribute("aria-busy");
     });
     if (!submitting.size) busyStatus.textContent = "";
   };
@@ -2654,7 +2658,12 @@
     if (submitting.has(form)) { event.preventDefault(); return; }
     if (event.defaultPrevented || form.hasAttribute("data-submit-repeatable")) return;
     form.setAttribute("aria-busy", "true");
-    submitControls(form).forEach((node) => node.setAttribute("aria-disabled", "true"));
+    submitControls(form).forEach((node) => {
+      node.setAttribute("aria-disabled", "true");
+      // A button tied in by form="…" sits outside the form, so the form's
+      // aria-busy does not reach it; mark it busy itself (cleared on release).
+      if (!form.contains(node)) node.setAttribute("aria-busy", "true");
+    });
     event.submitter?.classList.add("is-busy");
     busyStatus.textContent = "Working…";
     if (!form.hasAttribute("data-submit-waits")) {
@@ -4115,6 +4124,7 @@
     dialog.querySelectorAll("[data-confirm-accept], [data-confirm-cancel]").forEach((button) => {
       button.disabled = false;
       button.removeAttribute("aria-disabled");
+      button.removeAttribute("aria-busy");
       button.classList.remove("is-busy");
     });
     // Fields start again from their defaults each time, so an earlier
@@ -4188,6 +4198,7 @@
     const accept = state.dialog.querySelector("[data-confirm-accept]");
     accept.classList.remove("is-busy");
     accept.removeAttribute("aria-disabled");
+    accept.removeAttribute("aria-busy");
     // The same request would be refused again; Cancel stays.
     accept.disabled = true;
     const cancel = state.dialog.querySelector("[data-confirm-cancel]");
@@ -4233,6 +4244,7 @@
     const accept = state.dialog.querySelector("[data-confirm-accept]");
     accept.classList.remove("is-busy");
     accept.removeAttribute("aria-disabled");
+    accept.removeAttribute("aria-busy");
     accept.disabled = true;
     describe(accept);
     state.dialog.querySelector("[data-confirm-cancel]").disabled = false;
@@ -4327,6 +4339,9 @@
     state.busy = true;
     const accept = dialog.querySelector("[data-confirm-accept]");
     accept.setAttribute("aria-disabled", "true");
+    // In flight, not unavailable: the busy pointer without the spinner on a
+    // review's Apply (ui-v1.css).
+    accept.setAttribute("aria-busy", "true");
     if (!state.review) accept.classList.add("is-busy");
     dialog.querySelector("[data-confirm-cancel]").disabled = true;
     dialog.querySelector("[data-confirm-error]").hidden = true;
