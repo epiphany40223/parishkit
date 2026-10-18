@@ -217,7 +217,7 @@ def test_open_filters_are_a_compact_grid(page, component_origin, path):
     first_row = [left for left, bottom in cells if abs(bottom - cells[0][1]) <= 1]
     assert len(first_row) >= 3, cells
     button = page.get_by_role("button", name="Apply filters").bounding_box()
-    last = form.locator(":scope > div").last.bounding_box()
+    last = form.locator(":scope > div:not(.filter-actions)").last.bounding_box()
     assert button["x"] > last["x"], (button, last)
     assert button["y"] < last["y"] + last["height"], (button, last)
 

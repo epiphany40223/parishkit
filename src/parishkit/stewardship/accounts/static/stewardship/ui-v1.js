@@ -1656,7 +1656,8 @@
   // outside it). options.filters makes the filter form show the answer's
   // filters (syncFilters), as a data-in-place-filters owner does;
   // options.popped marks a Back or Forward redraw (see VIEWS_FORM), whose
-  // history entry is left as it is.
+  // history entry is left as it is. options.cleared marks Clear filters'
+  // answer (#1651), the page's default filters, which the form then shows.
   const refreshTable = async (region, control, url, init, fallback, options = {}) => {
     if (saving) {
       // The control was ignored; say why rather than doing nothing visibly.
@@ -1928,7 +1929,11 @@
       swappingFor = null;
     }
     if (!anywhere) syncControls(parsed);
-    if (owner?.hasAttribute("data-in-place-filters") || options.filters) syncFilters(parsed);
+    // Clear filters (#1651) asked the server for the unfiltered view, so the
+    // form takes that answer's values, as after a cross-link that sets them.
+    // A Back or Forward view (options.filters, #1562) sets them too.
+    if (owner?.hasAttribute("data-in-place-filters") || options.filters || options.cleared) syncFilters(parsed);
+    if (!anywhere) noteFiltersShown(control, owner, Boolean(options.cleared));
     // A report's filters refused at a field (#1332) are drawn again with
     // that field marked, but the filter form keeps its element and the
     // values typed (syncControls), so the marks and messages are copied
@@ -2054,7 +2059,8 @@
     // message in another live region at the same moment could cut it off.
     if (!refused) {
       if (!owner?.hasAttribute("data-in-place-spoken")) {
-        announce(describeTable(document.getElementById(id), control, owner));
+        const told = describeTable(document.getElementById(id), control, owner);
+        announce(options.cleared ? ["Filters cleared.", told].filter(Boolean).join(" ") : told);
       }
     }
     else if (summary) announce(sentences([...summary.querySelectorAll("li")]));
@@ -2135,6 +2141,22 @@
       // that form (form="…"); the event's target is that same form.
       owner = event.submitter?.form || form;
     }
+    // Clear filters (#1651): the filter form sent without its filters (see
+    // clearedFields). An unavailable one does nothing; admin-menu-v1.js
+    // already ignores its click, and this covers any other way to submit it.
+    const clearing = Boolean(event.submitter?.matches("form#table-filters [data-clear-filters]"));
+    if (clearing && event.submitter.hasAttribute("data-clear-unavailable")) {
+      event.preventDefault();
+      return;
+    }
+    // A page whose filter form has no table to refresh still clears, with
+    // an ordinary load of the unfiltered view; a native submission would
+    // send the very filters being cleared.
+    if (clearing && !region) {
+      event.preventDefault();
+      loadCleared(form, written, method);
+      return;
+    }
     if (!region || !sameOrigin(written || "")) return;
     // A form that also opens the review dialog (Off-site backups' settings,
     // #750) is in place only for a button marked data-review-skip (Test
@@ -2153,7 +2175,7 @@
     // The request is built before the form is marked in flight, so nothing
     // can fail between the two and leave the form locked.
     const action = new URL(written || "", document.baseURI);
-    const fields = new FormData(form, event.submitter || undefined);
+    const fields = clearing ? clearedFields(form) : new FormData(form, event.submitter || undefined);
     const save = Boolean(owner) && method === "post" && !owner.hasAttribute("data-in-place-read");
     let init, load;
     if (method === "post") {
@@ -2172,13 +2194,14 @@
       if (token) init.headers = {"X-CSRFToken": token};
       // A read-only table POST that got no answer is submitted natively; a
       // saving POST never is (refreshTable shows a note instead).
-      load = () => HTMLFormElement.prototype.submit.call(form);
+      load = clearing ? () => loadCleared(form, written, method)
+        : () => HTMLFormElement.prototype.submit.call(form);
     } else {
       action.search = new URLSearchParams(fields).toString();
       init = {method: "GET"};
       // A data-in-place GET falls back to the very URL it fetched, which
       // keeps a submitter's formaction (a native re-submission would not).
-      load = owner ? () => window.location.assign(action.href)
+      load = owner || clearing ? () => window.location.assign(action.href)
         : () => HTMLFormElement.prototype.submit.call(form);
     }
     inFlight.add(form);
@@ -2192,9 +2215,12 @@
       inFlight.delete(form);
       submitter?.removeAttribute("aria-disabled");
       submitter?.classList.remove("is-busy");
+      // Clear filters' own state outlives the busy mark just removed.
+      gateClear(form);
       reconcileBoxes();
     };
-    refreshTable(region, control, action.href, init, load, {owner, form: save ? form : null})
+    refreshTable(region, control, action.href, init, load,
+      {owner, form: save ? form : null, cleared: clearing})
       .finally(settle);
   }, true);
   // Back or Forward within a page that keeps its views in history
@@ -2228,6 +2254,141 @@
   // drew there: Back and Forward then agree with what this load shows.
   if (window.history.state?.inPlaceView && document.querySelector(VIEWS_FORM)) {
     window.history.replaceState({...window.history.state, inPlaceView: null}, "");
+  }
+  // Clear filters (#1651, UX conventions "Clear filters"): the button
+  // beside a filter form's apply button (components/filter-actions.html)
+  // puts every filter back to the page's default in place. The server owns
+  // the defaults, so Clear sends the form without its filters and the form
+  // then takes the answer's values (syncFilters, above), never blank fields.
+  //
+  // What is sent: the form's hidden fields (the CSRF token, the browser's
+  // zone, the table's sort and size, a view choice such as Production or
+  // Testing), except those marked data-filter, which carry a filter (System
+  // logs' submitted-form mark, a one-send view). No visible field is sent,
+  // so neither is a private filter.
+  const clearedFields = (form) => {
+    const fields = new FormData();
+    [...form.elements].forEach((field) => {
+      if (field instanceof HTMLInputElement && field.type === "hidden" && field.name
+          && !field.disabled && !field.hasAttribute("data-filter")) {
+        fields.append(field.name, field.value);
+      }
+    });
+    return fields;
+  };
+  // The ordinary load of the unfiltered view, when it cannot be shown in
+  // place: the address with only the kept fields, or for a POST form the
+  // same fields posted from a detached form (the filter form itself would
+  // send its filters).
+  const loadCleared = (form, written, method) => {
+    const action = new URL(written || "", document.baseURI);
+    const fields = clearedFields(form);
+    if (method !== "post") {
+      action.search = new URLSearchParams(fields).toString();
+      window.location.assign(action.href);
+      return;
+    }
+    const sent = document.createElement("form");
+    sent.method = "post";
+    sent.action = action.href;
+    sent.hidden = true;
+    fields.forEach((value, name) => {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = name;
+      input.value = value;
+      sent.append(input);
+    });
+    document.body.append(sent);
+    HTMLFormElement.prototype.submit.call(sent);
+  };
+  // A filter form's filters as one comparable string: each visible field
+  // (ticked or not for a box, else its value) and each data-filter hidden
+  // field, in order. ``rendered`` reads what the server drew (the default*
+  // properties) rather than what the browser now shows, which a reload may
+  // have restored from an earlier visit.
+  const filterValues = (form, {rendered = false} = {}) => JSON.stringify([...form.elements]
+    .filter((field) => field.name && !isSubmit(field) && !field.matches("[data-browser-zone]")
+      && (field.type !== "hidden" || field.hasAttribute("data-filter")))
+    .map((field) => {
+      if (field.type === "checkbox" || field.type === "radio") {
+        return [field.name, rendered ? field.defaultChecked : field.checked];
+      }
+      if (rendered && field instanceof HTMLSelectElement) {
+        const options = [...field.options];
+        return [field.name, (options.find((option) => option.defaultSelected) || options[0])?.value ?? ""];
+      }
+      return [field.name, rendered && "defaultValue" in field ? field.defaultValue : field.value];
+    }));
+  // Whether this page was opened with no filter in its address, so what the
+  // server drew is the page's default. Only the form's kept hidden fields
+  // (sort, size, zone, a view choice) and a table's page number (its size
+  // field's prefix + "page", web/tables.py) are not filters. A POST
+  // report's filters never reach the address, and its plain address shows
+  // its default view.
+  const openedUnfiltered = (form) => {
+    const kept = new Set([...clearedFields(form).keys()]);
+    [...kept].filter((name) => name.endsWith("size"))
+      .forEach((name) => kept.add(`${name.slice(0, -"size".length)}page`));
+    return [...new URLSearchParams(window.location.search).keys()].every((name) => kept.has(name));
+  };
+  // Per filter form: ``applied``, the filters of the list shown, and
+  // ``defaults``, the page's default filters, or null while unknown (a
+  // page opened already filtered, until a Clear shows them).
+  const filterState = new WeakMap();
+  // Clear filters is unavailable while it has nothing to do: the defaults
+  // are known, the list shown uses them and every field shows them. It is
+  // then aria-disabled (so it keeps focus and its place) and described by
+  // its tip, which admin-menu-v1.js shows on hover, focus or tap; while
+  // available it names no tip, so the tip never shows. A request in flight
+  // keeps its own aria-disabled mark until it settles (settle, above).
+  const gateClear = (form) => {
+    const button = form instanceof HTMLFormElement && form.querySelector("[data-clear-filters]");
+    const state = filterState.get(form);
+    if (!button || !state) return;
+    const idle = state.defaults !== null && state.applied === state.defaults
+      && filterValues(form) === state.defaults;
+    const tip = button.parentElement.querySelector(".admin-tip[id]");
+    button.toggleAttribute("data-clear-unavailable", idle);
+    if (idle) {
+      button.setAttribute("aria-disabled", "true");
+      if (tip) button.setAttribute("aria-describedby", tip.id);
+      return;
+    }
+    if (!inFlight.has(form)) button.removeAttribute("aria-disabled");
+    button.removeAttribute("aria-describedby");
+    tip?.classList.remove("is-shown", "is-tapped");
+  };
+  // After an in-place answer: a filter submission (Apply, Clear, or a
+  // control that sets the filters from outside the form, such as a System
+  // logs cross-link) changed the list's filters to what the form now shows;
+  // a Clear's answer is the page's default. Sorting or paging changes no
+  // filter, but every answer checks Clear filters again.
+  const noteFiltersShown = (control, owner, cleared) => {
+    const form = document.getElementById("table-filters");
+    const state = filterState.get(form);
+    if (!state) return;
+    const fromForm = control === form || (control instanceof Element && control.closest("form") === form);
+    if (fromForm || cleared || owner?.hasAttribute("data-in-place-filters")) {
+      state.applied = filterValues(form);
+      if (cleared) state.defaults = state.applied;
+    }
+    gateClear(form);
+  };
+  {
+    const form = document.getElementById("table-filters");
+    if (form instanceof HTMLFormElement && form.querySelector("[data-clear-filters]")) {
+      const rendered = filterValues(form, {rendered: true});
+      filterState.set(form, {applied: rendered, defaults: openedUnfiltered(form) ? rendered : null});
+      gateClear(form);
+      // Capture phase: a script's own change events (syncFilters) do not
+      // bubble, and every edit, typed or chosen, counts at once.
+      ["input", "change"].forEach((type) => document.addEventListener(type, (event) => {
+        if (event.target === form || event.target?.form === form) gateClear(form);
+      }, true));
+      // Values a back/forward visit restores are checked again.
+      window.addEventListener("pageshow", () => gateClear(form));
+    }
   }
   // An in-place review (Sent mail's bulk review, #382; Past campaigns'
   // import, #1018) shows what its form's last Review would change, in an

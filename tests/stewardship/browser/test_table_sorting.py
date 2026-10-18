@@ -113,7 +113,7 @@ def test_filter_form_follows_an_in_place_sort(page, component_origin):
     has_attribute(sort_heading(page, "name"), "aria-sort", "descending")
     assert sort.input_value() == "-name"
     with page.expect_request(lambda request: "q=" in request.url) as sent:
-        page.get_by_role("button", name="Filter").click()
+        page.get_by_role("button", name="Apply filters").click()
     assert "sort=-name" in sent.value.url
 
 
@@ -438,7 +438,7 @@ def test_get_filter_applies_in_place(page, component_origin):
     page.get_by_label("Search by name").fill("Lectors")
     offset = scroll_to_filters(page)
     with page.expect_request(lambda request: "q=Lectors" in request.url) as fetched:
-        page.get_by_role("button", name="Filter").click()
+        page.get_by_role("button", name="Apply filters").click()
     assert fetched.value.headers.get("x-requested-with") == "fetch"
     visible(page.get_by_text("Showing 1–1 of 1").first)
     assert ministry_names(page) == ["Lectors"]
@@ -450,7 +450,7 @@ def test_get_filter_applies_in_place(page, component_origin):
     assert bottom > 40
     assert abs(page.evaluate("window.scrollY") - min(offset, bottom)) < 40
     assert page.url == (component_origin + "/ministries?q=Lectors&size=50&sort=name")
-    assert page.evaluate("document.activeElement.textContent.trim()") == "Filter"
+    assert page.evaluate("document.activeElement.textContent.trim()") == "Apply filters"
     has_text(
         page.get_by_role("status").filter(has_text="Showing"),
         "Showing 1–1 of 1 · Page 1 of 1",
@@ -464,7 +464,7 @@ def test_filter_with_no_matches_shows_the_empty_table(page, component_origin):
     page.goto(component_origin + "/ministries")
     page.evaluate(MARK)
     page.get_by_label("Search by name").fill("Nothing")
-    page.get_by_role("button", name="Filter").click()
+    page.get_by_role("button", name="Apply filters").click()
     visible(page.get_by_text("No Ministries match these filters."))
     assert ministry_names(page) == []
     assert page.evaluate(MARKED) == "kept"

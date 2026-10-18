@@ -707,6 +707,17 @@ button:disabled { cursor: not-allowed; opacity: .55; box-shadow: none; }
    reduced motion the spinner stays still (see the rule at the end). */
 button[aria-disabled=true], .button[aria-disabled=true], input[type=submit][aria-disabled=true] { cursor: progress; box-shadow: none; }
 button.is-busy[aria-disabled=true], .button.is-busy[aria-disabled=true], input[type=submit].is-busy[aria-disabled=true] { background: var(--muted); border-color: var(--muted); color: var(--paper); }
+/* Clear filters (components/filter-actions.html, #1651) sits right after its
+   form's apply button, in the same filter-bar item or Filters panel cell,
+   and wraps under it only when the cell is too narrow. While it has nothing
+   to do it is greyed but focusable (aria-disabled, data-clear-unavailable,
+   ui-v1.js), and its reason is a floating tip like an unavailable control's,
+   so its state never moves anything (no layout shift). */
+.filter-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .5rem; vertical-align: bottom; }
+.filter-bar > .filter-actions, details.filter-panel > form > .filter-actions { flex: 0 0 auto; min-width: 0; margin: 0; }
+.filter-actions button { margin: 0; }
+.filter-clear { position: relative; display: inline-block; }
+button[data-clear-unavailable][aria-disabled=true], button[data-clear-unavailable][aria-disabled=true]:not(:disabled):hover { cursor: not-allowed; opacity: .55; background: var(--paper); color: var(--accent); box-shadow: none; }
 button.is-busy::after, .button.is-busy::after { content: ""; display: inline-block; width: .85em; height: .85em; margin-inline-start: .5em; vertical-align: -.1em; border: 2px solid currentColor; border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
 @keyframes busy-spin { to { transform: rotate(360deg); } }
 /* Live status regions (live-status-v1.js, live-running.html): a still-running

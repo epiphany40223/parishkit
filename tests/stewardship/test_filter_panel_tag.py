@@ -174,9 +174,13 @@ def panel_cells(name):
     source = (TEMPLATES / name).read_text(encoding="utf-8")
     body = source.split("{% filterpanel", 1)[1].split("{% endfilterpanel %}", 1)[0]
     body = body.split("%}", 1)[1]
-    # The Apply button is the {% button %} tag; keep its place as markup.
-    body = re.sub(r"{% button .*?%}", "<button>", body)
-    body = body.replace("{% endbutton %}", "</button>")
+    # Apply filters and Clear filters are the shared component (#1651), one
+    # cell of the grid; keep its place as markup.
+    body = re.sub(
+        r'{% include "stewardship/components/filter-actions.html".*?%}',
+        '<div id="filter-actions"></div>',
+        body,
+    )
     parser = PanelCells()
     parser.feed(TEMPLATE_SYNTAX.sub("", body))
     return parser
@@ -191,13 +195,14 @@ def test_each_panel_filter_is_one_grid_cell(name):
     The open panel's form is a grid (#1411, ui-v1.css): a label or control
     left loose in the form would take a cell of its own and split the
     field. A range fieldset is one cell, its two ends a div each; Apply
-    follows the last field, and only full-row notes come after it, so Apply
-    can share the last row of fields.
+    filters and Clear filters (one cell) follow the last field, and only
+    full-row notes come after them, so they can share the last row of
+    fields.
     """
     parser = panel_cells(name)
     assert parser.labels
     for label, ancestors in parser.labels:
         assert ancestors in (["form", "div"], ["form", "fieldset", "div"]), label
     tags = [tag for tag, _id in parser.children]
-    after = tags[tags.index("button") + 1 :]
+    after = tags[parser.children.index(("div", "filter-actions")) + 1 :]
     assert after and set(after) == {"p"}, parser.children

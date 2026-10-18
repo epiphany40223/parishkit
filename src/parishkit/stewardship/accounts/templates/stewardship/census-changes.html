@@ -28,7 +28,7 @@
 <div><label for="census-kind">{% translate "Kind of change" %}</label><select id="census-kind" name="kind">{% for key,label in kind_choices %}<option value="{{ key }}"{% if query.kind == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
 <div class="short" data-missing-hint="{% translate 'Enter a whole From date, or clear it.' %}"><label for="census-start">{% translate "Submitted from" %}</label><input id="census-start" type="date" name="start" value="{{ query.start }}" aria-describedby="census-zone-help" data-browser-zone-field></div>
 <div class="short" data-missing-hint="{% translate 'Enter a whole Through date, or clear it.' %}"><label for="census-end">{% translate "Through" %}</label><input id="census-end" type="date" name="end" value="{{ query.end }}" aria-describedby="census-zone-help" data-browser-zone-field></div>
-{% button type="submit" %}{% translate "Apply filters" %}{% endbutton %}
+{% include "stewardship/components/filter-actions.html" %}
 <p class="help" id="census-zone-help" data-browser-zone-note hidden>{% translate "From and Through are days in this computer's time zone:" %} <span data-browser-zone-name></span>.</p>
 <p class="help" data-complete-hint hidden></p>
 </form>{% endfilterpanel %}

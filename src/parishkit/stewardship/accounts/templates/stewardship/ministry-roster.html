@@ -16,7 +16,7 @@
 <input type="hidden" name="show" value="{{ show }}">
 <label for="roster-ministry">{% translate "Ministry" %}</label><select id="roster-ministry" name="ministry"><option value="">{% translate "All Ministries" %}</option>{% for item in ministries %}<option value="{{ item.duid }}"{% if ministry == item.duid|stringformat:'s' %} selected{% endif %}>{{ item.name }}</option>{% endfor %}</select>
 {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
-{% button type="submit" %}{% translate "Apply" %}{% endbutton %}</form>
+{% include "stewardship/components/filter-actions.html" %}</form>
 <section aria-labelledby="roster-export-heading">
 <h2 id="roster-export-heading">{% translate "Download" %}</h2>
 <form id="table-export" data-table-sync method="post" action="{% url 'admin:ministry_roster_export' %}">{% csrf_token %}<input type="hidden" name="show" value="{{ show }}"><input type="hidden" name="ministry" value="{{ ministry }}">
