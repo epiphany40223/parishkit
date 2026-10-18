@@ -499,12 +499,21 @@ field:
 - **Confirmable**: Member names, prefix, suffix, birth date, gender, marital
   status, email, phones, language, deceased status and date, a Member
   leaving the household, a new Member appearing, Ministry joins and leaves
-  (the roster lists), the upcoming pledge amount, and the Family's primary
-  address ([address finding](#family-addresses)).
-- **Not confirmable** (Entered by hand is final): share methods, the email
-  opt-out (`sendNoMail` is not email opt-out), the Family address block
-  ParishSoft does not report as primary, the pledge frequency until its
-  mapping is verified (below), and the non-ParishSoft streams.
+  (the roster lists), the upcoming pledge amount, the Family's email
+  opt-out (below), and the Family's primary address
+  ([address finding](#family-addresses)).
+- **Not confirmable** (Entered by hand is final): share methods, the Family
+  address block ParishSoft does not report as primary, the pledge frequency
+  until its mapping is verified (below), and the non-ParishSoft streams.
+
+The census email opt-out answer corresponds to the Family's ParishSoft
+`sendNoMail` flag (Administrator, 2026-10-18, recorded on
+[#1680](https://github.com/epiphany40223/parishkit/issues/1680): "good
+enough"). ParishSoft's API cannot write it, so it stays To enter by hand,
+but the Family search reads return it, so the refresh confirms an entered
+opt-out against it. This changes only confirmation: the Family form's
+baseline for the field stays unavailable until a slice that changes the
+shared projection says otherwise.
 
 ## Pipeline vocabulary
 
@@ -779,8 +788,8 @@ today and becomes the shared component's first user; Census changes'
   answer that removes a recorded value is by hand.
 - **Deceased status, moved household, new Members, prefix, suffix, marital
   status, email opt-out**: no write endpoint, or (death date) a write that
-  does not complete the request. All but the email opt-out are readable,
-  so their entries are confirmed.
+  does not complete the request. All are readable (the email opt-out as
+  the Family's `sendNoMail` flag), so their entries are confirmed.
 - **Gender**: the PUT returns success but the value is not applied
   ([#1616](https://github.com/epiphany40223/parishkit/issues/1616)). It is
   readable, so a by-hand entry is confirmed.
