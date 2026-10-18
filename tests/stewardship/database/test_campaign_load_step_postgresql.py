@@ -102,6 +102,17 @@ def state(html):
     return re.search(r'data-campaign-load-state="([a-z]+)"', html).group(1)
 
 
+def summary(html):
+    """The load region's visible summary line, without its sizing copies.
+
+    The region also draws invisible, aria-hidden copies of every state's
+    wording to size that line (#1618), so wording checks read the line itself.
+    """
+    return re.search(
+        r'<p class="campaign-load-summary"[^>]*>(.*?)</p>', html, re.DOTALL
+    ).group(1)
+
+
 def test_load_step_shows_one_state_at_a_time(auth_service, google):
     """Not loaded, then loading with no button, then loaded (PR 5, D2.1)."""
     row, _, _ = setup(auth_service.store)
@@ -113,7 +124,7 @@ def test_load_step_shows_one_state_at_a_time(auth_service, google):
     assert status_of(region, "Load ParishSoft data") == "Current step — Not done yet"
     # Not loaded: the line, every stage box waiting, and the load button,
     # which acts in place and also redraws the action row.
-    assert state(html) == "offer" and NOT_LOADED in html
+    assert state(html) == "offer" and NOT_LOADED in summary(html)
     assert html.count('data-stage-state="waiting"') == 4
     assert OFFER in html
     assert 'data-in-place-only="campaign-step-actions"' in html
@@ -139,7 +150,7 @@ def test_load_step_shows_one_state_at_a_time(auth_service, google):
         lease_expires_at=claimed + timedelta(minutes=5),
     )
     html = page(browser)
-    assert state(html) == "loading" and LOADING in html
+    assert state(html) == "loading" and LOADING in summary(html)
     status = reverse("admin:background_task_status", args=[task]) + "?view=load"
     assert f'data-live-url="{status}"' in html and "data-live-pending" in html
     assert 'data-load-stage="fetching" data-stage-state="done"' in html
@@ -199,7 +210,7 @@ def test_failed_load_says_so_and_offers_try_again(auth_service, google):
     )
     refresh_run("queued")
     html = page(browser)
-    assert "did not load" not in html and state(html) == "loading"
+    assert state(html) == "loading" and "did not load" not in summary(html)
     assert "Continue" not in actions(html)
 
 
@@ -214,10 +225,11 @@ def test_families_complete_the_load_step(auth_service, google):
     region = stepper(html.encode())
     assert status_of(region, "Load ParishSoft data") == "Current step — Completed"
     assert "2 of 8 steps completed" in region
-    assert "did not load" not in html and "data-campaign-load-start" not in html
+    assert "did not load" not in summary(html)
+    assert "data-campaign-load-start" not in html
     # Loaded: every box done, the Family count, and Continue.
     assert state(html) == "loaded" and html.count('data-stage-state="done"') == 4
-    assert "The campaign's ParishSoft data is loaded." in html
+    assert "The campaign's ParishSoft data is loaded." in summary(html)
     assert re.search(r"data-campaign-load-count>1 Family[,.]", html)
     assert (
         "Refresh now" not in html
@@ -247,14 +259,14 @@ def test_only_refreshes_since_creation_and_families_count(auth_service, google):
     browser, _ = signed_in()
     refresh_run("failed", created_at=row.created_at - timedelta(days=1))
     html = page(browser)
-    assert OFFER in html and "did not load" not in html
+    assert OFFER in html and "did not load" not in summary(html)
     assert "Continue" not in actions(html)
     succeeded = refresh_run("succeeded")
     html = page(browser)
     region = stepper(html.encode())
     assert status_of(region, "Load ParishSoft data") == "Current step — Not done yet"
-    assert state(html) == "empty" and NO_FAMILIES in html
-    assert OFFER not in html and NOT_LOADED not in html
+    assert state(html) == "empty" and NO_FAMILIES in summary(html)
+    assert OFFER not in html and NOT_LOADED not in summary(html)
     # No button at all: not the plain Load again, and no Continue.
     assert (
         "<button"
@@ -267,7 +279,7 @@ def test_only_refreshes_since_creation_and_families_count(auth_service, google):
     assert html.count('data-stage-state="done"') == 4
     assert f'href="{reverse("admin:background_task_page", args=[succeeded])}"' in html
     assert ">See the load<" in html and ">Refresh from ParishSoft<" in html
-    assert "Check that ParishSoft has active Parishioner Families" in html
+    assert "Check that ParishSoft has active Parishioner Families" in summary(html)
     # Every other step says the same instead of offering the load.
     content = page(browser, reverse("admin:content_catalog"))
     assert NO_FAMILIES in content and "data-campaign-load-start" not in content
@@ -275,11 +287,11 @@ def test_only_refreshes_since_creation_and_families_count(auth_service, google):
     # it is not (#1517 review, L2); once the Families exist, it is loaded.
     status = reverse("admin:background_task_status", args=[succeeded]) + "?view=load"
     polled = page(browser, status)
-    assert state(polled) == "empty" and NO_FAMILIES in polled
-    assert "is loaded." not in polled and "data-live-follow" in polled
+    assert state(polled) == "empty" and NO_FAMILIES in summary(polled)
+    assert "is loaded." not in summary(polled) and "data-live-follow" in polled
     populate(row, keys(), [FamilyStatus(1, True, True, True, True)])
     polled = page(browser, status)
-    assert state(polled) == "loaded" and "is loaded." in polled
+    assert state(polled) == "loaded" and "is loaded." in summary(polled)
 
 
 def test_quick_refreshes_never_count_as_the_load(auth_service, google):
@@ -294,7 +306,7 @@ def test_quick_refreshes_never_count_as_the_load(auth_service, google):
     refresh_run("queued", kind="delta")
     refresh_run("failed", kind="delta")
     html = page(browser)
-    assert state(html) == "offer" and OFFER in html and NOT_LOADED in html
+    assert state(html) == "offer" and OFFER in html and NOT_LOADED in summary(html)
     failed = refresh_run("failed")
     refresh_run("succeeded", kind="delta")
     refresh_run("queued", kind="delta")

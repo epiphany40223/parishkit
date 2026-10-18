@@ -850,12 +850,23 @@ def load_region(**values):
     return render_to_string("stewardship/campaign-load-status.html", values)
 
 
+def summary(html):
+    """The load region's visible summary line, without its sizing copies.
+
+    The region also draws invisible, aria-hidden copies of every state's
+    wording to size that line (#1618), so wording checks read the line itself.
+    """
+    return re.search(
+        r'<p class="campaign-load-summary"[^>]*>(.*?)</p>', html, re.DOTALL
+    ).group(1)
+
+
 def test_load_status_region_draws_one_state_each():
     """Each state's line, its boxes, and polling only while loading (PR 5)."""
     task = uuid4()
     status_url = reverse("admin:background_task_status", args=[task])
     offer = load_region(load="offer", stages=wizard.load_stages("offer", None))
-    assert "This campaign's ParishSoft data hasn't been loaded yet." in offer
+    assert "This campaign's ParishSoft data hasn't been loaded yet." in summary(offer)
     assert "data-live-pending" not in offer and "data-live-url" not in offer
     assert offer.count('data-stage-state="waiting"') == 4
     loading = load_region(
@@ -864,7 +875,7 @@ def test_load_status_region_draws_one_state_each():
         stages=wizard.load_stages("loading", "fetching"),
         progress=("fetching", 1000, 4000),
     )
-    assert "Loading the campaign's ParishSoft data…" in loading
+    assert "Loading the campaign's ParishSoft data…" in summary(loading)
     assert f'data-live-url="{status_url}?view=load"' in loading
     assert "data-live-pending" in loading and "1,000 of 4,000 records checked" in (
         loading
@@ -874,7 +885,8 @@ def test_load_status_region_draws_one_state_each():
     failed = load_region(
         load="failed", load_task=task, stages=wizard.load_stages("failed", "staging")
     )
-    assert "did not load." in failed and "See what went wrong" in failed
+    assert "did not load." in summary(failed)
+    assert "See what went wrong" in summary(failed)
     assert reverse("admin:background_task_page", args=[task]) in failed
     assert "data-live-pending" not in failed
     loaded = load_region(
@@ -883,7 +895,7 @@ def test_load_status_region_draws_one_state_each():
         families=1234,
         as_of=datetime(2026, 10, 17, 12, 0, tzinfo=UTC),
     )
-    assert "is loaded." in loaded and "1,234 Families, as of" in loaded
+    assert "is loaded." in summary(loaded) and "1,234 Families, as of" in loaded
     assert 'datetime="2026-10-17T12:00:00+00:00" data-local-instant' in loaded
     assert loaded.count('data-stage-state="done"') == 4
     # A poll's settled answer follows up by re-reading the page in place.
@@ -891,17 +903,18 @@ def test_load_status_region_draws_one_state_each():
         **wizard.load_status(task_values("succeeded", task), families=True)
     )
     assert "data-live-follow" in polled and 'href="#refresh-run"' in polled
-    assert "is loaded." in polled and "data-live-pending" not in polled
+    assert "is loaded." in summary(polled) and "data-live-pending" not in polled
     # A succeeded full load with no Families: its own wording, every box
     # done, the run and Refresh from ParishSoft linked, and no button (#1587).
     empty = load_region(
         **wizard.load_status(task_values("succeeded", task), families=False)
     )
-    assert "loaded, but no Families matched." in empty and "is loaded." not in empty
+    assert "loaded, but no Families matched." in summary(empty)
+    assert "is loaded." not in summary(empty)
     assert empty.count('data-stage-state="done"') == 4
     assert reverse("admin:background_task_page", args=[task]) in empty
     assert reverse("admin:source_refresh") in empty
-    assert "<button" not in empty and "hasn't been loaded" not in empty
+    assert "<button" not in empty and "hasn't been loaded" not in summary(empty)
 
 
 def task_values(state, task, phase="promoting"):
