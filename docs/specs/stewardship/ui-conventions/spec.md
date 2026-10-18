@@ -63,7 +63,9 @@ when it lands.
   [unavailable menu pages](#unavailable-menu-pages),
   [navigation rules](#navigation-rules), [wizards](#wizards).
 - Admin page layout: [page help](#page-help),
-  [button labels](#button-labels), [shared visual style](#shared-visual-style),
+  [button labels](#button-labels),
+  [review pipeline terms](#review-pipeline-terms),
+  [shared visual style](#shared-visual-style),
   [colour scheme](#colour-scheme),
   [status indicators](#status-indicators), [stat tiles](#stat-tiles),
   [stage boxes](#stage-boxes), [time entry](#time-entry),
@@ -2352,6 +2354,25 @@ whole label, such as the confirm dialog's `accept`. Labels built in Python
 or written by JavaScript are not covered. Progress text such as "Saving…"
 and truncated names are not labels, so they are unaffected.
 
+### Review pipeline terms
+
+**Rule.** Every page, export, help text, notice, audit display and
+command that shows a Family-submitted change under review uses the words
+of the [review pipeline vocabulary](../review-pipeline/spec.md#pipeline-vocabulary),
+exactly as its table spells them. A stream never introduces its own word for
+a shared stage, and "Approve" and "Publish" are retired as user-facing
+words for Accept and Update ParishSoft. The words are display only:
+stored values and audit event types keep their names. **Why.** Staff and
+Ministry leaders review several streams; one set of words, learnt once,
+says the same thing on every page, and *To do* no longer means both
+"waiting to be updated" and "waiting to be typed in". **Shared code.**
+`parishkit.stewardship.pipeline` (the stage, decision and term words, and
+the stage each stream's stored state maps to). **Precedent.**
+[#1680](https://github.com/epiphany40223/parishkit/issues/1680),
+[#1691](https://github.com/epiphany40223/parishkit/issues/1691). Pages
+move to the words as each stream moves to the shared review worklist; until
+then a page keeps its current words.
+
 ### Shared visual style
 
 The portal and the emails share one visual style
@@ -2569,6 +2590,12 @@ look per state:
   outline, in `currentColor`. No icon has a fixed colour, so forced-colours
   mode keeps every shape and mark. Icon colours come only from the
   [design tokens](#shared-visual-style).
+- **Needs correction.** A status saying a recorded value is wrong and
+  must be fixed (the review pipeline's **Entered incorrectly**) uses the
+  Error look, and a status saying an expected result has not appeared yet
+  (**Not seen in ParishSoft**) uses the Warning look
+  ([review pipeline](../review-pipeline/spec.md#entered-incorrectly-stage),
+  [#1680](https://github.com/epiphany40223/parishkit/issues/1680)).
 - **Contrast.** Text meets 4.5:1, and icons and borders 3:1, against their
   background, checked by a contrast test over the token pairs above. Not
   current uses `--control-border` (3.3:1 on `--paper-soft`), because the
@@ -3275,6 +3302,13 @@ The shared `table-selection.html` include and its `ui-v1.js` wiring give
 every such table this behavior. The server validates every submitted
 selection.
 
+A **worklist** (a table a reader works through, such as the review
+pipeline's [review worklist](../review-pipeline/spec.md#review-worklist)) has its filters
+always open, never behind a disclosure, above the table, and its export
+pane below the table. A table's create action (the review worklist's
+**Add**) sits in its selection bar, shown only to readers allowed to add
+there ([#1680](https://github.com/epiphany40223/parishkit/issues/1680)).
+
 ### Row actions and confirmation
 
 **Rule.** Row actions are same-size icon buttons in the last column, Delete
@@ -3325,6 +3359,20 @@ inventory on #879 lists.
   action cannot be undone; so far only Census changes ([#879](https://github.com/epiphany40223/parishkit/issues/879)), whose
   decisions take an optional note and Reopen a required one. A row shows
   only the actions that apply to it; a row with none shows nothing there.
+- **Selected state.** On a table whose row actions record a state (a
+  review decision, a mark), the icon of the state in force is drawn
+  **selected**: filled with that state's status colour, with a white
+  glyph, and `aria-pressed="true"`; the row's other icons are drawn
+  unselected (outline, `aria-pressed="false"`). Choosing the selected icon
+  again is not an undo; the row's own undo action (the review pipeline's
+  Back to review) is. So the decision shows on the icons, not only in a
+  status column ([review pipeline](../review-pipeline/spec.md#selected-state-icons),
+  [#1680](https://github.com/epiphany40223/parishkit/issues/1680)).
+- **By role.** Row actions the reader's role does not allow are not shown,
+  not shown disabled, so a Ministry leader and Staff may see different icon
+  sets on the same table; the server and database still refuse them. The
+  bulk bar likewise offers only the actions that every ticked row allows
+  that reader ([role-specific actions](../review-pipeline/spec.md#role-specific-actions)).
 - **Edit** opens the item's edit page, which is the same page as New, filled
   in. Saving it goes through the [review dialog](#review-dialog), after which
   the reader returns to the table (until #750 converts the page, through its
@@ -3351,7 +3399,9 @@ inventory on #879 lists.
 - **Several rows.** A table that allows acting on several rows has the
   [selection column and bulk bar](#admin-tables) above; its only bulk action
   is usually Delete selected, which opens the same dialog naming the count.
-  Rows without actions have no selection box. Several bulk buttons may share
+  Rows without actions have no selection box, and every row with a
+  bulk-eligible action has one: a table never gives boxes to only some of
+  its actionable rows (#1680). Several bulk buttons may share
   one dialog, each setting its title and text. A bulk action that applies
   only to one kind of row is a [prerequisite gate](#prerequisite-gates): it
   is available only while every ticked row is of its kind, and the bulk

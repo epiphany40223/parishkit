@@ -450,6 +450,7 @@ sections:
     "Admin page layout and help": [ADM-03]
     "Page help": [ADM-03]
     "Button labels": [ADM-03]
+    "Review pipeline terms": [ADM-03, DAT-06]
     "Shared visual style": [ADM-03]
     "Colour scheme": [ADM-03]
     "Status indicators": [ADM-03, ADM-13]
