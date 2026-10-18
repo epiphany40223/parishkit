@@ -1136,9 +1136,10 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `reminder_workgroup` | No-reminders WorkGroup | Menu: No-reminders WorkGroup | Administrator | (new, #861) | `/admin/campaign/no-reminders-workgroup/` | (same) | Edit, confirm, apply; stays editable while live. |
 | `go_live` | Go live | Menu: Go live | Administrator | Go-live readiness | `/admin/campaign/go-live/` | (same) | The Go live page's Check step (#1585); its POSTs answer in place or in the Start go-live dialog. |
 | `go_live_families` | Testing submissions | Go live | Administrator | Families with Testing submissions; Testing Families | `/admin/campaign/go-live/families/` | (same) |  |
-| `go_live_cleanup` | Testing cleanup | Go live | Administrator | Testing cleanup progress | `/admin/campaign/go-live/cleanup/<request>/` | (same) |  |
-| `go_live_links` | Prepare Family links | Testing cleanup | Administrator | Family links | `/admin/campaign/go-live/cleanup/<request>/links/` | (same) |  |
-| `production_confirmation` | Confirm Production | Prepare Family links | Administrator | Final Production confirmation | `/admin/campaign/go-live/cleanup/<request>/links/<preparation>/confirmation/` | (same) |  |
+| `go_live_prepare` | Go live | Go live (its Check step) | Administrator | (new, #1585) | `/admin/campaign/go-live/preparing/` | (same) | The Go live page's Prepare step (#1585 slice 3); its trail is Campaign setup › Go live and it marks the Go live menu entry. |
+| `go_live_cleanup` | (retired) | (retired) | Administrator | Testing cleanup; Testing cleanup progress | `/admin/campaign/go-live/cleanup/<request>/` | (retired; 404) | Retired with no redirect (#1585 slice 3): the Prepare step shows cleanup. |
+| `go_live_links` | (retired) | (retired) | Administrator | Prepare Family links; Family links | `/admin/campaign/go-live/cleanup/<request>/links/` | (retired; 404) | Retired with no redirect (#1585 slice 3): the system prepares the links, and the Prepare step shows them. |
+| `production_confirmation` | Confirm Production | Go live | Administrator | Final Production confirmation | `/admin/campaign/go-live/cleanup/<request>/links/<preparation>/confirmation/` | (same) |  |
 | `production_progress` | Production activation | Menu: Production activation | Administrator | Production activation progress | `/admin/campaign/production/` | (same) | Links its cleanup request and Sent mail. |
 | `production_withdrawal` | Cancel go-live | Production activation | Administrator | Withdraw from Production; Return to Testing | `/admin/campaign/production/cancellation/` | (same) | Links Pause and resume mail and Sent mail where it names them. |
 | `delivery_control` | Pause and resume mail | Menu: Pause and resume mail | Administrator | Campaign delivery controls; Delivery controls | `/admin/mail/controls/` | (same) |  |
@@ -4173,13 +4174,14 @@ gate.
 > [go-live sequencing](../background-processing/spec.md#go-live-sequencing)
 > runs, and the Testing cleanup and Family links pages retire; 4, the
 > Confirm Production step; 5, the Activation step and the Cancel go-live
-> dialog; 6, the runbooks. Until each slice lands, its part of go-live still
-> uses today's separate readiness, Testing cleanup, Family links,
-> confirmation, progress and cancellation pages, with their 5-minute page
-> limits, as the
+> dialog; 6, the runbooks. Slices 2 and 3 have landed. Until the others
+> land, Confirm Production, Production activation and Cancel go-live are
+> still today's separate pages, with their 5-minute page limits, as the
 > [launch runbook](../../../guides/stewardship-launch-runbooks.md#production-activation)
-> describes. In particular, after slice 2, Start go-live's Apply still
-> opens today's Testing cleanup page and begins no attempt until slice 3.
+> describes (its Testing cleanup and Family links passages change with
+> slice 6). In particular, after slice 3 Prepare's **Continue to Confirm
+> Production** opens today's confirmation page, at its old address (whose
+> trail is now Campaign setup › Go live), until slice 4 moves it.
 > Slice 2 renamed the page from Go-live readiness to Go live in the
 > [page-name table](#page-names-and-placement) and in the code together;
 > the other rows change with the slices that retire their pages. The page
@@ -4359,7 +4361,30 @@ outcome.
      hold ended** (below). Primary: **Refresh and prepare again**.
    - **All three done.** "Ready to confirm." Primary: **Continue to Confirm
      Production**. The step also completes by itself, so a reload opens
-     Confirm Production.
+     Confirm Production: a browser's own load of the address (its
+     `Sec-Fetch-Mode` is `navigate`) is redirected there, while the page's
+     own in-place reads draw the step, so a page left open shows Ready to
+     confirm and its Continue.
+   - **The attempt's refresh failed.** A ParishSoft refresh has no task
+     retry (a new refresh is its retry), so its box is Failed and the
+     primary is **Refresh and prepare again**, which begins the next
+     attempt; a refresh that was merged into, or superseded by, another
+     stays In progress until that one finishes or the hold reaches its cap.
+   - **No attempt.** A go-live started before this step existed has no
+     attempt of its own; the primary is Refresh and prepare again.
+   - **Go-live is no longer in progress** (stopped, here or by another
+     Administrator, or Production confirmed): the step bar shows Prepare
+     unavailable, the page says so and its primary opens Check (or
+     Production activation); a page that was watching the step opens it by
+     itself. Check then says "Another Administrator stopped go-live." when
+     the stop was another Administrator's, above "Go-live stopped at …".
+   - **Controls without page age.** Retry, Refresh and prepare again and
+     Stop go-live carry a control signed without a time that names exactly
+     what the step shows (the failed task and its version, the attempt
+     number, the request). The server re-reads the step and acts only while
+     the control still names it, minting the owner's own control then, so
+     a resend after a lost answer does nothing more and no form is ever
+     refused for its age.
 3. **Confirm Production.** One impact preview, built once the links are
    prepared and labelled with its browser-local as-of time: whether the
    campaign becomes active now or is scheduled (with its start time), the

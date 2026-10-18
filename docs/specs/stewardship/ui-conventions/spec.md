@@ -599,22 +599,20 @@ never scrolls to show it (Administrator, pk-local review of
   The identifier lives only in the tab's session history (history.state),
   never in the address. A reload draws the page from its address, so the
   list and the filter fields agree
-  ([#1562](https://github.com/epiphany40223/parishkit/issues/1562)). The
-  Refresh links of Testing cleanup, Prepare Family links and Production
-  activation ("Progress refreshed.") re-read their page's
-  own address this way rather than reloading it; Prepare Family links keeps
-  the history page shown, and a disclosure such as Technical details stays
-  open because only the list inside it is a region. Their command buttons
-  post in place too, as does the [Go live page](../admin-portal/spec.md#go-live-page)'s
+  ([#1562](https://github.com/epiphany40223/parishkit/issues/1562)). Production
+  activation's Refresh link ("Progress refreshed.") re-reads its page's
+  own address this way rather than reloading it, and a disclosure such as
+  Technical details stays open because only the list inside it is a region.
+  Its command button posts in place too, as do the [Go live page](../admin-portal/spec.md#go-live-page)'s
   Check readiness and public web address (it redirects back to Check, focus
   returns to the fresh button, and the overall result is read out: what
-  still needs fixing, else that every check passed), Testing cleanup's Retry and
-  Cancel, Prepare inactive Family links and each preparation's Cancel, Retry
-  and Retry disposal, and Retry failed mail preparation. A button that is
-  gone once its request is taken hands focus to the page's Refresh link just
-  below (cleanup, Production), or, on Prepare Family links, to the newest
-  preparation's heading; Start go-live's Apply opens the step in progress
-  as a page.
+  still needs fixing, else that every check passed), its Prepare step's
+  Retry and Refresh and prepare again (each redirects back to Prepare,
+  whose region is swapped), and Retry failed mail preparation. A button
+  that is gone once its request is taken hands focus to the page's Refresh
+  link just below (Production), or, on the Go live page, to the step's
+  heading; Start go-live's and Stop go-live's Apply open the page that
+  follows (the step in progress, or Check) as a page.
 - **Errors and fallback.** A POST that got an answer is never sent again; a
   saving POST is never re-sent at all; a read-only table POST with no answer
   falls back to the ordinary submission. A refused POST (an error answer, or
@@ -930,9 +928,9 @@ the [in-place controls](#in-place-controls); no other mechanism.
   page.
   The directory, Sent mail, System logs and Financial stewardship do this
   ([#1586](https://github.com/epiphany40223/parishkit/issues/1586)).
-- **Go-live pages.** The Go live page's Check step has no Refresh link.
-  Testing cleanup, Prepare Family links and Production activation still
-  have theirs until the go-live redesign applies this rule there
+- **Go-live pages.** The Go live page's Check and Prepare steps have no
+  Refresh link. Production activation still has its own until the go-live
+  redesign applies this rule there
   ([#1585](https://github.com/epiphany40223/parishkit/issues/1585)).
 
 ### No layout shift
@@ -1139,11 +1137,7 @@ setup is not ready, and Send on a campaign test email while a test is on its
 way. On Send to chosen Families, Send is unavailable with the first reason
 the reviewed Families cannot be sent: test codes not ready, campaign work in
 progress, a Family that cannot be sent a test, or more Families than the
-remaining allowance. Check these Families waits for a DUID. Prepare inactive
-Family links is unavailable, with its specific reason, while the campaign is
-no longer a draft, Testing cleanup is unfinished, other inputs (such as a
-ParishSoft refresh) are not ready, earlier links still need Cancel, or
-cancelled links are still being discarded. On the Off-site backups page,
+remaining allowance. Check these Families waits for a DUID. On the Off-site backups page,
 Test access is unavailable until Google Workspace mail is set up, since the
 check signs in as its mailbox user, and always in the local environment,
 which never reaches Google Drive. In the Pages and emails editor, "Remove
@@ -3087,8 +3081,10 @@ while running, and light green when done". **Shared code.** The
 `components/stage-boxes.html` include, `accounts/stages.py` (`rows`, which
 marks the stages before the current one done, and the state words) and
 `.stage-boxes` in `ui-v1.css`. **Precedent.** Setup's Loading parish data
-and Finishing setup (#1354), and Load ParishSoft data
-([#1404](https://github.com/epiphany40223/parishkit/issues/1404) PR 5);
+and Finishing setup (#1354), Load ParishSoft data
+([#1404](https://github.com/epiphany40223/parishkit/issues/1404) PR 5),
+and the [Go live page](../admin-portal/spec.md#go-live-page)'s Prepare
+step ([#1585](https://github.com/epiphany40223/parishkit/issues/1585));
 the other stage-progress displays move to it in
 [#1579](https://github.com/epiphany40223/parishkit/issues/1579).
 

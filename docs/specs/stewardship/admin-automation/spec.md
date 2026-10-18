@@ -1822,7 +1822,8 @@ signatures:
   `ministry_followup_exports.export_body` and its file name into
   `export_file_name`, which the page's view now calls.
 - **PR 12:** `go_live_commands` and `go_live_views.testing_families`, cleanup
-  retry and cancel, the link preparation controls in `activation_views.links`,
+  retry and cancel, the link preparation controls (`activation_progress`, which
+  the Go live page's Prepare step calls),
   `confirmation_views._fresh_after_cleanup`, `confirmation_commands`, the
   Production preparation retry (`confirmation_progress.retry`) and
   `withdrawal_commands`.
@@ -2496,8 +2497,7 @@ Administrator confirmation.
 | --- | --- |
 | `go_live` | `go-live readiness` (PR 3b); `go-live preview` with the DNS check, `go-live cleanup --token …` (PR 12) |
 | `go_live_families` | `go-live families`, an export (PR 12) |
-| `go_live_cleanup` | `go-live cleanup-status --watch`, `go-live cleanup-retry`, `go-live cleanup-cancel` (PR 12) |
-| `go_live_links` | `go-live links`, `go-live links-status --watch`, `go-live links-retry`, `go-live links-cancel` (cancel or discard the preparation) (PR 12) |
+| `go_live_prepare` | `go-live cleanup-status --watch`, `go-live cleanup-retry`, `go-live cleanup-cancel`, `go-live links`, `go-live links-status --watch`, `go-live links-retry`, `go-live links-cancel` (cancel or discard the preparation) (PR 12); the Go live page's Prepare step (#1585 slice 3) replaced the Testing cleanup and Prepare Family links pages |
 | `production_confirmation` | `go-live confirm-preview`, `go-live confirm --token …` (PR 12) |
 | `production_progress` | `go-live progress --watch` (PR 3b); the page's **Retry failed mail preparation** (PR 12) |
 | `production_withdrawal` | `go-live withdraw-preview --reason …`, `go-live withdraw --token …` (PR 12) |
