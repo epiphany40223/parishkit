@@ -534,11 +534,17 @@ def test_google_account_guidance_shows_where_sign_in_fails(page, component_origi
     page.goto(component_origin + LIST)
     line = page.locator("#users-never-signed-in")
     assert line.inner_text() == "1 Ministry leader has never signed in."
-    # The empty text is a single line even at 320 px, so it never takes more
-    # room than the count text it replaces (which may wrap to two lines).
-    line.evaluate("el => { el.textContent = 'Every Ministry leader has signed in.'; }")
-    one_line = line.evaluate("el => parseFloat(getComputedStyle(el).lineHeight)")
-    assert line.bounding_box()["height"] < one_line * 1.5
+    # The line keeps one height at 320 px in every form (count 1, the longest
+    # plural, and none), so the table below it never moves (#736).
+    heights = set()
+    for text in (
+        "1 Ministry leader has never signed in.",
+        "12 Ministry leaders have never signed in.",
+        "Every Ministry leader has signed in.",
+    ):
+        line.evaluate("(el, t) => { el.textContent = t; }", text)
+        heights.add(line.bounding_box()["height"])
+    assert len(heights) == 1, heights
     page.set_viewport_size({"width": 1280, "height": 900})
     about = page.locator("details[data-about-page]")
     about.locator("summary").click()

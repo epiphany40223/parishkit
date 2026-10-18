@@ -6140,8 +6140,9 @@ page of the table, such as "3 Ministry leaders have never signed in."
 ([#1593](https://github.com/epiphany40223/parishkit/issues/1593)), so an
 Administrator sees who may be stuck, often for want of a Google Account
 for their address. With none it says "Every Ministry leader has signed
-in.", so the line is always there, stays one line high even at 320 px,
-and a redraw moves nothing below it. It is counted from the rows the
+in.", so the line is always there, keeps one height in every form (a narrow
+screen reserves two lines for the count that may wrap), and a redraw
+moves nothing below it. It is counted from the rows the
 page already reads, adding no query. The About panel says users
 sign in with a Google Account for their address and repeats the
 [Google Account guidance](#login-and-denial-behavior) word for word, so an
