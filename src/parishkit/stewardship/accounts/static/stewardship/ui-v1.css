@@ -1086,6 +1086,25 @@ details.filter-panel[data-filter-panel] > form:not(.filter-bar) > fieldset > div
   .mail-title > #delivery-mode { position: absolute; inset-block-start: 0; inset-inline-end: 0; }
   .mail-title > #delivery-mode .segmented-choice { margin: 0; }
 }
+/* A heading's line that ends with a binary choice (Roster changes to enter,
+   #1653), as Sent mail's mode pair above: the pair is drawn at the end of
+   the line, out of the flow, so it takes no line of its own and the first
+   rows start on a laptop screen. The line is a size container, and the
+   pair moves there only while the heading, its About summary and the pair
+   all fit (about 62rem); narrower, it keeps its own line under the heading,
+   so it never overlaps them. Opening About adds its body on a line below,
+   so the pair never moves (no layout shift). */
+.title-choice { container-type: inline-size; position: relative; min-height: calc(var(--button-min-height) + 2 * var(--button-border-width)); }
+@container (min-width: 62rem) {
+  .title-choice > .title-choice-pair { position: absolute; inset-block-start: 0; inset-inline-end: 0; }
+  .title-choice > .title-choice-pair .segmented-choice { margin: 0; }
+}
+/* Roster changes to enter's Ministry filter and the tick's notice share one
+   row (#1653): the notice's two reserved lines (.action-status) fit within
+   the filter row's height beside it, and on a phone it wraps to its own. */
+.roster-controls { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem 1rem; margin-block-end: .5rem; }
+.roster-controls > .filter-bar { flex: 0 1 34rem; margin: 0; }
+.roster-controls > .action-status { flex: 1 1 18rem; margin: 0; }
 /* A row's Recipient is a link-styled button posting the private recipient
    (#1562): it reads as a link in its cell, never as a portal button. */
 .recipient-link, .recipient-link:not(:disabled):hover { min-height: 0; margin: 0; padding: 0; border: 0; vertical-align: baseline; background: none; box-shadow: none; color: var(--link); line-height: inherit; text-align: start; }

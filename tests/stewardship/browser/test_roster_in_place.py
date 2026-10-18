@@ -382,3 +382,64 @@ def test_a_change_listed_twice_names_its_browser_local_day(
         assert not failures
     finally:
         context.close()
+
+
+# Page-relative boxes of the controls above the list and the first row,
+# by name, for the compact top (#1653).
+TOP_BOXES = """() => Object.fromEntries([
+  ['heading', 'main h1'], ['about', 'details.about-page > summary'],
+  ['show', '#roster-show-choice'], ['filters', '#table-filters'],
+  ['notice', '#roster-notice'], ['row', '#table tbody tr'],
+].map(([name, selector]) => {
+  const box = document.querySelector(selector).getBoundingClientRect();
+  return [name, [box.x + scrollX, box.y + scrollY, box.width, box.height]];
+}))"""
+
+
+def test_the_first_rows_start_on_a_laptop_screen(page, component_origin, axe_source):
+    """At 1366 px wide with about 650 px of page (a 1366×768 laptop), Show
+    sits on the heading's line, the Ministry filter and the tick's notice
+    share a row, and the first row starts in the window; the download is a
+    closed disclosure below the list, and the link to Ministry requests is
+    in the About panel (#1653)."""
+    page.set_viewport_size({"width": 1366, "height": 650})
+    page.goto(component_origin + PATH)
+    boxes = page.evaluate(TOP_BOXES)
+    heading, show = boxes["heading"], boxes["show"]
+    # On the heading's line, at its end, beside the About summary.
+    assert show[1] < heading[1] + heading[3]
+    assert show[0] > boxes["about"][0] + boxes["about"][2]
+    # The notice's reserved lines sit beside the filters, within their row.
+    filters, notice = boxes["filters"], boxes["notice"]
+    assert notice[0] >= filters[0] + filters[2]
+    assert notice[1] + notice[3] <= filters[1] + filters[3] + 1
+    assert boxes["row"][1] < 650
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    export = page.locator("details.export-panel")
+    assert export.get_attribute("open") is None
+    assert not page.locator("#roster-format").is_visible()
+    assert export.evaluate(
+        "(node) => node.compareDocumentPosition(document.getElementById('table'))"
+        " & Node.DOCUMENT_POSITION_PRECEDING"
+    )
+    about = page.locator("details.about-page")
+    # Opening About adds its help below the line: nothing on it moves.
+    about.locator("summary").click()
+    visible(about.get_by_role("link", name="Ministry requests"))
+    after = page.evaluate(TOP_BOXES)
+    assert same_place(after["show"], show)
+    assert same_place(after["heading"], heading)
+    assert axe_violations(page, axe_source) == []
+
+
+def test_the_compact_top_wraps_on_a_phone(page, component_origin):
+    """At 390 px Show takes its own line under the heading, the notice its
+    own under the filters, and nothing scrolls sideways (#1653)."""
+    page.set_viewport_size({"width": 390, "height": 800})
+    page.goto(component_origin + PATH)
+    boxes = page.evaluate(TOP_BOXES)
+    heading = boxes["heading"]
+    assert boxes["show"][1] >= heading[1] + heading[3]
+    filters = boxes["filters"]
+    assert boxes["notice"][1] >= filters[1] + filters[3]
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
