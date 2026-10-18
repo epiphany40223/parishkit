@@ -159,36 +159,73 @@ def test_tiles_carry_every_stage_count():
     ]
 
 
-def test_page_shows_the_funnel_then_the_statistics_chart_and_export():
-    """Families by stage, the funnel, the statistics, the daily chart and
-    the small export panel, in that order, in one in-place region (#1537)."""
+# The Summary panel's tiles in order (Administrator, 2026-10-18, #1537):
+# the active population row, then Families by stage.
+SUMMARY_KEYS = [
+    "active_families",
+    "active_members",
+    "annual_pledges",
+    "comparison_pledges_all",
+    "invited",
+    "link_followed",
+    "form_opened",
+    "progressed",
+    "submitted",
+]
+
+
+def test_page_shows_one_summary_then_the_chart_and_export():
+    """One Summary panel of two tile rows, then the daily chart and the
+    small export panel, in that order, in one in-place region (#1537)."""
     page = render()
     assert "<h1>Response dashboard</h1>" in page
     headings = re.findall(r"<h2[^>]*>([^<—]+)", page)
     assert [heading.strip() for heading in headings] == [
-        "Families by stage",
-        "Response funnel",
-        "Current active population statistics",
+        "Summary",
         "Daily participation",
         "Export",
     ]
     assert f'<div id="{REGION}" data-in-place-region' in page
-    # The stage tiles come first, then the statistics' own tiles.
-    assert re.findall(r'<span class="stat-value">([^<]+)</span>', page)[:5] == [
-        "4",
-        "5",
-        "4",
-        "3",
-        "3",
+    summary = page[page.index('id="response-summary"') :]
+    summary = summary[: summary.index("</section>")]
+    # Row 1 has four tiles, row 2 five, each row named by its own label.
+    rows = re.findall(
+        r'<ul class="stat-tiles" aria-label="([^"]+)">(.*?)</ul>', summary
+    )
+    assert [(name, body.count('class="stat-tile"')) for name, body in rows] == [
+        ("Active population", 4),
+        ("Families by stage", 5),
     ]
+    assert re.findall(r'data-stat="(\w+)"', page) == SUMMARY_KEYS
+    labels = re.findall(r'<span class="stat-label">([^<]+)</span>', summary)
+    assert labels == [
+        "Active Families",
+        "Active Members",
+        "Current annual pledges",
+        "Last year&#x27;s pledges (all Families)",
+        "Invited",
+        "Link followed",
+        "Form opened",
+        "Progressed past the first step",
+        "Submitted",
+    ]
+    stages = re.findall(r'<span class="stat-value">([^<]+)</span>', rows[1][1])
+    assert stages == ["4", "5", "4", "3", "3"]
     assert "125% compared with invited" in page
+    # Link followed keeps its note as a tile detail line.
+    assert '<span class="stat-detail">Includes mail-scanner prefetches</span>' in page
     # No "Also counted" figures, no Lists of Families, no activity chart.
     for gone in ("Also counted", "Submitted more than once", "Lists of Families"):
         assert gone not in page
     assert 'id="response-activity-spec"' not in page and "By hour" not in page
-    # The funnel labels its bars, so it has no exact-values table; the
-    # page's only table is the daily one.
-    assert 'id="response-funnel-spec"' in page
+    # No funnel chart and no "Responses and email reach" chart: the tiles
+    # give their figures (#1537). The daily chart is the page's only chart,
+    # and its table the only table.
+    assert re.findall(r'data-chart="([^"]+)"', page) == ["daily-participation-spec"]
+    assert "Responses and email reach" not in page
+    # (The daily chart's tooltips name "Families that have responded".)
+    for gone in ("Families with eligible email", "Families that have responded"):
+        assert gone not in summary
     assert 'class="chart-table"' not in page
     assert page.count("<table") == 1 and "exact daily values" in page
     # No inline script or style.
@@ -215,7 +252,7 @@ def test_statistics_panel_has_one_data_as_of_line():
     ):
         assert gone not in page, gone
     # No "UTC" label: the browser shows the time in its own zone.
-    panel = page[page.index('id="participation-statistics"') :]
+    panel = page[page.index('id="response-summary"') :]
     assert "UTC" not in panel[: panel.index("</section>")]
 
 
@@ -259,25 +296,29 @@ def test_choices_are_in_place_links_carrying_the_view():
     # The Chart population sits in the Daily participation panel.
     chart = page[page.index('id="participation-chart"') :]
     assert 'id="participation-scope"' in chart
-    assert page.index('id="dashboard-mode"') < page.index('id="response-stages"')
+    assert page.index('id="dashboard-mode"') < page.index('id="response-summary"')
     # Staff are never offered Testing.
     staff = render(can_test=False)
     assert "Testing rehearsal" not in staff and "mode=testing" not in staff
 
 
-def test_testing_view_shows_the_rehearsal_funnel_only():
-    """Families by stage and the funnel show the rehearsal; the Production
-    panels are left out with one line saying why (#1537)."""
+def test_testing_view_shows_the_rehearsal_stages_only():
+    """The Summary's Families by stage row shows the rehearsal; the Active
+    population row and the Production panels are left out with one line
+    saying why (#1537)."""
     page = render(ReportQuery(mode="testing"))
     assert "never counted in Production" in page
-    assert "Families by stage" in page and 'id="response-funnel-spec"' in page
+    assert 'aria-label="Families by stage"' in page and "data-chart=" not in page
+    assert 'aria-label="Active population"' not in page
+    assert re.findall(r'data-stat="(\w+)"', page) == SUMMARY_KEYS[4:]
+    assert "Data as of" not in page
     reason = (
         '<p id="production-only">Population statistics, daily participation and '
         "the export count Production responses only. Choose Production to see "
         "them.</p>"
     )
     assert reason in page
-    for gone in ("participation-statistics", "participation-chart", "export-format"):
+    for gone in ("participation-chart", "export-format"):
         assert gone not in page
     testing = f'<a href="{PATH}?scope=historical&amp;page=1&amp;mode=testing'
     assert testing in page and 'aria-current="page">Testing rehearsal' in page
@@ -290,19 +331,16 @@ def test_testing_view_shows_the_rehearsal_funnel_only():
     assert 'id="production-only"' not in render()
 
 
-def test_funnel_is_named_by_its_heading_not_a_drawn_title():
-    """The panel heading names the chart; the drawn title is left out, and
-    so is the count axis, since each bar carries its count (#1537); the
-    emailed chart keeps both."""
+def test_page_draws_no_funnel_chart_but_the_email_keeps_it():
+    """The Families by stage tiles give the funnel's counts, shares and bars,
+    so the page draws no funnel chart (#1537); the emailed daily report's
+    funnel keeps its title and count axis."""
     from parishkit.stewardship.reports.chart_specs import funnel_chart
 
-    shown = funnel_panels(metrics())["funnel"].spec
-    assert "title" not in shown and shown["encoding"]["x"]["axis"] is None
+    assert set(funnel_panels(metrics())) == {"metrics", "stage_tiles", "invited"}
+    assert "response-funnel" not in render()
     emailed = funnel_chart(metrics()).spec
     assert "title" in emailed and emailed["encoding"]["x"]["axis"]
-    page = render()
-    assert '<h2 id="funnel-heading">Response funnel</h2>' in page
-    assert 'data-chart-title="Response funnel"' in page
 
 
 def test_no_invitations_yet_says_so_instead_of_shares():
@@ -337,10 +375,10 @@ def test_daily_table_links_keep_the_mode_and_population():
     assert ("mode", "testing") in ReportQuery(mode="testing").carried()
 
 
-def test_unreadable_statistics_leave_the_funnel_and_say_so():
+def test_unreadable_statistics_leave_the_stages_and_say_so():
     """When the statistics or daily facts cannot be read, the Production
-    view still shows the funnel and says the other panels are unavailable
-    (#1537), with no zero assumed."""
+    view still shows Families by stage and says the other rows and panels
+    are unavailable (#1537), with no zero assumed."""
     context = page_context(ReportQuery(mode="testing")) | {
         "query": ReportQuery(),
         "testing": False,
@@ -348,10 +386,11 @@ def test_unreadable_statistics_leave_the_funnel_and_say_so():
     }
     with using("us_long"):
         page = render_to_string("stewardship/response-dashboard.html", context)
-    assert "Families by stage" in page and 'id="response-funnel-spec"' in page
+    assert 'aria-label="Families by stage"' in page
+    assert 'aria-label="Active population"' not in page and "Data as of" not in page
     assert '<p id="production-unavailable">' in page
     assert "no zero values have been assumed" in page
-    for gone in ("participation-statistics", "participation-chart", "export-format"):
+    for gone in ("participation-chart", "export-format"):
         assert gone not in page
     assert 'id="production-unavailable"' not in render()
 

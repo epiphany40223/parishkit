@@ -94,7 +94,7 @@ def components(context, admin):
     pages = {
         "/participation": ("response-dashboard", page),
         # No ParishSoft data yet (#1540): every statistics tile reads "—"
-        # with its reason, and no progress chart is drawn.
+        # with its reason.
         "/participation-unknown": (
             "response-dashboard",
             page

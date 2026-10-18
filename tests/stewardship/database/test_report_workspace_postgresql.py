@@ -73,7 +73,7 @@ def test_workspace_navigation_exact_chart_and_safe_filters(http_scenario, monkey
         assert response.status_code == 200
         assert response["Cache-Control"] == "no-store"
         assert b"Updating" in html
-        assert b"Current active population statistics" in html
+        assert b'aria-label="Active population"' in html
         # One time line, "Data as of"; no Technical details (#1537).
         assert b"Data as of" in html and b"ParishSoft data load" not in html
         assert b"Historical as of day" in html

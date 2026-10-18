@@ -265,36 +265,27 @@ def test_live_presentation_is_the_digest_presentation_without_population_mixing(
     ]
 
 
-def test_statistics_panel_draws_reach_and_keeps_the_other_cards_as_tiles():
-    """Responded and email reach become the progress chart (#720); the
-    other cards stay tiles in their order. Without an observation nothing
-    is drawn and every card is a tile reading "—" with the reason, never
-    zero (#1540)."""
+def test_statistics_panel_is_the_active_population_row_only():
+    """The Summary's Active population row: four tiles in order, no progress
+    chart and no responded or email-reach tiles (#1537). Without an
+    observation every tile reads "—" with the reason, never zero (#1540)."""
     statistics = document().statistics
     panel = statistics_panel(statistics)
+    assert set(panel) == {"tiles"}
     assert [tile.label for tile in panel["tiles"]] == [
         "Active Families",
         "Active Members",
         "Current annual pledges",
         "Last year's pledges (all Families)",
     ]
-    assert [row[0] for row in panel["progress"].table.rows] == [
-        "Families that have responded",
-        "Families with eligible email",
-        "Families with deliverable email",
-    ]
     missing = statistics_panel(
         replace(statistics, active=None, comparison_pledge_all=MoneyAmount(None))
     )
-    assert missing["progress"] is None
     assert [(tile.key, tile.text) for tile in missing["tiles"]] == [
         (key, "—")
         for key in (
             "active_families",
             "active_members",
-            "eligible_email",
-            "deliverable_email",
-            "responses",
             "annual_pledges",
             "comparison_pledges_all",
         )
@@ -302,6 +293,11 @@ def test_statistics_panel_draws_reach_and_keeps_the_other_cards_as_tiles():
     assert {tile.unknown_reason for tile in missing["tiles"]} == {
         "No ParishSoft data has been loaded for this campaign yet."
     }
+    without_giving = statistics_panel(replace(statistics, financial_enabled=False))
+    assert [tile.key for tile in without_giving["tiles"]] == [
+        "active_families",
+        "active_members",
+    ]
 
 
 def test_each_unknown_pledge_total_gives_the_reason_for_its_cause():

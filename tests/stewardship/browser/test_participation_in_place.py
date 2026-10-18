@@ -40,18 +40,18 @@ PAIR_LAYOUT = """() => [...document.querySelectorAll(
 }).flat()"""
 ZONE = "timezone=America%2FLos_Angeles"
 # The current-population answer's all-Families comparison value, which the
-# first page lacks ($1,000.00 there): it shows that the statistics panel was
-# swapped in place. It is wider, so on Linux fonts it once wrapped onto a
-# second line and made the row taller (#1537); a value is now one line.
+# first page lacks ($1,000.00 there): it shows that the Summary's Active
+# population row was swapped in place. It is wider, so on Linux fonts it
+# once wrapped onto a second line and made the row taller (#1537); a value
+# is now one line.
 REFRESHED = "$982,657.00"
-# The daily chart panel's top, measured from the top of the statistics
-# panel's progress chart: the redrawn chart keeps its space, so the panel
-# below it must not move (#720). Measured from the chart, so it checks
-# the chart's own space; PAIR_LAYOUT checks that nothing above moved.
+# The daily chart panel's top, measured from the top of the Summary
+# panel: the swapped-in Summary keeps its height (each tile value is one
+# line, #1537), so the panel below it must not move. PAIR_LAYOUT checks
+# that nothing above the Chart population moved in the viewport.
 CHART_TOP = (
     "document.getElementById('participation-chart').getBoundingClientRect().top"
-    " - document.querySelector('#participation-statistics figure.chart')"
-    ".getBoundingClientRect().top"
+    " - document.getElementById('response-summary').getBoundingClientRect().top"
 )
 # The export panel's top, measured from the top of the daily chart panel:
 # the redrawn daily chart keeps its space, so the panel below it must not
@@ -90,7 +90,7 @@ def test_options_apply_in_place(page, component_origin):
     visible(
         page.get_by_role("heading", name="Daily participation — Current population")
     )
-    visible(page.locator("#participation-statistics .stat-value", has_text=REFRESHED))
+    visible(page.locator("#response-summary .stat-value", has_text=REFRESHED))
     assert page.evaluate(MARKED) == "kept"
     # Exactly the same place: scroll anchoring would change it to
     # follow content that moved above.
@@ -117,37 +117,35 @@ def test_options_apply_in_place(page, component_origin):
     ).to_have_count(1)
 
 
-def test_options_redraw_the_progress_chart_in_place(page, component_origin):
-    """Choosing a Chart population redraws the statistics' progress chart (#720)
-    with the fresh counts, and both charts keep their space until drawn, so
-    the panels below each stay as far below it as they were (#736)."""
+def test_options_keep_the_panels_in_place(page, component_origin):
+    """Choosing a Chart population swaps in the Summary's fresh tiles and
+    redraws the daily chart, its only chart (#1537), and each keeps its
+    space, so the panels below stay as far below as they were (#720, #736)."""
     from .test_charts import assert_clean, watch
     from .test_response_dashboard import FITTED
 
     errors = watch(page)
     page.set_viewport_size(VIEWPORT)
     page.goto(component_origin + REAL + "?" + ZONE)
-    rendered = page.locator("#participation-statistics [data-chart-state=rendered]")
+    rendered = page.locator("[data-chart-state=rendered]")
     daily = page.locator("#participation-chart [data-chart-state=rendered]")
-    expect(rendered).to_have_count(1)
     expect(daily).to_have_count(1)
+    expect(rendered).to_have_count(1)
     eventually(page, FITTED)
     top = page.evaluate(CHART_TOP)
     export = page.evaluate(EXPORT_TOP)
     page.locator(CURRENT).click()
-    visible(page.locator("#participation-statistics .stat-value", has_text=REFRESHED))
-    expect(rendered).to_have_count(1)
+    visible(page.locator("#response-summary .stat-value", has_text=REFRESHED))
     expect(daily).to_have_count(1)
+    expect(rendered).to_have_count(1)
     eventually(page, FITTED)
     assert abs(page.evaluate(CHART_TOP) - top) < 2
     assert abs(page.evaluate(EXPORT_TOP) - export) < 2
-    labels = rendered.locator("svg tspan").all_text_contents()
-    assert "450 out of 1,000 (45%)" in labels
     assert_clean(page, errors)
 
 
 def test_daily_table_refreshes_every_panel(page, component_origin):
-    """Sorting the daily table refreshes the statistics and the Chart
+    """Sorting the daily table refreshes the Summary and the Chart
     population from the same answer, as the whole region is refreshed."""
     page.goto(component_origin + REAL + "?" + ZONE)
     page.evaluate(MARK)
@@ -161,7 +159,7 @@ def test_daily_table_refreshes_every_panel(page, component_origin):
         ),
     )
     page.locator("#table a.sort-link").first.click()
-    visible(page.locator("#participation-statistics .stat-value", has_text=REFRESHED))
+    visible(page.locator("#response-summary .stat-value", has_text=REFRESHED))
     choice = page.get_by_role("group", name="Chart population")
     expect(choice.locator("a[aria-current=page]")).to_have_text("Current population")
     assert page.evaluate(MARKED) == "kept"

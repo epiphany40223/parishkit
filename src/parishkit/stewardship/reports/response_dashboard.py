@@ -2,10 +2,11 @@
 
 The Response dashboard (``reports/responses/``, ``workspace_views.dashboard``,
 #1537) shows the response funnel (``response_metrics``) as it stands at the
-database's current instant: a stat tile per stage with its share of Invited,
-and the funnel chart (``chart_specs``), which the browser draws from the
-embedded specification. The page reads the metrics once; the tiles and the
-chart are pure functions of that one result. ``report responses`` (the
+database's current instant: its Summary panel's Families by stage row is a
+stat tile per stage with its share of Invited. The tiles give every count,
+share and bar, so the page draws no funnel chart; the emailed daily report
+keeps its image (``chart_specs.funnel_chart``). The page reads the metrics
+once; the tiles are a pure function of that one result. ``report responses`` (the
 command line) reads the same metrics, with the activity buckets at a grain
 and each list's length, which the page no longer shows.
 
@@ -35,7 +36,7 @@ from parishkit.stewardship.campaigns.credential_models import RehearsalEpoch
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.stat_tiles import tile
 
-from .chart_specs import STAGE_LABELS, funnel_chart, share
+from .chart_specs import STAGE_LABELS, share
 from .response_metrics import (
     GRAINS,
     MODES,
@@ -178,29 +179,6 @@ def tiles(metrics):
     ]
 
 
-def untitled(chart):
-    """``chart`` without the title drawn inside it: the page's heading names it.
-
-    The emailed image keeps its title; on the page the panel's heading shows
-    ``chart.title``, which also stays the view's accessible name.
-    """
-    spec = {key: value for key, value in chart.spec.items() if key != "title"}
-    return replace(chart, spec=spec)
-
-
-def without_count_axis(chart):
-    """``chart`` (the funnel) without its count axis, for the page (#1537).
-
-    Each bar is labelled with its count and the stage tiles above give the
-    exact figures, so the axis adds nothing there; dropping it leaves the
-    bars room at phone width, where its ticks and title would crowd and
-    overflow the long stage names. The emailed image keeps its axis.
-    """
-    encoding = dict(chart.spec["encoding"])
-    encoding["x"] = {**encoding["x"], "axis": None}
-    return replace(chart, spec={**chart.spec, "encoding": encoding})
-
-
 def list_counts(families):
     """How many Families each funnel-chosen list holds, by key.
 
@@ -237,16 +215,11 @@ def read_metrics(campaign_id, mode):
 
 
 def funnel_panels(metrics):
-    """The Response dashboard's Families by stage and Response funnel (#1537).
-
-    A stat tile per stage and the funnel chart, named by its panel's heading
-    and drawn without an exact-values table or count axis: each bar is
-    labelled with its count, and the tiles above give the exact figures.
-    """
+    """The Response dashboard's Families by stage row (#1537): a stat tile per
+    stage, and the Invited count that decides whether shares are shown."""
     return {
         "metrics": metrics,
         "stage_tiles": tiles(metrics),
-        "funnel": without_count_axis(untitled(funnel_chart(metrics))),
         "invited": metrics.stage("invited"),
     }
 

@@ -6,7 +6,7 @@
 {% endblock %}
 {% block content %}
 <h1>{% translate "Response dashboard" %}</h1>
-{% aboutpage "response-dashboard" %}<p>{% translate "Families by stage counts each Family once per stage. Shares are compared with the Families invited; a Family can follow its link or submit without a delivered invitation, so a share can pass 100%." %}</p>
+{% aboutpage "response-dashboard" %}<p>{% translate "The Summary's Families by stage row counts each Family once per stage. Shares are compared with the Families invited; a Family can follow its link or submit without a delivered invitation, so a share can pass 100%." %}</p>
 <p>{% translate "A mail scanner that opens a Family's personal link counts as a link follow, so that stage includes such prefetches. A Family that submitted counts as having opened the form and progressed, since a submission passes every step; other progress is recorded from ParishKit 1.2.0 on." %}</p>
 <p>{% translate "The statistics count the Families who are eligible right now and their latest answers; repeat submissions do not increase participation, and Testing responses are excluded. The daily chart is calculated separately in the background, so it can lag a little behind the statistics; when it is being updated, the latest complete chart is shown." %}</p>
 {% if 'financial' in campaign.active_configuration.values.modules %}<p>{% translate "Last year's pledges (all Families) adds up every ParishSoft pledge in the comparison period and funds, for every Family, whatever its status today." %}</p>{% endif %}
@@ -18,15 +18,17 @@
 {% if can_test %}{% include "stewardship/components/segmented-choice.html" with choice_id="dashboard-mode" region_id="response-dashboard" label=_("Responses shown") first_key="mode-production" first_label=_("Production") first_href=mode_links.production second_key="mode-testing" second_label=_("Testing rehearsal") second_href=mode_links.testing chosen=testing|yesno:"mode-testing,mode-production" %}{% endif %}
 {% if testing and metrics %}<p class="notice">{% translate "Testing rehearsal: responses and test emails from the campaign's current rehearsal only. They are never counted in Production." %}</p>{% endif %}
 {% if metrics %}
-<section class="panel" id="response-stages" aria-labelledby="stages-heading">
-<h2 id="stages-heading">{% translate "Families by stage" %}</h2>
+{# One Summary panel of two stat-tile rows (#1540; Administrator, 2026-10-18, #1537): the active population, read in Production only, then Families by stage. Two rows in one panel, so each is named by its own label (ui-conventions "Stat tiles"). The tiles give every funnel count, share and bar, so the page draws no funnel chart, and the responses the old "Responses and email reach" chart drew are the Submitted tile. #}
+<section class="panel" id="response-summary" aria-labelledby="summary-heading">
+<h2 id="summary-heading">{% translate "Summary" %}</h2>
+{% if statistics %}{% if campaign.state == 'archived' %}<p class="notice">{% translate "Archived campaign: its Family information is kept as it was in the last ParishSoft data it used, not from a later campaign." %}</p>{% endif %}
+{# Without an observation every tile reads "—" with its reason, never zero. #}
+{% include "stewardship/components/stat-tiles.html" with tiles=tiles tiles_label=_("Active population") %}{% endif %}
 {% if not invited %}<p>{% translate "No invitations have been delivered yet. The counts below fill in as the first invitations go out." %}</p>{% endif %}
-{# One stat tile per stage (#1540): response_dashboard.tiles() builds them, each bar its share of Invited (#720). #}{% include "stewardship/components/stat-tiles.html" with tiles=stage_tiles tiles_labelledby="stages-heading" %}
-</section>
-{# Each bar is labelled with its count (its tooltip adds the share), and the tiles above give the exact figures, so the funnel has no exact-values table or count axis (#1266, #1537). #}
-<section class="panel" id="response-funnel" aria-labelledby="funnel-heading">
-<h2 id="funnel-heading">{{ funnel.title }}</h2>
-{% include 'stewardship/components/chart.html' with chart=funnel no_table=True %}
+{# One stat tile per stage: response_dashboard.tiles() builds them, each bar its share of Invited (#720). #}
+{% include "stewardship/components/stat-tiles.html" with tiles=stage_tiles tiles_label=_("Families by stage") %}
+{# The page's one time line (#1537): the moment the statistics were counted, in this browser's time. #}
+{% if statistics %}<p>{% translate "Data as of" %} <time datetime="{{ statistics.observed_at|date:'c' }}" data-local-instant>{{ statistics.observed_at|date:'c' }}</time></p>{% endif %}
 </section>
 {% else %}
 <section class="panel empty-state"><p>{% translate "This campaign has no Testing rehearsal now, so there are no Testing responses to show. Choose Production to see live responses." %}</p></section>
@@ -35,19 +37,10 @@
 {# The statistics, the daily chart and the export count Production responses only, so a Testing view leaves them out and says why (conditional fields, #1537). #}
 <p id="production-only">{% translate "Population statistics, daily participation and the export count Production responses only. Choose Production to see them." %}</p>
 {% elif participation_unavailable %}
-{# The statistics or daily facts could not be read from their inputs: the funnel above still shows (#1537), and no zero is assumed. #}
+{# The statistics or daily facts could not be read from their inputs: the Families by stage row above still shows (#1537), and no zero is assumed. #}
 {% if participation_cause == "statistics" %}<p id="production-unavailable">{% translate "Population statistics, daily participation and the export need ParishSoft data, and none is available yet; no zero values have been assumed. They appear after the first ParishSoft update completes." %}</p>
 {% else %}<p id="production-unavailable">{% translate "Population statistics, daily participation and the export are unavailable right now; no zero values have been assumed. Refresh this page in a few minutes." %}</p>{% endif %}
 {% else %}
-<section class="panel" id="participation-statistics"><h2 id="participation-statistics-heading">{% translate "Current active population statistics" %}</h2>
-{% if campaign.state == 'archived' %}<p class="notice">{% translate "Archived campaign: its Family information is kept as it was in the last ParishSoft data it used, not from a later campaign." %}</p>{% endif %}
-{# Visuals first (#720): the counts as tiles, then responded and email reach as progress bars against active Families, each bar's count and share drawn in its axis label and repeated in its tooltip (#1266). Without an observation every card is a tile reading "—" with its reason, and nothing is drawn. #}
-{% include "stewardship/components/stat-tiles.html" with tiles=tiles tiles_labelledby="participation-statistics-heading" %}
-{% if progress %}{% with chart=progress %}<h3>{{ chart.title }}</h3>
-{% include 'stewardship/components/chart.html' with no_table=True %}{% endwith %}{% endif %}
-{# The page's one time line (#1537): the moment the statistics were counted, in this browser's time. #}
-<p>{% translate "Data as of" %} <time datetime="{{ statistics.observed_at|date:'c' }}" data-local-instant>{{ statistics.observed_at|date:'c' }}</time></p>
-</section>
 <section class="panel" id="participation-chart">
 <h2>{% translate "Daily participation" %} — {% if query.scope == 'historical' %}{% translate "Historical as of day" %}{% else %}{% translate "Current population" %}{% endif %}</h2>
 {# The Chart population changes only the daily chart, its table and the export, so it sits in this panel, under its heading (#1534). #}
