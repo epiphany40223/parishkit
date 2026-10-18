@@ -8,12 +8,14 @@ release and rollback target, the newest N, anything of another repository),
 that a dry run removes nothing, that a failure is reported without
 stopping the rest, and that a failed lookup of what to keep stops it. The
 local half of `tools/stewardship-upgrade.sh` is run with a recording `ssh`
-to pin that it prunes only after a successful run, protects the replaced
-release, and never fails because pruning did.
+to pin that it prunes only after a successful run that reported a
+different replaced release, protects that release, is a dry run by
+default, and never fails because pruning did.
 """
 
 import json
 import os
+import shlex
 import subprocess
 import sys
 import textwrap
@@ -75,9 +77,6 @@ FAKE_DOCKER = textwrap.dedent(
             print("Error response from daemon: i/o timeout", file=sys.stderr)
             sys.exit(1)
         image = find(args[4])
-        if image is None:
-            print("Error: No such image: " + args[4], file=sys.stderr)
-            sys.exit(1)
         if image is None:
             print("Error: No such image: " + args[4], file=sys.stderr)
             sys.exit(1)
@@ -327,13 +326,17 @@ def test_bad_options_are_usage_errors(tmp_path):
 
 REPLACED = f"{OFFICIAL_REPO}@sha256:" + "a" * 64
 IMAGE = f"{OFFICIAL_REPO}@sha256:" + "d" * 64
+NOTES = "    Record in the operators' notes. Replaced release: "
 
 
-def run_upgrade(tmp_path, *args, host_rc=0, prune_rc=0, env=None):
+def run_upgrade(
+    tmp_path, *args, host_rc=0, prune_rc=0, env=None, last=NOTES + REPLACED
+):
     """Run the local half with an ssh that answers as a finished host half.
 
-    The first ssh call ends as a successful host half does, naming the
-    replaced release; the second (the pruning) exits with prune_rc.
+    The first ssh call ends as a successful host half does, its last line
+    `last` (by default naming the replaced release); the second (the
+    pruning) exits with prune_rc.
     """
     bin_dir = tmp_path / "bin"
     calls = tmp_path / "ssh.calls"
@@ -343,7 +346,8 @@ def run_upgrade(tmp_path, *args, host_rc=0, prune_rc=0, env=None):
         f"""echo "ssh $*" >>"{calls}"; cat >/dev/null
 n=$(wc -l <"{calls}")
 if [ "$n" -eq 1 ]; then
-    echo "    Record in the operators' notes. Replaced release: {REPLACED}"
+    echo "==> Upgraded"
+    printf '%s\\n' {shlex.quote(last)}
     exit {host_rc}
 fi
 echo "pruned"; exit {prune_rc}""",
@@ -369,16 +373,65 @@ echo "pruned"; exit {prune_rc}""",
 
 
 def test_a_successful_upgrade_prunes_keeping_both_releases(tmp_path):
-    """The pruning protects the started and the replaced release."""
+    """The pruning protects the started and the replaced release.
+
+    By default it is a dry run until the Administrator has reviewed one
+    Production dry-run log; STEWARDSHIP_PRUNE=on removes.
+    """
     for n, mode in enumerate(((), ("--rollback",))):
-        result, calls = run_upgrade(tmp_path / str(n), *mode)
-        assert result.returncode == 0, result.stderr
-        assert len(calls) == 2
-        assert (
-            f'bash "$f" --repo {OFFICIAL_REPO} --keep 4 --protect {IMAGE} '
-            f"--protect {REPLACED} ; rc="
-        ) in calls[1]
-        assert "Replaced release" in result.stdout and "pruned" in result.stdout
+        for prune, tail in (({}, " --dry-run"), ({"STEWARDSHIP_PRUNE": "on"}, "")):
+            result, calls = run_upgrade(tmp_path / f"{n}{tail}", *mode, env=prune)
+            assert result.returncode == 0, result.stderr
+            assert len(calls) == 2
+            assert (
+                f'bash "$f" --repo {OFFICIAL_REPO} --keep 4 --protect {IMAGE} '
+                f"--protect {REPLACED}{tail} ; rc="
+            ) in calls[1]
+            assert "Replaced release" in result.stdout and "pruned" in result.stdout
+
+
+def test_an_unknown_replaced_release_skips_pruning(tmp_path):
+    """No pruning unless the last line names a release digest of the repo.
+
+    The replaced release is the rollback target, so a missing, reworded,
+    empty or malformed report means nothing is pruned, even with
+    STEWARDSHIP_PRUNE=on, and the upgrade still succeeds.
+    """
+    for n, last in enumerate(
+        (
+            "==> Upgraded to the new release",
+            "    Record in the operator's notes. Replaced release: " + REPLACED,
+            "    Replaced: " + REPLACED,
+            NOTES,
+            NOTES + f"{OFFICIAL_REPO}@sha256:" + "a" * 63,
+            NOTES + f"{OFFICIAL_REPO}@sha256:" + "A" * 64,
+            NOTES + "ghcr.io/other/stewardship@sha256:" + "a" * 64,
+            NOTES + f"{OFFICIAL_REPO}:v1.0.0",
+            NOTES + REPLACED + " ",
+            # The report is not the last line, so it is not trusted.
+            NOTES + REPLACED + "\nsomething after it",
+        )
+    ):
+        result, calls = run_upgrade(
+            tmp_path / str(n), env={"STEWARDSHIP_PRUNE": "on"}, last=last
+        )
+        assert result.returncode == 0, (last, result.stderr)
+        assert len(calls) == 1, last
+        assert "old release images are not pruned" in result.stderr, last
+
+
+def test_a_same_version_rerun_skips_pruning(tmp_path):
+    """A re-run that replaced the release with itself does not prune.
+
+    The release before it is not known by name then; the next upgrade
+    prunes.
+    """
+    result, calls = run_upgrade(
+        tmp_path, env={"STEWARDSHIP_PRUNE": "on"}, last=NOTES + IMAGE
+    )
+    assert result.returncode == 0, result.stderr
+    assert len(calls) == 1
+    assert f"replaced {IMAGE} with itself" in result.stderr
 
 
 def test_the_pruning_settings_reach_the_host(tmp_path):
@@ -402,7 +455,7 @@ def test_the_pruning_settings_reach_the_host(tmp_path):
 
 def test_a_failed_pruning_never_fails_the_upgrade(tmp_path):
     """The upgrade succeeded, so a pruning failure is only a warning."""
-    result, calls = run_upgrade(tmp_path, prune_rc=1)
+    result, calls = run_upgrade(tmp_path, prune_rc=1, env={"STEWARDSHIP_PRUNE": "on"})
     assert result.returncode == 0
     assert len(calls) == 2
     assert "WARNING: pruning old release images failed" in result.stderr

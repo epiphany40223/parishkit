@@ -51,12 +51,17 @@
 #                           lists. Step 4 then converts the sign-in rules
 #                           between the release's two migrations (host
 #                           half's header). Refused with --rollback.
-#   STEWARDSHIP_PRUNE       on (default), dry-run or off: after a successful
+#   STEWARDSHIP_PRUNE       dry-run (default), on or off: after a successful
 #                           run, remove old release images from the host
 #                           with tools/stewardship-prune-images.sh (#1661),
 #                           keeping the started and the replaced release;
-#                           dry-run only lists what it would remove. A
-#                           pruning failure is a warning, never a failure.
+#                           dry-run only lists what it would remove. It is
+#                           skipped, with a message, unless the host half
+#                           reported the replaced release as a digest of
+#                           the repository different from the started one.
+#                           A pruning failure is a warning, never a failure.
+#                           The default becomes on once the Administrator
+#                           has reviewed one Production dry-run log.
 #   STEWARDSHIP_KEEP_RELEASES  how many newest other release images the
 #                           pruning keeps besides those (1-99, default 4)
 #   STEWARDSHIP_KEEP_BUILD_CACHE  1 to leave Docker's build cache alone
@@ -78,7 +83,7 @@ project=${STEWARDSHIP_PROJECT:-stewardship}
 yaml=${STEWARDSHIP_YAML:-/etc/parishkit/stewardship-deployment.yaml}
 repo=${STEWARDSHIP_IMAGE_REPO:-ghcr.io/epiphany40223/parishkit/stewardship}
 schema_change=${STEWARDSHIP_SCHEMA_CHANGE:-0}
-prune=${STEWARDSHIP_PRUNE:-on}
+prune=${STEWARDSHIP_PRUNE:-dry-run}
 keep=${STEWARDSHIP_KEEP_RELEASES:-4}
 
 hex=${image#"${repo}@sha256:"}
@@ -136,9 +141,25 @@ set -e
 # protected images are the release just started and the replaced one; the
 # prune script also keeps every image a container uses and the newest
 # STEWARDSHIP_KEEP_RELEASES others. Its failure never fails the upgrade.
-previous=$(sed -n "s/^    Record in the operators' notes\. Replaced release: //p" "$transcript" | tail -1)
-prune_args=(--repo "$repo" --keep "$keep" --protect "$image")
-[ -z "$previous" ] || prune_args+=(--protect "$previous")
+# The replaced release is the rollback target, so it must be known: the
+# host half's last line names it, and unless that line names a release
+# digest of this repository (it may be missing, reworded, or empty when the
+# old Compose file had no web image), nothing is pruned. A re-run of the
+# same digest replaced itself, so the release before it is not known by
+# name either; that run skips pruning too and the next upgrade prunes.
+previous=$(tail -n 1 "$transcript" | sed -n "s/^    Record in the operators' notes\. Replaced release: //p")
+previous_hex=${previous#"${repo}@sha256:"}
+if [ "$previous_hex" = "$previous" ] || ! [[ $previous_hex =~ ^[0-9a-f]{64}$ ]]; then
+    echo "WARNING: the host half did not report the replaced release as a ${repo} digest;" >&2
+    echo "         old release images are not pruned, so the rollback target stays on the host." >&2
+    exit 0
+fi
+if [ "$previous" = "$image" ]; then
+    echo "==> Not pruning old release images: this run replaced $image with itself (a re-run)," >&2
+    echo "    so the release before it is not known; the next upgrade prunes." >&2
+    exit 0
+fi
+prune_args=(--repo "$repo" --keep "$keep" --protect "$image" --protect "$previous")
 [ "$prune" = on ] || prune_args+=(--dry-run)
 [ "${STEWARDSHIP_KEEP_BUILD_CACHE:-0}" = 0 ] || prune_args+=(--keep-build-cache)
 args=$(printf '%q ' "${prune_args[@]}")

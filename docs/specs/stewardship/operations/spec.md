@@ -591,6 +591,14 @@ removes an image of another repository and never uses Docker's blanket
 prune commands for images, containers or volumes. It logs each image it
 removes or keeps and the disk space freed, offers a dry run that removes
 nothing, and a pruning failure is a warning that never fails the upgrade.
+It prunes only when the upgrade knows the replaced release as a release
+digest different from the one just started; otherwise (an unreported
+replaced release, or a re-run of the same digest) it skips pruning and
+says so. Any failure while finding what to keep, other than a protected
+image that is not on the host, stops it before anything is removed. The
+dry run is the default until the Administrator has reviewed one Production
+dry-run log; only then does a one-line follow-up (#1671) make real
+removal the default.
 The local laptop environment's deploy does not prune: its images are built
 in its VM and its build cache speeds the next build.
 

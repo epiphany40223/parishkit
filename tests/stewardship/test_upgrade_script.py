@@ -178,15 +178,16 @@ def test_a_rollback_refuses_the_schema_change_override(tmp_path):
     result, calls, _ = run_local(
         tmp_path / "zero", "--rollback", env={"STEWARDSHIP_SCHEMA_CHANGE": "0"}
     )
-    # The host half, then the image pruning (#1661).
-    assert result.returncode == 0 and len(calls) == 2
+    # Only the host half: this stand-in reports no replaced release, so the
+    # image pruning (#1661) is skipped.
+    assert result.returncode == 0 and len(calls) == 1
 
 
 def test_a_valid_digest_uploads_the_host_script_once(tmp_path):
     """One host-half ssh call, the arguments in order, the host half on its stdin.
 
-    The second call is the image pruning after the run succeeded (#1661),
-    which test_prune_images_script.py pins.
+    This stand-in reports no replaced release, so the image pruning
+    (#1661), which test_prune_images_script.py pins, is skipped.
     """
     image = f"{OFFICIAL_REPO}@sha256:" + "d" * 64
     result, calls, stdin = run_local(tmp_path)
@@ -199,12 +200,9 @@ def test_a_valid_digest_uploads_the_host_script_once(tmp_path):
         'ssh host.invalid f=$(mktemp) && cat > "$f" && bash "$f" '
         f"{OFFICIAL_REPO} {image} /opt/parishkit stewardship "
         f"/etc/parishkit/stewardship-deployment.yaml {UUID} 0 upgrade ; "
-        'rc=$?; rm -f "$f"; exit $rc',
-        'ssh host.invalid f=$(mktemp) && cat > "$f" && bash "$f" '
-        f"--repo {OFFICIAL_REPO} --keep 4 --protect {image} ; "
-        'rc=$?; rm -f "$f"; exit $rc',
+        'rc=$?; rm -f "$f"; exit $rc'
     ]
-    assert stdin == host_script() + PRUNE.read_text()
+    assert stdin == host_script()
     # The uploaded half is itself valid bash.
     assert subprocess.run(["bash", "-n"], input=stdin, text=True).returncode == 0
     result, calls, _ = run_local(tmp_path / "rollback", "--rollback")
