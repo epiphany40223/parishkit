@@ -115,8 +115,15 @@ def index(request):
         return private_response("Invalid report filters.\n", status=400)
 
 
-def _audit(principal, campaign_id, outcome):
-    """Parish-owned references survive purge without copying reported values."""
+def _audit(principal, campaign_id, outcome, *, automatic=False):
+    """Parish-owned references survive purge without copying reported values.
+
+    ``automatic`` marks a view the open page made by itself to bring newer
+    figures in (#1620); a reader's own view records no such key.
+    """
+    context = {"outcome": outcome}
+    if automatic:
+        context["automatic"] = True
     # An audit append takes no row locks, so it need not join the
     # writers' work order; waiting there stalled report pages behind
     # every source promotion and installer.
@@ -131,7 +138,7 @@ def _audit(principal, campaign_id, outcome):
             parish_id=system.active_configuration.parish.pk,
             campaign_id=campaign_id,
             subject_id=campaign_id,
-            context={"outcome": outcome},
+            context=context,
         )
 
 
@@ -153,8 +160,11 @@ def dashboard(request, campaign_id):
     try:
         service = runtime()
         # The page's own re-read when newer figures are ready (#1586) is
-        # passive: it never extends the sign-in, though it is audited.
-        principal = _principal(request, service.store, read_only=passive_read(request))
+        # passive: it never extends the sign-in, though it is audited, and
+        # marked automatic (#1620). The header can only add that mark: every
+        # view is audited whatever the request sends.
+        automatic = passive_read(request)
+        principal = _principal(request, service.store, read_only=automatic)
         try:
             query = ReportQuery.parse(request.GET)
         except ValueError:
@@ -164,7 +174,7 @@ def dashboard(request, campaign_id):
         identities = (campaign_id,)
         admit_report_read(campaign_id)
         if production:
-            _audit(principal, campaign_id, Outcome.STARTED)
+            _audit(principal, campaign_id, Outcome.STARTED, automatic=automatic)
         finalized = False
         response_guard = None
         # False once the statistics or daily facts could not be read.
@@ -185,6 +195,7 @@ def dashboard(request, campaign_id):
                         principal,
                         campaign_id,
                         Outcome.SUCCEEDED if succeeded else Outcome.FAILED,
+                        automatic=automatic,
                     )
                 except (DatabaseError, StorageInvariantError) as error:
                     emit_failure(error, event=Event.REPORT_AUDIT_FAILED)

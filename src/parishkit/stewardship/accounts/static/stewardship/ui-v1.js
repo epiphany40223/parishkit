@@ -2949,7 +2949,9 @@
   // tried again; live-status-v1.js says the same (#1647).
   const UPDATES_REFUSED = "Couldn't check for updates. Reload the page or sign in again.";
   const UPDATES_RETRYING = "Couldn't check for updates — retrying.";
-  // Sent with every automatic re-read (accounts/sessions.py passive_read).
+  // Sent with every automatic re-read (accounts/sessions.py passive_read),
+  // and only with one: it also marks an audited report view as automatic
+  // (#1620), so a read the reader asked for never carries it.
   const PASSIVE_READ = {"X-ParishKit-Read": "passive"};
   let rereadTimer = 0;
   let rereadFailures = 0;

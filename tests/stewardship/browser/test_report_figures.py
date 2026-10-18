@@ -12,7 +12,7 @@ every region, which only a full page load could lose.
 
 import pytest
 
-from .comparison_components import NEWER, PAGE, UPDATING
+from .comparison_components import DAY_5, NEWER, PAGE, UPDATING
 from .conftest import NOW
 from .report_components import FIGURES_NEWER, FIGURES_PENDING, REAL
 from .test_in_place import MARK, MARKED, VIEWPORT, scroll_below
@@ -224,4 +224,19 @@ def test_failed_follow_up_reads_back_off_to_the_status(page, component_origin):
     recorded(page, reads, 3)
     recorded(page, page_reads, 5)
     visible(problem)
+    assert page.evaluate(MARKED) == "kept"
+
+
+def test_a_readers_own_read_is_never_marked_automatic(page, component_origin):
+    """Only the page's own re-read is marked (#1620): X-ParishKit-Read is
+    what marks an audited report view automatic, so a read the reader asks
+    for, here Compare on day in place, never sends it."""
+    opened(page, component_origin, PAGE)
+    page.get_by_label("Compare on day").fill("5")
+    with page.expect_request(
+        lambda request: request.url.split("#")[0] == component_origin + DAY_5
+    ) as asked:
+        page.get_by_role("button", name="Compare", exact=True).click()
+    page.wait_for_url(component_origin + DAY_5 + "#comparison-report")
+    assert asked.value.headers.get("x-parishkit-read") is None
     assert page.evaluate(MARKED) == "kept"

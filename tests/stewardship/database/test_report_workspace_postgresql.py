@@ -537,3 +537,70 @@ def test_figures_status_refuses_signed_out_and_unauthorized_readers(
         assert leader.get(status + query).status_code == 403
         assert leader.get(status + "?view=other").status_code == 403
     assert events.count() == 0
+
+
+def test_automatic_rereads_are_audited_and_marked(http_scenario):
+    """An open report's own re-read is audited and marked automatic (#1620).
+
+    By Administrator decision a Response dashboard or Campaign comparison
+    view the page made by itself to bring newer figures in records
+    ``automatic: true`` in its audit context, so an audit reader can tell it
+    from a view the reader asked for, which has no such key. The marker is
+    the re-read's own ``X-ParishKit-Read: passive`` header, which can only
+    add the mark: every request, whatever header it sends, is audited, and
+    no other value marks it.
+    """
+    setup, browser = http_scenario
+    pointer(setup[2])
+    # Each page's address and the views it records, with their outcomes in
+    # order: the dashboard records its funnel read once, when it ends, as
+    # well as the daily chart's started and final views.
+    dashboard = reverse("admin:response_dashboard") + "?scope=historical&timezone=UTC"
+    pages = {
+        dashboard: {
+            "participation_viewed": ["started", "succeeded"],
+            "response_dashboard_viewed": ["succeeded"],
+        },
+        reverse("admin:campaign_comparison"): {
+            "campaign_comparison_viewed": ["started", "succeeded"],
+        },
+    }
+
+    def recorded(event_type):
+        """``event_type``'s audit contexts not yet checked, oldest first."""
+        rows = list(
+            AuditContext.objects.filter(event__event_type=event_type)
+            .exclude(event__pk__in=seen)
+            .order_by("event__created_at", "event__pk")
+            .values_list("event__pk", "context")
+        )
+        seen.update(pk for pk, _ in rows)
+        return [context for _, context in rows]
+
+    seen = set()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        for path, views in pages.items():
+            for headers, automatic in (
+                # The reader's own view: no marker.
+                ({}, False),
+                # The page's automatic re-read: audited, and marked.
+                ({"HTTP_X_PARISHKIT_READ": "passive"}, True),
+                # Any other value neither marks nor skips the audit.
+                ({"HTTP_X_PARISHKIT_READ": "skip-audit"}, False),
+                ({"HTTP_X_PARISHKIT_READ": ""}, False),
+            ):
+                response, _ = read(browser, path, **headers)
+                assert response.status_code == 200, (path, headers)
+                for event_type, outcomes in views.items():
+                    view = recorded(event_type)
+                    # Every view records its outcomes, whatever the header.
+                    assert [context["outcome"] for context in view] == outcomes, (
+                        path,
+                        headers,
+                        event_type,
+                    )
+                    for context in view:
+                        if automatic:
+                            assert context["automatic"] is True, (path, headers)
+                        else:
+                            assert "automatic" not in context, (path, headers)
