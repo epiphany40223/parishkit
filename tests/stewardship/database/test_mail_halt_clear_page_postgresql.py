@@ -190,7 +190,7 @@ def test_an_unsettled_email_holds_confirm(auth_service, google, family_mail):  #
     dispatch_settle(check, "passed")
     text = region(post(browser, action="clear_preview").content.decode())
     assert 'data-clear-unsettled="1"' in text
-    assert "/admin/mail/outgoing/?state=delivery_unknown" in text
+    assert "/admin/mail/sent/?state=delivery_unknown" in text
     assert 'data-clear-reason="unsettled"' in text
     refused = post(
         browser, action="clear_confirm", token=token_of(preview.content.decode())
