@@ -576,6 +576,7 @@ REPORTS = [
     "census_changes",
     "information_queue",
     "ministry_report",
+    "ministry_roster",
     "family_directory",
     "emailed_reports",
 ]
@@ -607,6 +608,7 @@ SPEC_ORDER = [
     "census_changes",
     "information_queue",
     "ministry_report",
+    "ministry_roster",
     "family_directory",
     "emailed_reports",
     # Parish data
@@ -690,6 +692,7 @@ def test_every_campaign_entry_is_greyed_out_without_a_current_campaign():
         "census_changes",
         "information_queue",
         "ministry_report",
+        "ministry_roster",
         "family_directory",
     }
     for item in items:
@@ -744,6 +747,12 @@ def test_every_campaign_entry_is_greyed_out_without_a_current_campaign():
             "census only",
             "testing",
             "ministry_report",
+            "This campaign does not include Ministry stewardship",
+        ),
+        (
+            "census only",
+            "testing",
+            "ministry_roster",
             "This campaign does not include Ministry stewardship",
         ),
     ],
@@ -1215,6 +1224,8 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
                 2 if statements[-1]["ministry"] else None,
                 selected if statements[-1]["ministry"] else None,
                 json.dumps(groups) if statements[-1]["census"] else None,
+                6 if statements[-1]["roster"] else None,
+                [] if statements[-1]["roster"] else None,
             )
 
     monkeypatch.setattr(
@@ -1224,22 +1235,28 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
     )
     active = _campaign("active")
     census = _campaign("active", modules=("ministry", "census"))
+    draft = _campaign("draft")
+    queues = {"information_queue": 3, "ministry_report": 2}
     cases = (
-        # Both queues for Staff: every Ministry.
-        ("staff", active, {"information_queue": 3, "ministry_report": 2}),
+        # Both queues and Roster changes to enter (#1660) for Staff: every
+        # Ministry.
+        ("staff", active, {**queues, "ministry_roster": 6}),
+        # A draft has nothing to enter yet, so its roster count is not read.
+        ("staff", draft, queues),
         # With the census: Staff count To do and Conflict, an Administrator
         # To review as well.
         (
             "staff",
             census,
-            {"census_changes": 5, "information_queue": 3, "ministry_report": 2},
+            {"census_changes": 5, **queues, "ministry_roster": 6},
         ),
         (
             "administrator",
             census,
-            {"census_changes": 7, "information_queue": 3, "ministry_report": 2},
+            {"census_changes": 7, **queues, "ministry_roster": 6},
         ),
-        # A leader has no Census changes entry, so no census count is read.
+        # A leader has no Census changes or Roster changes to enter entry, so
+        # neither count is read.
         ("ministry_leader", census, {"ministry_report": 2}),
         # A leader only has Ministry requests, scoped to their Ministry.
         ("ministry_leader", active, {"ministry_report": 2}),
@@ -1270,6 +1287,16 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
                 | {"assignee": "any", "presence": "current"}
             )
             assert statements[0]["viewer"] == actor.identity
+            # The roster count runs its page's selection (roster_rows) only
+            # past go-live, for Administrators and Staff.
+            assert statements[0]["roster"] is (
+                role != "ministry_leader" and campaign.state != "draft"
+            )
+            assert json.loads(statements[0]["roster_filters"]) == (
+                FollowupQuery(state="resolved", history="all").form_values()
+                | {"assignee": "any", "presence": "any"}
+            )
+            assert statements[0]["roster_outcomes"] == ["joined", "leave_confirmed"]
     # A count over a Ministry outside the leader's own scope is drift the
     # follow-up page refuses, so the menu shows no number either.
     selected[:] = [9, 77]
