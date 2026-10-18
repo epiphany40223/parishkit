@@ -11,7 +11,15 @@ import pytest
 
 from .automation_components import canonical
 from .test_charts import assert_clean, watch
-from .timeline_components import ADMIN, EMAILS, NEWEST, OLDEST, STAFF, UNAVAILABLE
+from .timeline_components import (
+    ADMIN,
+    EMAILS,
+    LATER,
+    NEWEST,
+    OLDEST,
+    STAFF,
+    UNAVAILABLE,
+)
 from .waits import (
     focused,
     has_attribute,
@@ -183,6 +191,62 @@ def test_the_kind_filter_narrows_the_lines_in_place(page, component_origin):
     assert (
         "2 times; most recently" in page.locator("#summary-heading + dl").inner_text()
     )
+    assert_clean(page, errors)
+
+
+def test_from_and_through_gate_apply_and_a_reload_keeps_the_view(
+    page, component_origin
+):
+    """A half-typed day holds Show lines; a whole one applies; reload keeps it.
+
+    Engines differ in what typing does to a date control (see
+    test_system_logs.py): Chromium and macOS WebKit mark a half-typed date
+    as bad input, Linux WebKit ignores the keys. Each outcome is asserted,
+    never skipped. The request carries the browser's zone, which the page
+    script filled in, so the days are Pacific ones.
+    """
+    errors = watch(page)
+    page.set_viewport_size({"width": 1280, "height": 2400})
+    page.goto(component_origin + ADMIN)
+    has_value(page.locator('#table-filters input[name="zone"]'), "America/Los_Angeles")
+    button = page.get_by_role("button", name="Show lines")
+    hint = page.locator("#table-filters [data-complete-hint]")
+    start = page.get_by_label("From", exact=True)
+    start.click()
+    page.keyboard.type("09")
+    page.locator("#timeline-kind").focus()
+    if start.evaluate("node => node.validity.badInput"):
+        assert button.is_disabled()
+        has_text(hint, "Enter a whole From date, or clear it.")
+    else:
+        assert start.input_value() == "" and button.is_enabled()
+    start.fill("2026-10-04")
+    assert button.is_enabled()
+    page.evaluate(MARK)
+    before = button.bounding_box()
+    with page.expect_response(
+        lambda response: "start=2026-10-04" in response.url
+    ) as fetched:
+        button.click()
+    assert fetched.value.status == 200, fetched.value.url
+    assert fetched.value.request.headers.get("x-requested-with") == "fetch"
+    message = page.locator("#table tbody").get_by_text(
+        "No lines match these filters.", exact=False
+    )
+    visible(message)
+    assert lines(page) == []
+    assert page.evaluate(MARKED) == "kept"
+    assert same_place(button.bounding_box(), before)
+    address = page.url.removeprefix(component_origin).split("#")[0]
+    assert canonical(address) == LATER
+    # A reload asks the server for the same address and shows the same view,
+    # with the day still chosen.
+    page.reload()
+    visible(message)
+    assert page.evaluate(MARKED) is None
+    assert start.input_value() == "2026-10-04"
+    assert page.get_by_label("Through", exact=True).input_value() == ""
+    assert page.locator("#timeline-kind").input_value() == "all"
     assert_clean(page, errors)
 
 

@@ -321,3 +321,54 @@ def test_a_family_is_refused_under_another_real_campaign(
         assert as_web(admin, other)[0].status_code == 403
         events = AuditEvent.objects.filter(event_type="family_timeline_viewed")
         assert not events.filter(subject_id=family.pk).exists()
+
+
+def test_session_ends_follow_their_sign_ins_mode():
+    """An end is kept exactly when its session's sign-in is a Production one.
+
+    The switch to Testing ends a Production session at the switch instant,
+    which already counts as Testing, so the end must be paired with its
+    sign-in by Family session, not attributed by its own instant; a Testing
+    session's end is dropped. The rows are seeded past the append-only
+    guards (``unguarded``) so the instants are exact.
+    """
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.campaigns.runtime_models import RuntimeTransition
+    from parishkit.stewardship.reports.timelines import read_sessions
+
+    from .auth_builders import unguarded
+
+    family, production, testing = uuid4(), uuid4(), uuid4()
+    start = database_now() + timedelta(days=1)
+    switch, signed_in_testing = start + timedelta(hours=1), start + timedelta(hours=2)
+    seeded = [
+        (start, production, "family_login"),
+        (switch, production, "family_session_ended"),
+        (signed_in_testing, testing, "family_login"),
+        (signed_in_testing + timedelta(minutes=5), testing, "family_session_ended"),
+    ]
+    # Production just before the first sign-in, whatever came earlier, then
+    # the switch to Testing.
+    modes = [
+        (start - timedelta(minutes=1), "testing", "production"),
+        (switch, "production", "testing"),
+    ]
+    with unguarded():
+        for number, (at, before, after) in enumerate(modes):
+            RuntimeTransition.objects.create(
+                created_at=at,
+                request_id=uuid4(),
+                expected_version=10**12 + number,
+                action="test",
+                before_mode=before,
+                after_mode=after,
+            )
+        for at, subject, kind in seeded:
+            AuditEvent.objects.create(
+                created_at=at, event_type=kind, subject_id=subject, actor_id=family
+            )
+    scope = SimpleNamespace(mode="production", rehearsal_epoch_id=None)
+    sign_ins, ends = read_sessions(family, scope, "testing", (None, None))
+    assert sign_ins == [(start, False)]
+    assert ends == [(switch, "family_session_ended")]

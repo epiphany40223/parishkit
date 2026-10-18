@@ -50,6 +50,22 @@ EMAILS = canonical(
         ]
     )
 )
+# The address Show lines sends for From 2026-10-04 (the day after every
+# fixture line, in the Pacific fixture browser) with Through blank.
+LATER = canonical(
+    ADMIN
+    + "?"
+    + urlencode(
+        [
+            ("zone", "America/Los_Angeles"),
+            ("size", "all"),
+            ("sort", "-when"),
+            ("kind", "all"),
+            ("start", "2026-10-04"),
+            ("end", ""),
+        ]
+    )
+)
 STAFF = "/timeline-staff"
 UNAVAILABLE = "/timeline-unavailable"
 # A Family ParishSoft no longer lists as active and registered, while other
@@ -76,7 +92,7 @@ def render(context, admin, timeline, **options):
 
 
 def components(context, admin):
-    """The Administrator's page, its sorts and filter, Staff's and unavailable ones."""
+    """The Administrator's page, its sorts and filters, Staff's and unavailable ones."""
     pages = {
         ADMIN: (TIMELINE, {"full": True}),
         OLDEST: (TIMELINE, {"full": True, "values": {"size": "all", "sort": "when"}}),
@@ -86,6 +102,14 @@ def components(context, admin):
             {
                 "full": True,
                 "query": TimelineQuery("emails"),
+                "values": {"size": "all", "sort": "-when"},
+            },
+        ),
+        LATER: (
+            TIMELINE,
+            {
+                "full": True,
+                "query": TimelineQuery(start="2026-10-04", zone="America/Los_Angeles"),
                 "values": {"size": "all", "sort": "-when"},
             },
         ),

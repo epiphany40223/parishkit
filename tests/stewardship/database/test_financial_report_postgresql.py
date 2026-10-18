@@ -488,8 +488,12 @@ def test_source_totals_respect_fund_window_and_giving_cutoff(response_service):
     # into them, not displayed beside them, so no text scan could catch it.
 
 
-def test_several_families_summary_order_and_pages(response_service):
-    """The summary covers every match, never the page; money stays with its Family."""
+def test_several_families_summary_order_and_pages(response_service, google):
+    """The summary covers every match, never the page; money stays with its Family.
+
+    The page's Timeline links (#1570) are one Family record read, however
+    many rows the page shows.
+    """
     harness = response_service
     financial_source(
         harness,
@@ -633,6 +637,40 @@ def test_several_families_summary_order_and_pages(response_service):
         complete = json.loads(cursor.fetchone()[0])
     assert [row["family_duid"] for row in complete["rows"]] == by_name
     assert all(row["pledge_total"] is None for row in complete["rows"])
+
+    # The Timeline links: one FamilyCampaign read per page, never one per
+    # row, for a three-row page as for a one-row page. (The whole statement
+    # count is not compared: an audit check that runs on some requests only
+    # makes it vary.)
+    from django.test.utils import CaptureQueriesContext
+
+    route = reverse("admin:financial_report")
+    browser, login = signed_in()
+    assert login.status_code == 302
+
+    def counted(values):
+        """One page for the posted ``values``, its links and the SQL it ran."""
+        with (
+            task_login(ServiceRole.WEB, exact=True, reconnect=True),
+            CaptureQueriesContext(connection) as queries,
+        ):
+            response, body = search(browser, route, values)
+        assert response.status_code == 200
+        links = body.count(b'<th scope="row" class="nowrap"><a href="')
+        return links, [query["sql"] for query in queries.captured_queries]
+
+    def link_reads(statements):
+        """The statements that read the page's Family record ids."""
+        return [
+            sql
+            for sql in statements
+            if 'FROM "stewardship_family_campaign"' in sql and "family_duid" in sql
+        ]
+
+    every, all_rows = counted({"sort": "name"})
+    one, one_row = counted({"search": "zETa"})
+    assert (every, one) == (3, 1)
+    assert len(link_reads(all_rows)) == len(link_reads(one_row)) == 1
 
 
 def test_native_page_filters_privately_and_denies_leaders(
