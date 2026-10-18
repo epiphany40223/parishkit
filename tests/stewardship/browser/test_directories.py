@@ -7,8 +7,6 @@ from uuid import UUID
 import pytest
 from django.urls import reverse
 
-from parishkit.stewardship.reports.response_dashboard import DIRECTORY_PRESETS
-
 from .waits import eventually, has_text, same_place, visible
 
 pytestmark = pytest.mark.parametrize(
@@ -535,9 +533,16 @@ def test_responses_shown_carries_the_applied_filters(page, component_origin):
     """
     directory = reverse("admin:family_directory")
 
+    # The directory presets the Response dashboard used to link (#1561
+    # removed them from the page with its Lists of Families panel).
+    presets = {
+        "submitted": {"response": "submitted", "responses": "yes", "sort": "submitted"},
+        "started": {"response": "started", "responses": "yes"},
+    }
+
     def preset(key, **extra):
         """A directory preset's address, as the response dashboard links it."""
-        return f"{directory}?{urlencode(DIRECTORY_PRESETS[key] | extra)}"
+        return f"{directory}?{urlencode(presets[key] | extra)}"
 
     answers = [
         page.request.get(component_origin + preset("started", mode="testing")).text(),
