@@ -2976,8 +2976,8 @@ required) and sends nothing. `--confirm --token` applies the review, as
 the page's Apply does: the emails are queued, and the background engine
 sends them. Like `send confirm`, `--confirm` first asks you to type `yes`,
 showing how many leaders are emailed and the mode; `--yes` answers it, and
-is required with `--token -` or when no terminal can answer (otherwise
-exit 4, `confirmation_required`, and nothing is queued). The review
+is required with `--token -` (otherwise exit 2, `usage`) or when no terminal
+can answer (otherwise exit 4, `confirmation_required`); nothing is queued. The review
 binds the Testing recipient only by a digest, so the printed token does
 not carry its address. A review lasts fifteen minutes, and the page and the command
 line can apply each other's reviews. Applying the same review again sends
