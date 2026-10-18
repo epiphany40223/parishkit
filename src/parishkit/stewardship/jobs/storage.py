@@ -18,7 +18,7 @@ from django.db import connection, transaction
 from django.db.models.functions import Now
 
 from parishkit.stewardship.campaigns.work_locks import require_work_order
-from parishkit.stewardship.observability import correlation
+from parishkit.stewardship.observability import FailureKind, correlation
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 
 from .models import TaskRun
@@ -27,6 +27,19 @@ from .phases import TaskPhase
 
 class TaskRetryConflict(StorageInvariantError):
     """A user-selected run is no longer the chain's latest failed execution."""
+
+
+class TaskNotAdmitted(PermissionError):
+    """The owning handler's admission refused a task operation (#1659).
+
+    A designed refusal, not a fault: Family mail refuses a claim while
+    sending is paused or stopped, and the task stays queued for a later
+    hint. It stays a PermissionError, so every caller that already treats a
+    refusal as one is unchanged, but it names its own category: as a plain
+    PermissionError (an OSError) it was classed ``filesystem_unavailable``.
+    """
+
+    failure_kind = FailureKind.TASK_NOT_ADMITTED
 
 
 @dataclass(frozen=True)
@@ -76,7 +89,7 @@ def _admit(callback, action, status):
     if not callable(callback):
         raise TypeError("Task admission callback is required.")
     if callback(action, status) is not True:
-        raise PermissionError("Task operation is not admitted.")
+        raise TaskNotAdmitted("Task operation is not admitted.")
 
 
 @contextmanager

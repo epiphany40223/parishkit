@@ -28,6 +28,8 @@ from parishkit.stewardship.jobs.lifetime import maintain_execution
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.outbox_models import OutboxMessage
 from parishkit.stewardship.jobs.queues import WorkQueue
+from parishkit.stewardship.jobs.storage import TaskNotAdmitted
+from parishkit.stewardship.observability import FailureKind, failure_kind_of
 
 from . import campaign_builders
 from .campaign_builders import campaign_clock, complete_empty_catchup
@@ -584,8 +586,10 @@ def test_an_outage_pause_lifts_after_its_cooldown(dispatch_worker, monkeypatch, 
         # The pause began at the third outage, one minute ago.
         clock[0] += 600 - 60 - 1
         # Still paused: admission refuses the claim, and nothing is sent.
-        with pytest.raises(PermissionError):
+        # The refusal names itself, never a filesystem failure (#1659).
+        with pytest.raises(TaskNotAdmitted) as refused:
             deliver(harness, path, message, owner)
+        assert failure_kind_of(refused.value) is FailureKind.TASK_NOT_ADMITTED
         clock[0] += 1
         # The single probe fails: sending pauses again at once, quietly.
         assert deliver(harness, path, message, owner) is owner

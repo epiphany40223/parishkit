@@ -136,6 +136,11 @@ class FailureKind(StrEnum):
     CREDENTIAL = "credential_unavailable"
     CONFIGURATION = "configuration_unavailable"
     FILESYSTEM = "filesystem_unavailable"
+    # A handler's admission refused a task operation on purpose (#1659),
+    # such as a claim while Family mail is paused or stopped: an expected
+    # state logged at INFO, never a failure of the filesystem or anything
+    # else. See jobs.storage.TaskNotAdmitted.
+    TASK_NOT_ADMITTED = "task_not_admitted"
     UNEXPECTED = "unexpected_failure"
     # Operator refusals the runbooks name. The formatter drops free text, and
     # Event names are mirrored by a SQL constraint, so these ride on the
