@@ -827,10 +827,19 @@ the [in-place controls](#in-place-controls); no other mechanism.
   (a hidden `a[data-reread]` follow-up link, handed from
   `live-status-v1.js` to `ui-v1.js`), as a periodic re-read does: it waits
   while the reader is busy and stops at a refusal. That read shows
-  figures, so it records one audited view, as opening the page does. The
-  re-read happens once per newer set of figures: a page left open records
-  one more view each time its figures change. Like every automatic re-read
-  it sends `X-ParishKit-Read: passive`, so it never extends the sign-in.
+  figures, so it records one audited view, as opening the page does, but
+  marked automatic (by Administrator decision on
+  [#1620](https://github.com/epiphany40223/parishkit/pull/1620)): its
+  audit context carries `automatic: true`, which System logs shows as
+  **How it was opened: Automatic refresh (the open page updated itself)**,
+  so an audit reader can tell it from a view the reader asked for, which
+  carries no such key. The re-read happens once per newer set of figures:
+  a page left open records one more view each time its figures change.
+  Like every automatic re-read it sends `X-ParishKit-Read: passive`, so it
+  never extends the sign-in; that header is also what marks the view
+  automatic. The header can only add the mark: the view is audited
+  whatever a request sends. The mark records what the page reported about
+  its own read, not proof of who started it.
   Failed re-reads are retried a bounded number of times, and each attempt
   records an audited view (its start and its failure): after a failure the
   page tries again in 5 seconds; after three failures in a row it says it

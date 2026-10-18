@@ -525,8 +525,12 @@ the x-axis label names the campaign time zone. While the page is open it
 follows the queued generation and shows it by itself once it is ready
 ([pages that update themselves](../ui-conventions/spec.md#pages-that-update-themselves),
 [#1586](https://github.com/epiphany40223/parishkit/issues/1586)), so the user
-never refreshes the page to check. A pinned export or digest waits/retries for its
-exact generation and fails visibly rather than substituting a different cutoff.
+never refreshes the page to check. That read records the dashboard's views
+like any other (`response_dashboard_viewed` and `participation_viewed`),
+each marked `automatic: true` in its audit context so it reads as an
+automatic refresh, not as the reader opening the page. A pinned export or
+digest waits/retries for its exact generation and fails visibly rather than
+substituting a different cutoff.
 Recalculation from the pinned source/submission inputs must reproduce every
 stored fact, and a verification job detects drift.
 
