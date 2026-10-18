@@ -2570,6 +2570,7 @@
     submitControls(form).forEach((node) => {
       node.classList.remove("is-busy");
       node.removeAttribute("aria-disabled");
+      if (!form.contains(node)) node.removeAttribute("aria-busy");
     });
     if (!submitting.size) busyStatus.textContent = "";
   };
@@ -2590,7 +2591,12 @@
     if (submitting.has(form)) { event.preventDefault(); return; }
     if (event.defaultPrevented || form.hasAttribute("data-submit-repeatable")) return;
     form.setAttribute("aria-busy", "true");
-    submitControls(form).forEach((node) => node.setAttribute("aria-disabled", "true"));
+    submitControls(form).forEach((node) => {
+      node.setAttribute("aria-disabled", "true");
+      // A button tied in by form="…" sits outside the form, so the form's
+      // aria-busy does not reach it; mark it busy itself (cleared on release).
+      if (!form.contains(node)) node.setAttribute("aria-busy", "true");
+    });
     event.submitter?.classList.add("is-busy");
     busyStatus.textContent = "Working…";
     if (!form.hasAttribute("data-submit-waits")) {
