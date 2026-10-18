@@ -406,3 +406,41 @@ def test_record_words_a_race_as_the_notice():
     assert record(Service(StaleDecision()), "staff", decision).startswith(
         "A chosen item was changed"
     )
+
+
+def test_a_withheld_action_is_left_out_of_one_row():
+    """An item that cannot take an action has no icon for it (#1683).
+
+    A census field no value can be typed for (moved, deceased, the email
+    opt-out, a New Member) has no Edit, whatever its stage.
+    """
+    assert icons(
+        "census", Placement(Stage.TO_REVIEW), by_hand=True, withheld={"edit"}
+    ) == [
+        ("accept", False, False),
+        ("ignore", False, False),
+        ("entered_by_hand", False, False),
+    ]
+
+
+@pytest.mark.parametrize(
+    "placement,expected",
+    [
+        (Placement(Stage.TO_REVIEW), ""),
+        # The stage's word already says the decision.
+        (Placement(Stage.IGNORED, Decision.IGNORED), ""),
+        (Placement(Stage.READY_TO_UPDATE, Decision.ACCEPTED), "Accepted."),
+        # A Conflict keeps its earlier decision visible, not in force.
+        (
+            Placement(Stage.CONFLICT, held_decision=Decision.ACCEPTED_EDITED),
+            "Earlier: Accepted (edited), not in force.",
+        ),
+        (
+            Placement(Stage.READY_TO_UPDATE, Decision.ACCEPTED, failed=True),
+            "Accepted. The last update failed.",
+        ),
+    ],
+)
+def test_the_decision_line_words_held_and_failed_items(placement, expected):
+    """The line under a row's stage (#1683)."""
+    assert worklist.decision_label(placement) == expected
