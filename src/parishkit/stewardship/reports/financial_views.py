@@ -33,6 +33,7 @@ from parishkit.stewardship.web.tables import report_table
 from .chart_specs import financial_charts
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
+from .family_links import link_families
 from .financial import (
     FIELD_MESSAGES,
     FINANCIAL_SORTING,
@@ -45,7 +46,6 @@ from .financial import (
 )
 from .read_admission import admit_report_read
 from .report_paging import carried_filters, clamp_query, pop_page_size
-from .timeline_views import link_families
 
 # The element id of each filter field a refusal can be shown at (#1332).
 FIELD_IDS = {
