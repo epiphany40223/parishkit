@@ -594,6 +594,16 @@ textarea { max-width: 56rem; }
 :is(form, fieldset) > div:has(> input[type=checkbox]):not(:has(> :is(select, textarea, input:not([type=checkbox], [type=hidden])))) > input[type=checkbox] { grid-column: 1; grid-row: 1; }
 :is(form, fieldset) > div:has(> input[type=checkbox]):not(:has(> :is(select, textarea, input:not([type=checkbox], [type=hidden])))) > label { grid-column: 2; grid-row: 1; margin: 0; font-weight: 550; cursor: pointer; }
 :is(form, fieldset) > div:has(> input[type=checkbox]):not(:has(> :is(select, textarea, input:not([type=checkbox], [type=hidden])))) > :is(.helptext, .errorlist) { grid-column: 2; margin: .2rem 0 0; }
+/* One radio of a group, drawn as a div holding the radio and its own label
+   (Edit scheduled email's Apply this edit to and Delete, #1656): the circle
+   beside its words, as a lone checkbox is above, with that choice's help or
+   unavailable reason under the words. The options read as answers, not
+   questions, so their words keep the ordinary option weight. User roles
+   (.choice) lay out their own. */
+:is(form, fieldset) > div:not(.choice):has(> input[type=radio]):not(:has(> :is(select, textarea, input:not([type=radio], [type=hidden])))) { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: .65rem; align-items: center; margin-block: .5rem; clear: both; }
+:is(form, fieldset) > div:not(.choice):has(> input[type=radio]):not(:has(> :is(select, textarea, input:not([type=radio], [type=hidden])))) > input[type=radio] { grid-column: 1; grid-row: 1; }
+:is(form, fieldset) > div:not(.choice):has(> input[type=radio]):not(:has(> :is(select, textarea, input:not([type=radio], [type=hidden])))) > label { grid-column: 2; grid-row: 1; margin: 0; font-weight: 450; cursor: pointer; }
+:is(form, fieldset) > div:not(.choice):has(> input[type=radio]):not(:has(> :is(select, textarea, input:not([type=radio], [type=hidden])))) > :is(.help, .helptext, .errorlist) { grid-column: 2; margin: .2rem 0 0; }
 /* A locked checkbox (Campaign settings, #1119) labels itself in a .label-row
    that also holds the "i" tip with why it is locked. The row takes the
    label's place, and the box keeps to the top, so opening the tip (which

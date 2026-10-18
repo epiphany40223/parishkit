@@ -28,6 +28,7 @@ from .schedule_list_components import (
     APPLY,
     CALENDAR,
     CALENDAR_OCTOBER,
+    EDIT_SERIES,
     LIST,
     MONTHS,
     NEW,
@@ -558,3 +559,29 @@ def test_show_and_sort_refresh_the_table_in_place(
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert axe_violations(page, axe_source) == []
     assert not failures
+
+
+@pytest.mark.parametrize(
+    ("scheme", "width"), [("light", 1280), ("dark", 1280), ("light", 390)]
+)
+def test_each_radio_sits_beside_its_words(page, component_origin, scheme, width):
+    """Apply this edit to and Delete this scheduled email: every radio is on
+    the line of its own label, the circle first (#1656)."""
+    page.emulate_media(color_scheme=scheme)
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + EDIT_SERIES)
+    radios = page.locator(
+        "fieldset[data-series-scope] input[type=radio],"
+        " #schedule-delete-form input[type=radio]"
+    )
+    assert radios.count() == 5
+    for index in range(radios.count()):
+        radio = radios.nth(index)
+        label = page.locator(f"label[for='{radio.get_attribute('id')}']")
+        circle, words = radio.bounding_box(), label.bounding_box()
+        # Side by side: the words start after the circle and their first line
+        # shares its height.
+        assert words["x"] >= circle["x"] + circle["width"]
+        assert words["y"] < circle["y"] + circle["height"]
+        assert circle["y"] < words["y"] + words["height"]
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
