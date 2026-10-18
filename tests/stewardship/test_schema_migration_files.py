@@ -397,7 +397,7 @@ FROZEN = {
         "cc88c09f4be01751997f1144be6ac2ade39bc3a760f90dc99baf09da17ced446"
     ),
     "0132_ministry_review_pipeline.sql": (
-        "f515a5d69d8eadfd4b43627fc72a6c2b3a3bc66bfa7634cc7ffe93df87cacf0a"
+        "e6d9c67d8a0ebd0c441727fbffaed0fa13a91908309b06834209826739ef2ac3"
     ),
 }
 

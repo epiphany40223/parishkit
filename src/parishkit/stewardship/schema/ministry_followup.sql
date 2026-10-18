@@ -91,7 +91,18 @@ BEGIN
                CASE WHEN target.action='join' THEN 'joined' ELSE 'leave_confirmed' END
            OR NEW.reviewed_ministry_duid=target.ministry_duid
            OR NOT coalesce(asked @> to_jsonb(NEW.reviewed_ministry_duid),false)
-           OR NOT stewardship_ministry_followup_authorized_v1(NEW.actor_id,NEW.reviewed_ministry_duid)))
+           OR NOT stewardship_ministry_followup_authorized_v1(NEW.actor_id,NEW.reviewed_ministry_duid)
+           -- Never a second current request about one Member and Ministry.
+           OR EXISTS (SELECT 1 FROM stewardship_ministry_request other
+               JOIN stewardship_submission history ON history.id=other.submission_id
+               JOIN stewardship_submission own ON own.id=target.submission_id
+               WHERE other.id<>target.id AND history.family_id=own.family_id
+                 AND history.campaign_id=own.campaign_id AND history.mode='live'
+                 AND other.entity_kind=target.entity_kind
+                 AND other.entity_key=target.entity_key
+                 AND coalesce(other.reviewed_ministry_duid,other.ministry_duid)
+                     =NEW.reviewed_ministry_duid
+                 AND other.state NOT IN ('cancelled','superseded'))))
     THEN RAISE EXCEPTION 'Ministry follow-up change is not valid for this request'
         USING ERRCODE='23514'; END IF;
     RETURN NEW;

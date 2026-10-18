@@ -5556,7 +5556,8 @@ BEGIN
                WHERE history.family_id=response.family_id AND history.campaign_id=response.campaign_id
                  AND history.mode='live' AND current_request.entity_kind=NEW.entity_kind
                  AND current_request.entity_key=NEW.entity_key
-                 AND current_request.ministry_duid=NEW.ministry_duid
+                 AND coalesce(current_request.reviewed_ministry_duid,
+                     current_request.ministry_duid)=NEW.ministry_duid
                  AND current_request.state NOT IN ('cancelled','superseded'))
            OR NEW.version<>1 OR NEW.state<>'new' OR NEW.assignee_id IS NOT NULL
            OR NEW.superseded_by_id IS NOT NULL OR NEW.outcome IS NOT NULL

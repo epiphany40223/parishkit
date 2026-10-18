@@ -28,7 +28,7 @@
 --   stewardship_ministry_request_guard_v1        admits a parish-added
 --       insert (a current Staff member or Administrator, the Family's
 --       latest live response, a Member it lists, a campaign Ministry, no
---       current request for that Member and Ministry); lets a closed
+--       current request carrying that Member and Ministry forward); lets a closed
 --       request's projection go back to In progress, or an added one to
 --       cancelled, only through Staff follow-up's paired revision; pairs the
 --       Edit's Ministry too; the Family replacement branch still needs an
@@ -40,7 +40,8 @@
 --       current Ministry (the edited one once edited); Back to review and
 --       withdraw (never on a refresh-resolved or ticked request, a note to
 --       reopen an ignored one); Edit (another campaign Ministry the actor
---       may also follow up); a decision note of at most 2,000 characters.
+--       may also follow up, which no other current request of the Member
+--       carries forward); a decision note of at most 2,000 characters.
 --   stewardship_ministry_revision_effect_v1      the projection check
 --       includes the Edit's Ministry.
 --   stewardship_ministry_followup_v1             a request is in scope by
@@ -141,7 +142,8 @@ BEGIN
                WHERE history.family_id=response.family_id AND history.campaign_id=response.campaign_id
                  AND history.mode='live' AND current_request.entity_kind=NEW.entity_kind
                  AND current_request.entity_key=NEW.entity_key
-                 AND current_request.ministry_duid=NEW.ministry_duid
+                 AND coalesce(current_request.reviewed_ministry_duid,
+                     current_request.ministry_duid)=NEW.ministry_duid
                  AND current_request.state NOT IN ('cancelled','superseded'))
            OR NEW.version<>1 OR NEW.state<>'new' OR NEW.assignee_id IS NOT NULL
            OR NEW.superseded_by_id IS NOT NULL OR NEW.outcome IS NOT NULL
@@ -384,7 +386,18 @@ BEGIN
                CASE WHEN target.action='join' THEN 'joined' ELSE 'leave_confirmed' END
            OR NEW.reviewed_ministry_duid=target.ministry_duid
            OR NOT coalesce(asked @> to_jsonb(NEW.reviewed_ministry_duid),false)
-           OR NOT stewardship_ministry_followup_authorized_v1(NEW.actor_id,NEW.reviewed_ministry_duid)))
+           OR NOT stewardship_ministry_followup_authorized_v1(NEW.actor_id,NEW.reviewed_ministry_duid)
+           -- Never a second current request about one Member and Ministry.
+           OR EXISTS (SELECT 1 FROM stewardship_ministry_request other
+               JOIN stewardship_submission history ON history.id=other.submission_id
+               JOIN stewardship_submission own ON own.id=target.submission_id
+               WHERE other.id<>target.id AND history.family_id=own.family_id
+                 AND history.campaign_id=own.campaign_id AND history.mode='live'
+                 AND other.entity_kind=target.entity_kind
+                 AND other.entity_key=target.entity_key
+                 AND coalesce(other.reviewed_ministry_duid,other.ministry_duid)
+                     =NEW.reviewed_ministry_duid
+                 AND other.state NOT IN ('cancelled','superseded'))))
     THEN RAISE EXCEPTION 'Ministry follow-up change is not valid for this request'
         USING ERRCODE='23514'; END IF;
     RETURN NEW;
