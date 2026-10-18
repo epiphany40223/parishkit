@@ -816,11 +816,29 @@ the [in-place controls](#in-place-controls); no other mechanism.
   rule for pages that follow background work), or a quiet in-place re-read
   of the page's own address when that view is itself passive (Background
   work, Families on the form now). A read never extends the sign-in and
-  never records an audited view.
+  never records an audited view, except a report's one re-read that brings
+  newer figures in (below).
+- **Reports whose figures are being prepared.** The Response dashboard and
+  Campaign comparison audit every view, so they are never re-read on a timer.
+  Their **Updating** notice sits in a figures status region that reads a
+  passive, unaudited status (`response_dashboard_status`), which says only
+  whether newer figures than the page's are ready, never a figure. Once
+  they are, the page re-reads its own address once, quietly and in place
+  (a hidden `a[data-reread]` follow-up link, handed from
+  `live-status-v1.js` to `ui-v1.js`), as a periodic re-read does: it waits
+  while the reader is busy, retries a failed read, and stops at a refusal.
+  That read shows figures, so it records one audited view, as opening the
+  page does; like every automatic re-read it sends `X-ParishKit-Read:
+  passive`, so it never extends the sign-in. The notice says the new
+  figures appear by themselves; no page tells the reader to refresh it to
+  check progress.
 - **Pace.** While background work is pending a status region reads fast
   (2 s backing off to 10 s, or the fixed pace the page asks for). A page
   whose state changes without the reader's own action re-reads every 30
-  seconds (Background work, Families on the form now). A watch that passes
+  seconds (Background work, Families on the form now), and a report's
+  figures status checks every 30 seconds while its figures are current, so
+  figures a new response or ParishSoft load makes out of date are noticed.
+  A watch that passes
   its time limit (an hour, or the page's own) slows to every 30 seconds
   instead of stopping, so a page left open never goes quiet while it still
   says "running". Reads pause while the tab is hidden, and the page catches

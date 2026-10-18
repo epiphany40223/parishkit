@@ -521,8 +521,11 @@ it never labels stale facts current. By Administrator decision
 Response dashboard's chart block shows no "data as of", campaign time zone or
 technical-details header, and no instruction line above the chart; the
 chart's as-of values are in the chart file's metadata and in its exports, and
-the x-axis label names the campaign time zone. The user can refresh after the
-queued generation publishes. A pinned export or digest waits/retries for its
+the x-axis label names the campaign time zone. While the page is open it
+follows the queued generation and shows it by itself once it is ready
+([pages that update themselves](../ui-conventions/spec.md#pages-that-update-themselves),
+[#1586](https://github.com/epiphany40223/parishkit/issues/1586)), so the user
+never refreshes the page to check. A pinned export or digest waits/retries for its
 exact generation and fails visibly rather than substituting a different cutoff.
 Recalculation from the pinned source/submission inputs must reproduce every
 stored fact, and a verification job detects drift.

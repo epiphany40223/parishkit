@@ -1513,8 +1513,12 @@ indicator polling above, and a page never reloads itself through a view that
 counts as activity, so an open page cannot keep an idle login alive. Nor does
 a status read record an audited view: a page whose own view is audited, such
 as background task details, reads a status-only fragment instead, so opening
-the page records one view however long it stays open. The page never replaces
-a control the Admin is using and never re-sends a form.
+the page records one view however long it stays open. The Response
+dashboard and Campaign comparison read such a fragment too, and record one
+more view each time they bring newer figures in, since that read shows figures
+([reports whose figures are being prepared](../ui-conventions/spec.md#pages-that-update-themselves)).
+The page never replaces a control the Admin is using and never re-sends a
+form.
 
 While a report export's, exact export's or background task's run is still
 queued (no worker has claimed it), its status says why it has not started and
