@@ -2327,9 +2327,13 @@ written to standard error when left out, and a repeat with the same key
 returns the same review (`created` false) and records nothing new; the key
 used for another decision or note is exit 1 (`invalid`). A change someone
 updated since that version is exit 1 (`stale_version`). A decision the change does not
-take now is exit 1 (`invalid`): a By-hand change, the decision it already
-has, approving a Conflict, or any review of a change that is queued for
-publication or already has a final outcome. A change that is not the
+take now is exit 1 (`invalid`): the decision it already has, approving a
+Conflict, sending an ignored change back (`unreviewed`) without a note, or
+any review of a change that is queued for publication or already has a
+final outcome. Since the Census changes page moved to the review pipeline
+([#1683](https://github.com/epiphany40223/parishkit/issues/1683)), a By-hand
+change takes a review too, as on the page; the command keeps its words until
+[#1688](https://github.com/epiphany40223/parishkit/issues/1688) renames it. A change that is not the
 current campaign's is exit 1 (`not_available`), and so is a repeat after
 the current campaign changed.
 
