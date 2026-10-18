@@ -195,6 +195,37 @@ def _request_binding(execution):
         return task.initiated_by_id, task.domain_request_id
 
 
+def approved_changes(campaign_id):
+    """Every open, approved, Automatic Member change of the campaign.
+
+    The changes a preflight plans, from the campaign's live responses; the
+    Publish to ParishSoft page counts the same ones as waiting (#528).
+    """
+    return ProposedChange.objects.filter(
+        submission__campaign_id=campaign_id,
+        submission__mode="live",
+        entity_kind="member",
+        handling="api",
+        decision="approved",
+        execution__in=PLANNABLE_EXECUTIONS,
+    )
+
+
+def publication_running(campaign_id):
+    """Whether a publish run of one of the campaign's plans is unfinished.
+
+    The page's (and later the command line's) gate on Check ParishSoft: the
+    preflight service itself does not refuse a check during a run.
+    """
+    return TaskRun.objects.filter(
+        task_type=PUBLICATION_TASK_TYPE,
+        state__in=NONTERMINAL_STATES,
+        domain_request_id__in=PublicationPlan.objects.filter(
+            campaign_id=campaign_id
+        ).values("pk"),
+    ).exists()
+
+
 def _preflight_scope():
     """The campaign, promoted snapshot, organization and changes to plan.
 
@@ -208,16 +239,9 @@ def _preflight_scope():
     # Annotated with each row's active accepted base (#528, ADM-09.03), so
     # a resolved conflict plans against the ParishSoft value accepted.
     rows = list(
-        with_accepted_base(
-            ProposedChange.objects.filter(
-                submission__campaign_id=campaign_id,
-                submission__mode="live",
-                entity_kind="member",
-                handling="api",
-                decision="approved",
-                execution__in=PLANNABLE_EXECUTIONS,
-            )
-        ).order_by("entity_key", "field", "pk")
+        with_accepted_base(approved_changes(campaign_id)).order_by(
+            "entity_key", "field", "pk"
+        )
     )
     members = {}
     for row in rows:

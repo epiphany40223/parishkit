@@ -108,10 +108,13 @@ SITES = {
         WEB,
         {"campaigns/cleanup_requests.py"},
     ),
-    # The census Publish page's calls (#528); the page is a later slice, so
-    # nothing imports them yet.
+    # The census Publish page's calls (#528). Check ParishSoft, on the
+    # Publish to ParishSoft page, queues the preflight from the web login;
+    # Apply and Run again are a later slice, so nothing imports them yet.
     "responses/publication_tasks.py::request_preflight": site(
-        "census_publication_preflight", WEB
+        "census_publication_preflight",
+        WEB,
+        {"reports/census_publication_views.py"},
     ),
     "responses/publication_tasks.py::confirm_and_publish": site(
         "census_publication", WEB

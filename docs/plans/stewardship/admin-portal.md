@@ -299,6 +299,8 @@ switched off:
 4. **Command-line parity**: `pk-admin census publish-check`,
    `publish-plan`, `publish-confirm` and `publish-rerun`.
 
+Slice 2 needs no schema, so it was delivered first.
+
 Turning publication on is not a slice: it follows the human `--send` smoke
 evidence on #528, a reviewed change replacing the gateway's
 `read_unconfirmed`, and the Administrator's decision.
