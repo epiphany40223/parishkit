@@ -8,8 +8,12 @@ stage mapping, role-action table and refresh comparison
 [#1691](https://github.com/epiphany40223/parishkit/issues/1691)), and
 the review worklist component with its decision interface
 (`components/review-worklist.html`, `web/review_worklist.py`,
-[#1681](https://github.com/epiphany40223/parishkit/issues/1681)), which no
-page uses yet. Every Staff
+[#1681](https://github.com/epiphany40223/parishkit/issues/1681)), and
+Ministry requests on it, with Edit, Staff Add and the "Family asked again"
+case ([#1684](https://github.com/epiphany40223/parishkit/issues/1684);
+[follow-up workflows](../admin-portal/spec.md#follow-up-workflows)); Not
+seen in ParishSoft for ticked requests comes with the refresh rules
+([#1689](https://github.com/epiphany40223/parishkit/issues/1689)). Every Staff
 and Ministry leader part ships during the current campaign. The
 Family-facing view of reviewed changes
 ([#1705](https://github.com/epiphany40223/parishkit/issues/1705)) comes

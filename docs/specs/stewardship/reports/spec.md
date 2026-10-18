@@ -1742,44 +1742,43 @@ two pages with links only (step 1 did that, and two pages still listed the
 same requests), making the summary the base, and a separate leader portal
 (rejected in #533). The host `report ministry` command is unchanged.
 
-From the top, the page shows:
+**The review worklist** ([#1684](https://github.com/epiphany40223/parishkit/issues/1684)).
+Ministry requests is the Ministry stream's
+[review worklist](../review-pipeline/spec.md#review-worklist): the shared
+component, its words and its selected-state icons, at the same address. It
+replaces the queue table, its Status and Outcome filters and its bulk
+outcomes; the request pages, Roster changes to enter, the remembered view,
+Export these requests and the packet stay. From the top, the page shows:
 
 1. The heading, the page help, the ParishSoft data date, the Roster changes
    to enter link (Admin/Staff only), and the notice shown while other
    campaign work locks edits.
-2. The queue's filter bar (Search Member or Ministry name, Ministry, Request,
-   Status, Outcome). It comes first so the totals below can change without
-   moving Apply filters
+2. **By Ministry**, a compact table described below. It stays above the
+   worklist's filters, not between them and the table: its counts apply
+   filters in place and the table's height changes with them, so anything
+   below the table would move under the pointer
    ([no layout shift](../ui-conventions/spec.md#no-layout-shift)).
-3. **Totals**, which are visual first
-   ([#720](https://github.com/epiphany40223/parishkit/issues/720)). Two tiles,
-   Join requests and Leave requests, count the requests the filters select,
-   on every page of the table and within the reader's scope. Then one
-   [chart engine](#chart-engine) chart, "Follow-up progress", draws a
-   progress bar for the resolved or closed requests and one for the
-   unresolved requests, against all those requests; the two always add up to
-   the whole. The chart counts the same requests **regardless of the Status
-   and Outcome filters**, because progress is about status: otherwise the
-   default Unresolved view would always show every request unresolved. This
-   is an implementation default pending Administrator confirmation on #1133.
-   The chart draws its values the way the
-   [Participation statistics](#campaign-statistics) chart does, in each
-   bar's axis label, so it has no exact-values table. The chart is always
-   drawn, so its box never appears or disappears and By Ministry below never
-   moves ([no layout shift](../ui-conventions/spec.md#no-layout-shift)): when
-   there is no request, and for the Staff-only "Members no longer in
-   ParishSoft" status choice, which has nothing to record, its bars read zero
-   out of zero. The totals follow
-   every filter change, sort and page change
-   [in place](../ui-conventions/spec.md#in-place-controls) (#519).
-4. **By Ministry**, a compact table described below.
-5. The queue table, exactly as described in
-   [follow-up workflows](../admin-portal/spec.md#follow-up-workflows): its
-   selection column and bulk outcomes (#1131), row links to request pages,
-   the remembered view, navigators and sort. Then **Export these requests**,
-   unchanged, and then the
-   [follow-up packet](#multi-ministry-follow-up-packet). The packet's choices
-   are still every Ministry in the reader's scope.
+3. The worklist: its reserved notice line, then its filters, always open:
+   **Stage** first, then Search Member or Ministry name, Ministry and
+   Request, and for Staff and Administrators **Members**, whose second
+   choice lists the requests for
+   [Members no longer in ParishSoft](../admin-portal/spec.md#follow-up-workflows)
+   (#1217) in place of the old Status choice; then the selection bar, the
+   table and **Export these requests**, as
+   [follow-up workflows](../admin-portal/spec.md#follow-up-workflows)
+   describes.
+4. The [follow-up packet](#multi-ministry-follow-up-packet). The packet's
+   choices are still every Ministry in the reader's scope.
+
+No totals and no chart sit above the table
+([#1676](https://github.com/epiphany40223/parishkit/issues/1676), folded
+into #1684): a review worklist has no summary tiles or charts
+([review worklist](../review-pipeline/spec.md#review-worklist)). The Join
+requests and Leave requests tiles and the "Follow-up progress" chart
+(#720, #1133) are removed with their chart code; how many requests are at
+each stage is in the Stage filter's choices, and how many each Ministry has
+is in By Ministry. Rejected: the two stat tiles with resolved counts
+that #1676 first proposed, since the worklist would remove them again.
 
 **By Ministry** has the columns Ministry, Join requests, Leave requests and
 Unresolved, with one row for every Ministry in the reader's scope. It does
@@ -1793,14 +1792,14 @@ the latest live request state. Requests for
 are left out for everyone (#1217).
 
 Each count that is not zero applies that Ministry and request type to the
-table below in place, when the reader may follow up that Ministry. It does
-not reload the page or jump to the top, and the filter bar then shows the
-filters it applied. A join count sets Request to Join, and a leave count sets
-it to Leave; both set Status to Any status. An Unresolved count sets Request
-to Join or leave and Status to Unresolved. Each count also clears the search
-and sets Outcome to Any outcome. A count is also an ordinary link carrying
-only the queue's closed link filters (`?ministry=<DUID>&action=join&state=any`
-and the like; see
+worklist below in place, when the reader may follow up that Ministry. It does
+not reload the page or jump to the top, and the filters then show what it
+applied. A join count sets Request to Join, and a leave count sets it to
+Leave; both set Stage to Every stage. An Unresolved count sets Request to
+Join or leave and Stage to To review, since an unresolved request is one
+still to review. Each count also clears the search. A count is also an
+ordinary link carrying only the worklist's closed link filters
+(`?ministry=<DUID>&kind=join&stage=all` and the like; see
 [follow-up workflows](../admin-portal/spec.md#follow-up-workflows)), so
 opening it in a new tab shows the same view. A Ministry leader gets links only
 for the Ministries they lead. A zero count is plain text, and each link's
@@ -1808,9 +1807,8 @@ accessible name names its Ministry ("3 join requests for Choir"), as
 [count links](../ui-conventions/spec.md#admin-tables) ask.
 
 A reader whose scope holds one Ministry sees a single line instead of a
-table. A long list scrolls inside a bounded box, so the queue stays near the
-top of the page. By Ministry is redrawn with every in-place refresh, so the
-change a bulk outcome makes shows in its counts.
+table. A long list scrolls inside a bounded box. By Ministry is redrawn with
+every in-place refresh, so the change a decision makes shows in its counts.
 
 "Not in ParishSoft data" and "No longer in this campaign" are the
 Administrator's concern and change nothing a leader does with a request, so
@@ -1825,10 +1823,14 @@ selection and the export capture still take. The queue likewise explains its
 "Removed" badge only to Admin/Staff. A leader never meets one, since a
 leader leads only the Ministries the campaign asks about (#922).
 
-The page reads its rows, totals and export through the follow-up selection
-with its cross-check. By Ministry and the packet's choices read the Ministry
-report selection with its own cross-check, so a reader needs both scopes,
-which the same roles hold. No migration was needed. The page's view audit is
+The page reads its rows and export through the follow-up selection with its
+cross-check; #1684's migration widens that selection so a request edited
+into another Ministry is in the scope of both Ministries' leaders
+([follow-up workflows](../admin-portal/spec.md#follow-up-workflows)). By
+Ministry and the packet's choices read the Ministry report selection with
+its own cross-check, so a reader needs both scopes, which the same roles
+hold; they still count and list each request under the Family's Ministry.
+The page's view audit is
 the queue's `ministry_followup_viewed`; it no longer records
 `ministry_report_viewed`, which the host `report ministry` command still
 records.
