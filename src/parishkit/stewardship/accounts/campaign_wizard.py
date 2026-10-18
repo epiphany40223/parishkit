@@ -115,9 +115,10 @@ class CampaignWizard(Wizard):
     marks Dates and mail schedules with no schedule saved, whose Continue
     says it goes on without one. ``load`` is the campaign's ParishSoft
     data while it has no Families: "offer" (with ``refresh_key``, the
-    button's request key), "loading" once a refresh is under way, or
-    "failed" when the newest refresh did not finish, whose button then
-    reads Try again. ``load_task`` is that newest refresh's Background task
+    button's request key), "loading" once a full refresh is under way,
+    "failed" when the newest full refresh did not finish, whose button then
+    reads Try again, or "empty" when it succeeded yet left no Families
+    (#1587). ``load_task`` is that newest refresh's Background task
     while it is loading or failed, and ``load_progress`` its (phase,
     current, total), for Load ParishSoft data's stage boxes. ``families``
     is the campaign's Family count, read only on that step once loaded.
@@ -159,7 +160,10 @@ class CampaignWizard(Wizard):
 
     @property
     def load_view(self):
-        """Load ParishSoft data's one state: offer, loading, failed or loaded."""
+        """Load ParishSoft data's one state.
+
+        Offer, loading, failed, empty (loaded, no Families) or loaded.
+        """
         return self.load or "loaded"
 
     @property
@@ -543,7 +547,8 @@ def load_stages(load, phase):
 
     keys = [key for key, _label in LOAD_STAGES]
     index = keys.index(phase) if phase in keys else -1
-    if load == "loaded":
+    if load in {"loaded", "empty"}:
+        # A load that ran and finished is done even with no Families.
         return stages.rows(LOAD_STAGES, len(keys))
     if load == "loading":
         return stages.rows(LOAD_STAGES, index)
@@ -561,11 +566,11 @@ def load_status(task, *, families):
     failed once it failed or was cancelled. A run that succeeded reads as
     loaded only when ``families`` (``current_campaign_has_families``) says
     the campaign has its Families, the same test the page's re-read makes
-    (``completed``); otherwise it is the offer again, so the region never
-    says and announces "loaded" just before the re-read says it is not
-    (#1517 review, L2). The settled answer's follow-up link then re-reads
-    the page in place, which draws the step's full state (the Family count,
-    Continue, Try again).
+    (``completed``); otherwise it is "empty" (loaded, but no Families
+    matched; #1587), so the region never says and announces "loaded" just
+    before the re-read says it is not (#1517 review, L2). The settled
+    answer's follow-up link then re-reads the page in place, which draws
+    the step's full state (the Family count, Continue, Try again).
     """
     from parishkit.stewardship.jobs.models import NONTERMINAL_STATES
 
@@ -577,7 +582,7 @@ def load_status(task, *, families):
         if state in _UNFINISHED
         else "loaded"
         if families
-        else "offer"
+        else "empty"
     )
     progress = task["progress"]
     return {
@@ -610,23 +615,34 @@ def _load_state(campaign, done):
     Returns (state, task, progress). ``done`` holds the completed step keys
     (``completed``), whose "load" says the campaign has its Families; then
     it is (None, None, None) and nothing more is read. Otherwise one small
-    query reads the newest ParishSoft refresh requested since the campaign
-    was created (an earlier one could not load it): "loading" while it is
+    query reads the newest *full* ParishSoft refresh requested since the
+    campaign was created (an earlier one could not load it; a quick
+    refresh never counts, #1587; the full requests are a subquery, so the
+    page's query count is unchanged): "loading" while it is
     under way (requested and not finished), "failed" when it failed or was
     cancelled, so the step says so and offers Try again rather than looking
     as if no load was started (#1404 PR 5), else "offer". While loading or
     failed, ``task`` is that run's Background task id and ``progress`` its
     (phase, current, total), which Load ParishSoft data's stage boxes and
     status poll use. The step pages show the state at the top, and Load
-    ParishSoft data draws its one state by it.
+    ParishSoft data draws its one state by it. A succeeded run is "empty":
+    it loaded, but the campaign still has no Families.
     """
     from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun
+    from parishkit.stewardship.source.refresh_models import SourceRefreshRequest
     from parishkit.stewardship.source.requests import TASK_TYPE
 
     if "load" in done:
         return None, None, None
     newest = (
-        TaskRun.objects.filter(task_type=TASK_TYPE, created_at__gte=campaign.created_at)
+        TaskRun.objects.filter(
+            task_type=TASK_TYPE,
+            created_at__gte=campaign.created_at,
+            # Retries keep the request, so this names every run of a full one.
+            domain_request_id__in=SourceRefreshRequest.objects.filter(
+                kind="full"
+            ).values("pk"),
+        )
         .order_by("-created_at", "-pk")
         .values_list("pk", "state", "phase", "progress_current", "progress_total")
         .first()
@@ -638,7 +654,7 @@ def _load_state(campaign, done):
         return "loading", task, tuple(progress)
     if state in _UNFINISHED:
         return "failed", task, tuple(progress)
-    return "offer", None, None
+    return "empty", task, tuple(progress)
 
 
 def for_request(match, campaign, configuration):
