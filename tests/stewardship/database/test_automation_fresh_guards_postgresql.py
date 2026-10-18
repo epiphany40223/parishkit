@@ -322,8 +322,12 @@ def test_the_family_test_guard_admits_a_command_session_of_any_age(
                     {"action": "confirm", "preview": token, "acknowledge": "on"},
                 ).status_code
 
-    # Refused (503: the guard) for an instant no live session holds.
-    assert confirm(instant - timedelta(seconds=1)) == 503
+    # Refused (503: the guard) for an instant no live session holds. Sign-in
+    # instants are whole seconds (the token's iat), and the fixture's own
+    # browser signed in a moment before paired()'s did, so instant - 1 s can
+    # be that browser's live instant on a slow runner: go before them all.
+    earliest = min(PortalSession.objects.values_list("authenticated_at", flat=True))
+    assert confirm(earliest - timedelta(seconds=1)) == 503
     assert not FamilyMailTest.objects.exists()
     assert confirm(instant) == 302
     [ticket] = FamilyMailTest.objects.all()
