@@ -567,7 +567,16 @@ never scrolls to show it (Administrator, pk-local review of
   happened ("By day", "List refreshed." and the rows now shown). A view
   choice replaces the address, and a followed redirect sets it to the
   redirect's page, so reload, bookmarks and Back never re-send a POST and do
-  not step through choices. The Refresh links of Go-live readiness
+  not step through choices. A row control that lists one subject's items in
+  place (a list's recipient, whose identifier is private filter state and
+  never in a URL) is followed like a link instead: its answer adds a history
+  entry, each entry keeps the view it shows in the browser's history state
+  (the read's POST body without its CSRF token, or nothing for a view drawn
+  from its address), and Back or Forward redraws that view in place, its
+  filter fields with it. A reload draws the page from its address, so the
+  list and the filter fields agree
+  ([#1562](https://github.com/epiphany40223/parishkit/issues/1562)). The
+  Refresh links of Go-live readiness
   ("Readiness preview refreshed."), Testing cleanup, Prepare Family links
   and Production activation ("Progress refreshed.") re-read their page's
   own address this way rather than reloading it; Prepare Family links keeps

@@ -4764,7 +4764,12 @@ line the first rows start on a laptop screen with the help closed
   the same mode, so the reader sees everything that recipient was sent,
   until the recipient history pages of a later #1562 slice take that
   control. It is a link-styled button posting the recipient in a small CSRF
-  form, since the Recipient filter is private (below).
+  form, since the Recipient filter is private (below). The Recipient filter
+  then shows that recipient, and Back returns to the list shown before, in
+  place, its filters with it
+  ([in-place controls](../ui-conventions/spec.md#in-place-controls)). The
+  link looks the same at rest and under the pointer, so hovering it moves
+  nothing.
   Recipient sorts on the server over the whole list (sort token `name`): by
   surname, then the whole shown name, then Family DUID for Families that show
   the same name, as the Active parishioner family directory orders them, each
@@ -4874,7 +4879,10 @@ from another page) carries `purpose`, `start`, `end`, `zone`, `state`,
 refused (400, without echoing it). After each in-place answer the address
 bar shows the view's linkable filters, sort and size, never the Recipient
 or the page (`data-page-address`, as System logs does), so a reload keeps
-them. Applying the filters, sorting, paging
+them. A reload (or a return to the page the browser did not keep in its
+back/forward cache) drops the Recipient, since only the browser's history
+state holds it: the page then lists its address's view with the Recipient
+filter empty. Applying the filters, sorting, paging
 and the mode control all act in place
 ([in-place controls](../ui-conventions/spec.md#in-place-controls)), and
 nothing appears or vanishes under the pointer
