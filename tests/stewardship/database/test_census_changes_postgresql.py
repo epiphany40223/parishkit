@@ -171,24 +171,24 @@ def test_native_page_and_downloads(response_service, google, settings):
         assert len(rows) == body.count(f"<td>{link}</td>".encode()) == 2
         assert len(link_reads(queries)) == 1
         assert get(browser, route + "?search=x")[0].status_code == 400
-        response, body = search(browser, route, {"status": "conflict"})
-        assert (
-            response.status_code == 200
-            and b"No census changes match these filters." in body
-        )
-        for invalid in ({"status": "bad"}, {"sort": "id"}, {"size": "7"}):
+        response, body = search(browser, route, {"stage": "conflict"})
+        assert response.status_code == 200 and b"Nothing is at this stage." in body
+        for invalid in (
+            {"stage": "bad"},
+            {"status": "bad"},
+            {"sort": "id"},
+            {"size": "7"},
+        ):
             assert search(browser, route, invalid)[0].status_code == 400
-        response, body = search(browser, route, {"sort": "-submitted"})
+        response, body = search(browser, route, {"sort": "-who"})
         assert response.status_code == 200 and b'aria-sort="descending"' in body
         # Member DUID has its own column beside Who, and sorts in place (#932).
-        response, body = search(
-            browser, route, {"status": "all", "sort": "member_duid"}
-        )
+        response, body = search(browser, route, {"stage": "all", "sort": "member_duid"})
         assert response.status_code == 200 and b'aria-sort="ascending"' in body
         assert b'<td class="numeric">3</td>' in body
         export = route + "exports/"
         response, body = search(
-            browser, export, {"format": "csv", "timezone": "UTC", "status": "all"}
+            browser, export, {"format": "csv", "timezone": "UTC", "stage": "all"}
         )
         assert response.status_code == 200 and response["Content-Type"] == "text/csv"
         assert "stewardship-census-changes-" in response["Content-Disposition"]
@@ -204,7 +204,7 @@ def test_native_page_and_downloads(response_service, google, settings):
         # Every Family is current: no status to mark.
         assert {values[1] for values in table[1:]} == {""}
         response, body = search(
-            browser, export, {"format": "xlsx", "timezone": "UTC", "status": "all"}
+            browser, export, {"format": "xlsx", "timezone": "UTC", "stage": "all"}
         )
         assert response.status_code == 200
         book = load_workbook(io.BytesIO(body))
@@ -236,7 +236,7 @@ def test_native_page_and_downloads(response_service, google, settings):
         assert sheet == table
         assert "Requested" in [values[7] for values in sheet[1:]]
         response, body = search(
-            browser, export, {"format": "pdf", "timezone": "UTC", "status": "all"}
+            browser, export, {"format": "pdf", "timezone": "UTC", "stage": "all"}
         )
         assert response.status_code == 200
         assert response["Content-Type"] == "application/pdf"

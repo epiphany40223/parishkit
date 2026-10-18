@@ -2388,8 +2388,7 @@ setting is off:
 - Census changes shows **Publish to ParishSoft** unavailable, with its
   reason in a reserved line beside it ([prerequisite
   gates](../ui-conventions/spec.md#prerequisite-gates)): "Publishing to
-  ParishSoft is switched off. Enter Automatic changes by hand from this
-  list."
+  ParishSoft is switched off. Type Ready to update changes in by hand."
 - The page itself, opened by its address, says the same in its page help and
   offers no button. Nothing is queued, read or written, and every post to
   it is refused (`publication_off`).

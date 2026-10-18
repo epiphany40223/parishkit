@@ -27,9 +27,16 @@ from django.utils.datastructures import MultiValueDict
 
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
-from parishkit.stewardship.responses.census import FAMILY_FIELDS
+from parishkit.stewardship.pipeline import Decision, Placement, Stage, census_placement
+from parishkit.stewardship.responses.census import (
+    ADDRESS_LIMITS,
+    FAMILY_FIELDS,
+    blank_address,
+    country_choices,
+)
 from parishkit.stewardship.responses.census_resolution import allowed
 from parishkit.stewardship.responses.census_review import (
+    ADDRESS_FIELDS,
     FIELDS,
     edit_limit,
     editable,
@@ -77,6 +84,30 @@ STATUSES = {
     "cancelled": "Cancelled",
 }
 HISTORY = frozenset({"superseded", "cancelled"})
+# The review worklist's Stage filter (#1683): the stages a census change
+# reaches, in the order the filter lists them, then History (superseded and
+# cancelled rows) and Every stage, which counts everything but History.
+# Entered incorrectly and Not seen in ParishSoft come with #1689.
+STAGES = (
+    Stage.TO_REVIEW,
+    Stage.CONFLICT,
+    Stage.READY_TO_UPDATE,
+    Stage.UPDATING,
+    Stage.TO_ENTER_BY_HAND,
+    Stage.ENTERED_BY_HAND,
+    Stage.UPDATED,
+    Stage.CONFIRMED,
+    Stage.IGNORED,
+)
+EVERY_STAGE = "all"
+STAGE_CHOICES = (
+    *(stage.value for stage in STAGES),
+    Stage.HISTORY.value,
+    EVERY_STAGE,
+)
+# The history line of a change a Family's same answer reopened over an
+# accepted ParishSoft value (the review pipeline's resubmission rule, #1683).
+REOPENED = "Reopened: ParishSoft had changed since this was accepted."
 # A terminal execution is the outcome, whatever the decision says.
 TERMINAL = {
     "published": "published",
@@ -104,9 +135,9 @@ HEADINGS = (
     "What changed",
     "ParishSoft now",
     "Family's answer",
-    "Edited value",
+    "Reviewer's value",
     "How it reaches ParishSoft",
-    "Status",
+    "Stage",
     "Submitted",
     "Recorded by",
     "Recorded at",
@@ -129,9 +160,9 @@ PDF_WEIGHTS = {
     "What changed": 5,
     "ParishSoft now": 6,
     "Family's answer": 6,
-    "Edited value": 4,
+    "Reviewer's value": 4,
     "How it reaches ParishSoft": 8,
-    "Status": 8,
+    "Stage": 8,
     "Submitted": 10,
     "Recorded by": 7,
     "Recorded at": 10,
@@ -146,12 +177,17 @@ TITLE = "Census changes"
 class CensusQuery:
     """The page's filters; identifying search text travels only in POST bodies.
 
-    ``status`` "open" is the default view: To do and Conflict, plus To review
-    for an Administrator, who decides automatic changes. ``start`` and
-    ``end`` are whole days in the browser's ``zone``, as on System logs.
+    ``stage`` is the review worklist's Stage filter (#1683), which the page
+    always sends (To review by default); when it is set, ``status`` and
+    ``history`` are not used. ``pk-admin report census`` and ``export
+    census`` still filter by ``status``, whose "open" default is To do and
+    Conflict, plus To review for an Administrator, until #1688 renames
+    them. ``start`` and ``end`` are whole days in the browser's ``zone``, as
+    on System logs.
     """
 
     search: str = ""
+    stage: str = ""
     status: str = "open"
     history: str = ""
     route: str = "any"
@@ -171,6 +207,7 @@ class CensusQuery:
         bounded_text(query.search)
         if (
             query.status not in STATUS_CHOICES
+            or (query.stage and query.stage not in STAGE_CHOICES)
             or query.history not in {"", "yes"}
             or query.route not in ROUTES
             or query.kind not in KINDS
@@ -233,7 +270,18 @@ SELECT p.id::text, p.entity_kind, p.entity_key, p.field,
             nullif(btrim(sm.canonical::jsonb->>'firstName'),''),
             nullif(btrim(sm.canonical::jsonb->>'lastName'),''))),'')) AS member_name,
     sc.snapshot_id,
-    p.version, latest.action, latest.note, latest.created_at, latest.email
+    p.version, latest.action, latest.note, latest.created_at, latest.email,
+    -- A Family's same answer that replaced an approval resting on an
+    -- accepted ParishSoft value (#528, ADM-09.03): the base was not carried,
+    -- so the change came back to review, which the page says (#1683).
+    EXISTS (SELECT 1 FROM stewardship_proposed_change pr
+        JOIN stewardship_proposal_review base ON base.proposal_id=pr.id
+            AND base.accepted_base AND base.accepted_source_id=pr.current_source_id
+        WHERE pr.superseded_by_id=p.id AND pr.decision='approved'
+          AND NOT EXISTS (SELECT 1 FROM stewardship_proposal_review later
+              WHERE later.proposal_id=pr.id
+                AND later.expected_version>base.expected_version
+                AND later.decision<>'approved')) AS reopened
 FROM stewardship_campaign c
 LEFT JOIN stewardship_source_current sc ON sc.singleton
 JOIN stewardship_submission s ON s.campaign_id=c.id AND s.mode='live'
@@ -286,6 +334,7 @@ COLUMNS = (
     "resolution_note",
     "resolution_at",
     "resolution_by",
+    "reopened",
 )
 
 # The menu's open count (#585, #1590; admin_context.OPEN_COUNTS embeds it):
@@ -351,7 +400,19 @@ def census_changes(campaign_id, query, principal):
     if not allows(principal, Capability.VIEW_CENSUS):
         raise PermissionError("Census changes are unavailable.")
     administrator = allows(principal, Capability.PUBLISH_CENSUS)
-    return select(census_rows(campaign_id), query, administrator=administrator)
+    result = select(census_rows(campaign_id), query, administrator=administrator)
+    # The reader's pipeline roles on the census stream (the review
+    # worklist's icons and bulk bar follow them): Staff hold the census
+    # capability, an Administrator also publishes.
+    result["roles"] = frozenset(
+        role
+        for role, capability in (
+            ("staff", Capability.MANUAL_CENSUS),
+            ("administrator", Capability.PUBLISH_CENSUS),
+        )
+        if allows(principal, capability)
+    )
+    return result
 
 
 def census_rows(campaign_id):
@@ -488,6 +549,61 @@ def edit_control(row):
     }
 
 
+def editor(row):
+    """What a row's Edit draws on the review worklist (#1683), or None.
+
+    The editor starts with the value carried forward (the reviewer's value,
+    else the Family's answer), in the form the Family form shows it. A
+    Family address is its parts (``parts``, with the country choices); a
+    Member field is a date, a choice or text no longer than the field takes
+    (for an Automatic change, ParishSoft's request schema;
+    ``census_review.edit_limit``). None for a field no value can be typed
+    for.
+    """
+    value = row["admin_value"] if row["admin_value_set"] else row["submitted_value"]
+    if row["entity_kind"] == "family":
+        if row["field"] not in ADDRESS_FIELDS:
+            return None
+        known = value if isinstance(value, dict) else {}
+        return {
+            "kind": "address",
+            "parts": {part: known.get(part) or "" for part in blank_address()},
+            "limits": dict(ADDRESS_LIMITS),
+            "countries": country_choices(),
+        }
+    definition = FIELDS.get(row["field"]) if row["entity_kind"] == "member" else None
+    if definition is None or definition.kind is ValueKind.BOOLEAN:
+        return None
+    return {
+        "kind": "date" if definition.kind is ValueKind.DATE else "text",
+        "value": browser_value(definition, KnownValue(True, value)) or "",
+        "choices": definition.choices,
+        "maxlength": edit_limit(row["field"], row["handling"]),
+    }
+
+
+def placement(row):
+    """The row's pipeline stage, from its stored decision and execution.
+
+    ``pipeline.census_placement`` derives it, as every stream's mapping
+    does. A change a Family's same answer reopened over an accepted
+    ParishSoft value comes back as a Conflict that keeps the earlier
+    Accepted visible, not in force (the resubmission rule's census case,
+    #1683).
+    """
+    found = census_placement(
+        decision=row["decision"],
+        execution=row["execution"],
+        handling=row["handling"],
+        entity_kind=row["entity_kind"],
+        admin_value_set=row["admin_value_set"],
+    )
+    if row.get("reopened") and found.stage is Stage.CONFLICT and not found.decision:
+        held = Decision.ACCEPTED_EDITED if row["admin_value_set"] else Decision.ACCEPTED
+        return Placement(Stage.CONFLICT, held_decision=held)
+    return found
+
+
 def family_answer(row):
     """The Family's answer as text. A birth date given as Unknown is stored
     as None, which would otherwise show blank like a removed value."""
@@ -532,6 +648,9 @@ def shape(row):
     else:
         shown["who"] = row["member_name"] or "Unavailable name"
     shown["status_label"] = STATUSES[shown["status"]]
+    shown["placement"] = placement(row)
+    shown["stage"] = shown["placement"].stage.value
+    shown["stage_label"] = shown["placement"].stage.label
     # What a person may record on this row now (#528): the page offers only
     # these, and the service and SQL check them again. Reopen is the
     # Administrator's; the page shows it only to them.
@@ -555,10 +674,15 @@ def shape(row):
     # Use the Family's value anyway (ADM-09.03): on a Conflict an
     # Administrator may approve over ParishSoft's current value.
     shown["resolve_conflict"] = shown["automatic"] and resolvable(state)
-    # Edit value (ADM-09.04): on the same rows a Review is offered on.
+    # Edit value (ADM-09.04): on the same rows a Review is offered on. This
+    # is pk-admin's offer, an Automatic change's only, until #1688; the
+    # review worklist's Edit is wider (``editor``, #1683).
     shown["edit"] = (
         edit_control(row) if shown["automatic"] and editable(state) else None
     )
+    shown["editor"] = editor(row) if editable(state) else None
+    # A Conflict can be accepted only against a known ParishSoft value.
+    shown["resolvable"] = resolvable(state)
     if isinstance(shown.get("resolution_at"), str):
         shown["resolution_at"] = datetime.fromisoformat(shown["resolution_at"])
     if shown.get("resolution_action") and not shown.get("resolution_by"):
@@ -571,8 +695,13 @@ def shape(row):
     return shown
 
 
-def wanted(status_key, query, *, administrator):
-    """Whether the status filter keeps a row with ``status_key``."""
+def wanted(row, query, *, administrator):
+    """Whether the Stage filter (or pk-admin's status filter) keeps ``row``."""
+    if query.stage:
+        return query.stage == row["stage"] or (
+            query.stage == EVERY_STAGE and row["stage"] != Stage.HISTORY.value
+        )
+    status_key = row["status"]
     if status_key in HISTORY:
         return bool(query.history)
     if query.status == "all":
@@ -585,19 +714,20 @@ def wanted(status_key, query, *, administrator):
 
 
 def select(rows, query, *, administrator):
-    """The rows the filters keep, with every change's count by status.
+    """The rows the filters keep, with every change's count by status and stage.
 
     ``status_counts`` counts every row of the campaign by status key,
     whatever the other filters, with the history statuses only when
-    ``history`` is on (zero otherwise): the Status filter's choice counts
-    (``status_choice_counts``, #1682) and ``report census`` read it.
+    ``history`` is on (zero otherwise): ``report census`` reads it.
+    ``stage_counts`` counts every row by review stage, for the Stage
+    filter's choices.
     """
     lower, upper = query.bounds
     needle = query.search.casefold()
     kept = [
         row
         for row in rows
-        if wanted(row["status"], query, administrator=administrator)
+        if wanted(row, query, administrator=administrator)
         and (query.route == "any" or (query.route == "automatic") == row["automatic"])
         and (query.kind == "any" or query.kind == row["kind"])
         and (lower is None or row["submitted_at"] >= lower)
@@ -614,30 +744,16 @@ def select(rows, query, *, administrator):
     for row in rows:
         if row["status"] not in HISTORY or query.history:
             counts[row["status"]] += 1
-    return {"rows": kept, "status_counts": counts, "administrator": administrator}
-
-
-def status_choice_counts(counts, *, administrator):
-    """How many changes each Status filter choice lists, by choice key.
-
-    The Status filter's choices carry these counts (#1682), in place of the
-    retired summary above the table: a status's own count, and Work to do
-    and Every status the sum of the statuses they list for this reader
-    (``wanted``). ``counts`` is ``select``'s ``status_counts``, which
-    already leaves history out unless it is shown, so history is taken as
-    on here.
-    """
+    # The Stage filter's counts: every row at each stage, whatever the
+    # other filters, as the review worklist's choices count them.
+    stages = {}
+    for row in rows:
+        stages[row["stage"]] = stages.get(row["stage"], 0) + 1
     return {
-        choice: sum(
-            count
-            for key, count in counts.items()
-            if wanted(
-                key,
-                SimpleNamespace(status=choice, history=True),
-                administrator=administrator,
-            )
-        )
-        for choice in STATUS_CHOICES
+        "rows": kept,
+        "status_counts": counts,
+        "stage_counts": stages,
+        "administrator": administrator,
     }
 
 
@@ -678,7 +794,7 @@ def export_rows(result, zone, *, time_text=iso_time):
             row["family_answer"],
             row["edited"],
             row["route_label"],
-            row["status_label"],
+            row["stage_label"],
             time_text(row["submitted_at"].astimezone(zone)),
             # The latest Entered in ParishSoft, Ignore or Reopen (#528).
             row.get("resolution_by") or "",

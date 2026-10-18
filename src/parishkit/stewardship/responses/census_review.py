@@ -240,7 +240,10 @@ def edited_address(raw):
     try:
         value = validate_address(raw)
     except InvalidHousehold as error:
-        raise InvalidEdit("Correct the address.", fields=dict(error.fields)) from None
+        # The first part's reason is the dialog's one error line; every part
+        # with a reason is marked.
+        reasons = dict(error.fields)
+        raise InvalidEdit(next(iter(reasons.values())), fields=reasons) from None
     if value is None:
         raise InvalidEdit(BLANK_EDIT)
     return value

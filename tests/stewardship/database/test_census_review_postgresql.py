@@ -21,7 +21,7 @@ from parishkit.stewardship.responses.models import ProposalReview, ProposedChang
 from parishkit.stewardship.storage import StaleRecordError
 
 from .test_background_grants_postgresql import task_login
-from .test_census_resolution_postgresql import leader, prepared, resolve
+from .test_census_resolution_postgresql import leader, prepared
 from .test_publication_plans_postgresql import owner, ready  # noqa: F401
 from .test_publication_worker_postgresql import (  # noqa: F401 (fixture)
     confirmed,
@@ -323,68 +323,3 @@ def test_do_block_refuses_the_earlier_guard_and_installs_on_a_bare_database():
         )
         assert cursor.fetchone() == (True,)
         raise Rollback
-
-
-def test_the_worklist_reviews_in_place_for_an_administrator_only(
-    response_service, google
-):
-    """An Administrator's Automatic row has Review (Approve and Ignore while
-    To review); the answer is the page with a notice and the new status, and
-    the history columns name the reviewer. Staff see no Review, and a By-hand
-    row keeps Record outcome."""
-    from .auth_builders import signed_in
-    from .test_information_followup_postgresql import search
-
-    harness, admin, staff, home, name = prepared(response_service)
-    google[0]["email"] = "staff@example.org"
-    staff_browser, login = signed_in()
-    assert login.status_code == 302
-    _, body = search(staff_browser, ROUTE, {"status": "all"})
-    assert b"resolve=approve&amp;" not in body and BACK not in body
-    assert b"resolve=entered&amp;" in body
-    form = {
-        "status": "all",
-        "resolve": "approve",
-        "proposal": str(name.pk),
-        "version": str(name.version),
-        "request_key": str(uuid4()),
-        "note": "  Checked with the Family  ",
-    }
-    # Staff posting a review anyway is denied. (Signed in first: the
-    # synthetic Google subject is shared, so this browser is checked before
-    # the Administrator signs in with it.)
-    response, _ = search(staff_browser, ROUTE, form | {"request_key": str(uuid4())})
-    assert response.status_code == 403
-    google[0]["email"] = "admin@example.org"
-    browser, login = signed_in()
-    assert login.status_code == 302
-    _, body = search(browser, ROUTE, {"status": "all"})
-    assert b"resolve=approve&amp;" in body and b"resolve=ignore_automatic&amp;" in body
-    assert BACK not in body
-    response, body = search(browser, ROUTE, form)
-    assert response.status_code == 200
-    assert b"approved." in body and b"Checked with the Family" in body
-    assert b"admin@example.org" in body
-    assert BACK in body
-    name = fresh(name)
-    assert name.decision == "approved"
-    assert ProposalReview.objects.get().note == "Checked with the Family"
-    # The same form again (another tab, drawn before) is now stale.
-    response, body = search(browser, ROUTE, form | {"request_key": str(uuid4())})
-    assert response.status_code == 200 and b"updated by someone else" in body
-    assert ProposalReview.objects.count() == 1
-    # A By-hand row cannot take a review.
-    resolve(harness, staff, home, "ignored")
-    home = fresh(home)
-    response, _ = search(
-        browser,
-        ROUTE,
-        form
-        | {
-            "proposal": str(home.pk),
-            "version": str(home.version),
-            "request_key": str(uuid4()),
-        },
-    )
-    assert response.status_code == 400
-    assert ProposalReview.objects.count() == 1

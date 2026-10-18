@@ -202,9 +202,7 @@ def panel_cells(name):
     return parser
 
 
-@pytest.mark.parametrize(
-    "name", ["census-changes.html", "information.html", "financial-report.html"]
-)
+@pytest.mark.parametrize("name", ["information.html", "financial-report.html"])
 def test_each_panel_filter_is_one_grid_cell(name):
     """Every label and its control share one div, a cell of the panel's grid.
 

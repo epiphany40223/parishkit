@@ -148,7 +148,7 @@ def test_edit_is_accept_with_a_value(response_service):
     ("field", "value", "message"),
     [
         ("first_name", "  ", "Enter the value"),
-        ("home_address", address(line1=""), "Correct the address"),
+        ("home_address", address(line1=""), "Complete this field"),
         (
             "home_address",
             address(line1="", city="", region="", postal_code="", country=""),

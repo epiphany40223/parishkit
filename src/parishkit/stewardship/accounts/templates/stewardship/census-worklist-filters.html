@@ -1,0 +1,13 @@
+{% load i18n %}{% comment %}
+  Census changes' own filters after the worklist's Stage (#1683), inside
+  the shared filters form (components/review-worklist.html): the Family
+  search, how a change reaches ParishSoft, the kind of change and the
+  submitted days. The browser's time zone is filled by ui-v1.js (#558): the
+  server places From and Through in it, as on System logs.
+{% endcomment %}<input type="hidden" name="zone" value="{{ query.zone }}" data-browser-zone data-zone-missing-hint="{% translate "Your browser didn't report a time zone, so these dates can't be used. Clear From and Through, or check your computer's time zone setting." %}">
+<div><label for="census-search">{% translate "Search name or Family DUID" %}</label><input id="census-search" name="search" maxlength="200" value="{{ query.search }}"></div>
+<div><label for="census-route">{% translate "How it reaches ParishSoft" %}</label><select id="census-route" name="route">{% for key,label in route_choices %}<option value="{{ key }}"{% if query.route == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+<div><label for="census-kind">{% translate "Kind of change" %}</label><select id="census-kind" name="kind">{% for key,label in kind_choices %}<option value="{{ key }}"{% if query.kind == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+<div class="short" data-missing-hint="{% translate 'Enter a whole From date, or clear it.' %}"><label for="census-start">{% translate "Submitted from" %}</label><input id="census-start" type="date" name="start" value="{{ query.start }}" aria-describedby="census-zone-help" data-browser-zone-field></div>
+<div class="short" data-missing-hint="{% translate 'Enter a whole Through date, or clear it.' %}"><label for="census-end">{% translate "Through" %}</label><input id="census-end" type="date" name="end" value="{{ query.end }}" aria-describedby="census-zone-help" data-browser-zone-field></div>
+<p class="help" id="census-zone-help" data-browser-zone-note hidden>{% translate "From and Through are days in this computer's time zone:" %} <span data-browser-zone-name></span>.</p>
