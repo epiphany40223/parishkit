@@ -27,9 +27,10 @@ The provider value encodings below (text as is, ISO civil dates, phone
 display text, email addresses joined by ``"; "``) are provisional until the
 human-run smoke test records a real Member contact read and write. Gender is
 the clearest open question: the census holds ``Male``/``Female``/
-``Unspecified`` but the recorded request schema allows one character. A read
-in a different form never matches the baseline, so it plans a conflict rather
-than a write; the smoke test must settle the mapping before any real PUT.
+``Unspecified`` but the recorded request schema allows one character and
+records no codes. The encoder maps gender through ``GENDER_CODES``, whose
+codes are a guess, so gender stays by hand until ``GENDER_CODES_CONFIRMED``
+is set (#1603); the smoke test must settle the codes before any real PUT.
 """
 
 import hashlib
@@ -73,6 +74,20 @@ MEMBER_CONTACT_FIELDS = (
 # Executions a publication may still act on. Queued rows already belong to a
 # plan; published, resolved, superseded and cancelled rows are outcomes.
 PLANNABLE_EXECUTIONS = frozenset({"pending", "failed", "conflict"})
+# TODO(#1603, #528 slice 3): confirm these codes with the human-run smoke
+# test before setting GENDER_CODES_CONFIRMED. The recorded request schema
+# only says ``gender`` is a nullable string of at most one character: it
+# lists no codes. Nothing offline shows which codes ParishSoft accepts or
+# returns: the ``F`` in the smoke tool's test record is synthetic, and the
+# Member record's ``sex`` (which the census reads) holds whole words. M and F
+# are the likely codes; Unspecified has no known code, so it is left out and
+# stays by hand even once the codes are confirmed (a blank cannot be sent).
+# Confirming must also record the read-back form: if a contact read returns
+# the whole word for a written code, the worker's raw read-back never
+# matches the planned record, which is the #528 slice-3 raw read-back item.
+GENDER_CODES = {"Male": "M", "Female": "F"}
+GENDER_CODES_CONFIRMED = False
+_GENDER_WORDS = {code: word for word, code in GENDER_CODES.items()}
 _DEFINITIONS = {field.name: field for field in (*MEMBER_FIELDS, *REQUEST_FIELDS)}
 
 
@@ -152,6 +167,9 @@ def decode_member_value(field, raw):
     try:
         if definition.kind is ValueKind.DATE:
             return source_value(definition, _civil_date(raw))
+        if field == "gender" and type(raw) is str and raw in _GENDER_WORDS:
+            # A one-character code compares as its census word.
+            return _GENDER_WORDS[raw]
         if definition.kind is ValueKind.EMAIL and raw is not None:
             if type(raw) is not str:
                 raise ValueError
@@ -166,8 +184,11 @@ def encode_member_value(field, value):
 
     Provisional until the smoke test records a real write: phones send their
     display text, email addresses are joined by ``"; "`` as ParishSoft stores
-    them, and civil dates and text are sent as they are.
+    them, gender sends its one-character code (None, so by hand, for a value
+    with no code), and civil dates and text are sent as they are.
     """
+    if field == "gender":
+        return GENDER_CODES.get(value)
     kind = _DEFINITIONS[field].kind
     if kind is ValueKind.PHONE and isinstance(value, dict):
         return value["display"]
@@ -237,10 +258,14 @@ def _unwritable(row, provider):
     A blank value (None, or text that is empty or only whitespace) would ask
     to clear the field, which the API cannot do (``null`` is ignored and
     ``""`` refused, #528). A value the recorded PUT schema refuses (a phone
-    under ten characters, an over-long name, a gender longer than one
-    character) would be refused with HTTP 400. The encoded form is checked,
-    so a phone whose display text is empty counts as blank too.
+    under ten characters, an over-long name) would be refused with HTTP 400.
+    The encoded form is checked, so a phone whose display text is empty
+    counts as blank too. Gender is by hand until its codes are confirmed
+    (``GENDER_CODES_CONFIRMED``), and a gender with no code (Unspecified)
+    encodes as blank.
     """
+    if row.field == "gender" and not GENDER_CODES_CONFIRMED:
+        return True
     value = encode_member_value(row.field, _proposed(row))
     if value is None or (isinstance(value, str) and not value.strip()):
         return True

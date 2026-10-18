@@ -2060,13 +2060,20 @@ current authorization/filter snapshot.
    ignored and `""` refused with HTTP 400; the API is taken to be unable to
    clear any field. So a blank value (empty, or only whitespace) is
    reported *By hand* and never planned, and so is a value the recorded
-   schema would refuse (a phone under ten characters, an over-long name, a
-   gender longer than one character), since the API would reject the PUT
+   schema would refuse (a phone under ten characters, an over-long name),
+   since the API would reject the PUT
    ([#528](https://github.com/epiphany40223/parishkit/issues/528),
    [#1600](https://github.com/epiphany40223/parishkit/issues/1600)). As
    defence in depth for the [handling registry](#proposed-changes), a change
    the registry no longer marks API-writable is reported *By hand* and never
-   planned too, whatever its stored handling says. Only
+   planned too, whatever its stored handling says. Gender
+   is sent as a one-character code (Male `M`, Female `F`) because the
+   schema allows one character, and a one-character code read back
+   compares as its census word. The schema records no codes, so these are
+   provisional and every gender change stays *By hand* until the human-run
+   smoke test confirms the codes ParishSoft accepts and returns; Unspecified
+   has no code and stays *By hand*
+   ([#1603](https://github.com/epiphany40223/parishkit/issues/1603)). Only
    `approved` decisions are planned. An approved proposal that
    reconciliation already holds in `conflict` counts as a conflict until it
    is re-reviewed, and one whose field the fresh read lacks cannot be
