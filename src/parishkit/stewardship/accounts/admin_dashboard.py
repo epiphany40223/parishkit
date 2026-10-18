@@ -57,28 +57,6 @@ def observe(actor, store, *, home=False):
         return config, summary(actor, config, now, home=home), now
 
 
-def health_listed(problems, offsite):
-    """Which of Home's own notices give way to a System health line.
-
-    A problem Home also reports in its own notice is shown once, as the
-    System health line (#1214). ``problems`` are Home's System health
-    problems; ``offsite`` is the off-site line's ``OffsiteStatus`` (or
-    None). The off-site line gives way only while it reports the failure,
-    and the invitation to set off-site copies up while ``offsite_missing``
-    (Production) says the same. Viewers without System health get no such
-    map, so every notice stays.
-    """
-    kinds = {problem.kind for problem in problems}
-    return {
-        "failed": "source_failed" in kinds,
-        "late": "source_late" in kinds,
-        "offsite": "backup_offsite_failed" in kinds
-        and offsite is not None
-        and offsite.kind == "failed",
-        "offsite_unset": "offsite_missing" in kinds,
-    }
-
-
 def summary(actor, configuration, now, *, home=False):
     """Read under the caller's work lock, which pins source/configuration promotion."""
     campaign = configuration.current_campaign
@@ -112,6 +90,10 @@ def summary(actor, configuration, now, *, home=False):
         )
 
         result["first_campaign"] = first_campaign_offer(configuration)
+    if home and campaign is not None:
+        # The campaign panel's days left (#1673): the snapshot's clock and
+        # the campaign's own dates, so no query.
+        result["campaign_facts"] = campaign_facts(campaign, now)
     if campaign is not None:
         result["next_mail"] = (
             ScheduleRevision.objects.filter(
@@ -141,6 +123,15 @@ def summary(actor, configuration, now, *, home=False):
                 recent["recent"] = Count("id", filter=Q(Exists(responded)))
             counts = FamilyCampaign.objects.filter(campaign=campaign).aggregate(
                 **recent,
+                # Home's one response population (#1673): the active
+                # Families with a response, a filter on this same statement.
+                # It comes before the "active" count, whose alias would
+                # otherwise shadow the field in this filter (Django's
+                # FieldError: "'active' is an aggregate").
+                active_responded=Count(
+                    "id",
+                    filter=Q(active=True, first_live_submission_id__isnull=False),
+                ),
                 active=Count("id", filter=Q(active=True)),
                 eligible=Count("id", filter=Q(portal_eligible=True)),
                 responded=Count("id", filter=Q(first_live_submission_id__isnull=False)),
@@ -156,7 +147,11 @@ def summary(actor, configuration, now, *, home=False):
             )
             result["families"] = counts
             if home:
-                result["family_tiles"] = family_tiles(counts)
+                result["family_tiles"] = family_tiles(
+                    counts,
+                    recent=counts["recent"],
+                    testing=configuration.mode == "testing",
+                )
         if (
             home
             and campaign.state == "draft"
@@ -175,8 +170,13 @@ def summary(actor, configuration, now, *, home=False):
                 configuration, revision=result["test_email"]
             )
             result["setup_next"] = campaign_wizard.resume(wizard) if wizard else None
-        if campaign.state in {"draft", "scheduled", "active"} and allows(
-            actor, Capability.FAMILY_CODES
+        # Home no longer shows the count (#1673): Data to fix in ParishSoft
+        # and the Family directory's "Can't be reached" preset carry it, and
+        # the command line's status read still reports it.
+        if (
+            not home
+            and campaign.state in {"draft", "scheduled", "active"}
+            and allows(actor, Capability.FAMILY_CODES)
         ):
             result["unreachable"] = unreachable_families(campaign.pk)
     if allows(actor, Capability.CONFIGURE):
@@ -188,13 +188,13 @@ def summary(actor, configuration, now, *, home=False):
                 "sections"
             ].get("integrations", [])
         }
-        # Read copy outcomes only when off-site copies are set up, so the
-        # page's query budget is unchanged otherwise; until then the page
-        # invites the Administrator to set them up.
-        if "backup" in kinds:
-            result["offsite"] = offsite_status()
-        else:
+        # Read copy outcomes only when off-site copies are set up, and only
+        # for the command line: Home leaves the off-site line to System
+        # health's Backups panel and problem count (#1673).
+        if "backup" not in kinds:
             result["offsite_unset"] = True
+        elif not home:
+            result["offsite"] = offsite_status()
         from .integration_credentials import STOPPED, unfinished_switches
         from .integration_forms import LABELS
 
@@ -234,8 +234,26 @@ def summary(actor, configuration, now, *, home=False):
         result["health_problems"] = home_problems(
             configuration, now, result["full_refresh"]
         )
-        result["health_listed"] = health_listed(
-            result["health_problems"], result.get("offsite")
+        # Home's one count line takes the error look when any counted
+        # problem is an error, else the warning look (#1673).
+        result["health_severity"] = (
+            "error"
+            if any(problem.severity == "error" for problem in result["health_problems"])
+            else "warning"
+        )
+    elif home:
+        # Without System health, Home's one ParishSoft line says the data
+        # may be out of date while the latest full refresh failed or is late
+        # (not while a Family send merely holds it), as the refresh block
+        # did before #1673. No query: the status is already read.
+        status = result["full_refresh"]
+        result["refresh_stale"] = bool(
+            status.failed_at
+            or (
+                status.out_of_date
+                and not status.held_for_send
+                and not status.catching_up
+            )
         )
     if home and campaign is not None and leads_ministries(actor):
         from parishkit.stewardship.reports.ministry_followup import my_ministries
@@ -249,26 +267,34 @@ def summary(actor, configuration, now, *, home=False):
         # Every Administrator's dashboard shows an expansion of who may sign
         # in until an Administrator acknowledges it.
         result["security_events"] = open_events(actor)
-        from .automation_sessions import open_notices
+        if home:
+            from .automation_sessions import pending_count
 
-        # Automation notices (ADM-11) stay on each Administrator's dashboard
-        # until that Administrator acknowledges them.
-        result["automation_notices"] = open_notices(actor)
+            # Automation notices (ADM-11) stay counted on each
+            # Administrator's Home until that Administrator acknowledges
+            # them; the list itself is on Automation access (#1673). The
+            # command line's status read counts them itself.
+            result["automation_pending"] = pending_count(actor)
     if allows(actor, Capability.BACKGROUND_WORK):
-        # Imported here like the other optional sections above: jobs.views
-        # loads the task API's view stack, which only this section needs.
-        from parishkit.stewardship.jobs.views import TASK_NAMES
+        failed = TaskRun.objects.filter(
+            state="failed", updated_at__gte=now - timedelta(hours=24)
+        )
+        if home:
+            # Home counts them in one line linking Background work (#1673).
+            result["failed_tasks"] = failed.count()
+        else:
+            # Imported here like the other optional sections above: jobs.views
+            # loads the task API's view stack, which only this list needs.
+            from parishkit.stewardship.jobs.views import TASK_NAMES
 
-        result["recent_failures"] = [
-            # The plain task name leads; the internal type stays for display
-            # under Technical details.
-            {**task, "name": TASK_NAMES.get(task["task_type"], task["task_type"])}
-            for task in TaskRun.objects.filter(
-                state="failed", updated_at__gte=now - timedelta(hours=24)
-            )
-            .order_by("-updated_at", "-id")
-            .values("id", "task_type", "updated_at")[:5]
-        ]
+            result["recent_failures"] = [
+                # The plain task name leads; the internal type stays for
+                # display under Technical details.
+                {**task, "name": TASK_NAMES.get(task["task_type"], task["task_type"])}
+                for task in failed.order_by("-updated_at", "-id").values(
+                    "id", "task_type", "updated_at"
+                )[:5]
+            ]
     return result
 
 
@@ -302,36 +328,75 @@ def leads_ministries(actor):
     )
 
 
-def family_tiles(counts):
-    """Home's Family participation panel as stat tiles (#720, #1540).
+def family_tiles(counts, *, recent=None, testing=False):
+    """Home's Responses tiles in the campaign panel (#720, #1540, #1673).
 
-    The active Families; the responses from Families who can use the
-    Family form now, out of those Families, with its share bar; and every
-    Family with a response, not counting Testing. That last count can
-    include Families no longer active, so it is not drawn as a share.
+    One population, the campaign's active Families: how many there are; how
+    many of them have a response, not counting Testing, with its share bar;
+    and, when ``recent`` is given, the Families who responded in the past
+    24 hours (Testing responses while ``testing``, as its explanation says).
     """
-    participation = counts["participation"]
-    return [
+    tiles = [
         tile("active", _("Active Families"), counts["active"]),
         tile(
-            "participation",
-            _("Responses from Families who can use the Family form now"),
-            participation.numerator,
+            "responded",
+            _("Active Families with a response"),
+            counts["active_responded"],
             details=(
                 _("out of %(total)s (%(share)s)")
                 % {
-                    "total": number(participation.denominator),
-                    "share": percentage(participation),
+                    "total": number(counts["active"]),
+                    "share": percentage(
+                        Percentage(counts["active_responded"], counts["active"])
+                    ),
                 },
             ),
-            share=(participation.numerator, participation.denominator),
-        ),
-        tile(
-            "responded",
-            _("All Families with a response (not counting Testing)"),
-            counts["responded"],
+            share=(counts["active_responded"], counts["active"]),
         ),
     ]
+    if recent is not None:
+        tiles.append(
+            tile(
+                "recent",
+                _("Responded in the past 24 hours"),
+                recent,
+                details=(_("Testing responses, while in Testing mode"),)
+                if testing
+                else (),
+            )
+        )
+    return tiles
+
+
+def campaign_facts(campaign, now):
+    """The campaign panel's countdown on Home (#1673), or an empty dict.
+
+    Today is the campaign's own date (its time zone), so the count matches
+    the dates the strip shows. Before the start date it is ``opens_in``
+    days; from then until the end date, ``days_left`` (0 on the last day);
+    after the end date, or for a closed campaign, nothing.
+    """
+    from zoneinfo import ZoneInfo
+
+    settings = campaign.active_configuration
+    start, end = settings.start_date, settings.end_date
+    if (
+        start is None
+        or end is None
+        or campaign.state
+        not in {
+            "draft",
+            "scheduled",
+            "active",
+        }
+    ):
+        return {}
+    today = now.astimezone(ZoneInfo(settings.timezone)).date()
+    if today < start:
+        return {"opens_in": (start - today).days}
+    if today <= end:
+        return {"days_left": (end - today).days}
+    return {}
 
 
 def unreachable_families(campaign_id):

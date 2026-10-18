@@ -3168,43 +3168,6 @@ def test_home_shows_a_listed_refresh_problem_once_and_keeps_its_links():
     assert plain.count("Run a full refresh now") == 1
 
 
-def test_only_a_listed_failure_gives_the_off_site_line_way():
-    """``health_listed``: each notice gives way only to its own listed
-    problem, and the off-site line only while it reports the failure."""
-    from parishkit.stewardship.accounts.admin_dashboard import health_listed
-    from parishkit.stewardship.accounts.backup_destination import OffsiteStatus
-
-    def offsite(kind):
-        """An off-site line of ``kind``."""
-        return OffsiteStatus(kind, "Words.", NOW, NOW, None)
-
-    listed = (
-        Problem("source_failed", at=NOW),
-        Problem("source_late", at=NOW),
-        Problem("backup_offsite_failed", at=NOW),
-    )
-    assert health_listed(listed, offsite("failed")) == {
-        "failed": True,
-        "late": True,
-        "offsite": True,
-        "offsite_unset": False,
-    }
-    # The incident is open, but the newest copy went through: the line no
-    # longer reports a failure, so it stays.
-    for kind in ("uploaded", "disabled", "none"):
-        assert health_listed(listed, offsite(kind))["offsite"] is False, kind
-    assert health_listed(listed, None)["offsite"] is False
-    # A failing off-site line with no listed problem stays too.
-    assert health_listed((), offsite("failed")) == {
-        "failed": False,
-        "late": False,
-        "offsite": False,
-        "offsite_unset": False,
-    }
-    # Off-site copies not set up (Production): the invitation gives way.
-    assert health_listed((Problem("offsite_missing"),), None)["offsite_unset"]
-
-
 def home_page(dashboard):
     """Home's page body as the index view draws it for ``dashboard``."""
     from parishkit.stewardship.accounts.backup_destination import OffsiteStatus
@@ -3231,29 +3194,32 @@ def home_page(dashboard):
     )
 
 
-def test_home_keeps_both_notices_for_a_viewer_without_system_health():
-    """A viewer who may not open System health gets no lines and no
-    ``health_listed``, so the failed refresh and the failed off-site copy
-    keep their own notices; a viewer with the lines sees each once."""
-    other = home_page({})
+def test_home_counts_problems_in_one_line_linking_system_health():
+    """Home shows only the count of System health problems, in the error
+    look when any is an error, linking System health (#1673); a viewer who
+    may not open System health gets the one ParishSoft line instead, and
+    neither sees the problem sentences, the refresh block or the off-site
+    line, which System health carries."""
+    other = home_page({"refresh_stale": True})
     assert "data-home-health" not in other
-    assert "did not finish." in other
-    assert "Copying the newest backup failed." in other
-    assert other.count("Run a full refresh now") == 1
+    assert "ParishSoft data may be out of date" in other
+    assert "The most recent full ParishSoft reload" not in other
+    assert "Copying the newest backup failed." not in other
+    assert "Run a full refresh now" not in other
     problems = (
         Problem("source_failed", at=NOW - timedelta(hours=1)),
         Problem("backup_offsite_failed", at=NOW),
     )
-    admin = home_page(
-        {
-            "health_problems": problems,
-            "health_listed": {"failed": True, "late": False, "offsite": True},
-        }
-    )
-    assert admin.count("did not finish.") == 1
-    assert "Copying the newest backup failed." not in admin
-    assert admin.count("Run a full refresh now") == 1
-    assert admin.count("Off-site backups (Google Drive)") == 1
+    admin = home_page({"health_problems": problems, "health_severity": "warning"})
+    line = re.search(r"<li [^>]*data-home-health>.*?</li>", admin, re.S).group(0)
+    assert 'class="notice" data-home-health' in line
+    assert "2 system problems." in line
+    assert 'href="/admin/system/health/">See System health</a>' in line
+    assert "The most recent full ParishSoft reload" not in admin
+    assert "ParishSoft data may be out of date" not in admin
+    errors = home_page({"health_problems": problems[:1], "health_severity": "error"})
+    assert 'class="notice notice-error" data-home-health' in errors
+    assert "1 system problem." in errors
 
 
 @pytest.mark.parametrize(

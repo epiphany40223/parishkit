@@ -379,6 +379,43 @@ hr { border: 0; border-top: 1px solid var(--border); margin-block: 2rem; }
 /* A card inside a card is a flat inset rather than a second floating layer. */
 .panel .panel { background: var(--paper-soft); box-shadow: none; }
 .empty-state { text-align: center; background: transparent; border-style: dashed; border-color: var(--control-border); box-shadow: none; color: var(--muted); }
+/* Overview pages (ui-conventions "Overview pages", #1673). Home's Needs attention row: short
+   count lines side by side, wrapping onto more lines and stacking on a phone. */
+.home-alerts { display: flex; flex-wrap: wrap; gap: .5rem; list-style: none; margin: 0 0 .6rem; padding: 0; }
+:where(.admin-body) .home-alerts > li.notice { flex: 1 1 20rem; margin: 0; padding: .45rem .85rem; }
+/* Home's panels are tighter than a form page's, so the overview fits a laptop window (1366 x
+   768) without scrolling. */
+:where(.admin-body) .panel.home-panel { padding: 1rem 1.25rem; margin-block: .6rem; }
+.home-participation { margin-top: .5rem; }
+.home-participation .stat-tiles { margin-bottom: .5rem; }
+.home-participation .stat-tiles:last-child { margin-bottom: 0; }
+.home-participation .stat-tile { padding: .5rem .85rem; }
+.home-participation-foot { margin: 0; }
+/* The campaign panel's fact strip: one key/value row (label above value), wrapping. */
+.home-facts { display: flex; flex-wrap: wrap; gap: .5rem 2rem; margin: 0; }
+.home-facts > div { display: flex; flex-direction: column; }
+.home-facts dt { font-size: .85rem; font-weight: 600; color: var(--muted); }
+.home-facts dd { margin: 0; font-weight: 600; }
+/* A panel heading with its "See the page" link on the same line. */
+.home-panel-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .25rem 1rem; margin-bottom: .5rem; }
+.home-panel-head > h2, .home-panel-links { margin: 0; }
+.home-next-steps > h2 { margin-block: 0 .5rem; }
+/* Link cards (components/link-cards.html): a grid of cards, each one link whose text reads the
+   page's name, then its count large and what it means on one line. The start bar reinforces
+   the count (warning above zero, accent at zero); the words carry it. Hover and focus change
+   only the underline, never the size (no layout shift). */
+.link-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr)); gap: .75rem; list-style: none; margin: 0; padding: 0; }
+.link-card { border: 1px solid var(--border); border-inline-start-width: .35rem; border-radius: var(--radius-small); background: var(--paper-soft); }
+.link-card > a, .link-card.link-card-off { display: flex; flex-wrap: wrap; align-items: baseline; align-content: space-between; column-gap: .4rem; box-sizing: border-box; height: 100%; padding: .55rem .85rem; }
+.link-card > a { text-decoration: none; }
+.link-card > a:hover .link-card-label, .link-card > a:focus-visible .link-card-label { text-decoration: underline; }
+.link-card-label { flex-basis: 100%; font-weight: 600; }
+.link-card-count { font-size: 1.5rem; font-weight: 650; line-height: 1.9rem; font-variant-numeric: tabular-nums; color: var(--ink); }
+.link-card-note { color: var(--muted); }
+.link-card-attention { border-inline-start-color: var(--warning-border); }
+.link-card-clear { border-inline-start-color: var(--accent); }
+.link-card-off { color: var(--muted); }
+.link-card-off .link-card-note { flex-basis: 100%; }
 /* Stat tiles (ui-conventions "Stat tiles", #1540), drawn by components/stat-tiles.html: a row of
    cards, wrapping, each its label, value and up to two explanation lines; a row's tiles stretch
    to one height. */

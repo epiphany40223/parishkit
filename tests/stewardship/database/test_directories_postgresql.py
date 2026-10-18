@@ -723,7 +723,7 @@ def test_reach_filter_finds_families_no_campaign_mail_can_reach(
 
 
 def test_reach_preset_link_and_dashboard_readiness(live_response_service, google):
-    """?reach=neither is the only accepted GET filter; the dashboard counts it."""
+    """?reach=neither is the only accepted GET filter; Home no longer counts it."""
     harness = live_response_service
     data = response_source()
     data.members[3]["emailAddress"] = ""
@@ -745,9 +745,9 @@ def test_reach_preset_link_and_dashboard_readiness(live_response_service, google
         assert read(browser, route + "?reach=sometimes")[0].status_code == 400
         assert read(browser, route + "?reach=neither&search=x")[0].status_code == 400
         home = browser.get("/admin/").content
-    assert (
-        b"Reaching every Family" in home and (route + "?reach=neither").encode() in home
-    )
+    # Home no longer shows the count (#1673); Data to fix in ParishSoft and
+    # this preset carry it.
+    assert b"Reaching every Family" not in home
 
 
 def test_testing_notice_links_the_test_page_only_for_administrators(
