@@ -2497,10 +2497,16 @@ two ways of reading to a screen reader. **Precedent.**
   value also always stays inside its tile, at every window width and
   font size: a row puts fewer tiles across rather than make a tile too
   narrow for its value. Every row of tiles stacks on a phone, including
-  those not yet drawn by the shared code. A row of four or five tiles
-  never leaves one tile alone on a line: four go 4 or 2 + 2 across, five go
-  5 or 3 + 2, and either stacks when even that is too narrow
-  ([#1537](https://github.com/epiphany40223/parishkit/issues/1537)).
+  those not yet drawn by the shared code.
+- **Balanced lines.** A row of four or five tiles drawn by the shared
+  component never leaves one tile alone on a line, at any row width: four
+  go 4 or 2 + 2 across, five go 5 or 3 + 2, and either stacks when even
+  that is too narrow
+  ([#1537](https://github.com/epiphany40223/parishkit/issues/1537)). The
+  rows still drawn by hand (Home, Campaign comparison, Financial
+  stewardship and Ministry requests) do not follow it yet; they pick it up
+  when they move onto the component
+  ([#1540](https://github.com/epiphany40223/parishkit/issues/1540)).
 - **Shared code.** The helper's `tile()` builds each tile and the include
   draws a row of them. A guard test fails when a template outside
   `components/` draws stat-tile markup by hand; the templates not yet
