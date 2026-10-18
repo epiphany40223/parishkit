@@ -2656,7 +2656,11 @@ two ways of reading to a screen reader. **Precedent.**
   value also always stays inside its tile, at every window width and
   font size: a row puts fewer tiles across rather than make a tile too
   narrow for its value. Every row of tiles stacks on a phone, including
-  those not yet drawn by the shared code.
+  those not yet drawn by the shared code. When even a stacked tile is too
+  narrow (a very narrow window with large text), its value is drawn
+  smaller to fit, still on one line of the same height, so the page never
+  scrolls sideways
+  ([#1667](https://github.com/epiphany40223/parishkit/issues/1667)).
 - **Balanced lines.** A row of four or five tiles drawn by the shared
   component never leaves one tile alone on a line, at any row width: four
   go 4 or 2 + 2 across, five go 5 or 3 + 2, and either stacks when even
