@@ -4294,11 +4294,22 @@
     line.scrollIntoView({block: "nearest"});
     return true;
   };
+  // A kept line may also name the element focus moves to (focus: an id):
+  // a campaign wizard sub-page's return focuses its item's row on Pages and
+  // emails (#1404 PR 6b; UX conventions, "Wizards", rule 10), after the
+  // line is written, so the line is still read as a status.
   try {
     const kept = JSON.parse(window.sessionStorage.getItem(REVIEW_OUTCOME) || "null");
     window.sessionStorage.removeItem(REVIEW_OUTCOME);
     if (kept && kept.path === window.location.pathname
-      && Date.now() - kept.at < REVIEW_OUTCOME_MS) showOutcome(kept.id, kept.text);
+      && Date.now() - kept.at < REVIEW_OUTCOME_MS && showOutcome(kept.id, kept.text)) {
+      const row = typeof kept.focus === "string" && kept.focus
+        ? document.getElementById(kept.focus) : null;
+      if (row) {
+        row.focus({preventScroll: true});
+        row.scrollIntoView({block: "nearest"});
+      }
+    }
   } catch { /* No storage: the page shows no status line. */ }
   // The status line's time, in the parish style's clock and this browser's
   // time zone, through the shared formatter (date-format-v1.js, which every
@@ -4767,7 +4778,8 @@
       const target = new URL(next, document.baseURI);
       try {
         window.sessionStorage.setItem(REVIEW_OUTCOME, JSON.stringify(
-          {path: target.pathname, id: "campaign-step-outcome", text, at: Date.now()}));
+          {path: target.pathname, id: "campaign-step-outcome", text,
+            focus: form.dataset.directFocus, at: Date.now()}));
       } catch { /* No storage: the next step shows no status line. */ }
       window.location.assign(target.href);
       return;
@@ -4791,6 +4803,71 @@
     // A repeat (Enter pressed twice) while a save is under way is ignored.
     if (reviewing.has(form)) return;
     saveStep(form, event.submitter);
+  }, true);
+
+  // Pages and emails' editor's Keep as is and go back (#1404 PR 6b; UX
+  // conventions, "Wizards", rule 10): its form (data-keep-item, in the
+  // campaign wizard's action row) posts the step and the item to
+  // campaign_step_continue without a page load. The server marks the item
+  // kept as is and answers with Pages and emails, which then opens with
+  // "<label> kept as is." in its status line and focus on the item's row
+  // (data-kept-focus), as Save and go back's return does. A refusal (the
+  // item changed meanwhile, setup ended, the server unreachable) is said in
+  // the row's reserved status line, with nothing marked, and the page stays.
+  const KEEP_UNREACHABLE = "The server could not be reached, so nothing was marked. Try again in a moment.";
+  const keepItem = async (form, submitter) => {
+    reviewing.add(form);
+    const line = document.getElementById("campaign-step-status");
+    const opener = submitter || form;
+    form.setAttribute("aria-busy", "true");
+    opener.setAttribute("aria-disabled", "true");
+    const finish = (text, link) => {
+      form.removeAttribute("aria-busy");
+      opener.removeAttribute("aria-disabled");
+      reviewing.delete(form);
+      if (!line) return;
+      line.replaceChildren(text);
+      if (link) {
+        const anchor = document.createElement("a");
+        anchor.href = link.url;
+        anchor.textContent = link.label;
+        line.append(" ", anchor);
+      }
+    };
+    let answer = null;
+    try {
+      answer = await readPage(formUrl(form), {method: "POST", body: new URLSearchParams(new FormData(form))});
+    } catch { /* no answer: said below */ }
+    if (!answer) {
+      finish(KEEP_UNREACHABLE);
+      return;
+    }
+    const answered = new URL(answer.response.url || formUrl(form), document.baseURI);
+    if (answer.response.ok && answer.response.redirected && sameOrigin(answered.href)) {
+      // Anywhere but Pages and emails (data-kept-return; the sign-in page
+      // once the session ended) opens without the line: nothing says the
+      // item was marked there.
+      if (answered.pathname !== new URL(form.dataset.keptReturn || "", document.baseURI).pathname) {
+        window.location.assign(answered.href);
+        return;
+      }
+      try {
+        window.sessionStorage.setItem(REVIEW_OUTCOME, JSON.stringify(
+          {path: answered.pathname, id: "campaign-step-outcome", text: form.dataset.keptText,
+            focus: form.dataset.keptFocus, at: Date.now()}));
+      } catch { /* No storage: Pages and emails shows no status line. */ }
+      window.location.assign(answered.href);
+      return;
+    }
+    finish(refusalText(answer.response.status, answer.text), refusalLink(answer.text));
+  };
+  document.addEventListener("submit", (event) => {
+    const form = event.target;
+    if (event.defaultPrevented || !(form instanceof HTMLFormElement)
+      || !form.matches("form[data-keep-item]") || !sameOrigin(formUrl(form))) return;
+    event.preventDefault();
+    if (reviewing.has(form)) return;
+    keepItem(form, event.submitter);
   }, true);
 
   // Basic and Advanced editor modes (#1121; ui-conventions spec, "Basic and
