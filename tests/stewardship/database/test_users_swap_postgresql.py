@@ -413,6 +413,11 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # and 0064's report selection in place, which 0094's rerun
 # (``CLOSURE_REPLACED``) brings back older, so ``CLOSURE_REPLACED`` runs
 # 0119's file after it.
+# 0130 (#1658, a provisional number) creates nothing: it replaces the
+# occurrence guard (0005's, before the closure), the digest slot check and
+# the weekly page proof (both the baseline's) in place. No closure file
+# installs any of them again, so their bodies survive the swap and nothing
+# is registered.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
