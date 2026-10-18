@@ -289,7 +289,9 @@ def promoted_at():
 # Campaign states whose Home Next steps list Roster changes to enter
 # (home_steps: Active, Mail paused, Closed or archived). A draft or a
 # scheduled campaign has no resolved request to enter yet, so Home does not
-# read the count there.
+# read the count there. Home still lists the Roster step, with no number, in
+# the other states it maps to Closed or Paused (purging, purge cleanup
+# failed, and a scheduled campaign with mail paused): the count is not read.
 ROSTER_STATES = frozenset({"active", "closed", "archived"})
 
 

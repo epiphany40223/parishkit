@@ -159,3 +159,35 @@ def test_staff_home_lists_the_campaign_end_work_with_counts(response_service, go
     assert "Ministry requests — 1 open" in listed
     assert _menu_count(body, "Ministry requests") == 1
     assert 'href="/admin/reports/ministries/follow-up/roster/"' in body.decode()
+
+
+def test_roster_count_database_error_leaves_the_link_without_a_number(
+    response_service, google, monkeypatch, caplog
+):
+    """A database error reading the Roster count does not fail Home: the step
+    still links to the list with no number, and the failure is logged at
+    WARNING as report_shaping_failed."""
+    from django.db import DatabaseError
+
+    from parishkit.stewardship.reports import ministry_roster_views
+
+    harness, _, _, _ = resolved(response_service)
+    browser, _, _, _ = leader(harness, google, roles=("staff",))
+
+    def broken(campaign_id, principal):
+        """Fail the count's read the way a lost connection or bad SQL would."""
+        raise DatabaseError("count unavailable")
+
+    monkeypatch.setattr(ministry_roster_views, "to_enter", broken)
+    with (
+        caplog.at_level("WARNING", logger="parishkit.stewardship"),
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+    ):
+        response, body = read(browser, "/admin/")
+    assert response.status_code == 200
+    assert "Roster changes to enter" in steps(body)
+    assert 'href="/admin/reports/ministries/follow-up/roster/"' in body.decode()
+    (warning,) = [
+        r for r in caplog.records if r.getMessage() == "report_shaping_failed"
+    ]
+    assert warning.levelname == "WARNING"
