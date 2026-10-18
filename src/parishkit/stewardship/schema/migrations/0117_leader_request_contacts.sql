@@ -24,8 +24,10 @@
 --
 -- Replaced functions, each copied whole from its newest definition (0094)
 -- with only the consent column and the four contact expressions changed
--- (the cannot-participate exclusion is in the packet only: such a Member has
--- no join requests, the only kind v3 gives contacts for):
+-- (both consent columns carry the cannot-participate exclusion: such a Member
+-- has no join in that submission, but an earlier join to the same Ministry,
+-- say one a ParishSoft refresh resolved as joined, is a v3 history row whose
+-- consent follows the chain's latest row, the cannot-participate leave):
 --   stewardship_ministry_packet_v1   (the baseline): the follow-up packet,
 --                                    and the leave requests' contact details
 --   stewardship_ministry_report_v3   (migration-owned, 0064): the join
@@ -328,10 +330,18 @@ WITH selected AS MATERIALIZED (
         -- Whether the Member's latest request to this Ministry stands (is
         -- not withdrawn): their consent to be contacted about it by the
         -- Ministry's leaders (#1591). Every version of it follows the
-        -- latest, as a leave request's details do.
-        first_value(r.state) OVER (PARTITION BY s.family_id,r.entity_kind,
-            r.entity_key,r.ministry_duid ORDER BY s.family_version DESC,r.id)
-            NOT IN ('cancelled','superseded') AS consented
+        -- latest, as a leave request's details do. Join and leave requests
+        -- to one Ministry share the chain, so an earlier join row follows a
+        -- later leave: a leave because the Member cannot participate in any
+        -- ministries (physical limitations) is not consent (Administrator,
+        -- #1591), and it must not leave the old join row showing them.
+        first_value(r.state NOT IN ('cancelled','superseded') AND coalesce(
+            s.answers#>ARRAY['service',CASE WHEN r.entity_kind='member'
+                THEN 'members' ELSE 'proposed_members' END,
+                r.entity_key,'cannot_serve'],'false'::jsonb)<>'true'::jsonb)
+            OVER (PARTITION BY s.family_id,r.entity_kind,r.entity_key,
+                r.ministry_duid ORDER BY s.family_version DESC,r.id)
+            AS consented
     FROM source x
     JOIN stewardship_submission s ON s.campaign_id=x.id AND s.mode='live'
     JOIN stewardship_ministry_request r ON r.submission_id=s.id
@@ -523,9 +533,13 @@ BEGIN
               'stewardship_ministry_report_v3')
           AND NOT p.prosecdef AND p.provolatile='s'
           AND p.prorettype='jsonb'::regtype
-          -- The packet's consent also excludes a cannot-participate leave.
+          -- Both consents exclude a cannot-participate leave; v3 takes
+          -- the chain's latest row's.
           AND CASE WHEN p.proname='stewardship_ministry_report_v3'
-              THEN p.prosrc LIKE '%NOT IN (''cancelled'',''superseded'') AS consented%'
+              THEN p.prosrc LIKE '%first_value(r.state NOT IN (''cancelled'',''superseded'') AND coalesce(
+%r.entity_key,''cannot_serve''],''false''::jsonb)<>''true''::jsonb)
+%OVER (PARTITION BY s.family_id,r.entity_kind,r.entity_key,
+%AS consented%'
               ELSE p.prosrc LIKE '%r.state NOT IN (''cancelled'',''superseded'') AND coalesce(
 %r.entity_key,''cannot_serve''],''false''::jsonb)<>''true''::jsonb
 %AS consented,%' END
@@ -540,9 +554,7 @@ BEGIN
           AND p.prosrc NOT LIKE '%NOT operational AND coalesce(%'
           AND p.prosrc NOT LIKE '%operational OR c.value->''publish_%'
           AND p.prosrc NOT LIKE '%(operational
-%OR c.value->''publish_%'
-          AND (p.proname<>'stewardship_ministry_report_v3'
-              OR p.prosrc LIKE '%first_value(r.state) OVER (PARTITION BY s.family_id,r.entity_kind,%'))<>2 THEN
+%OR c.value->''publish_%')<>2 THEN
         RAISE EXCEPTION 'Migration 0117 (leaders see a requesting Member''s own contact) did not replace the selections';
     END IF;
     -- CREATE OR REPLACE keeps the grants and names the same settings; check

@@ -388,7 +388,7 @@ FROZEN = {
         "5b2cc690bc1f6fdade66a22618290b959145989cd4d650675bda755d4df34ea8"
     ),
     "0117_leader_request_contacts.sql": (
-        "477b6bf060de33f1ba4ee9d2c070267fc6efdb0b29a99e122266a837b1c2e806"
+        "88da8cc865c48827953555f2ca2327b8a819d6e7676c9dbeb76cebbe7e994756"
     ),
 }
 

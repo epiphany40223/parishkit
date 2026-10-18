@@ -127,6 +127,22 @@ def test_the_closing_check_refuses_a_half_applied_rule(name, kind):
         check_refuses(changed, "\\(leaders see")
 
 
+def test_the_closing_check_refuses_a_report_without_the_exclusion():
+    """A report v3 whose chain consent forgets the cannot-participate
+    exclusion is refused, so an earlier join row never shows unpublished
+    contacts after a later cannot-participate leave."""
+    own = definition(MIGRATION, "stewardship_ministry_report_v3")
+    changed, count = re.subn(
+        r"first_value\(r\.state NOT IN \('cancelled','superseded'\) AND coalesce\("
+        r".*?\)\s+OVER",
+        "first_value(r.state NOT IN ('cancelled','superseded')) OVER",
+        own,
+        flags=re.S,
+    )
+    assert count == 1
+    check_refuses(changed, "\\(leaders see")
+
+
 def test_the_closing_check_refuses_a_packet_without_the_exclusion():
     """A packet whose consent forgets the cannot-participate exclusion is
     refused, so such a leave never shows unpublished contacts."""

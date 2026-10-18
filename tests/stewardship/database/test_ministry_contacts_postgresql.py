@@ -20,17 +20,21 @@ from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports import ministry_followup_views
+from parishkit.stewardship.reports.export_models import MinistryExportSnapshot
+from parishkit.stewardship.reports.ministries import MinistryQuery
 from parishkit.stewardship.reports.ministry_followup import FollowupQuery
+from parishkit.stewardship.workflows.models import MinistryRequest
 
 from .test_background_grants_postgresql import task_login
 from .test_export_views_postgresql import post
 from .test_information_followup_postgresql import search
-from .test_ministry_exports_postgresql import leader
+from .test_ministry_exports_postgresql import create, leader
 from .test_ministry_followup_postgresql import requests
-from .test_ministry_reports_postgresql import drop_leader, setup
-from .test_ministry_responses_postgresql import respond, revisit
+from .test_ministry_reports_postgresql import drop_leader, page, prepare, setup
+from .test_ministry_responses_postgresql import ministry_source, respond, revisit
 from .test_report_workspace_postgresql import read
 from .test_response_http_postgresql import answers_for
+from .test_source_families_postgresql import promote
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -269,3 +273,77 @@ def test_a_pdf_above_its_limit_is_refused_and_not_offered(
         # One request fits: the PDF is offered and written.
         response, body = export(browser, format="pdf", state="any", action="join")
         assert response.status_code == 200 and body.startswith(b"%PDF-")
+
+
+def test_a_cannot_participate_leave_hides_the_contact_on_an_earlier_join(
+    response_service, google
+):
+    """Member 3 asks to join Food pantry (9), a ParishSoft refresh resolves it
+    as joined, and the Family then checks the physical-limitations box, so
+    Member 3 leaves 4 and 9. That leave is not consent (Administrator,
+    #1591), and the old join row shares its chain: Food pantry's leader sees
+    the email Not published on it, in the history selection, on its request
+    page (request_contacts) and in a history capture of the report, and
+    Export these requests lists only the leave; Staff still see it."""
+    harness = setup(response_service)
+    browser, actor, _, _ = leader(harness, google)
+    join, _ = requests()
+    data = ministry_source()
+    data.ministry_type_memberships[9]["membership"] = [
+        {
+            "memberId": 3,
+            "ministryRoleId": 1,
+            "ministryRoleName": "Participant",
+            "startDate": "2026-01-01",
+            "endDate": None,
+        }
+    ]
+    snapshot, claim = prepare(data)
+    promote(snapshot, claim, harness.campaign, harness.rings)
+    join.refresh_from_db()
+    assert (join.state, join.outcome) == ("resolved", "joined")
+    # A resolved ordinary join still shares the email.
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        assert EMAIL in contact(item(browser, join))
+    form = revisit(harness)
+    answers = answers_for(form)
+    answers["ministries"]["members"]["3"] = {"join": [], "leave": [4, 9]}
+    answers["service"] = {
+        "members": {"3": {"cannot_serve": True}},
+        "proposed_members": {},
+    }
+    respond(harness, form, answers)
+    assert MinistryRequest.objects.filter(
+        ministry_duid=9, action="leave", state="new"
+    ).exists()
+    history = dict(history="all", state="any")
+    rows = page(
+        harness,
+        roles=("ministry_leader",),
+        scope=(9,),
+        ministry=9,
+        action="join",
+        **history,
+    )["rows"]
+    (row,) = [row for row in rows if row["id"] == str(join.pk)]
+    assert row["email_visibility"] == "not_published" and row["emails"] == []
+    assert row["phone_visibility"] == "available"
+    assert EMAIL not in json.dumps(rows, default=str)
+    staff = page(harness, ministry=9, action="join", **history)["rows"]
+    assert EMAIL in json.dumps(staff, default=str)
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        section = contact(item(browser, join))
+        assert "<dt>Email</dt><dd>Not published</dd>" in section
+        assert EMAIL not in section and PHONE in section
+        # The queue's file lists current requests only (#1131): the leave.
+        response, body = export(browser, state="any")
+        assert response.status_code == 200
+        assert [row["Request"] for row in table(body)] == ["Leave (cannot participate)"]
+        assert EMAIL not in body.decode()
+    # A capture of the join report's history lists the old join row, Not
+    # published too.
+    query = MinistryQuery(history="all", state="any")
+    request = create(harness, actor, query=query)
+    snapshot = MinistryExportSnapshot.objects.get(pk=request.ministry_snapshot_id)
+    assert snapshot.row_count == 1
+    assert EMAIL not in json.dumps(snapshot.document)

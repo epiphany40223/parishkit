@@ -1829,8 +1829,12 @@ shown as "Leave (cannot participate)") is not consent: it follows the
 publish flags (Administrator decision, 2026-10-18, on
 [#1591](https://github.com/epiphany40223/parishkit/issues/1591)), while
 ordinary join and stop-participating requests share as above. Such a Member
-joins no Ministry (the response guard refuses it), so only leave requests
-are affected. Nothing else widens: a Member with no
+joins no Ministry in that response (the response guard refuses it), but an
+earlier join request to the same Ministry (for example one a ParishSoft
+refresh resolved as joined) is listed in its history, and every version
+follows the latest one: once the latest is a cannot-participate leave, that
+Ministry's leaders see the publish flags on the earlier join too. Nothing
+else widens: a Member with no
 standing request to the Ministry (so every other Member of the Family), a
 withdrawn request and other Ministries' requests keep the publish flags, and
 a leader still reads only the Ministries they lead. The rule is enforced in
