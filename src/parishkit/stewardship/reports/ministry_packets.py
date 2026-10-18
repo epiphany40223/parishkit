@@ -79,7 +79,11 @@ def packet_document(payload, parameters, *, parish_name, requested_at, timezone)
         return moment(value).date() if value else ""
 
     def contacts(item, kind):
-        """Leaders see only published contact values, as in the Ministry report."""
+        """The value the packet SQL chose to show, or "Not published".
+
+        The SQL applies the Ministry report's leader contact rule
+        (``ministry_contacts``), so this only renders its visibility.
+        """
         if item[f"{kind}_visibility"] == "not_published":
             return "Not published"
         if kind == "email":

@@ -24,9 +24,13 @@ a new page, and CSV is one file with a blank row and repeated headings between
 Ministries.
 
 Ministry leaders receive only their assigned Ministries, and email and phone
-follow the Ministry report's ParishSoft publish-flag rule, rendering
-`Not published` rather than a source value. That rule applies identically to
-CSV, XLSX and PDF because all three render one captured document.
+follow the Ministry report's leader contact rule: published values, and the
+requesting Member's own on a standing request, unless the Member's
+latest answer says they cannot participate in any ministries
+(#1591), rendering
+`Not published` rather than any other source value. That rule applies
+identically to CSV, XLSX and PDF because all three render one captured
+document.
 
 ## Design
 

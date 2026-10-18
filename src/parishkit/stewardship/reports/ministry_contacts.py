@@ -2,8 +2,8 @@
 
 The follow-up request page and the queue's "Export these requests" show each
 request's Member contact details, which the retired Members joining and
-Members leaving lists used to show. Both read them here, through SQL that is
-already installed, so no schema change was needed:
+Members leaving lists used to show. Both read them here, through SQL that was
+already installed, so #1157 needed no schema change:
 
 - ``stewardship_ministry_report_v4``, the function those lists read, for one
   Ministry and request kind at a time: a join request's gender, age, email,
@@ -13,14 +13,26 @@ already installed, so no schema change was needed:
   a leave request's email and phones, which the report gives only for joins.
 
 Each derives the reader's scope in SQL from the signed-in user, applies the
-ParishSoft publish-flag rule there (a Ministry leader gets "Not published",
-never the value; Administrators and Staff get operational contact), and is
+leader contact rule there, and is
 cross-checked against Python's view of the same user, so neither can show
 more than the other allows (#389 L3). The caller has already read the
 requests through the follow-up selection, so every request asked about is in
 the reader's scope; a Ministry the report cannot read (for example one
 removed from the campaign whose requests were all withdrawn) has no details,
 which the page and file say, rather than failing.
+
+The leader contact rule: Administrators and Staff get operational contact.
+A Ministry leader gets the values the Member publishes in ParishSoft and
+"Not published" for the rest, except that on a standing request (the
+Member's latest version, not withdrawn) the leader gets the requesting
+Member's own email and phones, since asking to join or leave is consent to
+be contacted about it (Administrator decision, 2026-10-17, #1591; frozen
+migration 0119). A Member whose latest live answer (from the Family's
+newest response that answers for them) marks them as unable to participate
+in any ministries keeps the publish flags on every one of their requests,
+current or history, whatever the roster shows (Administrator decision,
+2026-10-18, applied per Member). Python never
+widens or narrows it: it only renders the visibility the SQL returns.
 """
 
 import json

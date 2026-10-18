@@ -6066,10 +6066,16 @@ Members can share a name and the request says which Member is meant: email
 and phones for either kind; for a join request the Family's known primary
 address, gender and age; for a leave request the Member's current role in the
 Ministry. Who sees it is exactly who may open the request: Administrators,
-Staff, and the leaders of the request's Ministry. A Ministry leader sees only
-the email addresses and phone numbers the Member allows to be shared, and
-"Not published" for the others; Administrators and Staff see operational
-contact. A Member the Family added on the form says so, since the details
+Staff, and the leaders of the request's Ministry. A Ministry leader sees the
+requesting Member's own email and phones on a standing request, since asking
+is consent to be contacted (Administrator decision, 2026-10-17,
+[#1591](https://github.com/epiphany40223/parishkit/issues/1591)), except on
+any request of a Member whom the Family's latest response says cannot
+participate in any ministries, and otherwise only the values the Member allows to be shared, with "Not
+published" for the others; Administrators and Staff see operational
+contact. The exact rule is the
+[Ministry change summary's](../reports/spec.md#ministry-change-summary).
+A Member the Family added on the form says so, since the details
 are what the Family entered. Where the details come from, and the rule for a
 request the report cannot read, are in the
 [Ministry change summary](../reports/spec.md#ministry-change-summary). The
@@ -6126,7 +6132,8 @@ reason and a link back to the queue, before any contact detail is read.
 Each download is audited as `ministry_followup_exported` with its count, the
 sorted Ministry DUIDs in the file (`ministry_duids`, which the log's Ministry
 filter finds) and whether its contacts were operational or
-publish-restricted (`ministry_operational`); never names, contact values,
+publish-restricted (`ministry_operational`; restricted means the leader
+rule, including #1591's requesting-Member values); never names, contact values,
 filters or search text.
 
 The queue's columns follow the shared

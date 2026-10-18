@@ -1,5 +1,6 @@
 """Shared exact US display rules; dates and instants deliberately stay distinct."""
 
+import json
 from datetime import UTC, date, datetime
 from decimal import ROUND_HALF_UP, Decimal, localcontext
 
@@ -64,6 +65,25 @@ def _split_extension(value):
     return number, extension if marker else ""
 
 
+def _stored_phone(value):
+    """The number in a Family-entered phone record, or ``value`` unchanged.
+
+    The form stores a phone it collects as ``{"display", "normalized"}``,
+    and the Ministry selections read a Member the Family added with ``->>``,
+    so the record arrives as its JSON text (#1623). Either form yields the
+    canonical number, else what the Family typed; anything else is returned
+    as it is.
+    """
+    if isinstance(value, str) and value.lstrip().startswith("{"):
+        try:
+            value = json.loads(value)
+        except ValueError:
+            return value
+    if isinstance(value, dict) and set(value) == {"display", "normalized"}:
+        return value["normalized"] or value["display"]
+    return value
+
+
 def phone(value):
     """Show one telephone number as "+1 (502) 555-1234", however it was stored.
 
@@ -73,6 +93,7 @@ def phone(value):
     form. Text that is not a plausible number is shown unchanged rather than
     guessed at, so malformed source values stay recognizable.
     """
+    value = _stored_phone(value)
     if value is None:
         return ""
     text = str(value).strip()

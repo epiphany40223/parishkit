@@ -101,7 +101,8 @@ def test_packet_scope_history_privacy_and_rendering(response_service, google):
     )
     assert row["email_contact_at"][:10] == emailed.date().isoformat()
     assert row["phone_contact_at"][:10] == phoned.date().isoformat()
-    # Staff see the operational contact; the leader capture below must not.
+    # Staff see the operational contact; the leader capture below sees the
+    # requesting Member's own (#1591).
     assert "valid@example.org" in json.dumps(row["emails"])
     assert row["notes"] is None and "PRIVATE-JOIN-NOTE" not in json.dumps(
         snapshot.document
@@ -118,15 +119,16 @@ def test_packet_scope_history_privacy_and_rendering(response_service, google):
     assert closed["notes"] == "OTHER-REFERENCE moved parishes"
     assert "PRIVATE-JOIN-NOTE" not in json.dumps(snapshot.document)
 
-    # A leader's packet is its own Ministries, with unpublished contacts withheld.
+    # A leader's packet is its own Ministries, with the requesting Member's
+    # unpublished email shown, since the Member asked (#1591).
     limited = packet(harness, head)
     snapshot, found = sections(limited)
     assert sorted(found) == [9]
     assert snapshot.authorization_scope["operational"] is False
     (row,) = found[9]["rows"]
-    assert row["email_visibility"] == "not_published" and row["emails"] is None
-    assert "valid@example.org" not in json.dumps(snapshot.document)
-    # The same leader does receive what the source publishes: this phone.
+    assert row["email_visibility"] == "available"
+    assert "valid@example.org" in json.dumps(row["emails"])
+    # The same leader receives the phone, which the source publishes.
     assert row["phone_visibility"] == "available"
     assert "202-555-0123" in json.dumps(row["phones"])
     assert sorted(sections(packet(harness, head, (9,)))[1]) == [9]

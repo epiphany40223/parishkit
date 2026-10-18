@@ -94,6 +94,34 @@ WITH selected AS MATERIALIZED (
     LEFT JOIN stewardship_source_ministry p ON p.id=m.payload_id
     LEFT JOIN chairs c ON c.ministry_key=d.duid::text
     WHERE selection IS NULL OR d.duid=ANY(selection::bigint[])
+), answered AS MATERIALIZED (
+    -- Each Member's current answer to cannot participate in any ministries
+    -- (physical limitations): the one in the Family's latest live
+    -- submission that answers it for that Member (lists them under
+    -- 'service'). A Member so answered shares no unpublished contact with
+    -- leaders on any of their requests, current or history, until a later
+    -- submission answers it for them without the box (Administrator,
+    -- #1591). A submission that leaves the Member out (reported moved out or
+    -- deceased) does not clear it; a Member never answered is not hidden.
+    -- Only an entry whose box is a JSON boolean is an answer, so a
+    -- malformed one (which the guards refuse) cannot clear the box.
+    -- One sort over the campaign's live submissions of Families with a
+    -- request here, joined by Member, not a lookup per request.
+    SELECT DISTINCT ON (s.family_id,g.kind,e.key) s.family_id,g.kind,e.key,
+        e.value->'cannot_serve'='true'::jsonb AS cannot_serve
+    FROM source x JOIN stewardship_submission s
+        ON s.campaign_id=x.id AND s.mode='live'
+    CROSS JOIN LATERAL (VALUES ('member','members'),
+        ('proposed_member','proposed_members')) g(kind,grp)
+    CROSS JOIN LATERAL jsonb_each(CASE WHEN jsonb_typeof(
+        s.answers->'service'->g.grp)='object'
+        THEN s.answers->'service'->g.grp END) e
+    WHERE jsonb_typeof(e.value->'cannot_serve')='boolean'
+        AND s.family_id IN (SELECT q.family_id FROM stewardship_submission q
+        JOIN stewardship_ministry_request r ON r.submission_id=q.id
+        JOIN ministries m ON m.duid=r.ministry_duid
+        WHERE q.campaign_id=x.id AND q.mode='live')
+    ORDER BY s.family_id,g.kind,e.key,s.family_version DESC
 ), requests AS MATERIALIZED (
     SELECT r.id,r.entity_kind,r.entity_key,r.ministry_duid,r.action,r.state,
         r.outcome,r.submission_id,s.submitted_at,f.family_duid,
@@ -106,10 +134,20 @@ WITH selected AS MATERIALIZED (
     JOIN stewardship_family_campaign f ON f.id=s.family_id
 ), latest AS MATERIALIZED (
     SELECT r.*,p.canonical::jsonb AS person,
+        -- A standing request (this is its latest version) is its Member's
+        -- consent to be contacted about it by the Ministry's leaders
+        -- (#1591); a withdrawn one is not. Nor is any request of a Member
+        -- whose current answer ('answered') is cannot participate in any
+        -- ministries (physical limitations): those follow the publish
+        -- flags (Administrator, #1591), whatever the roster holds.
+        r.state NOT IN ('cancelled','superseded') AND a.cannot_serve IS NOT TRUE
+            AS consented,
         CASE WHEN r.entity_kind='proposed_member'
             THEN s.answers->'proposed_members'->r.entity_key END AS proposed
     FROM requests r CROSS JOIN source x
     JOIN stewardship_submission s ON s.id=r.submission_id
+    LEFT JOIN answered a ON a.family_id=s.family_id
+        AND a.kind=r.entity_kind AND a.key=r.entity_key
     LEFT JOIN stewardship_snapshot_member sm
         ON r.entity_kind='member' AND sm.snapshot_id=x.source_id
         AND sm.source_key=r.entity_key
@@ -131,17 +169,21 @@ WITH selected AS MATERIALIZED (
             'Name not recorded in ParishSoft') AS member_name,
         CASE WHEN r.entity_kind='member' THEN r.entity_key::bigint END AS member_duid,
         CASE WHEN r.entity_kind='proposed_member' THEN r.entity_key END AS proposed_id,
-        CASE WHEN NOT operational AND coalesce(
+        -- Leaders see published values, and the requesting Member's own on
+        -- a standing request (#1591); Admins and Staff see operational ones.
+        CASE WHEN NOT operational AND NOT r.consented AND coalesce(
             c.value->'publish_email','false'::jsonb)<>'true'::jsonb
             THEN 'not_published' ELSE 'available' END AS email_visibility,
-        CASE WHEN operational OR c.value->'publish_email'='true'::jsonb
+        CASE WHEN operational OR r.consented
+            OR c.value->'publish_email'='true'::jsonb
             THEN CASE WHEN r.entity_kind='member' THEN c.value->'emails'
                 ELSE jsonb_build_array(jsonb_build_object(
                     'value',r.proposed->>'email')) END END AS emails,
-        CASE WHEN NOT operational AND coalesce(
+        CASE WHEN NOT operational AND NOT r.consented AND coalesce(
             c.value->'publish_phone','false'::jsonb)<>'true'::jsonb
             THEN 'not_published' ELSE 'available' END AS phone_visibility,
-        CASE WHEN operational OR c.value->'publish_phone'='true'::jsonb
+        CASE WHEN operational OR r.consented
+            OR c.value->'publish_phone'='true'::jsonb
             THEN CASE WHEN r.entity_kind='member' THEN c.value->'phones'
                 ELSE jsonb_build_object('home',r.proposed->>'home_phone',
                     'mobile',r.proposed->>'mobile_phone',

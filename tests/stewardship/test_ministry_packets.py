@@ -535,3 +535,39 @@ def test_stewardship_year_is_the_configured_label_not_a_derived_date():
         timezone="UTC",
     )
     assert dict(keyless.metadata)["Stewardship year"] == "2026"
+
+
+def test_a_family_entered_phone_reads_as_a_number_in_every_format():
+    """A phone the Family typed for a Member it added is stored as
+    {display, normalized} and reaches the packet as that record's JSON text
+    or as the object (#1623); every packet file shows the formatted number,
+    never the record."""
+    record = '{"display": "5025551212", "normalized": "+15025551212"}'
+    row = item(
+        member_name="New Person",
+        member_duid=None,
+        proposed_id="00000000-0000-4000-8000-000000000044",
+        entity_kind="proposed_member",
+        phones={
+            "mobile": record,
+            "home": {"display": "202 555 0123", "normalized": "+12025550123"},
+        },
+    )
+    document = packet([dict(duid=9, name="Choir", chairs=[], rows=[row])])
+    phones = document.sections[0].rows[0][HEADINGS.index("Phone number(s)")]
+    assert phones == "mobile: +1 (502) 555-1212\nhome: +1 (202) 555-0123"
+    text = rendered(document, "csv").decode()
+    book = load_workbook(io.BytesIO(rendered(document, "xlsx")))
+    try:
+        values = [
+            str(value)
+            for sheet in book.worksheets
+            for cells in sheet.iter_rows(values_only=True)
+            for value in cells
+        ]
+    finally:
+        book.close()
+    records = str(list(packet_records(document)))
+    assert "+1 (502) 555-1212" in text and any(phones == v for v in values)
+    assert "+1 (502) 555-1212" in records
+    assert not any("normalized" in s for s in (text, records, *values))

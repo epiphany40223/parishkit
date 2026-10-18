@@ -111,7 +111,9 @@ def test_capture_scope_and_revocation(response_service, google):
     assert recorded.event.subject_id == request.pk
     assert recorded.context["ministry_duids"] == [9]
     assert recorded.context["ministry_operational"] is False
-    assert "valid@example.org" not in json.dumps(snapshot.document)
+    # The Member asked to join, so even the unpublished email is in the
+    # leader's capture (#1591); the birth date never is.
+    assert "valid@example.org" in json.dumps(snapshot.document)
     assert "202-555-0123" in json.dumps(snapshot.document)
     assert "1960-01-01" not in json.dumps(snapshot.document)
     with pytest.raises(PermissionError):
@@ -293,7 +295,7 @@ def test_native_leader_exports_worker_and_download(
             assert b"Return to " not in body
         with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
             document = load_document(result)
-            assert "valid@example.org" not in str(document.rows)
+            assert "valid@example.org" in str(document.rows)
             assert execute_hint(
                 result.task_id,
                 queue=WorkQueue.GENERAL,
@@ -309,7 +311,7 @@ def test_native_leader_exports_worker_and_download(
                 {"csv": b"Member,", "xlsx": b"PK", "pdf": b"%PDF"}[format]
             )
             if format == "csv":
-                assert b"Not published" in body and b"valid@example.org" not in body
+                assert b"Not published" not in body and b"valid@example.org" in body
                 assert b"1960-01-01" not in body and b"+1 (202) 555-0123" in body
     # Once its window is over, the leader's own export is the fixed 410 page,
     # linking back to Ministry requests (#1398).
