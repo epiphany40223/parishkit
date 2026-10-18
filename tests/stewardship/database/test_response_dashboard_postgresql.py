@@ -32,9 +32,9 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 
 def tiles(body):
-    """The stage tiles' counts, in funnel order, from the rendered page."""
+    """The Summary's Families by stage counts, in funnel order (#1537)."""
     stages = re.search(
-        rb'<section class="panel" id="response-stages".*?</section>', body, re.S
+        rb'<ul class="stat-tiles" aria-label="Families by stage">.*?</ul>', body, re.S
     )
     if stages is None:
         return []
@@ -70,12 +70,14 @@ def test_dashboard_for_admin_and_staff_in_both_modes(
         # The mode link names the dashboard region as its fragment (#519).
         testing = route + "?scope=historical&amp;page=1&amp;mode=testing"
         assert b'href="' + testing.encode() + b'#response-dashboard"' in body
-        assert b'id="response-funnel-spec"' in body
+        # No funnel chart: the tiles give its figures (#1537).
+        assert b"response-funnel" not in body
         # The fixture's ParishSoft inputs give no statistics, so the
-        # Production view still shows the funnel and says the other panels
-        # are unavailable, rather than refusing the page (#1537); the
-        # activity chart is gone.
+        # Production view still shows Families by stage and says the other
+        # rows and panels are unavailable, rather than refusing the page
+        # (#1537); the activity chart is gone.
         assert b'id="production-unavailable"' in body
+        assert b'aria-label="Active population"' not in body
         assert b'id="response-activity-spec"' not in body
         # The rehearsal's sign-in, form and submission are Testing evidence.
         response, body = get(admin, route + "?mode=testing")
@@ -84,7 +86,7 @@ def test_dashboard_for_admin_and_staff_in_both_modes(
         assert b"Testing rehearsal" in body and b"never counted in Production" in body
         # The Production-only panels are left out, saying why.
         assert b'id="production-only"' in body
-        assert b"Current active population statistics" not in body
+        assert b'aria-label="Active population"' not in body
         # An old bookmark's activity grain still loads, and is ignored.
         response, body = get(admin, route + "?mode=testing&grain=day")
         assert response.status_code == 200 and b"Response activity" not in body

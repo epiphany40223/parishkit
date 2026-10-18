@@ -32,43 +32,138 @@ AXE = """async () => (await axe.run(document, {
 }))"""
 
 
-def test_dashboard_renders_tiles_and_charts_cleanly(page, component_origin, axe_source):
-    """Families by stage, then the funnel, the statistics and the daily
-    chart, all drawn with no policy violation or error (#1537).
+# The Summary's two rows of tiles (#1537).
+POPULATION = '#response-summary [aria-label="Active population"]'
+STAGES = '#response-summary [aria-label="Families by stage"]'
 
-    The page fits a phone-width window, and axe finds nothing to report.
+
+def test_dashboard_renders_one_summary_and_the_daily_chart_cleanly(
+    page, component_origin, axe_source
+):
+    """One Summary panel, its Active population row of four tiles over its
+    Families by stage row of five, then the daily chart, all drawn with no
+    policy violation or error (Administrator, 2026-10-18, #1537).
+
+    No funnel chart and no "Responses and email reach" chart: the tiles
+    give their figures. The page fits a phone-width window, and axe finds
+    nothing to report.
     """
     from playwright.sync_api import expect
 
     errors = watch(page)
     page.goto(component_origin + "/response-dashboard")
-    # The funnel, the statistics' progress bars and the daily chart.
-    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(3)
-    stages = page.locator("#response-stages")
-    assert stages.locator(".stat-tile").count() == 5
-    assert stages.locator(".stat-value").all_inner_texts() == ["5", "6", "4", "3", "3"]
-    # The tiles come before the funnel, and the funnel before the statistics.
-    tiles = stages.locator(".stat-tiles").bounding_box()
-    funnel = page.locator("[data-chart='response-funnel-spec']").bounding_box()
-    statistics = page.locator("#participation-statistics").bounding_box()
-    assert tiles["y"] < funnel["y"] < statistics["y"]
-    # No activity chart, no Also counted figures, no lists of Families, and
-    # the funnel has no exact-values table (#1537).
-    assert page.locator("[data-chart='response-activity-spec']").count() == 0
+    # The daily chart is the page's only chart.
+    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(1)
+    assert page.locator("[data-chart]").count() == 1
+    assert page.locator("#participation-chart [data-chart]").count() == 1
+    summary = page.locator("#response-summary")
+    assert page.locator("section.panel .stat-tiles").count() == 2
+    assert summary.locator(".stat-tiles").count() == 2
+    assert page.locator(POPULATION + " .stat-label").all_inner_texts() == [
+        "Active Families",
+        "Active Members",
+        "Current annual pledges",
+        "Last year's pledges (all Families)",
+    ]
+    assert page.locator(STAGES + " .stat-label").all_inner_texts() == [
+        "Invited",
+        "Link followed",
+        "Form opened",
+        "Progressed past the first step",
+        "Submitted",
+    ]
+    assert page.locator(STAGES + " .stat-value").all_inner_texts() == [
+        "5",
+        "6",
+        "4",
+        "3",
+        "3",
+    ]
+    link = page.locator(STAGES + ' [data-stat="link_followed"]').inner_text()
+    assert "Includes mail-scanner prefetches" in link
+    # Row 1 over row 2, then "Data as of", then the daily chart.
+    population = page.locator(POPULATION).bounding_box()
+    stages = page.locator(STAGES).bounding_box()
+    as_of = summary.get_by_text("Data as of").bounding_box()
+    chart = page.locator("#participation-chart").bounding_box()
+    assert population["y"] + population["height"] <= stages["y"]
+    assert stages["y"] < as_of["y"] < chart["y"]
+    # No activity chart, no Also counted figures, no lists of Families, no
+    # funnel and no reach chart (#1537).
     main = page.locator("main").inner_text()
-    assert "Also counted" not in main and "Lists of Families" not in main
-    assert page.locator("#response-funnel .chart-table").count() == 0
+    for gone in (
+        "Also counted",
+        "Lists of Families",
+        "Response funnel",
+        "Responses and email reach",
+        "Families with eligible email",
+    ):
+        assert gone not in main, gone
     assert_clean(page, errors)
     page.set_viewport_size({"width": 390, "height": 844})
-    eventually(
-        page,
-        "document.querySelector(\"[data-chart='response-funnel-spec'] svg\")"
-        ".getBoundingClientRect().width < 390",
-    )
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert_clean(page, errors)
     page.evaluate(axe_source)
     assert page.evaluate(AXE) == []
+
+
+# Each Summary tile: its row, its box, and whether its value fits inside it
+# (the value's own scroll width within its box, and its box within the
+# tile's padding box).
+SUMMARY_TILES = """() => [...document.querySelectorAll(
+    '#response-summary .stat-tile')].map((tile) => {
+  const value = tile.querySelector('.stat-value');
+  const t = tile.getBoundingClientRect(), v = value.getBoundingClientRect();
+  return {row: tile.parentElement.getAttribute('aria-label'),
+          key: tile.dataset.stat, top: Math.round(t.top), left: t.left,
+          right: t.right, width: t.width,
+          fits: value.scrollWidth <= Math.ceil(v.width)
+            && v.left >= t.left && v.right <= t.right};
+})"""
+
+
+# How many tiles each Summary row puts on each line, by window width (with
+# the Admin sidebar from 1100 pixels): a phone stacks, and otherwise a row
+# never leaves one tile alone on a line, so four go 4 or 2 + 2 and five go
+# 5 or 3 + 2 (ui-conventions "Stat tiles", #1537).
+SUMMARY_LINES = {
+    320: ([1, 1, 1, 1], [1, 1, 1, 1, 1]),
+    760: ([2, 2], [3, 2]),
+    1100: ([2, 2], [3, 2]),
+    1280: ([4], [3, 2]),
+    1600: ([4], [5]),
+}
+
+
+@pytest.mark.parametrize("width", sorted(SUMMARY_LINES))
+def test_summary_rows_fit_and_balance(page, component_origin, width):
+    """At every window width each Summary value stays inside its tile, no
+    tile is narrower than 12.5rem unless the row stacks on a phone, tiles on
+    one line never overlap, each row's lines are balanced, and the page
+    never scrolls sideways (ui-conventions "Stat tiles", #1537)."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + "/response-dashboard")
+    tiles = page.evaluate(SUMMARY_TILES)
+    assert len(tiles) == 9
+    assert all(tile["fits"] for tile in tiles), tiles
+    rem = page.evaluate(
+        "parseFloat(getComputedStyle(document.documentElement).fontSize)"
+    )
+    for name, expected in zip(
+        ("Active population", "Families by stage"), SUMMARY_LINES[width], strict=True
+    ):
+        lines = {}
+        for tile in (tile for tile in tiles if tile["row"] == name):
+            lines.setdefault(tile["top"], []).append(tile)
+        assert [len(line) for line in lines.values()] == expected, (name, lines)
+        for line in lines.values():
+            line.sort(key=lambda tile: tile["left"])
+            assert all(
+                a["right"] <= b["left"] for a, b in zip(line, line[1:], strict=False)
+            )
+            if width > 40 * rem:
+                assert all(tile["width"] >= 12.5 * rem - 1 for tile in line), line
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
 
 
 def test_testing_view_without_a_rehearsal_is_accessible(
@@ -90,20 +185,20 @@ def test_testing_view_without_a_rehearsal_is_accessible(
     assert page.evaluate(AXE) == []
 
 
-def test_testing_view_shows_the_rehearsal_funnel_only(
+def test_testing_view_shows_the_rehearsal_stages_only(
     page, component_origin, axe_source
 ):
-    """During a rehearsal, Families by stage and the funnel show it; the
-    Production-only panels are left out, with one line saying why (#1537)."""
-    from playwright.sync_api import expect
-
+    """During a rehearsal the Summary's Families by stage row shows it; the
+    Active population row and the Production-only panels are left out, with
+    one line saying why (#1537)."""
     errors = watch(page)
     page.goto(component_origin + "/response-dashboard-rehearsal")
-    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(1)
-    assert page.locator("#response-stages .stat-tile").count() == 5
+    assert page.locator("[data-chart]").count() == 0
+    assert page.locator(STAGES + " .stat-tile").count() == 5
+    assert page.locator(POPULATION).count() == 0
     visible(page.get_by_text("never counted in Production"))
     visible(page.locator("#production-only"))
-    for gone in ("#participation-statistics", "#participation-chart", "#export-format"):
+    for gone in ("#participation-chart", "#export-format"):
         assert page.locator(gone).count() == 0
     assert page.get_by_role("group", name="Chart population").count() == 0
     assert_clean(page, errors)
@@ -112,15 +207,15 @@ def test_testing_view_shows_the_rehearsal_funnel_only(
 
 
 def test_empty_campaign_renders_cleanly(page, component_origin, axe_source):
-    """Nothing invited or followed yet: zero tiles, a plain sentence, and the
-    funnel still drawn, with no policy violation; axe is clean."""
+    """Nothing invited or followed yet: zero tiles and a plain sentence,
+    with no policy violation; axe is clean."""
     from playwright.sync_api import expect
 
     errors = watch(page)
     page.goto(component_origin + "/response-dashboard-empty")
-    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(3)
-    assert page.locator("#response-stages .stat-value").all_inner_texts() == ["0"] * 5
-    main = page.locator("#response-stages").inner_text()
+    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(1)
+    assert page.locator(STAGES + " .stat-value").all_inner_texts() == ["0"] * 5
+    main = page.locator("#response-summary").inner_text()
     assert "No invitations have been delivered yet." in main
     assert "compared with invited" not in main
     assert_clean(page, errors)
@@ -142,7 +237,7 @@ def test_mode_choice_refreshes_the_dashboard_in_place(page, component_origin):
     errors = watch(page)
     page.set_viewport_size({"width": 1000, "height": 700})
     page.goto(component_origin + REAL + "?" + ZONE)
-    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(3)
+    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(1)
     eventually(page, FITTED)
     page.evaluate("window.__dashboardMarker = 1")
     testing = page.locator('[data-in-place="mode-testing"]')
@@ -152,8 +247,9 @@ def test_mode_choice_refreshes_the_dashboard_in_place(page, component_origin):
     page.keyboard.press("Enter")
     page.wait_for_url("**mode=testing*#response-dashboard")
     expect(page.locator("#production-only")).to_be_visible()
-    expect(page.locator("#participation-statistics")).to_have_count(0)
-    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(1)
+    expect(page.locator(POPULATION)).to_have_count(0)
+    expect(page.locator(STAGES)).to_have_count(1)
+    expect(page.locator("[data-chart]")).to_have_count(0)
     assert page.evaluate("window.__dashboardMarker") == 1
     assert abs(page.evaluate("window.scrollY") - before) < 2
     assert page.evaluate("document.activeElement.dataset.inPlace") == "mode-testing"
@@ -165,8 +261,8 @@ def test_mode_choice_refreshes_the_dashboard_in_place(page, component_origin):
     assert_clean(page, errors)
     # Production again: the statistics, chart and export come back.
     page.locator('[data-in-place="mode-production"]').click()
-    expect(page.locator("#participation-statistics")).to_have_count(1)
-    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(3)
+    expect(page.locator(POPULATION)).to_have_count(1)
+    expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(1)
     assert "mode=" not in page.url
     assert page.evaluate("window.__dashboardMarker") == 1
     assert page.evaluate("document.activeElement.dataset.inPlace") == "mode-production"
@@ -323,7 +419,7 @@ def test_switch_sends_mode_once_after_the_rehearsal_ends(page, component_origin)
 
 # Each stage tile's share bar, with the tile's and the bar's boxes, read from
 # the page itself so no assertion depends on content above the tiles.
-TILE_BARS = """() => [...document.querySelectorAll('#response-stages .stat-tile')]
+TILE_BARS = """() => [...document.querySelectorAll('STAGES .stat-tile')]
   .map(tile => {
   const bar = tile.querySelector('.stat-bar progress');
   const t = tile.getBoundingClientRect(), b = bar.getBoundingClientRect();
@@ -332,7 +428,7 @@ TILE_BARS = """() => [...document.querySelectorAll('#response-stages .stat-tile'
           hidden: bar.closest('[aria-hidden=true]') !== null,
           top: Math.round(t.top), tileBottom: t.bottom, barTop: b.top,
           barBottom: b.bottom, barWidth: b.width, tileWidth: t.width};
-})"""
+})""".replace("STAGES", STAGES)
 
 
 @pytest.mark.parametrize("width", [1280, 390])

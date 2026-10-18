@@ -802,34 +802,6 @@ def information_followup(counts, total):
     )
 
 
-# The statistics drawn as progress against active Families (#720), in the
-# order the cards listed them: (card label, PopulationStatistics field).
-PROGRESS = (
-    ("Families that have responded", "responses"),
-    ("Families with eligible email", "eligible_email"),
-    ("Families with deliverable email", "deliverable_email"),
-)
-
-
-def population_progress(active):
-    """The Participation statistics' progress bars against active Families.
-
-    ``active`` is ``CampaignStatistics.active``, the current active
-    population's counts. Without an observation there is nothing to draw:
-    ``None`` is returned and the cards say Unavailable, never zero.
-    """
-    if active is None:
-        return None
-    return count_bars(
-        "active-population",
-        "Responses and email reach",
-        [(label, getattr(active, field)) for label, field in PROGRESS],
-        total=active.families,
-        compared="Share of active Families",
-        progress=True,
-    )
-
-
 # Ministry requests' follow-up bars (#720), in drawing order: (bar label,
 # count in ``ministry_followup.request_totals``).
 FOLLOW_UP = (

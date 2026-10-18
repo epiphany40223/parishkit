@@ -592,26 +592,23 @@ Cards show:
 Giving cards include mapped funds/period and source as-of. Missing/incomplete
 source is never shown as zero: it reads Unavailable, or, in a tile, "—".
 
-On the [Response dashboard](#response-dashboard) the cards are visuals first
-([#720](https://github.com/epiphany40223/parishkit/issues/720)):
-[stat tiles](../ui-conventions/spec.md#stat-tiles) for
-the active Families, active Members and the two pledge figures, then one
-[chart engine](#chart-engine) chart, "Responses and email reach", with a
-progress bar against the active Families for each of the responded, eligible
-email and deliverable email counts. The axis ends at the active Families and
-a grey track shows the remainder. Each bar's axis label has its value,
-"463 out of 1,240 (37.3%)" (the wording the cards always used), on a second
-line under its name, so it fits at phone width; its tooltip and accessible
-name carry the same count and share, so the chart has no exact-values table
-([chart engine](#chart-engine),
-[#1266](https://github.com/epiphany40223/parishkit/issues/1266)). Without an
-observation nothing is drawn and every card is a tile reading "—", with a
+On the [Response dashboard](#response-dashboard) the cards are the first row
+of its Summary panel's [stat tiles](../ui-conventions/spec.md#stat-tiles)
+([#720](https://github.com/epiphany40223/parishkit/issues/720),
+[#1537](https://github.com/epiphany40223/parishkit/issues/1537)): Active
+Families, Active Members and, with giving enabled, Current annual pledges and
+Last year's pledges (all Families). The responded, eligible email and
+deliverable email counts are not on the page: the Summary's
+[Families by stage](#funnel-stages) row shows the responses, so the
+"Responses and email reach" chart that drew those three counts was removed
+as redundant (Administrator, 2026-10-18), and `pk-admin report participation`
+still reports all three. Without an observation every tile reads "—", with a
 toggletip saying no ParishSoft data has been loaded yet. A pledge total that
 cannot be added up reads "—" the same way, with the reason for its cause:
 no giving definition for the campaign, an answer whose amount is not known
 (current annual pledges), or a snapshot that does not hold every pledge for
 last year's period (last year's pledges). No reason promises that a later
-refresh will fix it. Under the tiles and bars one line, "Data as of" the
+refresh will fix it. Under the tiles one line, "Data as of" the
 moment the statistics were counted, shows that time in the browser's own
 zone, with no "UTC" label
 ([browser-local times](../ui-conventions/spec.md#dates-and-times),
@@ -652,8 +649,9 @@ installed SQL function `stewardship_family_response_v1` (migration 0050,
 dashboard, the digest and the
 [directory's Response filter](#response-filters) all read, so their counts
 cannot drift apart. The
-[chart engine](#chart-engine) draws the funnel on the
-[Response dashboard](#response-dashboard), `pk-admin report responses`
+[Response dashboard](#response-dashboard) shows its stages as stat tiles,
+the [chart engine](#chart-engine) draws the funnel for the emailed daily
+report, `pk-admin report responses`
 reports the activity series, and the
 directory's [Response filters](#response-filters) list the Families behind
 the counts; the
@@ -764,34 +762,39 @@ heading, and the page sends `Cache-Control: no-store`. Top to bottom:
 2. **Responses shown**, Production | Testing rehearsal, a
    [binary choice](../ui-conventions/spec.md#binary-choices) offered to
    Administrators only.
-3. **Families by stage**: a
-   [stat tile](../ui-conventions/spec.md#stat-tiles) per
-   [funnel stage](#funnel-stages) with its count, its share compared with
-   Invited and a share bar drawing that share
-   ([#720](https://github.com/epiphany40223/parishkit/issues/720)), counted at
-   the database's current instant. Invited's own bar is full, as the
-   reference the others are read against, and a share past 100% (a Family
-   can follow its link without a delivered invitation) fills its bar. Until
-   an invitation has been delivered the tiles leave out their shares and
-   bars and the panel says so in one sentence. The three figures reported
-   beside the funnel are not shown (`pk-admin report responses` still
-   reports them).
-4. **Response funnel**: the funnel chart, named by its panel's heading
-   rather than a title drawn inside it. Each bar is labelled with its
-   count, its tooltip adds its share, and the tiles above give the exact
-   figures, so it has no exact-values table
-   ([charts](../ui-conventions/spec.md#charts),
-   [#1266](https://github.com/epiphany40223/parishkit/issues/1266)) and,
-   on the page, no count axis, which would crowd the bars at phone width;
-   there a stage's note ("(includes mail-scanner prefetches)") is drawn on
-   its own line under the stage's name, so the counts still fit (the
-   emailed image keeps its axis and one-line labels).
-5. **Current active population statistics** ([campaign
-   statistics](#campaign-statistics)), ending with its one "Data as of"
-   line.
-6. **Daily participation**: the Chart population choice, the daily chart
+3. **Summary**: one panel of
+   [stat tiles](../ui-conventions/spec.md#stat-tiles) in two rows
+   (Administrator, 2026-10-18,
+   [#1537](https://github.com/epiphany40223/parishkit/issues/1537)), ending
+   with one "Data as of" line.
+   - **Active population** (a Production view only): Active Families,
+     Active Members, Current annual pledges and Last year's pledges (all
+     Families), the last two with giving enabled
+     ([campaign statistics](#campaign-statistics)). "Data as of" is the
+     moment these were counted.
+   - **Families by stage**: Invited, Link followed, Form opened, Progressed
+     past the first step and Submitted, a tile per
+     [funnel stage](#funnel-stages) with its count, its share compared with
+     Invited and a share bar drawing that share
+     ([#720](https://github.com/epiphany40223/parishkit/issues/720)), counted
+     at the database's current instant; Link followed's tile says it
+     includes mail-scanner prefetches. Invited's own bar is full, as the
+     reference the others are read against, and a share past 100% (a Family
+     can follow its link without a delivered invitation) fills its bar.
+     Until an invitation has been delivered the tiles leave out their shares
+     and bars and the panel says so in one sentence. The three figures
+     reported beside the funnel are not shown (`pk-admin report responses`
+     still reports them).
+
+   The page draws no funnel chart and no "Responses and email reach" chart:
+   the Families by stage tiles give the funnel's counts and shares and draw
+   its bars, and the responses that chart drew are the Submitted tile, so
+   both were removed as redundant (the emailed daily report keeps its funnel
+   image; `pk-admin report participation` still reports the email reach
+   counts).
+4. **Daily participation**: the Chart population choice, the daily chart
    and its table ([participation graph](#participation-graph)).
-7. **Export**: one sentence, "Exports the daily participation data on this
+5. **Export**: one sentence, "Exports the daily participation data on this
    page.", the Export format menu (XLSX, CSV and PDF, XLSX first and chosen,
    [downloaded files](../ui-conventions/spec.md#downloaded-files)) and
    **Generate export**, which exports every daily row of the chart shown
@@ -818,8 +821,8 @@ labelled as Testing, and is offered and admitted for Administrators only,
 since Testing responses appear only in explicit Admin testing views (see
 [population and calculation rules](#population-and-calculation-rules)). The
 statistics, the daily chart and the export count Production responses only,
-so a Testing view shows Families by stage and the funnel and, instead of the
-other panels, one line: "Population statistics, daily participation and the
+so a Testing view shows the Summary's Families by stage row only and,
+instead of the other rows and panels, one line: "Population statistics, daily participation and the
 export count Production responses only. Choose Production to see them."
 ([conditional fields](../ui-conventions/spec.md#conditional-fields)). With
 no active rehearsal, the Testing view says there is nothing to show. `scope`,
@@ -838,8 +841,8 @@ Each view reads the funnel once, and a Production view the statistics and
 the daily chart's facts, all inside the report's one
 [campaign read guard](../data/spec.md#campaign-read-guards) with its role
 recheck. When the statistics or the daily facts cannot be read from their
-inputs, the Production view still shows Families by stage and the funnel
-and, instead of the other panels, one line saying they are unavailable right
+inputs, the Production view still shows the Summary's Families by stage
+row and, instead of the other rows and panels, one line saying they are unavailable right
 now, with no zero assumed; a database or guard failure still answers the
 report's unavailable page. A view records `response_dashboard_viewed` with
 its outcome, and a Production view also `participation_viewed`, started and

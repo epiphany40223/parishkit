@@ -2611,7 +2611,9 @@ two ways of reading to a screen reader. **Precedent.**
   leaves out; it never repeats a figure another tile or the page already
   shows, as for [chart captions](#charts). A tile has no heading of its
   own: the label is not a heading, and the row is named by its panel's
-  heading.
+  heading. A panel with more than one row names each row with its own short
+  label instead, so a screen reader tells the rows apart
+  ([#1537](https://github.com/epiphany40223/parishkit/issues/1537)).
 - **Trend.** Where a comparison exists, a tile may end with one trend
   line, written in words with an arrow ("↑ 12.5% more"), never colour
   alone.
@@ -2636,7 +2638,10 @@ two ways of reading to a screen reader. **Precedent.**
   value also always stays inside its tile, at every window width and
   font size: a row puts fewer tiles across rather than make a tile too
   narrow for its value. Every row of tiles stacks on a phone, including
-  those not yet drawn by the shared code.
+  those not yet drawn by the shared code. A row of four or five tiles
+  never leaves one tile alone on a line: four go 4 or 2 + 2 across, five go
+  5 or 3 + 2, and either stacks when even that is too narrow
+  ([#1537](https://github.com/epiphany40223/parishkit/issues/1537)).
 - **Shared code.** The helper's `tile()` builds each tile and the include
   draws a row of them. A guard test fails when a template outside
   `components/` draws stat-tile markup by hand; the templates not yet

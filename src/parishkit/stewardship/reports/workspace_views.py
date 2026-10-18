@@ -1,13 +1,13 @@
 """The Response dashboard (#1537): the funnel, the statistics and the daily chart.
 
 One page (``reports/responses/``, the current campaign) shows, top to
-bottom, the Families by stage tiles and the Response funnel
-(``response_dashboard``), the current active population statistics, and the
+bottom, one Summary panel of stat tiles (the current active population
+statistics, then Families by stage from ``response_dashboard``), and the
 daily participation chart and table with their export, each read under the
 page's one campaign read guard. Production is the default; an
 Administrator's Testing rehearsal view (``mode=testing``) shows the
-rehearsal's funnel only, since the statistics, the daily chart and the
-export count Production responses.
+rehearsal's Families by stage only, since the statistics, the daily chart
+and the export count Production responses.
 """
 
 from contextlib import ExitStack
@@ -36,7 +36,7 @@ from parishkit.stewardship.web.security import private_response
 from parishkit.stewardship.web.stat_tiles import tile
 from parishkit.stewardship.web.tables import paginate
 
-from .chart_specs import participation_chart, population_progress
+from .chart_specs import participation_chart
 from .digest_presentation import participation_table_context
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES, _principal
@@ -310,34 +310,27 @@ def known_money(amount):
 
 
 def statistics_panel(statistics):
-    """The statistics panel's stat tiles and its progress chart (#720, #1540).
+    """The Summary panel's Active population row of stat tiles (#720, #1540).
 
-    With an observation, the responded and email-reach counts are drawn as
-    progress bars against active Families, and the active Families and
-    Members are tiles. Without one nothing is drawn, and all five are tiles
-    reading "—" with the reason, never zero. With giving enabled two pledge
-    tiles end the row (#728): the current annual pledges, and last year's
-    pledges of every Family in the ParishSoft data, whatever its status
-    today (so not a subtotal of these Families).
+    The active Families and Members, and with giving enabled two pledge
+    tiles (#728): the current annual pledges, and last year's pledges of
+    every Family in the ParishSoft data, whatever its status today (so not a
+    subtotal of these Families). Without an observation every tile reads
+    "—" with the reason, never zero. The responded and email-reach counts
+    are not shown (#1537): the Families by stage row gives the responses,
+    and ``report participation`` still reports all three.
     """
     active = statistics.active
     no_data = _("No ParishSoft data has been loaded for this campaign yet.")
-    if active is None:
-        figures = [
-            (key, label, None, no_data)
-            for key, label in (
-                ("active_families", _("Active Families")),
-                ("active_members", _("Active Members")),
-                ("eligible_email", _("Families with eligible email")),
-                ("deliverable_email", _("Families with deliverable email")),
-                ("responses", _("Families that have responded")),
-            )
-        ]
-    else:
-        figures = [
-            ("active_families", _("Active Families"), active.families, ""),
-            ("active_members", _("Active Members"), active.active_members, ""),
-        ]
+    figures = [
+        ("active_families", _("Active Families"), active and active.families, no_data),
+        (
+            "active_members",
+            _("Active Members"),
+            active and active.active_members,
+            no_data,
+        ),
+    ]
     if statistics.financial_enabled:
         pledges = known_money(active.annual_pledge) if active else None
         everyone = known_money(statistics.comparison_pledge_all)
@@ -372,8 +365,7 @@ def statistics_panel(statistics):
         "tiles": tuple(
             tile(key, label, value, unknown_reason="" if value is not None else reason)
             for key, label, value, reason in figures
-        ),
-        "progress": population_progress(active),
+        )
     }
 
 
