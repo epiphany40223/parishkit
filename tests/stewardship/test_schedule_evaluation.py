@@ -305,7 +305,6 @@ def test_a_weekly_digest_never_plans_its_skipped_week():
 @pytest.mark.parametrize(
     "value",
     [
-        [],
         ["2054-10-03", "2054-10-02"],
         ["2054-10-02", "2054-10-02"],
         ["20541002"],
@@ -319,6 +318,11 @@ def test_skip_dates_must_be_a_short_ascending_list_of_dates(value):
     """One canonical form: distinct ISO dates, ascending, at most 400 (#1658)."""
     with pytest.raises(ConfigError):
         plan(skip_dates=value)
+
+
+def test_an_empty_skip_list_skips_nothing():
+    """Empty once a change dropped every skip (an update merges, #1658)."""
+    assert plan(skip_dates=[]).page(through=FUTURE, limit=1).slots
 
 
 @pytest.mark.parametrize("kind", ["initial", "reminder"])

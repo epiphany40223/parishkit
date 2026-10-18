@@ -226,7 +226,11 @@ def test_a_digest_send_skips_this_email_only_or_the_whole_digest(
     posted = fields(request)
     assert (posted["scope"], posted["send"]) == ("send", SKIP_DAY)
     text = shown.inner_text()
-    assert f"the digest skips its send for {SKIP_DAY}, at" in text
+    # The skipped send is named by its send time alone (a <time> the page
+    # shows browser-local), not by its slot key (#1658).
+    sentence = shown.get_by_text("This email only: the digest skips its send at")
+    assert sentence.locator("time[data-local-instant]").count() == 1
+    assert f"for {SKIP_DAY}" not in sentence.inner_text()
     assert "Applying skips this send" in text
     assert axe_violations(page, axe_source) == []
     assert not failures

@@ -119,11 +119,17 @@ def reviewed_sends(changes, prior, before_zone, after_zone):
 
 
 def describe(values, campaign):
-    """Pair civil intent with bounded UTC previews resolved in its own campaign zone."""
+    """Pair civil intent with bounded UTC previews resolved in its own campaign zone.
+
+    A digest's ``skipped_sends`` (#1658) are the sends its skip dates still
+    skip, with their UTC times, so the review shows each as a browser-local
+    send time rather than its slot key.
+    """
     if values is None:
         return None
     page = preview_slots(values, campaign)
     return values | {
+        "skipped_sends": digest_skips.skipped_sends(values, campaign),
         "weekday_label": WEEKDAYS[values["weekday"]]
         if values["weekday"] is not None
         else None,
@@ -202,13 +208,14 @@ def build_preview(
         if value != campaign.active_configuration.values[key]
     }
     patch = schedules.patch()
+    prior = {row["id"]: row["values"] for row in schedules.previous}
     # A digest send skipped by this change (#1658): refused here unless it
     # may be skipped, and its send time is signed below with the others.
     skipped_due = (
         digest_skips.apply(
             patch,
             skips,
-            {row["id"]: row["values"] for row in schedules.previous},
+            prior,
             campaign.active_configuration.values,
             admin_editing.database_now(),
         )
@@ -264,6 +271,16 @@ def build_preview(
             kind=row["values"]["kind"],
         )
     )
+    # A skip of a send still ahead that the change moves off the digest's
+    # sends (a new weekday or campaign dates, #1658) is dropped, so it never
+    # applies again if the digest later moves back; the review lists it.
+    dropped = digest_skips.drop_stale(
+        patch,
+        prior,
+        campaign.active_configuration.values,
+        window.values(),
+        admin_editing.database_now,
+    )
     schedule_changes = list(patch)
     if changed or campaign_values:
         patch.append(
@@ -307,7 +324,6 @@ def build_preview(
         )
         return None
     summary = work_summary(campaign.pk)
-    prior = {row["id"]: row["values"] for row in schedules.previous}
     changes = [
         {
             "id": row["id"],
@@ -318,6 +334,8 @@ def build_preview(
             "after": describe(row.get("values"), window.values()),
             "impact": summary.get(row["id"], {}),
             "label": EMAIL_LABELS[(row.get("values") or prior[row["id"]])["kind"]],
+            # Skips this change drops (#1658, ``digest_skips.drop_stale``).
+            "dropped_skips": dropped.get(row["id"], []),
         }
         for row in schedule_changes
     ]
