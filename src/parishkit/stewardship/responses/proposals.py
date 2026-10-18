@@ -5,7 +5,7 @@ from django.db.models import F
 from parishkit.stewardship.campaigns.work_locks import require_work_order
 
 from .accepted_base import has_active_base
-from .capabilities import capability
+from .capabilities import proposal_handling
 from .census import HOUSEHOLD_FIELDS
 from .comparison import ValueKind, canonical_value
 from .effective import RESOLVED_EXECUTIONS, proposal_index
@@ -109,7 +109,9 @@ def derive_proposals(submission, validated):
                 current_available=field.source.available,
                 current_value=field.source.value,
                 current_source_id=validated.validation_snapshot_id,
-                handling=capability(field.entity, field.field).handling.value,
+                # Per field and per value: an answer that clears a value is
+                # By hand, as the API cannot clear (#1596); SQL checks it.
+                handling=proposal_handling(field.entity, field.field, submitted).value,
                 decision=decision,
                 admin_value_set=old.admin_value_set if carry_decision else False,
                 admin_value=old.admin_value if carry_decision else None,
