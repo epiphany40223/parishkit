@@ -77,6 +77,10 @@ STATUSES = {
     "cancelled": "Cancelled",
 }
 HISTORY = frozenset({"superseded", "cancelled"})
+# The open-work statuses the Summary lists even at 0 (#1472), so acting on
+# the last change of one (resolving the last Conflict, say) never removes a
+# Summary line and moves the table under the pointer.
+SUMMARY_ALWAYS = frozenset({"to_review", "to_do", "conflict"})
 # A terminal execution is the outcome, whatever the decision says.
 TERMINAL = {
     "published": "published",
@@ -449,6 +453,11 @@ def family_answer(row):
 
 def shape(row):
     """Word one proposal row for the page and the downloads."""
+    # Whether ParishSoft's current value was read and verified: never for a
+    # Family household field today. The page tells a field never read
+    # ("(not read)") from one read empty ("(blank)") (#1472); the downloads
+    # leave both blank.
+    read = bool(row["current_available"]) and row["entity_kind"] != "family"
     shown = row | {
         "status": status(row),
         "automatic": automatic(row),
@@ -458,11 +467,8 @@ def shape(row):
         "edited": display(row["admin_value"]) if row["admin_value_set"] else "",
         # Blank where no verified ParishSoft read exists (every Family
         # household field today) rather than a value that is not there.
-        "parishsoft_now": (
-            display(row["current_value"])
-            if row["current_available"] and row["entity_kind"] != "family"
-            else ""
-        ),
+        "parishsoft_read": read,
+        "parishsoft_now": display(row["current_value"]) if read else "",
         "baseline": (
             display(row["baseline_value"]) if row["baseline_available"] else ""
         ),
@@ -552,7 +558,8 @@ def select(rows, query, *, administrator):
             or needle in str(row["family_duid"])
         )
     ]
-    # The summary counts every status, and history only when it is shown.
+    # The summary counts every status, and history only when it is shown;
+    # it lists a status with no changes only if it is open work.
     counts = {key: 0 for key in STATUSES}
     for row in rows:
         if row["status"] not in HISTORY or query.history:
@@ -560,7 +567,9 @@ def select(rows, query, *, administrator):
     return {
         "rows": kept,
         "summary": [
-            (label, counts[key]) for key, label in STATUSES.items() if counts[key]
+            (label, counts[key])
+            for key, label in STATUSES.items()
+            if counts[key] or key in SUMMARY_ALWAYS
         ],
         "administrator": administrator,
     }

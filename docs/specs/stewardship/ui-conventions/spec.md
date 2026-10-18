@@ -3627,7 +3627,20 @@ bubble lists every item, one per line, with any text that goes with it.
 Where two related values would each need a column, one cell may stack them,
 one line each, when the heading names them in the same order and each value
 carries its name for screen readers (`stack-line`); a row is then as tall
-as its stacked lines and no taller. A money cell may show whole dollars,
+as its stacked lines and no taller. Where a row holds several related values
+that may each be long or blank, or that appear only on some rows (a census
+change's ParishSoft value, the Family's answer and an edited value), one
+cell may list them as labelled values instead (`dl.cell-pairs-wrap`): each
+small muted label on its own line above its value, so no label column widens
+the cell, the values wrapping within a readable minimum width, the heading
+naming the group, and a blank value shown as a muted "(blank)" rather than
+an empty line. A value the system never read (not merely empty at its
+source) shows a muted "(not read)" instead, so the two are never confused.
+A downloaded file gives each labelled value its own column.
+A worklist whose rows are acted on one by one, and which may be wider than
+its box, keeps its Actions column in view at the box's end while the rest
+scrolls sideways beneath it (`sticky-actions`), with its icons two to a
+line so it takes little of a narrow box. A money cell may show whole dollars,
 rounded half away from zero, where cents would widen a table; screen readers
 hear the exact amount, and exports and totals keep the cents. Money
 and date cells never wrap (`nowrap`), and a cell that holds only money is
@@ -3639,11 +3652,13 @@ class in `ui-v1.css`, and the `data-table whole-words` classes with their
 `numeric` and `nowrap` cell classes (a table gets the rule from the shared
 classes, not from a copy of them); the `stack-line` class; the toggletip
 component's `tip_button_text` and `tip_lines` for a "+N" chip; the
-`whole_dollars` template tag;
+`whole_dollars` template tag; `cell-pairs-wrap` and `sticky-actions`;
 the button-label browser test at 320 px and 1280 px.
 **Precedent.** #614, #952 (Portal users' rows wrapping to several lines), and
 the Financial stewardship report's chips, "+N" chip, stacked ParishSoft
-totals and whole dollars (#1544).
+totals and whole dollars (#1544), and Census changes' labelled Values and
+Last recorded cells and in-view Actions column
+([#1472](https://github.com/epiphany40223/parishkit/issues/1472)).
 
 Recorded exception: the Users page keeps every row to one line (the
 Administrator asked for one-line rows on #952). A long email or Name is cut

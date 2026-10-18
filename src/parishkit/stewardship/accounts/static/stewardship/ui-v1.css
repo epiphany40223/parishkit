@@ -854,6 +854,36 @@ td > :last-child { margin-bottom: 0; }
 .data-table dl.cell-pairs dt { grid-column: 1; color: var(--muted); font-weight: 400; }
 .data-table dl.cell-pairs dd { grid-column: 2; margin: 0; white-space: nowrap; }
 .data-table dl.cell-counts dd { text-align: end; }
+/* Labelled values that may be long (Census changes' Values and Last
+   recorded, #1472): each small muted label sits on its own line above its
+   value, so no label column widens the cell. The values wrap, and a long
+   address or email may break anywhere, but the list keeps a readable
+   minimum width, so the table scrolls inside its box rather than squeezing
+   the values into strips. A value with none says (blank), muted. */
+.data-table dl.cell-pairs-wrap { display: block; min-width: 11rem; max-width: 17rem; }
+.data-table dl.cell-pairs-wrap dt { font-size: .8125rem; line-height: 1.3; }
+.data-table dl.cell-pairs-wrap dd { white-space: normal; overflow-wrap: anywhere; margin-block-end: .3rem; }
+.data-table dl.cell-pairs-wrap dd:last-child { margin-block-end: 0; }
+.data-table dl.cell-pairs-wrap dd.nowrap { white-space: nowrap; }
+.cell-blank { color: var(--muted); }
+/* A worklist acted on row by row (Census changes, #1472) keeps its Actions
+   column in view at the table's end while the table scrolls sideways in
+   its box, so a row's actions never scroll out of reach. The cell is opaque
+   (the row's hover or selected tint painted over the paper), so the
+   scrolled columns pass beneath it, and a line marks its edge. Its icons
+   wrap two to a line, so it takes little of the box: the rows are already
+   several lines tall with their labelled values. An empty table's one
+   message cell (colspan) is left alone. The edge line is drawn by the
+   cell's own ::before on its inline-start side (so a right-to-left page
+   gets it on the correct side), not as a border, since the table's
+   collapsed borders would not travel with the sticky cell. */
+.sticky-actions > * > tr > :last-child:not([colspan]) { position: sticky; inset-inline-end: 0; z-index: 1; background: var(--paper); }
+.sticky-actions > * > tr > :last-child:not([colspan])::before { content: ""; position: absolute; inset-block: 0; inset-inline-start: 0; border-inline-start: 1px solid var(--border); pointer-events: none; }
+.sticky-actions > thead > tr > :last-child { background: var(--paper-soft); }
+.sticky-actions > tbody > tr:hover > :last-child { background: linear-gradient(var(--row-hover), var(--row-hover)), var(--paper); }
+.sticky-actions > tbody > tr:has(input[data-select-row]:checked) > :last-child { background: linear-gradient(var(--accent-soft), var(--accent-soft)), var(--paper); }
+.sticky-actions .table-actions { white-space: normal; width: calc(2 * var(--button-min-height) + 1rem); min-width: calc(2 * var(--button-min-height) + 1rem); box-sizing: content-box; }
+.sticky-actions .table-actions .icon-button { margin-block: 0 .35rem; }
 /* A long name in a table cell (the Ministry follow-up queue's Member, #932,
    and the Users page, #952) is cut short with an ellipsis, so it never
    makes its row several lines tall; the whole value stays the cell's text
