@@ -1217,9 +1217,11 @@ carries forward until the next Staff edit clears them.
 Manual census work uses proposed-change execution state rather than a separate
 workflow; each resolution's note, actor and time are an immutable resolution
 row ([Manual census resolution](../reports/spec.md#manual-census-resolution)).
-Admin and Staff may mark manual items resolved externally or ignored; only
-Admin may approve/edit/publish API-writable items, each decision an immutable
-review row ([Automatic census review](../reports/spec.md#automatic-census-review)).
+Admin and Staff review every census change (Accept, Edit, Ignore, Back to
+review), each decision an immutable review row
+([Automatic census review](../reports/spec.md#automatic-census-review)), and
+mark By hand items resolved externally; only an Administrator publishes
+([role-specific actions](../review-pipeline/spec.md#role-specific-actions)).
 
 ### Content and email templates
 
@@ -2186,9 +2188,9 @@ Admins may publish any reviewed subset during or after an active campaign.
 They need not finish review in one session. Later Family submissions supersede
 unpublished proposals as appropriate but never rewrite publication history.
 
-Only an Administrator approves and publishes; the per-change decisions are
-the worklist's
-[Automatic census review](../reports/spec.md#automatic-census-review). Only changes the
+Only an Administrator publishes. Staff and Administrators record the
+per-change decisions on the worklist
+([Automatic census review](../reports/spec.md#automatic-census-review)). Only changes the
 [handling registry](#proposed-changes) marks API-writable are ever written;
 staff enter every other census change by hand from the
 [Census changes](../reports/spec.md#pending-census-changes) worklist.
