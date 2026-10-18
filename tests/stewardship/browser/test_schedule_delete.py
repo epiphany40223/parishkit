@@ -230,6 +230,11 @@ def test_a_digest_send_skips_this_email_only_or_the_whole_digest(
     # shows browser-local), not by its slot key (#1658).
     sentence = shown.get_by_text("This email only: the digest skips its send at")
     assert sentence.locator("time[data-local-instant]").count() == 1
+    # Every <time> the review drew is rewritten browser-local once the
+    # dialog shows it, never left as the server's ISO instant.
+    when = sentence.locator("time[data-local-instant]")
+    assert when.inner_text() != when.get_attribute("datetime")
+    assert "+00:00" not in text and "T00:00:00" not in text
     assert f"for {SKIP_DAY}" not in sentence.inner_text()
     assert "Applying skips this send" in text
     assert axe_violations(page, axe_source) == []
