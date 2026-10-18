@@ -45,6 +45,8 @@ DAY_5 = PAGE + "?day=5"
 # re-reads its own address then, which a test answers with ``PAGE``.
 UPDATING = "/campaign-comparison-updating"
 NEWER = "/campaign-comparison-status-newer"
+# A refused day's page (a 400) whose figures are Updating (#1586).
+REFUSED_UPDATING = "/campaign-comparison-refused-updating"
 
 
 def _series(active, anchors, last):
@@ -263,13 +265,15 @@ def components(context, admin):
     """The page with imported years, on day 5, crowded, and with none."""
     principal = Principal(uuid4(), frozenset({"administrator"}), frozenset())
 
-    def page(found):
-        """Render the page for ``found``."""
+    def page(found, refused=False):
+        """Render the page for ``found``, refusing the day asked for when
+        ``refused``."""
+        shown = page_context(found, principal, refused=refused)
         return (
             "text/html",
             render_to_string(
                 "stewardship/campaign-comparison.html",
-                context | {"admin_chrome": admin} | page_context(found, principal),
+                context | {"admin_chrome": admin} | shown,
             ),
         )
 
@@ -290,6 +294,7 @@ def components(context, admin):
             ),
         ),
         UPDATING: page(replace(current, status="updating")),
+        REFUSED_UPDATING: page(replace(current, status="updating"), refused=True),
         "/campaign-comparison": page(current),
         PAGE: page(comparison()),
         DAY_5: page(comparison(day=5)),

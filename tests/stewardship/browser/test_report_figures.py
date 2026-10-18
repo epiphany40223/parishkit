@@ -12,7 +12,7 @@ every region, which only a full page load could lose.
 
 import pytest
 
-from .comparison_components import DAY_5, NEWER, PAGE, UPDATING
+from .comparison_components import DAY_5, NEWER, PAGE, REFUSED_UPDATING, UPDATING
 from .conftest import NOW
 from .report_components import FIGURES_NEWER, FIGURES_PENDING, REAL
 from .test_in_place import MARK, MARKED, VIEWPORT, scroll_below
@@ -239,4 +239,17 @@ def test_a_readers_own_read_is_never_marked_automatic(page, component_origin):
         page.get_by_role("button", name="Compare", exact=True).click()
     page.wait_for_url(component_origin + DAY_5 + "#comparison-report")
     assert asked.value.headers.get("x-parishkit-read") is None
+    assert page.evaluate(MARKED) == "kept"
+
+
+def test_a_refused_day_is_never_followed(page, component_origin):
+    """A Campaign comparison page answering a day it could not show is
+    itself a refusal, so its own re-read would only be refused again: the
+    Updating notice is shown but its figures status is never read."""
+    opened(page, component_origin, REFUSED_UPDATING)
+    reads = statuses(page, component_origin, NEWER)
+    visible(page.locator("#comparison-report " + NOTICE))
+    page.clock.fast_forward(60 * 1000)
+    page.evaluate("() => true")  # One round trip after the clock jump.
+    assert reads == []
     assert page.evaluate(MARKED) == "kept"

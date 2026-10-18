@@ -303,7 +303,7 @@ FIGURES_REGIONS = {
 }
 
 
-def figures_status(view, scope, shown, updating, *, newer=False):
+def figures_status(view, scope, shown, updating, *, newer=False, follow=True):
     """The figures status region's context (report-figures-status.html).
 
     ``view`` is the page (a FIGURES_REGIONS key), ``scope`` the population
@@ -311,6 +311,9 @@ def figures_status(view, scope, shown, updating, *, newer=False):
     when it shows none) and ``updating`` whether the newest figures are
     still being prepared. ``newer`` (the status read's answer only) says a
     newer generation than ``shown`` is ready, so the page re-reads itself.
+    ``follow`` False draws the notice but never watches it: a page that is
+    itself a refusal (a Campaign comparison day out of range) would only be
+    refused again by its own re-read.
     """
     query = urlencode({"view": view, "scope": scope, "shown": shown or ""})
     return {
@@ -319,6 +322,7 @@ def figures_status(view, scope, shown, updating, *, newer=False):
             "region": FIGURES_REGIONS[view],
             "updating": updating,
             "newer": newer,
+            "follow": follow,
             "url": reverse("admin:response_dashboard_status") + "?" + query,
         }
     }

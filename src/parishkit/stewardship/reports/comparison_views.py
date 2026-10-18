@@ -192,12 +192,14 @@ def page_context(comparison, principal, *, refused=False, mutable=True):
         # times, so it asks for no time zone (#1161).
         "mutable": mutable,
         "request_key": uuid4(),
-        # The Updating status, which follows the newest figures (#1586).
+        # The Updating status, which follows the newest figures (#1586),
+        # except on a refused day: its own re-read would be refused again.
         **figures_status(
             "comparison",
             "historical",
             comparison.fact_set_id,
             comparison.status != "current",
+            follow=not refused,
         ),
     }
 
