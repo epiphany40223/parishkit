@@ -1676,6 +1676,29 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
 .icon-button .action-icon { width: 1.15rem; height: 1.15rem; }
 .icon-button-danger { color: var(--error-ink); border-color: var(--error-border); }
 .icon-button-danger:not(:disabled):hover { background: var(--error-bg); color: var(--error-ink); }
+/* The review worklist (#1681; UX conventions, "Row actions and
+   confirmation"): the icon of a decision or mark in force is drawn selected,
+   filled with its status look's line colour (.status-working for an
+   accepted decision or a mark, .status-unknown for Ignored) with the glyph
+   in --paper (white on the light scheme, dark on the dark one, so it keeps
+   its contrast). It is aria-disabled, never an undo, so it keeps the
+   ordinary pointer rather than the busy one and no hover. */
+.icon-button.is-selected, .icon-button.is-selected:not(:disabled):hover { background: var(--status-line); border-color: var(--status-line); color: var(--paper); cursor: default; }
+/* The Stage column's chip: a plain badge, or for a needs-correction stage
+   (Entered incorrectly) and the Not seen in ParishSoft flag the Error and
+   Warning looks with their icon (UX conventions, "Status indicators"). */
+.stage-chip { display: inline-flex; align-items: center; gap: .3rem; padding: .1rem .55rem; border: 1px solid var(--border); border-radius: 999px; background: var(--paper-soft); color: var(--ink); font-size: .8125rem; font-weight: 600; white-space: nowrap; }
+.stage-chip:is(.status-error, .status-warning) { border-color: var(--status-line); background: var(--status-bg); color: var(--status-ink); }
+/* A worklist's filters are always open (no Filters disclosure), laid out as
+   the Filters panel's grid: one column on a phone, 14rem columns from
+   40rem, Apply in the next cell and the reserved hint on its own row. */
+.worklist-filters { display: grid; grid-template-columns: minmax(0, 1fr); gap: .5rem 1rem; align-items: end; margin-block: 1rem; }
+.worklist-filters label { margin: 0 0 .25rem; font-size: .925rem; }
+.worklist-filters > div { margin: 0; }
+.worklist-filters > div > :is(input, select) { max-width: none; }
+.worklist-filters > :is(p, [data-complete-hint]) { grid-column: 1 / -1; margin: 0; }
+.worklist-filters > button { justify-self: start; margin: 0; }
+@media (min-width: 40rem) { .worklist-filters { grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); } }
 .button-danger { background: var(--error-border); border-color: var(--error-border); color: var(--paper); }
 .button-danger:not(:disabled):hover { background: var(--error-ink); border-color: var(--error-ink); }
 .confirm-dialog { margin: 12vh auto auto; width: min(34rem, calc(100vw - 2rem)); padding: 1.25rem 1.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--paper); color: var(--ink); box-shadow: var(--shadow); }

@@ -301,8 +301,10 @@ MARKS_ON = {
     "level-audit": ("paper", "paper-soft"),
     "warning-border": ("paper", "paper-soft"),
     "error-border": ("paper", "paper-soft"),
-    # The focus ring on the checked Basic/Advanced segment is --paper.
-    "paper": ("accent",),
+    # The focus ring on the checked Basic/Advanced segment is --paper, and
+    # so is a review worklist icon's glyph drawn selected (#1681), filled
+    # with the Working or the Not current line colour.
+    "paper": ("accent", "control-border"),
 }
 
 

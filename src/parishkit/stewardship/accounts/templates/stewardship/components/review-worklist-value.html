@@ -1,0 +1,10 @@
+{% load i18n %}{% comment %}
+  The review worklist's default value editor (#1681): Edit's one text
+  field, the reviewer's value, which starts as the value carried forward
+  (the reviewer's, else the Family's answer). A stream whose value has
+  parts (a pledge's amount and frequency, a Ministry picker) gives its own
+  editor (worklist.editor_template), naming its fields value or
+  value_<part> (web/review_worklist.read_decision), and ends it with
+  components/review-worklist-note.html, as this does.
+{% endcomment %}<div class="dialog-fields" data-missing-hint="{% translate 'Enter the value to carry forward.' %}"><label for="{{ dialog_id }}-value">{% translate "Reviewer's value" %}</label><input id="{{ dialog_id }}-value" name="value" maxlength="2000" value="{% if row.reviewer_value %}{{ row.reviewer_value }}{% else %}{{ row.family_answer }}{% endif %}" required></div>
+{% include "stewardship/components/review-worklist-note.html" with note_name="note" %}

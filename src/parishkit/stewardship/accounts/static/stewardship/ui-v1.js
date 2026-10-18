@@ -4150,6 +4150,20 @@
       }
       field.dispatchEvent(new Event("change", {bubbles: true}));
     });
+    // The review worklist's choice field (#1681): a nameless hidden input
+    // marked data-confirm-choice, which a data-required-when rule on the
+    // dialog's note reads, so one dialog asks for a note only when the
+    // action needs one. A row's icon gives its data-confirm-choice
+    // ("reopen" when it sends an Ignored item back to review); a bulk button's
+    // holds only while some ticked row's box carries the same choice, so
+    // sending items back to review in bulk asks for a reason only when it reopens an
+    // Ignored item (review pipeline spec, "Reviewed stage").
+    const want = opener.dataset.confirmChoice || "";
+    const holds = !bulk || [...form.elements].some((box) =>
+      box.matches("input[data-select-row]:checked") && box.dataset.confirmChoice === want);
+    dialog.querySelectorAll("input[data-confirm-choice]").forEach((field) => {
+      field.value = want && holds ? want : "";
+    });
     if (form.hasAttribute("data-require-complete")) gateComplete(form);
     confirming = {
       dialog, opener, form, chosen, values, busy: false, done: false,
@@ -4451,6 +4465,12 @@
     // returns focus to that row's first action once it is redrawn, so the
     // reader stays where they were; when the row is gone, the fallback.
     const row = state.opener.closest("tr[id]")?.id;
+    // A review worklist icon (data-row-action, #1681) returns focus to the
+    // same action's icon in the redrawn row, now drawn selected, so the
+    // reader hears the decision in force (data-focus-action names another
+    // when the decision is drawn on it: an Edit's is its Accept); otherwise
+    // to the row's first action, as above.
+    const kind = state.opener.dataset.focusAction || state.opener.dataset.rowAction || "";
     const fresh = dialog.hasAttribute("data-confirm-answer-page")
       ? new DOMParser().parseFromString(answer.text, "text/html")
       : await freshPage(region?.dataset.refreshUrl || window.location.href);
@@ -4459,8 +4479,10 @@
     dialog.close();
     const fallback = dialog.dataset.confirmFallback || "";
     redrawFrom(fresh);
+    const redrawn = row ? document.getElementById(row) : null;
     const target = (state.opener.isConnected && state.opener)
-      || (row && document.getElementById(row)?.querySelector("[data-confirm-open]:not(:disabled)"))
+      || (kind && redrawn?.querySelector(`[data-row-action="${CSS.escape(kind)}"]`))
+      || redrawn?.querySelector("[data-confirm-open]:not(:disabled)")
       || document.getElementById(fallback) || document.querySelector("main h1");
     target?.focus({preventScroll: true});
     target?.scrollIntoView({block: "nearest"});
