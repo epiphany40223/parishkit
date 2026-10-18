@@ -4,10 +4,12 @@ from datetime import UTC, datetime, timedelta
 
 from parishkit.stewardship.accounts.schedule_forms import Schedules
 from parishkit.stewardship.accounts.schedule_table import (
+    SORTING,
     attach,
     schedule_rows,
     status,
 )
+from parishkit.stewardship.web.tables import whole_table
 
 from .campaign_factory import campaign, schedule
 from .test_schedule_forms import data_for
@@ -182,3 +184,35 @@ def test_rows_tolerate_a_send_time_far_past_the_campaign():
     later = AFTER + timedelta(days=400)
     table = schedule_rows(formset(saved()).previous, VALUES, {}, later)
     assert table[3].next_due is None and table[4].next_due is None
+
+
+def test_when_sorts_digests_at_their_next_send_both_ways():
+    """A digest sorts at its next send among the dated sends (#1652).
+
+    On Monday 5 October at 8 AM in New York the weekly digest sends at 9 AM
+    that day and the daily one at 6 AM the next, both before Reminder 1.
+    """
+    now = datetime(2054, 10, 5, 12, tzinfo=UTC)
+    rows = schedule_rows(formset(saved()).previous, VALUES, {}, now)
+    order = [
+        "Initial invitation",
+        "Weekly Admin digest",
+        "Daily Admin digest",
+        "Reminder 1",
+        "Reminder 2",
+    ]
+    table = whole_table(rows, sorting=SORTING, sort="when")
+    assert [row.label for row in table.rows] == order
+    table = whole_table(rows, sorting=SORTING, sort="-when")
+    assert [row.label for row in table.rows] == order[::-1]
+
+
+def test_when_lists_a_digest_with_no_more_sends_last_both_ways():
+    """After the campaign a digest has no next send, so it sorts last."""
+    rows = schedule_rows(formset(saved()).previous, VALUES, {}, AFTER)
+    for sort in ("when", "-when"):
+        table = whole_table(rows, sorting=SORTING, sort=sort)
+        assert [row.label for row in table.rows][-2:] == [
+            "Daily Admin digest",
+            "Weekly Admin digest",
+        ]

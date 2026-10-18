@@ -12,7 +12,7 @@ Angeles, three hours behind.
 
 import json
 import re
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from html import unescape
 from types import SimpleNamespace
 from uuid import uuid4
@@ -321,6 +321,48 @@ def test_a_new_digest_keeps_the_full_review(auth_service, google, kind, fields):
     )
     assert review.status_code == 200, review.content
     assert "data-review-title" not in review.content.decode()
+
+
+def test_an_applied_digest_is_listed_at_its_next_send(
+    auth_service, google, monkeypatch
+):
+    """A new Daily Admin digest sorts among the dated sends (#1652).
+
+    Added through New scheduled email and Apply, as an Administrator would.
+    At 9 AM in New York on October 10 its 9:30 AM send is next, after the
+    Initial invitation (October 1) and before Reminder 1 (October 25), in
+    both directions of the When heading; it is not listed last.
+    """
+    monkeypatch.setattr(campaign_wizard, "shown", lambda *_, **__: False)
+    store = auth_service.store
+    row = campaign_record()
+    setup(store, row)
+    digest = content(row["id"], kind="email", slot="daily_digest", subject="Digest")
+    added = change(
+        store,
+        store.active(),
+        uuid4(),
+        [{"operation": "add", "section": "content", **digest}],
+    )
+    assert added.state == "applied"
+    browser, _ = signed_in()
+    review = post(
+        browser,
+        NEW,
+        entry(store, kind="daily_digest", time="09:30", template_version=digest["id"]),
+    )
+    assert review.status_code == 200, review.content
+    accepted = post(browser, LIST, {"action": "confirm", "preview": token(review)})
+    apply(store, accepted)
+    assert definition("daily_digest")
+    now = datetime(2054, 10, 10, 13, tzinfo=UTC)
+    monkeypatch.setattr(schedule_views, "timezone", SimpleNamespace(now=lambda: now))
+    order = ["Initial invitation", "Daily Admin digest", "Reminder 1"]
+    for path, expected in ((LIST, order), (f"{LIST}?sort=-when", order[::-1])):
+        response = browser.get(path)
+        assert response.status_code == 200
+        page = unescape(response.content.decode())
+        assert re.findall(r'<th scope="row">([^<]*)</th>', page) == expected
 
 
 def test_a_repeat_adds_one_ordinary_reminder_per_date(auth_service, google):
