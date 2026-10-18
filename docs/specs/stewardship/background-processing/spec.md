@@ -762,6 +762,10 @@ Those messages have routing class `testing_override`; the envelope has only the
 single configured Testing address, and the subject and both body alternatives
 prominently identify Testing and safely name the intended recipients. Production
 applies none of these overrides.
+[Ministry leader emails](#ministry-leader-emails) are routed the same way,
+although they belong to no campaign: in Testing each goes only to the Testing
+recipient recorded with its request, its subject starts "[TEST]" and both
+bodies first name the leader it was meant for, as Administrator digests do.
 
 Safety-critical operational notifications are exempt. Operational incident
 alerts (see [critical errors](#critical-errors-and-notification)) and
@@ -2520,6 +2524,47 @@ old skip cannot silently cover them. A newly authorized manual digest is a
 distinct, audited request. The final archive/Return recheck uses the same
 Campaign locking protocol as producers and workers, preventing new obligations
 from racing a successful lifecycle transition.
+
+## Ministry leader emails
+
+An Administrator's
+[Email Ministry leaders](../admin-portal/spec.md#email-ministry-leaders)
+request is the only source of these emails
+([#1592](https://github.com/epiphany40223/parishkit/issues/1592)): nothing
+schedules one. The request records, at Apply, the mode, the Testing
+recipient in Testing, and each leader's address with their Ministries and
+open request counts, worked out by the database. It is delivered by the
+same engine as the Administrator notices of
+[critical errors](#critical-errors-and-notification) and security alerts,
+under its own compiled owner:
+
+- The scheduler finds a request with no preparation Task and queues one
+  `leader_email_prepare` Task on the general worker, as it does for a
+  security event.
+- The worker freezes the request's addresses into a cohort under its fenced
+  claim, and creates one outbox message (purpose `leader_email`) per leader,
+  with its content compiled once from the request's recorded counts and the
+  deployment's public address for the two links. The recipient row keeps
+  that compiled subject and bodies, so every attempt sends exactly what
+  preparation compiled.
+- Mail dispatch sends each message alone. Before each submission it checks
+  again that the address is still a user whose role is Ministry leader and
+  that the deployment mode is still the request's; if either changed, the
+  unsent email is cancelled (`recipient_revoked`), never redirected. A
+  restore under review holds it. A provider refusal for now, a sending
+  limit and a stopped mail sender hold or retry it as they do
+  Administrator notices, and a lost provider answer leaves it
+  "Not sure it arrived": it is never resent automatically, and an
+  Administrator resends by applying the review again.
+
+A leader email belongs to no campaign (its outbox campaign is empty and its
+scope is the parish), so campaign Pause and resume mail, held-email
+decisions, Testing cleanup and the Production transition never select it.
+Outgoing mail does not list it yet; the section's Last emailed column shows
+each address's latest outcome
+([#1562](https://github.com/epiphany40223/parishkit/issues/1562) brings
+every email to one list). Unlike an Administrator notice's, a failed or
+uncertain leader email writes no System logs error; Last emailed shows it.
 
 ## Exports and graph rendering
 
