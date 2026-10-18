@@ -108,8 +108,14 @@ WITH selected AS MATERIALIZED (
     SELECT r.*,p.canonical::jsonb AS person,
         -- A standing request (this is its latest version) is its Member's
         -- consent to be contacted about it by the Ministry's leaders
-        -- (#1591); a withdrawn one is not.
-        r.state NOT IN ('cancelled','superseded') AS consented,
+        -- (#1591); a withdrawn one is not. Nor is a leave because the
+        -- Member cannot participate in any ministries (physical
+        -- limitations): it follows the publish flags (Administrator, #1591).
+        r.state NOT IN ('cancelled','superseded') AND coalesce(
+            s.answers#>ARRAY['service',CASE WHEN r.entity_kind='member'
+                THEN 'members' ELSE 'proposed_members' END,
+                r.entity_key,'cannot_serve'],'false'::jsonb)<>'true'::jsonb
+            AS consented,
         CASE WHEN r.entity_kind='proposed_member'
             THEN s.answers->'proposed_members'->r.entity_key END AS proposed
     FROM requests r CROSS JOIN source x

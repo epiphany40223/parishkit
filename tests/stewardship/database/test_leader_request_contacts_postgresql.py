@@ -10,8 +10,10 @@ The first tests check 0117's closing check against 0094's bodies, as the
 earlier selection migrations' tests do; each statement there runs in a
 transaction that is rolled back. The rest prove, through the real web
 database role, that nothing else widens: another Member of the Family, a
-withdrawn request, another Ministry and a reader who leads nothing keep the
-publish flags or read nothing, while Staff keep operational contact.
+withdrawn request, a leave because the Member cannot participate in any
+ministries (Administrator decision, 2026-10-18), another Ministry and a
+reader who leads nothing keep the publish flags or read nothing, while Staff
+keep operational contact.
 """
 
 import io
@@ -125,6 +127,20 @@ def test_the_closing_check_refuses_a_half_applied_rule(name, kind):
         check_refuses(changed, "\\(leaders see")
 
 
+def test_the_closing_check_refuses_a_packet_without_the_exclusion():
+    """A packet whose consent forgets the cannot-participate exclusion is
+    refused, so such a leave never shows unpublished contacts."""
+    own = definition(MIGRATION, "stewardship_ministry_packet_v1")
+    changed, count = re.subn(
+        r"r\.state NOT IN \('cancelled','superseded'\) AND coalesce\(.*?AS consented,",
+        "r.state NOT IN ('cancelled','superseded') AS consented,",
+        own,
+        flags=re.S,
+    )
+    assert count == 1
+    check_refuses(changed, "\\(leaders see")
+
+
 def test_the_closing_check_refuses_changed_grants():
     """CREATE OR REPLACE keeps grants; a change to one is refused."""
     check_refuses(
@@ -149,9 +165,11 @@ def test_the_migration_installs_over_the_earlier_definitions():
         transaction.set_rollback(True)
 
 
-def family(harness):
-    """One Family's live requests: Member 3 asks to leave Choir (4) only, and
-    a Member the Family adds on the form asks to join Food pantry (9)."""
+def family(harness, *, cannot_serve=False):
+    """One Family's live requests: Member 3 asks to leave Choir (4) only
+    (with ``cannot_serve``, because they cannot participate in any
+    ministries), and a Member the Family adds on the form asks to join Food
+    pantry (9)."""
     start(harness)
     snapshot, claim = prepare(ministry_source())
     promote(snapshot, claim, harness.campaign, harness.rings)
@@ -164,6 +182,11 @@ def family(harness):
     )
     answers["ministries"]["proposed_members"][added] = {"join": [9]}
     answers["ministries"]["members"]["3"] = {"join": [], "leave": [4]}
+    if cannot_serve:
+        answers["service"] = {
+            "members": {"3": {"cannot_serve": True}},
+            "proposed_members": {added: {"cannot_serve": False}},
+        }
     respond(harness, form, answers)
     return harness, added
 
@@ -244,4 +267,27 @@ def test_a_withdrawn_request_keeps_the_publish_flags(response_service):
     assert "Not published" in text and EMAIL not in text
     staff = actor(harness, ("staff",), ()).identity
     found = sections(packet(harness, staff, history=True))[1]
+    assert EMAIL in json.dumps(found[4]["rows"])
+
+
+def test_a_cannot_participate_leave_keeps_the_publish_flags(response_service):
+    """Member 3's leave because they cannot participate in any ministries
+    shows Choir's leader the email Not published (the published phone stays),
+    in the packet and its file, while the added Member's ordinary join still
+    shows Food pantry's leader the entered email; Staff still see both."""
+    harness, added = family(response_service, cannot_serve=True)
+    request = packet(harness, actor(harness, **LEADER_4).identity)
+    snapshot, found = sections(request)
+    (row,) = found[4]["rows"]
+    assert (row["action"], row["state"]) == ("leave", "new")
+    assert row["email_visibility"] == "not_published" and row["emails"] is None
+    assert row["phone_visibility"] == "available"
+    assert EMAIL not in json.dumps(snapshot.document)
+    text = packet_text(harness, request)
+    assert "Not published" in text and EMAIL not in text
+    rows = page(harness, ministry=9, **LEADER_9)["rows"]
+    assert [(row["proposed_id"], row["emails"]) for row in rows] == [
+        (added, [PROPOSED])
+    ]
+    found = sections(packet(harness, actor(harness, ("staff",), ()).identity))[1]
     assert EMAIL in json.dumps(found[4]["rows"])

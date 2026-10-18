@@ -14,14 +14,18 @@
 -- contacted, so for a Member's request to a Ministry that Ministry's leaders
 -- see the requesting Member's own email and phones even when not published.
 -- Nothing else widens: a request stands only while its latest version is not
--- withdrawn (cancelled) or replaced (superseded); a Member with no standing
+-- withdrawn (cancelled) or replaced (superseded); a leave because the Member
+-- cannot participate in any ministries (physical limitations) follows the
+-- publish flags (Administrator decision, 2026-10-18); a Member with no standing
 -- request to the Ministry, another Ministry's requests and every other
 -- Member of the Family keep the publish flags; Administrators and Staff keep
 -- operational contact; and each selection still reads only the Ministries in
 -- the reader's SQL-derived scope.
 --
 -- Replaced functions, each copied whole from its newest definition (0094)
--- with only the consent column and the four contact expressions changed:
+-- with only the consent column and the four contact expressions changed
+-- (the cannot-participate exclusion is in the packet only: such a Member has
+-- no join requests, the only kind v3 gives contacts for):
 --   stewardship_ministry_packet_v1   (the baseline): the follow-up packet,
 --                                    and the leave requests' contact details
 --   stewardship_ministry_report_v3   (migration-owned, 0064): the join
@@ -150,8 +154,14 @@ WITH selected AS MATERIALIZED (
     SELECT r.*,p.canonical::jsonb AS person,
         -- A standing request (this is its latest version) is its Member's
         -- consent to be contacted about it by the Ministry's leaders
-        -- (#1591); a withdrawn one is not.
-        r.state NOT IN ('cancelled','superseded') AS consented,
+        -- (#1591); a withdrawn one is not. Nor is a leave because the
+        -- Member cannot participate in any ministries (physical
+        -- limitations): it follows the publish flags (Administrator, #1591).
+        r.state NOT IN ('cancelled','superseded') AND coalesce(
+            s.answers#>ARRAY['service',CASE WHEN r.entity_kind='member'
+                THEN 'members' ELSE 'proposed_members' END,
+                r.entity_key,'cannot_serve'],'false'::jsonb)<>'true'::jsonb
+            AS consented,
         CASE WHEN r.entity_kind='proposed_member'
             THEN s.answers->'proposed_members'->r.entity_key END AS proposed
     FROM requests r CROSS JOIN source x
@@ -505,7 +515,7 @@ $$;
 
 DO $check$
 BEGIN
-    -- Each replaced selection, once, invoker, stable, with the consent rule
+    -- Each replaced selection, once, invoker, stable, with its consent rule
     -- in both contact expressions of both kinds and no 0094 expression left.
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public'
@@ -513,7 +523,12 @@ BEGIN
               'stewardship_ministry_report_v3')
           AND NOT p.prosecdef AND p.provolatile='s'
           AND p.prorettype='jsonb'::regtype
-          AND p.prosrc LIKE '%NOT IN (''cancelled'',''superseded'') AS consented%'
+          -- The packet's consent also excludes a cannot-participate leave.
+          AND CASE WHEN p.proname='stewardship_ministry_report_v3'
+              THEN p.prosrc LIKE '%NOT IN (''cancelled'',''superseded'') AS consented%'
+              ELSE p.prosrc LIKE '%r.state NOT IN (''cancelled'',''superseded'') AND coalesce(
+%r.entity_key,''cannot_serve''],''false''::jsonb)<>''true''::jsonb
+%AS consented,%' END
           AND p.prosrc LIKE '%NOT operational AND NOT r.consented AND coalesce(
 %c.value->''publish_email''%'
           AND p.prosrc LIKE '%NOT operational AND NOT r.consented AND coalesce(

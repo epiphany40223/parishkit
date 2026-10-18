@@ -1822,7 +1822,15 @@ A request stands while the Member's latest version of it is neither
 withdrawn (cancelled) nor replaced; an earlier version shown with the
 history option follows that latest version, as its details already do.
 For a Member the Family added on the form, the values are the ones the
-Family entered with the request. Nothing else widens: a Member with no
+Family entered with the request. A leave request made because the Member
+cannot participate in any ministries (the form's physical-limitations
+checkbox, recorded as `cannot_serve` in the response's `service` answers and
+shown as "Leave (cannot participate)") is not consent: it follows the
+publish flags (Administrator decision, 2026-10-18, on
+[#1591](https://github.com/epiphany40223/parishkit/issues/1591)), while
+ordinary join and stop-participating requests share as above. Such a Member
+joins no Ministry (the response guard refuses it), so only leave requests
+are affected. Nothing else widens: a Member with no
 standing request to the Ministry (so every other Member of the Family), a
 withdrawn request and other Ministries' requests keep the publish flags, and
 a leader still reads only the Ministries they lead. The rule is enforced in
@@ -1926,7 +1934,8 @@ Outcome filter offers it; a request already resolved that way keeps its label
 For Ministry leaders, every email and phone value in the packet follows the
 Ministry report selection's leader contact rule
 ([Ministry change summary](#ministry-change-summary)): published values, and the
-requesting Member's own on a standing request; any other renders `Not published`
+requesting Member's own on a standing request other than a
+cannot-participate leave; any other renders `Not published`
 instead of the source value. Admin/Staff retain the operational-contact access
 defined by that rule. This privacy policy applies identically to screen, CSV,
 XLSX, and PDF output.

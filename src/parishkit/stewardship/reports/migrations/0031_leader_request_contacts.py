@@ -7,7 +7,9 @@ never parsed (#1591). It replaces ``stewardship_ministry_packet_v1`` and
 Ministry (its latest version, not withdrawn) is their consent to be
 contacted about it: that Ministry's leaders see the Member's own email and
 phones even when ParishSoft does not publish them (Administrator decision,
-2026-10-17). It ends with a DO block that refuses to commit unless both
+2026-10-17), except on a leave because the Member cannot participate in
+any ministries, which keeps the publish flags (2026-10-18). It ends with a
+DO block that refuses to commit unless both
 selections are installed as declared with their grants and settings
 unchanged. No model changes, so there is no state operation. Reversing
 needs its own forward migration, so, like the baseline, it has no reverse
