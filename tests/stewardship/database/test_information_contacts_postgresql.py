@@ -14,6 +14,7 @@ from parishkit.stewardship.reports.information_contacts import family_contacts
 from parishkit.stewardship.responses.models import AdditionalInformationItem
 
 from ..policy_factory import address
+from . import response_builders
 from .auth_builders import signed_in
 from .campaign_builders import change
 from .test_background_grants_postgresql import task_login
@@ -135,6 +136,10 @@ def test_contact_read_states_and_capability(live_response_service):
             {"label": "Family record", "emails": [], "phones": []}
         ]
         assert family_contacts(staff, snapshot, 999) == {"state": "missing"}
+        # A random id stands in for a compacted or replaced snapshot: the
+        # database refuses to compact the current, protected snapshot this
+        # fixture holds, and the read has one test, "promoted and not
+        # compacted", that an unknown id fails exactly as a compacted one.
         assert family_contacts(staff, uuid4(), 1) == {"state": "unavailable"}
         for roles in (frozenset({"ministry_leader"}), frozenset()):
             reader = Principal(uuid4(), roles, frozenset({4}))
@@ -144,3 +149,49 @@ def test_contact_read_states_and_capability(live_response_service):
             ):
                 family_contacts(reader, snapshot, 1)
             assert len(queries) == 0
+
+
+@pytest.fixture
+def crowded_service(monkeypatch, request):
+    """The live service, its Family 1 also holding a child and an inactive head.
+
+    Both extra Members have email and phone records of their own, so the
+    only thing keeping them off the page is the head-only read.
+    """
+    original = response_builders.response_source
+
+    def crowded():
+        """The shared source plus a child and an inactive head of Family 1."""
+        data = original()
+        for duid, kind, status, name in (
+            (5, "Child", "Active", "Child"),
+            (6, "Head", "Inactive", "Retired"),
+        ):
+            data.members[duid] = {
+                **data.members[3],
+                "memberDUID": duid,
+                "firstName": name,
+                "memberType": kind,
+                "memberStatus": status,
+                "emailAddress": f"{name.lower()}@example.org",
+                "homePhone": "202-555-0199",
+            }
+        return data
+
+    monkeypatch.setattr(response_builders, "response_source", crowded)
+    return request.getfixturevalue("live_response_service")
+
+
+def test_other_members_are_left_out(crowded_service):
+    """Children and inactive heads never appear, though their contacts exist."""
+    snapshot = crowded_service.snapshot.pk
+    staff = Principal(uuid4(), frozenset({"staff"}))
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        shown = family_contacts(staff, snapshot, 1)
+    assert [owner["label"] for owner in shown["owners"]] == [
+        "Family record",
+        "Member Example",
+    ]
+    text = str(shown)
+    assert "child@example.org" not in text and "retired@example.org" not in text
+    assert "202-555-0199" not in text

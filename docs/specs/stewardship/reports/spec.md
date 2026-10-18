@@ -1101,7 +1101,9 @@ Each item's page shows a **Contact details** section for its Family
 ([#1595](https://github.com/epiphany40223/parishkit/issues/1595)), so Staff
 can reply without looking the Family up in ParishSoft: the Family record's
 email addresses and phones, then those of each active head of household
-(the heads the page's Family name lists), each under its own name. They come
+(the heads the page's Family name lists), each under its own name. Other
+Members, such as children and inactive heads, are deliberately not listed:
+the heads are who Staff reply to. The details come
 from the same ParishSoft data the page names the Family from. The values are
 operational contact, as Administrators and Staff see it on Ministry requests
 ([Ministry change summary](#ministry-change-summary)): ParishSoft's publish
