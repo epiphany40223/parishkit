@@ -23,6 +23,7 @@ from .timeline_components import (
 from .waits import (
     focused,
     has_attribute,
+    has_count,
     has_text,
     has_value,
     same_place,
@@ -174,9 +175,7 @@ def test_the_kind_filter_narrows_the_lines_in_place(page, component_origin):
         button.click()
     assert fetched.value.request.headers.get("x-requested-with") == "fetch"
     assert fetched.value.status == 200, fetched.value.url
-    page.wait_for_function(
-        "!document.querySelector('#table tbody').textContent.includes('Got past')"
-    )
+    has_count(page.locator("#table tbody tr", has_text="Got past"), 0)
     assert lines(page) == ["Submission receipt", "Reminder 1", "Invitation"]
     assert page.evaluate(MARKED) == "kept"
     assert page.evaluate("window.scrollY") == scrolled
@@ -317,9 +316,7 @@ def test_the_export_form_keeps_choices_across_a_filter(page, component_origin):
     form.locator("#timeline-export-timezone").select_option("UTC")
     page.locator("#timeline-kind").select_option("emails")
     page.get_by_role("button", name="Show lines").click()
-    page.wait_for_function(
-        "!document.querySelector('#table tbody').textContent.includes('Got past')"
-    )
+    has_count(page.locator("#table tbody tr", has_text="Got past"), 0)
     assert form.locator("#timeline-format").input_value() == "pdf"
     assert form.locator("#timeline-export-timezone").input_value() == "UTC"
     assert_clean(page, errors)
