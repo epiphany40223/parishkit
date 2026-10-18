@@ -7,6 +7,7 @@
 <p>{% translate "Refreshing changes nothing in ParishSoft and sends no mail." %}</p>{% endaboutpage %}{% endif %}
 <p>{{ task.name }}{% if refresh_label %}: <strong>{{ refresh_label }}</strong>{% endif %}</p>
 {# live-status-v1.js updates the status by itself while the task runs and, when it ends, re-reads the status, Retry panels, history, latest retry and technical details quietly in place (#869); the page has no Refresh link (#1586). #}
+{# A refresh's status region is not aria-live (#1579): this announcer, outside the in-place region so a re-read never replaces it, reads out its state sentence when it changes. #}<p class="visually-hidden" role="status" data-live-announcer="task"></p>
 <div id="task-status" data-in-place-region>{% include 'stewardship/background-task-status.html' %}</div>
 {% comment %}Retry panels appear once a task has failed; as an in-place region the
   page brings them in when a watched task ends, without a reload (#869).{% endcomment %}

@@ -15,6 +15,7 @@ from uuid import UUID
 from django.template.loader import render_to_string
 from django.urls import reverse
 
+from parishkit.stewardship.accounts.campaign_wizard import task_stages
 from parishkit.stewardship.accounts.integration_credentials import CredentialSummary
 from parishkit.stewardship.accounts.integration_forms import IntegrationForm
 from parishkit.stewardship.campaigns.domain import Percentage
@@ -55,6 +56,8 @@ TASK_PAGE = reverse("admin:background_task_page", args=[TASK_RUN])
 TASK_STATUS = reverse("admin:background_task_status", args=[TASK_RUN])
 # The finished run's page with its history sorted by Action.
 TASK_FINISHED_BY_ACTION = "/live-task-finished-by-action"
+# Its status polled part-way through saving the records (#1579).
+TASK_STAGING_STATUS = "/live-task-staging-status"
 # A report export and a latest-data export, and a configuration change's
 # status, which update themselves (#519 PR 7b, #1586). The two exports share
 # one address form (the view draws whichever the job is).
@@ -315,8 +318,11 @@ def components(context, admin):
             for version, (action, step_state, phase, current) in enumerate(steps, 1)
         ]
         phase, current = steps[-1][2:]
+        # The run's stage boxes (#1579), as _task_read builds them.
+        stages = task_stages({"state": state, "progress": {"phase": phase}})
         values = page | {
             "is_refresh": True,
+            "stages": stages,
             "refresh_label": "Full refresh",
             "phase_text": phase_words("source_refresh", phase),
             "refresh_result": "4,000 records checked, 12 changed."
@@ -380,6 +386,12 @@ def components(context, admin):
         TASK_PAGE: refresh_task("running", running),
         TASK_STATUS: refresh_task("running", running, fragment=True),
         "/live-task-finished": refresh_task("succeeded", finished),
+        # Part-way through saving, for the stage boxes' change of state (#1579).
+        TASK_STAGING_STATUS: refresh_task(
+            "running",
+            [*running, ("progress", "running", "staging", 2000)],
+            fragment=True,
+        ),
         "/live-task-finished-status": refresh_task(
             "succeeded", finished, fragment=True
         ),

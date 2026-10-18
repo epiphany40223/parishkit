@@ -1193,7 +1193,8 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
    on a phone with no sideways scroll. The status word always carries the
    state; the mark (a bullet, a pointer, a check, a cross or a pause) and
    the colour only reinforce it. Loading parish data and Finishing setup
-   (setup wizard) and Load ParishSoft data (Campaign setup) draw it. */
+   (setup wizard), Load ParishSoft data (Campaign setup) and a ParishSoft
+   refresh's Background task status (#1579) draw it. */
 .stage-boxes { list-style: none; margin: 0 0 1rem; padding: 0; display: grid; gap: .5rem; grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr)); }
 /* The status sits on its own line under the stage's name, so a box keeps
    its height when its status word changes (Not started, then Done). */

@@ -319,10 +319,18 @@ def _task_read(request, task_id):
         progress["display"] = Percentage(progress["current"], progress["total"])
         # The history names each step in words, as the status line does.
         item["phase_text"] = phase_words(task["type"], progress["phase"])
+    stages = None
+    if task["type"] == REFRESH:
+        # A refresh's Current status draws its phases as the shared stage
+        # boxes (#1579), the same ones Load ParishSoft data draws.
+        from parishkit.stewardship.accounts.campaign_wizard import task_stages
+
+        stages = task_stages(task)
     return result, {
         "work": work,
         "task": task,
         "is_refresh": task["type"] == REFRESH,
+        "stages": stages,
         "phase_text": phase_words(task["type"], task["progress"]["phase"]),
         "retry_text": retry_reason(task),
         # Records checked and changed (#242), once a refresh has finished.
