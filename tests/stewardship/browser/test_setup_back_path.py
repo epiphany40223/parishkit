@@ -141,10 +141,11 @@ def checked_place(page):
 
     The re-check can only change the page below its heading (the region and
     its status line), so that is what must not move. The site header above
-    can grow on its own once the clock is fast-forwarded: its 30-second
-    status polls (ui-v1.js) fail on the component server and show
-    "Background status unavailable", which moved the whole page down by a
-    line, first seen on Firefox in CI.
+    could grow on its own once the clock was fast-forwarded: its 30-second
+    status polls (ui-v1.js) fail on the component server and showed
+    "Background status unavailable" on a line of its own, which moved the
+    whole page down by a line, first seen on Firefox in CI (the sentence now
+    replaces the pill's text in place, #1643).
     """
     left, top, width, height = place(page, "[data-progress-checked]")
     return [left, top - place(page, "h1")[1], width, height]
