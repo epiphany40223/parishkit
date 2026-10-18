@@ -7,6 +7,7 @@ campaign record id and the page's viewer may open the Timeline, and the
 "Inactive in ParishSoft" badge outside the link.
 """
 
+import re
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import UUID
@@ -107,3 +108,84 @@ def test_no_template_links_the_timeline_by_hand():
         source = path.read_text(encoding="utf-8")
         assert "'admin:timeline'" not in source, path.name
         assert "admin:family_timeline" not in source, path.name
+
+
+# Every Admin template that names a Family (#1570 slice 1b). Each draws the
+# name with the shared tag; the ones that must not link pass no record id.
+FAMILY_NAME_PAGES = {
+    "directory.html": "Active parishioner family directory",
+    "find-family-results.html": "Find a Family results",
+    "financial-report.html": "Financial stewardship",
+    "census-changes.html": "Census changes",
+    "census-publication.html": "Publish to ParishSoft, newest check",
+    "ministry-roster.html": "Roster changes to enter",
+    "limitations-report.html": "Limitations, both tables",
+    "presence.html": "Families on the form now",
+    "information.html": "Additional information request (queue: no link)",
+    "weekly-digest.html": "Weekly report items",
+    "delivery-refusals.html": "Refused addresses",
+    "delivery-refusal.html": "Refused address",
+    "source-form.html": "Families the form cannot open",
+    "go-live-families.html": "Testing submissions (no link: Testing only)",
+    "campaign-mail-families.html": "Send to chosen Families (no link: Testing)",
+    "system-health-accept.html": "Refused load examples (no link)",
+}
+
+# The justified exceptions: pages another open change converts. Outgoing
+# mail's Recipient column follows #1571 (Sent mail) and the Mail message
+# page's Family line #1563; remove each entry when its change lands.
+NOT_YET = {"deliveries.html": "#1571", "delivery.html": "#1563"}
+
+# A printed Family name: a {{ ... }} expression naming family_name.
+PRINTED_NAME = re.compile(r"\{\{[^}]*\bfamily_name\b[^}]*\}\}")
+# A table column headed "Family", by the shared sort heading or a plain one.
+FAMILY_COLUMN = re.compile(
+    r'\{% translate "Family" as heading %\}'
+    r'|<th scope="col"[^>]*>\{% translate "Family" %\}</th>'
+)
+HELPER = re.compile(r"\{% family_(link|timeline_url) ")
+
+
+def violations(source):
+    """Why ``source`` (one template) names a Family without the helper."""
+    found = [f"prints {match}" for match in PRINTED_NAME.findall(source)]
+    if FAMILY_COLUMN.search(source) and not HELPER.search(source):
+        found.append("has a Family column but never uses family_link")
+    return found
+
+
+def test_the_guard_catches_a_name_drawn_by_hand():
+    """The guard itself: a printed name, or a Family column without the tag."""
+    assert violations("<td>{{ row.family_name }}</td>")
+    assert violations("<td>{{ row.family_name|default:'' }}</td>")
+    assert violations('<th scope="col">{% translate "Family" %}</th><td>{{ x }}</td>')
+    assert not violations(
+        '{% translate "Family" as heading %}{% sort_heading t "f" heading %}'
+        "<td>{% family_link row.family_id row.family_name %}</td>"
+    )
+
+
+def test_no_admin_template_names_a_family_without_the_helper():
+    """Every Family name and Family column goes through ``family_link``."""
+    found = {}
+    for path in sorted(TEMPLATES.rglob("*.html")):
+        if path.name in NOT_YET:
+            continue
+        problems = violations(path.read_text(encoding="utf-8"))
+        if problems:
+            found[path.name] = problems
+    assert found == {}
+
+
+@pytest.mark.parametrize("name", sorted(FAMILY_NAME_PAGES))
+def test_every_family_name_page_uses_the_helper(name):
+    """Each listed page draws its Family names with the shared tag."""
+    source = (TEMPLATES / name).read_text(encoding="utf-8")
+    assert HELPER.search(source), FAMILY_NAME_PAGES[name]
+
+
+def test_the_exceptions_are_still_needed():
+    """An exception goes once its page no longer prints a name by hand."""
+    for name, issue in NOT_YET.items():
+        source = (TEMPLATES / name).read_text(encoding="utf-8")
+        assert violations(source), f"{name} is converted; drop it ({issue})"
