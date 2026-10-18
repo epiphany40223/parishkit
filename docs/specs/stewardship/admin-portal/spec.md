@@ -504,7 +504,13 @@ the Administrator) and cancels a Slack test still waiting for the Slack
 installer, so nothing is posted to Slack afterwards; a test already handed to
 Slack keeps its recorded result. The Slack connection and Test Slack steps
 leave the step bar, Review and Finish setup no longer need a Slack test, and
-turning Slack on again asks for a new token and a new test. The staged
+turning Slack on again asks for a new token and a new test. While Slack is
+off, opening the Test Slack page anyway (the browser's Back button, an old
+tab or a bookmark) shows no error: it opens the next step that needs work,
+the same step Home's Continue setup opens, which after a turn-off is Test
+email when its test must be sent again, otherwise Review
+([#1505](https://github.com/epiphany40223/parishkit/issues/1505)). Sending a
+Slack test while Slack is off stays refused. The staged
 credential's SQL guard admits that scrub only from the web, for the attempt's
 owner, while the attempt is collecting and its saved Slack step is off; the
 scrubbed row stays as the audit's tombstone, so at most one unscrubbed staged
