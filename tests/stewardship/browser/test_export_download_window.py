@@ -43,10 +43,10 @@ pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
 
-# Download, its reserved "until" line and the Refresh status link below it.
+# Download, its reserved "until" line and the Technical details below the panel.
 DOWNLOAD = "form[data-download-until] button, [data-download-ended-gated]"
 LINE = "[data-download-window]"
-REFRESH = "a[data-in-place='refresh']"
+BELOW = "details.technical-details > summary"
 # How long before the window's end a test checks that nothing has changed
 # yet: far longer than the real time its steps take while the fake clock
 # runs, so how fast the machine is does not matter.
@@ -59,8 +59,8 @@ def ms(delta):
 
 
 def places(page):
-    """Where Download, the "until" line and Refresh status are drawn."""
-    return [place(page, selector) for selector in (DOWNLOAD, LINE, REFRESH)]
+    """Where Download, the "until" line and Technical details are drawn."""
+    return [place(page, selector) for selector in (DOWNLOAD, LINE, BELOW)]
 
 
 @pytest.mark.parametrize("width", [1280, 360])

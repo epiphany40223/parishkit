@@ -1455,8 +1455,10 @@ tests, background task details, integration key changes, report exports,
 updates itself: while the work is queued or running it shows a worded running
 indicator and re-reads its passive status, backing off from 2 to 10 seconds
 (or at the fixed pace a page asks for, 2 to 60 seconds) and pausing while the
-tab is hidden; it states success or failure prominently
-when the work finishes and then stops. These status reads are passive like the
+tab is hidden; past its time limit it slows to every 30 seconds rather than
+stopping; it states success or failure prominently
+when the work finishes and then stops. Such pages have no manual Refresh
+link ([pages that update themselves](../ui-conventions/spec.md#pages-that-update-themselves)). These status reads are passive like the
 indicator polling above, and a page never reloads itself through a view that
 counts as activity, so an open page cannot keep an idle login alive. Nor does
 a status read record an audited view: a page whose own view is audited, such
@@ -4556,10 +4558,10 @@ invitation or reminder is due within an hour either side of now and nothing
 is scheduled for it yet. That wording hedges: a reminder no Family still
 needs schedules nothing, and an activation catch-up that keeps failing never
 schedules the invitations, so while waiting the page points to Background
-work. The page keeps checking for up to 3 hours after the last check that
-brought new counts (other self-updating pages stop an hour after they are
-opened), so a page opened an hour early follows the whole send. When it
-stops, it says to use **Refresh progress**. The region's counts change on
+work. The page keeps its pace for up to 3 hours after the last check that
+brought new counts (other self-updating pages slow down an hour after they
+are opened), so a page opened an hour early follows the whole send; after
+that it checks every 30 seconds, and it has no manual Refresh link. The region's counts change on
 every read, so it is not itself an ARIA live region. Screen readers instead
 hear one short polite announcement when the send passes each quarter,
 pauses, is held or is no longer in progress. Technical details sit outside
@@ -6509,19 +6511,21 @@ convention's; this page adds only the words.
 | No tile has a warning or an error | All working | Working |
 | Some tiles have warnings, none has an error | 1 warning / *N* warnings | Warning |
 | At least one tile has an error | 1 error / *N* errors, followed by "and 1 warning" / "and *N* warnings" when there are warnings too | Error |
-| Not current (below) | Not checked since 3:42 PM, then a **Refresh System health** button | Not current |
+| Not current (below) | Not checked since 3:42 PM | Not current |
 
 - **What it counts.** *N* counts tiles, not problems: "2 errors and 1
   warning" means two tiles show Error and one shows Warning, which is what
   the eye sees below. A tile counts once, under its worst state.
-- **Not current.** The poll stops for good after an hour of watching
-  (`GIVE_UP_MS` in `live-status-v1.js`), and today a failed check only
-  says "retrying". Either way the last answer could still read All working
-  when it is no longer true. So the line changes to **Not current** when
-  the poll gives up, and after three checks in a row have failed, with the
-  browser-local time of the last successful check. It takes the Not
-  current look, and its **Refresh System health** button reloads the
-  page's status in place and starts the poll again. Every tile turns Not
+- **Not current.** A failed check only says "retrying", so the last
+  answer could still read All working when it is no longer true. So the
+  line changes to **Not current** after three checks in a row have failed,
+  or when a check is refused, with the browser-local time of the last
+  successful check. It takes the Not current look; the poll keeps trying
+  (after an hour of watching it slows to every 30 seconds rather than
+  stopping, `GIVE_UP_MS` in `live-status-v1.js`), and there is no manual
+  Refresh button
+  ([pages that update themselves](../ui-conventions/spec.md#pages-that-update-themselves),
+  [#1586](https://github.com/epiphany40223/parishkit/issues/1586)). Every tile turns Not
   current with it, as [tiles while not current](#tiles-while-not-current)
   defines ([decision 12](#administrator-decisions-2026-10-13)). The line
   and the tiles return to their counted states on the next successful
@@ -6610,9 +6614,9 @@ current; slice 2b draws them always. The exception is
 answers the refused change and is not a standing control: it is drawn
 only while the refusal shown can be accepted or was accepted, or while a
 step's result is (Administrator, pk-local batch 24a and 2026-10-15).
-The page has no plain "Refresh System health" link at its end
-(Administrator, pk-local batch 24a): it refreshes itself, and the line's
-[Not current](#overall-status-line) button checks again when it stops.
+The page has no "Refresh System health" link or button
+(Administrator, pk-local batch 24a and #1586): it refreshes itself, and
+keeps trying while the line says [Not current](#overall-status-line).
 
 #### Health problem registry
 
@@ -6842,7 +6846,7 @@ arrived; nothing is fetched to draw it.
   again, the counted sentence of the overall line. It speaks nothing in
   between. Focus never moves.
 - **Back to current.** On the next successful check, from the poll's own
-  retry or from **Refresh System health**, the tiles take their fresh
+  retry, the tiles take their fresh
   states. Their summary rows change at once; their details follow the
   pointer hold of [opening and closing tiles](#opening-and-closing-tiles).
 

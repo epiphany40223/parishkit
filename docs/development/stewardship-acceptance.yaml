@@ -426,6 +426,7 @@ sections:
     "Admin portal interaction": [ADM-03]
     "JavaScript requirement": [ADM-12]
     "In-place controls": [ADM-03]
+    "Pages that update themselves": [ADM-03]
     "No layout shift": [ADM-03]
     "Disclosures": [ADM-03]
     "Prerequisite gates": [ADM-02, ADM-03]

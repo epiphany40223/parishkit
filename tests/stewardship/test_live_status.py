@@ -79,7 +79,8 @@ def test_credential_status_follows_until_confirmed_or_refused(
     )
     assert pending(html, "credential") is live
     assert text in html
-    assert "Refresh status" in html
+    # The page updates itself; it has no Refresh link (#1586).
+    assert "Refresh status" not in html
 
 
 def task(state):
@@ -319,13 +320,16 @@ def test_script_lets_a_region_renew_its_own_watching_limit():
     The limit is at most 3 hours and counts from the last poll that brought
     new content; other regions keep the one-hour limit from page load. It is
     judged from when the latest check was sent, so a clock jump while a check
-    is in flight still leaves one fresh check before watching stops (#425).
+    is in flight still leaves one fresh check at the region's pace (#425).
+    Past the limit the watch slows to every 30 seconds instead of stopping,
+    and names no Refresh link, since pages have none (#1586).
     """
     source = SCRIPT.read_text()
     assert "const GIVE_UP_MS = 60 * 60 * 1000;" in source
     assert 'region.getAttribute("data-live-give-up")' in source
     assert "Math.min(ownLimit, 3 * GIVE_UP_MS) : GIVE_UP_MS" in source
     assert "if (renews) started = Date.now();" in source
-    assert "if (asked - started > giveUp) {" in source
-    assert '|| "Refresh status"' in source
-    assert "Use ${refreshLabel} to check again." in source
+    assert "const slow = asked - started > giveUp;" in source
+    assert "const SLOW_MS = 30 * 1000;" in source
+    assert "slow ? SLOW_MS : fixed" in source
+    assert "refreshLabel" not in source and "Use ${" not in source

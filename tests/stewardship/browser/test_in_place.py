@@ -3,14 +3,15 @@
 Each test sets a mark outside every region, which only a full page load
 could lose, scrolls so the control sits well below the fold, activates it,
 and checks the mark, the scroll position, the new content, focus, the live
-region and the address. The Refresh links are the real Background work and
-Families on the form now templates; the form tests use a small test-only page
-(in_place_components.py) around one form[data-in-place].
+region and the address. The table tests use the real Background work
+template; the form tests use a small test-only page (in_place_components.py)
+around one form[data-in-place]. The periodic re-reads of Background work and
+Families on the form now are in test_auto_refresh.py (#1586).
 """
 
 import pytest
 
-from .in_place_components import BACKGROUND, FORM, PRESENCE
+from .in_place_components import BACKGROUND, FORM
 from .waits import eventually, has_text, visible
 
 pytestmark = pytest.mark.parametrize(
@@ -47,89 +48,6 @@ def count_requests(page, method, part):
         ),
     )
     return seen
-
-
-def test_background_refresh_rereads_the_view_in_place(page, component_origin):
-    """Refresh current work fetches the same page of the same view once and
-    swaps the table and the work counts; the reader keeps their place and
-    focus, and the live region says the list was refreshed."""
-    page.set_viewport_size(VIEWPORT)
-    page.goto(component_origin + BACKGROUND)
-    page.evaluate(MARK)
-    refresh = page.get_by_role("link", name="Refresh current work")
-    href = refresh.get_attribute("href")
-    assert "page=1" in href and href.endswith("#table")
-    offset = scroll_below(page, "#background-refresh")
-    gets = count_requests(page, "GET", "/admin/system/background/?")
-    refresh.click()
-    has_text(page.locator("#background-counts"), _counts(2))
-    assert page.evaluate(MARKED) == "kept"
-    assert abs(page.evaluate("window.scrollY") - offset) < 40
-    assert page.evaluate("document.activeElement.id") == "background-refresh"
-    has_text(
-        page.get_by_role("status").filter(has_text="List refreshed."),
-        "List refreshed. Showing 1–1 of 51 · Page 1 of 2",
-    )
-    assert page.url == component_origin + href
-    assert len(gets) == 1
-
-
-def _counts(active):
-    """The background page's work-count line with ``active`` tasks running."""
-    return (
-        f"Running: {active} · Waiting to start: 0 · Waiting to try again: 0 · "
-        "Stopped unexpectedly: 0"
-    )
-
-
-def test_background_refresh_follows_the_tables_page(page, component_origin):
-    """After Next, the Refresh link (a sync node) carries page 2, so a refresh
-    re-reads the page the reader is on rather than the first."""
-    page.set_viewport_size(VIEWPORT)
-    page.goto(component_origin + BACKGROUND)
-    page.locator("#table .table-nav").first.get_by_role("link", name="Next").click()
-    has_text(page.locator("#table tbody th[scope=row] a"), "ParishSoft data refresh 2")
-    refresh = page.get_by_role("link", name="Refresh current work")
-    assert "page=2" in refresh.get_attribute("href")
-    page.evaluate(MARK)
-    with page.expect_request(lambda request: "page=2" in request.url) as fetched:
-        refresh.click()
-    assert fetched.value.headers.get("x-requested-with") == "fetch"
-    visible(page.get_by_role("status").filter(has_text="List refreshed."))
-    assert page.evaluate(MARKED) == "kept"
-
-
-def test_presence_refresh_updates_the_list_and_count_in_place(page, component_origin):
-    """Refresh list swaps the rows, the count and the time outside the table."""
-    page.set_viewport_size({"width": 1280, "height": 400})
-    page.goto(component_origin + PRESENCE)
-    page.evaluate(MARK)
-    assert page.locator("#table tbody tr").count() == 1
-    offset = scroll_below(page, "#table-refresh")
-    gets = count_requests(page, "GET", "/admin/mail/presence/?size")
-    page.get_by_role("link", name="Refresh list").click()
-    has_text(
-        page.locator("#presence-count"),
-        "Families with the Family form open in their browser within the last "
-        "90 seconds: 2",
-    )
-    assert page.locator("#table tbody tr").count() == 2
-    assert page.evaluate(MARKED) == "kept"
-    # The new row pushed the link down; the page never jumps back up, and
-    # scrolls (only) enough to keep the focused link in view.
-    assert page.evaluate("window.scrollY") >= offset
-    assert page.evaluate(
-        "(() => { const box = document.getElementById('table-refresh')"
-        ".getBoundingClientRect(); return box.top >= 0"
-        " && box.bottom <= window.innerHeight; })()"
-    )
-    assert page.evaluate("document.activeElement.id") == "table-refresh"
-    assert page.url.endswith("sort=-heartbeat#table")
-    has_text(
-        page.get_by_role("status").filter(has_text="List refreshed."),
-        "List refreshed. Showing 1–2 of 2 · Page 1 of 1",
-    )
-    assert len(gets) == 1
 
 
 def test_post_form_saves_in_place_with_one_request(page, component_origin):
@@ -317,9 +235,9 @@ def test_leaving_the_page_keeps_a_save_note_but_skips_a_read_fallback(
     page.set_viewport_size(VIEWPORT)
     page.goto(component_origin + BACKGROUND)
     page.evaluate(MARK)
-    page.route("**/admin/background?*", lambda route: route.abort())
+    page.route("**/admin/system/background/?*", lambda route: route.abort())
     page.evaluate(LEAVING)
-    page.get_by_role("link", name="Refresh current work").click()
+    page.locator("#table .table-nav").first.get_by_role("link", name="Next").click()
     eventually(page, "() => !document.querySelector('[aria-busy=true]')")
     assert page.evaluate(MARKED) == "kept"
     page.goto(component_origin + FORM)

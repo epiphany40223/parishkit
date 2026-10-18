@@ -209,10 +209,10 @@ def test_a_running_send_polls_with_a_labelled_progress_bar():
     tag = region(html)
     assert "data-live-pending" in tag
     assert f'data-live-interval="{POLL_MILLISECONDS}"' in tag
-    # Three hours without new counts, renewed by each change, and the
-    # stop message names this page's own refresh link.
+    # Three hours without new counts, renewed by each change, before the
+    # pace slows; the page has no Refresh link to name (#1586).
     assert 'data-live-give-up="10800000"' in tag
-    assert 'data-live-refresh-label="Refresh progress"' in tag
+    assert "data-live-refresh-label" not in tag
     assert 'data-live-announce="Family email send in progress, 25% done."' in tag
     # The counts change every poll, so the region itself is not aria-live.
     assert "aria-live" not in tag and 'role="status"' not in tag

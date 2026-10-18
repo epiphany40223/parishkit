@@ -202,6 +202,27 @@ def test_admin_poll_does_not_refresh_admin_idle(family_service, google):
     assert row.last_activity_at == before
 
 
+@pytest.mark.parametrize(
+    "path", [ADMIN + "?size=50&sort=-heartbeat", "/admin/system/background/?state=all"]
+)
+def test_periodic_page_rereads_do_not_refresh_admin_idle(family_service, google, path):
+    """Families on the form now and Background work update themselves (#1586):
+    every 30 seconds ui-v1.js re-reads the page's own address in place, a GET
+    marked X-Requested-With: fetch. An open page re-reading itself can never
+    keep an idle sign-in alive."""
+    from parishkit.stewardship.accounts.models import PortalSession
+
+    browser, _ = signed_in()
+    row = PortalSession.objects.get(revoked_at__isnull=True)
+    before = row.last_activity_at
+    for _ in range(2):
+        response = browser.get(path, HTTP_X_REQUESTED_WITH="fetch")
+        assert response.status_code == 200
+        assert b"data-reread-every" in response.content
+    row.refresh_from_db()
+    assert row.last_activity_at == before
+
+
 # A Ministry leader leads through a ParishSoft role (#922), which this
 # fixture's synthetic population has none of; the capability matrix
 # (test_policy.py) shows leaders hold no presence capability either.

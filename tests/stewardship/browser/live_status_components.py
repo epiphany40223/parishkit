@@ -1,10 +1,11 @@
-"""Live-status pages at their real addresses, for in-place Refresh and Dismiss.
+"""Live-status pages at their real addresses, for their updates and Dismiss.
 
-#519 PR 7a and 7b: each page's Refresh link and an integration's Dismiss
-re-read the page itself, so the page is served where its controls lead. A test
-answers the re-read with another of these pages (a route), so the fresh
-region differs; the integration's Dismiss is answered by the fixture server
-with a real Post/Redirect/Get redirect (``POSTS``).
+#519 PR 7a and 7b, #1586: each page updates itself by re-reading itself (or
+its passive status), and an integration's Dismiss re-reads the page, so the
+page is served where those reads lead. A test answers a read with another of
+these pages (a route), so the fresh region differs; the integration's Dismiss
+is answered by the fixture server with a real Post/Redirect/Get redirect
+(``POSTS``).
 """
 
 from datetime import timedelta
@@ -35,22 +36,27 @@ from .send_progress_components import _send
 
 REQUEST, RUNNING = UUID(int=700), UUID(int=703)
 CREDENTIAL = reverse("admin:credential_status", args=[REQUEST])
-# A key change still being installed when its page opens, so its watcher
-# is already running when Refresh replaces the region.
+# A key change still being installed when its page opens, so the page
+# watches it from the start.
 CREDENTIAL_RUNNING = reverse("admin:credential_status", args=[RUNNING])
 PROGRESS = reverse("admin:family_email_progress")
 # The passive status the progress page polls while a send runs.
 PROGRESS_STATUS = "/live-progress-status"
 FAMILY_TESTS = reverse("admin:campaign_mail_families", args=[UUID(int=702)])
+# The same page while a Family test is on its way, so it watches itself
+# until a read brings the settled tests.
+FAMILY_TESTS_PENDING = "/live-family-tests-pending"
 INTEGRATION = reverse("admin:integration_settings", args=["parishsoft"])
 DISMISS = reverse("admin:dismiss_credential_result", args=["parishsoft"])
 # A ParishSoft refresh's task page and the passive status it polls (#869).
 TASK_RUN = UUID(int=869)
 TASK_PAGE = reverse("admin:background_task_page", args=[TASK_RUN])
 TASK_STATUS = reverse("admin:background_task_status", args=[TASK_RUN])
+# The finished run's page with its history sorted by Action.
+TASK_FINISHED_BY_ACTION = "/live-task-finished-by-action"
 # A report export and a latest-data export, and a configuration change's
-# status, whose Refresh links re-read them in place (#519 PR 7b). The two
-# exports share one address form (the view draws whichever the job is).
+# status, which update themselves (#519 PR 7b, #1586). The two exports share
+# one address form (the view draws whichever the job is).
 EXPORT = reverse("admin:report_export", args=[UUID(int=720)])
 EXACT = reverse("admin:report_export", args=[UUID(int=721)])
 CHANGE = reverse("admin:configuration_request", args=[UUID(int=722)])
@@ -155,15 +161,16 @@ def components(context, admin):
             },
         )
 
-    def family_tests(items):
-        """Send to chosen Families with these recent tests, none pending."""
+    def family_tests(items, pending=False):
+        """Send to chosen Families with these recent tests, one of them on
+        its way while ``pending``."""
         return family_tests_page(
             context,
             admin,
             confirm=False,
             families=[],
             items=items,
-            refresh=False,
+            refresh=pending,
             refresh_url=FAMILY_TESTS,
         )
 
@@ -372,6 +379,7 @@ def components(context, admin):
             "family-email-progress-status", sent=900, remaining=180
         ),
         FAMILY_TESTS: family_tests([]),
+        FAMILY_TESTS_PENDING: family_tests([], pending=True),
         "/live-family-tests-later": family_tests(tested),
         INTEGRATION: integration(failed),
         INTEGRATION + "?dismissed=1": integration(None),
@@ -398,9 +406,9 @@ def components(context, admin):
         CHANGE: change("staged"),
         "/live-change-applied": change("applied"),
     }
-    # Refresh task re-reads the task page with its history's view (#519 PR
-    # 7b): as first shown, and once sorted by Action, each read finds the
-    # run finished, sorted as it was asked.
+    # The task page's quiet re-read when its run ends keeps its history's
+    # view (#869, #1586): as first shown, and once sorted by Action, each
+    # read finds the run finished, sorted as it was asked.
     shown = refresh_values("running", running)["history"]
     action = shown.sort_target("action")
     by_action = refresh_values("running", running, sort=action)["history"]
@@ -414,5 +422,7 @@ def components(context, admin):
         canonical(TASK_PAGE + "?" + by_action.current_query): refresh_task(
             "succeeded", finished, sort=action
         ),
+        # The same, for a test to answer any read of the sorted page with.
+        TASK_FINISHED_BY_ACTION: refresh_task("succeeded", finished, sort=action),
     }
     return {path: ("text/html", body) for path, body in pages.items()}

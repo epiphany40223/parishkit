@@ -254,7 +254,9 @@ def test_a_410_without_a_gone_sentence_stops_polling(page, component_origin):
     page.route("**/report-export-pending", status)
     page.goto(component_origin + "/report-export-pending")
     visible(
-        page.get_by_text("Couldn't check status. Refresh the page or sign in again.")
+        page.get_by_text(
+            "Couldn't check for updates. Reload the page or sign in again."
+        )
     )
     settled = len(reads)
     page.wait_for_timeout(4000)
