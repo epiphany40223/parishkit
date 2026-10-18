@@ -3854,7 +3854,7 @@ Export forms and export status pages carry no sensitive-data banner
 [#1539](https://github.com/epiphany40223/parishkit/issues/1539)). A sentence
 that says what the file holds or leaves out (for example, that a Family
 link's private email-link part is not included) stays as plain help with
-the export, as its one short line or in its toggletip
+the export, in its row's toggletip
 ([export actions](#downloaded-files)). The privacy line inside each downloaded file stays: it travels
 with the file to readers who never saw the page
 ([file design](../reports/spec.md#file-design)). **Why.** The banner was a
@@ -3922,16 +3922,26 @@ Lines"). Each button posts its own format; there is no format menu and no
 separate Download, Queue or Generate button. The buttons are outlined, with
 a smaller font, padding and height than the portal's primary green buttons,
 so they read as secondary actions, and they wrap onto a second line on a
-phone rather than widening the page. A note on what the file holds (its
-scope, count or privacy) is one short line beside or under the row, and
-anything longer moves into the row's toggletip. A format the download cannot
+phone rather than widening the page. A format the download cannot
 take right now (Ministry requests' PDF above its row limit) is shown
-unavailable, named by the line that says why; while other campaign work
+unavailable, named by a line below the row that says why; while other campaign work
 holds exports, every button is unavailable with its reason (#563). The
 in-place progress, waiting note and refusal behaviour of the old Download
 buttons is unchanged: the clicked button shows it is busy, the row's other
 buttons wait with it, and the waiting note appears below the row. On a page
 with a table the row sits below the table, so the page's data starts higher.
+**No explanatory line.** Export buttons carry no explanatory line: no
+count ("Exports all 7 estimated matching Families, every page."), no scope
+("The file holds the list these choices show") and no list of the file's
+columns, above, beside or under the row, nor in a toggletip, because the
+buttons are self-explanatory (Administrator decision, 2026-10-18, pk-local
+R37 on [#1702](https://github.com/epiphany40223/parishkit/pull/1702)). Only
+a line saying why a button is unavailable, and a toggletip for what a reader
+could not guess (what the file leaves out, such as a Family link's private
+email-link part, or holds beyond the page) remain; the file's own Report
+information keeps its count and filters. `test_export_actions.py` fails when
+an export page draws a count, scope or column-list line.
+
 Not covered: a ready file's own Download button on its export status page,
 the campaign archive download, and hosted files, which are one file each,
 not a choice of formats. **Why.** Exports are common across the portal, and a

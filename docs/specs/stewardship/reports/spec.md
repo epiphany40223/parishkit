@@ -795,14 +795,12 @@ heading, and the page sends `Cache-Control: no-store`. Top to bottom:
    funnel chart remains anywhere; the Administrator can ask for one back.
 4. **Daily participation**: the Chart population choice, the daily chart
    and its table ([participation graph](#participation-graph)).
-5. **Export**: one sentence, "Exports the daily participation data on this
-   page.", and the export buttons **Export XLSX**, **Export CSV** and
-   **Export PDF**
+5. **Export**: the export buttons **Export XLSX**, **Export CSV** and
+   **Export PDF**, with no sentence on what they export
    ([export actions](../ui-conventions/spec.md#downloaded-files)), which
    export every daily row of the chart shown
    ([file design](#file-design); the statistics and the funnel join the
-   file in [#1557](https://github.com/epiphany40223/parishkit/issues/1557),
-   which then makes the sentence "Exports all the data on this page."). While no complete chart has
+   file in [#1557](https://github.com/epiphany40223/parishkit/issues/1557)). While no complete chart has
    been calculated, or other campaign work holds new exports, the buttons are
    shown unavailable with the sentence that says why
    ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)). The
@@ -1413,8 +1411,9 @@ own failure kind (`directory_head_emails_unavailable`) in the logs; the
 export is retried like any failed render. Report details (parish, campaign, capture time, "Head emails as of"
 when it applies, Families in the file, filters applied and the privacy line "Sensitive: Family codes.
 Authorized recipients only.") are in the PDF header and footer and the XLSX
-"Report information" sheet, never in columns. The page's export line names
-the file's columns for the current filters and mailing-columns choice. Every
+"Report information" sheet, never in columns. The page names neither the
+file's count nor its columns beside the export buttons
+([export actions](../ui-conventions/spec.md#downloaded-files)). Every
 file's times use the browser's zone
 ([time zones](../ui-conventions/spec.md#downloaded-files)). The
 export's capture keeps only the private contact columns its file

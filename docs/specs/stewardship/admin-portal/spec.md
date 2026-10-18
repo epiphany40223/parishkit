@@ -6328,8 +6328,9 @@ selection, which leaves such requests out once open
 the export refuses (400) any Status choice but the queue's own statuses, so
 the Staff-only choice of #1217 that lists only those requests is never
 exported.
-A line says how many requests the file holds; the count and the form's hidden
-filters follow an in-place Apply, sort or page change. The rows are the queue selection's own,
+No line says how many requests the file holds
+([export actions](../ui-conventions/spec.md#downloaded-files)); the form's
+hidden filters follow an in-place Apply, sort or page change. The rows are the queue selection's own,
 so a Ministry leader gets only the Ministries they lead, exactly as on the
 queue. The file's columns are the queue's (Member, Member DUID, Ministry,
 Request, Status with Outcome split out, Last contact), then the request
@@ -6355,7 +6356,7 @@ shared PDF writers take about 19 ms a request: timed on 1,000 synthetic
 Families with 3,002 requests, CSV took 1.2 s, XLSX 2.7 s and PDF 58 s (50 s
 as a table), so 1,000 requests is about 20 s, with room for the slower
 production server. While the queue's filters select more, Export PDF is
-shown unavailable and the export line says "The PDF is limited to 1,000
+shown unavailable and a line below the buttons says "The PDF is limited to 1,000
 requests: choose CSV or XLSX, or narrow the filters."; the buttons are
 redrawn with each applied view, in place. A PDF asked for anyway (a stale page) is refused with that
 reason and a link back to the queue, before any contact detail is read.
