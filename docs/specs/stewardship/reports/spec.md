@@ -1879,12 +1879,15 @@ then:
   first click.
 - **What changed**: the field's plain label (Mobile phone, Home address,
   Moved to another household, Deceased, New Member, and so on).
-- **ParishSoft now**, **Family's answer**, and **Edited value** (only when an
+- **Values**: one cell listing, each under its own small label,
+  **ParishSoft now**, on a Conflict **When the Family answered** (the value
+  the Family saw), **Family's answer**, and **Edited value** (only when an
   Administrator edited the proposed value). ParishSoft now is blank where no
   verified ParishSoft read exists for the field (today every Family
   household field), so a Family address never shows a ParishSoft value or a
   conflict. Values appear in full: Admin and Staff need them to type into
-  ParishSoft, and every view and download is audited. A blank Family's answer
+  ParishSoft, and every view and download is audited. A blank value shows a
+  muted *(blank)*, so it is never an empty line. A blank Family's answer
   means the Family removed the value: Staff remove it in ParishSoft, or
   Ignore the row to keep it. A birth date the Family gave as Unknown shows
   *Unknown*.
@@ -1899,8 +1902,9 @@ then:
   ParishSoft together and mark both entered.
 - **Status**, derived from the row's decision and execution as below.
 - **Submitted**, in browser-local time.
-- **Recorded by**, **Recorded at** and **Note**: the latest *Entered in
-  ParishSoft*, *Ignore* or *Reopen* on the row
+- **Last recorded**: one cell listing, each under its own small label, **By**,
+  **At** and **Note** (the files' Recorded by, Recorded at and Note): the
+  latest *Entered in ParishSoft*, *Ignore* or *Reopen* on the row
   ([manual census resolution](#manual-census-resolution)), or *Approve*,
   *Ignore*, *Back to To review*, *Save value* or *Clear edit* on an Automatic row
   ([automatic census review](#automatic-census-review)): the person's
@@ -1910,7 +1914,20 @@ then:
 - **Actions**, last: the row's action icons
   ([manual census resolution](#manual-census-resolution),
   [automatic census review](#automatic-census-review)), only those the row
-  allows the reader.
+  allows the reader, two to a line.
+
+The two labelled cells keep the table readable
+([#1472](https://github.com/epiphany40223/parishkit/issues/1472)): with a
+column each for these six values, every column was squeezed into a strip of
+single letters. The table follows the shared
+[table fit](../ui-conventions/spec.md#table-fit-and-row-height) rules: no
+column narrower than its longest word, the labelled values at a readable
+minimum width, and, where the table is wider than the page (a phone, or a
+laptop beside the Admin menu with long values), it scrolls sideways inside
+its own box while the Actions column stays in view at its end. A stacked
+card layout on a phone was considered and not taken: it would drop the
+sortable headings and the table's reading order for screen readers, and
+staff enter census changes into ParishSoft at a desktop.
 
 A terminal execution decides the status first, since it is the outcome
 whatever the decision says: *published* is **Published**,
@@ -1946,7 +1963,8 @@ number of changes and the privacy line
 ([#926](https://github.com/epiphany40223/parishkit/issues/926)); like the
 PDF, it does not list the filters. `pk-admin export census` writes these
 same files through the same writer.
-The files have the page's columns in the page's order: Family, ParishSoft
+The files have the page's columns in the page's order, each labelled value
+of Values and Last recorded in a column of its own: Family, ParishSoft
 status (the page's
 [Not in ParishSoft](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
 badge in a column of its own, with Family blank, for a Family the data no
