@@ -34,6 +34,17 @@ from parishkit.stewardship.web.contracts import check_version
 from .models import RESOLUTION_ACTIONS, ProposalResolution, ProposedChange
 
 MAX_NOTE = 2000
+
+
+class KeyRebound(ValueError):
+    """A request key already recorded a different review or resolution.
+
+    Nothing was saved. It happens only when a page's answer was lost and the
+    same drawn form (or bulk key) is sent again with other choices, so the
+    page offers a reload rather than a generic refusal (a 409).
+    """
+
+
 OPEN_EXECUTIONS = frozenset({"pending", "conflict"})
 
 
@@ -100,7 +111,7 @@ def record_resolution(
     ).first()
     if previous is not None:
         if any(getattr(previous, key) != value for key, value in intent.items()):
-            raise ValueError("This request key is already bound.")
+            raise KeyRebound("This request key is already bound.")
         return previous
     check_version(proposal, expected_version)
     if not allowed(proposal, action):

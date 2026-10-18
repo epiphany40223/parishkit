@@ -141,6 +141,7 @@ def test_edit_is_accept_with_a_value(response_service):
     assert reviews.count() == 1
     # Back to review keeps the value; Edit with the Family's answer clears it.
     decide(harness, staff, [fresh(rows["prefix"])], "back_to_review")
+    assert state(rows["prefix"]) == ("unreviewed", "pending", True, "Rev.")
     decide(harness, staff, [fresh(rows["prefix"])], "edit", value="Dr.")
     assert state(rows["prefix"]) == ("approved", "pending", False, None)
 
@@ -191,6 +192,46 @@ def test_accept_and_edit_on_a_conflict_accept_parishsofts_value(response_service
     prefix = conflicted(rows["prefix"], "Mr.")
     decide(harness, staff, [prefix], "accept")
     assert state(prefix)[:2] == ("approved", "pending")
+
+
+@pytest.mark.parametrize("bulk", [False, True])
+def test_a_repeated_accept_on_a_conflict_returns_the_first(response_service, bulk):
+    """The first post moved the Conflict to pending; the same post again
+    (its answer was lost) follows the first one's path and records nothing
+    more, one by one or in bulk."""
+    harness, _, staff, rows = prepared(response_service)
+    chosen = [conflicted(rows["first_name"])]
+    if bulk:
+        chosen.append(rows["prefix"])
+    key = uuid4()
+    first = decide(harness, staff, chosen, "accept", key=key, bulk=bulk)
+    again = decide(harness, staff, chosen, "accept", key=key, bulk=bulk)
+    assert [review.pk for review in again] == [review.pk for review in first]
+    assert ProposalReview.objects.count() == len(chosen)
+    assert ProposalReview.objects.filter(accepted_base=True).count() == 1
+
+
+def test_a_repeated_edit_returns_the_first_after_the_change_moved_on(
+    response_service,
+):
+    """An Edit whose answer was lost, sent again after a later Back to
+    review and Edit and once the change's update run started (no longer
+    editable), returns the first review rather than refusing it: the
+    repeated post is looked up before the value is compared with the
+    change's and before whether the change can be edited now."""
+    harness, _, staff, rows = prepared(response_service)
+    key = uuid4()
+    [first] = decide(harness, staff, [rows["first_name"]], "edit", value="One", key=key)
+    decide(harness, staff, [fresh(rows["first_name"])], "back_to_review")
+    decide(harness, staff, [fresh(rows["first_name"])], "edit", value="Two")
+    owner(
+        "UPDATE stewardship_proposed_change SET execution='queued' WHERE id=%s",
+        [rows["first_name"].pk],
+    )
+    [again] = decide(harness, staff, [rows["first_name"]], "edit", value="One", key=key)
+    assert again.pk == first.pk
+    assert ProposalReview.objects.filter(proposal=rows["first_name"]).count() == 3
+    assert state(rows["first_name"]) == ("approved", "queued", True, "Two")
 
 
 def test_back_to_review_reopens_an_ignored_change_only_with_a_note(response_service):

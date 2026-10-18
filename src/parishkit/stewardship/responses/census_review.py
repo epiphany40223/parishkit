@@ -29,19 +29,21 @@ that edit (``edit_census_change``, ADM-09.04): the same kind of review row,
 which keeps the decision and changes only the edit fields
 (``schema/migrations/0107_proposal_review_edit.sql``). The worklist's Edit
 is Accept with a value: one review row that approves and edits together
-(``accept_census_change``, ``schema/migrations/0131_census_pipeline_review.sql``).
+(``decide_census_changes``, ``schema/migrations/0131_census_pipeline_review.sql``).
 The Family's answer is never changed. An edit is per change only, never in
 bulk.
 
 On a Conflict (ParishSoft changed after the Family answered), a reviewer
-may choose "Use the Family's value anyway" (the worklist's Accept on a
-Conflict)
+may choose "Use the Family's value anyway" (the worklist's Accept or Edit on
+a Conflict, one by one or, for Accept, in bulk: each row is resolved
+against its own current ParishSoft value, #1683)
 (``resolve_census_conflict``, ADM-09.03): a review row that accepts
 ParishSoft's current value as the base publication merges against, approves
 the change and moves it from conflict to pending
 (``schema/migrations/0108_conflict_resolution.sql``; ``accepted_base``).
-The Family's baseline is never changed. It is per change only, never in
-bulk, since each row needs its own comparison.
+The Family's baseline is never changed. ``resolve_census_conflict``
+(``pk-admin census resolve-conflict``) is per change; the worklist's bulk
+Accept resolves each Conflict it covers at that row's own value.
 """
 
 import json
@@ -68,7 +70,7 @@ from parishkit.stewardship.web.tables import PAGE_SIZES
 from .accepted_base import has_active_base
 from .capabilities import Handling, capability
 from .census import InvalidHousehold, validate_address
-from .census_resolution import MAX_NOTE, record_resolution
+from .census_resolution import MAX_NOTE, KeyRebound, record_resolution
 from .comparison import ADDRESS_COMPONENTS, ValueKind
 from .contact_schema import PUT_SCHEMA, sendable
 from .member_census import InvalidMemberValue, validate_member_value
@@ -320,15 +322,6 @@ def _same_as_family(proposal, value):
 
 class Unchanged(ValueError):
     """The edit would leave the change's value as it is; nothing was saved."""
-
-
-class KeyRebound(ValueError):
-    """A request key already recorded a different review; nothing was saved.
-
-    It happens only when a page's answer was lost and the same drawn form
-    (or bulk key) is sent again with other choices, so the page offers a
-    reload rather than a generic refusal.
-    """
 
 
 def one_campaign(proposals):
@@ -748,14 +741,30 @@ def _decide(proposal, action, actor_id, version, key, note, parish, value):
             proposal, actor_id, version, key, "entered", note, parish
         )
     if action in (ACCEPT, EDIT):
+        # A repeated post (the same request key) follows the path its first
+        # post took: that post moved a Conflict to pending, so the row's
+        # execution no longer says it was one.
+        previous = ProposalReview.objects.filter(
+            actor_id=actor_id, request_key=key
+        ).first()
         edit = None
         if action == EDIT:
             edit = _edit_for(proposal, value, proposal.submission.campaign)
-            if edit == (proposal.admin_value_set, proposal.admin_value):
-                edit = None
-            elif not editable(proposal):
-                raise ValueError("This census change cannot be edited now.")
-        conflict = proposal.execution == "conflict"
+            # A repeated Edit is checked against its first post's own value
+            # (``_record`` returns that review, or refuses a rebound key),
+            # never against the change as it is now: since then it may hold
+            # another value or no longer be editable, and a lost answer sent
+            # again must still get the first review, not a refusal.
+            if previous is None:
+                if edit == (proposal.admin_value_set, proposal.admin_value):
+                    edit = None
+                elif not editable(proposal):
+                    raise ValueError("This census change cannot be edited now.")
+        conflict = (
+            previous.accepted_base
+            if previous is not None
+            else proposal.execution == "conflict"
+        )
         return _record(
             proposal,
             actor_id,
