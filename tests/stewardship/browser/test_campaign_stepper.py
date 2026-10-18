@@ -235,7 +235,7 @@ def assert_no_refresh_wording(page):
     assert page.get_by_text(QUEUE, exact=False).count() == 0
 
 
-@pytest.mark.parametrize("width", [320, 1280])
+@pytest.mark.parametrize("width", [320, 660, 1024, 1280])
 def test_load_step_loads_then_continues_in_place(
     page, component_origin, axe_source, width
 ):
@@ -454,7 +454,7 @@ def answer_load(page, origin, first, reread=None):
     return address
 
 
-@pytest.mark.parametrize("width", [320, 1280])
+@pytest.mark.parametrize("width", [320, 660, 1024, 1280])
 def test_failed_load_says_so_and_try_again_loads_again(page, component_origin, width):
     """After a failed load the step says so, with Try again (#1404 PR 5).
 
@@ -498,14 +498,15 @@ def test_failed_load_says_so_and_try_again_loads_again(page, component_origin, w
     assert failures == []
 
 
-@pytest.mark.parametrize("width", [320, 1280])
+@pytest.mark.parametrize("width", [320, 400, 641, 660, 700, 760, 1024, 1280, 1600])
 def test_load_with_no_families_has_its_own_state(page, component_origin, width):
     """A full load that matched no Families says so, in place (#1587).
 
-    Its wording, links to the run and Campaign settings, every box done, no
+    Its wording, links to the run and Refresh from ParishSoft, every box done, no
     button of any kind (not the plain Load again, not Continue); the summary
     line, boxes and the action row below keep their places from loading to
-    this state, in the poll's answer and after the page's in-place re-read.
+    this state, in the poll's answer and after the page's in-place re-read,
+    at phone, narrow desktop (just above the 40rem breakpoint) and wide widths.
     """
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
