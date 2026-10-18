@@ -42,9 +42,9 @@
   region draws a fresh request key and, below the button, the remembered run's live status, which polls the task's passive status
   fragment; when the run ends, live-status-v1.js re-reads this page in place, so the panel above (its own region) shows the new data age too. The
   breadcrumb is the way back, so there is no Cancel link. The run's status region is not aria-live (#1579): the announcer just above
-  the region, outside it so Refresh now's answer never replaces it, reads out the region's state sentence when it changes.{% endcomment %}<p class="visually-hidden" role="status" data-live-announcer="task"></p>
+  the region, outside it so Refresh now's answer never replaces it, reads out the region's state sentence when it changes; Refresh now says nothing itself (data-in-place-spoken), so the two never double up.{% endcomment %}<p class="visually-hidden" role="status" data-live-announcer="task"></p>
 <div id="refresh-run" data-in-place-region>
-<form method="post" action="{% url 'admin:source_refresh' %}#refresh-run" data-in-place="refresh-request" data-in-place-only data-in-place-message="{% translate 'Refresh requested.' %}">
+<form method="post" action="{% url 'admin:source_refresh' %}#refresh-run" data-in-place="refresh-request" data-in-place-only data-in-place-spoken>
   {% csrf_token %}<input type="hidden" name="request_key" value="{{ request_key }}">
   {% button type="submit" %}{% translate "Refresh now" %}{% endbutton %}
 </form>
