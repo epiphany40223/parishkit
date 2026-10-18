@@ -6316,9 +6316,8 @@ request page's view audit (`ministry_followup_viewed`) records the request's
 `ministry_duid`, as the retired Members joining and leaving lists' views
 recorded theirs; never names or contact values.
 
-Below the queue table, **Export these requests**, a closed export
-disclosure (its summary "Export these requests (CSV, XLSX or PDF)", per the
-[report filters and export rule](../ui-conventions/spec.md#page-help)),
+Below the queue table, **Export these requests**, the shared row of
+[export buttons](../ui-conventions/spec.md#downloaded-files),
 downloads the queue's applied view (its filters, search and sort; every
 page of it, not just the one shown) as CSV, XLSX or PDF (Administrator
 decision, 2026-10-12, option (a) on #1157), replacing the retired Members joining and leaving exports.
@@ -6330,8 +6329,7 @@ the export refuses (400) any Status choice but the queue's own statuses, so
 the Staff-only choice of #1217 that lists only those requests is never
 exported.
 A line says how many requests the file holds; the count and the form's hidden
-filters follow an in-place Apply, sort or page change, and the reader's
-format and time zone stay as chosen. The rows are the queue selection's own,
+filters follow an in-place Apply, sort or page change. The rows are the queue selection's own,
 so a Ministry leader gets only the Ministries they lead, exactly as on the
 queue. The file's columns are the queue's (Member, Member DUID, Ministry,
 Request, Status with Outcome split out, Last contact), then the request
@@ -6344,8 +6342,8 @@ page still shows when a request was submitted. Its Report information sheet
 and PDF card
 hold the parish, campaign, data date, request time, display time zone, age
 reference date, count, filters and the privacy line. It carries the
-retired export's sensitivity notice, and it asks for a time
-zone, since Last contact is an action time. The file is
+retired export's sensitivity notice, and its times are in the browser's
+zone ([time zones](../ui-conventions/spec.md#downloaded-files)). The file is
 rendered on request, as Roster changes to enter is, rather than queued as a
 stored export: a stored capture would need a schema change, because the
 export capture accepts only one Ministry's join or leave list or a packet.
@@ -6356,11 +6354,10 @@ interactive [read guard](../data/spec.md#campaign-read-guards), and the
 shared PDF writers take about 19 ms a request: timed on 1,000 synthetic
 Families with 3,002 requests, CSV took 1.2 s, XLSX 2.7 s and PDF 58 s (50 s
 as a table), so 1,000 requests is about 20 s, with room for the slower
-production server. While the queue's filters select more, the format menu
-offers PDF unavailable and the export line says "The PDF is limited to 1,000
-requests: choose CSV or XLSX, or narrow the filters."; the menu is redrawn
-with each applied view, in place, keeping the reader's choice where it is
-still offered. A PDF asked for anyway (a stale page) is refused with that
+production server. While the queue's filters select more, Export PDF is
+shown unavailable and the export line says "The PDF is limited to 1,000
+requests: choose CSV or XLSX, or narrow the filters."; the buttons are
+redrawn with each applied view, in place. A PDF asked for anyway (a stale page) is refused with that
 reason and a link back to the queue, before any contact detail is read.
 Each download is audited as `ministry_followup_exported` with its count, the
 sorted Ministry DUIDs in the file (`ministry_duids`, which the log's Ministry
@@ -8994,10 +8991,11 @@ page, and so does a date without a known zone, and every refusal no field
 can fix. The critical-event
 banner's link sends the browser's zone with a From day one day before its
 24-hour window, so the window is covered in every zone; when the browser
-reports no zone it sends no From day. Export
-requires choosing UTC or the browser's timezone (offered by the page), as every
-download whose rows hold exact action times asks
-([time zone question](../ui-conventions/spec.md#downloaded-files)); the
+reports no zone it sends no From day. Its export
+keeps the one time zone choice an Admin download has, "Times in" UTC or this
+browser's zone, preselected to the browser's (the zone the page shows),
+because the entries are compared with server and provider logs kept in UTC
+([time zones](../ui-conventions/spec.md#downloaded-files)); the
 file's timestamps carry their UTC offset. Logins/logouts, configuration, polls/tasks, each email and
 reason/recipient routing, report execution/export, errors, Family access,
 submission changes, workflow changes, publication, purge and
