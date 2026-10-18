@@ -593,7 +593,7 @@ The document is JSON with two optional members:
 
 | Entry | Members |
 | --- | --- |
-| Change a saved schedule | `id` (from `schedule show`) and any of `date`, `time` and `weekday` (in the campaign's time zone, as for adding one), `template_version` and, for a daily digest, `comparison` (`true` or `false`: whether it includes Compared with past campaigns). Members you leave out keep their values. Its `kind` cannot change, so it may not be given. |
+| Change a saved schedule | `id` (from `schedule show`) and any of `date`, `time` and `weekday` (in the campaign's time zone, as for adding one), `template_version` and, for a daily digest, `comparison` (`true` or `false`: whether it includes Compared with past campaigns). For a daily or weekly digest, `skip` (one `YYYY-MM-DD` slot date, as `schedule show` lists its `resolved` keys) skips just that send, as Edit's Delete with This email only does; the send must still be ahead and have no work yet, and `schedule show` then lists it in `skip_dates`. Members you leave out keep their values. Its `kind` cannot change, so it may not be given. |
 | Remove a saved schedule | `id` and `"delete": true`, nothing else. |
 | Add a schedule | `kind` (`initial`, `reminder`, `daily_digest` or `weekly_digest`) and the members its kind needs: `date` for `initial` and `reminder`, `weekday` (0 is Monday) for `weekly_digest`, and `time` (in the campaign's time zone, or in the new one when `window` changes `timezone` in the same document; the Admin portal takes times in your computer's zone instead) and `template_version` for all. A `daily_digest` may add `"comparison": true`; it is off without it. A `time` may be written in any form the page accepts, such as `09:00:00`, `9:00`, `9am` or `21:00`, and is stored as `HH:MM:SS`. |
 | Add repeating reminders | `repeat` (the rule below), `time` and `template_version`, as for one reminder, and nothing else. It adds one ordinary reminder per date the rule gives, as if you listed each one. Every date must fit: unlike the page, which leaves out a date that does not fit, the command refuses the whole change. A problem with one date alone, such as a date after the campaign closes, names that date; a conflict between schedules, such as a date at the same moment as a saved reminder or not after the initial invitation, comes back as a plain `schedules` error, as for reminders listed one by one. A rule that gives no dates or more than 30, or skips a month, is exit 1 (`invalid`). The rule itself is not saved unless you add `"remember": true`, which also saves it as a reminder series holding exactly the reminders this repeat adds, so later changes can treat them as one. The reminders are the same either way, and they send as ordinary reminders. |
@@ -3745,3 +3745,7 @@ Each change is recorded in System logs as on the page
   `--confirm`, the Users page's Email Ministry leaders review and Apply
   (full scope, the page's audit events and `admin_cmd_users_email_leaders`;
   `--confirm` prompts, `--yes` answers it).
+- `pk-admin/1` (#1658, migration 0130, a provisional number): additive. A
+  `schedule preview` change document may give a saved daily or weekly
+  digest a `skip` date, which skips that one send; `schedule show` and each
+  side of `schedule preview` list a digest's `skip_dates` (empty when none).

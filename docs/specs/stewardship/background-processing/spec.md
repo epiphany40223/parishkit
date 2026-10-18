@@ -690,6 +690,23 @@ transaction records old/new revisions, all affected counts, and the confirming
 Admin in audit history. Failure rolls back both the revision change and every
 cancellation.
 
+A Daily or Weekly Admin digest's revision may carry `skip_dates`
+([#1658](https://github.com/epiphany40223/parishkit/issues/1658), Edit's
+[This email only](../admin-portal/spec.md#delete-a-scheduled-email)): slot
+dates, as the slot keys name them, that it never sends. Skipping is a
+revision replacement like any other edit, so its old-revision work is
+cancelled and counted as above. Every evaluator skips those slots
+(`SchedulePlan.page` and `next_slot` advance their cursor past them, as past
+a wholly skipped civil day), so planning, catch-up, recovery and every
+forecast agree; and the database's canonical slot check
+(`stewardship_catchup_due_v1`, frozen migration 0130, a provisional number)
+answers no slot for a skipped date, so no occurrence can be created for it
+and no page or catch-up proof requires one. A skipped slot has no
+fulfillment, so a later revision would otherwise re-arm it as missed: every
+later revision of the digest keeps its skip dates, past ones included. A
+skip is refused once the slot's time has passed or it has any occurrence.
+Only digests take skip dates; Family mail never reads them.
+
 Missed occurrences catch up once when services recover. Before executing, the
 worker rechecks global system mode, campaign state, and recipient eligibility.
 Every missed occurrence retains its own durable outcome, but semantically

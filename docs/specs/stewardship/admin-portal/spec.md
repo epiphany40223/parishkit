@@ -3165,10 +3165,20 @@ directly; the wizard's list has its own Delete.
   prepared, and the series itself, as the command line's series delete does
   (`series_edits.plan`, scope `delete`); its reminders that sent stay as
   ordinary reminders. The review names the series' rule and says so.
-- **An Admin digest** is one repeating schedule with no single-day
-  exceptions, so Delete removes the whole digest: every send still to come
-  stops, and the review says so. Skipping one day of a digest is a later
-  change ([#1658](https://github.com/epiphany40223/parishkit/issues/1658)).
+- **An Admin digest** is one repeating schedule. Opened from the Edit
+  link of one of its sends on the [Campaign calendar](#campaign-calendar)
+  (`?send=` that send's slot, below), Delete has a **Delete** choice above
+  the button ([#1658](https://github.com/epiphany40223/parishkit/issues/1658)):
+  **This email only** (the default) and **The whole digest**. This email
+  only skips just that send: the digest keeps every other send, and the
+  review shows the digest's change and says which send it skips. The whole
+  digest removes it, as Delete does when Edit is opened from the list (with
+  no send named): every send still to come stops, and the review says so.
+  Only a send whose time is still ahead, that is a send of this digest, is
+  not skipped already and has no work yet (nothing prepared, sending, sent
+  or failed) is offered; for any other, Edit draws the whole-digest Delete
+  alone. The page's status line after Apply says "Email skipped." or
+  "Scheduled email deleted.".
 - **Refusals.** Edit already refuses a schedule that has run or has work
   prepared (a GET or a POST, even from an old link), so an email that sent or
   is being sent cannot be deleted, and the deletion checks that again. A
@@ -3178,7 +3188,23 @@ directly; the wizard's list has its own Delete.
   which then offers no Apply and names Sent mail; a stale page or another
   Administrator's change is refused as any review is. Reminder planning,
   live-campaign rules and emailed Family codes and links are those of any
-  schedule change.
+  schedule change. Skipping a digest send whose time has passed, or that has
+  work (prepared, sending, sent or failed), is refused (403) with nothing
+  recorded, and so is one skipped again (409, a stale page); a send that is
+  not one of the digest's, or a skip of anything but a digest, is refused
+  as an unknown request (400). The reviewed send's time is signed into the
+  review, so Apply refuses under the work lock once it has passed, and the
+  review's work fingerprint refuses once any work for the digest has
+  changed since it was drawn.
+- **A skipped send** is stored on the digest as one of its `skip_dates`
+  (the slot dates it skips: a Weekly digest's send day, a Daily digest's
+  reported day, sent the next morning), so it is an ordinary schedule
+  change: a new revision of the digest, reviewed, applied and audited like
+  any other. Every later change to the digest keeps its skip dates; how the
+  scheduler and database honour them is in
+  [skipped digest sends](../background-processing/spec.md#schedule-replacement-and-removal).
+  A skipped send cannot be brought back in this release. Only digests take
+  skip dates, so Family mail is never skipped this way.
 
 #### Campaign calendar
 
@@ -3222,8 +3248,10 @@ the campaign closes).
   equivalent: when, the schedule ("Reminder 2"), the email it sends, its
   status and Edit. The status is the scheduled emails table's, from the same
   counts-only work summary; each day or week of a digest shows the digest's
-  "Repeats" until its time has passed, then "Past". Every send of a digest is
-  listed, however long the campaign. Above it, **Show** is a [binary
+  "Repeats" until its time has passed, then "Past", and a skipped one
+  ([#1658](https://github.com/epiphany40223/parishkit/issues/1658)) shows
+  "Skipped". Every send of a digest is listed, however long the campaign,
+  skipped ones included. Above it, **Show** is a [binary
   choice](../ui-conventions/spec.md#binary-choices) (`?show=`): **Upcoming
   emails** (the default) or **Include past emails**. A past email is one
   whose time has passed and is not still sending; the default leaves them
@@ -3250,7 +3278,11 @@ in the grid and through Edit in the table, with `?calendar=` and the month
 shown (`?calendar=2054-11`), so that page's Cancel, Apply and Delete return
 to that month of the calendar; a schedule that has run, or has work
 prepared, is listed muted and not linked, as on the list, and so is a digest's
-send whose time has passed (editing the digest changes only its later sends).
+send whose time has passed (editing the digest changes only its later sends)
+or that is skipped. A digest send still to come links to the digest's Edit
+page with that send's slot too (`?send=2054-11-03`), so Edit's Delete can
+offer [This email only](#delete-a-scheduled-email); a `send` that is not a
+date is refused as an unknown address.
 A muted send is told apart by its status, in words in the table and read to
 screen readers in the grid. A week view,
 Production activation and go-live milestones, ParishSoft refresh times and the
@@ -3311,7 +3343,8 @@ checks it exactly as that page does.
   stay on Edit, where every reminder keeps its own date.
 - **Not movable:** a send that has run, is being prepared or was missed, and
   every send of a Daily or Weekly Admin digest (a digest is one repeating
-  schedule with no single-day exceptions). These keep their look on the
+  schedule; one of its sends can only be skipped, through Edit's
+  [Delete](#delete-a-scheduled-email)). These keep their look on the
   calendar and offer neither Move… nor a drag.
 
 ### Ministry leader roles
