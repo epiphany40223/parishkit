@@ -208,3 +208,40 @@ def test_status_read_leaves_the_home_only_values_out(response_service):
     assert "recent" not in status["families"] and "recent" in home["families"]
     # An active campaign admits no test email from Home.
     assert "test_email" not in home
+
+
+def test_active_families_with_a_response_leave_out_an_inactive_family(
+    response_service,
+):
+    """Home's "Active Families with a response" tile (#1673) counts only
+    active Families: a Family made inactive (and so no longer eligible, as
+    the table's constraint requires) keeps its response in the all-Families
+    count but leaves this one."""
+    from django.db.models import F
+
+    from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+
+    harness = setup(response_service)
+    principal = actor(harness, ("administrator",), ())
+    configuration = SystemConfiguration.objects.select_related(
+        "active_configuration"
+    ).get()
+    configuration.current_campaign = harness.campaign
+    rows = FamilyCampaign.objects.filter(campaign=harness.campaign)
+    answered = rows.filter(active=True, first_live_submission_id__isnull=False)
+    before = answered.count()
+    assert before >= 1
+    rows.filter(pk=answered.values("pk")[:1]).update(
+        active=False, portal_eligible=False, version=F("version") + 1
+    )
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        home = summary(principal, configuration, database_now(), home=True)
+    families = home["families"]
+    assert families["active_responded"] == before - 1
+    assert (
+        families["responded"]
+        == rows.filter(first_live_submission_id__isnull=False).count()
+    )
+    assert families["responded"] == families["active_responded"] + 1
+    tile = next(t for t in home["family_tiles"] if t.key == "responded")
+    assert tile.text == str(before - 1)
