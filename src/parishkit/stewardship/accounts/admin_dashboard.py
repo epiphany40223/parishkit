@@ -1,12 +1,12 @@
 """Read-only campaign overview with role-appropriate aggregates and no credentials."""
 
 import json
-import logging
 from datetime import timedelta
 from uuid import uuid4
 
 from django.db import connection
 from django.db.models import Count, Exists, OuterRef, Q
+from django.utils.translation import gettext as _
 
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.domain import Percentage
@@ -18,6 +18,8 @@ from parishkit.stewardship.source.refresh_status import (
     refresh_schedule,
 )
 from parishkit.stewardship.source.snapshot_models import SourceCurrent, SourceSnapshot
+from parishkit.stewardship.web.presentation import number, percentage
+from parishkit.stewardship.web.stat_tiles import tile
 
 from . import campaign_wizard
 from .campaign_wizard import invitation_revision
@@ -153,6 +155,8 @@ def summary(actor, configuration, now, *, home=False):
                 counts["eligible_responded"], counts["eligible"]
             )
             result["families"] = counts
+            if home:
+                result["family_tiles"] = family_tiles(counts)
         if (
             home
             and campaign.state == "draft"
@@ -233,8 +237,6 @@ def summary(actor, configuration, now, *, home=False):
         result["health_listed"] = health_listed(
             result["health_problems"], result.get("offsite")
         )
-    if home and campaign is not None:
-        result["roster_todo"] = roster_todo(actor, campaign)
     if home and campaign is not None and leads_ministries(actor):
         from parishkit.stewardship.reports.ministry_followup import my_ministries
 
@@ -286,56 +288,6 @@ def promoted_at():
     )
 
 
-# Campaign states whose Home Next steps list Roster changes to enter
-# (home_steps: Active, Mail paused, Closed or archived). A draft or a
-# scheduled campaign has no resolved request to enter yet, so Home does not
-# read the count there. Home still lists the Roster step, with no number, in
-# the other states it maps to Closed or Paused (purging, purge cleanup
-# failed, and a scheduled campaign with mail paused): the count is not read.
-ROSTER_STATES = frozenset({"active", "closed", "archived"})
-
-
-def roster_todo(actor, campaign):
-    """Roster changes to enter's default count for Home's Next steps, or None.
-
-    Read only where Home lists the step (an Administrator or Staff member,
-    who alone may open the list, on a campaign in ``ROSTER_STATES`` with the
-    Ministry module) through the page's own selection
-    (``ministry_roster_views.to_enter``), so the number is the rows the link
-    opens. Where the page would refuse or fail (the follow-up is turned off
-    or its inputs are unavailable) Home shows the link with no number. The
-    read runs in its own savepoint: Home's snapshot stays usable after a
-    database error, which is logged as the menu's failed counts are.
-    """
-    from django.core.exceptions import ObjectDoesNotExist
-    from django.db import DatabaseError, transaction
-
-    from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
-    from parishkit.stewardship.observability import Event, emit_failure
-    from parishkit.stewardship.reports.ministry_roster_views import to_enter
-
-    modules = (campaign.active_configuration.values or {}).get("modules", ())
-    if (
-        campaign.state not in ROSTER_STATES
-        or "ministry" not in modules
-        or not allows(actor, Capability.MINISTRY_FOLLOWUP)
-    ):
-        return None
-    try:
-        with transaction.atomic():
-            return to_enter(campaign.pk, actor)
-    except (PermissionError, ReadUnavailable, ObjectDoesNotExist):
-        return None
-    except DatabaseError as error:
-        emit_failure(
-            error,
-            event=Event.REPORT_SHAPING_FAILED,
-            level=logging.WARNING,
-            name_class=True,
-        )
-        return None
-
-
 def leads_ministries(actor):
     """Whether Home shows this person the My Ministries panel.
 
@@ -348,6 +300,38 @@ def leads_ministries(actor):
         and bool(actor.ministries)
         and not allows(actor, Capability.MINISTRY_FOLLOWUP)
     )
+
+
+def family_tiles(counts):
+    """Home's Family participation panel as stat tiles (#720, #1540).
+
+    The active Families; the responses from Families who can use the
+    Family form now, out of those Families, with its share bar; and every
+    Family with a response, not counting Testing. That last count can
+    include Families no longer active, so it is not drawn as a share.
+    """
+    participation = counts["participation"]
+    return [
+        tile("active", _("Active Families"), counts["active"]),
+        tile(
+            "participation",
+            _("Responses from Families who can use the Family form now"),
+            participation.numerator,
+            details=(
+                _("out of %(total)s (%(share)s)")
+                % {
+                    "total": number(participation.denominator),
+                    "share": percentage(participation),
+                },
+            ),
+            share=(participation.numerator, participation.denominator),
+        ),
+        tile(
+            "responded",
+            _("All Families with a response (not counting Testing)"),
+            counts["responded"],
+        ),
+    ]
 
 
 def unreachable_families(campaign_id):

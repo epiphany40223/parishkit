@@ -139,6 +139,26 @@ def test_open_word_opens_the_panel_by_default_only_when_given():
     assert closed.startswith('<details class="filter-panel" data-filter-panel><')
 
 
+def test_fixed_word_draws_an_always_open_box():
+    """Census changes passes ``fixed`` (#1682): a titled box, no disclosure.
+
+    Its heading names the box and carries the same synced count, so an
+    in-place Apply updates it as it does a panel's summary.
+    """
+    html = render(
+        "{% filterpanel query fixed %}x{% endfilterpanel %}",
+        query=CensusQuery(status="all"),
+    )
+    assert html == (
+        '<section class="filter-panel" data-filter-panel'
+        ' aria-labelledby="table-filters-heading">'
+        '<h2 id="table-filters-heading">Filters: '
+        '<span id="table-filters-applied" data-table-sync>1 applied</span></h2>'
+        "x</section>"
+    )
+    assert "<details" not in html
+
+
 # Django comments, tags and variables, removed before the panel's markup is
 # parsed: they may sit inside a start tag ({% if %} selected{% endif %}).
 TEMPLATE_SYNTAX = re.compile(

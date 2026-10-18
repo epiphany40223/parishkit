@@ -15,7 +15,7 @@ pytestmark = pytest.mark.parametrize(
 )
 
 
-@pytest.mark.parametrize("width", [1280, 390])
+@pytest.mark.parametrize("width", [1280, 390, 320])
 def test_family_participation_is_tiles_with_one_share_bar(
     page, component_origin, width
 ):

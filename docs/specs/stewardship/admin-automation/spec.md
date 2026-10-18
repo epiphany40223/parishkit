@@ -2790,7 +2790,8 @@ takes them) and the page's `census_changes`. The filters are parsed once
 the reader is admitted, so a refused one is `invalid` after the session
 recheck. Its rows name Families and Members with their contact details, so
 it prints counts only: the rows the filters keep, by route and by kind,
-and the page's summary by status key. It records the page's
+and every change of the campaign by status key (the counts the Status
+filter's choices show). It records the page's
 `census_changes_viewed` with a `count` of 0, and `report list` offers it,
 as the menu does. The
 [operator guide](../../../guides/stewardship-admin-automation.md#reports)

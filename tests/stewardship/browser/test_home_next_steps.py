@@ -50,7 +50,7 @@ def test_next_steps_link_their_pages_and_never_shift(
     ).to_have_attribute("href", "/admin/reports/responses/")
     listed = panel.locator("[data-next-step]")
     # Neither the census nor Ministry stewardship is on: Census changes,
-    # Roster changes to enter (below Ministry requests) and Ministry
+    # Roster changes to enter (a menu entry of its own, #1660) and Ministry
     # requests are text with the menu's reason (#1590).
     expect(listed.nth(1)).to_have_text(
         "Census changes — This campaign does not include the census"

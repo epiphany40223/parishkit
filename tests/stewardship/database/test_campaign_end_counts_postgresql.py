@@ -1,12 +1,11 @@
-"""Campaign-end Next steps counts under the real web role (#1590).
+"""Campaign-end Next steps and menu counts under the real web role (#1590).
 
 Home offers Administrators and Staff Census changes, Roster changes to enter,
-Additional information and Ministry requests, each with a count, and each
-count is the number of rows its link opens by default: the menu's Census
-changes count is the page's Work to do view, and Home's Roster changes to
-enter count is that list's Not yet entered view, both read through the
-pages' own row selection. A Ministry leader gets neither count, and both
-pages refuse them.
+Additional information and Ministry requests, each with its menu count, and
+each count is the number of rows its link opens by default: Census changes'
+Work to do view, and Roster changes to enter's Not yet entered view (a menu
+entry of its own since #1660), both held equal to the pages' own row
+selection. A Ministry leader gets neither count, and both pages refuse them.
 """
 
 import re
@@ -14,19 +13,20 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from django.db import connection, transaction
 
 from parishkit.stewardship.accounts import admin_context
-from parishkit.stewardship.accounts.admin_dashboard import roster_todo
 from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.deployment import ServiceRole
-from parishkit.stewardship.reports.ministry_roster_views import roster_rows, to_enter
+from parishkit.stewardship.reports.ministry_roster_views import roster_rows
+from parishkit.stewardship.workflows.roster import can_tick
 
 from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
 from .test_census_changes_postgresql import ADMIN, LEADER, STAFF, submit_live, worklist
 from .test_ministry_exports_postgresql import leader
-from .test_ministry_followup_postgresql import _menu_count
+from .test_ministry_followup_postgresql import _menu_count, edit, member_gone
 from .test_ministry_reports_postgresql import actor
 from .test_ministry_responses_postgresql import start
 from .test_report_workspace_postgresql import read
@@ -35,6 +35,8 @@ from .test_roster_entries_postgresql import resolved, tick
 pytestmark = pytest.mark.django_db(transaction=True)
 
 CENSUS = [SimpleNamespace(name="census_changes", url="/admin/reports/census/")]
+ROSTER_URL = "/admin/reports/ministries/follow-up/roster/"
+ROSTER = [SimpleNamespace(name="ministry_roster", url=ROSTER_URL)]
 
 
 def census_count(harness, principal, items=CENSUS):
@@ -43,6 +45,16 @@ def census_count(harness, principal, items=CENSUS):
         return admin_context._open_counts(
             SimpleNamespace(), principal, items, harness.campaign
         ).get("census_changes")
+
+
+def roster_count(principal, campaign):
+    """The menu's Roster changes to enter count, always asked for, on the
+    web login (the menu offers the entry only to Administrators and Staff;
+    asking anyway shows the count's own checks)."""
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        return admin_context._open_counts(
+            SimpleNamespace(), principal, ROSTER, campaign
+        ).get("ministry_roster")
 
 
 def steps(body):
@@ -90,9 +102,9 @@ def test_home_and_menu_show_the_census_count_for_an_administrator(
 
 
 def test_roster_count_is_the_lists_not_yet_entered_rows(response_service):
-    """Home's Roster changes to enter count follows the list: one resolved
-    join to enter, none once it is ticked, again one once cleared. A Ministry
-    leader is refused, by the count as by the page."""
+    """The menu's Roster changes to enter count follows the list: one
+    resolved join to enter, none once it is ticked, again one once cleared.
+    A Ministry leader is refused, by the count as by the page."""
     harness, admin, join, _ = resolved(response_service)
     staff = actor(harness, ("staff",), ())
     administrator = actor(harness, ("administrator",), ())
@@ -102,39 +114,115 @@ def test_roster_count_is_the_lists_not_yet_entered_rows(response_service):
     )
 
     def counts(principal):
-        """The list's default rows and both counts, on the web login."""
+        """The list's default rows and the menu's count, on the web login."""
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             rows, _ = roster_rows(campaign.pk, principal, "todo")
-            return (
-                len(rows),
-                to_enter(campaign.pk, principal),
-                roster_todo(principal, campaign),
-            )
+        return len(rows), roster_count(principal, campaign)
 
     for principal in (staff, administrator):
-        assert counts(principal) == (1, 1, 1)
+        assert counts(principal) == (1, 1)
     tick(harness, admin, join, True)
-    assert counts(staff) == (0, 0, 0)
+    assert counts(staff) == (0, 0)
     tick(harness, admin, join, False)
-    assert counts(staff) == (1, 1, 1)
-    with (
-        task_login(ServiceRole.WEB, exact=True, reconnect=True),
-        pytest.raises(PermissionError),
-    ):
-        to_enter(campaign.pk, own)
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        assert roster_todo(own, campaign) is None
-        # Python claiming Staff for a portal user SQL does not know reads
-        # nothing: the selection refuses, and Home shows no number.
-        stranger = Principal(uuid4(), frozenset({"staff"}))
-        assert roster_todo(stranger, campaign) is None
-        # A draft has nothing to enter yet: Home does not read the count.
-        draft = SimpleNamespace(
-            pk=campaign.pk,
-            state="draft",
-            active_configuration=campaign.active_configuration,
+    assert counts(staff) == (1, 1)
+    # The page admits Administrators and Staff only (its _principal).
+    assert not can_tick(own)
+    assert roster_count(own, campaign) is None
+    # Python claiming Staff for a portal user SQL does not know reads
+    # nothing: the selection refuses, and the menu shows no number.
+    stranger = Principal(uuid4(), frozenset({"staff"}))
+    assert roster_count(stranger, campaign) is None
+    # A draft has nothing to enter yet: the menu does not read the count.
+    draft = SimpleNamespace(pk=campaign.pk, state="draft")
+    assert roster_count(staff, draft) is None
+
+
+def agree(harness):
+    """A function returning the Roster changes to enter rows and the menu's
+    count for Staff, which must always be equal (#1660), on the web login."""
+    staff = actor(harness, ("staff",), ())
+    campaign = Campaign.objects.select_related("active_configuration").get(
+        pk=harness.campaign.pk
+    )
+
+    def counts():
+        """(page rows, menu count) of the default Not yet entered view."""
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            rows, _ = roster_rows(campaign.pk, staff, "todo")
+        return len(rows), roster_count(staff, campaign)
+
+    return counts
+
+
+def test_roster_count_includes_a_confirmed_leave(response_service):
+    """A resolved leave is a roster change too: it counts as the page lists
+    it, and a tick removes it from both."""
+    harness, admin, join, leave = resolved(response_service)
+    counts = agree(harness)
+    assert counts() == (1, 1)
+    edit(harness, admin, leave, state="resolved", outcome="leave_confirmed")
+    leave.refresh_from_db()
+    assert counts() == (2, 2)
+    tick(harness, admin, leave, True)
+    assert counts() == (1, 1)
+
+
+def test_roster_count_leaves_out_a_declined_request(response_service):
+    """A declined request is no roster change, so neither the page nor the
+    count lists it (the outcome filter, not the tick)."""
+    harness, admin, join, leave = resolved(response_service)
+    counts = agree(harness)
+    edit(harness, admin, leave, state="resolved", outcome="declined")
+    assert counts() == (1, 1)
+
+
+def test_roster_count_leaves_out_a_request_parishsoft_resolved(response_service):
+    """A join the ParishSoft roster already resolved needs no entering, on
+    the page and in the menu's count."""
+    from parishkit.stewardship.source.models import SourceCurrent
+
+    harness, admin, join, _ = resolved(response_service)
+    counts = agree(harness)
+    assert counts() == (1, 1)
+    snapshot = SourceCurrent.objects.values_list("snapshot_id", flat=True).get()
+    with transaction.atomic(), connection.cursor() as cursor:
+        # As a refresh would mark it (test_roster_entries_postgresql).
+        cursor.execute("SET LOCAL session_replication_role = replica")
+        cursor.execute(
+            "UPDATE stewardship_ministry_request SET resolution_source_id=%s,"
+            " version=version+1 WHERE id=%s",
+            [snapshot, join.pk],
         )
-        assert roster_todo(staff, draft) is None
+    assert counts() == (0, 0)
+
+
+def test_roster_count_keeps_a_change_for_a_member_who_is_gone(response_service):
+    """A Member ParishSoft no longer lists in the Family still needs their
+    change entered: the page keeps the row and so does the count."""
+    harness, admin, join, _ = resolved(response_service)
+    counts = agree(harness)
+    for standing in ("moved", "missing"):
+        member_gone(harness, standing)
+        assert counts() == (1, 1)
+
+
+def test_roster_count_ignores_the_request_a_resubmission_adds(response_service):
+    """A Family answering again adds an open request for the same join; the
+    resolved one stays, and only it counts, as on the page."""
+    from .test_ministry_responses_postgresql import respond, revisit
+    from .test_response_http_postgresql import answers_for
+    from .test_runtime_auth_grants_postgresql import web_login
+
+    harness, _, join, _ = resolved(response_service)
+    counts = agree(harness)
+    with web_login():
+        form = revisit(harness)
+        answers = answers_for(form)
+        answers["ministries"]["members"]["3"] = {"join": [9], "leave": []}
+        respond(harness, form, answers)
+    join.refresh_from_db()
+    assert join.state == "resolved"
+    assert counts() == (1, 1)
 
 
 def test_staff_home_lists_the_campaign_end_work_with_counts(response_service, google):
@@ -155,30 +243,40 @@ def test_staff_home_lists_the_campaign_end_work_with_counts(response_service, go
         "Ministry requests",
     ]
     assert "Roster changes to enter — 1 not yet entered" in listed
+    # The step's number is the menu entry's own (#1660).
+    assert _menu_count(body, "Roster changes to enter") == 1
     # The harness's leave request is still open; its join was resolved.
     assert "Ministry requests — 1 open" in listed
     assert _menu_count(body, "Ministry requests") == 1
-    assert 'href="/admin/reports/ministries/follow-up/roster/"' in body.decode()
+    assert f'href="{ROSTER_URL}"' in body.decode()
 
 
-def test_roster_count_database_error_leaves_the_link_without_a_number(
-    response_service, google, monkeypatch, caplog
-):
-    """A database error reading the Roster count does not fail Home: the step
-    still links to the list with no number, and the failure is logged at
-    WARNING as report_shaping_failed."""
-    from django.db import DatabaseError
-
-    from parishkit.stewardship.reports import ministry_roster_views
-
+def test_roster_page_is_its_own_menu_entry(response_service, google):
+    """Roster changes to enter opens with its own menu entry current and a
+    trail of Home › Responses and reports › the page (#1660)."""
     harness, _, _, _ = resolved(response_service)
     browser, _, _, _ = leader(harness, google, roles=("staff",))
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = read(browser, ROSTER_URL)
+    assert response.status_code == 200
+    text = body.decode()
+    assert f'<a href="{ROSTER_URL}" aria-current="page">' in text
+    assert _menu_count(body, "Roster changes to enter") == 1
+    trail = re.search(r'<nav[^>]*aria-label="Breadcrumb".*?</nav>', text, re.S)
+    assert trail is not None
+    assert "Ministry requests" not in trail.group(0)
 
-    def broken(campaign_id, principal):
-        """Fail the count's read the way a lost connection or bad SQL would."""
-        raise DatabaseError("count unavailable")
 
-    monkeypatch.setattr(ministry_roster_views, "to_enter", broken)
+def test_count_database_error_leaves_the_link_without_a_number(
+    response_service, google, monkeypatch, caplog
+):
+    """A database error in the menu's counts statement does not fail Home:
+    the Roster step still links to the list with no number, and the failure
+    is logged at WARNING as report_shaping_failed."""
+    harness, _, _, _ = resolved(response_service)
+    browser, _, _, _ = leader(harness, google, roles=("staff",))
+    # Fail the statement the way a lost connection or bad SQL would.
+    monkeypatch.setattr(admin_context, "OPEN_COUNTS", "SELECT missing_column")
     with (
         caplog.at_level("WARNING", logger="parishkit.stewardship"),
         task_login(ServiceRole.WEB, exact=True, reconnect=True),
@@ -186,7 +284,8 @@ def test_roster_count_database_error_leaves_the_link_without_a_number(
         response, body = read(browser, "/admin/")
     assert response.status_code == 200
     assert "Roster changes to enter" in steps(body)
-    assert 'href="/admin/reports/ministries/follow-up/roster/"' in body.decode()
+    assert _menu_count(body, "Roster changes to enter") is None
+    assert f'href="{ROSTER_URL}"' in body.decode()
     (warning,) = [
         r for r in caplog.records if r.getMessage() == "report_shaping_failed"
     ]

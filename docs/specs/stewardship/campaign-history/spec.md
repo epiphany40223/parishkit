@@ -869,8 +869,9 @@ and the average of all imported years:
   slice that uses it, since the import slice's migration is frozen once it
   is released.
 - A figure that cannot be computed shows "—" with a toggletip giving the
-  reason (no Family rows for last year, different id
-  systems, financial module off).
+  reason (no Family rows for last year, different id systems, financial
+  module off, no responders last year, no active Families on the day, or no
+  figure for the day yet). Every "—" has a reason.
 
 ### Pledge distribution
 
@@ -971,10 +972,12 @@ first, explanation in the About this page panel.
    "Day 12 of Stewardship 2027 · through Wednesday, October 14", with the
    last-year and average years named ("compared with 2026 and the
    2020–2026 average").
-2. **Headline tiles**, one per metric above, in that order. Each shows the
-   current figure large, then two lines: "Last year on day 12: 240 (12.5%
-   more)" and "2020–2026 average: 220 (22.7% more)". The full wording sits in the
-   tile's tooltip and accessible name.
+2. **Headline tiles**, one per metric above, in that order, drawn as
+   [stat tiles](../ui-conventions/spec.md#stat-tiles). Each shows the
+   current figure large, then two lines: "Last year on day 12: 240 (↑ 12.5%
+   more)" and "2020–2026 average: 220 (↑ 22.7% more)"; the average pledge
+   first adds its median so far. A screen reader reads the label, value
+   and lines in that order, as shown.
 3. **Day-by-day charts**, through the [chart
    engine](../reports/spec.md#chart-engine), one per measure, each with its
    summary and exact-values table: cumulative Families responded, percent of
@@ -1099,11 +1102,13 @@ figures come from the digest's pinned fact set. When the digest is
 compiled, the occurrence stores the section's computed aggregates (the
 figures, the chart specifications and each imported year's checksum), so
 the saved digest page shows exactly what was sent, whatever is imported or
-removed later. The section applies the [small-count
-protection](#pledge-distribution) and carries no note text. With no
-imported years the section is left out. It is the first task to use the
-chart engine's server renderer, so its slice adds that renderer's timeout
-name, as the [chart engine](../reports/spec.md#chart-engine) requires.
+removed later; that page draws the stored figures as
+[stat tiles](../ui-conventions/spec.md#stat-tiles), word for word. The
+section applies the [small-count protection](#pledge-distribution) and
+carries no note text. With no imported years the section is left out. It
+is the first task to use the chart engine's server renderer, so its slice
+adds that renderer's timeout name, as the
+[chart engine](../reports/spec.md#chart-engine) requires.
 
 ## Command line
 

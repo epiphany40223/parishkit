@@ -233,8 +233,9 @@ PAGES = {
     "ministry_followup_item": Page(
         "reports", _("Follow-up request"), "ministry_report"
     ),
-    # Resolved Ministry joins and leaves to enter in ParishSoft by hand (#528).
-    "ministry_roster": Page("reports", _("Roster changes to enter"), "ministry_report"),
+    # Resolved Ministry joins and leaves to enter in ParishSoft by hand (#528),
+    # a menu entry of its own with its count (#1660).
+    "ministry_roster": Page("reports", _("Roster changes to enter")),
     "family_directory": Page("reports", _("Active parishioner family directory")),
     # One Family's summary and timeline (#477; the Timeline since #1570),
     # opened from every Family name the shared family_link tag draws.
@@ -525,6 +526,10 @@ MENU = (
     Entry("census_changes", Capability.VIEW_CENSUS, CENSUS),
     Entry("information_queue", Capability.ADDITIONAL_FOLLOWUP, _downloaded(_campaign)),
     Entry("ministry_report", Capability.MINISTRY_REPORT, MINISTRY, scoped=True),
+    # Administrators and Staff only: unscoped MINISTRY_FOLLOWUP is the
+    # page's own check (workflows.roster.can_tick), which a Ministry leader,
+    # holding it only for their Ministries, never passes (#1660).
+    Entry("ministry_roster", Capability.MINISTRY_FOLLOWUP, MINISTRY),
     Entry("family_directory", Capability.FAMILY_CODES, _downloaded(_campaign)),
     # Staff see its daily reports; Send a weekly report now is on the page.
     Entry("emailed_reports", Capability.CAMPAIGN_REPORT),

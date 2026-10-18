@@ -2176,12 +2176,22 @@ Admin-edited proposed values. It never resolves by silent last-write-wins.
 ### Census change filters and downloads
 
 The default shows *To do* and *Conflict*, and, for an Administrator, *To
-review* as well. The Summary above the filters counts the changes by status
-(history only with *Include history*); it lists *To review*, *To do* and
-*Conflict* even at 0, and any other status only once it has a change, so
-resolving the last Conflict never removes a Summary line and moves the table
-under the pointer ([no layout shift](../ui-conventions/spec.md#no-layout-shift),
-[#1472](https://github.com/epiphany40223/parishkit/issues/1472)). Filters are status (with *Include history*), how the change
+review* as well. The page is laid out as a worklist
+([#1682](https://github.com/epiphany40223/parishkit/issues/1682)): the
+heading and help, then the filters, always open (a plain titled box, not a
+disclosure, still titled with how many filters are applied), then the table,
+then the download below the table, also always shown. There is no summary
+above the table; the counts by status are in the Status filter's choices
+instead, each choice followed by how many changes it lists, whatever the
+other filters (history only with *Include history*), for example "To do
+(12)", and *Work to do* and *Every status* count what they list. The
+choices are redrawn with every in-place answer, so the counts follow each
+recorded action, and a count reaching 0 keeps its choice, so nothing on the
+page moves ([no layout shift](../ui-conventions/spec.md#no-layout-shift)).
+These are this page's departures from the closed Filters panel and export
+disclosure of the shared
+[page layout](../ui-conventions/spec.md#page-help) rule (an Administrator
+decision, 2026-10-18). Filters are status (with *Include history*), how the change
 reaches ParishSoft (with *Hide automatic changes* for staff working by
 hand), kind of change (contact details, moved, deceased, new Member), a
 Family name or DUID search, and submitted date. Sorting, paging and filters

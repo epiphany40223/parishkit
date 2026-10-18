@@ -15,11 +15,19 @@ from uuid import UUID
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts import admin_context, admin_navigation
+from parishkit.stewardship.accounts.admin_dashboard import family_tiles
 from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.jobs.delivery_metadata import mode_split
 
 PATH = "/home-next-steps"
+# Home's Family participation counts, as admin_dashboard.summary reads them.
+FAMILIES = {
+    "active": 400,
+    "participation": Percentage(40, 400),
+    "responded": 160,
+    "recent": 12,
+}
 CAMPAIGN = SimpleNamespace(
     pk=UUID(int=1522),
     state="active",
@@ -51,7 +59,12 @@ CLOSED = SimpleNamespace(
         }
     )
 )
-CLOSED_COUNTS = {"census_changes": 4, "information_queue": 3, "ministry_report": 2}
+CLOSED_COUNTS = {
+    "census_changes": 4,
+    "ministry_roster": 5,
+    "information_queue": 3,
+    "ministry_report": 2,
+}
 # Emails that may not have arrived: two in Production, one in Testing.
 UNKNOWN = mode_split({"production": 2, "testing": 1}, "production")
 
@@ -88,12 +101,8 @@ def components(context, admin):
             "dashboard": {
                 "campaign": CAMPAIGN,
                 "refreshed_at": None,
-                "families": {
-                    "active": 400,
-                    "participation": Percentage(40, 400),
-                    "responded": 160,
-                    "recent": 12,
-                },
+                "families": FAMILIES,
+                "family_tiles": family_tiles(FAMILIES),
             },
         },
     )
@@ -107,9 +116,8 @@ def components(context, admin):
 def closed_components(context, admin):
     """Home on a closed campaign for Staff and for a Ministry leader (#1590).
 
-    The menu is each role's real one, with the counts the chrome would read;
-    Staff also get Roster changes to enter's count, as Home's dashboard
-    reads it.
+    The menu is each role's real one, with the counts the chrome would read,
+    Roster changes to enter's among them (#1660).
     """
     configuration = SimpleNamespace(mode="production")
     pages = {}
@@ -135,7 +143,6 @@ def closed_components(context, admin):
                     CLOSED_COUNTS.get(entry["name"]) if entry["url"] else None
                 )
         chrome = admin | {"admin": False, "sections": sections, "breadcrumbs": []}
-        staff = "staff" in actor.roles
         pages[path] = (
             "text/html",
             render_to_string(
@@ -145,11 +152,7 @@ def closed_components(context, admin):
                     "admin_chrome": chrome,
                     "principal": actor,
                     "configuration": configuration,
-                    "dashboard": {
-                        "campaign": CLOSED,
-                        "refreshed_at": None,
-                        "roster_todo": 5 if staff else None,
-                    },
+                    "dashboard": {"campaign": CLOSED, "refreshed_at": None},
                 },
             ),
         )
