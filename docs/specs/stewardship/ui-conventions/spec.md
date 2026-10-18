@@ -2487,7 +2487,11 @@ two ways of reading to a screen reader. **Precedent.**
   "UTC" label ([dates and times](#dates-and-times)).
 - **No layout shift.** The tiles of a row stretch to one height. An
   in-place update replaces their contents and keeps the row's tiles, so
-  nothing below moves ([no layout shift](#no-layout-shift)).
+  nothing below moves ([no layout shift](#no-layout-shift)). A value is
+  always one line of one height: it never wraps, a long value (ten
+  characters or more) is drawn smaller instead, and on a phone the tiles
+  stack, so a wider figure in a fresh answer cannot make its row taller
+  ([#1537](https://github.com/epiphany40223/parishkit/issues/1537)).
 - **Shared code.** The helper's `tile()` builds each tile and the include
   draws a row of them. A guard test fails when a template outside
   `components/` draws stat-tile markup by hand; the templates not yet

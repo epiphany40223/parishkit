@@ -18,6 +18,13 @@ from parishkit.stewardship.campaigns.domain import Money, Percentage
 from .presentation import number, percentage, usd
 
 UNKNOWN = "—"
+# A value is drawn on one line at a size chosen by its length (#1537), so a
+# fresh answer's wider figure never wraps and makes its row taller. Up to
+# LONG characters it is drawn at full size; from LONG at the smaller "long"
+# size, and from LONGEST at the smallest, each sized (ui-v1.css) so that
+# length fits a desktop tile in wide fonts.
+LONG = 10
+LONGEST = 14
 
 
 @dataclass(frozen=True)
@@ -36,6 +43,13 @@ class StatTile:
     details: tuple[str, ...] = ()
     trend: str = ""
     bar: tuple[int, int] | None = None
+
+    @property
+    def fit(self):
+        """The value's size class for its length, or "" for full size."""
+        if len(self.text) >= LONGEST:
+            return "stat-value-longest"
+        return "stat-value-long" if len(self.text) >= LONG else ""
 
 
 def formatted(value):
