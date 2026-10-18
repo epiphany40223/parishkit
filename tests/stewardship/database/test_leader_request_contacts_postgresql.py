@@ -214,6 +214,21 @@ def test_the_closing_check_refuses_another_latest_answer(name, pattern, replacem
     check_refuses(changed, "\\(leaders see")
 
 
+@pytest.mark.parametrize("condition", ["AND false", "AND a.cannot_serve IS NOT TRUE"])
+@pytest.mark.parametrize("name", REPLACED)
+def test_the_closing_check_refuses_an_extra_join_condition(name, condition):
+    """Review 1 of 2: a further condition on the LEFT JOIN of 'answered'
+    that rejects the row reads every Member as never answered, which drops
+    the exclusion; the check is anchored to the join's next line, so it is
+    refused."""
+    own = definition(MIGRATION, name)
+    changed, count = re.subn(
+        r"(AND a\.key=r\.entity_key)\n", rf"\1\n        {condition}\n", own
+    )
+    assert count == 1
+    check_refuses(changed, "\\(leaders see")
+
+
 def test_the_closing_check_refuses_changed_grants():
     """CREATE OR REPLACE keeps grants; a change to one is refused."""
     check_refuses(

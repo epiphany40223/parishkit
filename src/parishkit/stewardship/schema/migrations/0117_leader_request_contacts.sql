@@ -611,9 +611,16 @@ BEGIN
         WHERE q.campaign_id=x.id AND q.mode=''live'')
     ORDER BY s.family_id,g.kind,e.key,s.family_version DESC
 ), requests AS MATERIALIZED (%'
-          AND p.prosrc LIKE '%LEFT JOIN answered a ON a.family_id=s.family_id
+          -- Anchored to the next line, so no extra join condition (which
+          -- would read every Member as never answered) can follow.
+          AND p.prosrc LIKE ('%LEFT JOIN answered a ON a.family_id=s.family_id
         AND a.kind=r.entity_kind AND a.key=r.entity_key
+'
+              || CASE WHEN p.proname='stewardship_ministry_report_v3'
+                  THEN '), summary AS MATERIALIZED (
 %'
+                  ELSE '    LEFT JOIN stewardship_snapshot_member sm
+%' END)
           AND p.prosrc NOT LIKE '%answers#>ARRAY[''service''%'
           AND p.prosrc NOT LIKE '%DISTINCT ON (s.family_id) s.family_id,s.id%'
           AND CASE WHEN p.proname='stewardship_ministry_report_v3'
