@@ -766,7 +766,7 @@ def test_failed_load_says_so_and_offers_try_again():
     assert '<input type="hidden" name="return_step" value="content">' in html
 
 
-@pytest.mark.parametrize("load", ["offer", "loading", "failed"])
+@pytest.mark.parametrize("load", ["offer", "loading", "failed", "empty"])
 def test_the_load_step_draws_no_load_notice(load):
     """Load ParishSoft data is the load itself, so it draws no notice above."""
     html = stepper_html(
@@ -801,6 +801,8 @@ KEYS = ["fetching", "staging", "validating", "promoting"]
         ("loading", "fetching", ["active", "waiting", "waiting", "waiting"]),
         ("loading", "validating", ["done", "done", "active", "waiting"]),
         ("loaded", None, ["done"] * 4),
+        # A load that ran and finished is done, even with no Families.
+        ("empty", None, ["done"] * 4),
         ("failed", "staging", ["done", "failed", "waiting", "waiting"]),
         ("failed", "unspecified", ["failed", "waiting", "waiting", "waiting"]),
     ],
@@ -890,6 +892,16 @@ def test_load_status_region_draws_one_state_each():
     )
     assert "data-live-follow" in polled and 'href="#refresh-run"' in polled
     assert "is loaded." in polled and "data-live-pending" not in polled
+    # A succeeded full load with no Families: its own wording, every box
+    # done, the run and the settings linked, and no button (#1587).
+    empty = load_region(
+        **wizard.load_status(task_values("succeeded", task), families=False)
+    )
+    assert "loaded, but no Families matched." in empty and "is loaded." not in empty
+    assert empty.count('data-stage-state="done"') == 4
+    assert reverse("admin:background_task_page", args=[task]) in empty
+    assert reverse("admin:campaign_settings") in empty
+    assert "<button" not in empty and "hasn't been loaded" not in empty
 
 
 def task_values(state, task, phase="promoting"):
@@ -910,7 +922,7 @@ def task_values(state, task, phase="promoting"):
         ("succeeded", True, "loaded"),
         # A run that succeeded but left no Families is not the load: the
         # poll says what the page's re-read will (#1517 review, L2).
-        ("succeeded", False, "offer"),
+        ("succeeded", False, "empty"),
         ("failed", False, "failed"),
         ("cancelled", True, "failed"),
     ],

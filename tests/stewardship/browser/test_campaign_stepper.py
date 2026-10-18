@@ -11,9 +11,12 @@ from .stepper_components import (
     CONTENT,
     EDITOR,
     LOAD,
+    LOAD_EMPTY,
     LOAD_FAILED,
+    LOAD_RUN,
     LOAD_STATUS,
     LOAD_STATUS_DONE,
+    LOAD_STATUS_EMPTY,
     LOAD_STATUS_RUNNING,
     LOADED,
     LOADING,
@@ -342,8 +345,8 @@ class Polls(list):
         self.done = True
 
 
-def answer_polls(page, origin):
-    """Answer the step's status polls: running until ``finish``, then done.
+def answer_polls(page, origin, done=LOAD_STATUS_DONE):
+    """Answer the step's status polls: running until ``finish``, then ``done``.
 
     Returns the ``Polls`` answered.
     """
@@ -352,7 +355,7 @@ def answer_polls(page, origin):
     def answer(route):
         """Serve the running status until the test finishes the run."""
         polls.append(route.request.url)
-        shown = LOAD_STATUS_DONE if polls.done else LOAD_STATUS_RUNNING
+        shown = done if polls.done else LOAD_STATUS_RUNNING
         route.fulfill(response=route.fetch(url=origin + shown, method="GET"))
 
     page.route(lambda url: url.split("?")[0] == origin + LOAD_STATUS, answer)
@@ -491,5 +494,49 @@ def test_failed_load_says_so_and_try_again_loads_again(page, component_origin, w
     assert_same_box(above, summary.bounding_box())
     assert_same_box(below, back.bounding_box())
     assert_spoken_once(page, "Loading the campaign's ParishSoft data.")
+    assert page.evaluate(MARKED) == "kept"
+    assert failures == []
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_load_with_no_families_has_its_own_state(page, component_origin, width):
+    """A full load that matched no Families says so, in place (#1587).
+
+    Its wording, links to the run and Campaign settings, every box done, no
+    button of any kind (not the plain Load again, not Continue); the summary
+    line, boxes and the action row below keep their places from loading to
+    this state, in the poll's answer and after the page's in-place re-read.
+    """
+    failures = []
+    page.on("pageerror", lambda error: failures.append(str(error)))
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(answer_load(page, component_origin, LOAD, LOAD_EMPTY))
+    page.evaluate(MARK)
+    region = page.locator("#refresh-run")
+    summary = region.locator("[data-campaign-load-summary]")
+    row = page.locator("[data-campaign-step-actions]")
+    back = row.locator("[data-campaign-step-back]")
+    polls = answer_polls(page, component_origin, LOAD_STATUS_EMPTY)
+    start = region.get_by_role("button", name="Load the campaign's ParishSoft data")
+    start.click()
+    has_text(summary, "Loading the campaign's ParishSoft data…")
+    first_box = region.locator("[data-load-stage]").first.bounding_box()
+    above, below = summary.bounding_box(), back.bounding_box()
+    polls.finish()
+    contains(summary, "The campaign's ParishSoft data loaded, but no Families matched.")
+    assert summary.get_by_role("link", name="See the load").get_attribute(
+        "href"
+    ) == reverse("admin:background_task_page", args=[LOAD_RUN])
+    assert summary.get_by_role("link", name="Review Campaign settings").get_attribute(
+        "href"
+    ) == reverse("admin:campaign_settings")
+    assert [state for _key, state in stage_states(page)] == ["done"] * 4
+    assert region.get_by_role("button").count() == 0
+    assert row.get_by_role("link", name="Continue to Share options").count() == 0
+    assert_no_refresh_wording(page)
+    assert_same_box(above, summary.bounding_box())
+    assert_same_box(first_box, region.locator("[data-load-stage]").first.bounding_box())
+    assert_same_box(below, back.bounding_box())
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert page.evaluate(MARKED) == "kept"
     assert failures == []
