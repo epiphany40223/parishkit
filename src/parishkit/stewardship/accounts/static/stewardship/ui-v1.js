@@ -6606,14 +6606,22 @@
       const total = values.slice(0, 4).reduce((sum, value) => sum + value, 0);
       if (!Number.isSafeInteger(total)) throw new Error("Invalid total");
       const deliveryWarning = document.querySelector("[data-delivery-warning]");
-      if (deliveryWarning && (!Number.isSafeInteger(result.delivery_unknown) || result.delivery_unknown < 0)) throw new Error("Invalid delivery count");
+      // The operating mode's uncertain emails and the other mode's, each
+      // behind its own link to Sent mail in that mode (#1576).
+      const uncertain = [result.delivery_unknown, result.delivery_unknown_other];
+      if (deliveryWarning && uncertain.some((value) => !Number.isSafeInteger(value) || value < 0)) throw new Error("Invalid delivery count");
       backgroundIndicator.querySelector("[data-background-total]").textContent = total.toLocaleString("en-US");
       backgroundIndicator.querySelector("[data-background-running]").textContent = values[4].toLocaleString("en-US");
       if (deliveryWarning) {
-        const count = deliveryWarning.querySelector("[data-delivery-unknown]");
-        const formatted = result.delivery_unknown.toLocaleString("en-US");
-        if (count.textContent !== formatted) count.textContent = formatted;
-        const hidden = result.delivery_unknown === 0;
+        [["[data-delivery-here]", "[data-delivery-unknown]"],
+          ["[data-delivery-other]", "[data-delivery-unknown-other]"]].forEach(([link, number], index) => {
+          const shown = deliveryWarning.querySelector(link);
+          const count = deliveryWarning.querySelector(number);
+          const formatted = uncertain[index].toLocaleString("en-US");
+          if (count.textContent !== formatted) count.textContent = formatted;
+          if (shown.hidden !== (uncertain[index] === 0)) shown.hidden = uncertain[index] === 0;
+        });
+        const hidden = uncertain.every((value) => value === 0);
         if (deliveryWarning.hidden !== hidden) deliveryWarning.hidden = hidden;
       }
       if (unavailable) unavailable.hidden = true;

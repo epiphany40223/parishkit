@@ -226,10 +226,15 @@ def test_a_running_send_polls_with_a_labelled_progress_bar():
     assert "100.0 emails per minute" in html
     assert "about 6 minutes" in html
     # Each kind links to its own filtered list.
+    # In the mode the counts read, so Sent mail lists those emails (#1576).
     assert (
-        'href="/admin/mail/sent/?state=delivery_unknown">Review emails that may' in html
+        'href="/admin/mail/sent/?state=delivery_unknown&amp;mode=production">'
+        "Review emails that may" in html
     )
-    assert 'href="/admin/mail/sent/?state=permanent_failure">Review failed' in html
+    assert (
+        'href="/admin/mail/sent/?state=permanent_failure&amp;mode=production">'
+        "Review failed" in html
+    )
     assert "failed before they were prepared" not in html
     assert "<script" not in html
 

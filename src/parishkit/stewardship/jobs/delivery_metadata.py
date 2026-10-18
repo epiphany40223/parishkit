@@ -5,7 +5,17 @@ import re
 from uuid import UUID
 
 from django.db import connection
-from django.db.models import F, Func, JSONField, OuterRef, Q, Subquery, TextField, Value
+from django.db.models import (
+    Count,
+    F,
+    Func,
+    JSONField,
+    OuterRef,
+    Q,
+    Subquery,
+    TextField,
+    Value,
+)
 from django.db.models.functions import Cast, Lower
 from django.utils.translation import gettext_lazy as _
 
@@ -132,10 +142,15 @@ def with_name_keys(selected, snapshot, duid="family__family_duid"):
 # Sent mail's grouped Delivery choices (#1562), each a set of outbox
 # states. They overlap on purpose: they are filters, not a partition. Not
 # sure it arrived is not "not delivered", since such an email may have
-# arrived. Needs attention also leaves out the emails of those states that
-# nobody can act on (needs_attention).
+# arrived. Needs attention and Not sure it arrived — review needed also
+# leave out the emails of those states that nobody can act on
+# (``actionable``).
 STATE_GROUPS = {
     "needs_attention": ("delivery_unknown", "permanent_failure"),
+    # Not sure it arrived, but only the emails an Administrator can resolve
+    # (``actionable``): the choice the status bar's and Home's "review
+    # needed" counts link and count (#1576).
+    "needs_review": ("delivery_unknown",),
     "not_delivered": ("permanent_failure", "cancelled"),
     "still_sending": ("pending", "retry_wait", "submitting"),
 }
@@ -172,8 +187,11 @@ STATE_LABELS = OUTCOMES | {
 }
 
 
+# Sent mail's grouped Purpose choices: Family email, the invitations and
+# reminders System health's Waiting to retry counts and links (#1632).
+PURPOSE_GROUPS = {"family": ("initial", "reminder")}
 # Sent mail's Purpose filter, and its Production / Testing choice.
-PURPOSE_CHOICES = ("all", *LISTED_PURPOSES)
+PURPOSE_CHOICES = ("all", *PURPOSE_GROUPS, *LISTED_PURPOSES)
 MODES = ("production", "testing")
 RECIPIENT_HINT = "Use a Family DUID, an email address or a delivery ID."
 # An email address as Sent mail's Recipient filter takes it: one "@" with
@@ -226,7 +244,10 @@ def unknown_count():
 def alert_counts(since, *, limit):
     """Read independent indexed warning totals in one Admin-shell round trip.
 
-    Returns ``({event: count}, [log id], delivery_unknown, {event: ended})``.
+    Returns ``({event: count}, [log id], {mode: uncertain}, {event: ended})``:
+    ``{mode: uncertain}`` counts, per mode, the emails Sent mail lists as Not
+    sure it arrived and an Administrator can resolve (``needs_review``,
+    ``by_mode``; a mode with none is missing).
     CRITICAL operational events count when they are newer than ``since`` and
     have no shared acknowledgement. The ids, oldest first and at most
     ``limit``, are the counted rows the banner's Acknowledge form may
@@ -242,6 +263,9 @@ def alert_counts(since, *, limit):
     receipt) and every such incident has resolved. A row not yet taken in,
     or an incident still open, means the problem may be going on.
     """
+    # The uncertain emails are counted by Sent mail's own query (by_mode),
+    # compiled into this statement, so the count is what its link lists.
+    uncertain_sql, uncertain_params = by_mode("needs_review").query.sql_with_params()
     with connection.cursor() as cursor:
         cursor.execute(
             "WITH pending AS (SELECT log.id, log.event, log.created_at "
@@ -261,17 +285,19 @@ def alert_counts(since, *, limit):
             "(SELECT coalesce(array_agg(id ORDER BY created_at, id), '{}') "
             "FROM (SELECT id, created_at FROM pending "
             "ORDER BY created_at, id LIMIT %s) AS oldest), "
-            "(SELECT count(*) FROM stewardship_outbox_message "
-            "WHERE state='delivery_unknown' AND purpose=ANY(%s)), "
+            "(SELECT coalesce(jsonb_object_agg(counted.mode, counted.total), "
+            f"'{{}}'::jsonb) FROM ({uncertain_sql}) AS counted), "
             "(SELECT coalesce(array_agg(event ORDER BY event), '{}') "
             "FROM grouped WHERE ended), "
             "(SELECT coalesce(array_agg(ended_at ORDER BY event), '{}') "
             "FROM grouped WHERE ended)",
-            (since, limit, list(PURPOSES)),
+            (since, limit, *uncertain_params),
         )
         events, ids, unknown, ended_events, ended_times = cursor.fetchone()
     if isinstance(events, str):
         events = json.loads(events)
+    if isinstance(unknown, str):
+        unknown = json.loads(unknown)
     counts = {str(key): int(value) for key, value in events.items()}
     ended = dict(zip(ended_events, ended_times, strict=True))
     return counts, [UUID(str(value)) for value in ids], unknown, ended
@@ -303,40 +329,19 @@ def listing(
     (``read_listing`` passes the current one, which the page also names its
     Families from); without one every name key is NULL.
 
-    ``state`` is a state, a ``STATE_GROUPS`` group or "all"; ``purpose`` one
-    of ``PURPOSE_CHOICES``; ``mode`` "production", "testing" or None (both);
+    ``state`` is one of ``STATES`` (a state, a group or "all"); ``purpose``
+    one of ``PURPOSE_CHOICES`` (a purpose, a ``PURPOSE_GROUPS`` group or
+    "all"); ``mode`` "production", "testing" or None (both);
     ``since`` and ``until`` UTC bounds on When (``updated_at``), ``until``
     exclusive. ``query`` is the Recipient filter (``recipient_scope``). An
     address is resolved to its emails through the Administrator-only
     definer read for ``actor``, which raises ``PermissionError`` when it
     refuses.
     """
-    if (
-        state not in STATES
-        or purpose not in PURPOSE_CHOICES
-        or mode not in (None, *MODES)
-    ):
-        raise ValueError("Invalid delivery filter.")
     scope = recipient_scope(query)
-    selected = listed_messages()
-    if send is not None:
-        # About one id per Family, read through the definition index; the
-        # messages are then found by primary key.
-        selected = selected.filter(pk__in=email_ids(send))
-    if state == "needs_attention":
-        selected = needs_attention(selected)
-    elif state in STATE_GROUPS:
-        selected = selected.filter(state__in=STATE_GROUPS[state])
-    elif state != "all":
-        selected = selected.filter(state=state)
-    if purpose != "all":
-        selected = selected.filter(purpose=purpose)
-    if mode is not None:
-        selected = selected.filter(mode=mode)
-    if since is not None:
-        selected = selected.filter(updated_at__gte=since)
-    if until is not None:
-        selected = selected.filter(updated_at__lt=until)
+    selected = matching(
+        state=state, send=send, purpose=purpose, mode=mode, since=since, until=until
+    )
     if scope is not None:
         kind, value = scope
         if kind == "duid":
@@ -362,6 +367,105 @@ def listing(
     return window, rows, has_next, total
 
 
+def matching(*, state, send=None, purpose="all", mode=None, since=None, until=None):
+    """The emails Sent mail lists for these filters, before the Recipient one.
+
+    The one definition of what a Sent mail link opens: ``listing`` narrows
+    it by Recipient and reads a page of it, and every count that links to
+    Sent mail (``uncertain_by_mode``, ``alert_counts``, System health's
+    Waiting to retry) counts it, so a
+    count and the list its link opens cannot drift apart (#1576). The
+    arguments are ``listing``'s; a choice outside them raises ``ValueError``.
+    """
+    if (
+        state not in STATES
+        or purpose not in PURPOSE_CHOICES
+        or mode not in (None, *MODES)
+    ):
+        raise ValueError("Invalid delivery filter.")
+    selected = listed_messages()
+    if send is not None:
+        # About one id per Family, read through the definition index; the
+        # messages are then found by primary key.
+        selected = selected.filter(pk__in=email_ids(send))
+    if state == "needs_attention":
+        selected = needs_attention(selected)
+    elif state == "needs_review":
+        selected = actionable(selected).filter(state="delivery_unknown")
+    elif state in STATE_GROUPS:
+        selected = selected.filter(state__in=STATE_GROUPS[state])
+    elif state != "all":
+        selected = selected.filter(state=state)
+    if purpose in PURPOSE_GROUPS:
+        selected = selected.filter(purpose__in=PURPOSE_GROUPS[purpose])
+    elif purpose != "all":
+        selected = selected.filter(purpose=purpose)
+    if mode is not None:
+        selected = selected.filter(mode=mode)
+    if since is not None:
+        selected = selected.filter(updated_at__gte=since)
+    if until is not None:
+        selected = selected.filter(updated_at__lt=until)
+    return selected
+
+
+def by_mode(state):
+    """``matching(state=state)`` counted per mode, as one grouped query.
+
+    Each row is ``(mode, count)`` for a mode that has some; a mode with none
+    has no row. ``alert_counts`` embeds this query's SQL, and
+    ``uncertain_by_mode`` runs it, so both count exactly what Sent mail lists
+    for ``?state=<state>&mode=<mode>``.
+    """
+    return (
+        matching(state=state).order_by().values_list("mode").annotate(total=Count("pk"))
+    )
+
+
+def other_mode(mode):
+    """The operating mode Sent mail's mode choice offers beside ``mode``."""
+    return MODES[1] if mode == MODES[0] else MODES[0]
+
+
+def mode_split(counts, mode):
+    """Split per-mode counts into the operating mode's and the other's.
+
+    ``counts`` maps a mode to its count (a mode with none may be missing);
+    ``mode`` is the system's operating mode. Returns the dict the status
+    bar, Home and System health read: ``mode`` and ``count`` (that mode's,
+    the number shown), and ``other_mode`` and ``other`` (the other mode's,
+    which gets its own link and is never added to ``count``, #1576).
+    """
+    other = other_mode(mode)
+    return {
+        "mode": mode,
+        "count": int(counts.get(mode, 0)),
+        "other_mode": other,
+        "other": int(counts.get(other, 0)),
+    }
+
+
+def uncertain_by_mode():
+    """``{mode: count}`` of the emails Sent mail lists as review needed.
+
+    Not sure it arrived, of the kinds an Administrator can resolve
+    (``needs_review``): the status bar's and Home's counts (#1576).
+    """
+    return dict(by_mode("needs_review"))
+
+
+def actionable(selected):
+    """Narrow ``selected`` to the emails whose page offers resolutions.
+
+    Of a kind an Administrator resolves (``PURPOSES``: operational and
+    security notices offer none) in a campaign that is not archived (whose
+    page offers nothing). Needs attention and its Not sure it arrived part,
+    needs_review, read it, so an email nobody can act on never keeps a
+    "review needed" count up (#1576).
+    """
+    return selected.filter(purpose__in=PURPOSES).exclude(campaign__state="archived")
+
+
 def needs_attention(selected):
     """Narrow ``selected`` to Sent mail's Needs attention (#1562).
 
@@ -383,8 +487,7 @@ def needs_attention(selected):
         .values("action")[:1]
     )
     return (
-        selected.filter(purpose__in=PURPOSES)
-        .exclude(campaign__state="archived")
+        actionable(selected)
         .annotate(last_decision=Subquery(decided))
         .filter(
             Q(state="delivery_unknown")

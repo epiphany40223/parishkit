@@ -117,9 +117,13 @@ def _read_once(request, identifier, *, counts_only, audit):
             instant = database_now()
             if counts_only:
                 data, count = {"as_of": instant, "counts": _counts(instant)}, 0
-                from .delivery_metadata import unknown_count
+                from .delivery_metadata import mode_split, uncertain_by_mode
 
-                data["delivery_unknown"] = unknown_count()
+                # The status bar's two counts (#1576): this mode's and the
+                # other mode's, each what its Sent mail link lists.
+                unknown = mode_split(uncertain_by_mode(), configuration.mode)
+                data["delivery_unknown"] = unknown["count"]
+                data["delivery_unknown_other"] = unknown["other"]
             else:
                 data, count = (
                     _listing(window, state, task_type, sort, instant)

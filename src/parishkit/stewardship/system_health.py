@@ -984,6 +984,7 @@ class SystemHealth(ReadModel):
     send_active: bool
     planning_held: bool
     retry_waiting: int
+    retry_waiting_other: int
     next_retry_at: datetime | None
     daily_sent: int
     daily_limit: int
@@ -1074,6 +1075,7 @@ class SystemHealth(ReadModel):
             self.delivery_paused
             or self.planning_held
             or self.retry_waiting
+            or self.retry_waiting_other
             or any(
                 not line.running or line.sender_state != "running"
                 for line in self.senders
@@ -1839,16 +1841,31 @@ def _facts():
         return health_facts(cursor.fetchone())
 
 
-def _retries():
-    """How many Family emails wait to retry, and when the next is due."""
+def _retries(mode):
+    """How many Family emails wait to retry, by mode, and when the next is due.
+
+    Returns ``(count, other, due)``: the operating mode ``mode``'s count,
+    the other mode's, and when ``mode``'s next retry is due (None without
+    one). Each count gets its own Sent mail link in its mode, so a count is
+    never shown against a list of the other mode's emails (#1576). Both read
+    Sent mail's own filter (``matching``) for Family email waiting to retry,
+    which the links open (``state=retry_wait&purpose=family``), so a count
+    is exactly the rows its link lists (#1632). One grouped query.
+    """
     from django.db.models import Count, Min
 
-    from .jobs.outbox_models import OutboxMessage
+    from .jobs.delivery_metadata import matching, mode_split
 
-    found = OutboxMessage.objects.filter(
-        state="retry_wait", purpose__in=FAMILY_PURPOSES
-    ).aggregate(count=Count("id"), due=Min("not_before"))
-    return found["count"], found["due"]
+    # Sent mail's Family group is FAMILY_PURPOSES (test_system_health pins it).
+    found = {
+        row[0]: row[1:]
+        for row in matching(state="retry_wait", purpose="family")
+        .order_by()
+        .values_list("mode")
+        .annotate(Count("id"), Min("not_before"))
+    }
+    split = mode_split({key: value[0] for key, value in found.items()}, mode)
+    return split["count"], split["other"], found.get(mode, (0, None))[1]
 
 
 def _refused(succeeded_at):
@@ -2275,7 +2292,7 @@ def read_health(store):
         refused_at, refused_counts, refused_attempt = _refused(refresh.succeeded_at)
         drop_acceptance, accept_actor = _drop_acceptance(refused_attempt)
         backup_at, key_matches, backup_bytes, backup_version = _backup(configuration)
-        retry_waiting, next_retry_at = _retries()
+        retry_waiting, retry_waiting_other, next_retry_at = _retries(configuration.mode)
         daily_sent = daily_sends()
         daily_resume_at = daily_resume()
         progress = read_progress()
@@ -2309,6 +2326,7 @@ def read_health(store):
         send_active=bool(send and send.active),
         planning_held=bool(send and send.active and send.counts.held),
         retry_waiting=retry_waiting,
+        retry_waiting_other=retry_waiting_other,
         next_retry_at=next_retry_at,
         daily_sent=daily_sent,
         # The share Family invitations, reminders and tests may use: the daily

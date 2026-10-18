@@ -84,6 +84,7 @@ def background_counts(page):
                     "active": 1,
                 },
                 "delivery_unknown": 0,
+                "delivery_unknown_other": 0,
             }
         ),
     )

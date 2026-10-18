@@ -223,7 +223,7 @@ your roles would not show on the page is `null`.
 | `ministry_catalog` | Counts of recent catalog `refreshes`, `missing` and `retired` Ministries |
 | `security_events`, `automation_notices` | How many are unacknowledged for you |
 | `recent_failures` | Tasks failed in the last day: `id`, `type`, `updated_at` |
-| `tasks` | Background work counts by state, `active`, and `delivery_unknown` |
+| `tasks` | Background work counts by state, `active`, `delivery_unknown` (uncertain campaign emails in both modes, archived campaigns too), and the status bar's two Not sure it arrived — review needed counts: `delivery_review` in the operating `mode` and `delivery_review_other` in the other mode (each what Sent mail lists for `--state needs_review` in that mode) |
 | `presence` | `count`: Families on the portal now |
 
 ### `task list` and `task show TASK_ID`
@@ -323,7 +323,8 @@ the page may split between two tiles, so its `severity` is the worse of
 the two), the
 `processes` with their state, version and mail sender state,
 `missing_services`, `versions`, `schema_current`, the reasons Family email
-waits (`delivery_paused`, `planning_held`, `retry_waiting`), the 24-hour
+waits (`delivery_paused`, `planning_held`, `retry_waiting` in the
+operating `mode` and `retry_waiting_other` in the other mode), the 24-hour
 send count `daily_sent`, the `daily_limit` Family email stops at and
 `daily_resume_at`, when that count falls below the limit again (null while
 it is below), the open `incidents`, the ParishSoft `refresh` outcome, a refused load's
@@ -1944,9 +1945,10 @@ pk-admin delivery bounce-report MESSAGE_ID --address ADDRESS \
 `delivery list` takes Sent mail's filters: `--recipient` (a Family DUID, an
 email address or a delivery id, as input only), `--purpose` (`initial`,
 `reminder`, `receipt`, `family_test`, `daily_digest`, `weekly_digest`,
-`operational` or `security_event`), `--state` (a state, or the groups
-`needs_attention`, `not_delivered` and `still_sending`, as the page
-defines them), `--mode`
+`operational` or `security_event`, or the group `family`: invitations and
+reminders), `--state` (a state, or the groups `needs_attention`,
+`needs_review`, `not_delivered` and `still_sending`, as the page defines
+them), `--mode`
 (`production` or `testing`; both when left out), `--from` and `--to` (whole
 days, in the time zone `--zone` names, the parish's time zone by default),
 `--send` (send history's `send` value), `--page`, `--size` and `--sort`. The
