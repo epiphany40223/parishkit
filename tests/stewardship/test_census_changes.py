@@ -214,6 +214,30 @@ def test_filters_narrow_the_rows():
     assert summary["Superseded"] == 1
 
 
+def test_summary_keeps_open_work_lines_at_zero():
+    """To review, To do and Conflict stay in the Summary at 0, so resolving
+    the last of one removes no line above the table (#1472); any other
+    status is listed only once it has a change."""
+    result = select(
+        [shape(row(execution="published", decision="approved"))],
+        CensusQuery(),
+        administrator=True,
+    )
+    assert result["summary"] == [
+        ("To review", 0),
+        ("To do", 0),
+        ("Conflict", 0),
+        ("Published", 1),
+    ]
+    assert [
+        label for label, _ in select([], CensusQuery(), administrator=False)["summary"]
+    ] == [
+        "To review",
+        "To do",
+        "Conflict",
+    ]
+
+
 def test_dates_are_days_in_the_browser_zone():
     """From and Through are whole local days; a date needs a known zone."""
     query = CensusQuery.parse(
@@ -427,6 +451,77 @@ def test_page_shows_member_duid_beside_who():
     assert "<dt>Family's answer</dt><dd>" in html
     assert '<td class="numeric">41</td>' in html
     assert '<td class="numeric">New Member</td>' in html
+
+
+def test_values_tell_a_field_never_read_from_one_read_empty():
+    """ParishSoft now says (not read) where ParishSoft was never read (every
+    Family field) and (blank) where it was read and is empty; a Conflict's
+    When the Family answered says (blank) where ParishSoft was empty then
+    (#1472). The downloads leave every one of them an empty cell."""
+    from django.template.loader import render_to_string
+
+    from parishkit.stewardship.web.tables import paginate
+
+    family = row(
+        id="family",
+        entity_kind="family",
+        field="email_opt_out",
+        handling="manual",
+        current_value=False,
+        submitted_value=True,
+    )
+    empty = row(id="empty", current_value=None)
+    unread = row(id="unread", current_available=False)
+    conflict = row(
+        id="conflict", execution="conflict", baseline_value=None, current_value="1"
+    )
+    shaped = [shape(each) for each in (family, empty, unread, conflict)]
+    assert [each["parishsoft_read"] for each in shaped] == [False, True, False, True]
+    html = render_to_string(
+        "stewardship/census-changes.html",
+        {
+            "table": paginate(shaped, {}, sorting=SORTING),
+            "query": CensusQuery(),
+            "query_fields": {},
+            "summary": [],
+            "status_choices": [],
+            "route_choices": [],
+            "kind_choices": [],
+            "export_timezones": ["UTC"],
+        },
+    )
+
+    def values(identifier):
+        """The row's Values cell as label: text pairs."""
+        cell = re.search(
+            rf'<tr id="change-{identifier}">.*?<dl class="cell-pairs[^"]*">(.*?)</dl>',
+            html,
+            re.DOTALL,
+        ).group(1)
+        pairs = re.findall(r"<dt>(.*?)</dt><dd>(.*?)</dd>", cell, re.DOTALL)
+        return {
+            unescape(label): unescape(re.sub(r"<[^>]*>", "", text)).strip()
+            for label, text in pairs
+        }
+
+    assert values("family")["ParishSoft now"] == "(not read)"
+    assert values("unread")["ParishSoft now"] == "(not read)"
+    assert values("empty")["ParishSoft now"] == "(blank)"
+    assert "When the Family answered" not in values("empty")
+    assert values("conflict") == {
+        "ParishSoft now": "1",
+        "When the Family answered": "(blank)",
+        "Family's answer": "555-0199",
+    }
+    # The downloads are unchanged: an empty ParishSoft now cell either way.
+    result = select(shaped, CensusQuery(status="all"), administrator=True)
+    table = list(csv.reader(io.StringIO(census_csv(result, UTC).decode())))
+    column = HEADINGS.index("ParishSoft now")
+    by_who = {line[HEADINGS.index("Who")]: line for line in table[1:]}
+    assert by_who["Family"][column] == ""
+    assert sorted(line[column] for line in table[1:]) == ["", "", "", "1"]
+    assert "(not read)" not in "".join(map(str, table))
+    assert "(blank)" not in "".join(map(str, table))
 
 
 WORK_TO_DO_EMPTY = "No census changes need your work right now."

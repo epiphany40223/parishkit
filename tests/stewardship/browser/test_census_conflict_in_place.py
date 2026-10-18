@@ -77,14 +77,15 @@ def test_use_the_familys_value_anyway_answers_in_place(page, component_origin):
     dialog.get_by_label("Note (optional)").fill("Asked the Family")
     dialog.get_by_role("button", name="Record").click()
     has_text(page.locator("#census-notice"), CONFLICT_RESOLVED)
-    # Nothing jumps: the Summary above loses its Conflict line, so either the
-    # page keeps its scroll position (WebKit) or Chromium's scroll anchoring
-    # keeps the row just acted on where it was on the screen (#1472).
+    # Nothing jumps, in either engine: the Summary above keeps its Conflict
+    # line, now at 0 (#1472), so the page keeps its scroll position and the
+    # row just acted on stays where it was on the screen, with no help from
+    # Chromium's scroll anchoring (WebKit has none).
     row = page.locator("#table tbody tr").first
-    assert (
-        abs(page.evaluate("window.scrollY") - scrolled) <= 1
-        or abs(row.evaluate(TOP) - top) <= 1
-    )
+    assert abs(page.evaluate("window.scrollY") - scrolled) <= 1
+    assert abs(row.evaluate(TOP) - top) <= 1
+    summary = page.locator("#census-summary dl")
+    expect(summary).to_contain_text("Conflict0")
     assert "resolve=use_family" in posts[0] and "note=Asked+the+Family" in posts[0]
     assert "value=" not in posts[0] and len(posts) == 1
     first = page.locator("#table tbody tr").first

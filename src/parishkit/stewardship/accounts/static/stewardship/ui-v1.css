@@ -827,8 +827,13 @@ td > :last-child { margin-bottom: 0; }
    (the row's hover or selected tint painted over the paper), so the
    scrolled columns pass beneath it, and a line marks its edge. Its icons
    wrap two to a line, so it takes little of the box: the rows are already
-   several lines tall with their labelled values. */
-.sticky-actions > * > tr > :last-child { position: sticky; inset-inline-end: 0; z-index: 1; background: var(--paper); box-shadow: inset 1px 0 0 var(--border); }
+   several lines tall with their labelled values. An empty table's one
+   message cell (colspan) is left alone. The edge line is drawn by the
+   cell's own ::before on its inline-start side (so a right-to-left page
+   gets it on the correct side), not as a border, since the table's
+   collapsed borders would not travel with the sticky cell. */
+.sticky-actions > * > tr > :last-child:not([colspan]) { position: sticky; inset-inline-end: 0; z-index: 1; background: var(--paper); }
+.sticky-actions > * > tr > :last-child:not([colspan])::before { content: ""; position: absolute; inset-block: 0; inset-inline-start: 0; border-inline-start: 1px solid var(--border); pointer-events: none; }
 .sticky-actions > thead > tr > :last-child { background: var(--paper-soft); }
 .sticky-actions > tbody > tr:hover > :last-child { background: linear-gradient(var(--row-hover), var(--row-hover)), var(--paper); }
 .sticky-actions > tbody > tr:has(input[data-select-row]:checked) > :last-child { background: linear-gradient(var(--accent-soft), var(--accent-soft)), var(--paper); }
