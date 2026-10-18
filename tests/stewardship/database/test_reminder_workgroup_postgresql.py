@@ -19,9 +19,9 @@ from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.jobs.ownership import database_now
 from parishkit.stewardship.jobs.send_progress import read_send
-from parishkit.stewardship.reports.family_timeline import read_timeline
-from parishkit.stewardship.reports.family_timeline_views import read_identity
 from parishkit.stewardship.reports.response_metrics import ResponseScope
+from parishkit.stewardship.reports.timeline_views import read_identity
+from parishkit.stewardship.reports.timelines import read_timeline
 from parishkit.stewardship.source import refreshing
 from parishkit.stewardship.source.snapshot_models import SourceCurrent, SourceSnapshot
 from parishkit.stewardship.source.workgroups import (

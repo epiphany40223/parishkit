@@ -855,7 +855,7 @@ The row stores:
 
 - the first sign-in instant (`first_link_at`, "link followed"; this includes a
   mail scanner following a personal link, but not a Staff sign-in for the
-  Family through [Open form](../reports/spec.md#family-timeline), which is
+  Family through [Open form](../reports/spec.md#open-form), which is
   not the Family following its link);
 - the first form issuance instant (`first_form_at`, "form opened");
 - the first instant a form step past the first one was reported
@@ -885,7 +885,7 @@ ahead. The heartbeat, which carries nothing but presence, writes directly and
 a refusal is its ordinary temporary denial. Rows hold no answers, names or
 credentials; they are behavioural evidence about a Family, read only by the
 Admin and Staff [response funnel](../reports/spec.md#response-funnel), the
-Administrator's [Family timeline](../reports/spec.md#family-timeline) and
+Administrator's [Timeline](../reports/spec.md#timeline) and
 the background worker that compiles a Production daily digest's funnel (its
 first instants only).
 
@@ -1089,7 +1089,7 @@ Every final click creates an immutable `Submission` version containing:
 - validation/content/schema versions;
 - request/session correlation without storing credentials; and
 - `entered_by_id`, the portal user who entered it for the Family through
-  [Open form](../reports/spec.md#family-timeline), or null when the Family
+  [Open form](../reports/spec.md#open-form), or null when the Family
   entered it (a soft reference with no foreign key, added by frozen migration
   0065).
 

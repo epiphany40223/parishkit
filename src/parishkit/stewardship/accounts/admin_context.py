@@ -403,7 +403,7 @@ def _find_family(actor, items, campaign):
 
     Only a viewer whose menu offers the directory now (Administrators
     and Staff, with a current campaign) gets the box, and only if they may
-    also open the Family timeline its results link to. It reuses the menu's
+    also open the Timeline its results link to. It reuses the menu's
     decision, so it costs the header no query. The search route rechecks
     both on every request; this only decides whether to show the box.
     """

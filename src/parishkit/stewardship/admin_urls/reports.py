@@ -32,7 +32,6 @@ from ..reports import (
     emailed_views,
     export_pages,
     export_ui,
-    family_timeline_views,
     financial_export_views,
     financial_views,
     information_export_views,
@@ -42,6 +41,7 @@ from ..reports import (
     ministry_followup_exports,
     ministry_followup_views,
     ministry_roster_views,
+    timeline_views,
     weekly_manual_views,
     weekly_views,
     workspace_views,
@@ -188,8 +188,8 @@ patterns = [
     _page("reports/families/search/", directory_views.find_family, "find_family"),
     _page(
         "reports/families/<uuid:family_id>/",
-        family_timeline_views.family_timeline,
-        "family_timeline",
+        timeline_views.timeline,
+        "timeline",
     ),
     # Open form's hand-off (#529): a form action, posted only, so it has no
     # slashless form.
@@ -259,7 +259,7 @@ patterns = [
     ),
     _page(
         "reports/families/<uuid:family_id>/exports/",
-        family_timeline_views.export,
-        "family_timeline_export",
+        timeline_views.export,
+        "timeline_export",
     ),
 ]

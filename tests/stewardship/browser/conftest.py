@@ -114,7 +114,6 @@ from .directory_components import open_form_posts
 from .emailed_components import components as emailed_components
 from .family_test_components import components as family_test_components
 from .family_test_components import posts as family_test_posts
-from .family_timeline_components import components as family_timeline_components
 from .financial_components import components as financial_components
 from .find_family_components import POSTS as FIND_FAMILY_POSTS
 from .find_family_components import components as find_family_components
@@ -185,6 +184,7 @@ from .source_form_components import components as source_form_components
 from .stepper_components import POSTS as STEPPER_POSTS
 from .stepper_components import components as stepper_components
 from .system_health_components import components as system_health_components
+from .timeline_components import components as timeline_components
 from .upload_defaults_components import components as upload_defaults_components
 from .upload_defaults_components import posts as upload_defaults_posts
 from .user_components import POSTS as USER_POSTS
@@ -2258,7 +2258,7 @@ def component_origin():
     responses.update(weekly_components(context, admin))
     responses.update(chart_components(context, admin))
     responses.update(dashboard_components(context, admin))
-    responses.update(family_timeline_components(context, admin))
+    responses.update(timeline_components(context, admin))
     responses.update(find_family_components(context, admin))
     responses.update(user_components(context, admin))
     responses.update(security_components(context, admin))

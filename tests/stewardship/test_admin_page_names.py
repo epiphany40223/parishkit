@@ -109,7 +109,7 @@ TEMPLATES = {
     "ministry_roster": "ministry-roster.html",
     "family_directory": "directory.html",
     "emailed_reports": "emailed-reports.html",
-    "family_timeline": "family-timeline.html",
+    "timeline": "timeline.html",
     "index": "home.html",
     "configuration_request": "configuration-request.html",
 }

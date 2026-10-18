@@ -2907,8 +2907,10 @@
   // and says so.
   const REREAD_MIN_MS = 5000;
   const REREAD_FAILURES = 3;
-  // Said when a read is refused; live-status-v1.js says the same.
+  // Said when a read is refused, and when reads keep failing and will be
+  // tried again; live-status-v1.js says the same (#1647).
   const UPDATES_REFUSED = "Couldn't check for updates. Reload the page or sign in again.";
+  const UPDATES_RETRYING = "Couldn't check for updates — retrying.";
   let rereadTimer = 0;
   let rereadFailures = 0;
   let rereadStopped = false;
@@ -3002,7 +3004,7 @@
           return;
         }
         rereadFailures += 1;
-        if (rereadFailures >= REREAD_FAILURES) rereadProblem("Couldn't check for updates — retrying.");
+        if (rereadFailures >= REREAD_FAILURES) rereadProblem(UPDATES_RETRYING);
         scheduleReread();
       },
     };

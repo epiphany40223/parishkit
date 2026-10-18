@@ -213,7 +213,7 @@ def test_a_role_without_family_codes_cannot_redeem(
 ):
     """A role that loses Open form before redemption cannot use its hand-off.
 
-    No real role has Family timeline access without Family codes, so the
+    No real role has Timeline access without Family codes, so the
     redemption's role check is narrowed for the redeeming request only; the
     session itself stays live.
     """

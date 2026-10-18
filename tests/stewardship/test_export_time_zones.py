@@ -45,7 +45,7 @@ ASKS = {
     # and leaving exports: Last contact is an action time.
     ("ministry-followup.html", "admin:ministry_followup_export"): True,
     ("ministry-roster.html", "admin:ministry_roster_export"): True,
-    ("family-timeline.html", "export.url"): True,
+    ("timeline.html", "export.url"): True,
     ("ministry-packet.html", "admin:ministry_packet"): False,
     ("response-dashboard.html", "admin:report_export_create"): False,
     # Campaign days and dates, no action times (#1161).

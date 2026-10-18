@@ -423,6 +423,22 @@ hr { border: 0; border-top: 1px solid var(--border); margin-block: 2rem; }
    .stat-tiles row stacks, those still drawn by hand (home, campaign comparison, financial
    report, ministry follow-up) as well as the component's. */
 @media (max-width: 40rem) { .stat-tiles, .stat-tiles:has(> [data-stat]) { grid-template-columns: 1fr; } }
+/* A stacked tile can still be narrower than 12.5rem, its values' design width, when the window
+   is very narrow and the text large (320px at 150%, #1667): a one-line value then made its tile
+   and the page wider than the window. So on a phone each size shrinks in step with the room
+   left for a value: --stat-room is the window less the page's and the tile's gutters and
+   padding (5.75rem) and 20px for a scrollbar and rounding, and each size's divisor is the
+   12.5rem tile's 10.5rem of room over that size in rem (1.75rem: 6; 1.25rem: 8.4; 1rem: 10.5),
+   so a value that fits the 12.5rem tile fits the narrower one. min() keeps the usual size
+   wherever it fits, and 12px keeps a value legible at extreme text sizes. Window units, not
+   container units, for the WebKit scroll anchoring noted above; the line stays 2.1rem tall,
+   so nothing moves. Only the component's tiles do this: hand-drawn ones wrap instead. */
+@media (max-width: 40rem) {
+  .stat-tile[data-stat] { --stat-room: calc(100vw - 5.75rem - 20px); }
+  .stat-tile[data-stat] .stat-value { font-size: clamp(12px, var(--stat-room) / 6, 1.75rem); }
+  .stat-tile[data-stat] .stat-value-long { font-size: clamp(12px, var(--stat-room) / 8.4, 1.25rem); }
+  .stat-tile[data-stat] .stat-value-longest { font-size: clamp(12px, var(--stat-room) / 10.5, 1rem); }
+}
 /* Balanced lines (#1537): a component row of four or five tiles never leaves one tile alone on
    a line. Each track's minimum is 12.5rem while the whole row fits on one line, and otherwise a
    half (four tiles) or a third (five) of the row, so four go 4 or 2 + 2 across and five go 5 or

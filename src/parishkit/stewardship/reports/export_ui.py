@@ -177,22 +177,19 @@ def _origin(job):
             "admin:campaign_mail_families", args=[job.parameters["revision"]]
         )
     elif job.report == "family_timeline":
-        # The export sits under the Family's own timeline page, so the
-        # trail runs Directory > Family timeline > export and keeps
-        # which Family it was (#521).
-        from .family_timeline_views import timeline_url
-
+        # The export sits under the Family's own Timeline page, so the
+        # trail runs Directory > Timeline > export and keeps which Family
+        # it was (#521). The file keeps its "Family timeline" name, as it
+        # is always about one Family (#1570).
         title = _("Family timeline export")
-        source = "family_timeline"
+        source = "timeline"
         # From the request's parameters, not its capture, which is deleted
-        # when the export ends (#1398).
+        # when the export ends (#1398). An old Testing export's crumb opens
+        # the timeline too, which shows Production only since #1570; its
+        # ``mode`` stays readable but is no longer carried.
         family_id = UUID(job.parameters["family_id"])
         arguments = {"family_id": family_id}
-        report_url = timeline_url(family_id, job.parameters["mode"])
-        # The crumb opens the timeline in the mode exported, so the
-        # page draws no "Return to" link beside it (#1345).
-        if "?" in report_url:
-            queries = {source: report_url.split("?", 1)[1]}
+        report_url = reverse("admin:timeline", args=[family_id])
     elif job.report in {"family_directory", "postal_outreach"}:
         source = "family_directory"
         if job.parameters["postal"]:

@@ -218,7 +218,7 @@ def test_script_backs_off_pauses_and_stops_at_terminal_states():
     source = SCRIPT.read_text()
     assert "const DELAYS = [2000, 2000, 3000, 4000, 6000, 8000, 10000];" in source
     assert 'document.visibilityState !== "visible"' in source
-    assert "Couldn't check status — retrying." in source
+    assert "say(UPDATES_RETRYING);" in source
     # Only pending regions start polling, and a settled region finishes.
     assert 'region.hasAttribute("data-live-pending")' in source
     assert "else finish();" in source

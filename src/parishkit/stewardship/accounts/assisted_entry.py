@@ -128,7 +128,7 @@ def bound(record, binding):
 
 
 def may_open(principal):
-    """Open form needs the Family timeline's report access and Family codes."""
+    """Open form needs the Timeline's report access and Family codes."""
     return allows(principal, Capability.CAMPAIGN_REPORT) and allows(
         principal, Capability.FAMILY_CODES
     )
@@ -144,7 +144,7 @@ def _return_url(request, family_id):
     other Admin page, another Family's timeline) falls back to the timeline,
     so ``next`` can never redirect anywhere else.
     """
-    timeline = reverse("admin:family_timeline", args=[family_id])
+    timeline = reverse("admin:timeline", args=[family_id])
     value = request.POST.get("next", "")
     if not isinstance(value, str) or "\\" in value or value.startswith("//"):
         return timeline
@@ -316,7 +316,7 @@ def _family_code(service, record):
 
     None for no hand-off, an Admin session or role that has ended, or a
     Family that is gone or has no code. The code is decrypted under the
-    key-set lock, as the Family timeline does, and never leaves this call
+    key-set lock, as the Timeline does, and never leaves this call
     except into the ordinary code sign-in.
     """
     if record is None or not _live_admin(record):

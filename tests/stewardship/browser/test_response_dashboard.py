@@ -212,6 +212,61 @@ def test_summary_rows_balance_at_fractional_widths(page, component_origin, font)
                 assert lines == expected, (name, width, lines)
 
 
+# The longest value of each StatTile.fit size: 9, 13 and 17 characters.
+LONGEST_VALUES = ("$9,999.99", "$9,999,999.99", "$9,999,999,999.99")
+
+# Writes ``text`` (at its StatTile.fit size) into every Summary tile and
+# returns, for each, how far its text runs past the tile's border box (0
+# when inside), how many lines it takes, and its value's height in rem.
+# The text is measured on a range: a tile is a flex column, so the value's
+# element is stretched to the tile's width (test_participation_in_place).
+PHONE_FIT = """([text, fit]) => [...document.querySelectorAll(
+    '#response-summary .stat-tile[data-stat]')].map((tile) => {
+  const value = tile.querySelector('.stat-value');
+  value.textContent = text;
+  value.className = ('stat-value ' + fit).trim();
+  const outer = tile.getBoundingClientRect();
+  const range = document.createRange();
+  range.selectNodeContents(value);
+  const inner = range.getBoundingClientRect();
+  const rem = parseFloat(getComputedStyle(document.documentElement).fontSize);
+  return {
+    overflow: Math.max(0, outer.left - inner.left, inner.right - outer.right),
+    lines: new Set([...range.getClientRects()].map((r) => Math.round(r.top))).size,
+    height: Math.round(value.getBoundingClientRect().height / rem * 100) / 100,
+  };
+})"""
+
+
+@pytest.mark.parametrize("width", [320, 331, 390])
+@pytest.mark.parametrize("font", ["100%", "150%", "200%"])
+def test_values_fit_a_phone_with_large_text(page, component_origin, width, font):
+    """On a phone-width window with large text the stacked tiles stay
+    inside the window: each value, at every size's longest length, is drawn
+    smaller instead of making its tile and the page wider, still on one
+    line of the same height, so the page never scrolls sideways (#1667).
+
+    At 320px and 150% the full-size "$2,234.56" in Linux's DejaVu font made
+    the Active population tiles about 12px wider than their panel; 150% and
+    200% stand in for a reader's larger default font size.
+    """
+    from parishkit.stewardship.web.stat_tiles import StatTile
+
+    page.set_viewport_size({"width": width, "height": 800})
+    page.goto(component_origin + "/response-dashboard")
+    page.evaluate(f"document.documentElement.style.fontSize = '{font}'")
+    tiles = page.evaluate(SUMMARY_TILES)
+    assert len(tiles) == 9
+    assert all(tile["fits"] for tile in tiles), tiles
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    for text in LONGEST_VALUES:
+        fit = StatTile(key="probe", label="Probe", text=text).fit
+        drawn = page.evaluate(PHONE_FIT, [text, fit])
+        assert len(drawn) == 9
+        assert drawn == [{"overflow": 0, "lines": 1, "height": 2.1}] * 9, (text, drawn)
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth"), text
+
+
 def test_testing_view_without_a_rehearsal_is_accessible(
     page, component_origin, axe_source
 ):

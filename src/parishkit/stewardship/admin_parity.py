@@ -305,10 +305,10 @@ LEDGER = {
     # statistics and daily table that were Participation's.
     "response_dashboard": command("report responses", "report participation"),
     "family_directory": command("export directory", "export postal"),
-    # The one-Family timeline is Family-level, so it is a file only: the
-    # page's export form (PR 8g) and ``export family-timeline``.
-    "family_timeline": command("export family-timeline"),
-    "family_timeline_export": command("export family-timeline"),
+    # A Family's Timeline (#1570) is Family-level, so it is a file only:
+    # the page's export form (PR 8g) and ``export family-timeline``.
+    "timeline": command("export family-timeline"),
+    "timeline_export": command("export family-timeline"),
     "family_open_form": permanent(
         "Open form signs this browser in to the Family form for a Family on "
         "the phone; a browser hand-off by nature (#529)"

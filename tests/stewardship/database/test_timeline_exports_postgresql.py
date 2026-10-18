@@ -2,11 +2,14 @@
 
 The campaign is the response-metrics ``funnel`` fixture, as the timeline
 page's own tests use it: the corpus Family signs in, opens the form, gets
-past the first step and submits in Testing. Its timeline is exported from the
-page's form and from ``export family-timeline``; both make the same record
-and event, the real worker renders the file with the Family code for an
-Administrator, and the command's stream is the page's download byte for byte.
-The capture's SQL checks refuse what the web must never store.
+past the first step and submits in Testing, and, where a test needs
+Production lines, signs in live, opens the form and submits after the real
+activation. The Timeline shows Production records only (#1570), and so does
+its export. Its timeline is exported from the page's form and from ``export
+family-timeline``; both make the same record and event, the real worker
+renders the file with the Family code for an Administrator, and the
+command's stream is the page's download byte for byte. The capture's SQL
+checks refuse what the web must never store.
 """
 
 import io
@@ -70,6 +73,26 @@ def rehearsed_timeline(request):
     return harness, families
 
 
+def live_timeline(request):
+    """``rehearsed_timeline``, then the corpus Family's Production activity.
+
+    After the real activation it signs in live, opens the form and submits,
+    so its Production timeline (the only one the page shows, #1570) has a
+    sign-in, a form open and a submission.
+    """
+    from .campaign_builders import complete_empty_catchup
+    from .response_builders import activate_response_service
+    from .test_response_metrics_postgresql import live_login
+
+    harness, families = rehearsed_timeline(request)
+    harness = activate_response_service(harness)
+    complete_empty_catchup(harness.campaign, uuid4())
+    live = live_login(harness, 1)
+    open_form(live)
+    respond(live)
+    return live, families
+
+
 def requested():
     """Each ``export_requested`` event's context members, in order."""
     return [
@@ -107,17 +130,18 @@ def test_the_page_and_the_command_export_the_same_timeline(
     settings,
 ):
     """One record kind, one event, one file, from the page or the command."""
-    harness, families = rehearsed_timeline(request)
+    harness, families = live_timeline(request)
     family = families[1]
-    page = reverse("admin:family_timeline", args=[family])
+    page = reverse("admin:timeline", args=[family])
     browser, _ = signed_in()
     run = cli()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        response, body = get(browser, page + "?mode=testing")
+        response, body = get(browser, page)
     assert response.status_code == 200 and b"Export this timeline" in body
     assert f'action="{page}exports/"'.encode() in body
+    # The form posts no mode: the export is of Production records (#1570).
+    assert b'name="mode"' not in body
     fields = {
-        "mode": "testing",
         "format": "csv",
         "browser_timezone": "UTC",
         "request_key": str(uuid4()),
@@ -134,19 +158,25 @@ def test_the_page_and_the_command_export_the_same_timeline(
         assert (
             post(browser, page + "exports/", fields | {"extra": "x"}).status_code == 400
         )
+        # A mode is no longer a field of the form, whatever its value.
+        for mode in ("production", "testing"):
+            assert (
+                post(browser, page + "exports/", fields | {"mode": mode}).status_code
+                == 400
+            )
     by_page = ExportRequest.objects.get(request_key=fields["request_key"])
-    # The export's trail runs through the Family's own timeline (#521), in
-    # the mode it was exported in, so no "Return to" link repeats it (#1345).
+    # The export's trail runs through the Family's own Timeline (#521), so
+    # no "Return to" link repeats it (#1345).
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         _, status = get(browser, reverse("admin:report_export", args=[by_page.pk]))
     trail = status[status.index(b'aria-label="Breadcrumb"') :]
     trail = trail[: trail.index(b"</nav>")]
     directory = reverse("admin:family_directory")
     assert f'<a href="{directory}">'.encode() in trail
-    crumb = f'<li><a href="{page}?mode=testing">Family timeline</a></li>'
-    assert crumb.encode() in trail
+    assert f'<li><a href="{page}">Timeline</a></li>'.encode() in trail
     assert b"Return to " not in status
-    argv = ("export", "family-timeline", str(family), "--mode", "testing")
+    assert by_page.parameters["mode"] == "production"
+    argv = ("export", "family-timeline", str(family))
     # The file can hold the Family's code, so the command is fresh-gated
     # (#547): it asks first, and unanswered nothing is made.
     gates = AuditEvent.objects.filter(event_type="automation_fresh_gate")
@@ -225,6 +255,14 @@ def test_the_page_and_the_command_export_the_same_timeline(
 
     # The command's refusals: a read-only session, another campaign's or an
     # unknown Family, a mode the page does not offer.
+    code, document = run(
+        *argv, "--mode", "testing", "--format", "csv", "--timezone", "UTC"
+    )
+    assert code == 1 and document["error"]["code"] == "invalid", document
+    code, document = run(
+        *argv, "--mode", "production", "--format", "csv", "--timezone", "UTC"
+    )
+    assert code == 0, document
     reader = read_only_session(run.service)
     code, document = run(*argv, "--format", "csv", "--timezone", "UTC", secret=reader)
     assert code == 1 and document["error"]["code"] == "denied"
@@ -244,10 +282,9 @@ def test_the_page_and_the_command_export_the_same_timeline(
 def test_an_old_sign_in_queues_the_timeline_export(request, auth_service, google):
     """A sign-in older than five minutes queues the export (#1547)."""
     harness, families = rehearsed_timeline(request)
-    page = reverse("admin:family_timeline", args=[families[1]])
+    page = reverse("admin:timeline", args=[families[1]])
     browser, _ = signed_in()
     fields = {
-        "mode": "production",
         "format": "csv",
         "browser_timezone": "UTC",
         "request_key": str(uuid4()),
@@ -276,12 +313,11 @@ def test_staff_get_no_timeline_export(request, auth_service, google):
     )
     google[0]["email"] = "staff@example.org"
     browser, _ = signed_in()
-    page = reverse("admin:family_timeline", args=[families[1]])
+    page = reverse("admin:timeline", args=[families[1]])
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = get(browser, page)
         assert response.status_code == 200 and b"Export this timeline" not in body
         fields = {
-            "mode": "production",
             "format": "csv",
             "browser_timezone": "UTC",
             "request_key": str(uuid4()),
@@ -422,12 +458,12 @@ def test_a_production_export_matches_its_page(
 ):
     """The file's lines are the page's, from a capture nothing may change or
     delete."""
-    from .test_family_timeline_postgresql import lines
+    from .test_timelines_postgresql import lines
 
     harness, families = rehearsed_timeline(request)
     # The Production view of an invited Family: whatever lines it has live.
     family = families[11]
-    page = reverse("admin:family_timeline", args=[family])
+    page = reverse("admin:timeline", args=[family])
     browser, _ = signed_in()
     run = cli()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
@@ -446,10 +482,10 @@ def test_a_production_export_matches_its_page(
     assert code == 0, document
     made = ExportRequest.objects.get(pk=document["result"]["export"]["id"])
     assert made.parameters["mode"] == "production"
-    # A Production export's timeline crumb carries no mode (#521).
+    # The export's crumb is the Family's Timeline (#521, #1570).
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         _, status = get(browser, reverse("admin:report_export", args=[made.pk]))
-    assert f'<li><a href="{page}">Family timeline</a></li>'.encode() in status
+    assert f'<li><a href="{page}">Timeline</a></li>'.encode() in status
     assert b"Return to " not in status
     capture = TimelineExportSnapshot.objects.get(pk=made.timeline_snapshot_id)
     # The file's lines are the page's, oldest first as the When heading sorts.
@@ -528,9 +564,8 @@ def test_a_family_of_another_campaign_is_refused(
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             response = post(
                 browser,
-                reverse("admin:family_timeline_export", args=[family.pk]),
+                reverse("admin:timeline_export", args=[family.pk]),
                 {
-                    "mode": "production",
                     "format": "csv",
                     "browser_timezone": "UTC",
                     "request_key": str(uuid4()),

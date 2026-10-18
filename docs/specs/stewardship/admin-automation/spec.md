@@ -2718,7 +2718,7 @@ deleted when the export ends, so nothing regenerates it.
 | `family_directory`, `family_directory_export` | Export only: `export directory`, the Family-code directory, for the current campaign only until #145 (PR 8f); [fresh-gated](#fresh-gated-actions-from-the-command-line) |
 | `family_directory`, `family_directory_export` with mailing columns | Export only: `export postal`, the mail merge (PR 8f); [fresh-gated](#fresh-gated-actions-from-the-command-line) |
 | `find_family` | Permanent: a search by name; the command line takes no text that names a Family, and `export directory` is the file. This follows the pending "no search" default (PR 8e); if the Administrator allows searches, it becomes `--filter search=` on `export directory` |
-| `family_timeline`, `family_timeline_export` | One Family's timeline, so export only: the page's new export form and `export family-timeline FAMILY_RECORD_ID` (PR 8g, migration 0063); [fresh-gated](#fresh-gated-actions-from-the-command-line) |
+| `timeline`, `timeline_export` | One Family's Timeline (#1570), so export only: the page's export form and `export family-timeline FAMILY_RECORD_ID` (PR 8g, migration 0063); [fresh-gated](#fresh-gated-actions-from-the-command-line) |
 | `family_open_form` (new, #529) | Permanent: Open form signs this browser in to the Family form for a Family on the phone, a browser hand-off by nature; Families' responses are read through `report responses` and the directory exports with its Response filters |
 | `limitations_export` | `export limitations [--show S] [--format F] [--timezone Z]` (PR 8h, [#463](https://github.com/epiphany40223/parishkit/issues/463)): the page's download through the page's own writer (`limitation_views.export_body`), with #752's audit fields |
 | `census_changes`, `census_changes_export` | `report census`, counts ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the rows through `export census` (PR 8h, [#463](https://github.com/epiphany40223/parishkit/issues/463)). A row's Entered in ParishSoft, Ignore and Reopen ([#528](https://github.com/epiphany40223/parishkit/issues/528)) post to `census_changes`; their command is `census resolve PROPOSAL_ID --action entered\|ignored\|reopened` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), through the same `census_resolution` service. An Automatic row's Review (Approve, Ignore, Back to To review; ADM-09) posts there too; its command is `census review PROPOSAL_ID --decision approved\|ignored\|unreviewed` ([#528](https://github.com/epiphany40223/parishkit/issues/528)), through the same `census_review` service. The Review's Edit value and Clear edit (ADM-09.04) are `census edit PROPOSAL_ID --value TEXT\|- \| --clear`, and its Use the Family's value anyway (ADM-09.03) is `census resolve-conflict PROPOSAL_ID` ([#1434](https://github.com/epiphany40223/parishkit/issues/1434)), through the same service |
@@ -3042,7 +3042,7 @@ defaults pending Administrator confirmation; the
 lists them.
 
 `export family-timeline FAMILY_RECORD_ID [--mode production|testing]` (PR
-8g) is the Family timeline page's new export form, the
+8g) is the Timeline page's export form, the
 [timeline export](../reports/spec.md#timeline-export) of its frozen
 migration: the same service (`timeline_exports.create_timeline_export`), the
 same record, `export_requested` and `admin_cmd_export_family_timeline`, for
@@ -3051,7 +3051,10 @@ id, the opaque id in the page's address; a Family of another campaign is
 `not_available`. The file can hold the Family's code, so it is
 [fresh-gated](#fresh-gated-actions-from-the-command-line), as on its page:
 it asks at the prompt, then calls `sign_in_instant` in the export lock. The
-file is fetched with `export fetch`.
+file is fetched with `export fetch`. The page shows Production records only
+since [#1570](https://github.com/epiphany40223/parishkit/issues/1570), so
+`--mode testing` is refused as `invalid` (exit 1) and `--mode production`,
+the default, is kept for scripts that pass it.
 
 The export lifecycle commands work on any report export the Administrator
 may see, through the functions the export pages use

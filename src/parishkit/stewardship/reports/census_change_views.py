@@ -83,6 +83,7 @@ from .census_changes import (
 )
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
+from .family_links import link_families
 from .read_admission import admit_report_read
 
 FORMATS = {
@@ -829,6 +830,9 @@ def report(request, campaign_id):
             carry=list(query.form_values().items()),
             sorting=SORTING,
         )
+        # Each shown Family name opens its Timeline (#1570): one read of
+        # the page's Family record ids.
+        link_families(campaign_id, table.rows)
         # Other campaign work (a restore review, cleanup, purge or go-live
         # step) holds the campaign: the page offers no row actions, as the
         # service would refuse them, and says why.

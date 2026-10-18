@@ -153,9 +153,11 @@
   // refused and watching stops.
   const GIVE_UP_MS = 60 * 60 * 1000;
   const SLOW_MS = 30 * 1000;
-  // Said when a check is refused (signed out or no longer allowed);
-  // ui-v1.js's periodic re-read says the same (#1586).
+  // Said when a check is refused (signed out or no longer allowed), and
+  // when a check fails and will be tried again; ui-v1.js's periodic re-read
+  // says the same (#1586, #1647).
   const UPDATES_REFUSED = "Couldn't check for updates. Reload the page or sign in again.";
+  const UPDATES_RETRYING = "Couldn't check for updates — retrying.";
   // Each watcher's check that stops it once its region has been replaced.
   const watchers = new Set();
   // Each region name's coarse status sentence (data-live-announce) last
@@ -759,7 +761,7 @@
           return;
         }
         failures += 1;
-        if (!saysCurrent) say("Couldn't check status — retrying.");
+        if (!saysCurrent) say(UPDATES_RETRYING);
         else if (failures >= 3) current(false);
         schedule();
       } finally {
