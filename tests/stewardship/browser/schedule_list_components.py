@@ -62,6 +62,9 @@ checks need no database:
   plus a daily digest at 7:00 AM, the invitation sent, with the weekly digest
   expanded to each Monday and the daily one to each day through November 1
   (the day after the campaign closes), its first four days already past.
+  Each campaign day's Add (#1521) opens ``NEW`` with ``?date=``; ``ADD_ON``
+  (``NEW?date=2054-10-12``) is that New with October 12 filled in, as the
+  view draws it, whose Cancel and Apply return to ``CALENDAR``.
 
 ``POSTS`` lists the fixture server's answers to the pages' POSTs; it is
 filled in by ``components``, before the server starts.
@@ -165,6 +168,9 @@ DATES = "/schedule-dates"
 DATES_INVALID = "/schedule-dates-invalid"
 DATES_STALE = "/schedule-dates-stale"
 CALENDAR = "/schedule-calendar"
+# New opened by the calendar's Add on October 12, 2054 (#1521).
+ADD_DAY = "2054-10-12"
+ADD_ON = f"{NEW}?date={ADD_DAY}"
 # The end date Campaign settings proposes; the saved one is October 31.
 DATES_END = "2054-10-25"
 # The refusal's own explanation, which the dialog shows.
@@ -274,6 +280,7 @@ def _calendar(values, owner, emails, rows):
         "sends": calendar_sends(rows, owner["values"], summary, NOW, names),
         "weekdays": WEEK,
         "list_url": LIST,
+        "add_url": NEW,
     }
     return (
         "text/html",
@@ -294,6 +301,8 @@ def _entry(
     series=None,
     refusals=None,
     scope_error=None,
+    on=None,
+    list_url=LIST,
 ):
     """New scheduled email, or Edit scheduled email for ``schedule_row``.
 
@@ -302,9 +311,11 @@ def _entry(
     series ``schedule_row`` belongs to (#469), drawn as the view draws it,
     with ``refusals`` its scopes known to be unavailable; ``scope_error``
     draws the page refused with "This and following" chosen and that error
-    at the choice, with its summary.
+    at the choice, with its summary. ``on`` is New's send date from the
+    calendar's Add on a day (#1521), and ``list_url`` where Cancel and Apply
+    return.
     """
-    entry = entry_form(None, emails, rows, schedule_row)
+    entry = entry_form(None, emails, rows, schedule_row, on=on)
     scope_data = QueryDict("series-scope=following") if scope_error else None
     part_of = series_context(entry, series, scope_data, refusals)
     errors = {}
@@ -337,7 +348,7 @@ def _entry(
             "schedule": schedule_row,
             "base_digest": "a" * 64,
             "post_url": post_url,
-            "list_url": LIST,
+            "list_url": list_url,
             "apply_url": apply_url,
             "window_text": window_text(owner["values"]),
         }
@@ -605,6 +616,15 @@ def components(context, admin):
         APPLIED: _status(values, "applied"),
         NOT_APPLIED: _status(values, "failed", failure_code="stale_base"),
         NEW: _entry(values, owner, emails, rows, post_url=f"{NEW}/review"),
+        ADD_ON: _entry(
+            values,
+            owner,
+            emails,
+            rows,
+            post_url=f"{NEW}/review",
+            on=ADD_DAY,
+            list_url=CALENDAR,
+        ),
         EDIT: _entry(
             values, owner, emails, rows, schedule_row=first, post_url=f"{EDIT}/review"
         ),

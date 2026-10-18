@@ -9,6 +9,9 @@
 // are never shifted. The grids are drawn once, as the page loads and before
 // anything can be chosen, so nothing moves under the pointer later. Text is
 // only ever set as text: nothing read from the page is parsed as markup.
+// Each day of the campaign's dates that is today or later (browser-local)
+// also gets an Add link (#1521) that opens New scheduled email with that day
+// as its send date; the page itself never changes anything.
 (() => {
   const root = document.querySelector("[data-calendar]");
   const template = document.getElementById("calendar-month");
@@ -54,6 +57,28 @@
     return item;
   }
 
+  // A day's Add link (#1521): New scheduled email with ``key`` (this
+  // browser's local day, which the send date field is typed in) as its send
+  // date. Its visible word is short; its name carries the whole date ("Add
+  // an email on October 12, 2054"), so a screen reader, voice control and a
+  // keyboard user tabbing through the grid hear which day it adds to.
+  function addLink(key) {
+    const link = document.createElement("a");
+    const url = new URL(root.dataset.addUrl, document.baseURI);
+    url.searchParams.set("date", key);
+    link.href = url.pathname + url.search;
+    link.className = "calendar-add";
+    link.textContent = root.dataset.addText;
+    link.setAttribute("aria-label", root.dataset.addName.replace("{date}", dates.date(key)));
+    return link;
+  }
+
+  // Whether ``key`` is one of the campaign's dates and not already past
+  // (ISO days compare as text); only those get an Add, since New would
+  // refuse a passed time.
+  const canAdd = (key, today) => Boolean(root.dataset.start && root.dataset.end)
+    && root.dataset.start <= key && key <= root.dataset.end && key >= today;
+
   // A visible note in a day: Today, Campaign opens or Campaign closes.
   function marker(text) {
     const note = document.createElement("span");
@@ -62,13 +87,18 @@
     return note;
   }
 
-  // One day's cell: its number, its notes and its sends.
+  // One day's cell: its number (with Add on a campaign day), its notes and
+  // its sends.
   function dayCell(key, day, days, today) {
     const cell = document.createElement("td");
+    const head = document.createElement("div");
+    head.className = "calendar-day-head";
     const number = document.createElement("span");
     number.className = "calendar-day";
     number.textContent = String(day);
-    cell.append(number);
+    head.append(number);
+    if (root.dataset.addUrl && canAdd(key, today)) head.append(addLink(key));
+    cell.append(head);
     if (key === today) {
       cell.setAttribute("aria-current", "date");
       cell.append(marker(root.dataset.today));
