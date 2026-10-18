@@ -5,7 +5,10 @@ Status: **revised after the Administrator's review of 2026-10-18**
 [decisions](#decisions) are settled. Built so far: the shared vocabulary,
 stage mapping, role-action table and refresh comparison
 (`parishkit.stewardship.pipeline`,
-[#1691](https://github.com/epiphany40223/parishkit/issues/1691)), which no
+[#1691](https://github.com/epiphany40223/parishkit/issues/1691)), and
+the review worklist component with its decision interface
+(`components/review-worklist.html`, `web/review_worklist.py`,
+[#1681](https://github.com/epiphany40223/parishkit/issues/1681)), which no
 page uses yet. Every Staff
 and Ministry leader part ships during the current campaign. The
 Family-facing view of reviewed changes
@@ -889,10 +892,12 @@ in order. New schema follows the
   stream, unit tested as a table of the
   [re-evaluation rules](#baseline-refresh-re-evaluation);
 - one review-worklist template and view helper built on
-  `table-selection.html`, `table_actions` and the confirmation dialog;
+  `table-selection.html`, `table_actions` and the confirmation dialog
+  (`components/review-worklist.html`, `web/review_worklist.build`);
 - one decision service per stream behind a shared interface (accept, edit,
   ignore, add, back to review, mark entered) so the web page, bulk bar
-  and `pk-admin` share it ([#463](https://github.com/epiphany40223/parishkit/issues/463));
+  and `pk-admin` share it (`web/review_worklist.DecisionService`, with
+  `read_decision` reading the one POST every control sends) ([#463](https://github.com/epiphany40223/parishkit/issues/463));
 - the shared export component of
   [#1679](https://github.com/epiphany40223/parishkit/issues/1679).
 

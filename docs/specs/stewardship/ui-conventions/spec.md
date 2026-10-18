@@ -3396,13 +3396,19 @@ inventory on #879 lists.
   only the actions that apply to it; a row with none shows nothing there.
 - **Selected state.** On a table whose row actions record a state (a
   review decision, a mark), the icon of the state in force is drawn
-  **selected**: filled with that state's status colour, with a white
-  glyph, and `aria-pressed="true"`; the row's other icons are drawn
+  **selected**: filled with that state's status colour, with the glyph in
+  `--paper` (white on the light scheme, and dark on the dark scheme, where
+  white on the lighter status colours would fail the 3:1 icon contrast),
+  and `aria-pressed="true"`; the row's other icons are drawn
   unselected (outline, `aria-pressed="false"`). Choosing the selected icon
   again is not an undo; the row's own undo action (the review pipeline's
-  Back to review) is. So the decision shows on the icons, not only in a
+  Back to review) is, so the selected icon is unavailable
+  (`aria-disabled="true"`) and its tooltip names the state and the undo.
+  So the decision shows on the icons, not only in a
   status column ([review pipeline](../review-pipeline/spec.md#selected-state-icons),
-  [#1680](https://github.com/epiphany40223/parishkit/issues/1680)).
+  [#1680](https://github.com/epiphany40223/parishkit/issues/1680)). **Shared
+  code.** `components/review-worklist.html` and `web/review_worklist.py`
+  ([#1681](https://github.com/epiphany40223/parishkit/issues/1681)).
 - **By role.** Row actions the reader's role does not allow are not shown,
   not shown disabled, so a Ministry leader and Staff may see different icon
   sets on the same table; the server and database still refuse them. The
