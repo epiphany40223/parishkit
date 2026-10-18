@@ -6,10 +6,7 @@
 <p>{% translate "Family DUID is the Family's ID number in ParishSoft, shown in its own column so you can sort or copy it." %}</p>{% endaboutpage %}
 <p><a href="{% url 'admin:response_dashboard' %}">{% translate "Response dashboard" %}</a></p>
 <div id="limitations-summary" data-table-sync><h2>{% translate "Summary" %}</h2>
-<dl>
-<dt>{% translate "Cannot participate in ministries" %}</dt><dd>{{ summary.cannot_serve|number }}</dd>
-<dt>{% translate "Families that cannot attend Mass" %}</dt><dd>{{ summary.cannot_attend|number }}</dd>
-</dl></div>
+{# The Summary's counts as stat tiles (ui-conventions "Stat tiles", #1540). #}{% include "stewardship/components/stat-tiles.html" with tiles=summary_tiles tiles_label=_("Summary") %}</div>
 {# Two short filters fit one row, so they need no Filters panel (#227). #}<form id="table-filters" data-table-sync method="post" action="{% url 'admin:limitations_report' %}" class="filter-bar">{% csrf_token %}
 <div><label for="limitations-search">{% translate "Search name or Family DUID" %}</label><input id="limitations-search" name="search" maxlength="200" value="{{ query.search }}"></div>
 <div class="fit"><label for="limitations-filter">{% translate "Show" %}</label><select id="limitations-filter" name="show"><option value="any">{% translate "Everything" %}</option><option value="cannot_serve"{% if query.show == 'cannot_serve' %} selected{% endif %}>{% translate "Cannot participate in ministries" %}</option><option value="cannot_attend"{% if query.show == 'cannot_attend' %} selected{% endif %}>{% translate "Families that cannot attend Mass" %}</option></select></div>

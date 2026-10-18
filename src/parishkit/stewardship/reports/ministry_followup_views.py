@@ -42,6 +42,7 @@ from parishkit.stewardship.web.filter_errors import error_context, refused
 from parishkit.stewardship.web.refusals import Refusal, with_status_code
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.responses import campaign_response
+from parishkit.stewardship.web.stat_tiles import tile
 from parishkit.stewardship.web.tables import (
     PAGE_SIZES,
     paginate,
@@ -779,6 +780,14 @@ COUNT_FILTERS = {
 }
 
 
+def totals_tiles(totals):
+    """The Totals panel's two stat tiles (ui-conventions "Stat tiles", #1540)."""
+    return [
+        tile("joining", _("Join requests"), totals["joining"]),
+        tile("leaving", _("Leave requests"), totals["leaving"]),
+    ]
+
+
 def count_links(principal, summary):
     """The addresses one By Ministry row's counts apply to the table (#1133).
 
@@ -817,6 +826,7 @@ def _overview(campaign_id, query, principal, result):
     return {
         "totals": totals,
         "followup_chart": ministry_followup(totals),
+        "totals_tiles": totals_tiles(totals),
         "by_ministry": summaries,
         # The "Not in ParishSoft data" and campaign marks, for Staff and
         # Administrators only (#1135).

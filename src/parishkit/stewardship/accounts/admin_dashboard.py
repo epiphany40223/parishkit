@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from django.db import connection
 from django.db.models import Count, Exists, OuterRef, Q
+from django.utils.translation import gettext as _
 
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.domain import Percentage
@@ -18,6 +19,8 @@ from parishkit.stewardship.source.refresh_status import (
     refresh_schedule,
 )
 from parishkit.stewardship.source.snapshot_models import SourceCurrent, SourceSnapshot
+from parishkit.stewardship.web.presentation import number, percentage
+from parishkit.stewardship.web.stat_tiles import tile
 
 from . import campaign_wizard
 from .campaign_wizard import invitation_revision
@@ -153,6 +156,8 @@ def summary(actor, configuration, now, *, home=False):
                 counts["eligible_responded"], counts["eligible"]
             )
             result["families"] = counts
+            if home:
+                result["family_tiles"] = family_tiles(counts)
         if (
             home
             and campaign.state == "draft"
@@ -348,6 +353,38 @@ def leads_ministries(actor):
         and bool(actor.ministries)
         and not allows(actor, Capability.MINISTRY_FOLLOWUP)
     )
+
+
+def family_tiles(counts):
+    """Home's Family participation panel as stat tiles (#720, #1540).
+
+    The active Families; the responses from Families who can use the
+    Family form now, out of those Families, with its share bar; and every
+    Family with a response, not counting Testing. That last count can
+    include Families no longer active, so it is not drawn as a share.
+    """
+    participation = counts["participation"]
+    return [
+        tile("active", _("Active Families"), counts["active"]),
+        tile(
+            "participation",
+            _("Responses from Families who can use the Family form now"),
+            participation.numerator,
+            details=(
+                _("out of %(total)s (%(share)s)")
+                % {
+                    "total": number(participation.denominator),
+                    "share": percentage(participation),
+                },
+            ),
+            share=(participation.numerator, participation.denominator),
+        ),
+        tile(
+            "responded",
+            _("All Families with a response (not counting Testing)"),
+            counts["responded"],
+        ),
+    ]
 
 
 def unreachable_families(campaign_id):
