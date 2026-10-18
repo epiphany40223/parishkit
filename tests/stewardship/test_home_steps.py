@@ -14,6 +14,7 @@ from django.urls import reverse
 
 from parishkit.stewardship.accounts import admin_navigation as navigation
 from parishkit.stewardship.accounts import home_steps
+from parishkit.stewardship.jobs.delivery_metadata import mode_split
 
 ALL = frozenset(entry.name for entry in navigation.MENU)
 
@@ -125,6 +126,55 @@ WORK = [
 ]
 
 
+def split(count, other, mode="production"):
+    """The chrome's split uncertain count (``delivery_metadata.mode_split``)."""
+    return mode_split(
+        {mode: count, "testing" if mode == "production" else "production": other},
+        mode,
+    )
+
+
+def test_mail_problems_link_each_mode_separately():
+    """The operating mode's count links that mode; the other mode's has its
+    own link and is never added in, also when only the other mode has some
+    (#1576)."""
+    entries = menu()
+
+    def sent(steps):
+        """The Sent mail step (#1590 added steps before it)."""
+        return next(step for step in steps if step.label == "Sent mail")
+
+    both = sent(
+        home_steps.next_steps(
+            "active", "administrator", entries, mail_unknown=split(2, 3)
+        )
+    )
+    assert both.url == "/deliveries/?state=delivery_unknown&mode=production"
+    assert both.count == 2
+    assert both.other.url == "/deliveries/?state=delivery_unknown&mode=testing"
+    assert (both.other.count, str(both.other.note)) == (
+        3,
+        "in Testing may not have arrived",
+    )
+    only = sent(
+        home_steps.next_steps(
+            "active", "administrator", entries, mail_unknown=split(0, 1)
+        )
+    )
+    assert (only.url, only.count) == ("/deliveries/", None)
+    assert only.other.url == "/deliveries/?state=delivery_unknown&mode=testing"
+    testing = sent(
+        home_steps.next_steps(
+            "active",
+            "administrator",
+            entries,
+            mail_unknown=split(0, 4, mode="testing"),
+        )
+    )
+    assert testing.other.url == ("/deliveries/?state=delivery_unknown&mode=production")
+    assert str(testing.other.note) == "in Production may not have arrived"
+
+
 def test_active_and_paused_steps_carry_the_open_counts():
     """The queues show their open counts; Sent mail filters to the emails
     that may not have arrived while there are some; paused mail comes first."""
@@ -132,7 +182,7 @@ def test_active_and_paused_steps_carry_the_open_counts():
         counts={"census_changes": 4, "information_queue": 3, "ministry_report": 0}
     )
     active = home_steps.next_steps(
-        "active", "administrator", entries, mail_unknown=2, roster_todo=6
+        "active", "administrator", entries, mail_unknown=split(2, 0), roster_todo=6
     )
     assert labels(active) == [*WORK, "Family email progress", "Sent mail"]
     assert (active[1].url, active[1].count, str(active[1].note)) == (
@@ -147,10 +197,23 @@ def test_active_and_paused_steps_carry_the_open_counts():
     )
     assert (active[3].count, str(active[3].note)) == (3, "open")
     assert (active[4].count, str(active[4].note)) == (0, "open")
-    assert active[6].url == "/deliveries/?state=delivery_unknown"
+    assert active[6].url == "/deliveries/?state=delivery_unknown&mode=production"
     assert (active[6].count, str(active[6].note)) == (2, "may not have arrived")
-    quiet = home_steps.next_steps("active", "administrator", entries, mail_unknown=0)
-    assert (quiet[6].url, quiet[6].count) == ("/deliveries/", None)
+    assert active[6].other is None
+    for idle in (
+        home_steps.next_steps(
+            "active", "administrator", entries, mail_unknown=split(0, 0)
+        ),
+        home_steps.next_steps("active", "administrator", entries),
+    ):
+        assert (idle[6].url, idle[6].count, idle[6].other) == (
+            "/deliveries/",
+            None,
+            None,
+        )
+    quiet = home_steps.next_steps(
+        "active", "administrator", entries, mail_unknown=split(0, 0)
+    )
     # A roster count Home could not read shows the link with no number.
     assert (quiet[2].url, quiet[2].count, quiet[2].note) == (
         reverse("admin:ministry_roster"),
@@ -280,7 +343,7 @@ def test_template_links_available_steps_and_names_greyed_ones():
     context = {
         "admin_chrome": {
             "sections": [{"items": list(entries.values())}],
-            "delivery_unknown": 1,
+            "delivery_unknown": split(1, 2),
         },
         "configuration": SimpleNamespace(mode="production"),
         "principal": SimpleNamespace(roles={"administrator"}),
@@ -295,8 +358,10 @@ def test_template_links_available_steps_and_names_greyed_ones():
     assert f"Roster changes to enter — {navigation.NO_CAMPAIGN}" in html
     assert f"Ministry requests — {navigation.NO_CAMPAIGN}" in html
     assert (
-        '<a href="/deliveries/?state=delivery_unknown">Sent mail</a>'
-        " — 1 may not have arrived"
+        '<a href="/deliveries/?state=delivery_unknown&amp;mode=production">'
+        "Sent mail</a> — 1 may not have arrived; "
+        '<a href="/deliveries/?state=delivery_unknown&amp;mode=testing">'
+        "2 in Testing may not have arrived</a>"
     ) in html
     context["dashboard"] = {"campaign": None}
     assert "data-next-steps" not in render_to_string(

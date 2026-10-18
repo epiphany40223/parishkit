@@ -84,11 +84,27 @@ STEPS = {
 }
 
 
+class Other(NamedTuple):
+    """A step's second, separately linked count: the other mode's (#1576)."""
+
+    url: str
+    count: int
+    note: str
+
+
+# What an Other count means, by the mode it counts.
+_OTHER_NOTES = {
+    "testing": _("in Testing may not have arrived"),
+    "production": _("in Production may not have arrived"),
+}
+
+
 class Step(NamedTuple):
     """One next step: a page name, its link (None while unavailable) and extras.
 
     ``reason`` is the menu's reason while the step is greyed out; ``count``
     an open count shown after the name, and ``note`` what the count means.
+    ``other`` is a second count with its own link (``Other``), or None.
     """
 
     label: str
@@ -96,6 +112,7 @@ class Step(NamedTuple):
     reason: str | None = None
     count: int | None = None
     note: str | None = None
+    other: Other | None = None
 
 
 def campaign_state(campaign, mode, *, go_live=False):
@@ -224,17 +241,34 @@ def _roster(ministry, viewer_role, count):
 
 
 def _mail_problems(deliveries, unknown):
-    """Sent mail, filtered to emails that may not have arrived when some are."""
+    """Sent mail, filtered to emails that may not have arrived when some are.
+
+    ``unknown`` is the chrome's split count (``delivery_metadata.mode_split``)
+    or None. The operating mode's count links Sent mail filtered to that
+    mode, which lists exactly those emails; the other mode's, when it has
+    some, is a separate link (``Step.other``), never added in (#1576).
+    """
     if deliveries is None:
         return None
     label = str(deliveries["label"])
-    if not deliveries["url"] or not unknown:
-        return Step(label, deliveries["url"], deliveries["reason"])
+    url = deliveries["url"]
+    if not url or not unknown or not (unknown["count"] or unknown["other"]):
+        return Step(label, url, deliveries["reason"])
+    other = None
+    if unknown["other"]:
+        other = Other(
+            f"{url}?state=delivery_unknown&mode={unknown['other_mode']}",
+            unknown["other"],
+            _OTHER_NOTES[unknown["other_mode"]],
+        )
+    if not unknown["count"]:
+        return Step(label, url, other=other)
     return Step(
         label,
-        f"{deliveries['url']}?state=delivery_unknown",
-        count=unknown,
+        f"{url}?state=delivery_unknown&mode={unknown['mode']}",
+        count=unknown["count"],
         note=_("may not have arrived"),
+        other=other,
     )
 
 

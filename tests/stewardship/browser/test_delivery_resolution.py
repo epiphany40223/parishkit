@@ -76,6 +76,8 @@ def test_warning_polls_durable_count_and_survives_unavailable_response(
                         active=0,
                     ),
                     "delivery_unknown": count[0],
+                    # The other mode's count, its own link (#1576).
+                    "delivery_unknown_other": 5 if count[0] == 1234 else 0,
                 }
             )
 
@@ -106,6 +108,12 @@ def test_warning_polls_durable_count_and_survives_unavailable_response(
         else:
             expect(warning).to_be_visible()
             expect(warning).to_contain_text("1,234")
+            other = warning.locator("[data-delivery-other]")
+            expect(other).to_be_visible()
+            expect(other).to_have_text("Not sure it arrived in Testing: 5")
+            expect(other).to_have_attribute(
+                "href", "/admin/mail/sent/?state=delivery_unknown&mode=testing"
+            )
         if value == "bad":
             # The failure sentence covers the counts (#1643); the counts
             # themselves still hold the last good total.

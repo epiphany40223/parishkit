@@ -244,6 +244,7 @@ def health(**values):
             "send_active": False,
             "planning_held": False,
             "retry_waiting": 0,
+            "retry_waiting_other": 0,
             "next_retry_at": None,
             "daily_sent": 0,
             "daily_limit": 1600,
@@ -699,6 +700,7 @@ def test_the_status_region_states_problems_and_panels_in_words():
         delivery_paused=True,
         paused_at=NOW,
         retry_waiting=3,
+        retry_waiting_other=2,
         next_retry_at=NOW,
         daily_sent=1612,
         refused_at=NOW,
@@ -732,7 +734,13 @@ def test_the_status_region_states_problems_and_panels_in_words():
         "Emails went to 1,612 recipients in the last 24 hours. Family "
         "invitations, reminders and Family tests stop at 1,600." in body
     )
-    assert "?state=retry_wait" in body
+    # Each mode's count links Sent mail in its own mode, never summed (#1576).
+    assert "?state=retry_wait&amp;mode=production" in body
+    assert "2 Testing Family emails wait to retry" in body
+    assert (
+        '?state=retry_wait&amp;mode=testing">Sent mail: waiting to retry in Testing'
+        in body
+    )
     assert "All services run version 1.4.2." in body
     assert "stewardship-deployment-runbook.md" not in body  # no sender is stopped
     # How long ago the last backup finished is counted in the browser, so an

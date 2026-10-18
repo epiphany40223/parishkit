@@ -323,7 +323,8 @@ the page may split between two tiles, so its `severity` is the worse of
 the two), the
 `processes` with their state, version and mail sender state,
 `missing_services`, `versions`, `schema_current`, the reasons Family email
-waits (`delivery_paused`, `planning_held`, `retry_waiting`), the 24-hour
+waits (`delivery_paused`, `planning_held`, `retry_waiting` in the
+operating `mode` and `retry_waiting_other` in the other mode), the 24-hour
 send count `daily_sent`, the `daily_limit` Family email stops at and
 `daily_resume_at`, when that count falls below the limit again (null while
 it is below), the open `incidents`, the ParishSoft `refresh` outcome, a refused load's
