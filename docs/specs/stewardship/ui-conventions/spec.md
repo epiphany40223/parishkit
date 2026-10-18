@@ -816,8 +816,8 @@ the [in-place controls](#in-place-controls); no other mechanism.
   rule for pages that follow background work), or a quiet in-place re-read
   of the page's own address when that view is itself passive (Background
   work, Families on the form now). A read never extends the sign-in and
-  never records an audited view, except a report's one re-read that brings
-  newer figures in (below).
+  never records an audited view, except a report's re-read that brings
+  newer figures in, once per newer set of figures (below).
 - **Reports whose figures are being prepared.** The Response dashboard and
   Campaign comparison audit every view, so they are never re-read on a timer.
   Their **Updating** notice sits in a figures status region that reads a
@@ -826,10 +826,18 @@ the [in-place controls](#in-place-controls); no other mechanism.
   they are, the page re-reads its own address once, quietly and in place
   (a hidden `a[data-reread]` follow-up link, handed from
   `live-status-v1.js` to `ui-v1.js`), as a periodic re-read does: it waits
-  while the reader is busy, retries a failed read, and stops at a refusal.
-  That read shows figures, so it records one audited view, as opening the
-  page does; like every automatic re-read it sends `X-ParishKit-Read:
-  passive`, so it never extends the sign-in. The notice says the new
+  while the reader is busy and stops at a refusal. That read shows
+  figures, so it records one audited view, as opening the page does. The
+  re-read happens once per newer set of figures: a page left open records
+  one more view each time its figures change. Like every automatic re-read
+  it sends `X-ParishKit-Read: passive`, so it never extends the sign-in.
+  Failed re-reads are retried a bounded number of times, and each attempt
+  records an audited view (its start and its failure): after a failure the
+  page tries again in 5 seconds; after three failures in a row it says it
+  is not current and goes back to the passive status, which is checked
+  after 30 seconds and then every 60 seconds, and the page re-reads again
+  only when that status still says newer figures are ready. The next read
+  that works clears the count. The notice says the new
   figures appear by themselves; no page tells the reader to refresh it to
   check progress.
 - **Pace.** While background work is pending a status region reads fast
