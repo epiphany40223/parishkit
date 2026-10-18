@@ -188,16 +188,32 @@ def untitled(chart):
     return replace(chart, spec=spec)
 
 
+# A funnel stage label's note ("Link followed (includes mail-scanner
+# prefetches)") drawn on its own line, so at phone width the longest label
+# leaves the bars and their counts room inside the chart.
+NOTE_ON_ITS_OWN_LINE = (
+    "indexof(datum.label, ' (') < 0 ? datum.label"
+    " : [substring(datum.label, 0, indexof(datum.label, ' (')),"
+    " substring(datum.label, indexof(datum.label, ' (') + 1)]"
+)
+
+
 def without_count_axis(chart):
     """``chart`` (the funnel) without its count axis, for the page (#1537).
 
     Each bar is labelled with its count and the stage tiles above give the
     exact figures, so the axis adds nothing there; dropping it leaves the
     bars room at phone width, where its ticks and title would crowd and
-    overflow the long stage names. The emailed image keeps its axis.
+    overflow the long stage names. A stage's note is drawn under its name
+    (``NOTE_ON_ITS_OWN_LINE``): on one line, Linux's wider Firefox and
+    WebKit fonts left a 320-pixel window no room for the counts, which were
+    cut off at the chart's edge. The emailed image keeps its axis and
+    one-line labels.
     """
     encoding = dict(chart.spec["encoding"])
     encoding["x"] = {**encoding["x"], "axis": None}
+    y = encoding["y"]
+    encoding["y"] = {**y, "axis": {**y["axis"], "labelExpr": NOTE_ON_ITS_OWN_LINE}}
     return replace(chart, spec={**chart.spec, "encoding": encoding})
 
 

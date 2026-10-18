@@ -782,8 +782,10 @@ heading, and the page sends `Cache-Control: no-store`. Top to bottom:
    figures, so it has no exact-values table
    ([charts](../ui-conventions/spec.md#charts),
    [#1266](https://github.com/epiphany40223/parishkit/issues/1266)) and,
-   on the page, no count axis, which would crowd the bars at phone width
-   (the emailed image keeps its axis).
+   on the page, no count axis, which would crowd the bars at phone width;
+   there a stage's note ("(includes mail-scanner prefetches)") is drawn on
+   its own line under the stage's name, so the counts still fit (the
+   emailed image keeps its axis and one-line labels).
 5. **Current active population statistics** ([campaign
    statistics](#campaign-statistics)), ending with its one "Data as of"
    line.

@@ -27,6 +27,7 @@ from parishkit.stewardship.reports.digest_presentation import (
 from parishkit.stewardship.reports.facts import FactUnavailable
 from parishkit.stewardship.reports.response_dashboard import (
     HOURLY_SPAN,
+    NOTE_ON_ITS_OWN_LINE,
     DashboardQuery,
     at_grain,
     chosen_grain,
@@ -300,6 +301,13 @@ def test_funnel_is_named_by_its_heading_not_a_drawn_title():
     assert "title" not in shown and shown["encoding"]["x"]["axis"] is None
     emailed = funnel_chart(metrics()).spec
     assert "title" in emailed and emailed["encoding"]["x"]["axis"]
+    # On the page a stage's note goes under its name, so the counts fit at
+    # phone width; the emailed chart keeps one-line labels.
+    assert shown["encoding"]["y"]["axis"] == {
+        "labelLimit": 300,
+        "labelExpr": NOTE_ON_ITS_OWN_LINE,
+    }
+    assert "labelExpr" not in emailed["encoding"]["y"]["axis"]
     page = render()
     assert '<h2 id="funnel-heading">Response funnel</h2>' in page
     assert 'data-chart-title="Response funnel"' in page
