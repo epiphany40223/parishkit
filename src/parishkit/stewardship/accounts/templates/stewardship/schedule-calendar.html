@@ -20,11 +20,11 @@ with ?date=<that day>, named and titled by data-add-name with {date} filled
 in), which opens New scheduled email with that send date; its Apply returns
 here, and the reserved status line below (schedules-outcome, the New page's
 review dialog's) then says what was applied. Each Edit link (in the grid and
-the table) gets ?calendar=<the month shown>, so Edit's Cancel and Apply
-return to that month. The page itself changes nothing.
+the table) gets ?calendar=<the month shown>, so Edit's Cancel, Apply and
+Delete return to that month. The page itself changes nothing.
 {% endcomment %}
 <h1>{% translate "Campaign calendar" %}</h1>
-{% aboutpage "schedule-calendar" %}<p>{% translate "Every email the campaign's mail schedules send, by date, one month at a time: the Initial invitation, each reminder, and every day or week of the Admin digests. Previous month and Next month go through the campaign's months. Times are in your computer's time zone. An email links to its Edit page while it has not run yet; Delete is on Dates and mail schedules. The + on a day of the campaign opens New scheduled email with that send date, and returns here once it is added." %}</p>{% endaboutpage %}
+{% aboutpage "schedule-calendar" %}<p>{% translate "Every email the campaign's mail schedules send, by date, one month at a time: the Initial invitation, each reminder, and every day or week of the Admin digests. Previous month and Next month go through the campaign's months. Times are in your computer's time zone. An email links to its Edit page while it has not run yet, and Delete is on that page. The + on a day of the campaign opens New scheduled email with that send date, and returns here once it is added." %}</p>{% endaboutpage %}
 <p>{{ campaign.active_configuration.name }}</p>
 <p class="campaign-dates">{% blocktranslate trimmed with start=values.start_date|parish_date end=values.end_date|parish_date %}Campaign dates: {{ start }} – {{ end }}{% endblocktranslate %}</p>
 {% include "stewardship/components/review-outcome.html" with outcome_id="schedules-outcome" %}

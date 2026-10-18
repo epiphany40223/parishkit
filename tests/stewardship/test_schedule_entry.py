@@ -23,6 +23,7 @@ from parishkit.stewardship.accounts.schedule_entry_views import (
     _check_repeat,
     _chosen,
     _days,
+    _delete_entries,
     _entries,
     _fields,
     _remember,
@@ -709,3 +710,64 @@ def test_return_url_goes_back_to_the_calendar_month_or_the_list():
     calendar = "/admin/campaign/schedules/calendar/"
     assert return_url("2054-10-12", None) == f"{calendar}?month=2054-10"
     assert return_url(None, "2054-11") == f"{calendar}?month=2054-11"
+
+
+def series_of(rows):
+    """A remembered series holding the two reminders of ``saved``."""
+    return {
+        "id": str(uuid4()),
+        "values": {
+            "campaign_id": OWNER["id"],
+            "rule": {"frequency": "daily", "start": "2054-10-01", "end": "2054-10-31"},
+            "schedules": sorted(row["id"] for row in rows[1:3]),
+        },
+    }
+
+
+def test_delete_this_removes_one_schedule_and_names_a_digest():
+    """This one alone; a digest's review says every later send stops."""
+    rows = saved(emails())
+    entries, changes, notes = _delete_entries(rows[1], None, rows, set(), "this")
+    assert (entries, changes, notes) == (
+        [{"id": rows[1]["id"], "delete": True}],
+        [],
+        [],
+    )
+    entries, changes, notes = _delete_entries(rows[3], None, rows, set(), "this")
+    assert entries == [{"id": rows[3]["id"], "delete": True}]
+    assert notes == [
+        "This digest repeats, so deleting it stops every send of it still to come."
+    ]
+
+
+def test_delete_the_whole_series_keeps_its_sent_reminders():
+    """The command line's series delete: unsent members and the record go."""
+    rows = saved(emails())
+    record = series_of(rows)
+    entries, changes, notes = _delete_entries(rows[2], record, rows, set(), "series")
+    assert entries == [
+        {"id": member, "delete": True}
+        for member in sorted(
+            record["values"]["schedules"],
+            key=lambda member: next(
+                row["values"]["date"] for row in rows if row["id"] == member
+            ),
+        )
+    ]
+    assert changes == [
+        {"operation": "remove", "section": "schedule_series", "id": record["id"]}
+    ]
+    assert notes[0].startswith("The whole series is deleted: Every day, October 1")
+    assert notes[0].endswith("stay as ordinary reminders.")
+    # A reminder that sent stays, as an ordinary reminder.
+    entries, _changes, _notes = _delete_entries(
+        rows[2], record, rows, {rows[1]["id"]}, "series"
+    )
+    assert entries == [{"id": rows[2]["id"], "delete": True}]
+
+
+def test_delete_the_whole_series_of_a_reminder_no_longer_in_one_is_refused():
+    """A page drawn while the reminder was in a series: reload, nothing done."""
+    rows = saved(emails())
+    with pytest.raises(UserFacingError, match="no longer part of a series"):
+        _delete_entries(rows[1], None, rows, set(), "series")

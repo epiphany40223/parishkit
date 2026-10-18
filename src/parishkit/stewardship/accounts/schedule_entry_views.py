@@ -26,7 +26,11 @@ views act on them:
   (``SeriesScope``, ``_series_edit``), planned by the command line's own
   ``series_edits.plan``. Delivery never reads a series.
 - **Delete** answers the list's confirmation dialog: it removes the chosen
-  schedules in one configuration change.
+  schedules in one configuration change. Edit's own Delete (#1656) posts
+  the same route with ``action=preview`` instead and is answered with the
+  review dialog's fragment (``_delete_review``): this schedule alone, or for
+  a series' reminder the whole series (the command line's series delete),
+  confirmed on Dates and mail schedules like every review.
 
 Neither path has validation of its own. Each turns its request into the
 change document the schedule commands take (``admin_changes.form_data``),
@@ -114,7 +118,7 @@ from .schedule_forms import (
 )
 from .schedule_preview import work_summary
 from .schedule_reads import campaign_schedules, schedule_state
-from .schedule_table import schedule_rows
+from .schedule_table import DIGESTS, schedule_rows
 from .series_edits import SCOPES, SeriesEditError, cut, plan, rule_text
 from .series_schema import SECTION as SERIES
 from .sessions import authenticated_admin
@@ -217,6 +221,17 @@ ADD_ON = "date"
 FROM_CALENDAR = "calendar"
 # A year and month as the calendar's addresses name one (``?month=``).
 YEAR_MONTH = re.compile(r"\d{4}-(0[1-9]|1[0-2])")
+# Edit's Delete (#1656): which reminders of a series' reminder it removes,
+# the fields its review posts, and the review's lines on a series or digest.
+DELETE_SCOPES = ("this", "series")
+DELETE_FIELDS = {"csrfmiddlewaretoken", "base_digest", "schedule_id", "action", "scope"}
+SERIES_DELETED = _(
+    "The whole series is deleted: %(rule)s. Its reminders that already sent "
+    "stay as ordinary reminders."
+)
+DIGEST_DELETED = _(
+    "This digest repeats, so deleting it stops every send of it still to come."
+)
 # Edit's refusal of a save that changes nothing. The page's change gate
 # keeps Review unavailable until something changed, so only a request that
 # bypasses the page script meets it, in the review dialog (#750).
@@ -1133,7 +1148,8 @@ def _entry(request, campaign_id, schedule_id=None):
     has that send date filled in, and its Cancel and Apply return to the
     calendar on that day's month; Edit opened from the calendar
     (``?calendar=<month>``, #1656) returns to that month (``return_url``).
-    The page posts to its own path, without the parameter.
+    The page posts to its own path, without the parameter. Edit also draws
+    Delete, whose review is ``_delete_review``'s.
 
     Inside the campaign wizard the page posts ``save`` instead (#1404 PR 4b):
     the same review, signed with the save's request key and recorded at once
@@ -1240,6 +1256,8 @@ def _entry(request, campaign_id, schedule_id=None):
             # Where Cancel goes and Apply returns: the calendar's month for
             # its Add and its links (#1656), else the list.
             "list_url": return_url(on, month),
+            # Edit's Delete (#1656) posts its review here.
+            "delete_url": reverse("admin:schedule_delete"),
             # The review dialog's Apply confirms on the list, then returns.
             "apply_url": reverse("admin:schedule_settings"),
             "window_text": window_text(values),
@@ -1600,6 +1618,94 @@ def _refusal(window, schedules):
     )
 
 
+def _delete_entries(schedule, record, saved, read_only, scope):
+    """What Edit's Delete removes (#1656): ``(entries, series_changes, notes)``.
+
+    ``scope`` "this" removes ``schedule`` alone; a series' reminder then
+    leaves its series through the series upkeep, as a delete from the list
+    does. "series" removes every reminder of ``record`` (the reminder's
+    series) that has not sent or been prepared, and the series record, with
+    the command line's own plan (``series_edits.plan``, scope ``delete``);
+    the sent ones stay as ordinary reminders. ``notes`` are the review's
+    plain lines on what else the delete means.
+    """
+    identifier = schedule["id"]
+    if scope == "this":
+        digest = schedule["values"]["kind"] in DIGESTS
+        return (
+            [{"id": identifier, "delete": True}],
+            [],
+            [DIGEST_DELETED] if digest else [],
+        )
+    if record is None:
+        # A page drawn while the reminder was in a series.
+        raise UserFacingError(
+            NOT_IN_SERIES, fix=_("Reload the page to see it as it is now.")
+        )
+    outcome = plan(
+        record,
+        {row["id"]: row["values"] for row in saved},
+        read_only,
+        scope="delete",
+    )
+    entries = [{"id": member, "delete": True} for member in outcome["remove"]]
+    note = SERIES_DELETED % {"rule": rule_text(record["values"]["rule"])}
+    return entries, outcome["changes"], [note]
+
+
+def _delete_review(request, service, actor, campaign_id):
+    """Review Edit's Delete of one schedule, or of its whole series (#1656).
+
+    The post names one schedule (``schedule_id``), ``action=preview`` and,
+    for a series' reminder, ``scope`` ("this", the default, or "series",
+    ``_delete_entries``). The schedule must still be changeable
+    (``_changeable``: not run and no work prepared), as on Edit. The change
+    is reviewed exactly as every schedule change is (``review``), and the
+    answer is the review dialog's fragment, whose Apply confirms on Dates and
+    mail schedules; sends that block it give a review without Apply. A rule
+    the remaining schedules would break is a plain refusal the dialog shows,
+    and nothing is recorded until Apply.
+    """
+    posted = request.POST
+    if set(posted) - DELETE_FIELDS or any(
+        len(values) != 1 for _name, values in posted.lists()
+    ):
+        raise unexpected_fields(posted, allowed=DELETE_FIELDS)
+    scope = posted.get("scope", "this")
+    if posted["action"] != "preview" or scope not in DELETE_SCOPES:
+        # No sources: an unknown action or scope value, not an unknown field.
+        raise unexpected_fields()
+    identifier = str(UUID(posted.get("schedule_id", "")))
+    with work_transaction():
+        state, campaign, editable = schedule_state(service, campaign_id, page=True)
+        saved = _saved(state, campaign)
+        read_only = _changeable(saved, campaign, {identifier})
+        schedule = next(row for row in saved if row["id"] == identifier)
+        record = _series_of(state[0], campaign, schedule)
+        entries, series_changes, notes = _delete_entries(
+            schedule, record, saved, read_only, scope
+        )
+        reviewed, window, schedules, _forms = review(
+            service,
+            actor,
+            state,
+            campaign,
+            editable,
+            entries,
+            base_digest=posted.get("base_digest"),
+            series_changes=series_changes,
+        )
+    if reviewed is None:
+        raise _refusal(window, schedules)
+    response = render(
+        request,
+        "stewardship/schedule-review.html",
+        reviewed | {"new": False, "deleting": scope, "series_notes": notes},
+    )
+    _recheck(request, service)
+    return response
+
+
 @require_http_methods(["POST"])
 def schedule_delete(request, campaign_id):
     """Delete the chosen schedules in one change, as the dialog confirmed.
@@ -1608,7 +1714,8 @@ def schedule_delete(request, campaign_id):
     once (``confirm_intent``: the applied configuration and the campaign's
     work are rechecked under the work lock). A refusal changes nothing. The
     answer is the change's status page, which the dialog follows until the
-    change is applied.
+    change is applied. Edit's Delete posts ``action=preview`` instead, and
+    is answered with its review (``_delete_review``, #1656).
     """
     try:
         service = runtime()
@@ -1616,6 +1723,8 @@ def schedule_delete(request, campaign_id):
         filters(request.GET, allowed=set())
         if request.FILES:
             raise unexpected_fields(request.FILES, allowed=())
+        if "action" in request.POST:
+            return _delete_review(request, service, actor, campaign_id)
         identifiers = _chosen(request.POST)
         listing = reverse("admin:schedule_settings")
         with work_transaction():

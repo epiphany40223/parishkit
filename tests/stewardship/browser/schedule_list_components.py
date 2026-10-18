@@ -68,6 +68,12 @@ checks need no database:
   (``CALENDAR_OCTOBER``). The calendar shows one month (#1656); ``MONTHS``
   are its addresses with ``?month=``, each the same page (the script reads
   the month).
+- Edit's Delete (#1656): ``EDIT`` posts it to ``EDIT_DELETE``, answered with
+  the review of removing Reminder 1; ``EDIT_SERIES`` to ``SERIES_DELETE``,
+  answered with the review of deleting its whole series; ``EDIT_INITIAL``
+  to ``INITIAL_DELETE``, refused with ``REFUSAL`` in the server's words.
+  ``EDIT_FROM_CALENDAR`` is ``EDIT`` opened from the calendar's October,
+  whose Cancel and Apply return there.
 
 ``POSTS`` lists the fixture server's answers to the pages' POSTs; it is
 filled in by ``components``, before the server starts.
@@ -93,6 +99,7 @@ from parishkit.stewardship.accounts.schedule_changes import (
 )
 from parishkit.stewardship.accounts.schedule_entry_views import (
     DAY_MOVED,
+    SERIES_DELETED,
     RepeatRule,
     _edit_notes,
     _sends_once,
@@ -115,7 +122,7 @@ from parishkit.stewardship.accounts.schedule_table import (
     schedule_rows,
 )
 from parishkit.stewardship.accounts.schedule_views import _summary as dates_summary
-from parishkit.stewardship.accounts.series_edits import plan
+from parishkit.stewardship.accounts.series_edits import plan, rule_text
 from parishkit.stewardship.web.refusals import send_time_passed
 from parishkit.stewardship.web.tables import whole_table
 
@@ -182,6 +189,10 @@ MONTHS = [
     f"{CALENDAR}?month=2054-01",
     f"{CALENDAR}?month=2060-01",
 ]
+EDIT_DELETE = f"{EDIT}/deletion"
+SERIES_DELETE = f"{EDIT_SERIES}/deletion"
+INITIAL_DELETE = f"{EDIT_INITIAL}/deletion"
+EDIT_FROM_CALENDAR = f"{EDIT}?calendar=2054-10"
 # The end date Campaign settings proposes; the saved one is October 31.
 DATES_END = "2054-10-25"
 # The refusal's own explanation, which the dialog shows.
@@ -314,6 +325,7 @@ def _entry(
     scope_error=None,
     on=None,
     list_url=LIST,
+    delete_url=EDIT_DELETE,
 ):
     """New scheduled email, or Edit scheduled email for ``schedule_row``.
 
@@ -323,8 +335,8 @@ def _entry(
     with ``refusals`` its scopes known to be unavailable; ``scope_error``
     draws the page refused with "This and following" chosen and that error
     at the choice, with its summary. ``on`` is New's send date from the
-    calendar's Add on a day (#1521), and ``list_url`` where Cancel and Apply
-    return.
+    calendar's Add on a day (#1521), ``list_url`` where Cancel and Apply
+    return, and ``delete_url`` where Edit's Delete posts its review (#1656).
     """
     entry = entry_form(None, emails, rows, schedule_row, on=on)
     scope_data = QueryDict("series-scope=following") if scope_error else None
@@ -361,6 +373,7 @@ def _entry(
             "post_url": post_url,
             "list_url": list_url,
             "apply_url": apply_url,
+            "delete_url": delete_url,
             "window_text": window_text(owner["values"]),
         }
         | entry_times(owner["values"], rows, schedule_row, NOW, bound=False)
@@ -507,11 +520,12 @@ def _dates_refused(values, owner, emails, rows):
     )
 
 
-def _review(owner, changes, *, new=True, blocking=0, series_notes=()):
+def _review(owner, changes, *, new=True, blocking=0, series_notes=(), deleting=None):
     """The review dialog's fragment for ``changes`` (schedule-review.html).
 
     A New review adding one schedule that sends once is the view's
     confirmation (``_sends_once``, #1356), as the server draws it.
+    ``deleting`` is Edit's Delete's scope (#1656).
     """
     reviewed = {
         "campaign": {"pk": owner["id"], "active_configuration": owner["values"]},
@@ -521,6 +535,7 @@ def _review(owner, changes, *, new=True, blocking=0, series_notes=()):
         "preview": None if blocking else "synthetic-preview",
         "new": new,
         "series_notes": series_notes,
+        "deleting": deleting,
     }
     return render_to_string(
         "stewardship/schedule-review.html",
@@ -637,6 +652,15 @@ def components(context, admin):
             on=ADD_DAY,
             list_url=CALENDAR_OCTOBER,
         ),
+        EDIT_FROM_CALENDAR: _entry(
+            values,
+            owner,
+            emails,
+            rows,
+            schedule_row=first,
+            post_url=f"{EDIT}/review",
+            list_url=CALENDAR_OCTOBER,
+        ),
         EDIT: _entry(
             values, owner, emails, rows, schedule_row=first, post_url=f"{EDIT}/review"
         ),
@@ -652,7 +676,13 @@ def components(context, admin):
             post_url=f"{EDIT_EMAIL_REFUSED}/review",
         ),
         EDIT_INITIAL: _entry(
-            values, owner, emails, rows, schedule_row=initial, post_url=f"{EDIT}/review"
+            values,
+            owner,
+            emails,
+            rows,
+            schedule_row=initial,
+            post_url=f"{EDIT}/review",
+            delete_url=INITIAL_DELETE,
         ),
         EDIT_CLOSED: _entry(
             values,
@@ -671,6 +701,7 @@ def components(context, admin):
             schedule_row=first,
             post_url=f"{EDIT_SERIES}/review",
             series=series,
+            delete_url=SERIES_DELETE,
         ),
         EDIT_SERIES_GATED: _entry(
             values,
@@ -765,6 +796,26 @@ def components(context, admin):
             outcome, first["values"]["date"], time(10, 30), changed_email=False
         ),
     )
+    # Edit's Delete (#1656): Reminder 1 removed, or its whole series, with
+    # the view's own line on the series.
+    removed = [
+        {
+            "label": "Reminder",
+            "operation": "remove",
+            "before": describe(row["values"], owner["values"]),
+            "after": None,
+            "impact": {"cancellable": 3, "occurrences": 1},
+        }
+        for row in reminders
+    ]
+    delete_review = _review(owner, removed[:1], new=False, deleting="this")
+    series_delete = _review(
+        owner,
+        removed,
+        new=False,
+        deleting="series",
+        series_notes=[SERIES_DELETED % {"rule": rule_text(SERIES_RULE)}],
+    )
     blocked = _review(
         owner,
         [
@@ -799,6 +850,23 @@ def components(context, admin):
             ),
             f"{FAILED}/deletion": (303, NOT_APPLIED, ""),
             f"{NEW}/review": (200, None, review),
+            EDIT_DELETE: (200, None, delete_review),
+            SERIES_DELETE: (200, None, series_delete),
+            INITIAL_DELETE: (
+                400,
+                None,
+                json.dumps(
+                    {
+                        "errors": [{"code": "invalid"}],
+                        "refusal": {
+                            "message": REFUSAL,
+                            "fix": "Nothing was deleted. Change the other "
+                            "schedules first, then try again.",
+                            "link": None,
+                        },
+                    }
+                ),
+            ),
             f"{EDIT}/review": (200, None, edit_review),
             f"{EDIT_SERIES}/review": (200, None, series_review),
             f"{EDIT_PASSED}/review": (200, None, edit_review),

@@ -16,7 +16,7 @@ calendar shows the same names, emails, statuses and Edit links as the
 scheduled emails table and cannot describe a schedule differently. Status
 reads the same counts-only work summary, never Family data. Nothing here
 changes anything: Edit opens the existing Edit scheduled email page (with
-the month shown, so it returns there, #1656), and each
+the month shown, so it returns there; its Delete is Edit's, #1656), and each
 day's Add (#1521) the existing New scheduled email page with that send date
 (``schedule_entry_views.added_on``), whose review, Apply and audit are New's.
 """
