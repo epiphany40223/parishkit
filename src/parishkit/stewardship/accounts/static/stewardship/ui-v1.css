@@ -1261,6 +1261,8 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
 .stage-boxes > .stage-operator { background: var(--warning-bg); border-color: var(--warning-border); }
 .stage-boxes > .stage-failed::before { content: "\2715"; color: var(--error-ink); }
 .stage-boxes > .stage-failed { border-color: var(--error-border); background: var(--error-bg); }
+.stage-boxes > .stage-uncertain::before { content: "?"; color: var(--ink); font-weight: 700; }
+.stage-boxes > .stage-uncertain { border-style: dashed; border-color: var(--ink); }
 .stage-status { font-size: .925rem; font-variant-numeric: tabular-nums; }
 .stage-boxes li p { margin: .25rem 0 0; font-size: .925rem; }
 /* Load ParishSoft data (campaign-load-status.html, #1404 PR 5): the line

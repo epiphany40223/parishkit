@@ -512,7 +512,7 @@ def test_a_slack_test_post_while_slack_is_off_is_still_refused(monkeypatch):
         ("not_sent", [("done", None), ("done", None), ("failed", "Failed")]),
         (
             "delivery_unknown",
-            [("done", None), ("done", None), ("failed", "Not sure it arrived")],
+            [("done", None), ("done", None), ("uncertain", "Not sure it arrived")],
         ),
         (
             "cancelled",
@@ -564,3 +564,26 @@ def test_the_newest_test_is_drawn_with_the_shared_stage_boxes(state, expected):
         {"items": [row("new", state)], "empty": "None yet."},
     )
     assert "Earlier tests" not in single and "<ul>" not in single
+
+
+def test_a_test_sent_with_earlier_settings_draws_no_result():
+    """A stale newest test says nothing about the current settings, so its
+    boxes are all Not started rather than a green Delivered that reads as
+    current (#1578)."""
+    from parishkit.stewardship.accounts.setup_mail_views import LABELS, progress
+
+    stale = {
+        "id": "stale",
+        "state": "accepted",
+        "label": str(LABELS["accepted"]),
+        "created_at": NOW.isoformat(),
+        "current": False,
+    }
+    boxes = progress([stale])
+    assert [box["state"] for box in boxes] == ["waiting"] * 3
+    assert [box["status"] for box in boxes] == ["Not started"] * 3
+    html = render_to_string(
+        "stewardship/setup-test-status.html", {"items": [stale], "empty": "None yet."}
+    )
+    assert "Sent with earlier settings" in html and "Delivered" in html
+    assert "stage-done" not in html

@@ -299,7 +299,14 @@ queued or being sent. The newest test is drawn with the shared
 Result; the box a settled test ended on names its outcome in the list's
 words (Delivered, Failed, Not sure it arrived, or a cancelled test's Queued
 box), and earlier tests are listed below it
-([#1578](https://github.com/epiphany40223/parishkit/issues/1578)). While it is, Send (or Send another test) is
+([#1578](https://github.com/epiphany40223/parishkit/issues/1578)). A test of
+unknown delivery is drawn Not sure it arrived in a neutral, uncertain
+treatment, never as failed. A newest test sent with earlier settings proves
+nothing about the current ones, so its boxes are Not started beside the line
+Sent with earlier settings. A queued test still counts only while setup is
+collecting, so starting Load parish data before the worker has picked a
+queued test up cancels that test (Not sent); nothing is ever sent against a
+frozen view, and the test is sent again from its own step. While it is, Send (or Send another test) is
 unavailable, named by a line after the action row saying a test is on its
 way, and, while the page cannot check the test's status, by that status line
 too ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates),

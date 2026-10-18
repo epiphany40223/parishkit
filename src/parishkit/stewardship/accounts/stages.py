@@ -19,6 +19,9 @@ STATUS = {
     "active": _("In progress"),
     "waiting": _("Not started"),
     "failed": _("Failed"),
+    # The work ended and its outcome is not known (a test email the mail
+    # service did not confirm): neither done nor failed.
+    "uncertain": _("Not sure"),
 }
 
 
@@ -26,7 +29,7 @@ def rows(stages, index, current="active"):
     """One box per ``(key, label)`` of ``stages``, worded for the template.
 
     The stages before ``index`` are done, the one at ``index`` is
-    ``current`` ("active", "waiting" or "failed") and later ones are
+    ``current`` ("active", "waiting", "failed" or "uncertain") and later ones are
     waiting. An ``index`` of ``len(stages)`` marks every stage done, and
     -1 (the work has not reached its first stage) marks every one waiting.
     """

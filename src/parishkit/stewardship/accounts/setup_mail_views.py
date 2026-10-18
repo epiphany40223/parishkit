@@ -66,14 +66,15 @@ STAGES = (
     ("result", _("Result")),
 )
 # Each test state's place in STAGES: the box it reached and that box's state.
-# An accepted test has passed every stage; one not sent, or of unknown
-# delivery, failed at its Result; a cancelled one never left the queue.
+# An accepted test has passed every stage; one not sent failed at its
+# Result; one of unknown delivery is uncertain there (not drawn as failed);
+# a cancelled one never left the queue.
 PLACES = {
     "queued": (0, "active"),
     "submitting": (1, "active"),
     "accepted": (len(STAGES), "done"),
     "not_sent": (2, "failed"),
-    "delivery_unknown": (2, "failed"),
+    "delivery_unknown": (2, "uncertain"),
     "cancelled": (0, "failed"),
 }
 
@@ -84,10 +85,16 @@ def progress(items):
     A settled test's last box says its outcome in the list's own words
     (its ``label``, e.g. Delivered or Not sure it arrived) instead of only Done
     or Failed, so the boxes and the line above them agree.
+
+    A newest test sent with earlier settings proves nothing about the
+    current ones, so its boxes are all Not started (the line above them says
+    Sent with earlier settings) rather than a result that reads as current.
     """
     if not items:
         return None
     newest = items[0]
+    if not newest["current"]:
+        return stages.rows(STAGES, -1)
     index, current = PLACES[newest["state"]]
     boxes = stages.rows(STAGES, index, current)
     if newest["state"] not in {"queued", "submitting"}:
