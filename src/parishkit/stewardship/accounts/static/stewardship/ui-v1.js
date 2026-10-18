@@ -1112,8 +1112,8 @@
   // a fresh copy would discard (#519).
   // A page whose filter form is marked data-in-place-views (Sent mail,
   // #1562) keeps, in each history entry, how to draw the view it shows: the
-  // POST body of the answer that drew it (never its CSRF token), or none
-  // for a view drawn from its address. A form marked data-in-place-push (a
+  // POST body of the read that drew it (never its CSRF token), or none
+  // for a view drawn from its address or by a save. A form marked data-in-place-push (a
   // row's Recipient) adds a history entry for its answer instead of
   // replacing the address, and Back or Forward redraws that entry's view in
   // place (the popstate handler below), so a private filter that never
@@ -1960,7 +1960,13 @@
         window.history.replaceState(window.history.state, "", href);
         return;
       }
-      const body = init.method === "POST" && init.body instanceof URLSearchParams
+      // Only a read's body is kept, as only a read is safe to send again:
+      // the filter form or a table control (no owner) or a form marked
+      // data-in-place-read (a row's Recipient). A save on the same page
+      // (Sent mail's bulk Preview and Confirm) keeps none, so Back or
+      // Forward to its entry draws the address by GET (#1571).
+      const read = !owner || owner.hasAttribute("data-in-place-read");
+      const body = read && init.method === "POST" && init.body instanceof URLSearchParams
         ? [...init.body].filter(([name]) => name !== "csrfmiddlewaretoken") : null;
       const state = {...(window.history.state || {}), inPlaceView: body};
       if (owner?.hasAttribute("data-in-place-push")) window.history.pushState(state, "", href);
@@ -2183,7 +2189,9 @@
     const body = event.state?.inPlaceView;
     const reload = () => window.location.reload();
     const options = {quiet: true, filters: true, popped: true};
-    if (Array.isArray(body)) {
+    // A body naming an action is a save (a bulk Preview or Confirm), never
+    // re-sent even if one was recorded: the address is drawn instead.
+    if (Array.isArray(body) && !body.some(([name]) => name === "action")) {
       const fields = new URLSearchParams(body);
       const token = filters.querySelector("input[name=csrfmiddlewaretoken]")?.value;
       if (token) fields.set("csrfmiddlewaretoken", token);

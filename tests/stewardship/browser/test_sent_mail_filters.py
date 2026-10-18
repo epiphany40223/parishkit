@@ -407,3 +407,73 @@ def test_a_reload_shows_its_address_view(page, component_origin):
     assert page.locator("tbody tr").count() == 4
     assert recipient_shown(page) == ""
     assert page.evaluate("history.state.inPlaceView") is None
+
+
+def test_back_never_sends_a_bulk_confirm_again(page, component_origin):
+    """Sent mail's bulk Preview and Confirm are saves posted to the page's
+    own address, whose answers draw that address (#1571): their entries
+    keep no body, so Back to them draws the address by GET and never sends
+    a Preview or a Confirm again. A body naming an action, however it got
+    into history, is never re-sent either."""
+    from .delivery_components import LIST_ACTION, OWN_ACTION
+
+    def fixture(path):
+        """The fixture server's page at ``path``."""
+        return page.request.get(component_origin + path).text()
+
+    listed = fixture(OWN_ACTION)
+    saves = [fixture(OWN_ACTION + "-review"), fixture(OWN_ACTION + "-result")]
+    # A Recipient's answer, drawn at this page's own address too, so its
+    # entry is pushed (an answer drawing another page's address is not).
+    read = fixture("/deliveries-applied").replace(LIST_ACTION, OWN_ACTION)
+    sent, drawn = [], []
+
+    def handle(route):
+        """Answer a save with its next page, a read with one row, a GET
+        with the list; note every request."""
+        if route.request.method != "POST":
+            drawn.append(route.request.url)
+            route.fulfill(status=200, body=listed, content_type="text/html")
+            return
+        fields = parse_qs(route.request.post_data or "", keep_blank_values=True)
+        sent.append(fields)
+        body = saves.pop(0) if "action" in fields else read
+        route.fulfill(status=200, body=body, content_type="text/html")
+
+    page.route(component_origin + OWN_ACTION + "*", handle)
+    page.goto(component_origin + OWN_ACTION)
+    page.evaluate(MARK)
+    page.locator("#bulk-panel summary").click()
+    retry = page.locator("#bulk-retry_failed")
+    retry.locator("textarea[name=note]").fill("Gmail was down from 2 to 3 PM.")
+    retry.get_by_role("button", name="Preview retry").click()
+    page.get_by_role("button", name="Retry 3 emails").click()
+    page.get_by_role("heading", name="Partly done").wait_for()
+    recorded(page, sent, 2)
+    assert [fields["action"] for fields in sent] == [["preview"], ["confirm"]]
+    # The Confirm's answer set the address, and its entry keeps no body.
+    assert page.url.startswith(component_origin + OWN_ACTION + "?")
+    assert page.evaluate("history.state.inPlaceView") is None
+    # A Recipient (a read) adds an entry; Back returns to the Confirm's.
+    page.locator("tbody .recipient-link").first.click()
+    eventually(page, "history.length", 3)
+    assert recipient_shown(page) == "12345"
+    recorded(page, sent, 3)
+    assert "action" not in sent[2]
+    page.go_back()
+    # The page's load, then Back's redraw of the address by GET.
+    recorded(page, drawn, 2)
+    eventually(page, "document.querySelector('#delivery-recipient').value", "")
+    # Defense in depth: an entry whose body names an action draws its
+    # address by GET instead of posting it.
+    page.evaluate(
+        """() => {
+            history.replaceState({inPlaceView: [['action', 'confirm'],
+                ['preview', 'signed-preview']]}, '');
+            history.pushState({inPlaceView: null}, '');
+        }"""
+    )
+    page.go_back()
+    recorded(page, drawn, 3)
+    assert len(sent) == 3
+    assert page.evaluate(MARKED) == "kept"

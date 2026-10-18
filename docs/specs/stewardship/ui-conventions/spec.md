@@ -571,9 +571,11 @@ never scrolls to show it (Administrator, pk-local review of
   place (a list's recipient, whose identifier is private filter state and
   never in a URL) is followed like a link instead: its answer adds a history
   entry, each entry keeps the view it shows in the browser's history state
-  (the read's POST body without its CSRF token, or nothing for a view drawn
-  from its address), and Back or Forward redraws that view in place, its
-  filter fields with it. A reload draws the page from its address, so the
+  (a read's body only, without its CSRF token, or nothing for a view drawn
+  from its address or by a save, so Back or Forward never re-sends a save),
+  and Back or Forward redraws that view in place, its filter fields with it.
+  The identifier lives only in the tab's session history (history.state),
+  never in the address. A reload draws the page from its address, so the
   list and the filter fields agree
   ([#1562](https://github.com/epiphany40223/parishkit/issues/1562)). The
   Refresh links of Go-live readiness
