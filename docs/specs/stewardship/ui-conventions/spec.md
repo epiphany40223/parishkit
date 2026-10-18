@@ -1743,8 +1743,8 @@ cell is too narrow, so no row is added). Clear filters
 puts every filter back to the page's default in one step and shows the
 result in place. No filter form names its apply button otherwise (the
 Ministries list's Filter, Background work's Show tasks, Refused addresses'
-Show refusals and Roster changes' Apply became Apply filters, #1651). **Why.** Clearing each field by
-hand, or editing the address, is slow and easy to get wrong; a reload or a
+Show refusals, Roster changes' Apply and the Timeline's Show lines became
+Apply filters, #1651). **Why.** Clearing each field by hand, or editing the address, is slow and easy to get wrong; a reload or a
 link to the bare page would lose the reader's sort, rows per page and view
 choices (Administrator, pk-local review,
 [#1651](https://github.com/epiphany40223/parishkit/issues/1651)).

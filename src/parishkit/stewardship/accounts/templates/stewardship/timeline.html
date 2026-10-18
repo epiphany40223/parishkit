@@ -34,13 +34,13 @@
 {% if full %}<section class="panel" aria-labelledby="events-heading">
 <h2 id="events-heading">{% translate "Timeline" %}</h2>
 {# The filter bar (#1570): a GET form whose closed choices stay in the address, applied in place (ui-v1.js, form#table-filters[data-table-sync]); it carries the When sort as hidden fields, and the sort heading carries the filters back. The zone is the browser's, filled by ui-v1.js (#558), so From and Through are days in this computer's time zone, as on System logs; the gate's hint keeps its line (data-complete-hint="reserve"), so nothing moves. #}
-<form id="table-filters" data-table-sync method="get" action="{{ page_url }}#table" class="filter-bar" data-require-complete data-missing-hint="{% translate 'Correct the filters to apply them.' %}">
+<form id="table-filters" data-table-sync method="get" action="{{ page_url }}#table" class="filter-bar timeline-filters" data-require-complete data-missing-hint="{% translate 'Correct the filters to apply them.' %}">
 <input type="hidden" name="zone" value="{{ query.zone }}" data-browser-zone data-zone-missing-hint="{% translate "Your browser didn't report a time zone, so these dates can't be used. Clear From and Through, or check your computer's time zone setting." %}">
 {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
 <div class="fit"><label for="timeline-kind">{% translate "Kind" %}</label><select id="timeline-kind" name="kind">{% for key, label in kinds.items %}<option value="{{ key }}"{% if query.kind == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
 <div class="short" data-missing-hint="{% translate 'Enter a whole From date, or clear it.' %}"><label for="timeline-start">{% translate "From" %}</label><input id="timeline-start" type="date" name="start" value="{{ query.start }}" aria-describedby="timeline-zone-help" data-browser-zone-field></div>
 <div class="short" data-missing-hint="{% translate 'Enter a whole Through date, no earlier than From, or clear it.' %}"><label for="timeline-end">{% translate "Through" %}</label><input id="timeline-end" type="date" name="end" data-not-before="timeline-start" value="{{ query.end }}" aria-describedby="timeline-zone-help" data-browser-zone-field></div>
-{% button type="submit" %}{% translate "Show lines" %}{% endbutton %}
+{% include "stewardship/components/filter-actions.html" %}
 {% translate "From and Through are days in this computer's time zone:" as zone_note %}{% include "stewardship/components/zone-note.html" with note_text=zone_note note_id="timeline-zone-help" %}
 <p class="help" data-complete-hint="reserve" hidden></p>
 </form>

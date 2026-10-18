@@ -32,7 +32,7 @@ ADMIN = timeline_url(FAMILY)
 # oldest first, then back to newest first.
 OLDEST = ADMIN + "?size=all&sort=when"
 NEWEST = ADMIN + "?size=all&sort=-when"
-# The address the filter bar's Show lines sends for Kind Emails, from the
+# The address the filter bar's Apply filters sends for Kind Emails, from the
 # fixture browser (Pacific): its zone, the table's hidden size and sort, and
 # the blank days, as a native GET form sends them, in the order the fixture
 # server's fallback sorts them to.
@@ -50,7 +50,7 @@ EMAILS = canonical(
         ]
     )
 )
-# The address Show lines sends for From 2026-10-04 (the day after every
+# The address Apply filters sends for From 2026-10-04 (the day after every
 # fixture line, in the Pacific fixture browser) with Through blank.
 LATER = canonical(
     ADMIN
