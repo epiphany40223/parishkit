@@ -179,9 +179,9 @@ def test_an_export_cancelled_elsewhere_settles_its_open_page(page, component_ori
     assert panel.evaluate("node => node.getBoundingClientRect().top") == top
     settled = len(reads)
     # Polling has stopped: no further read, and no "Couldn't check" line.
-    # The common prefix matches every wording of the refusal and retry lines
-    # ("Couldn't check status", "Couldn't check for updates", #1644), so a
-    # rewording cannot make this pass whatever the page says.
+    # The common prefix matches both the refusal and the retry line
+    # (#1644, #1647), so a rewording of either cannot make this pass
+    # whatever the page says.
     page.wait_for_timeout(4000)
     assert len(reads) == settled == 2
     assert page.get_by_text("Couldn't check").count() == 0

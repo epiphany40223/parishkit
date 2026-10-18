@@ -829,13 +829,14 @@ the [in-place controls](#in-place-controls); no other mechanism.
 - **No manual refresh.** There is no Refresh link or button that re-reads
   the page's own state. Controls that start work (Refresh from ParishSoft,
   Refresh now) are actions, not page refreshes, and stay. When reads fail,
-  the page says so under the region it could not read and keeps trying: a
-  status region at once ("Couldn't check status — retrying."), and System
-  health and a table's periodic re-read after three failures in a row, so
-  one blip says nothing; the line goes away on the next read that works. A
-  read that is refused (the sign-in ended, or access was removed)
-  stops the updates and says so in the same words on every page
-  ("Couldn't check for updates. Reload the page or sign in again."); the
+  the page says so under the region it could not read, in the same words
+  on every page ("Couldn't check for updates — retrying."), and keeps
+  trying: a status region says so at once, and System health and a table's
+  periodic re-read after three failures in a row, so one blip says nothing;
+  the line goes away on the next read that works. A read that is refused
+  (the sign-in ended, or access was removed) stops the updates and says so
+  in the same words on every page ("Couldn't check for updates. Reload the
+  page or sign in again."); the
   Admin session's own dialog offers to sign in again. A failed automatic read never navigates.
 - **Reload.** The page's address always identifies what is shown: view
   choices replace the address, and an in-place POST follows its
