@@ -2139,8 +2139,11 @@ A panel's summary says how many are applied
 Apply while the panel and its form keep their elements. A report's export form
 is likewise a closed disclosure (for example, "Export complete results (CSV,
 XLSX or PDF)"). The Family directory,
-Additional information, Financial stewardship, Limitations, Census
-changes and Ministry requests follow this (#227). Ministry requests keeps its
+Additional information, Financial stewardship, Limitations and
+Ministry requests follow this (#227). Census changes, a worklist, keeps its
+filters always open and its download below the table, always shown
+([its filters and downloads](../reports/spec.md#census-change-filters-and-downloads),
+[#1682](https://github.com/epiphany40223/parishkit/issues/1682)). Ministry requests keeps its
 compact filter bar rather than a Filters panel: its By Ministry counts apply
 a Ministry and request into the filters in place, and a closed panel would
 hide what the link just applied. System logs and the remaining report pages
