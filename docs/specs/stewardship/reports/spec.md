@@ -996,8 +996,12 @@ shows them all, with no paging or row navigator. Its lines are:
   ([#795](https://github.com/epiphany40223/parishkit/issues/795));
 - each **Signed out** (the Family chose Sign out, `family_logout`) and
   **Session ended** (the system ended the Family's form session, for
-  example when the mode or the campaign changed, `family_session_ended`);
-  a session that simply timed out records neither;
+  example after a submission or when the mode or the campaign changed,
+  `family_session_ended`); a session that simply timed out records
+  neither. A new sign-in in the same browser ends the earlier session in
+  the same transaction, so that end has the sign-in's instant: it reads
+  **Earlier session ended** (replaced by a new sign-in) and sorts just
+  before that sign-in, so it never reads as the new session ending;
 - each form open, getting past the first step and the furthest step
   reached;
 - each submission, noting when Staff entered it for the Family and when no
@@ -1015,9 +1019,9 @@ too:
 
 - **Kind:** All (the default), Family form activity (form opens, progress
   and submissions), Emails (every email line and the not-sent lines), or
-  Sign-ins and sign-outs (sign-ins, Staff opened the form, Signed out and
-  Session ended). A person's timeline will add Admin actions and Role
-  changes; a Family's shows only the kinds it can have
+  Sign-ins and sign-outs (sign-ins, Staff opened the form, Signed out,
+  Session ended and Earlier session ended). A person's timeline will add
+  Admin actions and Role changes; a Family's shows only the kinds it can have
   ([conditional fields](../ui-conventions/spec.md#conditional-fields)).
 - **From** and **Through:** whole days in the browser's time zone, as on
   System logs, placed as UTC bounds on the server (so a daylight-saving day

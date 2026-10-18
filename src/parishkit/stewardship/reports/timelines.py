@@ -368,7 +368,11 @@ def events(
     ``session_ends`` are ``(instant, event_type)`` pairs, ``family_logout``
     (the Family chose Sign out) or ``family_session_ended`` (the system ended
     the session); they are built after the Family's own steps, so a sign-in,
-    a submission and the sign-out at one instant read in that order.
+    a submission and the sign-out at one instant read in that order. The
+    exception is a system end at the same instant as a sign-in: a new
+    sign-in in the same browser ends the earlier session in its own
+    transaction, so that end reads "Earlier session ended" and is built
+    before the sign-in, never as if the new session had ended.
     """
 
     def sign_in(value):
@@ -395,11 +399,29 @@ def events(
         return Event(
             at,
             _("Session ended"),
-            _("ended by the system, for example when the campaign or mode changed"),
+            _(
+                "ended by the system, for example after a submission or when "
+                "the campaign or mode changed"
+            ),
             kind="sessions",
         )
 
-    lines = [sign_in(value) for value in sign_ins]
+    sign_in_at = {value[0] if isinstance(value, tuple) else value for value in sign_ins}
+    replaced = [
+        (at, event_type)
+        for at, event_type in session_ends
+        if event_type == "family_session_ended" and at in sign_in_at
+    ]
+    lines = [
+        Event(
+            at,
+            _("Earlier session ended"),
+            _("replaced by a new sign-in"),
+            kind="sessions",
+        )
+        for at, _event_type in replaced
+    ]
+    lines += [sign_in(value) for value in sign_ins]
     lines += [Event(at, _("Opened the form")) for at in forms]
     if engagement is not None and engagement.progress_at is not None:
         lines.append(Event(engagement.progress_at, _("Got past the first step")))
@@ -420,7 +442,11 @@ def events(
         lines.append(
             Event(submission.at, _("Submitted a response"), "; ".join(details))
         )
-    lines += [session_end(at, event_type) for at, event_type in session_ends]
+    lines += [
+        session_end(at, event_type)
+        for at, event_type in session_ends
+        if (at, event_type) not in replaced
+    ]
     lines += [
         Event(at, _("Invitation not sent"), _("already responded"), kind="emails")
         for at, _occurrence in skips

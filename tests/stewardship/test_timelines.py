@@ -525,6 +525,27 @@ def test_sign_outs_and_session_ends_are_session_lines():
     assert "ended by the system" in str(lines[-1].detail)
 
 
+def test_a_session_replaced_by_a_new_sign_in_ends_before_it():
+    """A new sign-in's revocation of the earlier session sorts before it."""
+    # The login path revokes the earlier session in its own transaction, so
+    # the end has the new sign-in's instant; it must not read as the new
+    # session ending. An end at another instant keeps the generic wording.
+    first, again = START + 20 * MINUTE, START + 30 * MINUTE
+    lines = events(
+        [],
+        [],
+        sign_ins=[first, again],
+        session_ends=[(again, "family_session_ended"), (again, "family_logout")],
+    )
+    assert [(str(line.what), str(line.detail)) for line in lines] == [
+        ("Signed in", "or a mail scanner checked the link"),
+        ("Earlier session ended", "replaced by a new sign-in"),
+        ("Signed in", "or a mail scanner checked the link"),
+        ("Signed out", ""),
+    ]
+    assert {line.kind for line in lines} == {"sessions"}
+
+
 def test_narrow_keeps_one_kind_within_half_open_bounds():
     """``narrow`` keeps the kind and the [start, end) interval, in order."""
     lines = TIMELINE.events
