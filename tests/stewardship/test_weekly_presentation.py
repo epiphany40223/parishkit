@@ -70,6 +70,12 @@ def report(monkeypatch):
         lambda *args: requested.append(("funnel", *args)),
     )
     monkeypatch.setattr(presentation, "retained_selection", lambda row: selection)
+    # The current campaign, which decides whether names link (#1570).
+    monkeypatch.setattr(
+        presentation.SystemConfiguration.objects,
+        "values_list",
+        lambda *args, **kwargs: SimpleNamespace(get=lambda: CAMPAIGN),
+    )
     monkeypatch.setattr(
         presentation.WeeklyManualRequest.objects,
         "filter",
@@ -108,6 +114,19 @@ def test_report_pages_do_not_drop_or_repeat_items(report, page, count):
     assert requested[1:] == [("funnel", CAMPAIGN, "testing", snapshot.observed_at)]
     assert result["funnel_stages"] == ()
     assert result["funnel_testing_note"].startswith("Testing digests")
+
+
+def test_an_earlier_campaigns_names_do_not_link(report, monkeypatch):
+    """The Timeline serves only the current campaign, so a snapshot retained
+    from an earlier one shows plain names (#1570)."""
+    snapshot, _ = report
+    monkeypatch.setattr(
+        presentation.SystemConfiguration.objects,
+        "values_list",
+        lambda *args, **kwargs: SimpleNamespace(get=lambda: uuid4()),
+    )
+    result = presentation.snapshot_context(snapshot)
+    assert result["rows"] and all(row["family_id"] is None for row in result["rows"])
 
 
 def test_only_selected_detail_identity_is_queried(report):

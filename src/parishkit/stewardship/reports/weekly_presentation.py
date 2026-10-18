@@ -3,6 +3,7 @@
 from django.core.exceptions import ObjectDoesNotExist
 from django.urls import reverse
 
+from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.responses.models import AdditionalInformationItem
 
@@ -60,6 +61,12 @@ def snapshot_context(snapshot, *, page=1, item_id=None):
     # Each request's current disposition and, for its Family name's Timeline
     # link (#1570), its Family's record id, in the same one read.
     statuses, families = {}, {}
+    # The Timeline serves only the current campaign, so an earlier campaign's
+    # retained snapshot shows plain names, not links that would be refused.
+    linkable = (
+        SystemConfiguration.objects.values_list("current_campaign_id", flat=True).get()
+        == snapshot.campaign_id
+    )
     for pk, disposition, family_id in AdditionalInformationItem.objects.filter(
         pk__in=[value.item_id for value in visible],
         submission__campaign_id=snapshot.campaign_id,
@@ -76,7 +83,7 @@ def snapshot_context(snapshot, *, page=1, item_id=None):
         rows.append(
             {
                 "value": value,
-                "family_id": families.get(value.item_id),
+                "family_id": families.get(value.item_id) if linkable else None,
                 "captured": DISPOSITIONS[captured],
                 "current": DISPOSITIONS[current],
                 # The stored keys, for the command line's ``digest weekly``

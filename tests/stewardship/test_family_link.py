@@ -116,6 +116,9 @@ def test_no_template_links_the_timeline_by_hand():
 
 # Every Admin template that names a Family (#1570 slice 1b). Each draws the
 # name with the shared tag; the ones that must not link pass no record id.
+# The guard below only sees ``family_name`` prints and a "Family" column, so a
+# new page that names a Family through another key (``row.name``, a heading)
+# must be added here to be checked for the helper.
 FAMILY_NAME_PAGES = {
     "directory.html": "Active parishioner family directory",
     "find-family-results.html": "Find a Family results",

@@ -160,9 +160,12 @@ def family_link(context, family_id, name, active=None):
     """A Family's name in an Admin table, linked to its Timeline (#1570).
 
     Usage: ``{% family_link row.family_id row.display_name active=row.active %}``.
-    ``name`` is the shared surname-and-heads name, or None (or blank) when
-    the current ParishSoft data no longer has the Family: the shared "Not in
-    ParishSoft" badge then stands alone in its place, never an empty link.
+    ``name`` is the shared surname-and-heads name, or None when the current
+    ParishSoft data no longer has the Family: the shared "Not in ParishSoft"
+    badge then stands alone in its place, never an empty link. A blank name
+    is treated the same, defensively: every source gives None for a missing
+    Family and a placeholder for a present one with no name, so blank should
+    not occur.
     ``family_id`` None draws no link, for a page whose names must not open
     the Timeline (a Testing-only list, or a name already linking its row's
     own page). ``active`` False adds the

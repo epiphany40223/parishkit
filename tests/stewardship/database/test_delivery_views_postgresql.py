@@ -936,8 +936,11 @@ def test_verified_clearance_form_is_audited_and_replay_safe(response_service, go
     )
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         activity = PortalSession.objects.get().last_activity_at
-        page = browser.get(path)
+        with CaptureQueriesContext(connection) as queries:
+            page = browser.get(path)
         assert page.status_code == 200 and b"csrfmiddlewaretoken" in page.content
+        # The Family's name opens its Timeline (#1570), its record id read once.
+        assert len(link_reads(queries)) == 1
         assert PortalSession.objects.get().last_activity_at == activity
         assert browser.post(path + "clearance/", values).status_code == 403
         for _ in range(2):
