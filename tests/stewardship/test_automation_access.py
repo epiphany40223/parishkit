@@ -71,7 +71,6 @@ def page(monkeypatch):
         "_administrator",
         lambda request, service: SimpleNamespace(identity=ME, roles={"administrator"}),
     )
-    monkeypatch.setattr(views, "_fresh", lambda request: True)
     monkeypatch.setattr(views, "database_now", lambda: NOW)
     monkeypatch.setattr(views, "live_sessions", lambda: [dict(r) for r in LIVE_ROWS])
     monkeypatch.setattr(
