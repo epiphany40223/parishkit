@@ -451,3 +451,76 @@ def test_unusable_pending_source_field_does_not_block_other_refresh(
             parent_kind="submission", parent_id=row.pk
         ).values_list("snapshot_id", flat=True)
     ) == {previous, snapshot.pk}
+
+
+@pytest.mark.parametrize(("code", "word"), [("M", "Male"), ("f", "Female")])
+def test_parishsoft_gender_code_shows_word_and_is_unchanged(
+    response_service, code, word
+):
+    """A source M/F/U shows its census word and keeping it is no change (#1621).
+
+    The stored answer stays ParishSoft's code, so the SQL guard (which reads
+    the raw source) admits it; a different word is an ordinary proposal
+    whose current value is that code.
+    """
+    harness = response_service
+    data = response_source()
+    data.members[3].update(sex=code)
+    snapshot, claim = prepare(data)
+    promote(snapshot, claim, harness.campaign, harness.rings)
+    with web_login():
+        form = load_form(harness)
+        assert field(form, "gender")["value"] == word
+        assert not field(form, "gender")["changed"]
+        answers = answers_for(form)
+        response = post(
+            harness.client,
+            "/family/submit",
+            {"baseline": form["baseline"], "answers": answers},
+        )
+        assert response.status_code == 200, response.content
+        assert not ProposedChange.objects.exists()
+        assert Submission.objects.get().answers["members"]["3"]["gender"] == code
+        harness.client, result = login(harness.code, harness.client)
+        assert result.status_code == 302
+        refreshed = load_form(harness)
+        assert field(refreshed, "gender")["value"] == word
+        answers = answers_for(refreshed)
+        answers["members"]["3"]["gender"] = "Unspecified"
+        response = post(
+            harness.client,
+            "/family/submit",
+            {"baseline": refreshed["baseline"], "answers": answers},
+        )
+        assert response.status_code == 200, response.content
+    change = ProposedChange.objects.get()
+    assert (change.field, change.current_value, change.submitted_value) == (
+        "gender",
+        code,
+        "Unspecified",
+    )
+
+
+def test_spaced_parishsoft_gender_code_kept_stores_code(response_service):
+    """A source ``" M "`` kept as Male stores the code and proposes nothing.
+
+    Outer spaces are ignored on decode (#1621); the database guard compares
+    the trimmed answer with the trimmed source, so it admits the submission.
+    """
+    harness = response_service
+    data = response_source()
+    data.members[3].update(sex=" M ")
+    snapshot, claim = prepare(data)
+    promote(snapshot, claim, harness.campaign, harness.rings)
+    with web_login():
+        form = load_form(harness)
+        assert field(form, "gender")["value"] == "Male"
+        assert not field(form, "gender")["changed"]
+        response = post(
+            harness.client,
+            "/family/submit",
+            {"baseline": form["baseline"], "answers": answers_for(form)},
+        )
+        assert response.status_code == 200, response.content
+    assert not ProposedChange.objects.exists()
+    assert Submission.objects.get().answers["members"]["3"]["gender"] == "M"

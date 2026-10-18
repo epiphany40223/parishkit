@@ -16,6 +16,7 @@ from parishkit.stewardship.responses.member_census import (
     InvalidMemberSource,
     InvalidMemberValue,
     browser_value,
+    gender_word,
     source_value,
     validate_member_value,
 )
@@ -112,6 +113,63 @@ def test_unknown_presentation_preserves_availability_and_prior_attestation():
 def test_gender_choices_are_explicit_and_canonical(value):
     assert validate("gender", value) == value
     assert source_value(FIELDS["gender"], " " + value.upper() + " ") == value
+
+
+@pytest.mark.parametrize(
+    ("code", "word"),
+    [
+        ("M", "Male"),
+        ("F", "Female"),
+        ("U", "Unspecified"),
+        ("m", "Male"),
+        (" f ", "Female"),
+        ("u", "Unspecified"),
+    ],
+)
+def test_parishsoft_gender_codes_read_as_census_words(code, word):
+    """ParishSoft v2 reads return M/F/U; the form shows the word (#1621)."""
+    field = FIELDS["gender"]
+    assert gender_word(code) == word
+    # The baseline stays ParishSoft's code, as the SQL guard reads it.
+    assert source_value(field, code) == code
+    assert browser_value(field, KnownValue(True, code)) == word
+    # Keeping the shown word is no change: the answer is the source's code.
+    assert validate("gender", word, KnownValue(True, code)) == code.strip()
+    # The raw code an older page holds is still the unchanged source.
+    assert validate("gender", code, KnownValue(True, code)) == code.strip()
+
+
+def test_parishsoft_gender_code_change_is_a_real_answer():
+    """Choosing a different word than the decoded code is the Family's change."""
+    assert validate("gender", "Female", KnownValue(True, "M")) == "Female"
+    assert validate("gender", "Unspecified", KnownValue(True, "M")) == "Unspecified"
+    # A word without a code-holding source is a plain choice.
+    assert validate("gender", "Male") == "Male"
+    assert validate("gender", "Male", KnownValue(True, "Male")) == "Male"
+
+
+@pytest.mark.parametrize("value", ["", "X", "MF", "Male", "Legacy", None, 1])
+def test_unexpected_gender_values_are_left_unchanged(value):
+    """Only the three codes decode; a blank stays blank (never Unspecified)."""
+    assert gender_word(value) == value
+    assert browser_value(FIELDS["gender"], KnownValue(True, value)) == (value or "")
+
+
+def test_unexpected_gender_code_is_only_retained_never_decoded():
+    """An unknown code stays the current record and forges no choice."""
+    assert validate("gender", "X", KnownValue(True, "X")) == "X"
+    with pytest.raises(InvalidMemberValue):
+        validate("gender", "X")
+    with pytest.raises(InvalidMemberValue):
+        validate("gender", "", KnownValue(True, "M"))
+
+
+def test_gender_codes_apply_to_gender_only():
+    """Another choice field's one-letter source text is not decoded."""
+    field = FIELDS["marital_status"]
+    assert browser_value(field, KnownValue(True, "M")) == "M"
+    with pytest.raises(InvalidMemberValue):
+        validate("marital_status", "Male", KnownValue(True, "M"))
 
 
 @pytest.mark.parametrize("value", MARITAL_STATUSES)

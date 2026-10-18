@@ -1720,9 +1720,11 @@ Ministry leaders never see the tick anywhere
 ([follow-up workflows](../admin-portal/spec.md#follow-up-workflows)).
 The contact details are read through the installed selections, with no
 schema change: `stewardship_ministry_report_v4`, read for one Ministry and
-request kind with every version, gives a join request's gender, age as of
-the report date, email, phones and known primary Family address, and a
-leave request's current role in the Ministry; the
+request kind with every version, gives a join request's gender (a
+ParishSoft code read as its census word, as the
+[Family form](../parishioner-portal/spec.md#existing-member-census) reads
+it), age as of the report date, email, phones and known primary Family
+address, and a leave request's current role in the Ministry; the
 [follow-up packet's](#multi-ministry-follow-up-packet)
 `stewardship_ministry_packet_v1` gives a leave request's email and phones
 (the packet's projection, which leaders already receive), its scope derived
