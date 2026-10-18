@@ -966,10 +966,13 @@ timeline table described next.
 
 **Records shown.** The page shows Production records only: there is no
 Production or Testing control (the Administrator's decision on #1570), and a
-`mode` in the address is refused as an invalid filter (400). Testing
-rehearsal results per Family stay on Go-live readiness's Testing
-submissions. Emails, submissions, form opens and the engagement record carry
-their mode. A sign-in is the durable `family_login` audit event, which
+`mode` in the address is refused as an invalid filter (400). While a
+rehearsal is active, an Administrator sees Testing responses with
+Responses shown set to Testing rehearsal on the
+[response dashboard](#response-dashboard) and, per Family, on the
+[Active parishioner family directory](#response-filters). Emails,
+submissions, form opens and the engagement record carry their mode. A
+sign-in is the durable `family_login` audit event, which
 carries no mode, so it is shown only when the system was in Production at
 that instant (from the runtime mode transitions); a sign-out or session end
 belongs to the Family session its sign-in started, so it is shown exactly
