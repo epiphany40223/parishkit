@@ -57,7 +57,9 @@ def test_home_counts_problems_and_banner_links_tiles(
 @pytest.mark.parametrize("width", [320, 1280])
 def test_home_counts_the_shared_kinds(page, component_origin, axe_source, width):
     """The former page notices (#1214, slice 1) are counted too, and Home
-    drops its own off-site invitation: System health says it."""
+    drops its own off-site invitation: System health says it. An unreadable
+    backup key keeps its own sentence line, and while it shows the count
+    links nothing, since System health cannot be shown (#1673)."""
     errors = []
     page.on("pageerror", lambda error: errors.append(str(error)))
     page.set_viewport_size({"width": width, "height": 900})
@@ -65,9 +67,11 @@ def test_home_counts_the_shared_kinds(page, component_origin, axe_source, width)
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     page.evaluate(axe_source)
     assert page.evaluate(AXE) == []
-    expect(page.locator("[data-home-health]")).to_have_text(
-        "Error 4 system problems. See System health"
-    )
+    expect(page.locator("[data-home-health]")).to_have_text("Error 3 system problems.")
+    key = page.locator('[data-problem="backup_key_unchecked"]')
+    expect(key).to_contain_text("Warning The backup key could not be checked")
+    expect(key.locator("a")).to_have_count(0)
+    expect(page.locator(".home-alerts a")).to_have_count(0)
     expect(page.get_by_role("link", name="Set up off-site backups")).to_have_count(0)
     assert "Encrypted copies of every backup" not in page.locator("main").inner_text()
     assert errors == []

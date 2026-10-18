@@ -8,6 +8,7 @@ Administrator-only.
 """
 
 import json
+import re
 from datetime import timedelta
 from uuid import uuid4
 
@@ -484,8 +485,6 @@ def listed(body):
 
 def home_count(body):
     """Home's System health count line (#1673) as (count, state word), or None."""
-    import re
-
     match = re.search(
         r'data-home-health>.*?class="status-word">(\w+)</span></span>'
         r" (\d+) system problems?\.",
@@ -538,10 +537,11 @@ def test_the_shared_backup_problems_on_home_and_the_page(auth_service, google):
     assert "backup_key_mismatch" not in listed(page)
 
 
-def test_home_counts_an_unreadable_backup_key_while_the_page_is_unavailable(
+def test_home_states_an_unreadable_backup_key_while_the_page_is_unavailable(
     auth_service, google, monkeypatch
 ):
-    """Home still counts the warning (#1673); the page keeps its 503.
+    """Home shows the warning's own sentence, with no link, instead of a
+    count line linking System health, whose page keeps its 503 (#1673).
 
     Only System health's own reading of the key fails here: the applied
     configuration is still valid, as a damaged key record would not be.
@@ -563,8 +563,15 @@ def test_home_counts_an_unreadable_backup_key_while_the_page_is_unavailable(
     assert home.status_code == 200
     assert page.status_code == 503
     body = home.content.decode()
-    assert home_count(body) == (1, "Warning")
-    assert "#health-backups" not in body
+    assert home_count(body) is None
+    line = re.search(
+        r'<li class="notice" data-problem="backup_key_unchecked"[^>]*>.*?</li>',
+        body,
+        re.DOTALL,
+    ).group(0)
+    assert '<span class="status-word">Warning</span>' in line
+    assert "so System health cannot be shown" in line
+    assert "<a " not in line
 
 
 def test_a_backup_running_across_a_key_change_is_no_mismatch(auth_service, google):

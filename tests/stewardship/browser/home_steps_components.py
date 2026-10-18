@@ -219,7 +219,6 @@ def health_components(context, admin, chrome, actor, configuration):
             workgroup="Do not remind",
             detail="reminders_scheduled",
         ),
-        Problem("backup_key_unchecked"),
         Problem(
             "backup_request_failed",
             at=now - timedelta(hours=1),
@@ -239,6 +238,9 @@ def health_components(context, admin, chrome, actor, configuration):
                 "refreshed_at": None,
                 "health_problems": shared,
                 "health_severity": "error",
+                # An unreadable backup key keeps System health from
+                # opening, so Home states it instead of counting it.
+                "health_lines": (Problem("backup_key_unchecked"),),
                 "offsite_unset": True,
             },
         },

@@ -227,15 +227,17 @@ def summary(actor, configuration, now, *, home=False):
             # Home only: the command line's status read leaves it out.
             result["held_emails"] = undecided_emails(campaign.pk)
     if allows(actor, Capability.SYSTEM_LOGS):
-        from parishkit.stewardship.system_health import home_problems
+        from parishkit.stewardship.system_health import BLOCKS_PAGE, home_problems
 
-        # One line for each System health problem, for those who may open
-        # that page (ADM-13); others see none.
-        result["health_problems"] = home_problems(
-            configuration, now, result["full_refresh"]
-        )
-        # Home's one count line takes the error look when any counted
-        # problem is an error, else the warning look (#1673).
+        # System health's problems, for those who may open that page
+        # (ADM-13); others see none. Home counts them in one line linking
+        # the page (#1673), except a problem that keeps the page from
+        # opening: Home shows its own sentence instead (``health_lines``).
+        problems = home_problems(configuration, now, result["full_refresh"])
+        result["health_lines"] = [p for p in problems if p.kind in BLOCKS_PAGE]
+        result["health_problems"] = [p for p in problems if p.kind not in BLOCKS_PAGE]
+        # The count line takes the error look when any counted problem is
+        # an error, else the warning look.
         result["health_severity"] = (
             "error"
             if any(problem.severity == "error" for problem in result["health_problems"])
