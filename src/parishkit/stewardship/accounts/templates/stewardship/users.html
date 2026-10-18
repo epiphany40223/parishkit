@@ -76,7 +76,7 @@ time zone (data-compact, date-format-v1.js), as other dense tables do
 </div>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <p class="help" id="users-delete-reason">{{ delete_reason }}</p>
-<p class="help" id="users-never-signed-in">{% if never_signed_in %}{% blocktranslate count count=never_signed_in %}{{ count }} Ministry leader has never signed in.{% plural %}{{ count }} Ministry leaders have never signed in.{% endblocktranslate %}{% else %}{% translate "No Ministry leader user is waiting for a first sign-in." %}{% endif %}</p>
+<p class="help" id="users-never-signed-in">{% if never_signed_in %}{% blocktranslate count count=never_signed_in %}{{ count }} Ministry leader has never signed in.{% plural %}{{ count }} Ministry leaders have never signed in.{% endblocktranslate %}{% else %}{% translate "Every Ministry leader has signed in." %}{% endif %}</p>
 {% translate "Delete {name}?" as title_one %}{% translate "Delete {count} users?" as title_many %}{% translate "This person can no longer sign in to the Admin portal, and their open sessions end on their next request. The address can be added again later as a new user." as body %}{% translate "Delete" as accept %}
 {% include "stewardship/components/confirm-dialog.html" with dialog_id="user-delete" form_id="user-actions" fallback="users-table-title" title_one=title_one title_many=title_many body=body accept=accept done_one=_("Deleted {name}.") done_many=_("Deleted {count} users.") %}
 </section>

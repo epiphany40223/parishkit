@@ -18,5 +18,5 @@ This guide is for Administrators to pass on to Ministry leaders (and Staff) who 
 ## Troubleshooting for operators
 
 - "Couldn't find your Google Account" on Google's page means the address has no Google Account: step 2.
-- "Access unavailable" on the portal means Google signed the person in, but with an address that is not a user. Compare the address on the Users page with the one the person chose in Google's account chooser. Sign-in activity in System logs usually records such refusals.
+- "Access unavailable" on the portal usually means Google signed the person in, but with an address that is not a user. Compare the address on the Users page with the one the person chose in Google's account chooser. Sign-in activity in System logs usually records such refusals.
 - Changing the address means deleting the user and adding the new address (see the Users page's About panel).

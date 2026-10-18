@@ -6,8 +6,9 @@
   are quoted from the parishioner-portal specification.
   Admin denials (admin is true) extend the JavaScript-gated Admin base
   (#565); Family denials extend the ungated base. The generic Admin denial
-  adds the Google Account guidance (#1593) for every reason alike, so it
-  still says nothing about which check failed.
+  adds the Google Account guidance (#1593) for every sign-in refusal alike
+  (sign_in), so it still says nothing about which check failed; a signed-in
+  person's refused report view gets none.
 {% endcomment %}
 {% block title %}{% if kind == "code" %}{% translate "Family code not accepted" %}{% elif kind == "link" %}{% translate "Family link not accepted" %}{% elif kind == "unavailable" %}{% translate "Sign-in temporarily unavailable" %}{% else %}{% translate "Access unavailable" %}{% endif %}{% endblock %}
 {% block content %}<section class="flow panel">
@@ -23,7 +24,7 @@
   {% else %}
   <h1>{% translate "Access unavailable" %}</h1>
   <p>{% translate "Sign-in is unavailable. Please try again." %}</p>
-  {% if admin %}{% google_account_help %}{% endif %}
+  {% if admin and sign_in %}{% google_account_help %}{% endif %}
   {% endif %}
   {% if public_content %}<div class="content-block">{{ public_content|safe }}</div>{% endif %}
   <p><a href="{{ retry_path }}">{% if kind == "code" %}{% translate "Try another Family code" %}{% elif kind == "link" %}{% translate "Enter your Family code instead" %}{% else %}{% translate "Try signing in again" %}{% endif %}</a></p>

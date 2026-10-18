@@ -68,8 +68,8 @@ def test_access_gate_rate_limits_and_outages_use_the_family_route(status):
     assert b'href="/"' in response.content
 
 
-def test_only_the_generic_admin_refusal_carries_the_google_account_guidance():
-    """Every Admin refusal alike explains a missing Google Account (#1593).
+def test_only_the_generic_admin_sign_in_refusal_carries_the_google_account_guidance():
+    """Every Admin sign-in refusal alike explains a missing Google Account (#1593).
 
     The guidance is the same for every reason, so it reveals no check; the
     temporary-unavailability page and Family refusals do not show it.
@@ -77,8 +77,33 @@ def test_only_the_generic_admin_refusal_carries_the_google_account_guidance():
     from parishkit.stewardship.accounts.google_account_help import HELP_URL
 
     marker = f'href="{HELP_URL}"'.encode()
-    assert marker in login_denial(admin=True, status=403).content
-    unavailable = login_denial(admin=True, status=503, kind="unavailable")
+    assert marker in login_denial(admin=True, status=403, sign_in=True).content
+    unavailable = login_denial(admin=True, status=503, kind="unavailable", sign_in=True)
     assert marker not in unavailable.content
     for kind in TEXTS:
         assert marker not in login_denial(status=403, kind=kind).content
+
+
+def test_guidance_shows_for_sign_in_refusals_only():
+    """A signed-in person's refusal gets no Google Account advice (#1593).
+
+    A report view's ``denial()`` reaches a person who is already signed in,
+    so the advice would be wrong; each sign-in refusal kind renders
+    byte-identical content, so it still reveals no check.
+    """
+    from parishkit.stewardship.accounts.authentication import denial
+
+    marker = b"data-google-account-help"
+    try:
+        raise PermissionError
+    except PermissionError:
+        report_refusal = denial()
+        sign_in_refusals = [
+            denial(sign_in=True),
+            denial(status=403, retry=0, sign_in=True),
+            login_denial(admin=True, status=403, sign_in=True),
+        ]
+    assert marker not in report_refusal.content
+    assert marker not in login_denial(admin=True, status=403).content
+    assert len({r.content for r in sign_in_refusals}) == 1
+    assert marker in sign_in_refusals[0].content

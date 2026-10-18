@@ -49,10 +49,12 @@ address the parish gave access to; an address with no Google Account needs
 one created for it first, keeping the existing address (Google's sign-up
 offers to use an existing email address instead of a new Gmail address),
 with a link to Google's own "Create a Google Account" help; and whom to ask
-when it still fails. The not-authorized page shows it for every refusal
-alike, so it still reveals nothing about which check failed. The
+when it still fails. The not-authorized page shows it for every sign-in
+refusal alike (a refusal of a signed-in person, such as a report view
+they may not read, does not), so it still reveals nothing about which check failed. The
 temporary-unavailability page and the Family portal's pages do not show it.
-The local laptop environment's test sign-in branch does not either. The
+The local laptop environment's test sign-in branch does not either,
+nor do its refused test sign-in links. The
 guidance's wording is kept in one place in code
 (`accounts/google_account_help.py`), so the [Users page](#users-table) and a
 later leader email ([#1592](https://github.com/epiphany40223/parishkit/issues/1592))
@@ -6137,9 +6139,10 @@ never signed in (their Last successful sign-in reads Never), across every
 page of the table, such as "3 Ministry leaders have never signed in."
 ([#1593](https://github.com/epiphany40223/parishkit/issues/1593)), so an
 Administrator sees who may be stuck, often for want of a Google Account
-for their address. With none it says "No Ministry leader user is waiting
-for a first sign-in.", so the line is always there and a redraw moves nothing below it. It is counted from the
-rows the page already reads, adding no query. The About panel says users
+for their address. With none it says "Every Ministry leader has signed
+in.", so the line is always there, stays one line high even at 320 px,
+and a redraw moves nothing below it. It is counted from the rows the
+page already reads, adding no query. The About panel says users
 sign in with a Google Account for their address and repeats the
 [Google Account guidance](#login-and-denial-behavior) word for word, so an
 Administrator can pass it on (in the local laptop environment, only while

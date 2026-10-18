@@ -527,12 +527,19 @@ def test_google_account_guidance_shows_where_sign_in_fails(page, component_origi
         link = guidance.get_by_role("link", name=str(LINK_LABEL))
         assert link.get_attribute("href") == HELP_URL, path
         assert link.get_attribute("target") == "_blank", path
-    page.goto(component_origin + "/denied")
-    assert page.locator("[data-google-account-help]").count() == 0
+    for path in ("/denied", "/denied-admin-signed-in"):
+        page.goto(component_origin + path)
+        assert page.locator("[data-google-account-help]").count() == 0, path
+    page.set_viewport_size({"width": 320, "height": 900})
     page.goto(component_origin + LIST)
-    assert page.locator("#users-never-signed-in").inner_text() == (
-        "1 Ministry leader has never signed in."
-    )
+    line = page.locator("#users-never-signed-in")
+    assert line.inner_text() == "1 Ministry leader has never signed in."
+    # The empty text is a single line even at 320 px, so it never takes more
+    # room than the count text it replaces (which may wrap to two lines).
+    line.evaluate("el => { el.textContent = 'Every Ministry leader has signed in.'; }")
+    one_line = line.evaluate("el => parseFloat(getComputedStyle(el).lineHeight)")
+    assert line.bounding_box()["height"] < one_line * 1.5
+    page.set_viewport_size({"width": 1280, "height": 900})
     about = page.locator("details[data-about-page]")
     about.locator("summary").click()
     visible(about.locator("[data-google-account-help]"))
