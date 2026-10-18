@@ -3217,9 +3217,21 @@ def test_home_counts_problems_in_one_line_linking_system_health():
     assert 'href="/admin/system/health/">See System health</a>' in line
     assert "The most recent full ParishSoft reload" not in admin
     assert "ParishSoft data may be out of date" not in admin
+    assert '<span class="status-word">Warning</span>' in line
     errors = home_page({"health_problems": problems[:1], "health_severity": "error"})
     assert 'class="notice notice-error" data-home-health' in errors
     assert "1 system problem." in errors
+
+
+def test_every_home_problem_line_leads_with_its_state():
+    """Each Home line that reports a problem is a status indicator (#1673,
+    ui-conventions "Overview pages"): the failed tasks and out-of-date data
+    lines lead with the error icon and word."""
+    page = home_page({"refresh_stale": True, "failed_tasks": 2})
+    for marker in ("data-home-refresh", "data-home-failed-tasks"):
+        line = re.search(rf"<li [^>]*{marker}>.*?</li>", page, re.S).group(0)
+        assert "level-icon-error" in line, marker
+        assert '<span class="status-word">Error</span>' in line, marker
 
 
 @pytest.mark.parametrize(
