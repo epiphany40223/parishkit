@@ -347,12 +347,31 @@ def task_status(request, task_id):
     # Refresh from ParishSoft polls with ?view=refresh (#521): the region
     # there sits in its own page region and has no history or Retry panel
     # below it, so it is worded for that page. Any other query is ignored.
-    region = {"region_id": REFRESH_RUN} if request.GET.get("view") == "refresh" else {}
+    view = request.GET.get("view")
+    region = {"region_id": REFRESH_RUN} if view == "refresh" else {}
     # The region shows no history, so history paging does not apply here.
     request.GET = QueryDict()
     result, context = _task_read(request, task_id)
     if context is None:
         return result
+    if view == "load" and context["is_refresh"]:
+        # Load ParishSoft data, the Campaign setup step (#1404 PR 5), polls
+        # with ?view=load for its own live region: the refresh's stage boxes
+        # instead of the task's status panel. Only a succeeded run asks
+        # whether the campaign has its Families (one query, once).
+        from parishkit.stewardship.accounts import campaign_wizard
+
+        task = context["task"]
+        families = (
+            task["state"] == "succeeded"
+            and campaign_wizard.current_campaign_has_families()
+        )
+        response = render(
+            request,
+            "stewardship/campaign-load-status.html",
+            campaign_wizard.load_status(task, families=families),
+        )
+        return _finish_html(request, result, response, task_id, audit=False)
     response = render(
         request, "stewardship/background-task-status.html", context | region
     )

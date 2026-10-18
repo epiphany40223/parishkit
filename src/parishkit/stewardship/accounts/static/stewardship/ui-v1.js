@@ -1987,7 +1987,15 @@
     // Focus without scrolling kept the reader's place; if the control itself
     // is just outside the viewport, bring it (and nothing more) into view.
     target.scrollIntoView({block: "nearest"});
-    if (!refused) announce(describeTable(document.getElementById(id), control, owner));
+    // A form marked data-in-place-spoken (Load ParishSoft data's button,
+    // #1404 PR 5) says nothing on success: the region it changes reads out
+    // its own new state through its live-status announcer, and a second
+    // message in another live region at the same moment could cut it off.
+    if (!refused) {
+      if (!owner?.hasAttribute("data-in-place-spoken")) {
+        announce(describeTable(document.getElementById(id), control, owner));
+      }
+    }
     else if (summary) announce(sentences([...summary.querySelectorAll("li")]));
     else announce(NOT_ACCEPTED);
   };

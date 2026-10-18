@@ -216,7 +216,8 @@ unfinished.
 Setup collects no campaign (#142). Once it is complete, open Home and choose
 **Create the campaign**, fill in its form (every module, for the seeder),
 review and create it, then press **Load the campaign's ParishSoft data** on
-the change's status so the campaign gets its Families and codes.
+Load ParishSoft data, the campaign wizard step it opens next, so the
+campaign gets its Families and codes.
 
 For an unattended install, `tools/stewardship-local.sh wizard` completes the
 wizard through the wizard pages' own service layer with the fake ParishSoft
