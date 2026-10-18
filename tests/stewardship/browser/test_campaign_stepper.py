@@ -26,7 +26,15 @@ from .stepper_components import (
 from .test_artwork_dialog import png, slot
 from .test_components import axe_violations, shown_step_list
 from .test_in_place import MARK, MARKED
-from .waits import available, greyed, has_attribute, has_text, hidden, visible
+from .waits import (
+    available,
+    eventually,
+    greyed,
+    has_attribute,
+    has_text,
+    hidden,
+    visible,
+)
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -386,12 +394,24 @@ def assert_state_colours(page, boxes, waiting):
     light = (background(done), background(active), background(rest))
     assert light[2] == waiting
     assert len(set(light)) == 3, light
-    page.emulate_media(color_scheme="dark")
+    scheme(page, "dark")
     try:
         dark = (background(done), background(active), background(rest))
         assert len(set(dark)) == 3 and dark[:2] != light[:2], (light, dark)
     finally:
-        page.emulate_media(color_scheme="light")
+        scheme(page, "light")
+
+
+def scheme(page, name):
+    """Emulate the device colour scheme ``name`` and wait for the page to take it.
+
+    The Admin dark tokens hang off ``html[data-theme]``, which admin-gate-v1.js
+    sets from a ``matchMedia`` change listener that runs after
+    ``emulate_media`` returns. Reading colours before it runs sees the old
+    scheme's, as WebKit often did (#1638).
+    """
+    page.emulate_media(color_scheme=name)
+    eventually(page, "document.documentElement.dataset.theme", name)
 
 
 # Every live region's text, keyed by the node, kept on the page for a
