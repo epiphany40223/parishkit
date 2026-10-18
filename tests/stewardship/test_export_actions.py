@@ -4,7 +4,8 @@ The ui-conventions "Downloaded files" rule (Export actions, Time zones):
 each export form draws its formats with the ``export_actions`` tag, one
 small "Export XLSX" … button per format, never its own format menu or
 Download button; no export asks for a time zone, except on a page that lets
-the reader view its times in UTC (System logs). Like the button guard, the
+the reader view its times in UTC (System logs); and no row has an
+explanatory line on its count, scope or columns (R37). Like the button guard, the
 template checks are a plain text scan, so they cover branches no fixture
 reaches; a new export form fails until it is listed in EXPORTS.
 """
@@ -53,6 +54,13 @@ TAG = re.compile(r"{% export_actions ((?:\"\w+\" )+)")
 # A format or zone the template draws itself rather than through the row.
 OWN_FORMAT = re.compile(r'name="format"|>Export (?:XLSX|CSV|PDF)<')
 ZONE_MENU = re.compile(r'<select\b[^>]*\bname="(?:browser_)?timezone"')
+# The retired explanatory lines above an export row (pk-local R37): its
+# count ("Exports all 7 estimated matching Families, every page."), its scope
+# ("The file holds the list these choices show") and its column list.
+EXPLAINS = re.compile(
+    r"Exports (?:the|all) |The file holds (?:the|all|both)|has these columns|"
+    r"-export-(?:count|columns)\b"
+)
 
 
 def template_forms():
@@ -94,6 +102,13 @@ def test_no_template_draws_its_own_format_choice():
         assert "export_format_options" not in text, path.name
         forms = [body for body in FORM.findall(text) if "{% export_actions " in body]
         assert not any(ZONE_MENU.search(body) for body in forms), path.name
+
+
+def test_no_export_row_explains_itself():
+    """No export page draws a count, scope or column-list line (R37)."""
+    for name in sorted({name for name, _ in EXPORTS}):
+        text = COMMENT.sub("", (TEMPLATES / name).read_text())
+        assert not EXPLAINS.search(text), name
 
 
 def test_only_the_utc_pages_have_a_zone_choice():

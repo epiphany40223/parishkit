@@ -39,5 +39,5 @@
 {% comment %}The export (#1679, ui-conventions "Downloaded files"): one row of small export buttons (export_actions), each posting its format, below the table, in the browser's time zone; its form's hidden filters follow each in-place Apply, sort or page (data-table-sync).{% endcomment %}<div class="export-pane">
 <form id="table-export" data-table-sync method="post" action="{% url 'admin:limitations_export' %}">{% csrf_token %}
 {% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
-{% translate "The file holds both tables, every page of them, with the filters applied above." as tip %}{% export_actions "csv" "xlsx" "pdf" name="limitations" label=_("Export both tables") tip=tip %}</form></div>
+{% export_actions "csv" "xlsx" "pdf" name="limitations" label=_("Export both tables") %}</form></div>
 {% endblock %}

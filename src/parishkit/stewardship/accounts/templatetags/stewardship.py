@@ -117,7 +117,9 @@ def export_actions(
     the element ids that describe every button (the line saying why, or a
     complete gate's hint). ``tip`` is the toggletip text closing the row, and
     ``tip_more`` an optional sentence added to it (the Family timeline's
-    "It includes the Family code.").
+    "It includes the Family code."); a tip is only for what the buttons
+    cannot say, such as what the file leaves out, never the file's count,
+    scope or columns (ui-conventions "Downloaded files", Export actions).
 
     Time zone (ui-conventions "Downloaded files", Time zones): the row posts
     the browser's zone in a hidden ``browser_timezone`` field, which

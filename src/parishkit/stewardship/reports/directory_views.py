@@ -59,7 +59,7 @@ from .directories import (
     staff_entered,
     testing_codes_context,
 )
-from .directory_documents import export_headings, head_names
+from .directory_documents import head_names
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .read_admission import admit_report_read
@@ -390,13 +390,6 @@ def directory(request, campaign_id):
                     # Responses Staff entered through Open form (#529).
                     "staff_entered": staff_entered(
                         campaign_id, [row["family_id"] for row in report["rows"]]
-                    ),
-                    "export_headings": export_headings(
-                        postal=postal,
-                        reach=query.reach,
-                        dates=dates,
-                        counts=counts,
-                        checks=query.check != "any",
                     ),
                     # In Testing the link keeps the mode it was drawn in.
                     "unreachable_url": reverse("admin:family_directory")

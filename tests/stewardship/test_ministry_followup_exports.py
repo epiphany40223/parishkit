@@ -463,7 +463,9 @@ def test_the_queue_offers_export_these_requests():
     assert "Ministry leaders receive the email and phones of each Member" in section
     assert 'name="browser_timezone" data-browser-zone' in section
     assert 'name="timezone"' not in section
-    assert 'id="followup-export-count" data-table-sync' in html
+    # No count line (R37); the PDF limit line is drawn hidden below the limit.
+    assert 'id="followup-export-pdf-limit" data-table-sync hidden' in html
+    assert "The file holds" not in html
     assert "Export XLSX" in section and "Export CSV" in section
 
 
@@ -508,14 +510,16 @@ def export_buttons(html):
 
 
 def test_the_pdf_is_offered_only_up_to_its_limit():
-    """Above the limit Export PDF is unavailable, and the export line says
-    why; CSV and XLSX stay offered. The row is redrawn with each applied view."""
+    """Above the limit Export PDF is unavailable, and the line below the row
+    says why; CSV and XLSX stay offered. The row and the line are redrawn with
+    each applied view."""
     html = followup_page(total=3, export_pdf_limit=2)
     buttons = export_buttons(html)
     assert 'value="pdf" disabled data-server-disabled' in buttons
     assert 'value="csv" aria-describedby' in buttons
     assert 'id="followup-export-buttons" data-table-sync' in html
     assert "The PDF is limited to 2 requests" in html
+    assert 'id="followup-export-pdf-limit" data-table-sync>' in html
     html = followup_page(total=2, export_pdf_limit=2)
     assert "disabled" not in export_buttons(html)
     assert "The PDF is limited" not in html

@@ -111,16 +111,17 @@ def test_export_follows_an_in_place_apply(page, component_origin):
     )
     assert form.locator("input[name=ministry]").input_value() == ""
     assert form.locator("input[name=browser_timezone]").input_value() == zone
-    assert "51" in page.locator("#followup-export-count").inner_text()
+    # No count line (R37); the PDF limit line stays hidden below the limit.
+    assert page.locator("#followup-export-pdf-limit").is_hidden()
 
 
 def test_pdf_is_unavailable_above_its_limit(page, component_origin):
     """With more requests than one PDF may hold, Export PDF is unavailable
-    and the export line says why; CSV and XLSX still are not (#1157)."""
+    and the line below the row says why; CSV and XLSX still are not (#1157)."""
     page.goto(component_origin + "/followup-over")
     row = export_row(page)
     pdf = row.get_by_role("button", name="Export PDF")
     assert pdf.is_disabled()
-    assert pdf.get_attribute("aria-describedby") == "followup-export-count"
+    assert pdf.get_attribute("aria-describedby") == "followup-export-pdf-limit"
     assert row.get_by_role("button", name="Export XLSX").is_enabled()
     visible(page.get_by_text("The PDF is limited to 1,000 requests", exact=False))

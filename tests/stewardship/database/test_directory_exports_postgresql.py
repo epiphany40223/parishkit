@@ -536,15 +536,13 @@ def test_postal_mail_merge_leaves_out_families_without_a_mailing_address(
         for text in (
             b"Addressee",
             b"Mailing address",
-            b"Every listed Family is in the mail-merge file: the active "
-            b"Families with no deliverable head email and a usable mailing "
-            b"address.",
             b"<td>Member Example</td>",
             b'name="mailing" value="yes" checked',
             b'<input type="hidden" name="mailing" value="yes">',
-            b"ParishSoft DUID, Family, Addressee, Family heads,",
         ):
             assert text in body
+        # No column-list line above the export buttons (R37).
+        assert b"The file has these columns" not in body
         response = post(browser, reverse("admin:family_directory_export"), fields)
         assert response.status_code == 302
     request = ExportRequest.objects.get(request_key=fields["request_key"])

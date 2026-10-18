@@ -88,11 +88,10 @@
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 </div>
 {% comment %}The export (#1679, ui-conventions "Downloaded files"): one row of small export buttons (export_actions), each posting its format, below the table, in the browser's time zone; its form's hidden filters follow each in-place Apply, sort or page (data-table-sync).{% endcomment %}<div class="export-pane">
-<p class="help" id="information-export-count" data-table-sync>{% blocktranslate with shown=total|number count counter=total %}Exports the {{ shown }} estimated matching item, every page.{% plural %}Exports all {{ shown }} estimated matching items, every page.{% endblocktranslate %}</p>
 <form id="table-export" data-table-sync data-submit-waits method="post" action="{% url 'admin:information_export' %}">{% csrf_token %}
 {% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
 <input type="hidden" name="request_key" value="{{ request_key }}">
 <label><input type="checkbox" name="history" value="yes"{% if not mutable %} disabled{% endif %}> {% translate "Include complete Staff workflow history" %}</label>
-{% translate "The file uses the applied filters and sort above, not just this page, and the text as it is when you export; later changes are not included." as tip %}{% export_actions "csv" "xlsx" "pdf" name="information" label=_("Export complete results") tip=tip enabled=mutable describedby=mutable|yesno:",information-locked" %}</form></div>
+{% export_actions "csv" "xlsx" "pdf" name="information" label=_("Export complete results") enabled=mutable describedby=mutable|yesno:",information-locked" %}</form></div>
 {% endif %}
 {% endblock %}

@@ -58,9 +58,8 @@
 {% else %}<p>{% translate "There are no campaign dates to display yet." %}</p>{% endif %}
 {% else %}<p>{% translate "Participation chart unavailable. No complete report is ready for this population yet; no zero values have been assumed. The chart is calculated in the background; refresh this page in a few minutes." %}</p>{% endif %}
 </section>
-{# A small export panel (#1537): one sentence and the row of export buttons (export_actions, XLSX first, #1190, #1679), posting the zone the page was drawn in. Without a chart, or while other campaign work holds exports, the button is still drawn, unavailable and named by the sentence that says why (#563); the server refuses a forged request all the same. #}
+{# A small export panel (#1537): the row of export buttons, with no sentence on what it exports (ui-conventions "Downloaded files", Export actions) (export_actions, XLSX first, #1190, #1679), posting the zone the page was drawn in. Without a chart, or while other campaign work holds exports, the button is still drawn, unavailable and named by the sentence that says why (#563); the server refuses a forged request all the same. #}
 <section class="panel" id="participation-export" aria-labelledby="participation-export-heading"><h2 id="participation-export-heading">{% translate "Export" %}</h2>
-<p>{% translate "Exports the daily participation data on this page." %}</p>
 {% if not export_allowed %}<p class="notice" id="participation-export-locked">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so new exports are unavailable until it finishes or is cancelled; going live can take days. Files that are ready can still be downloaded." %}</p>{% endif %}
 {% if chart %}
 <form method="post" action="{% url 'admin:report_export_create' %}">{% csrf_token %}

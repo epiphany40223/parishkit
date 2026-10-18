@@ -504,7 +504,6 @@ def test_post_filter_applies_in_place_with_csrf(page, component_origin):
     chart = page.locator("[data-chart='information-followup-spec']")
     expect(chart).to_have_attribute("data-chart-state", "rendered")
     expect(chart.locator("svg tspan", has_text="1 out of 3 (33.3%)")).to_have_count(1)
-    visible(page.locator("#information-export-count", has_text="3 estimated matching"))
     export = page.locator("#table-export input[type=hidden][name=disposition]")
     assert export.input_value() == "withdrawn"
     assert page.evaluate(MARKED) == "kept"
@@ -536,13 +535,11 @@ def test_post_filter_with_no_matches_empties_the_counts(page, component_origin):
 
 def test_filter_that_adds_columns_and_notes_updates_them(page, component_origin):
     """Include mailing columns adds table columns, the unreachable-Families
-    notice and the export's mail-merge columns line, all outside the table
-    but the columns; each follows the filter without a page load."""
+    notice (outside the table) and the export's mailing field; each follows
+    the filter without a page load."""
     page.goto(component_origin + "/family-directory")
     page.evaluate(MARK)
     assert page.locator("[data-unreachable-notice]").count() == 0
-    columns = page.locator("#directory-export-columns")
-    assert "mail-merge file" not in columns.text_content()
     fulfil_post_with(
         page, "**/families/", component_origin, lambda request: "/postal-directory"
     )
@@ -553,8 +550,6 @@ def test_filter_that_adds_columns_and_notes_updates_them(page, component_origin)
     visible(page.locator("#table").get_by_role("columnheader", name="Addressee"))
     visible(page.locator("[data-unreachable-notice]"))
     assert page.locator("#table-export input[name=mailing]").input_value() == "yes"
-    # The export row's columns line follows (#1679), shown below the table.
-    visible(columns.get_by_text("mail-merge file", exact=False))
     assert page.evaluate(MARKED) == "kept"
 
 

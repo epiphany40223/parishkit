@@ -1114,7 +1114,8 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
    outlined buttons, one per format, smaller and quieter than the primary
    green buttons, wrapping on a phone instead of widening the page. They are
    2.25rem tall, past the 24px minimum target size with .5rem between them.
-   An export pane (.export-pane) is that row and its one short note line.
+   An export pane (.export-pane) is that row and, only while exporting is
+   unavailable (other campaign work under way), the line saying why.
    System logs' "Times in" menu sits in the row at its own width. */
 .export-pane { margin-block: 1rem; }
 .export-pane > p, .export-pane > form > p { margin-block: .25rem; }

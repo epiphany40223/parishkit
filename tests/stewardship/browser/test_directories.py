@@ -183,7 +183,8 @@ def test_complete_directory_export_controls_are_private_native_and_gated(
         # menu and no zone question: the browser's zone is sent unasked.
         assert page.get_by_label("Export format").count() == 0
         assert page.get_by_label("Export timezone").count() == 0
-        visible(page.get_by_text("51 estimated matching Families", exact=False))
+        # No count line above the buttons (R37).
+        assert page.get_by_text("estimated matching", exact=False).count() == 0
         page.get_by_label(
             "Search by Family name, any member's name, DUID, envelope number or address"
         ).fill("Unsaved private edit")

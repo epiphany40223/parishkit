@@ -98,8 +98,9 @@ HEADINGS = (
 NO_CONTACT = "None recorded"
 UNAVAILABLE = "Unavailable"
 PRIVACY = "Sensitive parish information. Share only with authorized recipients."
-# The fix for a PDF above EXPORT_PDF_LIMIT requests; the queue's export line
-# says the same while its filters select more (ministry-followup.html).
+# The fix for a PDF above EXPORT_PDF_LIMIT requests; the line below the
+# queue's export row says the same while its filters select more
+# (ministry-followup.html).
 PDF_TOO_LARGE_FIX = _("Choose CSV or XLSX, or narrow the filters.")
 
 
