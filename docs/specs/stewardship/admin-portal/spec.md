@@ -965,7 +965,7 @@ no such entry. A count follows the link as text. "Production being
 activated" is a scheduled campaign, or Production preparation in progress;
 "Mail paused" is Production with live mail paused, in any state not closed.
 Sent mail problems are the emails that may not have arrived (the
-header's "Not sure it arrived" counts), and the step links Sent mail
+header's "Not sure it arrived — review needed" counts), and the step links Sent mail
 filtered to the operating mode's, counted as "N may not have arrived", or
 plain Sent mail while that mode has none. When the other mode has some, a
 second link follows, "N in Testing may not have arrived" (or in
@@ -1462,14 +1462,21 @@ Administrators have two always-visible indicators:
   actions defined by the
   [delivery workflow](../background-processing/spec.md#family-invitations-and-reminders);
   it never displays credentials or sealed substitutions. Its count is the
-  emails of the system's operating mode that Sent mail lists as Not sure it
-  arrived (every kind Sent mail lists, operational and security notices
-  too), and it links Sent mail filtered to them in that mode, so the count
-  is exactly the list it opens: both read Sent mail's one filter
-  definition. When the other mode also has some, a second, separate link
-  ("Not sure it arrived in Testing: N", or in Production) opens them in that
-  mode; the two are never added into one number ([#1576](https://github.com/epiphany40223/parishkit/issues/1576)). The warning shows
-  while either has some, and each link while its own count does.
+  emails of the system's operating mode that Sent mail lists under its
+  Delivery choice Not sure it arrived — review needed: Not sure it arrived,
+  of a kind an Administrator can resolve (not an operational or security
+  notice) in a campaign that is not archived. An email nobody can resolve
+  would otherwise keep the warning up for good. It links Sent mail filtered
+  to them in that mode, so the count is exactly the list it opens: both
+  read Sent mail's one filter definition. When the other mode also has
+  some, a second, separate link ("Not sure it arrived in Testing: N", or in
+  Production) opens them in that mode; the two are never added into one
+  number ([#1576](https://github.com/epiphany40223/parishkit/issues/1576)).
+  The warning shows while either has some, and each link while its own
+  count does. The other mode's link comes first, so when the operating
+  mode's count, the one an Administrator usually clears, drops to 0, its
+  link disappears without moving the other under the pointer
+  ([no layout shift](../ui-conventions/spec.md#no-layout-shift)).
 
 Family clients heartbeat while a form is actively visible, at no more than one
 request every 30 seconds. Expired/closed/ineligible sessions disappear. Worker
@@ -4836,9 +4843,13 @@ a phone, without sideways scrolling) holds:
   email (or, as before, the emails of the Family record with that id).
   Anything else is refused with the page's field error. A Testing email's
   routed address (the Testing recipient) is not searched.
-- **Purpose**: All, or one kind (Initial invitation, Reminder, Submission
-  receipt, Selected-Family test, Daily Administrator report, Weekly
-  Administrator report, Operational notice, Security notice).
+- **Purpose**: All; Family invitations and reminders (Initial invitation
+  and Reminder together, the Family email
+  [System health](#system-health)'s Waiting to retry counts,
+  [#1632](https://github.com/epiphany40223/parishkit/issues/1632)); or one
+  kind (Initial invitation, Reminder, Submission receipt, Selected-Family
+  test, Daily Administrator report, Weekly Administrator report,
+  Operational notice, Security notice).
 - **From** and **Through**: whole days in the browser's zone, as on
   [System logs](#logs). From starts at that day's midnight and Through
   includes its whole day; the server converts both to UTC bounds with the
@@ -4852,7 +4863,7 @@ a phone, without sideways scrolling) holds:
   ("From and Through are days in this computer's time zone: …") as a tip
   rather than a line of its own, so the bar stays compact (#227); like the
   note, it shows only once the browser reports a known zone.
-- **Delivery**: All; three grouped choices; then each single state as
+- **Delivery**: All; four grouped choices; then each single state as
   before. The groups overlap on purpose: they are filters, not a partition.
   - **Needs attention**: what an Administrator can still act on: Not sure
     it arrived (`delivery_unknown`), and Failed (`permanent_failure`) unless
@@ -4862,6 +4873,11 @@ a phone, without sideways scrolling) holds:
     operational or security notice) in a campaign that is not archived.
     One set-based condition: the campaign join and one correlated lookup of
     the latest resolution per candidate, through its history index.
+  - **Not sure it arrived — review needed**: the Not sure it arrived part
+    of Needs attention (`delivery_unknown`, of a kind whose page offers
+    resolutions, in a campaign that is not archived). The status bar's and
+    Home's counts link it ([Background indicators](#background-indicators),
+    [#1576](https://github.com/epiphany40223/parishkit/issues/1576)).
   - **Not delivered**: emails that finished without being delivered, Failed
     and Not sent (cancelled) (`permanent_failure`, `cancelled`). Not sure it
     arrived is not in it, since such an email may have arrived; a Delivered
@@ -7362,9 +7378,12 @@ reason ends (if known), and a link to act on it:
   [mail sender panel](#mail-sender-panel).
 - **Planning is held:** the same reasons, in the same words, for which
   [Family email progress](#family-email-progress) shows **Held**.
-- **Waiting to retry:** how many messages of the operating mode wait to
-  retry after a temporary refusal, and when the next retry is due, linking
-  Sent mail filtered to Waiting to retry in that mode. When the other mode
+- **Waiting to retry:** how many Family invitations and reminders of the
+  operating mode wait to retry after a temporary refusal, and when the next
+  retry is due, linking Sent mail filtered to Waiting to retry, Family
+  invitations and reminders, in that mode. The count reads Sent mail's own
+  filter, so it is exactly the rows the link lists
+  ([#1632](https://github.com/epiphany40223/parishkit/issues/1632)). When the other mode
   also has some, a separate **Waiting to retry in Testing** (or in
   Production) line counts them and links Sent mail in that mode; the two
   counts are never added together ([#1576](https://github.com/epiphany40223/parishkit/issues/1576)).
