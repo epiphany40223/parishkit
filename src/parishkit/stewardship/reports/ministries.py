@@ -10,6 +10,7 @@ from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
+from parishkit.stewardship.responses.member_census import gender_word
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
@@ -394,6 +395,8 @@ def ministry_page(
         # Every row is of the chosen kind (the selection filters on it).
         row["outcome_label"] = outcome_label(row["outcome"], action, "Not yet recorded")
         row["address_lines"] = address_lines(row["address"] or {})
+        # An existing Member's gender is ParishSoft's code (#1621).
+        row["gender"] = gender_word(row.get("gender"))
         row["emails"] = [
             entry["value"] for entry in row["emails"] or [] if entry.get("value")
         ]
