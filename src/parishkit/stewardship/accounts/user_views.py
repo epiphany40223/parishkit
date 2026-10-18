@@ -21,7 +21,9 @@ building its answer, so an Administrator demoted meanwhile is refused:
 
 Below the users table, ``users`` also draws the ParishSoft Ministry leaders
 who have no user yet, and its Apply records their import
-(``leader_import_views``, #952 slice 6).
+(``leader_import_views``, #952 slice 6), and then the Email Ministry
+leaders table, whose review and Apply have their own route
+(``leader_email_views``, #1592).
 
 Nothing here edits configuration directly. Every change is one
 ``ConfigurationChangeRequest`` built by ``user_changes.plan_changes`` and
@@ -79,6 +81,8 @@ from .admin_editing import (
     sign_preview,
 )
 from .authentication import runtime
+from .leader_email_views import PREFIX as EMAIL_PREFIX
+from .leader_email_views import emails_context
 from .leader_import import imported_ids
 from .leader_import_views import PREFIX as LEADER_PREFIX
 from .leader_import_views import leaders_context
@@ -354,7 +358,8 @@ def users(request):
         paging = filters(
             request.GET,
             allowed=set(table_parameters(PREFIX))
-            | set(table_parameters(LEADER_PREFIX)),
+            | set(table_parameters(LEADER_PREFIX))
+            | set(table_parameters(EMAIL_PREFIX)),
         )
         with read_transaction():
             configuration, records = _users(service)
@@ -363,18 +368,25 @@ def users(request):
             own = acting_email(actor.identity)
             # The chrome presents this verified observation, never a newer one.
             request._stewardship_display_configuration = configuration
+            # Each address's latest leader email, read in the same snapshot.
+            emails = emails_context(
+                rows, paging, _carried(paging, PREFIX, LEADER_PREFIX)
+            )
         table = paginate(
             table_rows(rows, saved, own),
             paging,
             prefix=PREFIX,
-            carry=_carried(paging, LEADER_PREFIX),
+            carry=_carried(paging, LEADER_PREFIX, EMAIL_PREFIX),
             sorting=USER_SORTING,
         )
-        leaders = leaders_context(request, paging, _carried(paging, PREFIX))
+        leaders = leaders_context(
+            request, paging, _carried(paging, PREFIX, EMAIL_PREFIX)
+        )
         response = render(
             request,
             "stewardship/users.html",
             leaders
+            | emails
             | {
                 "table": table,
                 "base_digest": configuration.active_configuration.digest,
@@ -404,9 +416,11 @@ def users(request):
         return error_response(error)
 
 
-def _carried(paging, prefix):
-    """The other table's place (its prefixed page, size and sort) to keep."""
-    return [(name, value) for name, value in paging.items() if name.startswith(prefix)]
+def _carried(paging, *prefixes):
+    """The other tables' places (their prefixed page, size and sort) to keep."""
+    return [
+        (name, value) for name, value in paging.items() if name.startswith(prefixes)
+    ]
 
 
 def recorded_identities(email):

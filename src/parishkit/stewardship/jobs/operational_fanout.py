@@ -191,7 +191,7 @@ def prepare_page(claim, store, owner=OPERATIONAL):
                 scope_id=cohort.parish_id,
                 semantic_key=identifier,
                 mode=cohort.mode,
-                routing="operational",
+                routing=owner.routing(cohort.mode),
                 purpose=owner.purpose,
             )
             _, render = owner.mail_render(
@@ -216,6 +216,13 @@ def prepare_page(claim, store, owner=OPERATIONAL):
                 command_id=identifier,
                 admit=admit,
             )
+            # An owner whose recipients keep their compiled content (Ministry
+            # leader emails) stores exactly what this render holds.
+            content = (
+                {"subject": render.subject, "html": render.html, "text": render.text}
+                if owner.keeps_content
+                else {}
+            )
             owner.recipient_model.objects.create(
                 id=identifier,
                 cohort=cohort,
@@ -223,6 +230,7 @@ def prepare_page(claim, store, owner=OPERATIONAL):
                 outbox_id=message.message_id,
                 actor_id=claim.worker_id,
                 correlation_id=claim.run_id,
+                **content,
             )
         return len(existing) + min(len(pending), BATCH_SIZE), cohort.recipient_count
 

@@ -10403,6 +10403,7 @@ CREATE FUNCTION public.stewardship_task_type_login_v1(task_type text) RETURNS te
             'daily_digest_prepare',
             'family_mail_prepare',
             'family_mail_test',
+            'leader_email_prepare',
             'operational_collect',
             'operational_prepare',
             'operational_slack',

@@ -563,6 +563,7 @@ def scheduler_producer(store, *, bulk=False, web_health=None):
     from .campaigns.digest_schedule_planning import DigestScheduleProducer
     from .campaigns.go_live_sequencing import GoLiveProducer
     from .campaigns.schedule_production import FamilyScheduleProducer
+    from .jobs.leader_email_owner import LEADER
     from .jobs.loop_settings import LoopSettings
     from .jobs.operational_collection import produce_collection
     from .jobs.operational_fanout import produce_fanout
@@ -629,6 +630,7 @@ def scheduler_producer(store, *, bulk=False, web_health=None):
             return (*operational, *finalization)
         operational += independent_producer(guard, produce_fanout, guard)
         operational += independent_producer(guard, produce_fanout, guard, SECURITY)
+        operational += independent_producer(guard, produce_fanout, guard, LEADER)
         operational += independent_producer(guard, produce_slack, guard)
         independent_producer(guard, recover_setup_mail)
         independent_producer(guard, recover_setup_slack)

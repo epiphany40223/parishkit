@@ -302,7 +302,8 @@ BEGIN
        AND public.stewardship_daily_digest_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),NULL) IS NOT TRUE
        AND public.stewardship_weekly_digest_write_admitted_v1(TG_TABLE_NAME,to_jsonb(NEW),NULL) IS NOT TRUE
        AND public.stewardship_ops_prepare_write_v1(TG_TABLE_NAME,to_jsonb(NEW)) IS NOT TRUE
-       AND public.stewardship_security_prepare_write_v1(TG_TABLE_NAME,to_jsonb(NEW)) IS NOT TRUE THEN
+       AND public.stewardship_security_prepare_write_v1(TG_TABLE_NAME,to_jsonb(NEW)) IS NOT TRUE
+       AND public.stewardship_leader_email_prepare_write_v1(TG_TABLE_NAME,to_jsonb(NEW)) IS NOT TRUE THEN
         RAISE EXCEPTION 'Outbox insertion requires current preparation ownership'
             USING ERRCODE='23514';
     END IF;
@@ -426,7 +427,7 @@ BEGIN
     -- both allocation and the last local boundary before external submission.
     IF NEW.routing='testing_override' AND (TG_OP='INSERT' OR NEW.action IN
        ('prepared','submit','retry_failed','authorize_resend','retry_unaccepted','retry_idempotent'))
-       AND NOT EXISTS (
+       AND NEW.purpose<>'leader_email' AND NOT EXISTS (
            SELECT 1 FROM public.stewardship_campaign_credentials c
            JOIN public.stewardship_system_configuration s ON s.current_campaign_id=c.campaign_id
            WHERE c.campaign_id=NEW.campaign_id AND NOT c.go_live_gate AND s.mode='testing'
@@ -436,6 +437,15 @@ BEGIN
                    AND e.campaign_id=c.campaign_id AND e.state='active'
              ))
        ) THEN
+        RAISE EXCEPTION 'Testing delivery is not currently admitted' USING ERRCODE='23514';
+    END IF;
+    -- A Ministry leader email (#1592, migration 0117) belongs to no
+    -- campaign: its Testing work is admitted only while the deployment
+    -- itself is in Testing.
+    IF NEW.purpose='leader_email' AND NEW.routing='testing_override' AND (TG_OP='INSERT'
+       OR NEW.action IN ('prepared','submit','retry_failed','authorize_resend','retry_unaccepted','retry_idempotent'))
+       AND NOT EXISTS (SELECT 1 FROM public.stewardship_system_configuration s
+           WHERE s.mode='testing') THEN
         RAISE EXCEPTION 'Testing delivery is not currently admitted' USING ERRCODE='23514';
     END IF;
     IF NEW.credential_namespace='production' AND NEW.sealed_substitutions IS NOT NULL
@@ -454,8 +464,8 @@ BEGIN
        OR claim.domain_request_id IS DISTINCT FROM NEW.id THEN
         RAISE EXCEPTION 'Invalid delivery task binding' USING ERRCODE='23514';
     END IF;
-    IF (NEW.purpose NOT IN ('operational','security_event') AND NEW.scope_id IS DISTINCT FROM NEW.campaign_id)
-       OR (NEW.purpose IN ('operational','security_event') AND NOT EXISTS (
+    IF (NEW.purpose NOT IN ('operational','security_event','leader_email') AND NEW.scope_id IS DISTINCT FROM NEW.campaign_id)
+       OR (NEW.purpose IN ('operational','security_event','leader_email') AND NOT EXISTS (
            SELECT 1 FROM public.stewardship_parish WHERE id=NEW.scope_id
        )) OR (NEW.family_id IS NOT NULL AND NOT EXISTS (
            SELECT 1 FROM public.stewardship_family_campaign
@@ -574,7 +584,7 @@ BEGIN
             -- Minimum lifecycle fence even before per-message holds are attached.
             -- The later owner also verifies dates, purpose-specific post-close
             -- rules, recipient eligibility and catch-up readiness under this lock.
-            IF NEW.routing='production' AND NOT EXISTS (
+            IF NEW.routing='production' AND NEW.purpose<>'leader_email' AND NOT EXISTS (
                 SELECT 1 FROM public.stewardship_campaign c
                 JOIN public.stewardship_system_configuration s ON s.current_campaign_id=c.id
                 JOIN public.stewardship_campaign_credentials k ON k.campaign_id=c.id
@@ -582,6 +592,14 @@ BEGIN
                   AND NOT s.restore_review_required AND NOT k.go_live_gate
                   AND c.state IN ('scheduled','active','closed')
                   AND (NOT c.delivery_paused OR public.stewardship_delivery_message_released_v1(NEW.id))
+            ) THEN
+                RAISE EXCEPTION 'Production delivery is not currently admitted' USING ERRCODE='23514';
+            END IF;
+            -- A Ministry leader email has no campaign: it is sent only while
+            -- the deployment is in Production and no restore is under review.
+            IF NEW.routing='production' AND NEW.purpose='leader_email' AND NOT EXISTS (
+                SELECT 1 FROM public.stewardship_system_configuration s
+                WHERE s.mode='production' AND NOT s.restore_review_required
             ) THEN
                 RAISE EXCEPTION 'Production delivery is not currently admitted' USING ERRCODE='23514';
             END IF;
@@ -861,7 +879,7 @@ BEGIN
     SELECT * INTO r FROM public.stewardship_outbox_render WHERE id=e.render_id;
     SELECT * INTO m FROM public.stewardship_outbox_message WHERE id=e.message_id;
     IF e.id IS NULL OR r.id IS NULL OR m.id IS NULL OR e.previous_state<>'submitting'
-       OR m.purpose NOT IN ('initial','reminder','receipt','family_test','daily_digest','weekly_digest','operational','security_event') OR e.attempt<1
+       OR m.purpose NOT IN ('initial','reminder','receipt','family_test','daily_digest','weekly_digest','operational','security_event','leader_email') OR e.attempt<1
        OR e.evidence_digest<>encode(sha256(convert_to(e.evidence_note,'UTF8')),'hex')
        OR e.provider_key_digest<>encode(sha256(convert_to(m.semantic_key::text,'UTF8')),'hex')
        THEN RETURN NULL; END IF;

@@ -735,6 +735,7 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
                 "operational": "operational-receipt",
                 "operational_fanout": "operational-fanout-receipt",
                 "security_fanout": "security-fanout-receipt",
+                "leader_fanout": "leader-fanout-receipt",
                 "operational_slack": "operational-slack-receipt",
                 "finalization": "finalization-receipt",
                 "boundary": "boundary-receipt",
@@ -752,11 +753,11 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
                 "setup_cleanup": "setup-cleanup-receipt",
                 "maintenance": "maintenance-receipt",
             }
-            # One patched fanout producer serves both alert owners, so its
-            # failure loses the security receipt as well.
+            # One patched fanout producer serves every alert owner, so its
+            # failure loses the security and leader email receipts as well.
             failing = {failing_producer}
             if failing_producer == "operational_fanout":
-                failing.add("security_fanout")
+                failing.update({"security_fanout", "leader_fanout"})
             assert kwargs["produce"](guard) == (
                 (
                     tuple(
@@ -822,10 +823,13 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
 
     def fanout(guard, owner=None):
         """The scheduler runs one fanout producer per alert owner in turn."""
+        from parishkit.stewardship.jobs.leader_email_owner import LEADER
         from parishkit.stewardship.jobs.security_owner import SECURITY
 
         if owner is None:
             return ("operational-fanout-receipt",)
+        if owner is LEADER:
+            return ("leader-fanout-receipt",)
         assert owner is SECURITY
         return ("security-fanout-receipt",)
 
@@ -1034,12 +1038,14 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
                 operation.assert_not_called()
             return
         hold.assert_not_called()
+        from parishkit.stewardship.jobs.leader_email_owner import LEADER
         from parishkit.stewardship.jobs.loop_settings import LoopSettings
         from parishkit.stewardship.jobs.security_owner import SECURITY
 
         assert operational_fanout.call_args_list == [
             call(guard),
             call(guard, SECURITY),
+            call(guard, LEADER),
         ]
         operational_slack.assert_called_once_with(guard)
         # One loop's runtime settings, shared by the producers that read
@@ -1066,8 +1072,8 @@ def test_background_process_keeps_scope_receipts_and_cleans_up_on_exit(
         family_recovery.assert_called_once_with()
         slack_recovery.assert_called_once_with()
         maintenance.assert_called_once_with(guard)
-        # Twenty-seven independent producers, each bracketed by two checks.
-        assert guard.check.call_count == 54
+        # Twenty-eight independent producers, each bracketed by two checks.
+        assert guard.check.call_count == 56
     else:
         operational.assert_not_called()
         operational_fanout.assert_not_called()

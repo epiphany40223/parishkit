@@ -396,9 +396,16 @@ def test_every_slashless_form_is_listed_once_and_expected():
 # have no slashless form (slashless.SLASHLESS's rule): Delete scheduled emails
 # answers only the list's confirmation dialog (#878), as Delete user does
 # (#952), the Import Ministry leaders review answers only the leaders
-# table's form (#952 slice 6), and Delete email templates only the Pages and
-# emails tables' dialog (#879).
-POSTED_ONLY = {"schedule_delete", "user_delete", "user_leader_import", "content_delete"}
+# table's form (#952 slice 6), the Email Ministry leaders review only its
+# table's form and dialog (#1592), and Delete email templates only the Pages
+# and emails tables' dialog (#879).
+POSTED_ONLY = {
+    "schedule_delete",
+    "user_delete",
+    "user_leader_import",
+    "user_leader_emails",
+    "content_delete",
+}
 
 
 def test_every_moved_page_has_its_slashless_form():

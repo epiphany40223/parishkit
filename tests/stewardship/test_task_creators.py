@@ -292,11 +292,16 @@ SITES = {
         "operational_collect", SCHEDULER, {"runtime_process.py"}
     ),
     "jobs/operational_fanout.py::produce_fanout": site(
-        # Once for the operational owner and once for SECURITY.
-        {"operational_prepare", "security_prepare"},
+        # Once each for the operational owner, SECURITY and LEADER (#1592).
+        {"operational_prepare", "security_prepare", "leader_email_prepare"},
         SCHEDULER,
-        # operational_owner imports the module, not the producer.
-        {"jobs/operational_owner.py", "runtime_process.py"},
+        # operational_owner and leader_email_owner import the module, not the
+        # producer.
+        {
+            "jobs/operational_owner.py",
+            "jobs/leader_email_owner.py",
+            "runtime_process.py",
+        },
     ),
     "jobs/operational_slack_tasks.py::produce_slack": site(
         "operational_slack", SCHEDULER, {"runtime_process.py"}

@@ -206,6 +206,12 @@ class Action(StrEnum):
     USER_LEADERS_LISTED = "user_leaders_listed"
     USER_LEADERS_IMPORT_REQUESTED = "user_leaders_import_requested"
     USER_LEADER_IMPORTED = "user_leader_imported"
+    # Email Ministry leaders (#1592), both recorded by SQL: each review read
+    # (``count`` is the Ministry leader users answered) and each Apply's
+    # request (its subject; ``count`` is the leaders emailed), never an
+    # address.
+    USER_LEADER_EMAILS_REVIEWED = "user_leader_emails_reviewed"
+    USER_LEADER_EMAILS_REQUESTED = "user_leader_emails_requested"
     SECURITY_EVENT_ACKNOWLEDGED = "security_event_acknowledged"
     CRITICAL_EVENTS_ACKNOWLEDGED = "critical_events_acknowledged"
     CREDENTIAL_RESULT_DISMISSED = "credential_result_dismissed"

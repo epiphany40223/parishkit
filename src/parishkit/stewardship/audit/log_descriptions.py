@@ -957,6 +957,12 @@ DESCRIPTIONS = {
     "user_leader_imported": _(
         "A ParishSoft Ministry leader was imported as a Ministry leader user."
     ),
+    "user_leader_emails_reviewed": _(
+        "An Administrator reviewed emailing Ministry leaders that they can sign in."
+    ),
+    "user_leader_emails_requested": _(
+        "An Administrator asked to email Ministry leaders that they can sign in."
+    ),
     "system_logs_exported": _("An Administrator downloaded the system logs."),
     "export_cancelled": _("A report download was cancelled."),
     "chair_review_decided": _(

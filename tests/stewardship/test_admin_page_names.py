@@ -131,13 +131,15 @@ VIEW_NAMED = {"reports", "daily_digest_snapshot"}
 # change's status page, as does Delete email templates for Pages and emails'
 # tables, and Delete hosted files the library's dialog with a redirect or a
 # refusal (#879), never a page of their own. Import Ministry leaders answers
-# Users' review dialog with the review's fragment (#750).
+# Users' review dialog with the review's fragment (#750), and so does Email
+# Ministry leaders (#1592).
 NOT_PAGES = {
     "schedule_delete",
     "user_delete",
     "hosted_file_delete",
     "content_delete",
     "user_leader_import",
+    "user_leader_emails",
 }
 # Pages whose new name waits for a later slice, with that slice. None is
 # left: Portal users became Users with #952.
