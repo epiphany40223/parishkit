@@ -4244,7 +4244,12 @@
       // A radio group (RadioNodeList) is not an element: each of its
       // buttons is listened to instead.
       (control instanceof RadioNodeList ? [...control] : [control])
-        .forEach((item) => item.addEventListener("change", update));
+        .forEach((item) => {
+          item.addEventListener("change", update);
+          // A text control is followed as it is typed, not only on blur
+          // (the Slack step's saved-token note follows the channel ID).
+          item.addEventListener("input", update);
+        });
       showWhenUpdates.push({node, update, wrapper: hides ? wrapper : null});
       update();
     });

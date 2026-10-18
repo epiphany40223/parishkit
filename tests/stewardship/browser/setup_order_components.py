@@ -162,7 +162,7 @@ def components(context, admin, now, status_url, setup_draft):
                 "step_label": BY_KEY["slack"].label,
                 "slack_on": True,
                 "slack_saved": True,
-                "slack_current": True,
+                "slack_saved_channel": "CFIXTURE",
             },
         ),
     }

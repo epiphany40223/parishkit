@@ -286,17 +286,17 @@ def setup_step(request, step):
 def _slack_context(draft, wizard, options):
     """What the Slack step's page says about a saved token, if anything.
 
-    ``slack_saved`` is whether a token is staged, ``slack_current`` whether
-    it is sealed with the saved channel (the step is done), and
+    ``slack_saved`` is whether a token is staged, ``slack_saved_channel``
+    the channel it is sealed with (the page's note follows the channel field
+    against it, as the token's requirement does), and
     ``slack_on`` whether Slack is saved on, which offers Turn off Slack
     notifications (#1499). Other steps get nothing.
     """
     if "saved" not in options:
         return {}
-    step = wizard.step("slack") if wizard else None
     return {
         "slack_saved": options["saved"] is not None,
-        "slack_current": step is not None and step.state == "done",
+        "slack_saved_channel": options["saved"],
         "slack_on": bool(draft.sections.get("slack", {}).get("enabled")),
     }
 

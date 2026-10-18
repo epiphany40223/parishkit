@@ -80,3 +80,9 @@
 .helptext { display: block; max-width: 70ch; margin-block: .25rem .75rem; color: var(--muted); font-size: .925rem; }
 .setup-checklist li { margin-block: .25rem; }
 @media print { .setup-actions { display: none; } }
+/* The Slack step's saved-token statements share one grid cell and the hidden
+   one keeps its space (invisible), so editing the channel swaps the words in
+   place and moves nothing below (no layout shift). */
+.setup-saved-state { display: grid; }
+.setup-saved-state > * { grid-area: 1 / 1; }
+.setup-saved-state > [hidden] { display: block !important; visibility: hidden; }
