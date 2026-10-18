@@ -755,10 +755,13 @@ def test_private_form_errors_and_csrf_never_stage_or_redisplay(
     assert not SecretReplacementRequest.objects.exists()
 
 
-def test_stale_configuration_and_authentication_deny_secret_intake(
+def test_stale_configuration_denies_secret_intake_and_an_old_sign_in_saves(
     auth_service, google, handoff, monkeypatch
 ):
-    """Old forms do not bind credentials to changed settings or renew authentication."""
+    """Old forms do not bind credentials to changed settings (#1547).
+
+    A sign-in older than five minutes still saves the key from a current page.
+    """
     browser, _ = signed_in()
     page = browser.get(URL)
     version = auth_service.store.active()
@@ -777,9 +780,11 @@ def test_stale_configuration_and_authentication_deny_secret_intake(
         ],
     )
     assert save_key(browser, SECRET, page).status_code == 409
-    stale_sign_in()
-    assert save_key(browser, SECRET).status_code == 403
     assert not SecretReplacementRequest.objects.exists()
+    stale_sign_in()
+    response = save_key(browser, SECRET)
+    assert (response.status_code, response["Location"]) == (302, URL)
+    assert SecretReplacementRequest.objects.count() == 1
 
 
 @pytest.mark.parametrize("role", ["staff", "ministry_leader"])
@@ -860,40 +865,17 @@ def test_credential_status_follows_live_and_never_renews_idle(
     assert session.last_activity_at == activity
 
 
-def test_settings_changes_need_a_fresh_sign_in(auth_service, google):
-    """A stale sign-in can neither review nor confirm an integration change (#547).
+def test_an_old_sign_in_reviews_and_confirms_settings(auth_service, google):
+    """A sign-in older than five minutes reviews and confirms a change (#1547).
 
-    The step-up page returns to the settings page and nothing is queued. Once
-    fresh, the reviewed form confirms exactly one request, and posting it
-    again returns that same request.
+    The reviewed form confirms exactly one request, and posting it again
+    returns that same request.
     """
     browser, _ = signed_in()
-    review = post(browser, URL, edit(auth_service.store))
-    preview = hidden(review, "preview")
     stale_sign_in()
-    for values in (edit(auth_service.store), {"action": "confirm", "preview": preview}):
-        refused = browser.post(
-            URL,
-            values | {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value},
-            HTTP_ACCEPT="text/html",
-        )
-        assert refused.status_code == 403
-        page = refused.content.decode()
-        assert "Confirm with Google" in page and "Nothing was done" in page
-        assert f'name="next" value="{URL}"' in page
-    # Removing an integration asks the same, before its review.
-    removed = browser.post(
-        INDEX + "slack/",
-        {
-            "action": "remove",
-            "csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value,
-        },
-        HTTP_ACCEPT="text/html",
-    )
-    assert removed.status_code == 403
-    assert f'name="next" value="{INDEX}slack/"' in removed.content.decode()
-    assert not ConfigurationChangeRequest.objects.exists()
-    signed_in(browser)
+    review = post(browser, URL, edit(auth_service.store))
+    assert review.status_code == 200
+    preview = hidden(review, "preview")
     confirmed = post(browser, URL, {"action": "confirm", "preview": preview})
     assert confirmed.status_code == 302
     again = post(browser, URL, {"action": "confirm", "preview": preview})
@@ -940,34 +922,18 @@ def test_the_review_dialog_shows_public_settings_only(auth_service, google, hand
     assert not SecretReplacementRequest.objects.exists()
 
 
-def test_a_stale_sign_in_is_refused_in_the_review_dialog(auth_service, google):
-    """The review dialog's Save, Apply and Remove with a stale sign-in are
-    refused with the step-up drawn for the dialog (403, data-review-refusal),
-    whose Confirm with Google returns to the settings page (#547, #750).
-    Nothing is reviewed or queued, and the refusal log records why."""
-    from .test_admin_refusal_log_postgresql import entries
-
+def test_an_old_sign_in_reviews_and_applies_in_the_dialog(auth_service, google):
+    """The review dialog's Save and Apply admit a sign-in older than five
+    minutes (#1547): Save answers with the review, Apply queues one request."""
     browser, _ = signed_in()
-    preview = hidden(post(browser, URL, edit(auth_service.store)), "preview")
     stale_sign_in()
-    for url, values in (
-        (URL, edit(auth_service.store)),
-        (URL, {"action": "confirm", "preview": preview}),
-        (INDEX + "slack/", {"action": "remove"}),
-    ):
-        refused = fetch(browser, url, values)
-        assert refused.status_code == 403
-        text = refused.content.decode()
-        assert "<div data-review-refusal>" in text and "Confirm with Google" in text
-        assert f'name="next" value="{url}"' in text
-        assert "data-review-preview" not in text
-    assert not ConfigurationChangeRequest.objects.exists()
-    rows = entries()[-3:]
-    assert [row.context["reason"] for row in rows] == [
-        "fresh_authentication_required"
-    ] * 3
-    # Each with its closed code, as error_response's refusal would have.
-    assert [row.context["codes"] for row in rows] == [["denied"]] * 3
+    review = fetch(browser, URL, edit(auth_service.store))
+    assert review.status_code == 200 and b"data-review-answer" in review.content
+    confirmed = fetch(
+        browser, URL, {"action": "confirm", "preview": hidden(review, "preview")}
+    )
+    assert confirmed.status_code == 302
+    assert ConfigurationChangeRequest.objects.count() == 1
 
 
 def test_an_unchanged_save_is_refused_to_the_dialog(auth_service, google):
@@ -1016,25 +982,3 @@ def test_spaces_the_server_strips_are_no_key(auth_service, google, handoff):
     )
     assert review.status_code == 200 and b"data-review-answer" in review.content
     assert not SecretReplacementRequest.objects.exists()
-
-
-def test_a_sign_in_gone_stale_under_the_work_lock_is_refused_in_the_dialog(
-    auth_service, google, monkeypatch
-):
-    """Apply's fresh sign-in is checked again under the work lock (#547): a
-    sign-in that passes the page's first check but not that one is refused
-    to the dialog with the step-up notice (403) and nothing is queued."""
-    from parishkit.stewardship.accounts import integration_views
-
-    browser, _ = signed_in()
-    preview = hidden(post(browser, URL, edit(auth_service.store)), "preview")
-    stale_sign_in()
-    # Only the view's own first check passes; confirm_intent's recheck,
-    # under the work lock, still sees the stale sign-in.
-    monkeypatch.setattr(integration_views, "require_fresh", lambda *a, **k: None)
-    refused = fetch(browser, URL, {"action": "confirm", "preview": preview})
-    assert refused.status_code == 403
-    text = refused.content.decode()
-    assert "<div data-review-refusal>" in text and "Confirm with Google" in text
-    assert f'name="next" value="{URL}"' in text
-    assert not ConfigurationChangeRequest.objects.exists()

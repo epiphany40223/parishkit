@@ -227,7 +227,7 @@ class BackupRequest(models.Model):
     The web login records it (System health's Take a backup now, ADM-13
     PR 3b); the backup login's request mode claims, runs and settles it. The
     guard in ``schema/migrations/0062_backup_request.sql`` admits an insert
-    only from the web login, for a fresh Administrator sign-in, one request
+    only from the web login, for a live Administrator session, one request
     at a time and never during a restore review, and lets only the backup
     login move a request along its states. Every time is the database's.
     No path, host or credential is stored.

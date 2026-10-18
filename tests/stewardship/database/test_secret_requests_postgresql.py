@@ -94,8 +94,8 @@ def clean(intent, callback):
     )
 
 
-def test_sealed_intake_rejects_stale_reauthentication_without_reserving_target(intent):
-    """An unusable sealed request must fail atomically at intake, not during claim."""
+def test_sealed_intake_admits_a_sign_in_of_any_age(intent):
+    """A sign-in three hours old is staged with its sealed candidate (#1547)."""
     from parishkit.stewardship.accounts.credential_handoff import PrivateHandoff
     from parishkit.stewardship.accounts.cryptography import Key
     from parishkit.stewardship.accounts.key_files import file_fingerprint
@@ -108,16 +108,12 @@ def test_sealed_intake_rejects_stale_reauthentication_without_reserving_target(i
         "sealed_candidate": handoff.public().seal(intent["request_id"], candidate),
         "candidate_fingerprint": file_fingerprint(candidate),
     }
-    with pytest.raises(IntegrityError, match="fresh authentication"):
-        stage_secret_request(
-            **(
-                arguments
-                | {"reauthenticated_at": timezone.now() - timedelta(minutes=6)}
-            )
-        )
-    assert not SecretReplacementRequest.objects.exists()
-    assert not SealedCredentialStaging.objects.exists()
-    assert stage_secret_request(**arguments).state == "staged"
+    signed_in = timezone.now() - timedelta(hours=3)
+    receipt = stage_secret_request(**(arguments | {"reauthenticated_at": signed_in}))
+    assert receipt.state == "staged"
+    row = SecretReplacementRequest.objects.get(pk=intent["request_id"])
+    assert row.reauthenticated_at == signed_in
+    assert SealedCredentialStaging.objects.filter(request_id=row.pk).count() == 1
 
 
 def test_sql_sealed_payload_cannot_attach_to_legacy_empty_consumer_intent(intent):

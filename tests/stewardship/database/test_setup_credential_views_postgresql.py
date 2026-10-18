@@ -240,59 +240,13 @@ def test_other_login_and_missing_handoff_fail_without_persisting(setup_http, goo
         assert not SetupSealedCredential.objects.exists()
 
 
-def test_lapsed_freshness_offers_step_up_that_keeps_the_same_draft(setup_http, google):
-    """A page shows Confirm with Google; confirming returns to the same setup.
-
-    Setup's credential pages accept a sign-in up to an hour old (#1402), so
-    the lapsed sign-in here is 61 minutes old.
-    """
+@pytest.mark.parametrize("minutes", [30, 61, 180])
+def test_an_old_sign_in_opens_and_saves_a_credential_page(setup_http, google, minutes):
+    """A sign-in of any age opens and saves a setup credential page (#1547)."""
     import time
 
     publish("parishsoft")
-    google[0]["auth_time"] = int(time.time()) - 61 * 60
-    with web_login():
-        browser = started()
-        attempt = SetupAttempt.objects.get()
-        page = browser.get(
-            URL, HTTP_ACCEPT="text/html,*/*;q=0.8", HTTP_SEC_FETCH_MODE="navigate"
-        )
-        assert page.status_code == 403
-        assert page["Content-Type"].startswith("text/html")
-        assert page["Cache-Control"] == "no-store"
-        body = page.content.decode()
-        assert "Confirm with Google" in body
-        assert 'action="/admin/login"' in body
-        assert f'name="next" value="{URL}"' in body
-        script = browser.get(URL, HTTP_ACCEPT="application/json")
-        assert script.status_code == 403
-        assert script.json()["errors"][0]["code"] == "denied"
-        del google[0]["auth_time"]
-        _, response = signed_in(browser, next=URL)
-        assert response["Location"] == URL
-        assert browser.get(URL).status_code == 200
-        response = post(
-            browser,
-            URL,
-            {
-                "candidate": CANDIDATE.decode(),
-                "organization_id": "1",
-                "version": str(SetupAttempt.objects.get().version),
-            },
-        )
-        assert response.status_code == 302, response.content
-    assert SetupAttempt.objects.get().pk == attempt.pk
-    assert PortalSession.objects.count() == 1
-    assert SetupSealedCredential.objects.get().attempt_id == attempt.pk
-
-
-def test_a_sign_in_from_the_last_hour_opens_and_saves_a_credential_page(
-    setup_http, google
-):
-    """A 30-minute-old sign-in needs no step-up during setup (#1402)."""
-    import time
-
-    publish("parishsoft")
-    google[0]["auth_time"] = int(time.time()) - 30 * 60
+    google[0]["auth_time"] = int(time.time()) - minutes * 60
     with web_login():
         browser = started()
         page = browser.get(URL)

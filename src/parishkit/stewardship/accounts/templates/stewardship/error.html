@@ -8,13 +8,9 @@
 {% block title %}{{ title }}{% endblock %}
 {% block content %}<section class="flow panel">
   <h1>{{ title }}</h1>
-  {% if reauthenticate %}
-  {% if submitted %}{% if inputs_kept %}{% translate "Nothing was done or sent. What you chose is kept and will be shown again when you return, for you to confirm." as step_up_outcome %}{% else %}{% translate "Nothing was done or sent. Anything you entered on the form was not saved, so enter it again after you return." as step_up_outcome %}{% endif %}{% endif %}{% translate "this action" as step_up_action %}{% if not local_environment %}{% translate "Google may ask you to choose your account or sign in." as step_up_note %}{% endif %}{% include 'stewardship/components/step-up-notice.html' with action=step_up_action outcome=step_up_outcome note=step_up_note next=next next_label=next_label role="alert" %}
-  {% else %}
   <div class="notice notice-error" role="alert"><ul>{% for message in error_messages %}<li>{{ message }}</li>{% endfor %}</ul></div>
   <p>{{ guidance }}</p>
   {% if fix_link %}<p><a href="{{ fix_link }}">{{ fix_label }}</a></p>{% endif %}
   {% if sign_in %}<p><a href="{{ sign_in }}">{% translate "Sign in again" %}</a></p>{% endif %}
-  {% endif %}
   <p class="actions">{% if back %}<a href="{{ back }}">{% translate "Return to the previous page" %}</a>{% endif %}<a href="{{ home }}">{{ home_label }}</a></p>
 </section>{% endblock %}

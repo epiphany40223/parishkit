@@ -1,10 +1,11 @@
 """The caller of an Admin action, independent of how it arrived.
 
-Admission (``sessions.authenticated_admin``), freshness (``require_fresh``),
-privileged intake (``privileged_actions.admit_admin_action``) and page
-authorization (``admin_editing.principal``) take an ``AdminCaller`` instead of
-a Django request. They use only its session store, its ``PortalSession`` and,
-on the web, its CSRF state, so one service layer serves the Admin pages and,
+Admission (``sessions.authenticated_admin``), the sign-in instant
+(``sign_in_instant``), privileged intake
+(``privileged_actions.admit_admin_action``) and page authorization
+(``admin_editing.principal``) take an ``AdminCaller`` instead of a Django
+request. They use only its session store, its ``PortalSession`` and, on the
+web, its CSRF state, so one service layer serves the Admin pages and,
 later, the host command line (see the Admin automation specification's
 "Caller seam").
 
@@ -93,7 +94,7 @@ class AdminCaller:
     campaign_id: int | None = None
     # Automation only: the admin_cmd_* type of the state-changing command
     # this caller runs (set by the command line before it acts), which the
-    # fresh-gated notice names; None for reads, previews and the web.
+    # privileged-command notice names; None for reads, previews and the web.
     command_type: str | None = None
     # Automation only: the admitted AutomationSession row, for its label,
     # deadline and the 72-hour warning; None for the web.

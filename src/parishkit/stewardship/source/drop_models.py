@@ -81,10 +81,10 @@ class SourceDropAcceptance(models.Model):
     It names the refused attempt (one acceptance per refusal, ever) and copies
     every count recorded with it, as reviewed: ``counts`` maps each measure to
     ``{"before": …, "after": …, "failed": …}``. ``session_id`` and
-    ``authenticated_at`` are the Administrator's session and its fresh
-    sign-in instant. The guard in
+    ``authenticated_at`` are the Administrator's session and its sign-in
+    instant. The guard in
     ``schema/migrations/0080_drop_acceptance.sql`` admits a row only from the
-    web login, for a freshly signed-in Administrator, for the newest refusal
+    web login, for a live Administrator session, for the newest refusal
     with no full refresh promoted since, with counts equal to the recorded
     ones, while no other acceptance is live; it sets ``created_at`` and
     ``expires_at`` (24 hours later) from the database clock, and refuses every

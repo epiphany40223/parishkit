@@ -548,8 +548,7 @@ placeholder reference mentions `{{ file.<slug> }}` and links to this page.
   and `token`, which is all that expanding a placeholder needs. The scheduler
   and every other login read nothing. A test renders a file link and an inline
   hosted image under each of these real logins.
-- Every action is a CSRF-protected POST. Fresh Google authentication is not
-  required, matching content and artwork edits, which also do not require it.
+- Every action is a CSRF-protected POST.
 - Audit events (new `Action` values in `audit/schemas.py`, with the `ACTION`
   context gaining closed fields `file_slug`, `previous_file_slug`,
   `file_kind`, `file_size` and `file_fingerprint`, mirrored in

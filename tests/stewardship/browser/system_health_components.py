@@ -46,7 +46,8 @@ BACKUP_PAGE = "/admin/system/health/"
 BACKUP_STATUS = "/system-health-backup/status"
 BACKUP_PREVIEW = "/system-health-backup-preview"
 BACKUP_REQUESTED = "/system-health-backup-requested"
-BACKUP_STEP_UP = "/system-health-backup-step-up"
+# The answer when the session ended meanwhile (#1547).
+BACKUP_SIGNED_OUT = "/system-health-backup-signed-out"
 BACKUP_BUSY = "/system-health-backup-busy"
 # The page with a request held while a Family email send is in progress;
 # its polls (BACKUP_STATUS) bring the same state.
@@ -63,7 +64,7 @@ DEBUG_PAGE = "/system-health-debug"
 DEBUG_STATUS = "/system-health-debug/status"
 DEBUG_PREVIEW = "/system-health-debug-preview"
 DEBUG_SET = "/system-health-debug-set"
-DEBUG_STEP_UP = "/system-health-debug-step-up"
+DEBUG_SIGNED_OUT = "/system-health-debug-signed-out"
 # The Debug logging tile (#1214 slice 5): the same page, whose next poll
 # finds the switch set and no service logging in debug form any more.
 DEBUG_TILE = "/system-health-debug-tile"
@@ -144,18 +145,11 @@ LOADED = loaded_states(0, list(RESAVE))
 # checks unable to run.
 TILE_STATES = ("working", "warning", "error", "unchecked")
 TILE_PAGES = "/system-health-tiles-"
-# Accept this change once while the sign-in was stale when the page was
-# drawn (#1331 item 18): the offer shows the step-up notice and greys the
-# button; a fresh page offers it, and no poll changes which (#1159).
-ACCEPT_STEP_UP = "/system-health-accept-step-up"
-ACCEPT_STEP_UP_STATUS = "/system-health-accept-step-up/status"
-ACCEPT_FRESH = "/system-health-accept-fresh"
-ACCEPT_FRESH_STATUS = "/system-health-accept-fresh/status"
-ACCEPT_STEP_UP_LATE = "/system-health-accept-step-up-late"
-ACCEPT_STEP_UP_LATE_STATUS = "/system-health-accept-step-up-late/status"
-# Accept this change once in LOCAL, drawn with a recent and a stale sign-in.
-ACCEPT_LOCAL_FRESH = "/system-health-accept-local-fresh"
-ACCEPT_LOCAL_STALE = "/system-health-accept-local-stale"
+# Accept this change once offered on a page whose polls bring the same
+# refusal: the button is offered whenever the Administrator signed in
+# (#1547), and no poll greys it.
+ACCEPT_OFFERED = "/system-health-accept-offered"
+ACCEPT_OFFERED_STATUS = "/system-health-accept-offered/status"
 TROUBLED_STATUS = canonical(f"{STATUS}?{urlencode({'loaded': loaded_query(LOADED)})}")
 
 
@@ -476,8 +470,6 @@ def components(context, admin):
                 "source_form_count": form,
                 "source_form_tile": source_form_tile(form),
                 "resave_tile": resave_tile(resave),
-                # A sign-in recent enough for the step-up gated actions.
-                "fresh": True,
                 "debug_actor": "other@example.org" if switch else None,
                 "accept_actor": "other@example.org" if accepted is True else None,
                 "refused_attempt": attempt if refused else None,
@@ -586,35 +578,11 @@ def components(context, admin):
         extra[canonical(f"{url}?{urlencode({'loaded': query})}") if query else url] = (
             status(found)
         )
-    # Accept this change once with a stale sign-in (#1331 item 18). The
-    # status is the same whatever the sign-in; only the page's own
-    # data-health-fresh, set when it was drawn, picks the form.
-    stale_sign_in = {"fresh": False, "status_url": ACCEPT_STEP_UP_STATUS}
-    extra[ACCEPT_STEP_UP] = page(values(False, refused=True) | stale_sign_in)
-    extra[ACCEPT_STEP_UP_STATUS] = status(values(False, refused=True))
-    # A page drawn with a recent sign-in, whose polls bring the same refusal.
-    extra[ACCEPT_FRESH] = page(
-        values(False, refused=True) | {"status_url": ACCEPT_FRESH_STATUS}
+    # Accept this change once offered, whose polls bring the same refusal.
+    extra[ACCEPT_OFFERED] = page(
+        values(False, refused=True) | {"status_url": ACCEPT_OFFERED_STATUS}
     )
-    extra[ACCEPT_FRESH_STATUS] = status(values(False, refused=True))
-    # A stale page drawn before any refusal, carrying a CSRF token, whose
-    # poll brings one: the swapped-in step-up form takes the page's token.
-    extra[ACCEPT_STEP_UP_LATE] = page(
-        values(False)
-        | {
-            "fresh": False,
-            "csrf_token": "component-token",
-            "status_url": ACCEPT_STEP_UP_LATE_STATUS,
-        }
-    )
-    extra[ACCEPT_STEP_UP_LATE_STATUS] = status(values(False, refused=True))
-    # In LOCAL, an open refusal's offer drawn with a recent sign-in and with
-    # a stale one (#1385): only the shown copy's step-up records a return
-    # path. Their polls bring the same refusal.
-    for url, fresh in ((ACCEPT_LOCAL_FRESH, True), (ACCEPT_LOCAL_STALE, False)):
-        local = values(False, refused=True) | {"local_environment": True}
-        extra[url] = page(local | {"fresh": fresh, "status_url": f"{url}/status"})
-        extra[f"{url}/status"] = status(local)
+    extra[ACCEPT_OFFERED_STATUS] = status(values(False, refused=True))
     return extra | {
         PAGE: (
             "text/html",
@@ -687,14 +655,14 @@ def components(context, admin):
                 "stewardship/system-health-status.html", values(False, waiting=True)
             ),
         ),
-        BACKUP_STEP_UP: (
+        BACKUP_SIGNED_OUT: (
             "text/html",
             render_to_string(
                 BACKUP_ANSWER,
                 values(
                     False,
                     status_url=BACKUP_STATUS,
-                    backup_now={"refused": "reauthenticate"},
+                    backup_now={"refused": "signed_out"},
                 ),
             ),
         ),
@@ -801,7 +769,7 @@ def components(context, admin):
                 ),
             ),
         ),
-        DEBUG_STEP_UP: (
+        DEBUG_SIGNED_OUT: (
             "text/html",
             render_to_string(
                 DEBUG_ANSWER,
@@ -809,7 +777,7 @@ def components(context, admin):
                     False,
                     debug=True,
                     status_url=DEBUG_STATUS,
-                    debug_off={"refused": "reauthenticate"},
+                    debug_off={"refused": "signed_out"},
                     debug_off_shown=True,
                 ),
             ),

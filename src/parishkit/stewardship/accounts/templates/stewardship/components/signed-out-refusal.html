@@ -1,0 +1,9 @@
+{% load i18n %}{% comment %}
+  An in-place step refused because the Administrator's session ended
+  between admission and the write (``signed_out``, #1547): an hour idle,
+  signed out in another tab, or access removed. Nothing was done.
+  Include with:
+    marker=<the region's refusal attribute, e.g. "backup-refused">: drawn as
+      data-<marker>="signed_out", the hook tests and scripts read.
+    outcome=<sentence saying nothing was done, e.g. "Nothing was changed.">
+{% endcomment %}<p class="notice notice-error" data-{{ marker }}="signed_out" role="alert">{% translate "Your sign-in has ended, for example after an hour without activity or after signing out in another tab." %} {{ outcome }} <a href="{% url 'admin:login' %}">{% translate "Sign in again" %}</a>{% translate ", then try again." %}</p>

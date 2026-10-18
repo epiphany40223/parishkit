@@ -165,14 +165,10 @@ still the design record for preparation and disposal),
    refresh first, timed as in the timing notes above, then discard and
    prepare again.
 6. **Administrator: confirm.** Choose **Review final Production
-   confirmation**. The page requires a Google sign-in made after the cleanup
-   completed and within the last five minutes: choose **Confirm with Google**
-   in its **Confirm it's you with Google** panel, and the sign-in brings you
-   back to this page. Then choose **Verify final readiness and mail impact**,
-   check the exact preview (start and close dates, and immediate versus
-   scheduled), type `Production`, and choose **Confirm Production**, all
-   within five minutes of the sign-in. A changed input means a new preview,
-   not a failure.
+   confirmation**, then **Verify final readiness and mail impact**, check the
+   exact preview (start and close dates, and immediate versus scheduled),
+   type `Production`, and choose **Confirm Production** within five minutes
+   of the preview. A changed input means a new preview, not a failure.
 7. **Administrator: watch the result.** The **Production activation
    progress** page (`/admin/campaign/production/`) shows the
    outcome. A campaign that became active prepares its initial mail in the
@@ -188,13 +184,11 @@ still the design record for preparation and disposal),
 **Cancel go-live** returns a *scheduled* campaign to draft in Testing, and is
 possible only before its start: once the start passes, the campaign is active
 and stays live. Open **Cancel go-live** from the progress
-page, choose **Confirm with Google** (the sign-in brings you back to this
-page), give a reason, tick **I understand that deleted Testing data cannot be
+page, give a reason, tick **I understand that deleted Testing data cannot be
 restored.**, choose **Preview cancellation** and then **Confirm cancelling
 go-live**. If the preview reports work in flight or uncertain, the confirm
-button is withheld: resolve that work, choose **Confirm with Google** again if
-more than five minutes have passed since the last sign-in, then preview again
-and confirm within five minutes and before the start.
+button is withheld: resolve that work, then preview again and confirm within
+five minutes and before the start.
 Cancel go-live is refused while delivery is paused: the progress page then
 hides the Cancel go-live link, and the Cancel go-live page says go-live can't
 be cancelled, as it does for an active campaign. Resume first, which needs
@@ -509,7 +503,7 @@ is the emergency path.
    it, or after seven days.
 3. If the change is real, such as the parish inactivating many Families at
    once, an Administrator accepts it once on System health: **Accept this
-   change once** (it needs a Google sign-in within five minutes), review
+   change once**, review
    the counts, tick "I checked this in ParishSoft, and the change is real",
    and confirm. That also asks for a full refresh, as **Refresh now** does.
    The section then says who accepted it, when, and when the acceptance
@@ -581,9 +575,8 @@ server step is needed; the
 [credential installer guide](stewardship-credential-installers.md#replacing-an-integration-key-from-the-web)
 describes the design.
 
-1. Sign in with Google within the last five minutes, open **Integrations**,
-   then the provider's page (`/admin/system/integrations/<target>/`).
-   Paste the new key in its field and select **Save**. The key is sealed at
+1. Open **Integrations**, then the provider's page
+   (`/admin/system/integrations/<target>/`). Paste the new key in its field and select **Save**. The key is sealed at
    once and never shown again.
 2. The page follows the change: "Checking and installing the new key", then
    "Switching to it now", then "Key updated." The isolated installer checks
@@ -613,8 +606,7 @@ It is the tool for a provider outage, a content mistake found after the
 schedule started, or any moment when mail must stop now. The controls exist
 only for the current Production campaign.
 
-1. Open the **Pause and resume mail** page (`/admin/mail/controls/`), signed
-   in with Google within the last five minutes.
+1. Open the **Pause and resume mail** page (`/admin/mail/controls/`).
 2. Choose **Preview pause**, give the reason, and confirm with the fresh
    preview. Messages already being submitted may still reach the provider and
    cannot be recalled; everything else unsent is held, and new mail created
@@ -638,9 +630,7 @@ only for the current Production campaign.
       its cause (usually ParishSoft
       availability), choose **Retry report work** on the task's page, and
       wait for it to complete.
-   2. Confirming needs a Google sign-in from the last five minutes: choose
-      **Confirm with Google**, and the sign-in brings you back to this page.
-      The **Provider and sender check** panel says whether a sender check is
+   2. The **Provider and sender check** panel says whether a sender check is
       needed. After an ordinary pause it says none is, and you go straight
       to step 3. After sender trouble it says why one is needed, and
       Preview resume stays unavailable until it passes: choose **Preview and
@@ -656,12 +646,11 @@ only for the current Production campaign.
       reports each become one report obligation, every held receipt is
       released, and future work keeps its original due time.
    4. Choose **Confirm resume of live delivery**, within five minutes of
-      the sign-in and the preview. Every input is checked again;
+      the preview. Every input is checked again;
       anything that changed cancels the confirmation without releasing mail,
       and you preview again. If the confirm button is missing, or confirming
-      reports an authentication error, changed inputs or "This preview is
-      out of date.", a clock has run out: confirm with Google again as in
-      step 2 and preview again. If the page comes back saying a sender
+      reports changed inputs or "This preview is out of date.", a clock has
+      run out: preview again. If the page comes back saying a sender
       check is needed, send a test as in step 2 first.
 
 If the campaign closes while delivery is paused, resuming no longer applies:
@@ -673,12 +662,10 @@ while any of its messages is still submitting or unknown, and no resolution
 at all (release, cancel or clear) is accepted while a
 daily or weekly report is still being prepared: wait for it to finish, and
 if its preparation has failed, retry it from the Background work page as in
-step 4.1 above. Every resolution (release, cancel or clear) needs a Google
-sign-in from the last five minutes and is confirmed within five minutes of
-its preview, and a release also needs the five-minute sender test, all in
-one go as for a resume. A missing confirm button or an authentication error
-means the sign-in has expired, "This preview is out of date." means the
-preview has, and "This information changed" means something the preview
+step 4.1 above. Every resolution (release, cancel or clear) is confirmed
+within five minutes of its preview, and a release also needs the sender
+test, all in one go as for a resume. "This preview is out of date." means
+the preview has expired, and "This information changed" means something the preview
 relied on moved (the sender test expired, report preparation started, or the
 held messages changed); recover as for a resume. This does not reopen Family access.
 Held invitations and reminders are cancelled by the mail worker under the

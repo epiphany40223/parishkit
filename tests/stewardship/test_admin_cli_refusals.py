@@ -25,7 +25,7 @@ from parishkit.config import ConfigError
 from parishkit.stewardship import admin_cli
 from parishkit.stewardship.accounts.admin_editing import error_response
 from parishkit.stewardship.accounts.policy import Principal
-from parishkit.stewardship.accounts.sessions import FreshAuthenticationRequired
+from parishkit.stewardship.accounts.sessions import SignInEnded
 from parishkit.stewardship.admin_changes import InvalidChange
 from parishkit.stewardship.admin_reads import NotAvailable
 from parishkit.stewardship.audit import refusals
@@ -34,7 +34,11 @@ from parishkit.stewardship.observability import Event, SafeJsonFormatter
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web import refusal_log
 from parishkit.stewardship.web.refusal_log import AdminRefusalMiddleware
-from parishkit.stewardship.web.refusals import UserFacingDenied, UserFacingError
+from parishkit.stewardship.web.refusals import (
+    AccessDenied,
+    UserFacingDenied,
+    UserFacingError,
+)
 
 SECRET = "A" * 43
 PREAMBLE = f"pk-admin-session/1 {SECRET} {'f' * 64}\n".encode()
@@ -148,12 +152,21 @@ SHARED = [
         "WARNING",
         id="permission-error",
     ),
+    # A read-only or no-longer-live automation session at a privileged
+    # command is a plain denial since #1547.
     pytest.param(
-        FreshAuthenticationRequired(PRIVATE),
+        AccessDenied("This needs a live full-scope session."),
         "denied",
-        {"codes": ["denied"], "reason": "fresh_authentication_required"},
-        "INFO",
-        id="step-up",
+        {"codes": ["denied"], "reason": "denied"},
+        "WARNING",
+        id="automation-scope",
+    ),
+    pytest.param(
+        SignInEnded(PRIVATE),
+        "denied",
+        {"codes": ["denied"], "reason": "denied"},
+        "WARNING",
+        id="sign-in-ended",
     ),
     pytest.param(
         UserFacingDenied(PRIVATE),

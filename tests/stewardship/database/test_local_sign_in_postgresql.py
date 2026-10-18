@@ -222,46 +222,56 @@ def test_unknown_or_malformed_tokens_are_refused(local, token):
     assert PortalSession.objects.count() == 0
 
 
-def test_second_sign_in_is_a_step_up_like_google(local):
-    """A new link from a signed-in browser refreshes that session in place."""
+def test_second_sign_in_is_a_new_session_like_google(local):
+    """A new link from a signed-in browser issues a new session (#1547).
+
+    The old session is revoked as ``admin_reauthenticated`` and each sign-in
+    records ``admin_login``, exactly as a second Google sign-in does.
+    """
     client = browser()
     assert post_token(client, mint(local)).status_code == 302
     cookie = client.cookies["pk_admin"].value
     row = PortalSession.objects.get()
     assert post_token(client, mint(local)).status_code == 302
-    assert client.cookies["pk_admin"].value == cookie
-    assert PortalSession.objects.get().pk == row.pk
+    assert client.cookies["pk_admin"].value != cookie
+    row.refresh_from_db()
+    assert row.revoked_at is not None
+    live = PortalSession.objects.get(revoked_at__isnull=True)
+    assert live.pk != row.pk and live.principal_id == row.principal_id
     # Audit keys are not sequential, so compare the set of recorded kinds.
     assert sorted(
         AuditEvent.objects.filter(actor_id=row.principal_id).values_list(
             "event_type", flat=True
         )
-    ) == ["admin_login", "admin_step_up"]
+    ) == ["admin_login", "admin_login", "admin_reauthenticated"]
+    assert AuditEvent.objects.get(event_type="admin_reauthenticated").subject_id == (
+        row.pk
+    )
 
 
 @pytest.mark.parametrize(
-    "next_path,expected",
+    "next_path",
     [
-        ("/admin/users/automation/approval/", "/admin/users/automation/approval/"),
-        ("https://example.com/admin/", "/admin/"),
-        ("//example.com/admin/", "/admin/"),
-        ("/admin/local/sign-in", "/admin/"),
-        ("", "/admin/"),
+        "/admin/users/automation/approval/",
+        "https://example.com/admin/",
+        "//example.com/admin/",
+        "/admin/local/sign-in",
+        "",
     ],
 )
-def test_a_step_up_returns_to_the_page_that_asked(local, next_path, expected):
-    """A step-up's "next" (#613) is revalidated as an Admin path, as Google's is."""
+def test_a_second_sign_in_ignores_the_return_path(local, next_path):
+    """A second sign-in's posted "next" is ignored: it lands on /admin/."""
     client = browser()
     assert post_token(client, mint(local)).status_code == 302
     response = post_token(client, mint(local), next=next_path)
-    assert (response.status_code, response["Location"]) == (302, expected)
+    assert (response.status_code, response["Location"]) == (302, "/admin/")
 
 
 APPROVAL = "/admin/users/automation/approval/"
 
 
 def test_a_new_session_ignores_the_return_path(local):
-    """A first sign-in is not a step-up: "next" is ignored for /admin/."""
+    """A first sign-in ignores "next" and lands on /admin/."""
     response = post_token(browser(), mint(local), next=APPROVAL)
     assert (response.status_code, response["Location"]) == (302, "/admin/")
 
@@ -271,7 +281,7 @@ def test_another_users_sign_in_ignores_the_return_path(
     two_admins,  # noqa: F811
 ):
     """A browser signed in as one Administrator, signing in as another, gets a
-    new session, not a step-up, so the stored return path is not used."""
+    new session for that account and lands on /admin/, ignoring "next"."""
     make_local(settings)
     client = browser()
     assert post_token(client, mint(two_admins)).status_code == 302

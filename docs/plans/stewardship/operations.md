@@ -145,7 +145,7 @@ fresh-install, restart, ownership, failure or persistence checks.
    with manifest/digest/version/tenant/credential validation and destructive
    confirmation.
 2. Restore database/media/config, run permitted forward migrations, start in
-   Testing, invalidate all restored sessions/OAuth/reauthentication state, and
+   Testing, invalidate all restored sessions and OAuth state, and
    atomically set `restore_review_required` before exposing web routes.
    Initialize a fresh Family-link credential epoch, clear restored generation/
    rehearsal pointers, and fence old preparation work including inactive
@@ -166,7 +166,7 @@ fresh-install, restart, ownership, failure or persistence checks.
    including closed-Production, archived-current versus historical archived,
    ambiguous delivery choice, interruption, wrong tenant, missing key, and
    release race; reject restored Admin/Staff/leader/Family cookies and verify
-   fresh Google login plus maintenance queue isolation.
+   a new Google login plus maintenance queue isolation.
 
 ### OPS-07: Housekeeping and retention jobs
 

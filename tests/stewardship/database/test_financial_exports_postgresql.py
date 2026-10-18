@@ -327,30 +327,17 @@ def test_native_financial_exports_use_real_worker_and_guarded_downloads(
     assert FinancialExportSnapshot.objects.count() == 3
 
 
-def test_financial_export_needs_a_fresh_sign_in(response_service, google):
-    """A stale sign-in queues nothing and returns to the report (#547).
-
-    After the step-up the same form queues exactly one export.
-    """
+def test_an_old_sign_in_queues_a_financial_export(response_service, google):
+    """A sign-in older than five minutes queues exactly one export (#1547)."""
     harness = response_service
     financial_source(harness, modules=["financial"], options=map(asdict, OPTIONS))
     harness = activate_response_service(harness)
     browser, _ = signed_in()
-    route = reverse("admin:financial_report")
     export = reverse("admin:financial_export")
     fields = FinancialQuery().form_values() | dict(
         format="csv", browser_timezone="UTC", request_key=str(uuid4())
     )
     stale_sign_in()
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        refused = post(browser, export, fields, HTTP_ACCEPT="text/html")
-        assert refused.status_code == 403
-        page = refused.content.decode()
-        assert "Confirm with Google" in page and "Nothing was done" in page
-        assert f'name="next" value="{route}"' in page
-        assert "you will then return to Financial stewardship." in page
-        assert not ExportRequest.objects.exists()
-    signed_in(browser)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         created = post(browser, export, fields)
         assert created.status_code == 302

@@ -975,11 +975,8 @@ PDF, with the export time zone), the shared export lifecycle's
 the page's mode to `reports/families/<family>/exports/`, which only an
 Administrator may use, as only an Administrator sees the full timeline;
 Staff get no form, and their post is denied. The file can hold the Family's
-live code, so, like the Active parishioner family directory's exports,
-creating it needs a Google sign-in within five minutes
-([#547](https://github.com/epiphany40223/parishkit/issues/547)); a stale
-sign-in gets the step-up page, which returns to the timeline, and nothing is
-made. The form is drawn inside the
+live code, so creating it is audited like the Active parishioner family
+directory's exports. The form is drawn inside the
 page's table region, so an in-place mode switch draws it again with the mode
 it posts, and with no Testing rehearsal it is absent. The request captures
 what the page shows, through the page's own reads, inside the campaign's
@@ -1255,16 +1252,9 @@ the standard asynchronous, short-lived, requester-authorized export
 pipeline, including its explicitly accepted plaintext storage and owner-only
 permissions under the
 [point-in-time export rule](../operations/spec.md#point-in-time-exports).
-Opening the page needs no fresh sign-in, but queuing an export needs a Google
-sign-in within the last five
-minutes, because the file holds every listed Family's code
-([#547](https://github.com/epiphany40223/parishkit/issues/547)). A stale
-sign-in gets the
-[step-up](../architecture/spec.md#identity-and-session-security), which
-queues nothing and returns to the directory; the filters, being private form
-state, are applied again. The export panel says so before the Administrator or Staff member queues one, when their
-sign-in is already older than that
-([page help](../ui-conventions/spec.md#page-help)). Interactive report execution and exports are audited at
+Queuing an export needs no recent sign-in
+([#1547](https://github.com/epiphany40223/parishkit/issues/1547)), although
+the file holds every listed Family's code. Interactive report execution and exports are audited at
 report, campaign, actor, filter, and row-count granularity without copying
 codes into the audit payload. Exact-code-search audit records omit the raw filter and store
 only a keyed fingerprint when correlation is operationally necessary.
@@ -2308,9 +2298,7 @@ plus these changes; nothing else changes. 2 Members are held back. This
 cannot be undone from here." It offers **Apply** and **Cancel**. Apply posts
 the plan and the counts shown, and the server confirms the plan and queues
 its run in one transaction (`confirm_and_publish`), re-checking every rule
-the data workflow lists: a Google sign-in within the last five minutes (a
-refusal offers **Confirm with Google** in the dialog, as the review dialog
-says), Production mode, the switch on, the plan less than an hour old, every
+the data workflow lists: Production mode, the switch on, the plan less than an hour old, every
 planned change at the version the plan recorded, the counts equal to the
 plan's, and no change being written by another unfinished plan. A repeated
 Apply returns the same run.
@@ -2393,7 +2381,6 @@ refusals](../operations/spec.md#admin-input-refusals)), never with a value.
 | `publication_plan_changed` | A planned change or the counts changed since the check | Something changed since the check. Check ParishSoft again. |
 | `publication_plan_superseded` | A newer plan exists | A newer check exists. Review it first. |
 | `publication_overlap` | A change is still being written by another plan | Some of these changes are still being written. Wait for that run to finish. |
-| `publication_fresh_sign_in` | No sign-in in the last five minutes | Confirm with Google to publish (step-up). |
 | `publication_finished` | Run again with nothing unfinished | Every Member in this check is finished. |
 
 A check or run that fails in the background is not a refusal: the page shows
@@ -2547,9 +2534,8 @@ figures, so the charts have no exact-values table
 [#1266](https://github.com/epiphany40223/parishkit/issues/1266)); a Family can
 choose more than one share method, so those shares can add up past 100%. The
 summary follows the applied filters in place, and its charts keep their space
-until they are drawn again. Exports are CSV, XLSX, and PDF; queuing
-one needs the same fresh sign-in as a
-[active parishioner family directory](#active-parishioner-family-directory) export, returning to this report. No
+until they are drawn again. Exports are CSV, XLSX, and PDF, queued as an
+[active parishioner family directory](#active-parishioner-family-directory) export is. No
 Ministry leader receives aggregate or Family financial detail.
 
 The page checks its date and pledge filters before Apply (a date, each

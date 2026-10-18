@@ -71,7 +71,7 @@ def install(text):
 def live(name):
     """The installed definition of ``public.name()``, as one statement.
 
-    A later migration (0113, #1547) replaces 0112's confirmation guard, so a
+    A later migration (0114, #1547) replaces 0112's confirmation guard, so a
     test that runs 0112's file puts this back, not 0112's body.
     """
     with connection.cursor() as cursor:

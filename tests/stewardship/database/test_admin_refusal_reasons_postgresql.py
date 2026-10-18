@@ -106,20 +106,21 @@ def test_a_refused_test_access_says_which_refusal(auth_service, google):
     assert "not-a-drive-link" not in json.dumps(row.context)
 
 
-def test_a_code_posted_without_a_fresh_sign_in_is_refused_in_place(
-    auth_service, google
-):
-    """Automation access answers 200 with the step-up: no status recorded."""
+def test_a_code_posted_from_an_old_sign_in_reaches_the_lookup(auth_service, google):
+    """A sign-in older than five minutes looks the code up (#1547).
+
+    The unknown code is refused by the lookup itself, at INFO, not by any
+    sign-in age.
+    """
     browser, _ = signed_in()
     stale_sign_in()
     assert browser.get(APPROVAL).status_code == 200
     assert entries() == []
     page = post(browser, APPROVAL, action="lookup", code="ZZZZZZZZ")
-    assert page.status_code == 200 and b"Confirm with Google" in page.content
+    assert page.status_code == 200
     (row,) = entries()
     assert row.level == "INFO"
-    assert row.context["reason"] == "fresh_authentication_required"
-    assert "status" not in row.context
+    assert row.context["reason"] == "pairing_code_refused"
     assert "ZZZZZZZZ" not in json.dumps(row.context)
 
 

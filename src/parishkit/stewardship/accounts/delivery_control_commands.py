@@ -25,7 +25,7 @@ from parishkit.stewardship.web.refusals import (
 from .admin_editing import editable_configuration, principal
 from .content_models import ContentVersion
 from .delivery_forecast import next_due
-from .sessions import require_fresh
+from .sessions import sign_in_instant
 
 SALT = "stewardship-delivery-control-v1"
 RESOLVABLE_TYPES = frozenset({"receipt", "daily_digest", "weekly_digest"})
@@ -318,14 +318,8 @@ def page(request, service, campaign_id):
     """Passive status does not refresh idle expiry or perform provider requests."""
     with work_transaction():
         _, runtime, campaign = _current(request, service, campaign_id, passive=True)
-        try:
-            require_fresh(request, record=False)
-            fresh = True
-        except PermissionError:
-            fresh = False
         return {
             "campaign": campaign,
-            "fresh": fresh,
             "cautions": CAUTIONS,
             "coverage_labels": COVERAGE_LABELS,
             **controls(campaign, runtime),
@@ -583,7 +577,7 @@ def confirm(request, service, campaign_id, *, token, record=None):
                 else uuid4()
             ),
             session_id=request.portal_session.pk,
-            authenticated_at=require_fresh(request),
+            authenticated_at=sign_in_instant(request),
             correlation_id=current_correlation(),
         )
         if record is not None:

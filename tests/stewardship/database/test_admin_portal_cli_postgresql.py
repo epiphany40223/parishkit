@@ -4,7 +4,8 @@ Process admission is replaced by the test's own Django assembly; everything
 after it is the real command line on the restricted web login. The switch is
 read and changed through the page's own ``family_maintenance`` functions, so
 the page and the command line see the same state and audit trail; changing
-it is fresh-gated, and a full-scope session stands in for the sign-in.
+changing it needs a live full-scope session and leaves the
+``automation_fresh_gate`` trail.
 """
 
 import pytest

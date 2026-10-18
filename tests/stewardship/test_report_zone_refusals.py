@@ -104,7 +104,6 @@ def test_financial_report_refuses_dates_without_a_zone(monkeypatch, zone, name):
 def test_financial_export_refuses_dates_without_a_zone(monkeypatch, zone, name):
     """So does its export, including a form from a page loaded before #558."""
     _financial_signed_in(monkeypatch, financial_export_views)
-    monkeypatch.setattr(financial_export_views, "require_fresh", Mock())
     request = RequestFactory().post("/", _financial(zone, name) | EXPORT)
     response = financial_export_views.create(request, uuid4())
     assert response.status_code == 400 and ZONE in response.content
@@ -115,7 +114,6 @@ def test_a_financial_filter_without_dates_needs_no_zone(monkeypatch):
     problem: its missing field is refused as any malformed export is, and
     the report itself reads it (the zone is unused)."""
     _financial_signed_in(monkeypatch, financial_export_views)
-    monkeypatch.setattr(financial_export_views, "require_fresh", Mock())
     values = {
         key: value
         for key, value in FinancialQuery().form_values().items()
@@ -131,7 +129,6 @@ def test_a_financial_filter_without_dates_needs_no_zone(monkeypatch):
 def test_a_financial_export_with_a_query_string_is_invalid_first(monkeypatch):
     """A query string is refused as invalid, never answered with the zone hint."""
     _financial_signed_in(monkeypatch, financial_export_views)
-    monkeypatch.setattr(financial_export_views, "require_fresh", Mock())
     values = _financial(None, "first_start") | EXPORT
     response = financial_export_views.create(
         RequestFactory().post("/?x=1", values), uuid4()

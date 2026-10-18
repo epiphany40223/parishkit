@@ -14,11 +14,10 @@ printed as the page shows it.
 ``files delete`` and ``files rename`` are the page's row actions (#947)
 through its own ``hosted_file_uses.delete_many`` and ``rename``, admitted as
 the page's POST (``CONFIGURE``, recording activity) and so needing a
-full-scope session. The page asks for no recent sign-in, so neither is
-fresh-gated; ``files delete`` prompts because a deletion cannot be undone.
-Each records the page's events and its own ``admin_cmd_files_<verb>`` in the
-page's transaction, through the functions' ``record`` callback, only when
-something changed.
+full-scope session. Neither is privileged; ``files delete`` prompts because a
+deletion cannot be undone. Each records the page's events and its own
+``admin_cmd_files_<verb>`` in the page's transaction, through the functions'
+``record`` callback, only when something changed.
 """
 
 from dataclasses import dataclass

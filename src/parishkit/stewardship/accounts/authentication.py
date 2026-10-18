@@ -1,4 +1,4 @@
-"""Google-only provider boundary with early admission and fresh signed identity.
+"""Google-only provider boundary with early admission and signed identity.
 
 Allauth owns PKCE, authorization URL construction, state and provider exchange.
 This application deliberately exposes none of its signup/password/connect/token
@@ -45,7 +45,7 @@ from parishkit.stewardship.web.contracts import (
     FieldError,
     validation_response,
 )
-from parishkit.stewardship.web.namespaces import admin_return_path
+from parishkit.stewardship.web.namespaces import ADMIN_HOME
 from parishkit.stewardship.web.refusals import (
     UserFacingDenied,
     UserFacingGone,
@@ -67,7 +67,6 @@ from .sessions import (
     database_now,
     end_admin,
     issue_admin,
-    reauthenticate_admin,
     revocation_epoch,
 )
 
@@ -298,16 +297,13 @@ class SignedGoogleAdapter(GoogleOAuth2Adapter):
 def verified_authentication_time(claims, state):
     """Preserve signed provider authentication independently of local login time.
 
-    Token issuance and account selection alone do not prove reauthentication.
-    An existing Google session may establish ordinary identity without granting
-    the five-minute privileged window. The one-use nonce binds this exchange;
-    auth_time records the provider's authentication, which may predate it.
-
-    Google ignores max_age and the claims request and never sends auth_time
-    (its discovery document lists no such claim). Then the token's issue time
-    stands in: the one-use nonce binds this token to a sign-in started here
-    within 15 minutes, so it records the fresh Google round trip that
-    require_fresh admits. An auth_time that is present is still validated.
+    The one-use nonce binds this exchange; auth_time, when present, records
+    the provider's authentication, which may predate it. Google never sends
+    auth_time (its discovery document lists no such claim), so the token's
+    issue time stands in: the nonce binds this token to a sign-in started
+    here within 15 minutes. The instant is recorded on the session and on
+    privileged actions; no action requires it to be recent (#1547). An
+    auth_time that is present is still validated.
     """
     now = database_now()
     authenticated = claims["auth_time"] if "auth_time" in claims else claims["iat"]
@@ -370,8 +366,8 @@ def _session_admission_refused(error):
 def complete_identity(request, subject, email, hosted, *, authenticated_at):
     """Only a verified Google identity can be created or refresh its email claims.
 
-    The recovery epoch and the ``next`` path come from the one-use OAuth state
-    the callback admitted; everything after that is the shared identity core,
+    The recovery epoch comes from the one-use OAuth state the callback
+    admitted; everything after that is the shared identity core,
     ``establish_identity``, which the LOCAL test sign-in also calls.
     """
     data = request.stewardship_oauth_state["data"]
@@ -382,7 +378,6 @@ def complete_identity(request, subject, email, hosted, *, authenticated_at):
         hosted,
         authenticated_at=authenticated_at,
         recovery_epoch=data["recovery_epoch"],
-        destination=data.get("next"),
     )
 
 
@@ -394,8 +389,6 @@ def establish_identity(
     *,
     authenticated_at,
     recovery_epoch,
-    destination,
-    step_up_only=False,
 ):
     """The post-verification identity core shared by every Admin sign-in path.
 
@@ -405,22 +398,14 @@ def establish_identity(
     the identity rate limiter, the recovery-epoch check (``recovery_epoch``
     is the epoch the sign-in started under, and must still be current),
     ``PortalUser`` get-or-create and the disabled check, current-policy
-    authorization, ``reauthenticate_admin`` or ``issue_admin``, the SQL
-    session guard's ``IntegrityError`` handling and the CSRF rotation.
-    Neither path may call ``issue_admin`` or ``reauthenticate_admin`` on its
-    own, so sessions, audit, login rules and step-up cannot drift apart.
+    authorization, ``issue_admin``, the SQL session guard's
+    ``IntegrityError`` handling and the CSRF rotation. Neither path may call
+    ``issue_admin`` on its own, so sessions, audit and login rules cannot
+    drift apart.
 
-    When the browser already holds a live session for this same PortalUser,
-    the sign-in is a step-up: that session's freshness advances in place
-    (see ``reauthenticate_admin``). Otherwise a new session replaces whatever
-    the browser held. Either way the CSRF secret rotates and the browser
-    returns to the validated ``destination`` path.
-
-    With ``step_up_only`` (the LOCAL sign-in, #613), ``destination`` is
-    honoured only for that step-up; a new session goes to the Admin home.
-    The LOCAL return path comes from browser storage, not from a signed
-    sign-in state as Google's does, so only the browser that is already
-    signed in as this user may steer where its own step-up lands.
+    A new session replaces whatever the browser held, the CSRF secret
+    rotates and the browser goes to the Admin home. There is no step-up
+    sign-in that keeps a session (#1547).
     """
     service = runtime()
     epoch = (
@@ -458,25 +443,18 @@ def establish_identity(
                 version=F("version") + 1,
             )
         principal = None if user.disabled else current_principal(service.store, user.pk)
-        stepped_up = False
         if principal is not None and principal.roles:
+            # A session this browser let go idle, expire or lose its
+            # authority ends with that reason first, as admission records
+            # it; issue_admin then ends a live one as admin_reauthenticated.
+            authenticated_admin(request, store=service.store)
             try:
-                stepped_up = (
-                    reauthenticate_admin(
-                        request,
-                        user.pk,
-                        store=service.store,
-                        authenticated_at=authenticated_at,
-                    )
-                    is not None
+                issue_admin(
+                    request,
+                    user.pk,
+                    store=service.store,
+                    authenticated_at=authenticated_at,
                 )
-                if not stepped_up:
-                    issue_admin(
-                        request,
-                        user.pk,
-                        store=service.store,
-                        authenticated_at=authenticated_at,
-                    )
             except IntegrityError as error:
                 # The SQL session guard (#306) re-checks the Admin rule at the
                 # insert. A policy activation that removed it after
@@ -507,20 +485,16 @@ def establish_identity(
         record_account_refusal(user.pk)
         return denial(status=429 if delay else 403, retry=delay)
     service.limiter.clear(counter)
-    if step_up_only and not stepped_up:
-        destination = None
-    # Revalidate even though login stored only a validated path in its state.
-    return HttpResponseRedirect(admin_return_path(destination))
+    return HttpResponseRedirect(ADMIN_HOME)
 
 
 @require_http_methods(["GET", "HEAD", "POST"])
 def login(request):
     """Only a CSRF-protected POST initiates authentication; ignore dynamic scopes.
 
-    An optional ``next`` field names the same-origin Admin page to return to
-    after sign-in or step-up; anything but a safe /admin/ path means /admin/.
-    A signed-in Admin posts here from a fresh-authentication prompt; the
-    session then keeps its lifetime, since only the callback may refresh it.
+    The sign-in always returns to the Admin home. Google is asked only to let
+    the person choose an account (``prompt=select_account``); it ignores
+    ``max_age``, so none is sent (#1547).
     """
     try:
         service = runtime()
@@ -533,26 +507,22 @@ def login(request):
             return denial(status=429, retry=delay)
         limiter.counters([counter], failure=True)
         nonce = secrets.token_urlsafe(32)
-        destination = admin_return_path(request.POST.get("next"))
         if "principal" not in request.session:
             request.session.set_expiry(database_now() + timedelta(minutes=15))
         provider = get_adapter(request).get_provider(request, "google")
         return provider.redirect(
             request,
             process="login",
-            next_url=destination,
+            next_url=ADMIN_HOME,
             data={
                 "nonce": nonce,
                 "recovery_epoch": revocation_epoch(),
                 "initiated_at": int(database_now().timestamp()),
-                "next": destination,
             },
             scope=["openid", "email"],
             auth_params={
                 "nonce": nonce,
                 "prompt": "select_account",
-                "max_age": "0",
-                "claims": '{"id_token":{"auth_time":{"essential":true}}}',
             },
         )
     except (LimiterUnavailable, ConfigError):

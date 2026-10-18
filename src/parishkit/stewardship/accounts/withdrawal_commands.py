@@ -20,7 +20,7 @@ from parishkit.stewardship.web.refusals import (
 )
 
 from .admin_editing import editable_configuration, principal
-from .sessions import require_fresh
+from .sessions import sign_in_instant
 
 SALT = "stewardship-production-withdrawal-v1"
 
@@ -67,15 +67,9 @@ def page(request, service, campaign_id):
     with work_transaction():
         _, runtime, confirmation = _current(request, service, campaign_id, passive=True)
         campaign = confirmation.request.campaign
-        try:
-            require_fresh(request, record=False)
-            fresh = True
-        except PermissionError:
-            fresh = False
         return {
             "campaign": campaign,
             "available": available(campaign, runtime, _now()),
-            "fresh": fresh,
             "withdrawal": ProductionWithdrawal.objects.filter(
                 confirmation=confirmation
             ).first(),
@@ -213,6 +207,6 @@ def withdraw(request, service, campaign_id, *, token):
             **values,
             transition_id=uuid4(),
             session_id=request.portal_session.pk,
-            authenticated_at=require_fresh(request, irreversible=True),
+            authenticated_at=sign_in_instant(request, irreversible=True),
             correlation_id=current_correlation(),
         )

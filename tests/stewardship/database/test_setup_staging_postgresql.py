@@ -16,8 +16,7 @@ from parishkit.stewardship.accounts.sessions import (
     database_now,
     end_admin,
     issue_admin,
-    reauthenticate_admin,
-    require_fresh,
+    sign_in_instant,
 )
 from parishkit.stewardship.accounts.setup_drafts import view_draft
 from parishkit.stewardship.accounts.setup_models import SetupAttempt
@@ -68,18 +67,12 @@ def login(service, *, authenticated_at=None):
     return request
 
 
-def test_step_up_keeps_the_same_login_and_its_draft(setup_service):
-    """Reauthenticating in place is not a new login: the wizard stays owned."""
+def test_an_hour_old_sign_in_keeps_its_draft(setup_service):
+    """A sign-in of any age keeps owning its wizard (#1547): no step-up."""
     request = login(setup_service, authenticated_at=database_now() - timedelta(hours=1))
     attempt = begin_setup(request, setup_service)
     original = PortalSession.objects.get()
-    assert reauthenticate_admin(
-        request,
-        original.principal_id,
-        store=setup_service.store,
-        authenticated_at=database_now(),
-    )
-    assert require_fresh(request) > original.authenticated_at
+    assert sign_in_instant(request) == original.authenticated_at
     assert begin_setup(request, setup_service) == attempt
     assert view_draft(request, setup_service).status.attempt_id == attempt.attempt_id
     assert PortalSession.objects.get().pk == original.pk

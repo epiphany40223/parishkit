@@ -138,7 +138,7 @@ class PublicationField(ImmutableRecord):
 
 
 class PublicationConfirmation(ImmutableRecord):
-    """An Administrator's final, freshly signed-in confirmation of one plan.
+    """An Administrator's final, signed-in confirmation of one plan.
 
     The counts are what the Administrator was shown; SQL requires them to
     equal the plan's, so the confirmation covers exactly that plan.

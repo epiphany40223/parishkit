@@ -237,9 +237,7 @@ navigation or HTML form submission (`Sec-Fetch-Mode: navigate`, or an
 explicit `text/html` Accept) instead receives an ordinary page in the site
 layout with the same status code. That page shows the message, the next step
 (correct and resubmit, reload, sign in again, or try later), a link back to
-the same-origin Admin page the person came from, and the home link. A missing
-fresh authentication offers **Confirm with Google** as described under
-[identity and session security](../architecture/spec.md#identity-and-session-security). Forms that
+the same-origin Admin page the person came from, and the home link. Forms that
 can re-render with inline field errors still do so.
 
 A form posted with a field it does not have, a field repeated, an unknown
@@ -620,14 +618,9 @@ never scrolls to show it (Administrator, pk-local review of
   that fails falls back to the ordinary load, except when the browser cut
   it off because the reader is leaving the page: their own navigation goes
   ahead. A save with no answer still shows its note then, since a download
-  link also starts leaving the page and the page stays. A step-up stays an
-  ordinary navigation even inside a region: on Send to chosen Families, Check
-  these Families and Send these Family tests act in place, and a review
-  swapped in with a stale sign-in keeps its Confirm with Google form, which
-  loads the sign-in page (in LOCAL, the page records the return path for a
-  swapped-in step-up as it does for one it loaded with). A Send refused for a
-  stale sign-in is answered with the step-up page, shown whole. That page's
-  Refresh status replaces only the recent tests (and the critical-problems
+  link also starts leaving the page and the page stays. On Send to chosen
+  Families, Check these Families and Send these Family tests act in place.
+  That page's Refresh status replaces only the recent tests (and the critical-problems
   banner), so Family DUIDs typed but not yet checked are kept, and after
   Send the requested notice takes focus. A file upload is
   sent in place as the multipart body a native submission sends: on
@@ -640,9 +633,8 @@ never scrolls to show it (Administrator, pk-local review of
   emails step, Fill in and Reset each land on their own region, so focus
   stays where the reader is (the notice that replaces Fill in; Reset's
   heading, since its box comes back unticked), and the stepper and each
-  entry's state update. Neither needs a fresh sign-in; an answer without
-  the region (the step-up page, a stale version's error page) is shown
-  whole.
+  entry's state update. An answer without the region (a stale version's
+  error page) is shown whole.
 - **Real targets.** Every control is a real link or form with its `href`
   or `action` and fragment, which the script requests; when an ordinary load
   happens instead (a fallback above), the fragment, kept across a
@@ -1024,21 +1016,17 @@ wait for a change then.
 The same holds for the rest of the Admin portal (#563, the audit's last
 slice): Start Testing cleanup on Go-live readiness and Confirm Production
 before a passing check (named by the step still needed); Confirm cancelling
-go-live while mail blocks it; every Confirm on Pause and resume mail, Send on
-chosen-Family tests, and Close or Reopen on Family portal availability
-without a recent sign-in; the retry the Mail message page would offer while
+go-live while mail blocks it; the retry the Mail message page would offer while
 the resend admission refuses it; Queue new manual report while an earlier
 Weekly Admin digest is still being prepared or delivered (checked when the
 page opens); and Upload on Hosted files while the library is full. A button
 the server draws disabled because other campaign work holds the page (report
-exports, follow-up saves, Participation) or because the sign-in is not
-recent (automation approval) names that notice too.
+exports, follow-up saves, Participation) names that notice too.
 
 The same applies wherever the page already knows the refusal, whatever the
-reason: other campaign work holding the action, a missing prerequisite the
-server checks first, or a sign-in that is not recent (named by the shared
-step-up notice). When that notice can appear on an in-place answer, it is
-drawn after the controls it disables, so nothing moves
+reason: other campaign work holding the action, or a missing prerequisite the
+server checks first. When the notice naming it can appear on an in-place
+answer, it is drawn after the controls it disables, so nothing moves
 ([#1331](https://github.com/epiphany40223/parishkit/issues/1331)). Each
 feature spec lists its own cases, such as
 [Restore review](../admin-portal/spec.md#restore-release) and the
@@ -1427,18 +1415,15 @@ the campaign wizard in #1404 PR 4).
   settings); the dialog can then be closed. The page behind is not redrawn,
   and the form keeps the reader's values at the version they came from,
   never the current one, so a stale page can never quietly propose undoing a
-  change made elsewhere. A refusal that needs a fresh sign-in offers
-  **Confirm with Google** and its step-up page, as it does today. A
-  refusal the server draws itself (a fragment marked `data-review-refusal`,
-  such as the shared step-up notice with its **Confirm with Google**) is
-  shown in the dialog as drawn. This holds at the dialog's height limit
-  too (#1482): a review too long for the window stops short of the limit
-  by room for a refusal (7rem, or a fifth of the window's height if less),
-  and once a refusal shows the review keeps its height and the dialog grows
-  into that room, so the buttons stay put. A refusal taller than the room
-  (a long one on a phone) is never cut short or scrolled: the review
-  shrinks instead, and the buttons rise only by the part of the refusal
-  that does not fit in the room.
+  change made elsewhere. A refusal the server draws itself (a fragment
+  marked `data-review-refusal`) is shown in the dialog as drawn. This holds
+  at the dialog's height limit too (#1482): a review too long for the
+  window stops short of the limit by room for a refusal (7rem, or a fifth
+  of the window's height if less), and once a refusal shows the review
+  keeps its height and the dialog grows into that room, so the buttons stay
+  put. A refusal taller than the room (a long one on a phone) is never cut
+  short or scrolled: the review shrinks instead, and the buttons rise only
+  by the part of the refusal that does not fit in the room.
 - **Uploads.** In an upload editor (Campaign images, Parish logos), choosing
   the file and selecting Review uploads it as the first step of Review: the
   server stages it and the dialog shows its preview (each generated size, the
@@ -2198,26 +2183,12 @@ entry's (Administrator decision, 2026-10-11,
 next rather than only that it is empty
 ([empty tables and lists](#empty-tables-and-lists)).
 
-A hint that an action needs a sign-in from the last five minutes (the
-step-up) shows only when re-authentication would actually be asked for: the
-server, drawing the page, finds the sign-in older than that. Pages ask with
-the shared `{% fresh_sign_in %}` template tag, or use their view's `fresh`
-value, both built on the same check every gated action makes; a fresh reader
-sees no such hint. A sign-in that ages after the page is drawn gets the
-step-up answer when the form is sent, which explains itself, so no timer
-reveals the hint later ([no layout shift](#no-layout-shift); Administrator
-decision, 2026-10-12,
-[#1159](https://github.com/epiphany40223/parishkit/issues/1159)). A page
-shows such a hint at most once: an integration page with a key field says
-once that what was entered, the pasted key included, is not kept, rather
-than repeating the hint for the key. Every step-up hint, before an action
-or after one refused for a stale sign-in, is the one shared notice
-(`components/step-up-notice.html`): the same "For security, … needs a
-sign-in from the last five minutes." sentence and markup on every page,
-naming the action in a short phrase. No page words its own, and a template
-test fails when one does
-([#1192](https://github.com/epiphany40223/parishkit/issues/1192)). The idle
-sign-out notice is not a step-up hint and is unaffected.
+No page hints that an action needs a recent sign-in, and no control is
+disabled until the reader signs in again: no Admin action checks a sign-in's
+age ([identity and session security](../architecture/spec.md#identity-and-session-security);
+Administrator decision, 2026-10-17,
+[#1547](https://github.com/epiphany40223/parishkit/issues/1547)). The idle
+sign-out notice is unaffected.
 
 Template tests guard these rules: one fails when a paragraph shown without a
 click holds a message longer than about two sentences (50 words), one fails

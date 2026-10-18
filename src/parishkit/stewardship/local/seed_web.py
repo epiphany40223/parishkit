@@ -3,13 +3,13 @@
 Everything here calls the production code the Admin and Family pages call,
 inside a process configured like the web service (``configure_web_runtime``)
 and under the web identity. Requests are real Django request objects built
-with ``RequestFactory``; the Admin session is created and made fresh through
+with ``RequestFactory``; the Admin session is created through
 ``establish_identity``, the identity core the Google callback and the LOCAL
-test sign-in share, so sessions, audit and step-up behave as after a real
-sign-in. Family sessions are minted by ``issue_family`` from the Family's
-code, the form baseline by ``issue_baseline``, presence by the real heartbeat
-view and submissions by ``submit_family``. In Testing mode the Family signs in
-with the rehearsal code its chosen-Family Testing send carried
+test sign-in share, so sessions and audit behave as after a real sign-in.
+Family sessions are minted by ``issue_family`` from the Family's code, the
+form baseline by ``issue_baseline``, presence by the real heartbeat view and
+submissions by ``submit_family``. In Testing mode the Family signs in with the
+rehearsal code its chosen-Family Testing send carried
 (``RehearsalFamilyWebDriver``), and that send is made through the page's own
 review and confirmation (``family_tests``). No row is written by anything but
 production code.
@@ -124,11 +124,11 @@ def new_request(path="/admin/", *, method="get", data=None, session=None):
 
 # Admin.
 def sign_in_admin(request, email):
-    """Sign the Admin in (or step up) through the shared identity core.
+    """Sign the Admin in through the shared identity core.
 
     This is exactly what the LOCAL test sign-in does after consuming its
     token: the subject is ``local-test:<email>``, the recovery epoch is the
-    current one and freshness is now. A redirect means success; any other
+    current one and the sign-in instant is now. A redirect means success; any other
     response is the core's uniform denial.
     """
     from django.http import HttpResponseRedirect
@@ -146,7 +146,6 @@ def sign_in_admin(request, email):
         None,
         authenticated_at=database_now(),
         recovery_epoch=revocation_epoch(),
-        destination=None,
     )
     if not isinstance(response, HttpResponseRedirect):
         raise SeedWebRefused(f"The Admin sign-in was refused ({response.status_code}).")
@@ -495,8 +494,7 @@ def family_tests(request, service, campaign_id, revision_id, duids):
     The page's review (``campaign_family_test.prepare``, signed with its own
     salt) followed by its confirmation (``request_tests``, acknowledged), so
     each Family gets one ticket that the worker prepares with its Testing
-    code and mail-dispatch sends to the Testing recipient only. The caller
-    signs in again first: the confirmation needs a fresh sign-in. Returns
+    code and mail-dispatch sends to the Testing recipient only. Returns
     the tickets.
     """
     from django.core import signing

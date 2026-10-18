@@ -18,8 +18,8 @@ cannot drift:
   ``credential_result_dismissed`` and ``admin_cmd_integration_dismiss``
   together, only when the line was dismissed.
 
-Neither page asks for a recent sign-in or a confirmation, so neither
-command is fresh-gated or prompts.
+Neither page asks for a confirmation, so neither command is privileged or
+prompts.
 """
 
 from dataclasses import dataclass

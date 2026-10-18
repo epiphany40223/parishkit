@@ -17,9 +17,9 @@
   counts only, and the signed binding), ``requested`` (the acceptance just
   recorded, or the first one when the confirmation was repeated) with
   ``refresh`` (the full refresh requested, or None), or ``refused`` (why the
-  step was refused: ``busy`` is "this changed since you looked", with the
-  step-up for a stale sign-in). Under each count that fell too far the
-  preview lists its example Families (PR 5c: name and Family DUID,
+  step was refused: ``busy`` is "this changed since you looked", and
+  ``signed_out`` a session that ended meanwhile). Under each count that
+  fell too far the preview lists its example Families (PR 5c: name and Family DUID,
   Administrators only), or says none are available; they are part of the
   preview, drawn with it, so nothing appears or moves afterwards. A
   requested or refused result keeps the button in a data-live-mirror-target
@@ -51,7 +51,7 @@
 <p>{% button type="submit" data-submit-waits data-live-stale-holds %}{% translate "Confirm: accept this change once" %}{% endbutton %}</p></form>
 <form method="post" action="{% url 'admin:system_health' %}#accept-change" data-in-place="accept-cancel" data-in-place-fallback="accept-preview" data-in-place-message="{% translate 'Change not accepted.' %}">{% csrf_token %}<input type="hidden" name="action" value="accept_cancel">{% button type="submit" variant="secondary" %}{% translate "Cancel" %}{% endbutton %}</form></div>{% endwith %}
 {% else %}{% if accept.requested %}<p data-accept-done>{% translate "Change accepted once." %} {% if accept.refresh %}{% translate "A full refresh was requested; this panel follows it within about 10 seconds." %}{% else %}{% translate "A full refresh could not be requested right now, but the acceptance stands: the next full refresh, scheduled or from Refresh now, will use it." %}{% endif %}</p>
-{% elif accept.refused == "reauthenticate" %}{% url 'admin:system_health' as here %}{% translate "accepting this change" as step_up_action %}{% translate "Nothing was accepted." as step_up_outcome %}{% include 'stewardship/components/step-up-notice.html' with action=step_up_action outcome=step_up_outcome next=here marker="accept-refused" marker_value="reauthenticate" %}
+{% elif accept.refused == "signed_out" %}{% translate "Nothing was accepted." as signed_out_outcome %}{% include 'stewardship/components/signed-out-refusal.html' with marker="accept-refused" outcome=signed_out_outcome %}
 {% elif accept.refused == "busy" %}<p class="notice" data-accept-refused="changed">{% translate "This changed since you looked; review it again. Nothing was accepted. The refusal above catches up within about 10 seconds." %}</p>
 {% elif accept.refused == "denied" %}<p class="notice notice-error" data-accept-refused="denied">{% translate "The server refused this acceptance, so nothing was accepted. System logs record why; ask the server operator to check the database grants." %}</p>
 {% elif accept.refused == "invalid" %}<p class="notice notice-error" data-accept-refused="invalid">{% if accept.refusal_text %}{{ accept.refusal_text }}{% else %}{% translate "That request could not be read, or the box was not ticked. Nothing was accepted; review it again." %}{% endif %}</p>

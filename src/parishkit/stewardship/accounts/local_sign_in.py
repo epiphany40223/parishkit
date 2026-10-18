@@ -160,11 +160,9 @@ def sign_in(request):
         except ConfigError:
             delay = record_failure(request)
             return denial(status=429 if delay else 403, retry=delay)
-        # Presence was just proved with the link, so freshness is now; the
-        # core decides authorization from the login rules, as for Google.
-        # "next" is the page that asked for a fresh sign-in (#613). It is
-        # honoured only for a step-up of this browser's own session for the
-        # same user, and the core revalidates it as an Admin path.
+        # Presence was just proved with the link, so the sign-in instant is
+        # now; the core decides authorization from the login rules, as for
+        # Google.
         return establish_identity(
             request,
             SUBJECT_PREFIX + email,
@@ -172,8 +170,6 @@ def sign_in(request):
             None,
             authenticated_at=database_now(),
             recovery_epoch=stored["recovery_epoch"],
-            destination=request.POST.get("next"),
-            step_up_only=True,
         )
     except (LimiterUnavailable, ConfigError):
         return denial(status=503, retry=5)

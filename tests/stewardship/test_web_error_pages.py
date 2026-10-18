@@ -6,11 +6,7 @@ import pytest
 from django.db import DatabaseError
 from django.test import RequestFactory, override_settings
 
-from parishkit.stewardship.accounts.admin_editing import (
-    error_response,
-    step_up_response,
-)
-from parishkit.stewardship.accounts.sessions import FreshAuthenticationRequired
+from parishkit.stewardship.accounts.admin_editing import error_response
 from parishkit.stewardship.deployment import DeploymentProfile
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web import error_pages
@@ -95,26 +91,25 @@ def test_browser_pages_show_closed_messages_and_next_steps(code, status, title):
     assert ('href="/admin/login"' in body) is (code == ErrorCode.DENIED)
 
 
-def test_fresh_authentication_offers_confirm_with_google():
-    """The step-up form posts to sign-in with the current page as next."""
-    request = RequestFactory().get("/admin/setup/credentials/slack", **PAGE)
-    response = through(request, error_response(FreshAuthenticationRequired()))
+def test_a_denial_offers_sign_in_and_no_step_up():
+    """A refused Admin request links to sign-in; no page asks to confirm (#1547)."""
+    request = RequestFactory().post("/admin/setup/credentials/slack", **PAGE)
+    response = through(request, error_response(PermissionError("private")))
     body = response.content.decode()
     assert response.status_code == 403
-    assert "For security, this action needs a Google sign-in" in body
-    assert 'action="/admin/login"' in body
-    assert 'name="next" value="/admin/setup/credentials/slack"' in body
-    assert 'name="csrfmiddlewaretoken"' in body
-    assert "Confirm with Google" in body
+    assert 'href="/admin/login"' in body
+    assert "Confirm with Google" not in body
+    assert "For security" not in body
+    assert 'name="next"' not in body
+    assert "private" not in body
 
 
 @pytest.mark.parametrize("outage", [False, True])
-def test_local_step_up_mentions_google_only_with_a_real_client(monkeypatch, outage):
-    """LOCAL's step-up page names the laptop command, and Google only with a
-    real OAuth client (#619, #1399).
+def test_local_denial_carries_the_local_flag(monkeypatch, outage):
+    """LOCAL's error page keeps its LOCAL chrome even in the outage fallback.
 
     The outage fallback renders without context processors, so the page's
-    own context must carry LOCAL's flags.
+    own context must carry LOCAL's flag (#619).
     """
     real = error_pages.render_to_string
 
@@ -127,79 +122,11 @@ def test_local_step_up_mentions_google_only_with_a_real_client(monkeypatch, outa
     monkeypatch.setattr(error_pages, "render_to_string", render)
     request = RequestFactory().get("/admin/setup/credentials/slack", **PAGE)
     with override_settings(STEWARDSHIP_DEPLOYMENT_PROFILE=DeploymentProfile.LOCAL):
-        response = through(request, error_response(FreshAuthenticationRequired()))
+        response = through(request, error_response(PermissionError()))
     body = response.content.decode()
     assert response.status_code == 403
+    assert "This is the local laptop environment" in body
     assert "Google" not in body
-    assert "For security, this action needs a sign-in" in body
-    assert "tools/stewardship-local.sh sign-in" in body
-    # With a real OAuth client (#1399) the same page also offers Google.
-    with override_settings(
-        STEWARDSHIP_DEPLOYMENT_PROFILE=DeploymentProfile.LOCAL,
-        STEWARDSHIP_GOOGLE_SIGN_IN=True,
-    ):
-        response = through(request, error_response(FreshAuthenticationRequired()))
-    body = response.content.decode()
-    assert "Confirm with Google" in body
-    assert "tools/stewardship-local.sh sign-in" in body
-
-
-@pytest.mark.parametrize("kept", [False, True])
-def test_refused_gated_post_says_nothing_was_done(kept):
-    """A stale-sign-in refusal of a submitted form never reads like a success.
-
-    It says plainly that nothing happened, and says whether the view kept the
-    Admin's choices for after the step-up or they must be entered again.
-    """
-    request = RequestFactory().post("/admin/campaign/content/test/y/families/", **PAGE)
-    response = error_response(FreshAuthenticationRequired())
-    if kept:
-        response.stewardship_inputs_kept = True
-    body = through(request, response).content.decode()
-    assert "Nothing was done or sent." in body
-    assert ("will be shown again when you return" in body) is kept
-    assert ("enter it again after you return" in body) is not kept
-    assert 'name="next" value="/admin/campaign/content/test/y/families/"' in body
-
-
-@pytest.mark.parametrize(
-    "named,expected",
-    [
-        (
-            "/admin/reports/c/families/?mailing=yes",
-            "/admin/reports/c/families/?mailing=yes",
-        ),
-        ("https://example.org/admin/", "/admin/"),
-        ("/admin/login", "/admin/"),
-    ],
-)
-def test_post_only_routes_return_to_the_form_page(named, expected):
-    """A POST-only route's step-up returns to the page its form came from (#547).
-
-    The named page is still revalidated: anything but a same-origin Admin page
-    returns to the Admin home, never to the POST URL.
-    """
-    request = RequestFactory().post("/admin/reports/c/families/export", **PAGE)
-    body = through(
-        request, step_up_response(named, "Active parishioner family directory")
-    ).content
-    body = body.decode()
-    assert "Nothing was done or sent." in body
-    assert f'name="next" value="{expected}"' in body
-    # The page names where the step-up returns, since it is not this page.
-    assert "you will then return to Active parishioner family directory." in body
-    assert "return to this page" not in body
-
-
-def test_fresh_authentication_for_scripts_stays_a_json_denial():
-    """The step-up marker changes nothing for fetch callers."""
-    response = error_response(FreshAuthenticationRequired())
-    assert response.status_code == 403
-    assert response.stewardship_reauthenticate
-    request = RequestFactory().post("/admin/x", HTTP_ACCEPT="application/json")
-    assert json.loads(through(request, response).content)["errors"][0]["code"] == (
-        "denied"
-    )
 
 
 def test_return_links_are_same_origin_admin_pages_only():
@@ -233,9 +160,9 @@ def test_lookup_errors_render_not_found_pages():
 
 
 def test_family_pages_link_only_to_the_family_home():
-    """Outside /admin/ no Admin link, sign-in or step-up form is offered."""
+    """Outside /admin/ no Admin link or sign-in is offered."""
     request = RequestFactory().get("/family/section", **PAGE)
-    response = error_response(FreshAuthenticationRequired())
+    response = error_response(PermissionError())
     body = through(request, response).content.decode()
     assert "/admin/" not in body
     assert 'href="/"' in body

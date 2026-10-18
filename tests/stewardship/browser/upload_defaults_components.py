@@ -28,7 +28,7 @@ from parishkit.stewardship.accounts.hosted_file_views import (
 from parishkit.stewardship.accounts.hosted_files import placeholder
 from parishkit.stewardship.web.tables import paginate
 
-from .step_up_components import render as step_up_page
+from .family_test_components import denied_page
 
 LIBRARY = reverse("admin:hosted_files")
 UPLOAD = reverse("admin:hosted_file_upload")
@@ -46,7 +46,8 @@ ROOM_AGAIN = f"{LIBRARY}?case=room-again"
 # Routed answers to UPLOAD, fetched by GET from these addresses.
 REFUSED_TYPE = "/hosted-upload-refused-type"
 REFUSED_SIZE = "/hosted-upload-refused-size"
-STEP_UP = "/hosted-upload-step-up"
+# The server's error page (403), which has no region of the library.
+DENIED = "/hosted-upload-denied"
 
 
 def _row(slug, size=123456):
@@ -164,7 +165,7 @@ def components(context, admin):
         BY_NAME: _library(context, admin, rows, sort="name"),
         REFUSED_TYPE: _library(context, admin, rows, form=_refused("type")),
         REFUSED_SIZE: _library(context, admin, rows, form=_refused("too_large")),
-        STEP_UP: step_up_page("error", context, admin, next=LIBRARY),
+        DENIED: denied_page(context, admin),
     }
     return {path: ("text/html", body) for path, body in pages.items()}
 

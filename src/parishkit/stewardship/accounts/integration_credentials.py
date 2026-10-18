@@ -43,7 +43,7 @@ from .request_models import ConfigurationChangeRequest
 from .request_patch import OPTIONAL_INTEGRATIONS, credential_request_schema
 from .secret_models import SECRET_PENDING, SecretReplacementRequest
 from .secret_requests import cancel_secret_request
-from .sessions import authenticated_admin, require_fresh
+from .sessions import authenticated_admin, sign_in_instant
 from .setup_credentials import admit_candidate
 
 # Derives the selection request's key from the secret request's identity, so
@@ -438,11 +438,12 @@ def save_credential(
     so a command's own audit event commits with it.
     """
     # Checked before the key is sealed, in its own transaction: an automation
-    # caller's stand-in needs one. It records nothing (``record=False``): the
-    # gates under the intake and request locks below record the fresh gate
-    # with the action. A web caller's check is unchanged.
+    # caller needs a live full-scope session. It records nothing
+    # (``record=False``): the checks under the intake and request locks below
+    # record the automation event with the action. A web caller of any
+    # sign-in age passes (#1547).
     with transaction.atomic():
-        require_fresh(request, record=False)
+        sign_in_instant(request, record=False)
     if target in {"google_workspace", "slack"}:
         from parishkit.stewardship.deployment import recorded_profile
 
@@ -503,14 +504,20 @@ def save_credential(
         values["settings"] = settings
 
     def admit():
-        """Repeat authorization, freshness and base under the work lock."""
+        """Repeat authorization and the base under the work lock.
+
+        An automation caller's session is checked again here too
+        (``sign_in_instant``), which locks its automation session row until
+        this transaction commits, so a revocation committed after the intake
+        is seen, and one racing it waits.
+        """
         with work_transaction():
-            fresh = authenticated_admin(request, store=service.store, read_only=True)
-            if not allows(fresh, Capability.CONFIGURE) or fresh.identity != (
-                actor.identity
+            current = authenticated_admin(request, store=service.store, read_only=True)
+            if not allows(current, Capability.CONFIGURE) or (
+                current.identity != actor.identity
             ):
                 return False
-            require_fresh(request)
+            sign_in_instant(request)
             return True
 
     base = service.store.active()

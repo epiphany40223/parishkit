@@ -1264,11 +1264,11 @@ def test_the_backup_confirmation_says_only_what_the_page_does_not():
 
 def test_the_backup_request_and_refusals_answer_the_dialog():
     """Apply's answer draws the region again; each refusal is marked for the
-    dialog to show as drawn, the step-up's Confirm with Google included."""
+    dialog to show as drawn, a session that ended meanwhile included."""
     done = backup_answer(requested=SimpleNamespace(created_at=NOW), created=True)
     assert 'id="backup-now"' in done and "data-review-answer" not in done
     for refused, words in (
-        ("reauthenticate", "For security, taking a backup now needs a Google"),
+        ("signed_out", "Your sign-in has ended"),
         ("busy", "A backup is already requested"),
         ("denied", "The server refused this backup request"),
         ("invalid", "That request could not be read."),
@@ -1277,7 +1277,9 @@ def test_the_backup_request_and_refusals_answer_the_dialog():
         assert text.strip().startswith("<div data-review-refusal>"), refused
         assert f'data-backup-refused="{refused}"' in text and words in text
         assert 'id="backup-now"' not in text
-    assert "Confirm with Google" in backup_answer(refused="reauthenticate")
+    ended = backup_answer(refused="signed_out")
+    assert "Sign in again" in ended and "Nothing was requested." in ended
+    assert "Confirm with Google" not in ended
 
 
 def debug_page(
@@ -1412,7 +1414,7 @@ def test_the_debug_off_confirmation_and_each_refusal_answer_the_dialog():
     assert 'id="debug-off"' in done and "data-review-answer" not in done
     assert 'data-debug-status="set"' in done
     for refused, words in (
-        ("reauthenticate", "For security, turning off debug logging needs a Google"),
+        ("signed_out", "Your sign-in has ended"),
         ("busy", "Debug logging has already been turned off"),
         ("denied", "The server refused to turn off debug logging"),
         ("invalid", "That request could not be read."),
@@ -1899,7 +1901,7 @@ def test_the_examples_help_shows_only_when_a_failing_count_gets_examples():
 @pytest.mark.parametrize(
     ("refused", "marker", "words"),
     [
-        ("reauthenticate", "reauthenticate", "For security, accepting this change"),
+        ("signed_out", "signed_out", "Your sign-in has ended"),
         ("busy", "changed", "This changed since you looked; review it again."),
         ("denied", "denied", "The server refused this acceptance"),
         ("invalid", "invalid", "or the box was not ticked"),
@@ -2033,7 +2035,7 @@ def test_the_allow_confirmation_result_and_refusals_answer_the_dialog():
     done = debug_allow_answer(allowed=SimpleNamespace(cleared_at=NOW), created=True)
     assert 'id="debug-off"' in done and "data-review-answer" not in done
     for refused, words in (
-        ("reauthenticate", "allowing debug logging again needs a Google sign-in"),
+        ("signed_out", "Your sign-in has ended"),
         ("busy", "The debug-off switch is no longer set"),
         ("production", "In Production only the server operator can clear"),
         ("denied", "The server refused to allow debug logging again"),
@@ -3004,58 +3006,36 @@ def test_the_version_panel_repeats_no_problem():
     assert "The services run different versions" not in copy.split("</template>")[0]
 
 
-def test_accept_this_change_once_draws_its_offer_and_its_step_up():
-    """#1331 item 18: an open refusal's offer is drawn offered and, greyed,
-    with the shared step-up notice that names it; the page's sign-in when it
-    was drawn picks one (data-health-fresh), so the polled copy is the same
-    whatever the sign-in. The fixed sign-in sentence is gone, and the polled
-    step-up form leaves its CSRF token empty."""
+def test_accept_this_change_once_draws_its_offer_once():
+    """An open refusal's offer is its one button, whatever the sign-in's age
+    (#1547): no step-up copy, and the polled copy leaves its CSRF token
+    empty."""
     body = accept_page()
     offer = section(body, 'id="accept-change"')
-    assert 'class="accept-when-fresh"' in offer and 'value="accept_preview"' in offer
-    stale = offer.split('class="accept-when-stale">', 1)[1].split("</div>\n<div", 1)[0]
-    assert "data-step-up-notice" in stale and "data-accept-step-up" in stale
-    assert "For security, accepting this change needs" in stale
-    assert 'id="accept-change-fresh-reason"' in stale
-    assert 'aria-describedby="accept-change-fresh-reason"' in stale
-    assert "It needs a recent" not in offer
+    assert offer.count('value="accept_preview"') == 1
+    assert "accept-when" not in offer and "For security" not in offer
     model = health(refused_at=NOW, refused_counts=FAILED)
     region = page({"health": model, "refused_attempt": REFUSED_ATTEMPT})[0]
     copy = region.split('data-live-mirror="accept-offer">', 1)[1].split("</template>")[
         0
     ]
-    assert "data-step-up-notice" in copy
+    assert 'value="accept_preview"' in copy
     assert 'name="csrfmiddlewaretoken" value=""' in copy
-    # The same polled copy for a stale and a fresh reader.
-    again = page({"health": model, "refused_attempt": REFUSED_ATTEMPT, "fresh": True})
-    assert again[0] == region
-    # An accepted refusal's greyed button says who accepted, not the step-up.
-    assert "data-accept-step-up" not in accept_page(acceptance=accepted())
 
 
-def test_only_the_page_judges_the_sign_in(monkeypatch):
-    """The page passes ``fresh`` from the session's sign-in as it is drawn;
-    the fragment and an action's answer never carry it, so no poll changes
-    which form the page shows (#1159)."""
+def test_no_page_or_fragment_judges_the_sign_in():
+    """System health never reads the sign-in's age (#1547)."""
     from pathlib import Path
 
     from parishkit.stewardship.accounts import system_health_views
 
     source = Path(system_health_views.__file__).read_text()
-    assert source.count('context["fresh"] = freshness(request)[0]') == 1
-    extra = {
-        "campaign_id": None,
-        "pause": None,
-        "debug_actor": None,
-        "accept_actor": None,
-        "refused_attempt": None,
-    }
-    assert "fresh" not in system_health_views._context(health(), extra, loaded={})
+    assert "freshness" not in source and 'context["fresh"]' not in source
     template = (
         Path(system_health_views.__file__).parent
         / "templates/stewardship/system-health.html"
     ).read_text()
-    assert "{% if fresh %} data-health-fresh{% endif %}" in template
+    assert "data-health-fresh" not in template
 
 
 @pytest.mark.parametrize(

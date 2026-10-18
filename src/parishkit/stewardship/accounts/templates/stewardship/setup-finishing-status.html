@@ -7,8 +7,8 @@
   fresh region while setup is still finishing (data-live-pending), then
   stops at completion or failure. Only the page passes status_url. The
   region is not aria-live: data-live-announce says the overall state, read
-  out by the page's announcer when it changes. The step-up notice and the
-  Cancel setup form sit outside the region (data-live-mirror-target), so a
+  out by the page's announcer when it changes. The Cancel setup form
+  sits outside the region (data-live-mirror-target), so a
   poll never discards a focused button; the polled copies here leave their
   CSRF tokens empty for live-status-v1.js to fill from the page's own.
 {% endcomment %}<div class="setup-finishing-region" data-live-status="setup-finishing"{% if status_url %} data-live-url="{{ status_url }}"{% endif %} data-live-announce="{% if overall == 'completed' %}{% translate 'Setup is complete.' %}{% elif overall == 'failed' %}{% translate 'Setup could not finish.' %}{% elif overall == 'operator' %}{% translate 'Waiting for the server operator.' %}{% else %}{% translate 'Setup is finishing.' %}{% endif %}" data-finishing-state="{{ overall }}"{% if overall != 'completed' and overall != 'failed' %} data-live-pending{% endif %}>
@@ -29,6 +29,5 @@
 <p>{% translate "Run the documented credential acknowledgement command inside each actual consumer after recreation. A one-off container does not acknowledge the real consumer. The installer retains rollback material until the final setup transaction succeeds." %}</p>
 <p>{% translate "Follow the “First database and application startup” section of the Stewardship runtime operator guide. The web application cannot recreate containers or access the Docker daemon." %}</p></section>
 {% endif %}{% endif %}
-<template data-live-mirror="setup-step-up">{% if reauthenticate %}{% include 'stewardship/setup-finishing-step-up.html' with mirrored=True %}{% endif %}</template>
 <template data-live-mirror="setup-cancel">{% if overall != 'completed' %}{% include 'stewardship/setup-cancel-form.html' with mirrored=True %}{% endif %}</template>
 </div>

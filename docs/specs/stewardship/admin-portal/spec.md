@@ -128,26 +128,15 @@ connection and Load parish data come last before the tests, next to each other
 ([#1353](https://github.com/epiphany40223/parishkit/issues/1353)): the load
 can take a few minutes, so the rest of setup is done before the wait, and a
 load that fails on a wrong key or organization is one step after the page
-that fixes it. No data-entry page needs the loaded data. Like
-[secret replacement](#parish-and-integration-configuration), the credential
-pages require fresh Google authentication, but while setup is unfinished a
-credential page accepts a sign-in up to **60 minutes** old, the length of the
-Admin idle timeout, instead of five minutes
-([#1402](https://github.com/epiphany40223/parishkit/issues/1402)), so the
-Admin is not asked to confirm again on each credential page. The web check
-(`SETUP_FRESH_SECONDS`) and the SQL guard on staged setup credentials
-enforce the same hour, both counting a sign-in exactly 60 minutes old as
-within it, and the guard admits it only for the setup attempt's original
-owner and session while the attempt is collecting, in Testing mode with no
-campaign. Each staged credential's audit entry records how old the sign-in
-was, in seconds, when it was sealed. Every action after setup,
-Integrations' secret replacement included, keeps the five-minute rule;
-the idle and absolute session limits and the two-hour load watchdog are
-unchanged. Finish setup asks for no fresh sign-in, before or after this
-change. An older sign-in is offered "Confirm with Google", which keeps the
-setup. The pages mention that rule only when
-the sign-in is already older
-([page help](../ui-conventions/spec.md#page-help)). The email and Slack
+that fixes it. No data-entry page needs the loaded data. No setup page checks
+how long ago the Admin signed in
+([#1547](https://github.com/epiphany40223/parishkit/issues/1547); the
+one-hour setup window of #1402 is gone with it). The SQL guard on staged
+setup credentials admits a credential only for the setup attempt's original
+owner and live, active session while the attempt is collecting, in Testing
+mode with no campaign. Each staged credential's audit entry records how old
+the session's sign-in was, in seconds, when it was sealed. The idle and
+absolute session limits and the two-hour load watchdog still apply. The email and Slack
 tests, Review and the final confirmation follow the load, in that order, so
 Review is the last step before Finish setup and shows the tests' results
 ([#1476](https://github.com/epiphany40223/parishkit/issues/1476)). Every page shows a
@@ -422,9 +411,6 @@ to staging, so it cannot repopulate expired setup. At the watchdog deadline the
 server refuses further renewal, requests cancellation, and cleanup proceeds at
 the worker's next safe point; lease expiry handles an unresponsive worker.
 Wizard staging is not resumable under a new login in the first release.
-Confirming with Google for a fresh-authentication step is a
-[step-up of the same session](../architecture/spec.md#identity-and-session-security),
-not a new login, so it keeps the wizard's staging.
 Finalization freezes the staged setup, runs each target-specific credential
 installer, applies one complete authoritative YAML version through the
 configuration installer, and then commits the promoted source snapshot,
@@ -444,13 +430,10 @@ acknowledgement with a count of acknowledged services, applying the
 configuration, the final parish data load, and completion) with the time since
 confirmation. Each step changes in place while setup finishes. Once setup
 completes, the page shows a Continue link to the Admin home and drops Cancel
-setup. A failed step stops the updates. The step-up notice below appears or
-goes in place as it becomes needed. A failed step explains what to do: a credential the provider
+setup. A failed step stops the updates. A failed step explains what to do: a credential the provider
 rejected repeats the integration page's per-provider advice on what to check,
 one that did not finish in time asks the operator to check the credential
-installers, and each says to cancel and start a new setup (#456). When a credential cannot
-start because the original Google sign-in is more than five minutes old, the
-page offers the same-session step-up, which keeps the setup. Before the marker,
+installers, and each says to cancel and start a new setup (#456). Before the marker,
 normal routes remain unconfigured/fail-closed and cancel cleanup removes sealed
 staging and any wizard-only files without exposing a partial product setup.
 Cancellation after YAML selection uses the
@@ -1101,7 +1084,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `chair_reviews` | Review Chairperson decision | Portal users | Administrator | Chair reviews | `/admin/users/reviews` (POST only) | (none) | Retired by #922: removed with Chairperson reviews. |
 | `signed_in_sessions` | Signed-in sessions | Menu: Signed-in sessions | Administrator | (new, #953) | (none) | `/admin/users/sessions/` | New page ([Signed-in sessions](#signed-in-sessions)); its Sign out dialog posts the session to the same address. |
 | `automation_access` | Automation access | Menu: Automation access | Administrator | (same) | `/admin/users/automation/` | (same) | [Admin automation](../admin-automation/spec.md#revocation-and-listing) (ADM-11); the Revoke dialog posts the session to `/admin/users/automation/sessions/` (#879). |
-| `automation_approval` | Approve an automation session | Automation access | Administrator | (same) | `/admin/users/automation/approval/` | (same) | Opened from the command line's link; needs a fresh sign-in. |
+| `automation_approval` | Approve an automation session | Automation access | Administrator | (same) | `/admin/users/automation/approval/` | (same) | Opened from the command line's link. |
 | `system_health` | System health | Menu: System health | Administrator | (new) | (none) | `/admin/system/health/` | New page ([System health](#system-health), #530, ADM-13). |
 | `source_form` | Families the form cannot open | System health | Administrator | (new, #774) | (none) | `/admin/system/source-form/` | New page ([System health page](#system-health-page)); no menu entry. Also linked from Data to fix in ParishSoft (#1011). |
 | `integrations` | Integrations | Menu: Integrations | Administrator | (same) | `/admin/system/integrations/` | (same) |  |
@@ -1119,7 +1102,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `local_sign_in` | Local test sign-in | (outside the menu) | Anyone | (same) | `/admin/local/sign-in` | (same) | LOCAL only. |
 | `maintenance` | Restore review | (outside the menu) | Administrator | The site is being restored (Staff, Ministry leader) | `/admin/maintenance` | (same) | Decision 12: the [restore review page](#restore-release) (#537). Staff and Ministry leaders see a plain notice. |
 | `availability_setup` | The system is not configured yet | (outside the menu) | Administrator, Staff, Ministry leader | (same) | (any Admin URL before setup completes, non-Administrator) | (any Admin URL before setup completes) |  |
-| `error_page` | _error title_ | (outside the menu) | Administrator, Staff, Ministry leader | _error title_ (e.g. Check your entries, This information changed, Access unavailable, Page unavailable, Page not found, Confirm it's you) | (any Admin URL that fails) | (same) | Object-named (exception); offers a way back to the page or Home. |
+| `error_page` | _error title_ | (outside the menu) | Administrator, Staff, Ministry leader | _error title_ (e.g. Check your entries, This information changed, Access unavailable, Page unavailable, Page not found) | (any Admin URL that fails) | (same) | Object-named (exception); offers a way back to the page or Home. |
 | `setup` | Initial setup | Setup stepper | Administrator | (same) | `/admin/setup` | (same) |  |
 | `setup_step_parish` | Parish profile | Setup stepper | Administrator | (same) | `/admin/setup/parish` | (same) |  |
 | `setup_step_mail` | Outgoing email settings | Setup stepper | Administrator | (same) | `/admin/setup/mail` | (same) |  |
@@ -1198,8 +1181,7 @@ Administrator who saved a key may read its status. Some pages are named in
 trails but never linked, and "Return to" skips them: those that only answer a
 POST (the Import Ministry leaders review); one-time reviews that refuse once their change is
 confirmed (Copy campaign); and Finish
-switching, which still opens afterward but needs a fresh Google sign-in and has
-nothing left to do. A menu page is linked in a trail or "Return to" only while
+switching, which still opens afterward but has nothing left to do. A menu page is linked in a trail or "Return to" only while
 the viewer's menu entry for it is available, so a page whose entry is
 unavailable because it would now refuse (Share options once the campaign is
 locked, Campaign images for an archived campaign) is named without a link.
@@ -1701,14 +1683,12 @@ The page and its rules are defined by the
 [hosted files specification](../hosted-files/spec.md#admin-page).
 
 Integration pages expose connection status, last check, safe fingerprint, and
-Replace/Test actions. Secret replacement requires fresh Google authentication
-(or a full-scope
-[automation session](../admin-automation/spec.md#secret-replacement)), and
-so does reviewing, confirming or removing a settings change, such as the
-reply-to address, the backup folder or Slack
-([#547](https://github.com/epiphany40223/parishkit/issues/547)): a stale
-sign-in gets the step-up, which returns to the settings page with nothing
-saved, and the page says so beside Save.
+Replace/Test actions. Secret replacement (also from a full-scope
+[automation session](../admin-automation/spec.md#secret-replacement)) and
+reviewing, confirming or removing a settings change, such as the reply-to
+address, the backup folder or Slack, need an Administrator's current session
+but no recent sign-in
+([#1547](https://github.com/epiphany40223/parishkit/issues/1547)).
 The UI seals the submitted value to its target-specific installer, shows
 staged/testing/installing/consumer-acknowledged progress, and never redisplays
 it; a typed key or token has the shared
@@ -1757,13 +1737,10 @@ confirmations of one sentence. The dialog shows public settings only: never
 a key, a key's fingerprint or the key field's signed request. Save with a
 new key pasted is not reviewed: it submits as before, the key is checked
 with the provider and its install is followed on the page (the recorded
-exception). A sign-in that is not recent at Review or Apply is refused in
-the dialog with the shared step-up notice, whose Confirm with Google returns
-to the settings page; nothing is queued. Once applied, the settings form is
+exception). Once applied, the settings form is
 redrawn at the applied version, with the status line under it saying what
-was applied. The step-up, the fresh sign-in checked again under the work
-lock, the signed preview, the configuration request and its audit are
-unchanged, and `pk-admin integration preview` and `integration confirm`
+was applied. The signed preview, the configuration request and its audit
+are unchanged, and `pk-admin integration preview` and `integration confirm`
 still share the page's review.
 
 Page text describes what the Admin sees happen, never the machinery: no
@@ -1856,11 +1833,8 @@ credential file, and only the one-shot `backup-worker` profile reads it
   for review and confirmation; the review shows the old and new
   fingerprints.
 - **Authority and audit.** Only Administrators with the Configure capability
-  may use the page. Starting a change and confirming it each need a Google
-  sign-in within the last five minutes. When the sign-in went stale while
-  the Administrator was at the key machine, a correctly typed code asks for
-  the Google step-up first; the proved change waits in the session (a
-  proved public key only) and is shown for review on return.
+  may use the page; neither starting a change nor confirming it checks the
+  sign-in's age ([#1547](https://github.com/epiphany40223/parishkit/issues/1547)).
   Confirmation uses the configuration-request path: its
   `config_request_staged` audit entry is written by the database in the
   same transaction as the request, and each later checkpoint
@@ -3699,11 +3673,9 @@ Going live is a dedicated workflow, not a toggle. It requires:
   ScheduleOccurrence/ScheduleFulfillment rows, with exact submission,
   distinct-Family, and message/result counts plus an Admin-only Family list;
   and
-- completion of the gated asynchronous cleanup below, followed by fresh Google
-  authentication and a typed Production confirmation (from the command line,
-  a full-scope
-  [automation session](../admin-automation/spec.md#fresh-gated-actions-from-the-command-line)
-  stands in for the fresh authentication).
+- completion of the gated asynchronous cleanup below, followed by a typed
+  Production confirmation (from the command line, by a full-scope
+  [automation session](../admin-automation/spec.md#fresh-gated-actions-from-the-command-line)).
 
 Readiness also lists the current campaign's saved pages and emails that
 today's sanitizer would change, the rows **Pages and emails** marks
@@ -3731,10 +3703,8 @@ sign-in-again refusal
 
 Testing deliveries do not count as live. After readiness and inventory, the
 Admin explicitly acknowledges that cleanup is irreversible and starts it on
-the [Go live page](#go-live-page), which needs fresh Google authentication
-([#547](https://github.com/epiphany40223/parishkit/issues/547)): until the
-sign-in is fresh, the page offers **Confirm with Google** in place of the
-start button, and the request records that fresh sign-in instant. One
+the [Go live page](#go-live-page); the request records the acting
+session's sign-in instant as audit evidence. One
 transaction creates a durable ProductionTransitionRequest, acquires the
 campaign go-live gate, records the inventory/aggregate described below and
 queues an idempotent cleanup task; with the [Go live page](#go-live-page) it
@@ -3762,8 +3732,7 @@ From `cleanup_complete`, once the inactive Family links are prepared on
 current ParishSoft data (today by the Administrator on the Family links page;
 with the Go live page, by
 [go-live sequencing](../background-processing/spec.md#go-live-sequencing)),
-fresh authentication made after cleanup completed and typed confirmation
-invoke a short final transaction. Under the request, campaign, and global locks it
+typed confirmation invokes a short final transaction. Under the request, campaign, and global locks it
 recomputes readiness and compares its commit instant with the resolved half-open
 campaign interval. Test-mailing and terminal-delivery requirements are checked
 against the immutable pre-cleanup aggregate/readiness evidence because their
@@ -3801,9 +3770,9 @@ short final transaction; cancelling releases the gate without restoring deleted
 Testing data. Only the pre-start `scheduled` result offers **Cancel go-live**
 (formerly Withdraw from Production), and not while
 [live delivery is paused](#live-delivery-pause). That action
-requires fresh Google authentication (or a full-scope
-[automation session](../admin-automation/spec.md#fresh-gated-actions-from-the-command-line)),
-an entered reason, and explicit
+(also available to a full-scope
+[automation session](../admin-automation/spec.md#fresh-gated-actions-from-the-command-line))
+requires an entered reason and explicit
 confirmation that Testing data deleted by the prior transition cannot be
 restored. Under a campaign row lock, the server must verify that the state is
 still `scheduled`, account for and safely cancel future live work under the
@@ -3812,8 +3781,7 @@ invalidate readiness, return the campaign to `draft`, unlock structural
 settings, and audit the result. Provider-submitting or `delivery_unknown` work
 blocks completion. If the start transition has won the race and the campaign is
 already `active`, withdrawal is rejected. Going live again requires a complete
-new readiness run, preview/test evidence, cleanup, reauthentication, and
-confirmation.
+new readiness run, preview/test evidence, cleanup, and confirmation.
 
 Before the first cleanup batch, gate acquisition writes one non-sensitive
 Testing delivery aggregate containing counts by message type and terminal
@@ -3838,8 +3806,7 @@ beside the check.
 
 For staff validation, a Testing-mode draft campaign also offers a link from the
 test send, **Send this email to chosen real Families (Testing recipient only)**,
-to the page **Send this email to chosen Families**: a freshly authenticated
-Administrator enters up to ten Family IDs, reviews each Family's eligibility
+to the page **Send this email to chosen Families**: an Administrator enters up to ten Family IDs, reviews each Family's eligibility
 (each reviewed row names the Family as the active parishioner family directory does, the
 surname then the heads of household), and confirms that real Family data goes to the Testing recipient. Each eligible
 Family's real message for a template its invitation or reminder schedules use is
@@ -3852,21 +3819,11 @@ ten such sends are in progress per campaign. It creates and satisfies no
 scheduled occurrence or fulfillment, does not satisfy the readiness check,
 cannot be resent, and is deleted by Testing cleanup like all other Testing mail.
 It does not open the portal outside the campaign dates.
-When the Administrator's Google sign-in is older than the fresh window, the
-review shows how long ago they signed in and offers **Confirm with Google** in
-place of Send. The reviewed Family IDs, never credentials, are kept in the
-server-side session across that
-[step-up](../architecture/spec.md#identity-and-session-security), so the same
-review returns for the Administrator to confirm; nothing is sent automatically.
 A stale confirmation is refused with a page that says nothing was sent. After a
 send, the page confirms how many tests were requested and refreshes their
 status while any is still on its way. A test waiting behind another Testing
 email to the same Family that is marked "Not sure it arrived" says so and
 points to Outgoing mail; until that email is resolved there, the test waits.
-
-Every other fresh-authentication action refused from a submitted form says that
-nothing was done or sent and offers the same step-up; forms that carry a secret,
-such as a replacement key, keep nothing and ask for it again.
 
 The transition changes the global system mode. Because only one campaign can be
 active, the selected campaign is the sole target of the readiness calculation;
@@ -3893,10 +3850,7 @@ gate.
 > [launch runbook](../../../guides/stewardship-launch-runbooks.md#production-activation)
 > describes. In particular, after slice 2, Start go-live's Apply still
 > opens today's Testing cleanup page and begins no attempt until slice 3.
-> Until [#1560](https://github.com/epiphany40223/parishkit/pull/1560) lands,
-> Start go-live, Confirm Production and Cancel go-live still need the recent
-> Google sign-in that the [Production transition](#production-transition)
-> section describes, and the SQL confirmation guard still enforces it. The
+> The
 > page keeps its registry name, Go-live readiness, in the
 > [page-name table](#page-names-and-placement) until slice 2 renames it Go
 > live there and in the code together; the other rows change with the
@@ -3913,12 +3867,11 @@ against the [refresh schedule](../background-processing/spec.md#refresh-schedule
 The Administrator acts twice, each time in the shared
 [review dialog](../ui-conventions/spec.md#review-dialog): **Start go-live**,
 which names what cannot be undone, and **Confirm Production**, with the
-typed `Production` word. The system does everything in between. Once
-[#1560](https://github.com/epiphany40223/parishkit/pull/1560) lands, neither
+typed `Production` word. The system does everything in between. Neither
 action asks for a recent Google sign-in
 ([#1547](https://github.com/epiphany40223/parishkit/issues/1547)), because
-the SQL confirmation guard then requires completed cleanup, not a sign-in
-made after it; until then the status note above applies.
+the SQL confirmation guard requires completed cleanup, not a sign-in made
+after it.
 Every server rule above stays: the readiness problems and gates, the
 go-live gate, the irreversible cleanup, the state machine and confirmation
 guard, Cancel go-live's reason and pre-start-only rule, and the honoring of
@@ -4294,7 +4247,7 @@ decisions. Besides the listing, the web login may insert a hold row directly; th
 hold guard admits one only during a review and for its current restore, and a
 hold only keeps mail back.
 
-**Release.** A freshly authenticated Administrator confirms release. It is
+**Release.** An Administrator confirms release. It is
 refused while any email still needs a hold (the list must be found first, and
 again after a source refresh adds Families), so every hold can still be
 decided during the review. The transaction then clears the gate and records
@@ -4305,13 +4258,11 @@ and the holds keep every possibly-sent email from going out again. A current
 campaign that is `purging` or `purge_cleanup_failed`, or a campaign work gate
 that is preparing or running, blocks release for explicit operator recovery.
 
-Settling a hold and releasing both require an enabled Administrator whose
-session signed in with Google within the last five minutes, the same rule as
-other high-impact actions; the session and sign-in instant are recorded with
-the decision. Like the backup request guard, the SQL check proves a live,
-recent session row, not that a real Google round trip happened: a compromised
-web process could present one. Listing held emails needs no fresh sign-in,
-because a hold only keeps mail back.
+Settling a hold and releasing both require an enabled Administrator with a
+live, active session, the same rule as other high-impact actions; the session
+and its sign-in instant are recorded with the decision. Like the backup
+request guard, the SQL check proves a live session row, not that a real
+Google round trip happened: a compromised web process could present one.
 
 **The Restore review page.** During a review the access gate sends an
 Administrator to the Restore review page (`/admin/maintenance`); Staff and
@@ -4338,16 +4289,12 @@ waiting for an undecided invitation, and invitations only a deliverability
 change would retry are shown apart. "Release the site" stays unavailable, with
 its reason beside it, until no email still needs a hold and no purge or
 campaign change is running (both read when the page is drawn, as the release
-reads them). Without a sign-in from the last five minutes, every decision and
-Release are unavailable, named by the shared step-up notice, which is drawn
-last in the region so its appearing on a later in-place answer moves nothing
-([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates), #1331);
-the Held emails page does the same. Its preview says what
+reads them). Its preview says what
 Families get as things stand (open, mail paused, not yet open, Testing or
 closed), how many held emails stay held, and how many Families' reminders an
 undecided invitation keeps back, then releases and ends on Home. Every control
-acts in place, and a step's outcome or refusal (with the step-up for a stale
-sign-in) is drawn after the controls of its own panel, so nothing moves under
+acts in place, and a step's outcome or refusal is drawn after the controls
+of its own panel, so nothing moves under
 the pointer ([UX conventions](../ui-conventions/spec.md#no-layout-shift)).
 Times are browser-local, the due times in the held-email table in the
 [table-cell form](../ui-conventions/spec.md#date-format). After release the
@@ -4370,23 +4317,22 @@ same). A "send again" is sent by the
 ordinary planner with the restored link, coalesced with any reminder then due;
 the page itself sends nothing. It says how many emailable Families an undecided
 invitation keeps from getting reminders, keeps a send listed once it is
-decided, and draws every outcome and refusal (with the step-up) after the
-table, so nothing moves under the pointer. Cancel returns focus to the send's
+decided, and draws every outcome and refusal after the table, so nothing moves under the pointer. Cancel returns focus to the send's
 button that opened the preview; after a confirm that button is unavailable
 (the send is decided), so focus moves to the list's heading and the outcome is
 announced. With no hold for the current
 campaign it says so. During a review it redirects to the Restore review page,
 and a decision whose preview came from before a review began settles nothing.
 Holds of another campaign are not shown: they cannot be decided. The command
-line does not take these decisions (the guard admits only a fresh browser
-sign-in).
+line does not take these decisions (the guard admits only a browser
+session).
 
 ### Live delivery pause
 
 An Admin may pause production delivery without changing global mode or Campaign
 lifecycle state. Pause and resume mail is available only in Production, for
 the current campaign while it is `scheduled`, `active` or `closed`. The action
-requires fresh authentication, a reason, explicit
+requires a reason, explicit
 confirmation, and a preview of queued, submitting, delivery-unknown, and next-
 due counts. It atomically sets the Campaign's durable delivery-pause control and
 holds every production message that has not begun provider submission. Family
@@ -4419,7 +4365,7 @@ banner; for an Administrator it also names who paused and why, since when
 not-sure-it-arrived counts, and links to Pause and resume mail, which shows the
 held counts by message type.
 
-Resume requires fresh authentication, a passed sender check when one is
+Resume requires a passed sender check when one is
 needed, an exact backlog preview, and explicit confirmation.
 
 An ordinary administrative pause needs no sender check: Resume, and a closed
@@ -4438,8 +4384,8 @@ pause. A refusal at Gmail's sending limit is not trouble: the email was not
 sent, and the limit hold retries it after its own wait. The check is a test email to the Testing recipient
 (**Preview and send a test**, on the same page) that the mail service accepted
 after the pause and after that trouble, with the current mail settings and
-credential. It lasts 30 minutes: long enough to read the preview and confirm a
-fresh sign-in, short enough to still describe the sender as it is. The page
+credential. It lasts 30 minutes: long enough to read the preview and
+confirm, short enough to still describe the sender as it is. The page
 says in place which holds: no check is needed; a check is needed, why, and to
 send a test email first, with the link; or when the sender was checked and the
 time to resume before. While a needed check is missing, Preview resume is shown
@@ -4468,7 +4414,7 @@ after close, so every resolution below cancels it the same way and counts it
 toward clearing the pause; an uncertain provider outcome is never cancelled
 this way and still blocks the clear.
 Accepted receipts and completed-day Admin digests remain held. Before archive,
-an Admin must use a freshly authenticated **Resolve held messages** workflow to
+an Admin must use the **Resolve held messages** workflow to
 release selected non-Family-access message types (after the sender check
 above, when one is needed) or
 cancel them with exact counts and a reason. This does not reopen Family access
@@ -5002,9 +4948,7 @@ in the order the Administrator asked for
    and replaces only its own region, so nothing above its button moves;
    the bounces already reported for the email are listed after the form,
    with browser-local times and "cleared" for a cleared one, each linking
-   its refused address page. The field help is in "i" toggletips. It needs
-   no fresh sign-in, like Clear verified refusal: it only sets an address
-   aside, changes no credential, and clearing undoes it. Reporting sends
+   its refused address page. The field help is in "i" toggletips. Reporting sends
    nothing and does not change the Family's code or link; the Family's
    other addresses keep receiving the same mail. The report is audited
    (`recipient_bounce_reported`), and the Refused addresses line near the
@@ -5086,7 +5030,7 @@ sent, and no schema change is involved.
 An Administrator may close the Family portal for maintenance from Mail and
 Family portal → Family portal availability, for example while fixing a data
 problem, and
-reopen it later. Changing the switch requires fresh authentication and a CSRF
+reopen it later. Changing the switch requires a CSRF
 token, and each change is recorded in the audit log
 (`family_maintenance_started` or `family_maintenance_ended`); the newest such
 event is the switch's state, so a fresh install starts open. The optional
@@ -5154,7 +5098,7 @@ page offers retry/cancel and does not offer final confirmation until preparation
 and the other readiness checks pass. Prepared credentials are never displayed,
 sent in Family mail, or accepted by login while staged.
 
-Fresh authentication and final confirmation atomically recheck the
+Final confirmation atomically rechecks the
 single-current-campaign guard, exact preparation/source/configuration/key
 versions, and readiness, move `closed` to `active`, apply the proposed end date,
 preserve or assert Production, select the ready token-generation pointer, and
@@ -5214,7 +5158,7 @@ exactly `archived`, remains the global current-campaign pointer, has no other
 campaign in `draft`, `scheduled`, `active`, or `closed`, has no active purge
 gate as defined by the
 [purge data model](../data/spec.md#job-outbox-audit-and-purge-records), has no
-conflicting campaign work, and after fresh Google authentication plus explicit
+conflicting campaign work, and after explicit
 confirmation. The transition is audited and leaves Family access and schedules
 disabled; reopening is still the separate readiness workflow above.
 
@@ -5224,7 +5168,7 @@ Archiving does not itself change the global mode. Once the sole current
 campaign is archived, the Admin portal exposes **Return to Testing**. This is a
 dedicated web workflow; there is no ordinary API or console shortcut.
 
-The workflow requires fresh Google authentication and a confirmation naming the
+The workflow requires a confirmation naming the
 archived campaign. Its preflight transaction locks the global configuration and
 campaign, then verifies that the campaign remains archived, has no purge gate,
 and still satisfies every archive quiescence condition above. It also verifies
@@ -5235,7 +5179,7 @@ links to the work that must be resolved.
 On success, one idempotent transaction sets or confirms global Testing mode,
 clears the current-campaign pointer even if the mode was already Testing,
 invalidates campaign-specific Production readiness, and records the actor,
-reauthentication time, campaign, preflight
+the session's sign-in time, campaign, preflight
 counts, and before/after mode in the audit log. It neither changes the archived
 campaign nor reroutes or recreates any historical production message. Draft
 creation becomes available only after this transaction commits. Historical
@@ -5455,7 +5399,7 @@ it again against the request's base. Both guards are Python's: SQL's
 activation check keeps an Administrator but cannot tell who asked, so the
 own-Administrator guard has no SQL counterpart. The `pk-admin users` commands
 act as the Administrator who approved the automation session and apply the
-same guard. A user change asks for no fresh Google sign-in and no
+same guard. A user change asks for no
 dialog beyond Delete's; this is the accepted low-friction policy of the
 [identity security policy](../architecture/spec.md#identity-and-session-security).
 The audit records the actor, the target email, the Name and role before and
@@ -5628,8 +5572,7 @@ session, a command session and an unknown session are refused. The ending is the
 [session ending](../architecture/spec.md#identity-and-session-security),
 whose actor is the person signed out, and `admin_session_signed_out` records
 the Administrator as actor with the same session as subject; both are in
-[sign-in activity](#sign-in-activity). Signing out needs no fresh Google
-sign-in, like revoking on Automation access, and has no command-line
+[sign-in activity](#sign-in-activity). Signing out has no command-line
 counterpart (the route-parity ledger lists it as session chrome); the
 operator's offline recovery still signs everyone out.
 
@@ -5961,8 +5904,7 @@ page still shows when a request was submitted. Its Report information sheet
 and PDF card
 hold the parish, campaign, data date, request time, display time zone, age
 reference date, count, filters and the privacy line. It carries the
-retired export's sensitivity notice; like it, it needs no fresh sign-in
-(that is for Family codes and financial detail, #547), and it asks for a time
+retired export's sensitivity notice, and it asks for a time
 zone, since Last contact is an action time. The file is
 rendered on request, as Roster changes to enter is, rather than queued as a
 stored export: a stored capture would need a schema change, because the
@@ -7534,15 +7476,12 @@ checks.
 
 - **Who:** an enabled Administrator with the `CONFIGURE` capability, checked
   in the service function and again in the action's SQL guard.
-- **Fresh sign-in:** each action needs a Google sign-in within the last five
-  minutes, as pausing and resuming mail do (see
-  [live delivery pause](#live-delivery-pause)). A stale sign-in gets the
-  existing "Confirm with Google" step-up, which returns to this page with
-  the action's panel still open. The action records its fresh sign-in
-  instant, and its SQL guard checks it as
-  `stewardship_delivery_control_guard_v1` does. **Take a backup now**
-  needs it too, so all four follow one rule
-  ([decision 5](#system-health-decisions)).
+- **Session:** each action needs the Administrator's live, active session,
+  as pausing and resuming mail do (see
+  [live delivery pause](#live-delivery-pause)), but no recent sign-in
+  ([#1547](https://github.com/epiphany40223/parishkit/issues/1547)). The
+  action records the session's sign-in instant, and its SQL guard binds the
+  row to that session as `stewardship_delivery_control_guard_v1` does.
 - **Preview, then confirm:** each action first shows a preview built by the
   server, then a confirm button. Where the preview depends on a state that
   can change (a halt, a refusal), the confirmation carries the signed
@@ -7557,7 +7496,7 @@ checks.
   logging on and when the switch was set in its panel, the actions' rules
   in "About this page"), so the
   dialog says in one sentence what Apply does and adds only what the server
-  worked out. Their refusals, the step-up included, show in the dialog, and
+  worked out. Their refusals show in the dialog, and
   Apply's answer redraws the action's region, its button greyed with the
   reason. The server's checks, the preview's key and the
   audit are unchanged.
@@ -7589,8 +7528,11 @@ checks.
 - **Schema order with ADM-11:** ADM-11 PR 5, which added
   `stewardship_automation_fresh_v1`, has landed, and no ADM-13 action was
   built before it, so its migration amended no ADM-13 guard. Each action's SQL
-  guard accepts `stewardship_automation_fresh_v1` from the start, and its
-  route and command land with it.
+  guard admitted automation sessions from the start, and its route and
+  command land with it. Since migration 0114
+  ([#1547](https://github.com/epiphany40223/parishkit/issues/1547)) the guards
+  no longer check a sign-in's age; they call that helper only to require a
+  command session's live full-scope automation session.
 - **Notifications:** the page, the logs and the audit event tell other
   Administrators. No action sends email or Slack notices
   ([decision 7](#system-health-decisions)); automation events also get the
@@ -7608,7 +7550,7 @@ the backup login. Instead:
 
 1. Confirming records one backup request (a new
    `stewardship_backup_request` row: who, when, state `waiting`, and the
-   fresh sign-in instant) and returns at once.
+   session's sign-in instant) and returns at once.
 2. A new host cron entry runs the `backup-worker` profile in **request mode**
    every five minutes. Request mode first reads the database for a request
    that is waiting and not expired, before it takes any lock. When there is
@@ -7739,7 +7681,7 @@ that only a restart removes. Instead:
    consumer halted by the other's marker takes on the identity in the
    marker, so both consumers share one halt.
 2. Confirming records a clear signal (a new row: the halt identity it
-   clears, who, when and the fresh sign-in instant).
+   clears, who, when and the session's sign-in instant).
 3. Each mail consumer reads the newest clear signal in its idle and
    heartbeat loop and in its check before each new send, at most every 15
    seconds. It acts only on a signal naming its current halt: it removes
@@ -7861,8 +7803,8 @@ requires today.
    personal data, because each name already exists in the promoted data
    that every backup holds.
 3. Confirming records a one-time acceptance (a new row: the refused run,
-   every recorded count's before and after values, who, when and the fresh
-   sign-in instant) and requests a full refresh, as **Refresh now** does.
+   every recorded count's before and after values, who, when and the
+   session's sign-in instant) and requests a full refresh, as **Refresh now** does.
    A refusal is accepted at most once: if its acceptance lapses unused,
    **Refresh now** gives a new refusal to review and accept. The refusal of
    a load with no Families or no Members cannot be accepted. The row is
@@ -7971,14 +7913,7 @@ refresh" and is no longer counted among the problems that need attention
 (Home keeps the refusal's own line). Its rules (what the next full
 refresh must meet, how the acceptance ends, that a refusal is accepted only
 once and an empty load never, and the server operator's override as the
-emergency path) are in "i" toggletips. The section does not always say
-that the button needs a recent sign-in: only when the sign-in was too old
-for it as the page was drawn does the shared step-up notice stand above
-the greyed button, which names it, as the
-[step-up rule](../ui-conventions/spec.md#page-help) asks (#1159, #1331).
-That is fixed for the page's life, so no status update shows or hides the
-notice; a sign-in that ages after the page was drawn gets the step-up
-answer when the button is used. The preview, the refusals and the
+emergency path) are in "i" toggletips. The preview, the refusals and the
 result are answered in place, as the
 [in-place controls](../ui-conventions/spec.md#in-place-controls) convention
 requires. The preview's binding is signed for the Administrator who
@@ -8036,8 +7971,8 @@ switch stays set until it is cleared.
 
 **How it works.**
 
-1. Confirming sets the switch: one durable row with who, when and the fresh
-   sign-in instant.
+1. Confirming sets the switch: one durable row with who, when and the
+   session's sign-in instant.
 2. **Every process that reaches the database honors it.** Today
    `debug_logging_enabled()` reads the environment on every call. ADM-13
    gives it an in-process override: a process that reads the switch as set
@@ -8146,7 +8081,7 @@ the switch (`cleared_by` `administrator`, the Administrator recorded), under
 the [shared rules](#shared-rules-for-health-actions), and records
 `debug_logging_allowed` naming the switch (from the command line also
 `admin_cmd_system_debug_allow`, `pk-admin system debug-allow`). Each step is
-answered in the dialog, with the same fresh sign-in step-up. A repeated
+answered in the dialog. A repeated
 confirmation returns the switch already cleared; one another Administrator
 or the server operator cleared first is refused as stale. It is not drawn
 while no switch is set, nor ever in Production. In Production the
@@ -8154,8 +8089,8 @@ page never offers it, and the server refuses it ("In Production only the
 server operator can clear the debug-off switch")
 ([decision 3](#system-health-decisions)): the switch's guard (migration
 0088) admits the web login's clear only while the global mode is Testing,
-for an enabled Administrator with a live session signed in within five
-minutes (or a live full-scope automation session), once, changing only the
+for an enabled Administrator with a live, active session (or a live
+full-scope automation session), once, changing only the
 clear's time, kind and Administrator. Turning debug logging off is offered
 in both modes. The operator's offline clear is unchanged and still names no
 subject.
@@ -8288,7 +8223,9 @@ above already follows them.
    use case ADM-29 asks. Only the examples are kept, and only until the
    decision or their expiry.
 5. **Does Take a backup now need a fresh sign-in?** Yes, like the other
-   three actions.
+   three actions. Superseded by
+   [#1547](https://github.com/epiphany40223/parishkit/issues/1547)
+   (2026-10-17): no Admin action checks a sign-in's age.
 6. **Is there a daily limit on requested backups?** No. One at a time is
    the only bound.
 7. **Should accepting a large change or clearing a halt send email or Slack
@@ -8511,7 +8448,9 @@ default, applies no group. The group is a fixed list of audit types, so no one
 types internal type names one at a time:
 
 - `admin_login`, a successful sign-in to the portal by any portal role;
-- `admin_step_up`, a sign-in confirmed again for a protected action;
+- `admin_step_up`, a sign-in confirmed again for a protected action
+  (older rows only: nothing records it since
+  [#1547](https://github.com/epiphany40223/parishkit/issues/1547));
 - `admin_logout`, `admin_timeout`, `admin_revoked`,
   `admin_reauthenticated` and `admin_privileges_changed`, the
   [session endings](../architecture/spec.md#identity-and-session-security)
@@ -8776,10 +8715,9 @@ The workflow has these required stages:
    non-secret evidence workflow below. An encrypted upload alone is not proof
    that the backup can be recovered.
 6. Explain irreversible effects and retained tombstone fields.
-7. Obtain fresh Google authentication.
-8. Require the exact campaign name and generated short purge phrase in separate
+7. Require the exact campaign name and generated short purge phrase in separate
    confirmation fields.
-9. Atomically advance the request to `queued` and create one idempotent purge
+8. Atomically advance the request to `queued` and create one idempotent purge
    task.
 
 The recovery-evidence page displays the purge request ID, selected backup

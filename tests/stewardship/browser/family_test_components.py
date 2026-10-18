@@ -10,8 +10,10 @@ never stands in for another's.
 """
 
 from datetime import timedelta
+from types import SimpleNamespace
 from uuid import UUID
 
+from django.template.loader import render_to_string
 from django.urls import reverse
 
 from parishkit.stewardship.accounts.admin_editing import summary_errors
@@ -20,25 +22,69 @@ from parishkit.stewardship.accounts.campaign_family_test_views import (
     FamilyTestForm,
 )
 
-from .step_up_components import render
-
 # Check is answered by a route, so this page's POST never reaches the server.
 CHECK = reverse("admin:campaign_mail_families", args=[UUID(int=704)])
 # Send's redirect lands on SENT, a stand-in for the session's requested
 # count (the static fixture server cannot remember one), at the same path.
 SEND = reverse("admin:campaign_mail_families", args=[UUID(int=705)])
 SENT = SEND + "?sent=1"
-# A Send whose sign-in went stale between the review and Send.
-STALE = reverse("admin:campaign_mail_families", args=[UUID(int=706)])
+# A Send the server refuses with its error page, which has no region of
+# this page.
+DENIED = reverse("admin:campaign_mail_families", args=[UUID(int=706)])
 # Routed answers to CHECK, fetched by GET from these addresses.
 REVIEW = "/family-test-review"
-REVIEW_STALE = "/family-test-review-stale"
-REVIEW_LOCAL = "/family-test-review-local"
 REFUSED = "/family-test-refused"
 FAMILIES = [{"name": "Sample Family", "duid": 1234, "label": "Eligible"}]
 
 
-def _page(context, admin, address, *, local=False, **values):
+def family_tests_page(context, admin, **values):
+    """The real Send to chosen Families page, with ``values`` over a sample.
+
+    The sample is one ready Family under an annual campaign, so a test sets
+    only what its state changes.
+    """
+    campaign = SimpleNamespace(
+        pk=UUID(int=619),
+        delivery_paused=False,
+        active_configuration=SimpleNamespace(
+            name="Annual campaign",
+            starts_at=context["deadline"],
+            ends_at=context["absolute_deadline"],
+        ),
+    )
+    sample = {
+        "admin_chrome": admin,
+        "campaign": campaign,
+        "subject": "Welcome",
+        "testing_recipient": "testing@example.org",
+        "epoch_ready": True,
+        "available": 3,
+        "families": [{"name": "Sample Family", "duid": 1234, "label": "Ready"}],
+        "confirm": True,
+        "sendable": True,
+    }
+    return render_to_string(
+        "stewardship/campaign-mail-families.html", context | sample | values
+    )
+
+
+def denied_page(context, admin):
+    """The server's error page for a refused action: no region of any page."""
+    return render_to_string(
+        "stewardship/error.html",
+        context
+        | {
+            "admin_chrome": admin,
+            "admin": True,
+            "title": "Not allowed",
+            "error_messages": ["This action is not allowed."],
+            "home": "/admin/",
+            "home_label": "Administration home",
+        },
+    )
+
+
+def _page(context, admin, address, **values):
     """The page at ``address``, empty unless ``values`` say otherwise.
 
     It is tall enough (a long recent-tests list) that the page scrolls, so a
@@ -53,23 +99,18 @@ def _page(context, admin, address, *, local=False, **values):
         }
         for index in range(1, 25)
     ]
-    return render(
-        "family-tests",
+    return family_tests_page(
         context,
         admin,
-        local,
         **(
             {
                 "form": FamilyTestForm(),
                 "families": [],
                 "confirm": None,
                 "sendable": False,
-                "fresh": True,
-                "signed_in_minutes": 1,
                 "items": items,
                 "refresh": False,
                 "refresh_url": address,
-                "next": address,
             }
             | values
         ),
@@ -98,10 +139,6 @@ def components(context, admin):
     pages = {
         CHECK: _page(context, admin, CHECK),
         REVIEW: _review(context, admin, CHECK),
-        REVIEW_STALE: _review(context, admin, CHECK, fresh=False, signed_in_minutes=7),
-        REVIEW_LOCAL: _review(
-            context, admin, CHECK, local=True, fresh=False, signed_in_minutes=7
-        ),
         REFUSED: _page(
             context,
             admin,
@@ -112,15 +149,15 @@ def components(context, admin):
         ),
         SEND: _review(context, admin, SEND),
         SENT: _page(context, admin, SEND, sent=1, available=2),
-        STALE: _review(context, admin, STALE),
+        DENIED: _review(context, admin, DENIED),
     }
     return {path: ("text/html", body) for path, body in pages.items()}
 
 
 def posts(context, admin):
     """The fixture server's answers to Send: SEND redirects back to the page
-    with its requested notice, and STALE is refused with the step-up page."""
+    with its requested notice, and DENIED is refused with the error page."""
     return {
         SEND: (303, SENT, ""),
-        STALE: (403, None, render("error", context, admin, next=STALE)),
+        DENIED: (403, None, denied_page(context, admin)),
     }
