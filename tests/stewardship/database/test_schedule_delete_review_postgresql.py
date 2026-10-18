@@ -223,3 +223,47 @@ def test_a_series_reminder_deletes_itself_or_the_whole_series(auth_service, goog
     apply(store, post(browser, LIST, {"action": "confirm", "preview": token(review)}))
     assert last not in schedule_ids(store)
     assert not store.active().document()["sections"].get("schedule_series")
+
+
+def test_the_whole_series_keeps_a_reminder_that_has_sent(
+    auth_service, google, monkeypatch
+):
+    """A reminder that already sent is not removed: it stays, ordinary."""
+    store = auth_service.store
+    _campaign, _identifier = series_deployment(store)
+    browser, _ = signed_in()
+    first, last = reminder(store, FIRST), reminder(store, LAST)
+    # The first reminder's time has passed with work planned (so it counts as
+    # sent); the last one's time has not come.
+    sent = ScheduleDefinition.objects.get(pk=first)
+    pending(sent, uuid4())
+    later = sent.current_revision.due_at + timedelta(hours=1)
+    monkeypatch.setattr(
+        schedule_entry_views, "timezone", SimpleNamespace(now=lambda: later)
+    )
+    review = post(browser, DELETE, deletion(store, last, scope="series"))
+    assert review.status_code == 200, review.content
+    apply(store, post(browser, LIST, {"action": "confirm", "preview": token(review)}))
+    ids = schedule_ids(store)
+    assert first in ids and last not in ids
+    # The series record goes; the reminder that sent is no longer in a series.
+    assert not store.active().document()["sections"].get("schedule_series")
+    assert ScheduleDefinition.objects.get(pk=first).current_revision_id is not None
+
+
+def test_work_prepared_after_the_review_refuses_apply(auth_service, google):
+    """Delete's review, then work for that email, then Apply: refused, unrecorded."""
+    store = auth_service.store
+    setup(store)
+    browser, _ = signed_in()
+    target = definition("reminder")
+    review = post(browser, DELETE, deletion(store, target.pk))
+    assert review.status_code == 200, review.content
+    pending(target, uuid4())
+    before = ConfigurationChangeRequest.objects.count()
+    refused = post(browser, LIST, {"action": "confirm", "preview": token(review)})
+    assert refused.status_code == 409
+    assert ConfigurationChangeRequest.objects.count() == before
+    assert str(target.pk) in schedule_ids(store)
+    target.refresh_from_db()
+    assert target.current_revision_id is not None
