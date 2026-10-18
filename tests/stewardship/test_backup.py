@@ -827,3 +827,57 @@ def test_a_configured_key_replaces_the_installed_file(deployment, tmp_path):
     document["sections"]["integrations"][0]["values"]["settings"]["public_key"] = "x"
     with pytest.raises(ConfigError):
         backup.recipient_from(document)
+
+
+def _failed_open(tmp_path, capsys, monkeypatch, manifest):
+    """Run backup-open on an unopenable set beside ``manifest``; return stderr."""
+    from parishkit.stewardship import backup_commands
+
+    monkeypatch.setattr(backup_commands, "configure_logging", lambda: None)
+    sealed = tmp_path / "set.sealed"
+    sealed.write_bytes(b"not a sealed file")
+    if manifest is not None:
+        (tmp_path / "manifest.json").write_text(manifest)
+    key = tmp_path / "operator.key"
+    key.write_text(backup_sealing.generate_keypair()[0])
+    argv = ["backup-open", "--key", str(key), "--input", str(sealed)]
+    assert main([*argv, "--destination", str(tmp_path / "out")]) == 2
+    return capsys.readouterr().err
+
+
+def test_open_refusal_names_the_sets_own_release_image(tmp_path, capsys, monkeypatch):
+    """A set from another release is opened with that release's image (#1580)."""
+    manifest = json.dumps(
+        {"application_version": "0.0.1", "image": "registry.example/app@sha256:ab12"}
+    )
+    err = _failed_open(tmp_path, capsys, monkeypatch, manifest)
+    assert "could not be opened" in err
+    assert "set's own release image" in err
+    assert "release 0.0.1" in err and "registry.example/app@sha256:ab12" in err
+    assert str(tmp_path) not in err
+
+
+def test_open_refusal_without_a_usable_manifest_stays_generic(
+    tmp_path, capsys, monkeypatch
+):
+    """No manifest, a same-release one or a hostile one adds no named release."""
+    from parishkit import __version__
+
+    err = _failed_open(tmp_path, capsys, monkeypatch, None)
+    assert "could not be opened" in err and "set's own release image" in err
+    assert "taken by release" not in err
+    same = json.dumps({"application_version": __version__, "image": "x@sha256:1"})
+    assert "taken by release" not in _failed_open(tmp_path, capsys, monkeypatch, same)
+    hostile = json.dumps({"application_version": "1.0\nINJECT", "image": "x y"})
+    assert "taken by release" not in _failed_open(
+        tmp_path, capsys, monkeypatch, hostile
+    )
+    # A trailing newline must not slip past the shape check.
+    trailing = json.dumps({"application_version": "0.0.1\n", "image": "a\n"})
+    assert "taken by release" not in _failed_open(
+        tmp_path, capsys, monkeypatch, trailing
+    )
+    # Absurd nesting raises RecursionError; the real refusal still shows.
+    deep = "[" * 200000 + "]" * 200000
+    err = _failed_open(tmp_path, capsys, monkeypatch, deep)
+    assert "could not be opened" in err and "taken by release" not in err
