@@ -119,7 +119,8 @@ report query rather than an extension of it. That query's rows flow verbatim
 into immutable [export captures](stewardship-ministry-exports.md), so adding
 private notes there would risk leaking them into exports. The follow-up query
 projects names and workflow only. Email, phone and address stay behind the
-Ministry report's publish-flag rules, and each page links to that authorized
+Ministry report's leader contact rule (publish flags, and the requesting
+Member's own values on a standing request, #1591), and each page links to that authorized
 detail instead of repeating the privacy decision.
 
 SQL intersects the caller's current role scope with the campaign's Ministries
