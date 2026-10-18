@@ -4352,7 +4352,9 @@ due counts. It atomically sets the Campaign's durable delivery-pause control and
 holds every production message that has not begun provider submission. Family
 access and live submissions continue; their receipts are accepted but held.
 Nothing is rerouted to the Testing recipient. Operational notifications and
-explicit readiness/test-recipient sends remain allowed.
+explicit readiness/test-recipient sends remain allowed. The pause also holds
+[Ministry leader emails](#email-ministry-leaders), which belong to no
+campaign, and refuses new ones until resume.
 
 Messages already `submitting` may have reached the provider and
 `delivery_unknown` messages retain their reconciliation workflow, including an
@@ -5719,7 +5721,8 @@ selection checkbox, Name (the row header), Email, Last successful sign-in
 (as the users table shows it) and **Last emailed**: when this section last
 emailed that address, and how that email has ended so far, in the words
 Outgoing mail uses for a delivery state ("Delivered", "Not sure it
-arrived" and the rest), or "Never". The table follows the shared
+arrived" and the rest), or "Never". A Ministry leader user with no Name is
+listed under their email, so Email all never skips them. The table follows the shared
 [Admin tables](../ui-conventions/spec.md#admin-tables): Name, Email, Last
 successful sign-in and Last emailed sort on the server, Name by default,
 and it pages and refreshes in place. Its bulk bar is the shared one:
@@ -5736,7 +5739,9 @@ the [review dialog](../ui-conventions/spec.md#review-dialog). It is a full
 review, because it shows what the page does not: for each leader who will
 be emailed, their Ministries in the current campaign with each one's open
 requests to join and to leave, read now and counted as the email will state
-them. It then lists anyone chosen but skipped, and why: no longer a
+them: when the counts worked out again at Apply differ (a ParishSoft
+refresh or a new request since the review), Apply is refused as a changed
+page and nothing is queued. It then lists anyone chosen but skipped, and why: no longer a
 Ministry leader user, or leading none of the campaign's Ministries in
 ParishSoft (their email would have nothing to show). In Testing mode the
 review says that every email goes to the Testing recipient instead, naming
@@ -5748,7 +5753,10 @@ and its status line, above the table, says the emails were queued. Each
 Apply is one request: replaying it (a double click, a resent request)
 queues nothing more, while a new Apply emails the chosen leaders again, so
 Last emailed is the place to check first. A review lasts fifteen minutes,
-as every review does.
+as every review does. While
+[Pause and resume mail](#live-delivery-pause) has the current campaign's
+delivery paused, the review and Apply are refused with that reason and
+nothing is queued; an email already queued waits and is sent after resume.
 
 Each email is one message to one leader, with fixed wording that Pages and
 emails does not edit. Its subject names the parish. It says that the
@@ -5782,7 +5790,7 @@ among the leaders it returns. Apply records one Ministry leader email
 request. Its database guard admits it only from the web login, for a
 current Administrator, for at most 100 distinct addresses that are each a
 current Ministry leader user leading one of the campaign's Ministries,
-while the campaign is not archived. The guard works out each leader's Ministries and counts itself, with
+while the campaign is not archived and its delivery is not paused. The guard works out each leader's Ministries and counts itself, with
 the same function, so no form supplies them, and it records the
 `user_leader_emails_requested` audit event with the count. The command line
 does not have this action yet

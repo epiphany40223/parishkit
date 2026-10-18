@@ -2548,18 +2548,24 @@ under its own compiled owner:
   that compiled subject and bodies, so every attempt sends exactly what
   preparation compiled.
 - Mail dispatch sends each message alone. Before each submission it checks
-  again that the address is still a user whose role is Ministry leader and
-  that the deployment mode is still the request's; if either changed, the
-  unsent email is cancelled (`recipient_revoked`), never redirected. A
-  restore under review holds it. A provider refusal for now, a sending
+  again that the address is still a user whose role is Ministry leader,
+  that the deployment mode is still the request's and, in Testing, that the
+  Testing recipient is still the one the request recorded; if any changed,
+  the unsent email is cancelled (`recipient_revoked`), never redirected. A
+  restore under review holds it, and so does
+  [Pause and resume mail](../admin-portal/spec.md#live-delivery-pause)
+  while the current campaign's delivery is paused: a Production leader
+  email stays pending and is sent after resume. Python and the outbox state
+  guard both check this. A provider refusal for now, a sending
   limit and a stopped mail sender hold or retry it as they do
   Administrator notices, and a lost provider answer leaves it
   "Not sure it arrived": it is never resent automatically, and an
   Administrator resends by applying the review again.
 
 A leader email belongs to no campaign (its outbox campaign is empty and its
-scope is the parish), so campaign Pause and resume mail, held-email
-decisions, Testing cleanup and the Production transition never select it.
+scope is the parish), so it gets no pause hold record and is not in the
+pause's held counts, and held-email decisions, Testing cleanup and the
+Production transition never select it.
 Outgoing mail does not list it yet; the section's Last emailed column shows
 each address's latest outcome
 ([#1562](https://github.com/epiphany40223/parishkit/issues/1562) brings
