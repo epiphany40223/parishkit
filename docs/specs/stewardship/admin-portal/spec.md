@@ -8573,8 +8573,10 @@ Only Admins access the combined log screen. It supports:
   indexes ([#765](https://github.com/epiphany40223/parishkit/issues/765))
   find the entries for a phrase holding three letters or digits in a row
   without reading the others; a shorter phrase has nothing to look up and
-  reads the entries in the date range, which the page says. What a search
-  finds is the same either way. Every log read (page or export) runs under
+  reads the entries in the date range, which the page says. With From or
+  Through set, an audit record's details are looked up only for the records
+  in that range ([#1574](https://github.com/epiphany40223/parishkit/issues/1574)).
+  What a search finds is the same either way. Every log read (page or export) runs under
   the 60-second interactive statement limit; a read it stops is recorded as
   a timeout (what, limit, time taken) and answered with the page's
   unavailable message;

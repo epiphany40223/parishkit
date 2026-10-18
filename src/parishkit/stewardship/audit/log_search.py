@@ -280,6 +280,25 @@ def ministry_condition(duid):
     return matched
 
 
+def in_range(contexts, bounds):
+    """``contexts`` of audit events inside the ``[lower, upper)`` interval.
+
+    The listed contexts are read once, before the events, so without this a
+    one-day search for a term in every context checked every context ever
+    written (#1574 measured 317 ms against 24 ms at 133,333 contexts). With
+    the event's own date condition PostgreSQL can instead read the range's
+    events from their date index and look each one's context up by event,
+    or keep the trigram index when that lists fewer; the events outside the
+    range are filtered out afterwards anyway, so what is found is the same.
+    """
+    lower, upper = bounds
+    if lower:
+        contexts = contexts.filter(event__created_at__gte=lower)
+    if upper:
+        contexts = contexts.filter(event__created_at__lt=upper)
+    return contexts
+
+
 def narrowed(rows, query, *, type_column, contexts=None):
     """Apply the text and Ministry filters to one source's queryset.
 
@@ -292,7 +311,8 @@ def narrowed(rows, query, *, type_column, contexts=None):
 
     The audit text's detail arm sits in an OR with the type arms. When the
     indexes can narrow the search, it lists the matching contexts' events
-    once (``AmongSubquery``), so the whole OR is one bitmap scan (#765).
+    once (``AmongSubquery``), so the whole OR is one bitmap scan (#765),
+    and only those of events in the From/Through range (``in_range``).
     Otherwise it stays an EXISTS correlated on the context's ``event``,
     which PostgreSQL hashes: a scan with ``= ANY(array)`` as a filter would
     compare every row with every listed event (#765 measured 15 s). The
@@ -305,7 +325,8 @@ def narrowed(rows, query, *, type_column, contexts=None):
         else:
             matched = with_every_value(contexts, query.text).filter(detail)
             if indexable(query.text):
-                detail = Q(AmongSubquery("pk", matched.values("event")))
+                listed = in_range(matched, query.bounds).values("event")
+                detail = Q(AmongSubquery("pk", listed))
             else:
                 detail = Exists(matched.filter(event=OuterRef("pk")))
         typed = type_condition(

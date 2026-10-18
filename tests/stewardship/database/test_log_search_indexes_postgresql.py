@@ -1,6 +1,6 @@
 """The System logs text search indexes and migration file 0117 (#765)."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import uuid4
 
@@ -9,7 +9,12 @@ from django.db import DatabaseError, connection, transaction
 
 from parishkit.stewardship.audit import log_reads
 from parishkit.stewardship.audit.log_rows import LogQuery
-from parishkit.stewardship.audit.log_search import indexable
+from parishkit.stewardship.audit.log_search import (
+    AmongSubquery,
+    ShownValueContains,
+    indexable,
+)
+from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 
 pytestmark = pytest.mark.django_db(transaction=True)
 FROZEN = (
@@ -227,3 +232,77 @@ def test_a_term_without_a_trigram_never_reads_a_trigram_index(populated):
                 assert index not in plan, (text, index, plan)
             if name == "audit":
                 assert LISTED not in plan and "SubPlan" in plan, plan
+
+
+# Audit events spread over 100 days, one in two with a context, and a term
+# ("123") in every context's shown values, as #1574's measurement had.
+SPREAD = """
+SET LOCAL session_replication_role = replica;
+INSERT INTO stewardship_audit_event (id, correlation_id, event_type, created_at)
+SELECT gen_random_uuid(), gen_random_uuid(), 'dashboard_viewed',
+       now() - (g % 100) * interval '1 day' - (g % 997) * interval '1 minute'
+FROM generate_series(1, 20000) g;
+INSERT INTO stewardship_audit_context
+    (id, correlation_id, actor_kind, schema, context, event_id)
+SELECT gen_random_uuid(), e.correlation_id, 'system', 'action',
+       jsonb_build_object('count', 123000000 + row_number() OVER ()), e.id
+FROM (SELECT * FROM stewardship_audit_event ORDER BY random() LIMIT 10000) e;
+RESET session_replication_role;
+ANALYZE stewardship_audit_event, stewardship_audit_context;
+"""
+
+
+def audit_reads(text, **filters):
+    """The audit source's count and page querysets for one search."""
+    _operational, audit = log_reads.sources(LogQuery(text=text, **filters), None)
+    return {
+        "count": audit.order_by()[:10001],
+        "page": log_reads.ordered(audit, oldest=False)[:50],
+    }
+
+
+def test_a_date_range_bounds_the_listed_audit_contexts():
+    """With a date range, the audit contexts listed up front are only those
+    of events in the range: PostgreSQL reads the range's events by date and
+    looks their contexts up by event instead of reading every matching
+    context from the trigram index, and what is found is unchanged (#1574).
+    The planner runs with its normal settings, as the page does."""
+    day = (datetime.now(UTC) - timedelta(days=3)).date().isoformat()
+    ranged = {"start": day, "end": day, "zone": "UTC"}
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(SPREAD)
+        for filters in (ranged, {}):
+            for read, query in audit_reads("123", **filters).items():
+                sql, params = query.query.sql_with_params()
+                cursor.execute("EXPLAIN " + sql, params)
+                plan = "\n".join(row[0] for row in cursor.fetchall())
+                # The InitPlan comes before the top node's own child.
+                listed = plan.split("\n  ->", 1)[0]
+                assert "InitPlan" in listed, (filters, read, plan)
+                by_event = "stewardship_audit_context_event_id_key" in listed
+                if filters:
+                    # The range's events, read by date, and their contexts.
+                    assert by_event, (read, plan)
+                    assert listed.count("created_at >=") == 1, (read, plan)
+                    assert "audit_context_value_trgm" not in listed, (read, plan)
+                    assert "Seq Scan" not in plan, (read, plan)
+                else:
+                    # Without a range every matching context is listed, as
+                    # before (every one here, so PostgreSQL reads them all).
+                    assert not by_event and "created_at" not in listed, plan
+        # The same events as the unbounded list finds, and some of them.
+        lower, upper = LogQuery(**ranged).bounds
+        unbounded = AuditEvent.objects.filter(
+            AmongSubquery(
+                "pk",
+                AuditContext.objects.filter(
+                    ShownValueContains("context", "123")
+                ).values("event"),
+            ),
+            created_at__gte=lower,
+            created_at__lt=upper,
+        )
+        found = set(audit_reads("123", **ranged)["count"].values_list("pk", flat=True))
+        assert found == set(unbounded.values_list("pk", flat=True))
+        assert 50 < len(found) < 10000
+        transaction.set_rollback(True)
