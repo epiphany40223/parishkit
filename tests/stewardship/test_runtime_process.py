@@ -1150,7 +1150,11 @@ def test_each_background_process_reports_its_own_status(
         assert status.report.call_args_list[-1] == ((), {})
         if role is not ServiceRole.SCHEDULER:
             kwargs["idle"]()
-            assert status.report.call_args_list[-1] == ((), {"connect": True})
+            # No halt was lifted, so the record is written when due (#1555).
+            assert status.report.call_args_list[-1] == (
+                (),
+                {"connect": True, "now": False},
+            )
         return 0
 
     monkeypatch.setattr(service_status, "ServiceStatusReporter", reporter)
