@@ -508,28 +508,6 @@ def test_an_error_page_shows_no_step_or_placed_trail():
     assert navigation.placement(request) is None
 
 
-def test_a_key_page_for_an_unknown_integration_stays_under_integrations():
-    """An unknown target places nothing, so the trail and Return stop there."""
-    from parishkit.stewardship.accounts.integration_views import place_key_page
-
-    request = SimpleNamespace()
-    place_key_page(request, "nonsense")
-    assert navigation.placement(request) is None
-    match = _match("credential_status", request_id=uuid4())
-    _, trail = navigation.build(match, _items())
-    assert trail[-2] == {
-        "label": navigation.PAGES["integration_settings"].label,
-        "url": None,
-    }
-    assert navigation.back(match) == {
-        "label": navigation.PAGES["integrations"].label,
-        "url": reverse("admin:integrations"),
-    }
-    # A step still shows without a known integration.
-    place_key_page(request, "nonsense", flow="change", step="review")
-    assert navigation.placement(request).step == "review"
-
-
 # Stable menu shape (ADM-12.02 to .04; admin-portal spec, "Stable menu shape").
 
 

@@ -86,8 +86,6 @@ CONVERTED_PAGES = {
     "/clone-preview": "Copied content",
     "/presence": "Families with the Family form open",
     "/weekly-manual": "not a retry of a previous email",
-    "/credential-status": "Key replacement status",
-    "/credential-selection": "This integration is stopped until you finish",
     "/source-refresh": "Refresh now",
     "/backup-key": "Never give this server the private key.",
     "/delivery-refusal": "Clearing removes only this refusal",

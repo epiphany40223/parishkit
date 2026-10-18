@@ -290,21 +290,6 @@ PAGES = {
     "source_form": Page("system", _("Families the form cannot open"), "system_health"),
     "integrations": Page("system", _("Integrations")),
     "integration_settings": Page("system", _("Integration"), "integrations"),
-    # A key's status and its Finish switching page sit under the integration
-    # the key belongs to; their views supply the target the routes lack. The
-    # status is readable only by the Administrator who saved the key, so
-    # Finish switching (open to every Administrator) never runs through it.
-    # Finish switching is a one-time review, so a switch's status page
-    # names it but returns to the integration.
-    "credential_status": Page(
-        "system", _("Key replacement status"), "integration_settings"
-    ),
-    "select_credential": Page(
-        "system",
-        _("Finish switching to the new key"),
-        "integration_settings",
-        linkable=False,
-    ),
     "background": Page("system", _("Background work")),
     "background_task_page": Page("system", _("Background task"), "background"),
     "logs": Page("system", _("System logs")),

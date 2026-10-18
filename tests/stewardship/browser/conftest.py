@@ -796,20 +796,6 @@ def component_origin():
             },
         ),
         (
-            "/credential-selection",
-            "credential-selection",
-            {
-                "label": "ParishSoft",
-                "before": "a" * 64,
-                "receipt": {"pk": uuid4(), "resulting_fingerprint": "b" * 64},
-                "preview": "synthetic-selection-intent",
-                "selected": False,
-                "changes": [
-                    {"label": "Slack channel ID", "before": "C0123", "after": "C0456"}
-                ],
-            },
-        ),
-        (
             "/backup-key",
             "backup-key",
             {
@@ -829,26 +815,6 @@ def component_origin():
                 "challenge": "PKBKP1:" + "A" * 80,
                 "intent": "synthetic-intent",
                 "code_error": "That code does not match.",
-            },
-        ),
-        (
-            "/credential-status",
-            "credential-status",
-            {
-                "receipt": {"request_id": uuid4(), "state": "awaiting_ack"},
-                "pending": True,
-                # A key's status sits under its integration (#196).
-                "admin_chrome": admin
-                | {
-                    "breadcrumbs": [
-                        {"label": "Home", "url": "/home"},
-                        {"label": "System", "url": "/integrations"},
-                        {"label": "Integrations", "url": "/integrations"},
-                        {"label": "ParishSoft", "url": "/integration-settings"},
-                        {"label": "Key replacement status", "url": None},
-                    ],
-                    "back": {"label": "ParishSoft", "url": "/integration-settings"},
-                },
             },
         ),
         (

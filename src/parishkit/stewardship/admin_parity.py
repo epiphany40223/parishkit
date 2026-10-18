@@ -453,19 +453,19 @@ LEDGER = {
         "integration confirm",
         "integration backup-probe",
         "integration key replace",
+        # Finish switching to the new key, in the page's review dialog (#1568).
+        "integration key finish-switching-preview",
+        "integration key finish-switching",
         "integration backup-key challenge",
         "integration backup-key preview",
         "integration backup-key confirm",
     ),
-    "integration_status": command("integration status"),
+    # The settings page's status line, which is also a key change's status
+    # (#1568).
+    "integration_status": command("integration status", "integration key status"),
     # The ParishSoft page's live refresh schedule check (#632).
     "refresh_schedule_check": command("integration schedule-preview"),
-    "credential_status": command("integration key status"),
     "dismiss_credential_result": command("integration dismiss"),
-    "select_credential": command(
-        "integration key finish-switching-preview",
-        "integration key finish-switching",
-    ),
     # The first-Admin setup wizard.
     **{
         name: permanent(SETUP)
