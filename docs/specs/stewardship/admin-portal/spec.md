@@ -123,8 +123,9 @@ configured ([#142](https://github.com/epiphany40223/parishkit/issues/142)):
    and US main phone.
 2. Google Workspace email service-account/delegated mailbox, sender/reply
    address, optional From name, Testing recipient, and test delivery.
-3. Optional Slack token/channel and test notification. The channel ID field
-   is shown, and required, only while Slack notifications are enabled.
+3. Optional Slack channel and bot token, on one step, and test notification.
+   The channel ID and token fields are shown only while Slack notifications
+   are enabled.
 4. The parish logo.
 5. The [users](#portal-user-management) who may sign in, while preserving
    the bootstrap Administrator: email addresses listed under Administrator,
@@ -150,15 +151,20 @@ The wizard presents these as one ordered sequence of pages, defined once in
 code, and follows the general
 [wizard rules](../ui-conventions/spec.md#wizards), whose Status says which
 of them it meets. The Parish profile comes first, so the administrator starts by
-describing their own parish. The Google Workspace and Slack credential pages
-follow, each immediately after the public settings its staging depends on
-(outgoing mail and Testing recipient for Google Workspace, Slack settings for
-the Slack token), then Parish logos and Administrative access. ParishSoft
-connection and Load parish data come last before the tests, next to each other
+describing their own parish. Each test follows the step whose input it
+proves, so a test that fails is one step after the page that fixes it
+([#1578](https://github.com/epiphany40223/parishkit/issues/1578)): Outgoing
+email settings, Testing recipient and Google Workspace connection (its key is
+staged with the outgoing mail and Testing settings as its public scope), then
+Test email; then the one Slack notifications (optional) step, which takes the
+channel and the Slack bot token together, then Test Slack while Slack is on;
+then Parish logos and Administrative access. ParishSoft connection and Load
+parish data come last before Review, next to each other
 ([#1353](https://github.com/epiphany40223/parishkit/issues/1353)): the load
 can take a few minutes, so the rest of setup is done before the wait, and a
 load that fails on a wrong key or organization is one step after the page
-that fixes it. No data-entry page needs the loaded data. No setup page checks
+that fixes it. No data-entry page needs the loaded data, and neither test needs the logos,
+the access lists, the ParishSoft key or the load. No setup page checks
 how long ago the Admin signed in
 ([#1547](https://github.com/epiphany40223/parishkit/issues/1547); the
 one-hour setup window of #1402 is gone with it). The SQL guard on staged
@@ -166,9 +172,9 @@ setup credentials admits a credential only for the setup attempt's original
 owner and live, active session while the attempt is collecting, in Testing
 mode with no campaign. Each staged credential's audit entry records how old
 the session's sign-in was, in seconds, when it was sealed. The idle and
-absolute session limits and the two-hour load watchdog still apply. The email and Slack
-tests, Review and the final confirmation follow the load, in that order, so
-Review is the last step before Finish setup and shows the tests' results
+absolute session limits and the two-hour load watchdog still apply. Review and the final
+confirmation follow the load, so Review is the last step before Finish setup
+and shows the tests' results
 ([#1476](https://github.com/epiphany40223/parishkit/issues/1476)). Every page shows a
 compact progress stepper: the current step by number and name, the count of
 completed steps and a slim [step bar](../ui-conventions/spec.md#step-bars)
@@ -198,12 +204,13 @@ required field is valid, with a short hint after the row saying what is
 missing, as [prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)
 describe; a logo file over 5 MB is refused at its field as soon as it is
 chosen, as on Parish logos), a short introduction, and plain-language help for
-every field. Revisiting a page shows its saved values; a credential page never
-shows the saved secret (a typed key or token can be checked with the shared
+every field. Revisiting a page shows its saved values; a credential page (and
+the Slack step's bot token) never shows the saved secret (a typed key or token can be checked with the shared
 [Show control](../ui-conventions/spec.md#secret-fields)) but says that one is saved (with its public scope, such as
 the ParishSoft organization), lets it be kept by leaving the key empty
 (unless it was entered for settings changed since, or the ParishSoft
-organization ID is changed, when the key is required again), and
+organization ID or Slack channel ID is changed, when the key is required
+again), and
 explains that it can be replaced until setup finishes and afterwards from
 Integrations. A page whose prerequisites are unmet explains what is missing
 and links the step that fixes it, keeping the HTTP status of the underlying
@@ -233,33 +240,51 @@ says its outgoing email settings work. It carries no Family data, link, code
 or campaign content, and nothing in it depends on a campaign.
 
 Test email, Test Slack (only when Slack is on), Review and Finish setup are
-ordinary steps with the same action row, not a hub. Test email opens once
-every required data-entry step is done and the load succeeded; it does not
-wait for Review. On each test page the primary action sends the test until a
-test of the current draft revision is accepted; then it is Continue to the
-next step (Test Slack, or Review), with sending another test kept as a
-secondary button. When the newest test of the current revision was not sent,
+ordinary steps with the same action row, not a hub. Each test needs only its
+own inputs ([#1578](https://github.com/epiphany40223/parishkit/issues/1578)):
+Test email opens once Outgoing email settings, Testing recipient and Google
+Workspace connection are done, and Test Slack once the Slack notifications
+step is saved on with a current Slack bot token; neither waits for Parish
+logos, Administrative access, ParishSoft connection, the load or Review. A
+test is bound to the staged credential it used (the same credential, at the
+same version and key fingerprint) and to the settings sealed with that
+credential: the outgoing email settings and Testing recipient for the email
+test, the channel for the Slack test. An accepted test stays accepted while
+that binding is current, whatever else is saved; it is needed again only
+when its own inputs change. The parish name and the From name in the test
+email are display text, not delivery routing, so changing them later does
+not ask for a new test (Review shows them). On each test page the primary
+action sends the test until a test of the current settings is accepted; then
+it is Continue to the next step, with sending another test kept as a
+secondary button. When the newest test of the current settings was not sent,
 the test page says so after its action row, in plain language, with the
 same advice about a rejected key as the provider's
 [integration settings](#parish-and-integration-configuration), and links the
-steps that fix it: Outgoing email settings and Google Workspace connection
-for the email test, Slack notifications and Slack connection for the Slack
-test, which also offers [turning Slack off](#turning-slack-off-during-setup).
-Saving a fix opens the next step not done yet (Google Workspace
-connection when its key must be entered again, otherwise Test email), never
+steps that fix it: Outgoing email settings, Testing recipient and Google
+Workspace connection for the email test, and Slack notifications for the
+Slack test, which also offers
+[turning Slack off](#turning-slack-off-during-setup). Saving a fix opens the
+next step not done yet (Google Workspace connection when its key must be
+entered again, otherwise Test email; Test Slack after the Slack step), never
 Review first; when that step's prerequisites are missing, the save opens the
 step that needs work instead. Review's Readiness section says, for each
 required test, whether a test of these exact settings was accepted, and
 links the test step only for a test that was not; its body links no other
 step. Review counts as done only when it is shown with every earlier step,
 the tests included, done, and its primary action is Continue to Finish
-setup. Any later save bumps the draft version, so Review and both tests are
-required again; a changed mail or Testing setting also makes the staged
-Google Workspace key stale. Back from Test email goes to Load parish data,
-from Review to the last test, and from Finish setup to Review. Finish
-setup's primary action is "Check readiness and finish setup", which still
-requires accepted tests of the exact current revision; its links to the
-tests stay for a test that went stale after Review.
+setup. Any later save bumps the draft version, so Review is required again;
+a changed mail or Testing setting also makes the staged Google Workspace key
+stale, and with it the email test. Back from Test email goes to Google
+Workspace connection, from Test Slack to Slack notifications, from Parish
+logos to the test before it, from Review to Load parish data, and from
+Finish setup to Review. Finish setup's primary action is "Check readiness
+and finish setup", which still requires accepted tests of the current
+settings, and the SQL readiness guard admits the same binding and no other;
+its links to the tests stay for a test that went stale after Review. A setup
+attempt still collecting when this order is installed keeps its saved steps,
+staged credentials and accepted tests: the stepper opens the first step that
+needs work in the new order, and a test accepted earlier counts while its
+binding is current.
 
 The setup wizard's status pages (Test email, Test Slack, Load parish data and
 Finishing setup) [update themselves](#background-indicators) like every other
@@ -404,8 +429,8 @@ A load that fails for good (for example, a wrong ParishSoft key or
 organization ID, which never retries, or a load whose worker stopped on its
 last allowed attempt, which recovery then fails) returns setup to collecting
 with the failed load still bound, so every page is editable again and the
-watchdog, which runs only while loading, stops (#1353). The test email and
-test Slack message still require a load that succeeded. A load that has
+watchdog, which runs only while loading, stops (#1353). Neither the test
+email nor the test Slack message needs the load (#1578). A load that has
 finished, succeeded or failed, can be discarded, and only then (never one
 running, waiting to retry or abandoned): saving a different ParishSoft key
 or organization ID discards it, saving the same key and
@@ -502,23 +527,41 @@ credential-reference checks.
 Slack is optional, and an Administrator who turned it on can turn it off
 again at any point of setup, for example after a made-up or wrong token
 failed Test Slack
-([#1499](https://github.com/epiphany40223/parishkit/issues/1499)). The Slack
-connection step only checks the token's format and sends nothing, so a wrong
-token fails only at Test Slack; both pages say, in plain language, that Slack
-is optional and can be turned off. Each offers a **Turn off Slack
-notifications** button above its form, and a Slack test that was not sent says
-first "use a real Slack bot token, or turn Slack notifications off" with the
-same button beside it. The button is no separate action: it saves the Slack
-notifications step with Enable Slack notifications unticked and no channel,
-through that step's own save (exact draft version, CSRF, audit), exactly like
-unticking the box there and choosing Save and continue, and then opens the
-next step not done yet ([wizard rule 8](../ui-conventions/spec.md#wizards));
-since every save bumps the draft version, that is Test email when its test
-must be sent again, otherwise Review. The button's text says so before it is
-chosen, and Test email, while its only accepted test is from an earlier draft
-version, says that a setting changed (for example, Slack was turned off), so
-the test email is sent once more. The Slack notifications step's help says
-that turning Slack off discards the Slack token entered for this setup.
+([#1499](https://github.com/epiphany40223/parishkit/issues/1499)).
+
+Slack notifications (optional) is one step
+([#1578](https://github.com/epiphany40223/parishkit/issues/1578)): Enable
+Slack notifications and, below it and shown only while it is ticked
+([conditional fields](../ui-conventions/spec.md#conditional-fields)), the
+Slack channel ID and the Slack bot token. The token field is the shared
+[secret field](../ui-conventions/spec.md#secret-fields) with Show. Once a
+token is saved the step says so, and the token is kept by leaving the field
+empty, unless the channel ID is changed: the token is sealed with its
+channel, so a new channel needs the token entered again, and the field is
+required while the channel differs from the saved one. One Save and continue
+saves the step and stages the token in the same transaction, under the exact
+draft version; a token that does not look like a Slack bot token is a field
+error and nothing is saved. The step only checks the token's format and
+sends nothing, so a wrong token fails only at Test Slack. There is no
+separate Slack connection step, and the setup credential page has no Slack
+target: `/admin/setup/credentials/slack` answers 404 with no redirect.
+
+The Slack step, while Slack is saved on, and Test Slack say, in plain
+language, that Slack is optional and can be turned off. Each offers a **Turn
+off Slack notifications** button above its form, and a Slack test that was
+not sent says first "use a real Slack bot token, or turn Slack notifications
+off" with the same button beside it. The button is no separate action: it
+saves the Slack notifications step with Enable Slack notifications unticked
+and no channel, through that step's own save (exact draft version, CSRF,
+audit), exactly like unticking the box there and choosing Save and continue,
+and then opens the next step not done yet
+([wizard rule 8](../ui-conventions/spec.md#wizards)). Turning Slack off
+changes nothing the email test proved, so an accepted email test stays
+accepted. Test email, while its only accepted test was of settings changed
+since, says that the outgoing email settings, Testing recipient or Google
+Workspace key changed, so the test email is sent once more. The Slack
+notifications step's help says that turning Slack off discards the Slack
+token entered for this setup.
 
 Any save that leaves Slack off, from the button or from the Slack
 notifications step, continues as if Slack had never been enabled. In the same
@@ -526,13 +569,12 @@ transaction it discards this setup's staged Slack bot token (its ciphertext
 and channel are scrubbed; the audit records `setup_credential_scrubbed` for
 the Administrator) and cancels a Slack test still waiting for the Slack
 installer, so nothing is posted to Slack afterwards; a test already handed to
-Slack keeps its recorded result. The Slack connection and Test Slack steps
-leave the step bar, Review and Finish setup no longer need a Slack test, and
-turning Slack on again asks for a new token and a new test. While Slack is
+Slack keeps its recorded result. Test Slack leaves the step bar, Review and
+Finish setup no longer need a Slack test, and turning Slack on again asks for
+a new token and a new test. While Slack is
 off, opening the Test Slack page anyway (the browser's Back button, an old
 tab or a bookmark) shows no error: it opens the next step that needs work,
-the same step Home's Continue setup opens, which after a turn-off is Test
-email when its test must be sent again, otherwise Review
+the same step Home's Continue setup opens
 ([#1505](https://github.com/epiphany40223/parishkit/issues/1505)). Sending a
 Slack test while Slack is off stays refused. The staged
 credential's SQL guard admits that scrub only from the web, for the attempt's
@@ -1264,16 +1306,15 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `setup_step_mail` | Outgoing email settings | Setup stepper | Administrator | (same) | `/admin/setup/mail` | (same) |  |
 | `setup_step_testing` | Testing recipient | Setup stepper | Administrator | (same) | `/admin/setup/testing` | (same) |  |
 | `setup_credential_google_workspace` | Google Workspace connection | Setup stepper | Administrator | Setup credential: Google Workspace mail (stepper: Google Workspace connection) | `/admin/setup/credentials/google_workspace` | (same) |  |
+| `setup_mail` | Test email | Setup stepper | Administrator | Setup email test (stepper: Test email) | `/admin/setup/mail-test` | (same) |  |
 | `setup_step_slack` | Slack notifications (optional) | Setup stepper | Administrator | (same) | `/admin/setup/slack` | (same) |  |
-| `setup_credential_slack` | Slack connection | Setup stepper | Administrator | Setup credential: Slack (stepper: Slack connection) | `/admin/setup/credentials/slack` | (same) |  |
+| `setup_notification` | Test Slack | Setup stepper | Administrator | Setup Slack test (stepper: Test Slack) | `/admin/setup/slack-test` | (same) |  |
 | `setup_branding` | Parish logos | Setup stepper | Administrator | Parish logo | `/admin/setup/branding` | (same) |  |
 | `setup_step_access` | Administrative access | Setup stepper | Administrator | (same) | `/admin/setup/access` | (same) |  |
 | `setup_credential_parishsoft` | ParishSoft connection | Setup stepper | Administrator | Setup credential: ParishSoft (stepper: ParishSoft connection) | `/admin/setup/credentials/parishsoft` | (same) |  |
 | `setup_source` | Load parish data | Setup stepper | Administrator | (same) | `/admin/setup/source` | (same) |  |
 | `setup_source_progress` | Loading parish data | Setup stepper | Administrator | (same) | `/admin/setup/source/<task>` | (same) |  |
 | `setup_preview` | Review | Setup stepper | Administrator | Setup preview (stepper: Review) | `/admin/setup/preview` | (same) |  |
-| `setup_mail` | Test email | Setup stepper | Administrator | Setup email test (stepper: Test email) | `/admin/setup/mail-test` | (same) |  |
-| `setup_notification` | Test Slack | Setup stepper | Administrator | Setup Slack test (stepper: Test Slack) | `/admin/setup/slack-test` | (same) |  |
 | `setup_confirmation` | Finish setup | Setup stepper | Administrator | Finish initial setup (stepper: Finish setup) | `/admin/setup/confirm` | (same) |  |
 | `setup_finishing` | Finishing setup | Setup stepper | Administrator | (same) | `/admin/setup/finishing` | (same) |  |
 | `setup_unavailable` | Setup step not available | Setup stepper | Administrator | (same) | (any setup step whose prerequisites are missing) | (same) |  |
