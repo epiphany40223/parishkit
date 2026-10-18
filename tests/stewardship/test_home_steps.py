@@ -114,32 +114,53 @@ def test_steps_follow_the_viewers_menu():
     assert "Preview and test email" not in labels(without)
 
 
+# The four lists Staff work through at campaign end (#1590), after the
+# Response dashboard, while the campaign runs and after it closes.
+WORK = [
+    "Response dashboard",
+    "Census changes",
+    "Roster changes to enter",
+    "Additional information",
+    "Ministry requests",
+]
+
+
 def test_active_and_paused_steps_carry_the_open_counts():
     """The queues show their open counts; Sent mail filters to the emails
     that may not have arrived while there are some; paused mail comes first."""
-    entries = menu(counts={"information_queue": 3, "ministry_report": 0})
-    active = home_steps.next_steps("active", "administrator", entries, mail_unknown=2)
-    assert labels(active) == [
-        "Response dashboard",
-        "Additional information",
-        "Ministry requests",
-        "Family email progress",
-        "Sent mail",
-    ]
-    assert (active[1].count, str(active[1].note)) == (3, "open")
-    assert (active[2].count, str(active[2].note)) == (0, "open")
-    assert active[4].url == "/deliveries/?state=delivery_unknown"
-    assert (active[4].count, str(active[4].note)) == (2, "may not have arrived")
+    entries = menu(
+        counts={"census_changes": 4, "information_queue": 3, "ministry_report": 0}
+    )
+    active = home_steps.next_steps(
+        "active", "administrator", entries, mail_unknown=2, roster_todo=6
+    )
+    assert labels(active) == [*WORK, "Family email progress", "Sent mail"]
+    assert (active[1].url, active[1].count, str(active[1].note)) == (
+        "/census_changes/",
+        4,
+        "to do",
+    )
+    assert (active[2].url, active[2].count, str(active[2].note)) == (
+        reverse("admin:ministry_roster"),
+        6,
+        "not yet entered",
+    )
+    assert (active[3].count, str(active[3].note)) == (3, "open")
+    assert (active[4].count, str(active[4].note)) == (0, "open")
+    assert active[6].url == "/deliveries/?state=delivery_unknown"
+    assert (active[6].count, str(active[6].note)) == (2, "may not have arrived")
     quiet = home_steps.next_steps("active", "administrator", entries, mail_unknown=0)
-    assert (quiet[4].url, quiet[4].count) == ("/deliveries/", None)
+    assert (quiet[6].url, quiet[6].count) == ("/deliveries/", None)
+    # A roster count Home could not read shows the link with no number.
+    assert (quiet[2].url, quiet[2].count, quiet[2].note) == (
+        reverse("admin:ministry_roster"),
+        None,
+        None,
+    )
     paused = home_steps.next_steps("paused", "administrator", entries)
     assert labels(paused)[0] == "Pause and resume mail"
     assert labels(paused)[1:] == labels(active)
-    assert labels(home_steps.next_steps("paused", "staff", entries)) == [
-        "Response dashboard",
-        "Additional information",
-        "Ministry requests",
-    ]
+    assert labels(home_steps.next_steps("paused", "staff", entries)) == WORK
     leader = home_steps.next_steps("active", "ministry_leader", entries)
     assert labels(leader) == ["Ministry requests"]
 
@@ -147,17 +168,53 @@ def test_active_and_paused_steps_carry_the_open_counts():
 def test_greyed_queue_shows_no_count():
     """A greyed queue entry names its reason and no count, as the menu does."""
     entries = menu(greyed={"information_queue"}, counts={"information_queue": 4})
-    step = home_steps.next_steps("active", "staff", entries)[1]
+    step = home_steps.next_steps("active", "staff", entries)[3]
+    assert step.label == "Additional information"
     assert (step.url, step.note) == (None, None)
     assert step.reason == navigation.NO_CAMPAIGN
 
 
+def test_roster_step_follows_ministry_requests_for_admin_and_staff_only():
+    """Roster changes to enter hangs below Ministry requests: greyed with its
+    reason, left out without it, and never offered to a Ministry leader,
+    whom the page refuses (#1590)."""
+    greyed = menu(greyed={"ministry_report"})
+    step = home_steps.next_steps("closed", "staff", greyed, roster_todo=3)[2]
+    assert (step.label, step.url, step.count) == ("Roster changes to enter", None, None)
+    assert step.reason == navigation.NO_CAMPAIGN
+    without = menu(ALL - {"ministry_report"})
+    assert "Roster changes to enter" not in labels(
+        home_steps.next_steps("closed", "staff", without, roster_todo=3)
+    )
+    for state in ("active", "closed"):
+        leader = home_steps.next_steps(state, "ministry_leader", menu(), roster_todo=3)
+        assert labels(leader) == ["Ministry requests"]
+    assert home_steps._roster(menu()["ministry_report"], "ministry_leader", 3) is None
+
+
 def test_closed_and_activating_steps():
-    """The closed row offers the reports; activation, its progress and mail."""
-    assert labels(home_steps.next_steps("closed", "administrator", menu())) == [
-        "Response dashboard",
-        "Emailed reports",
+    """The closed row offers the campaign-end work lists with their counts
+    (#1590) and, for an Administrator, Emailed reports; a leader keeps the
+    open count on Ministry requests. Activation lists its progress and mail."""
+    entries = menu(
+        counts={"census_changes": 2, "information_queue": 1, "ministry_report": 5}
+    )
+    closed = home_steps.next_steps("closed", "administrator", entries, roster_todo=0)
+    assert labels(closed) == [*WORK, "Emailed reports"]
+    assert [(step.count, str(step.note)) for step in closed[1:5]] == [
+        (2, "to do"),
+        (0, "not yet entered"),
+        (1, "open"),
+        (5, "open"),
     ]
+    staff = home_steps.next_steps("closed", "staff", entries, roster_todo=0)
+    assert labels(staff) == WORK
+    (leader,) = home_steps.next_steps("closed", "ministry_leader", entries)
+    assert (leader.label, leader.count, str(leader.note)) == (
+        "Ministry requests",
+        5,
+        "open",
+    )
     assert labels(home_steps.next_steps("activating", "administrator", menu())) == [
         "Production activation",
         "Sent mail",
@@ -216,7 +273,10 @@ def test_home_returns_nothing_without_a_campaign_or_chrome():
 def test_template_links_available_steps_and_names_greyed_ones():
     """The panel links what the menu offers, writes the reason for the rest,
     and leads with the Today line."""
-    entries = menu(greyed={"ministry_report"}, counts={"information_queue": 5})
+    entries = menu(
+        greyed={"ministry_report"},
+        counts={"information_queue": 5, "census_changes": 2},
+    )
     context = {
         "admin_chrome": {
             "sections": [{"items": list(entries.values())}],
@@ -230,6 +290,9 @@ def test_template_links_available_steps_and_names_greyed_ones():
     assert "data-next-steps" in html and ">Next steps</h2>" in html
     assert "Today: 1 Family responded in the past 24 hours." in html
     assert '<a href="/information_queue/">Additional information</a> — 5 open' in html
+    assert '<a href="/census_changes/">Census changes</a> — 2 to do' in html
+    # Roster changes to enter is greyed with Ministry requests (#1590).
+    assert f"Roster changes to enter — {navigation.NO_CAMPAIGN}" in html
     assert f"Ministry requests — {navigation.NO_CAMPAIGN}" in html
     assert (
         '<a href="/deliveries/?state=delivery_unknown">Sent mail</a>'
