@@ -281,7 +281,9 @@ New and Edit scheduled email pages below), its fields show only those its mail
 type uses (initial invitation and reminder: date, time and email; daily digest:
 time, email and the **Include Compared with past campaigns** checkbox, off by
 default, which adds the
-[comparison section](../campaign-history/spec.md#digest-section); weekly
+[comparison section](../campaign-history/spec.md#digest-section), and
+clearing it on a saved digest removes that section from later digests
+([#1698](https://github.com/epiphany40223/parishkit/issues/1698)); weekly
 digest: weekday, time and email) and offer only emails of
 that type; the page script clears a field it hides. The send time is a [time
 entry](../ui-conventions/spec.md#time-entry) field. A saved schedule's mail type is shown but cannot
