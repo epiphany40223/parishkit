@@ -334,11 +334,13 @@ leave/withdrawal action. Recheck the same rule at submission, including the
 linked stale-form reconfirmation requirement.
 
 Directly under each Member's "Ministry participation" heading, before the
-"cannot participate" note and the continue, stop and join choices, one plain
-sentence that is always shown says: "If you choose to join a ministry or stop
-participating in one, that ministry's leaders will see this person's email
-address and phone numbers so they can follow up." It is shown once per Member
-page, never per Ministry, and describes the
+"cannot participate" checkbox and the continue, stop and join choices, one
+plain sentence that is always shown says: "If you choose to join a ministry
+or stop participating in one, that ministry's leaders will see this person's
+email address and phone numbers so they can follow up." It comes before the
+checkbox because checking it stops every current Ministry, so Families and
+screen readers meet the sentence before any choice that shares contacts. It
+is shown once per Member page, never per Ministry, and describes the
 [leader contact rule](../reports/spec.md#ministry-change-summary) for a
 standing request
 ([#1625](https://github.com/epiphany40223/parishkit/issues/1625)).
@@ -362,11 +364,12 @@ unresolved choice cancels/supersedes its workflow while retaining history.
 
 ### Cannot participate in ministries
 
-Above the Ministry choices, each Member may check "Because of physical
-limitations, I/we cannot participate in any ministries at this time." While
-checked, every current Ministry is set to "Stop participating in this
-ministry", every join choice is cleared, and the Ministry choices and the
-join-more-ministries disclosure are disabled for pointer, keyboard and
+Inside the "Ministry participation" section, after the leader contact
+sentence and above the Ministry choices, each Member may check "Because of
+physical limitations, I/we cannot participate in any ministries at this
+time." While checked, every current Ministry is set to "Stop participating
+in this ministry", every join choice is cleared, and the Ministry choices
+and the join-more-ministries disclosure are disabled for pointer, keyboard and
 assistive technology alike. Unchecking restores the Family's own earlier
 choices. The server rejects a response in which such a Member continues or
 joins any Ministry. This answer is recorded with the response and is never
