@@ -61,6 +61,12 @@ def test_staff_queue_detail_history_and_accessibility(
             == []
         )
     page.goto(component_origin + "/information-item")
+    # The Family's contact details (#1595), one heading per owner.
+    contact = page.locator("#information-contact")
+    visible(contact.get_by_role("heading", name="Contact details"))
+    visible(contact.get_by_role("heading", name="Anna Example"))
+    visible(contact.get_by_text("Home: +1 (202) 555-0123"))
+    visible(contact.get_by_text("None recorded"))
     assert (
         page.get_by_label("Staff notes", exact=True).input_value()
         == "Called; awaiting a response."

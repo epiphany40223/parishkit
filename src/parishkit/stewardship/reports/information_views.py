@@ -52,6 +52,7 @@ from .information import (
     information_page,
     parse_page,
 )
+from .information_contacts import family_contacts
 from .read_admission import admit_report_read
 from .report_paging import (
     carried_filters,
@@ -315,6 +316,18 @@ def _page_response(request, campaign_id, *, item_id=None, sent=None):
                 if item_id
                 else ((), False)
             )
+            # The Family's contact details (#1595), for the item page only;
+            # an in-place history page swaps only the history, so it skips
+            # the read.
+            contacts = (
+                family_contacts(
+                    principal,
+                    result["metadata"]["source_id"],
+                    result["rows"][0]["family_duid"],
+                )
+                if item_id and not history_only
+                else None
+            )
             ids = {row.actor_id for row in history} | {
                 row.followed_up_by_id for row in history
             }
@@ -341,6 +354,7 @@ def _page_response(request, campaign_id, *, item_id=None, sent=None):
                 query_fields=query.form_values(),
                 mutable=mutable,
                 item=result["rows"][0] if item_id else None,
+                contacts=contacts,
                 queue_token=token,
                 next_id=following,
                 history=history,

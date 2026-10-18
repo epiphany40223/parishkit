@@ -7,7 +7,8 @@
 <p>{% translate "The list includes requests from Families that are now inactive. Staff follow-up never changes what the Family wrote, or the history of a request the Family later replaced or withdrew." %}</p>
 <p>{% translate "Family names come from ParishSoft data as of" %} <time datetime="{{ metadata.source_as_of|date:'c' }}" data-local-instant>{{ metadata.source_as_of|date:'c' }}</time> ({% translate "data load" %} {{ metadata.source_generation|number }}).</p>
 <p>{% translate "Times and the submitted-date filters use your computer's time zone: a date filter covers that whole day, from midnight to midnight." %}</p>
-<p>{% translate "Family DUID is the Family's ID number in ParishSoft, shown in its own column so you can copy it." %}</p>{% endaboutpage %}
+<p>{% translate "Family DUID is the Family's ID number in ParishSoft, shown in its own column so you can copy it." %}</p>
+<p>{% translate "Each request's page shows the Family's contact details from the same ParishSoft data, so you can reply without looking the Family up: the email addresses and phones of the Family record and of each head of household, including any ParishSoft does not publish. Only Staff and Administrators can see them." %}</p>{% endaboutpage %}
 <p><a href="{% url 'admin:response_dashboard' %}">{% translate "Response dashboard" %}</a></p>
 {% if not mutable %}<p class="notice" id="information-locked">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so follow-up edits and new exports are unavailable until it finishes or is cancelled; going live can take days. You can still read the requests and their history." %}</p>{% endif %}
 {% if item %}
@@ -18,6 +19,13 @@
 {% if item.replacement_id %}<p><a href="{% url 'admin:information_item' item.replacement_id %}{% if queue_token %}?queue={{ queue_token }}{% endif %}">{% translate "Open the replacement request" %}</a></p>{% endif %}
 {% if item.previously_reported %}<p>{% translate "Included in a previously delivered weekly digest." %}</p>
 {% if item.disposition != 'current_actionable' %}<p>{% if item.correction_resolved %}{% translate "This correction is resolved in the weekly digest workflow. Resolution does not necessarily mean an email was delivered." %}{% else %}{% translate "This change is visible to the weekly digest correction workflow; the old request is no longer actionable." %}{% endif %}</p>{% endif %}{% endif %}
+{# The Family's contact details (#1595), so Staff can reply without looking the Family up in ParishSoft: the Family record's, then each active head's, read from the ParishSoft data the page names the Family from. Operational contact: Staff and Administrators, the page's only readers, see every value whatever ParishSoft's publish flags say. #}
+{% if contacts %}<section id="information-contact" aria-labelledby="information-contact-heading"><h2 id="information-contact-heading">{% translate "Contact details" %}</h2>
+{% if contacts.state == 'shown' %}{% for owner in contacts.owners %}<h3>{{ owner.label }}</h3>
+<dl><dt>{% translate "Email" %}</dt><dd>{% for email in owner.emails %}{{ email }}{% if not forloop.last %}<br>{% endif %}{% empty %}{% translate "None recorded" %}{% endfor %}</dd>
+<dt>{% translate "Phones" %}</dt><dd>{% for kind, value in owner.phones %}{{ kind }}: {{ value|phone }}{% if not forloop.last %}<br>{% endif %}{% empty %}{% translate "None recorded" %}{% endfor %}</dd></dl>{% endfor %}
+{% elif contacts.state == 'missing' %}<p>{% translate "This Family is not in the current ParishSoft data, so no contact details are available." %}</p>
+{% else %}<p>{% translate "The ParishSoft data was replaced while this page was read, so contact details are unavailable. Reload the page to see them." %}</p>{% endif %}</section>{% endif %}
 {% if item.followed_up_at %}<p>{% translate "Followed up by" %} {{ item.completed_by }} <time datetime="{{ item.followed_up_at|date:'c' }}" data-local-instant>{{ item.followed_up_at|date:'c' }}</time></p>{% endif %}
 <form method="post" action="{% url 'admin:information_update' item.id %}#information-item" data-require-complete data-in-place="information-save" data-in-place-message="{% translate 'Follow-up saved.' %}">{% csrf_token %}
 {% comment %}A Save the server refused at the confirmation (#1332) is drawn again with what was sent (sent), its version included, so resubmitting it after another edit is still a conflict.{% endcomment %}<input type="hidden" name="expected_version" value="{% if sent %}{{ sent.expected_version }}{% else %}{{ item.version }}{% endif %}"><input type="hidden" name="request_key" value="{{ request_key }}">

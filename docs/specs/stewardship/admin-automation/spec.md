@@ -3551,7 +3551,8 @@ pages' own pieces.
   (started, then succeeded or failed). It prints the item's id, version,
   disposition, instants, flags, replacement and completing account id,
   and each history revision's flags, account ids and instants: never the
-  Family's name or DUID, the submitted text or the Staff notes.
+  Family's name or DUID, its contact details (#1595), the submitted text
+  or the Staff notes.
   `followup information-update ITEM_ID --expected-version N [--needed
   yes|no] [--completed yes|no] [--confirm-clear] [--notes TEXT|-]` is the
   item's Save through `responses.information.update_information`: a
