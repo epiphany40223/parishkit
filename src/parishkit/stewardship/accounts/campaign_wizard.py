@@ -9,7 +9,8 @@ Back and Next to the neighbouring pages. It grants nothing: each page still
 performs every access, state and prerequisite check of its own.
 
 Completion is read from what was applied, plus one stored fact. Campaign
-settings is completed when the campaign is created. Share options, Pages
+settings is completed when the campaign is created. Load ParishSoft data is
+completed once the campaign has its Families (#1404 PR 5). Share options, Pages
 and emails, Dates and mail schedules and Campaign images are completed once
 a change confirmed on that page has been applied since the campaign was
 created, which ``step_keys`` recognizes from each applied request's patch
@@ -53,21 +54,29 @@ from .setup_wizard import Step, Wizard
 
 @dataclass(frozen=True)
 class Page:
-    """One step: its key and the Admin URL name of the page it opens."""
+    """One step: its key, the Admin URL name of the page it opens, and a name.
+
+    ``name`` is the step's own name where it differs from the page's: Load
+    ParishSoft data opens Refresh from ParishSoft (#1404 PR 5).
+    """
 
     key: str
     route: str
+    name: object = None
 
     @property
     def label(self):
-        """The page's own name, as the menu and its heading use it."""
-        return NAMES[self.route].label
+        """The step's name: its own, else the page's, as the menu uses it."""
+        return self.name or NAMES[self.route].label
 
 
 # The order a campaign is prepared in. Ministries and funds are part of
 # Campaign settings' one form (#1119), so they are not a step of their own.
 PAGES = (
     Page("settings", "campaign_settings"),
+    # The campaign's Families, Family codes and giving come from a full
+    # ParishSoft refresh, requested from this step once the campaign exists.
+    Page("load", "source_refresh", _("Load ParishSoft data")),
     Page("share_options", "share_settings"),
     Page("content", "content_catalog"),
     Page("schedules", "schedule_settings"),
@@ -106,7 +115,12 @@ class CampaignWizard(Wizard):
     marks Dates and mail schedules with no schedule saved, whose Continue
     says it goes on without one. ``load`` is the campaign's ParishSoft
     data while it has no Families: "offer" (with ``refresh_key``, the
-    button's request key) or "loading" once a refresh is under way.
+    button's request key), "loading" once a refresh is under way, or
+    "failed" when the newest refresh did not finish, whose button then
+    reads Try again. ``load_task`` is that newest refresh's Background task
+    while it is loading or failed, and ``load_progress`` its (phase,
+    current, total), for Load ParishSoft data's stage boxes. ``families``
+    is the campaign's Family count, read only on that step once loaded.
     ``creating`` marks step 1 before the campaign exists (``creation``):
     Create the campaign draws its own action row inside its form, so the
     shared row draws nothing. ``direct`` marks a step page whose form the
@@ -120,6 +134,9 @@ class CampaignWizard(Wizard):
     no_schedules: bool = False
     load: str | None = None
     refresh_key: object = None
+    load_task: object = None
+    load_progress: tuple | None = None
+    families: int | None = None
     creating: bool = False
     direct: bool = False
     save_key: object = None
@@ -139,6 +156,17 @@ class CampaignWizard(Wizard):
     def reviewable(self):
         """Whether the current step's Continue records it as kept as is."""
         return self.current is not None and self.current.key in REVIEW_STEPS
+
+    @property
+    def load_view(self):
+        """Load ParishSoft data's one state: offer, loading, failed or loaded."""
+        return self.load or "loaded"
+
+    @property
+    def load_stages(self):
+        """Load ParishSoft data's stage boxes for ``load_view`` (#1404 PR 5)."""
+        phase = self.load_progress[0] if self.load_progress else None
+        return load_stages(self.load_view, phase)
 
 
 def shown(campaign, mode, *, admin, go_live):
@@ -215,6 +243,9 @@ def build(
     no_schedules=False,
     load=None,
     direct=False,
+    load_task=None,
+    load_progress=None,
+    families=None,
 ):
     """Derive the stepper for the page ``current`` (a step key) as a ``Wizard``.
 
@@ -225,7 +256,8 @@ def build(
     invitation's current revision, or None when there is none to test. Every
     other step is always a link: Back and Continue never save or discard
     anything on the page, and each page keeps its own prerequisites.
-    ``sub``, ``no_schedules``, ``load`` and ``direct`` are carried
+    ``sub``, ``no_schedules``, ``direct`` and the ``load`` facts
+    (``load``, ``load_task``, ``load_progress``, ``families``) are carried
     through (``CampaignWizard``); a ``direct`` stepper draws a fresh
     ``save_key``.
     """
@@ -277,7 +309,10 @@ def build(
         sub=sub,
         no_schedules=no_schedules,
         load=load,
-        refresh_key=uuid4() if load == "offer" else None,
+        refresh_key=uuid4() if load in {"offer", "failed"} else None,
+        load_task=load_task,
+        load_progress=load_progress,
+        families=families,
         direct=direct,
         save_key=uuid4() if direct else None,
     )
@@ -408,13 +443,18 @@ def completed(campaign, revision):
     ``revision`` is the invitation's current revision (or None). Applied
     changes since the campaign's creation, and the steps kept as is
     (``CampaignSetupReview``, the whole step only), complete the page
-    steps; an accepted test of ``revision`` completes Preview and test
-    email. A stored review is never undone by a later change.
+    steps; the campaign's Families complete Load ParishSoft data, and an
+    accepted test of ``revision`` completes Preview and test email. A
+    stored review is never undone by a later change.
     It reads every patch applied since the creation: only the step pages,
     an applied step change's status and an Administrator's Home call it,
     while a Testing draft is being prepared, whose history is a few dozen
     changes, in a constant number of queries.
     """
+    from django.db.models import CharField, Value
+
+    from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+
     from .campaign_mail_models import CampaignMailTest
     from .runtime_models import ConfigurationActivation
 
@@ -424,10 +464,19 @@ def completed(campaign, revision):
     ).values_list("request__patch", flat=True)
     for patch in patches:
         done |= step_keys(patch, campaign.pk)
+    # The steps kept as is, and "load" once the campaign has a Family (one
+    # row is enough), in one UNION statement: Home's query budget is fixed.
+    loaded = (
+        FamilyCampaign.objects.filter(campaign_id=campaign.pk)
+        .annotate(step=Value("load", output_field=CharField()))
+        .order_by()
+        .values_list("step", flat=True)[:1]
+    )
     done |= set(
         CampaignSetupReview.objects.filter(campaign_id=campaign.pk, item="")
+        .order_by()
         .values_list("step", flat=True)
-        .distinct()
+        .union(loaded)
     )
     if (
         revision is not None
@@ -468,25 +517,128 @@ SUBPAGES = {
 _SAME_PAGE = {"artwork_upload": "images"}
 
 
-def _load_state(campaign):
-    """The campaign's ParishSoft data while it has no Families, or None.
+# A refresh run that ended without loading anything: the load "failed".
+_UNFINISHED = frozenset({"failed", "cancelled"})
 
-    "loading" while a ParishSoft refresh is under way (requested and not
-    finished), else "offer": the step pages then show Load the campaign's
-    ParishSoft data at the top (#1404). Two small indexed queries, and only
-    the first once the campaign has its Families.
+# The major stages of a full ParishSoft refresh, in the order its worker
+# reports them (source/refreshing.py, then source/execution.py's promotion),
+# as Load ParishSoft data's stage boxes name them (#1404 PR 5).
+LOAD_STAGES = (
+    ("fetching", _("Download from ParishSoft")),
+    ("staging", _("Save the downloaded records")),
+    ("validating", _("Check the new data")),
+    ("promoting", _("Make the new data current")),
+)
+
+
+def load_stages(load, phase):
+    """The stage boxes for the load in state ``load`` at its run's ``phase``.
+
+    Not loaded yet ("offer"): every stage waiting. Loaded: every stage done.
+    Loading: the stages before the run's phase done and its phase in
+    progress (none yet while it is queued). Failed: the stage the run
+    stopped in is marked failed, the first one when it stopped before any.
+    """
+    from . import stages
+
+    keys = [key for key, _label in LOAD_STAGES]
+    index = keys.index(phase) if phase in keys else -1
+    if load == "loaded":
+        return stages.rows(LOAD_STAGES, len(keys))
+    if load == "loading":
+        return stages.rows(LOAD_STAGES, index)
+    if load == "failed":
+        return stages.rows(LOAD_STAGES, max(index, 0), "failed")
+    return stages.rows(LOAD_STAGES, -1)
+
+
+def load_status(task, *, families):
+    """Load ParishSoft data's live status for one refresh run's ``task``.
+
+    ``task`` is the run as the Background task read names it (``_task_read``).
+    The passive status fragment (``?view=load``) draws the step's live region
+    from it while the run is watched: loading while it is under way and
+    failed once it failed or was cancelled. A run that succeeded reads as
+    loaded only when ``families`` (``current_campaign_has_families``) says
+    the campaign has its Families, the same test the page's re-read makes
+    (``completed``); otherwise it is the offer again, so the region never
+    says and announces "loaded" just before the re-read says it is not
+    (#1517 review, L2). The settled answer's follow-up link then re-reads
+    the page in place, which draws the step's full state (the Family count,
+    Continue, Try again).
+    """
+    from parishkit.stewardship.jobs.models import NONTERMINAL_STATES
+
+    state = task["state"]
+    load = (
+        "loading"
+        if state in NONTERMINAL_STATES
+        else "failed"
+        if state in _UNFINISHED
+        else "loaded"
+        if families
+        else "offer"
+    )
+    progress = task["progress"]
+    return {
+        "load": load,
+        "load_task": task["id"],
+        "stages": load_stages(load, progress["phase"]),
+        "progress": (progress["phase"], progress["current"], progress["total"]),
+        "polled": True,
+    }
+
+
+def current_campaign_has_families():
+    """Whether the current campaign has a Family, in one query.
+
+    Load ParishSoft data's status poll asks it once its run has succeeded,
+    so the poll calls the data loaded exactly when the page would
+    (``completed``'s "load"); the run itself names no campaign.
     """
     from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+
+    from .runtime_models import SystemConfiguration
+
+    current = SystemConfiguration.objects.values("current_campaign_id")
+    return FamilyCampaign.objects.filter(campaign_id__in=current).exists()
+
+
+def _load_state(campaign, done):
+    """The campaign's ParishSoft data while it has no Families.
+
+    Returns (state, task, progress). ``done`` holds the completed step keys
+    (``completed``), whose "load" says the campaign has its Families; then
+    it is (None, None, None) and nothing more is read. Otherwise one small
+    query reads the newest ParishSoft refresh requested since the campaign
+    was created (an earlier one could not load it): "loading" while it is
+    under way (requested and not finished), "failed" when it failed or was
+    cancelled, so the step says so and offers Try again rather than looking
+    as if no load was started (#1404 PR 5), else "offer". While loading or
+    failed, ``task`` is that run's Background task id and ``progress`` its
+    (phase, current, total), which Load ParishSoft data's stage boxes and
+    status poll use. The step pages show the state at the top, and Load
+    ParishSoft data draws its one state by it.
+    """
     from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun
     from parishkit.stewardship.source.requests import TASK_TYPE
 
-    if FamilyCampaign.objects.filter(campaign_id=campaign.pk).exists():
-        return None
-    if TaskRun.objects.filter(
-        task_type=TASK_TYPE, state__in=NONTERMINAL_STATES
-    ).exists():
-        return "loading"
-    return "offer"
+    if "load" in done:
+        return None, None, None
+    newest = (
+        TaskRun.objects.filter(task_type=TASK_TYPE, created_at__gte=campaign.created_at)
+        .order_by("-created_at", "-pk")
+        .values_list("pk", "state", "phase", "progress_current", "progress_total")
+        .first()
+    )
+    if newest is None:
+        return "offer", None, None
+    task, state, *progress = newest
+    if state in NONTERMINAL_STATES:
+        return "loading", task, tuple(progress)
+    if state in _UNFINISHED:
+        return "failed", task, tuple(progress)
+    return "offer", None, None
 
 
 def for_request(match, campaign, configuration):
@@ -516,14 +668,26 @@ def for_request(match, campaign, configuration):
         from .schedule_reads import campaign_schedules
 
         no_schedules = not campaign_schedules(configuration, campaign.pk)
+    done = completed(campaign, revision)
+    load, load_task, load_progress = _load_state(campaign, done)
+    families = None
+    if current == "load" and load is None and not sub:
+        # Load ParishSoft data says how many Families the load brought: one
+        # count, on that step only, so no other page pays for it.
+        from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+
+        families = FamilyCampaign.objects.filter(campaign_id=campaign.pk).count()
     return build(
         financial,
         current,
-        done=completed(campaign, revision),
+        done=done,
         mail_test_url=_test_url(revision),
         sub=sub,
         no_schedules=no_schedules,
-        load=_load_state(campaign),
+        load=load,
+        load_task=load_task,
+        load_progress=load_progress,
+        families=families,
         direct=name in DIRECT_SUBPAGES if sub else current in DIRECT_STEPS,
     )
 

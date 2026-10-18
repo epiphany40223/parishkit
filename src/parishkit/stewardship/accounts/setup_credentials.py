@@ -6,7 +6,10 @@ from uuid import UUID, uuid4
 from django.db.models import F
 
 from parishkit.config import ConfigError
-from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.campaigns.work_locks import (
+    require_work_order,
+    work_transaction,
+)
 from parishkit.stewardship.deployment import recorded_profile
 from parishkit.stewardship.mail_catcher import MailTransport, workspace_transport
 from parishkit.stewardship.observability import current_correlation
@@ -25,6 +28,7 @@ from .sessions import (
 )
 from .setup_drafts import _owned
 from .setup_models import SetupAttempt, SetupDraftSection
+from .setup_notification_models import SetupSlackDelivery
 from .setup_policy import SetupState
 from .setup_secret_models import SetupSealedCredential
 from .setup_staging import _expiry, _status
@@ -169,9 +173,11 @@ def stage_credential(
                 admit_candidate(target, candidate, recorded_profile())
             except ConfigError:
                 raise ValueError("The credential has an invalid format.") from None
+        # A token discarded by turning Slack off stays as a scrubbed
+        # tombstone; a new one is a new row (#1499).
         row = (
             SetupSealedCredential.objects.defer("ciphertext")
-            .filter(attempt=attempt, target=target)
+            .filter(attempt=attempt, target=target, scrubbed_at=None)
             .first()
         )
         identifier = row.pk if row is not None else uuid4()
@@ -221,3 +227,33 @@ def stage_credential(
         authenticated_admin(request, store=service.store, activity=True)
         attempt.refresh_from_db()
         return _status(attempt), _receipt(row)
+
+
+def discard_slack(attempt, *, actor_id):
+    """Discard a collecting attempt's staged Slack token and queued test (#1499).
+
+    The caller (``setup_drafts.save_sections``) holds the work order and
+    has just saved the attempt's Slack step off and bumped its version, so
+    setup continues as if Slack had never been on: the token's ciphertext
+    and channel are scrubbed now rather than at expiry (the SQL guard
+    admits this only for the owner while the saved Slack step is off), and
+    a test still waiting for the Slack installer is cancelled, so nothing
+    is posted. A test already handed to Slack keeps its recorded result.
+    Turning Slack on again stages a new token and needs a new test.
+    """
+    require_work_order()
+    context = dict(correlation_id=current_correlation(), version=F("version") + 1)
+    SetupSealedCredential.objects.filter(
+        attempt=attempt, target="slack", scrubbed_at=None
+    ).update(
+        ciphertext=None,
+        settings={},
+        scrubbed_at=database_now(),
+        actor_id=actor_id,
+        **context,
+    )
+    # The cancel guard admits only a test that is no longer live, with no
+    # actor (a system outcome), as the stale-test sweep records it.
+    SetupSlackDelivery.objects.filter(attempt=attempt, state="queued").update(
+        state="cancelled", finished_at=database_now(), actor_id=None, **context
+    )

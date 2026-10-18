@@ -65,7 +65,7 @@ when it lands.
   [button labels](#button-labels), [shared visual style](#shared-visual-style),
   [colour scheme](#colour-scheme),
   [status indicators](#status-indicators), [stat tiles](#stat-tiles),
-  [time entry](#time-entry),
+  [stage boxes](#stage-boxes), [time entry](#time-entry),
   [schedules](#schedules), [schedule previews](#schedule-previews).
 - Tables: [Admin tables](#admin-tables),
   [empty tables and lists](#empty-tables-and-lists),
@@ -508,7 +508,10 @@ never scrolls to show it (Administrator, pk-local review of
   sort heading or navigator inside a `form[data-in-place]` (a selection form
   around its table) is still a table control. A POST form should carry a
   `data-in-place-message` ("Saved.") for the live region; without one the
-  clicked button's text is announced.
+  clicked button's text is announced. A form whose region reads out its own
+  new state through a live-status announcer (`data-live-announcer`) is marked
+  `data-in-place-spoken` instead and announces nothing on success, so two
+  live regions never speak at once (Load ParishSoft data, #1404 PR 5).
 - **Request.** The browser fetches exactly the request the control would
   have made, follows the server's Post/Redirect/Get redirect, and replaces
   every region the fetched page shares with this one, plus the counts,
@@ -538,7 +541,10 @@ never scrolls to show it (Administrator, pk-local review of
   heading takes focus. The list updates by itself while a test is on its
   way, and once the test settles a quiet follow-up re-reads only the
   form's region, so Send, the acknowledgement and a fresh preview come
-  back without moving focus; the page has no manual refresh link.
+  back without moving focus; the page has no manual refresh link. In
+  Campaign setup the follow-up also re-reads the stepper and its action
+  row, so the first accepted test marks the step completed and shows
+  Continue in place.
   Off-site backups' Test access posts in place as well: its status line
   is swapped in and watched while the check runs, focus stays on Test
   access, and the settled check re-reads that line in place, so a folder
@@ -1453,11 +1459,18 @@ Recorded exceptions (Administrator decision, 2026-10-11):
   Save with a new key pasted submits natively (`data-review-native`).
   Integrations' other changes use the dialog.
 
-Operational actions that are not editors (going live, Confirm Production,
-cancelling go-live, pausing and resuming mail, fixing many emails at once,
-test email sends, a manual ParishSoft refresh, Family portal maintenance) keep
-the flows their own sections describe; whether any of them moves to the
-dialog is decided on [#750](https://github.com/epiphany40223/parishkit/issues/750).
+Going live uses the dialog for each of its consequential actions: **Start
+go-live** and **Confirm Production** (full reviews, Confirm Production with
+the typed word inside the dialog), **Stop go-live** (a confirmation) and
+**Cancel go-live** (a full review, with its reason inside the dialog), as
+the [Go live page](../admin-portal/spec.md#go-live-page) describes
+(Administrator decision, 2026-10-17, on
+[#1585](https://github.com/epiphany40223/parishkit/issues/1585); built in
+its slices 2 to 5). Other operational actions that are not editors
+(pausing and resuming mail, fixing many emails at once, test email sends, a
+manual ParishSoft refresh, Family portal maintenance) keep the flows their
+own sections describe; whether any of them moves to the dialog is decided
+on [#750](https://github.com/epiphany40223/parishkit/issues/750).
 System health's Take a backup now, Turn off debug logging and Allow debug
 logging again confirm in the dialog
 ([#1356](https://github.com/epiphany40223/parishkit/issues/1356)), since
@@ -2041,7 +2054,9 @@ keeps the single label Save and continue on an unchanged page (rule 3), and
 it has no Leave setup in its summary (rule 11) and no sub-pages. The
 campaign wizard meets rules 1, 7, 9, 11 and 12 and the Return to *step*
 link of rule 10 ([#1407](https://github.com/epiphany40223/parishkit/pull/1407)):
-Create the campaign is its step 1 before the campaign exists (#1404 PR 3);
+Create the campaign is its step 1 before the campaign exists (#1404 PR 3),
+and loading the campaign's ParishSoft data is its step 2 (#1404 PR 5),
+completed only while the campaign has its Families;
 an applied change or a Continue stays completed, while Preview and test
 email counts only for a test of the invitation's current revision. It meets
 rule 8 for Continue, which opens the next step not done yet. Campaign
@@ -2057,10 +2072,8 @@ so Return to *step* is their way back while unchanged. On Campaign images, until
 PR 4c), Continue is unavailable while an image is chosen but not uploaded,
 so the page's own upload, with its review dialog, is the way on, and after
 it the page redraws in place and stays on its step;
-loading the campaign's ParishSoft data is a notice on every step rather than
-a step of its own; and Back asking before it discards (rule 6) is not
-built in either wizard. Each part's precedent moves into the rule above
-when it lands.
+and Back asking before it discards (rule 6) is not built in either
+wizard. Each part's precedent moves into the rule above when it lands.
 
 ## Admin page layout and help
 
@@ -2534,6 +2547,41 @@ two ways of reading to a screen reader. **Precedent.**
   moved onto the component are listed in it, each with why, and the list
   may only shrink. Email and PDF reports cannot load the stylesheet and
   keep their own layouts.
+
+### Stage boxes
+
+**Rule.** A page that follows a long piece of work through its major
+stages shows them as one row of stage boxes: one box per stage, in order,
+left to right, wrapping onto more rows on a phone with no sideways scroll.
+Each box names its stage and its state in words, Not started, In progress,
+Done or Failed (Finishing setup also has Waiting for the server operator),
+so its text, and its name as a list item, carry the state; a mark (a
+bullet, a pointer, a check, a cross or a pause) and a colour from the
+[design tokens](#shared-visual-style) only reinforce it, in light and dark:
+Not started keeps the page's own background, In progress is the attention
+yellow (`warning-bg`, `warning-border`), Done the light accent green
+(`accent-soft`, `accent-line`) and Failed the error tone (`error-bg`,
+`error-border`); Dark mode takes each token's dark value. A change of state
+changes only these colours, the mark and the words, never the box's size.
+The boxes show only stages the server reports, never invented ones. While
+the work runs, the page updates the boxes in place from a passive status
+read, and announces a change of state politely through the page's
+announcer, once per change, not on every poll; every state draws the same
+boxes and keeps the lines around them reserved, so an update moves nothing
+([no layout shift](#no-layout-shift)). **Why.** The Administrator,
+2026-10-17, on the campaign wizard's Load ParishSoft data: "one box for
+each major step in the loading process, proceeding from left to right",
+and the same boxes, from the same code, as setup's Loading parish data and
+Finishing setup, so a reader learns the pattern once; and on their colours
+(Administrator, 2026-10-17): "'normal' background before starting, yellow
+while running, and light green when done". **Shared code.** The
+`components/stage-boxes.html` include, `accounts/stages.py` (`rows`, which
+marks the stages before the current one done, and the state words) and
+`.stage-boxes` in `ui-v1.css`. **Precedent.** Setup's Loading parish data
+and Finishing setup (#1354), and Load ParishSoft data
+([#1404](https://github.com/epiphany40223/parishkit/issues/1404) PR 5);
+the other stage-progress displays move to it in
+[#1579](https://github.com/epiphany40223/parishkit/issues/1579).
 
 ### Time entry
 
@@ -3231,7 +3279,7 @@ of ParishSoft DUID:
 - **Family DUID:** wherever a Family is named, in its own column; staff
   search and match Families by it.
 - **Member DUID:** only where staff act on a specific Member in ParishSoft:
-  Census changes, Roster changes to enter, the follow-up queue on Ministry
+  Census changes, Publish to ParishSoft, Roster changes to enter, the follow-up queue on Ministry
   requests and its Export these requests, the host's join and leave lists
   and the packets, the Limitations report, Families the form cannot open, and the
   Users page's ParishSoft Ministry leaders table and its import review

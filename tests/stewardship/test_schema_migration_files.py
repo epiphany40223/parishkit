@@ -363,6 +363,12 @@ FROZEN = {
     "0110_financial_local_days.sql": (
         "f89490777c7145a1b0213dc2976d4c1c2bc14289fe08926c502667f0ca9cb5d8"
     ),
+    "0111_setup_slack_off.sql": (
+        "ca795eb61592697af8dac8172add7e213d1c183319004227b96e57ed94798b86"
+    ),
+    "0112_upstream_at_check.sql": (
+        "2ad93429256bc20dfc47c6f676981b13a993835c6e83ec70dbf8977a74776ffd"
+    ),
 }
 
 

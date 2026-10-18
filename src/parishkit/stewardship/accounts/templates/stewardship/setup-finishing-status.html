@@ -21,13 +21,7 @@
 </div>{% else %}{% if overall == 'failed' %}<p class="notice notice-error">{% translate "Setup could not finish. The failed step below explains what happened and what to do." %}</p>{% endif %}
 <section class="panel" data-finishing>
 <h2>{% translate "Progress" %}</h2>
-<ol class="setup-load-phases" aria-label="{% translate 'Steps to finish setup' %}">{% for step in steps %}
-<li class="setup-load-{{ step.state }}" data-finishing-step="{{ step.key }}"><span class="setup-load-label">{{ step.label }}</span> <span class="setup-load-status">{{ step.status }}</span>
-<p>{{ step.text }}{% if step.count %} {% blocktranslate trimmed with done=step.count.done total=step.count.total %}{{ done }} of {{ total }} services acknowledged.{% endblocktranslate %}{% endif %}</p>
-{% if step.progress %}<p>{{ step.progress|out_of }}</p>{% endif %}
-{% if step.task %}<p>{% translate "Task reference" %}: <code>{{ step.task }}</code></p>{% endif %}
-</li>{% endfor %}
-</ol>
+{% translate "Steps to finish setup" as steps_label %}{% include 'stewardship/components/stage-boxes.html' with stages=steps label=steps_label key_attribute="finishing-step" detail="stewardship/setup-finishing-step.html" %}
 <p data-finishing-elapsed>{% translate "You confirmed setup:" %} <time{% if overall != 'failed' %} data-live-since{% endif %} datetime="{{ confirmed_at|date:'c' }}">{{ confirmed_ago }}</time></p>
 </section>
 {% if not prepared %}<section class="panel"><h2>{% translate "What the server operator does" %}</h2>

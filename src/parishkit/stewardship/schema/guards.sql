@@ -236,10 +236,6 @@ ALTER TABLE ONLY public.stewardship_setup_mail_delivery
 ALTER TABLE ONLY public.stewardship_setup_draft_section
     ADD CONSTRAINT setup_one_draft_per_step UNIQUE (attempt_id, step);
 
--- CONSTRAINT: stewardship_setup_sealed_credential setup_secret_attempt_target
-ALTER TABLE ONLY public.stewardship_setup_sealed_credential
-    ADD CONSTRAINT setup_secret_attempt_target UNIQUE (attempt_id, target);
-
 -- CONSTRAINT: stewardship_setup_slack_delivery setup_slack_explicit_request
 ALTER TABLE ONLY public.stewardship_setup_slack_delivery
     ADD CONSTRAINT setup_slack_explicit_request UNIQUE (attempt_id, request_key);
@@ -4888,6 +4884,9 @@ BEGIN
                 -- publication lease's task is running; it then publishes it
                 -- when the entity's latest outcome is published, or returns
                 -- it to pending or failed when that outcome is invalidated.
+                -- The publication check also marks it resolved upstream when
+                -- its plan, recorded in this transaction, found the value
+                -- already in ParishSoft.
                 IF ROW(NEW.current_available,NEW.current_value,NEW.admin_value_set,
                        NEW.admin_value,NEW.decision,NEW.superseded_by_id)
                    IS DISTINCT FROM
@@ -4926,7 +4925,22 @@ BEGIN
                              AND f.outcome='write'
                            ORDER BY c.created_at DESC, c.id DESC LIMIT 1)
                        IS NOT DISTINCT FROM CASE WHEN NEW.execution='published'
-                           THEN 'published' ELSE 'invalidated' END))
+                           THEN 'published' ELSE 'invalidated' END)
+                   -- The publication check (#528, ADM-09): a Production-mode
+                   -- plan recorded in this same transaction found the value
+                   -- already in ParishSoft, so the change is resolved
+                   -- upstream at the next version and nothing is written. The
+                   -- plan guard stamps created_at with transaction_timestamp(),
+                   -- so a plan committed earlier never matches; resolved_upstream
+                   -- is terminal, so the mark is final.
+                   OR (OLD.execution IN ('pending','failed') AND NEW.execution='resolved_upstream'
+                       AND OLD.decision='approved' AND OLD.handling='api' AND OLD.entity_kind='member'
+                       AND EXISTS (SELECT 1 FROM public.stewardship_publication_field f
+                           JOIN public.stewardship_publication_entity e ON e.id=f.entity_id
+                           JOIN public.stewardship_publication_plan p ON p.id=e.plan_id
+                           WHERE f.proposal_id=OLD.id AND f.proposal_version=OLD.version
+                             AND f.outcome='already_in_parishsoft'
+                             AND NOT p.testing AND p.created_at=transaction_timestamp())))
                 THEN
                     RAISE EXCEPTION 'Proposal publication requires its confirmed plan and outcome' USING ERRCODE='23514';
                 END IF;

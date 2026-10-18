@@ -188,7 +188,7 @@ def test_finishing_setup_moves_on_in_place(page, component_origin, axe_source, w
     page.clock.fast_forward(2000)
     recorded(page, polls, 1)
     step = page.locator('[data-finishing-step="parishsoft"]')
-    has_text(step.locator(".setup-load-status"), "In progress")
+    has_text(step.locator(".stage-status"), "In progress")
     visible(step.get_by_text("Checking the credential with the provider."))
     visible(page.locator("[data-step-up-notice]"))
     focused(summary)

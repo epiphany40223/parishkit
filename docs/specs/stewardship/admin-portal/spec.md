@@ -225,7 +225,8 @@ same advice about a rejected key as the provider's
 [integration settings](#parish-and-integration-configuration), and links the
 steps that fix it: Outgoing email settings and Google Workspace connection
 for the email test, Slack notifications and Slack connection for the Slack
-test. Saving a fix opens the next step not done yet (Google Workspace
+test, which also offers [turning Slack off](#turning-slack-off-during-setup).
+Saving a fix opens the next step not done yet (Google Workspace
 connection when its key must be entered again, otherwise Test email), never
 Review first; when that step's prerequisites are missing, the save opens the
 step that needs work instead. Review's Readiness section says, for each
@@ -358,7 +359,9 @@ Wizard pages do not list the time limits. The shared
 [inactivity dialog](../architecture/spec.md#identity-and-session-security)
 warns five minutes before sign-out and lets the Admin stay signed in, which
 also keeps the setup attempt. The progress page names the three parts of the load
-(download, save, check) and, during the download, each ParishSoft collection
+(download, save, check) as
+[stage boxes](../ui-conventions/spec.md#stage-boxes), as Finishing setup
+names its steps, and, during the download, each ParishSoft collection
 as done, in progress (Ministry rosters as "N of M") or waiting, with its
 record count; the saved-record bar appears once saving starts. The worker
 encodes one step per finished collection in the task's two monotonic
@@ -471,6 +474,51 @@ browser wizard behaves the same way.
 Restore is an operator command performed before bootstrap/wizard. A restored,
 valid configured database skips initial setup after version/migration and
 credential-reference checks.
+
+### Turning Slack off during setup
+
+Slack is optional, and an Administrator who turned it on can turn it off
+again at any point of setup, for example after a made-up or wrong token
+failed Test Slack
+([#1499](https://github.com/epiphany40223/parishkit/issues/1499)). The Slack
+connection step only checks the token's format and sends nothing, so a wrong
+token fails only at Test Slack; both pages say, in plain language, that Slack
+is optional and can be turned off. Each offers a **Turn off Slack
+notifications** button above its form, and a Slack test that was not sent says
+first "use a real Slack bot token, or turn Slack notifications off" with the
+same button beside it. The button is no separate action: it saves the Slack
+notifications step with Enable Slack notifications unticked and no channel,
+through that step's own save (exact draft version, CSRF, audit), exactly like
+unticking the box there and choosing Save and continue, and then opens the
+next step not done yet ([wizard rule 8](../ui-conventions/spec.md#wizards));
+since every save bumps the draft version, that is Test email when its test
+must be sent again, otherwise Review. The button's text says so before it is
+chosen, and Test email, while its only accepted test is from an earlier draft
+version, says that a setting changed (for example, Slack was turned off), so
+the test email is sent once more. The Slack notifications step's help says
+that turning Slack off discards the Slack token entered for this setup.
+
+Any save that leaves Slack off, from the button or from the Slack
+notifications step, continues as if Slack had never been enabled. In the same
+transaction it discards this setup's staged Slack bot token (its ciphertext
+and channel are scrubbed; the audit records `setup_credential_scrubbed` for
+the Administrator) and cancels a Slack test still waiting for the Slack
+installer, so nothing is posted to Slack afterwards; a test already handed to
+Slack keeps its recorded result. The Slack connection and Test Slack steps
+leave the step bar, Review and Finish setup no longer need a Slack test, and
+turning Slack on again asks for a new token and a new test. While Slack is
+off, opening the Test Slack page anyway (the browser's Back button, an old
+tab or a bookmark) shows no error: it opens the next step that needs work,
+the same step Home's Continue setup opens, which after a turn-off is Test
+email when its test must be sent again, otherwise Review
+([#1505](https://github.com/epiphany40223/parishkit/issues/1505)). Sending a
+Slack test while Slack is off stays refused. The staged
+credential's SQL guard admits that scrub only from the web, for the attempt's
+owner, while the attempt is collecting and its saved Slack step is off; the
+scrubbed row stays as the audit's tombstone, so at most one unscrubbed staged
+credential per target is kept. Slack notifications (optional) itself has no
+prerequisite: once saved it stays a link in the step bar from every step,
+whatever the state of the other steps, except while the parish data load runs.
 
 ## Navigation and home
 
@@ -1014,7 +1062,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `financial_report` | Financial stewardship | Menu: Financial stewardship | Administrator, Staff | Financial stewardship detail; Financial report | `/admin/reports/financial/` | (same) |  |
 | `limitations_report` | Limitations | Menu: Limitations | Administrator, Staff | Talents and limitations | `/admin/reports/limitations/` | (same) | Renamed when talents were retired (#970); the old address is gone. Its CSV/XLSX/PDF download (`limitations/exports/`) is a non-page action. |
 | `census_changes` | Census changes | Menu: Census changes | Administrator, Staff | (new, #528) Pending census changes | `/admin/reports/census/` | (same) | Its CSV/XLSX/PDF download (`census/exports/`) is a non-page action; a row's Entered in ParishSoft, Ignore and Reopen post to the page itself. |
-| `census_publication` | Publish to ParishSoft | Census changes | Administrator | (new, [#528](https://github.com/epiphany40223/parishkit/issues/528)) | `/admin/reports/census/publication/` | (same) | Not built yet; see [Publish to ParishSoft](../reports/spec.md#publish-to-parishsoft). Census changes links to it for Administrators, shown unavailable with its reason while publication is switched off. Check ParishSoft posts to the page itself; Apply posts to `publication/<plan>/confirmation/` and Run again to `publication/<plan>/retries/`. |
+| `census_publication` | Publish to ParishSoft | Census changes | Administrator | (new, [#528](https://github.com/epiphany40223/parishkit/issues/528)) | `/admin/reports/census/publication/` | (same) | Built in slices ([ADM-09](../../../plans/stewardship/admin-portal.md#adm-09-census-review-and-parishsoft-publication-ui)): the page, Check ParishSoft and the newest plan so far; Apply and Run again are not built yet. See [Publish to ParishSoft](../reports/spec.md#publish-to-parishsoft). Census changes links to it for Administrators, shown unavailable with its reason while publication is switched off. Check ParishSoft posts to the page itself; Apply posts to `publication/<plan>/confirmation/` and Run again to `publication/<plan>/retries/`. |
 | `information_queue` | Additional information | Menu: Additional information | Administrator, Staff | Additional information and follow-up | `/admin/reports/information/` | (same) |  |
 | `information_item` | Information request | Additional information | Administrator, Staff | Additional information and follow-up (one request); Information item | `/admin/reports/information/<item>/` | (same) | Return to the queue keeps its filters and page. |
 | `ministry_reports` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry reports | `/admin/ministry-reports/` | (retired; 404) | Replaced by Ministry requests, which shows the "no campaign" page when there is nothing for the viewer to report. |
@@ -3226,14 +3274,14 @@ Campaign settings, so no question is asked twice.
 Status: the page (its admission, first page and what follows confirming) and
 its guided steps are built
 ([#142](https://github.com/epiphany40223/parishkit/issues/142)), with #1404's
-quick wins ([#1407](https://github.com/epiphany40223/parishkit/pull/1407))
-and Create the campaign drawn as step 1 (#1404 PR 3), and the direct save
+quick wins ([#1407](https://github.com/epiphany40223/parishkit/pull/1407)),
+Create the campaign drawn as step 1 (#1404 PR 3), Load ParishSoft data as
+step 2 (#1404 PR 5), and the direct save
 on Campaign settings and Share options (#1404 PR 4) and on Pages and emails'
 editor and New and Edit scheduled email (#1404 PR 4b).
 The rest of #1404 is planned, and each part below marked "(planned, #1404
 PR n)" describes the design, not yet the pages: the direct save on Campaign
-images (PR 4c); Load
-ParishSoft data as a step (PR 5); the Pages and emails item states and the
+images (PR 4c); the Pages and emails item states and the
 suggested schedules (PR 6); and Back asking before it discards, with
 Go-live readiness's summary lines (PR 7). Setup ends without a campaign, so
 a newly set-up deployment reaches the page; a deployment set up before #142
@@ -3314,17 +3362,24 @@ Testing mode and every earlier campaign is archived or purged, the rule every
 new draft follows, so of two creation requests confirmed at once one applies
 and the other fails. Once the request is applied, the dialog does not stay on
 the change's status: it opens the next Campaign setup step that is not done
-yet ([#1404](https://github.com/epiphany40223/parishkit/issues/1404)), Share
-options with Financial stewardship and Pages and emails without it, whose
-status line says the campaign was created and when; once Load ParishSoft
-data is a step (planned, #1404 PR 5), that next step is Load ParishSoft
-data, and step 1 is never opened again after creation. A reload of the address
+yet ([#1404](https://github.com/epiphany40223/parishkit/issues/1404)), which
+for a new campaign is always step 2, Load ParishSoft data, whose status
+line says the campaign was created and when; step 1 is never opened again
+after creation. A reload of the address
 naming the request, and Change status, still offer
 **Load the campaign's ParishSoft data**, which requests a full ParishSoft
-refresh and opens that refresh's progress page. Every Campaign setup step and
-sub-page also offers it, at its top, until the campaign has its Families;
+refresh and opens that refresh's progress page. Every other Campaign setup
+step and sub-page also offers it, at its top, until the campaign has its
+Families;
 pressed there, it returns to that step, which then says "ParishSoft data is
-loading; Go-live readiness waits for it." while the refresh is under way. The refresh can only be
+loading; Go-live readiness waits for it." while the refresh is under way.
+After a failed load (the newest ParishSoft refresh requested since the
+campaign was created failed or was cancelled, and the campaign has no
+Families) that notice says "The campaign's ParishSoft data did not load. The
+last ParishSoft refresh did not finish.", links the run's Background task ("See
+what went wrong"; the cause is in System logs, as that page says) and its
+button reads **Try again**, so a failed load never looks as if none was
+started. The refresh can only be
 requested after activation, because a refresh reads the current campaign when
 it is requested. The offer disappears once the campaign has its Families. It
 reads the campaign's giving window and creates the campaign's Families and
@@ -3344,12 +3399,12 @@ look, drawn by the same template for its
 the [wizard rules](../ui-conventions/spec.md#wizards): Campaign
 settings (its basics, Ministries and funds, one form since
 [#1119](https://github.com/epiphany40223/parishkit/issues/1119); Create the
-campaign before the campaign exists), Load ParishSoft data (planned, #1404
-PR 5), Share
+campaign before the campaign exists), Load ParishSoft data, Share
 options (shown only when the campaign's modules use it), Pages and emails,
 Dates and mail schedules, Campaign images, Preview and test email (for the
 initial invitation's current revision), and Go-live readiness. Each step is
-named after the page it opens and is that existing page, not a separate
+named after the page it opens (except Load ParishSoft data, which opens
+Refresh from ParishSoft) and is that existing page, not a separate
 staging page, so every save is that page's ordinary review, confirm and
 apply. Only those pages and their sub-pages draw the stepper; Preview and test
 email draws it only for the revision its step opens. Campaign settings counts
@@ -3370,8 +3425,8 @@ stored ([`CampaignSetupReview`](../data/spec.md#campaign)), and a later change
 elsewhere never undoes it. Preview and test email counts as completed once a
 test of the invitation's current revision was accepted, and Load ParishSoft
 data once the campaign has its Families (a Family campaign record exists,
-the read the load offer already uses), so it needs no stored review
-(planned, #1404 PR 5). Defaults
+the read the load offer already uses), so it needs no stored review and
+no schema change (#1404 PR 5). Defaults
 (the default text and share options that Create the campaign adds) never
 complete a step by themselves, and Go-live readiness completes only by going
 live.
@@ -3384,16 +3439,59 @@ live.
   schedules, still leads to Dates and mail schedules' combined review
   ([Campaign settings page](#campaign-settings-page)); on a draft those
   schedules have sent nothing.
-- **Load ParishSoft data** (planned, #1404 PR 5). It opens Refresh from
-  ParishSoft in wizard mode, saying "A full refresh adds the campaign's
-  Families, Family codes and giving. It usually takes a few minutes. You can
-  go on to the next steps while it runs; Go-live readiness waits for it." Its
-  primary is **Load the campaign's ParishSoft data**; once the load is
-  requested, its progress shows in place and the primary becomes Continue to
-  the next step while the load runs. A failed load shows its reason and
-  **Try again**, never the plain offer again, so it never looks as if no load
-  was started. The scheduled full refresh stays the fallback. The load is
-  started by that button, never automatically at creation.
+- **Load ParishSoft data** (#1404 PR 5). It opens Refresh from
+  ParishSoft in wizard mode, which shows exactly one state of the
+  campaign's ParishSoft data, chosen on the server, with no Refresh now and
+  none of the page's queue wording, since the step is the campaign's load,
+  not a refresh to repeat (Administrator, 2026-10-17). Below its summary
+  line, the full refresh's major stages are
+  [stage boxes](../ui-conventions/spec.md#stage-boxes), left to right:
+  Download from ParishSoft, Save the downloaded records, Check the new data
+  and Make the new data current, the phases the refresh's worker reports,
+  each marked not started, in progress, done or failed in words.
+  - *Not loaded* (no load under way since the campaign was created): "This
+    campaign's ParishSoft data hasn't been loaded yet.", every stage not
+    started, and the primary **Load the campaign's ParishSoft data**.
+  - *Loading* (the newest refresh since the campaign was created is
+    queued, running or waiting to retry): "Loading the campaign's
+    ParishSoft data…", the stages following the run, with the records
+    checked on the line after them, and no button at all, not even
+    Continue. The region polls the run's passive status read (which never
+    renews idle time) and is updated in place; once the run ends, the page
+    re-reads itself in place, so the stepper, the action row and this
+    region show the next state with no reload. The poll calls a run that
+    succeeded loaded only when the campaign has its Families, as the page
+    does; a run that succeeded and left none reads as not loaded, so the
+    region never says loaded just before the re-read says otherwise.
+  - *Loaded* (the campaign has its Families, the step's completion): "The
+    campaign's ParishSoft data is loaded.", every stage done, the line after
+    them giving the campaign's Family count and the data's age ("as of",
+    in the browser's time zone), and the action row's primary **Continue
+    to** the next step not done yet, a link.
+  - *Failed* (as above): "The campaign's ParishSoft data did not load.",
+    with **See what went wrong**, which opens the run's Background task,
+    the stage the run stopped in marked failed, and the primary **Try
+    again**, never the plain offer again, so it never looks as if no load
+    was started.
+
+  The button acts [in place](../ui-conventions/spec.md#in-place-controls),
+  and its answer also redraws the action row; the button announces nothing
+  itself, since the region reads out its new state. Every state draws the
+  same summary line, boxes and reserved line after them, the summary line
+  keeps room for its longest wording on a phone, the button's slot keeps
+  the height of the taller of its two labels in every state, even with no
+  button, and the region keeps its height (`data-keep-height`), so a change
+  of state moves nothing, the action row below included
+  ([no layout shift](../ui-conventions/spec.md#no-layout-shift)). The About
+  panel says what the load reads, that the page updates by itself while it
+  runs and may be left, what Try again does, and that the scheduled
+  refreshes keep the data up to date afterwards
+  ([page help](../ui-conventions/spec.md#page-help)). The step draws no
+  load notice above the page, since the page is the load. The scheduled
+  full refresh stays the fallback. The load is started by that button,
+  never automatically at creation. Outside the stepper Refresh from
+  ParishSoft is unchanged
+  ([manual ParishSoft refresh](#manual-parishsoft-refresh)).
 - **Share options** and **Campaign images.** The existing pages in wizard
   mode. Removing an image keeps its confirmation, because it discards a file
   ([wizard rule 5](../ui-conventions/spec.md#wizards)).
@@ -3442,8 +3540,10 @@ live.
   Campaign calendar are its sub-pages.
 - **Preview and test email.** Its primary is the page's own test until
   that test is accepted (its Continue, below).
-- **Go-live readiness.** The last step; the go-live flow (#462)
-  follows from it unchanged. It gains one summary line per step (planned, #1404
+- **Go-live readiness.** The last step: its segment opens the
+  [Go live page](#go-live-page)'s Check step, which draws only the Go live
+  step bar, not this stepper, and whose Back returns to Preview and test
+  email (#1585). It gains one summary line per step (planned, #1404
   PR 7), such as "Share options: kept the defaults" or "Pages and
   emails: 3 changed, 14 default text", so no step needs a review dialog of
   its own; the outward-facing review stays in Confirm Production.
@@ -3491,7 +3591,8 @@ Campaign images, while a chosen image is not uploaded yet, Continue is
 unavailable, with a hint after the row in a line that is always reserved,
 so the page's own Save (with its review dialog, for now) stays the way on,
 until its direct save makes it Save and continue (planned, #1404 PR 4c).
-Preview and test
+Load ParishSoft data offers Continue only once the campaign has its Families
+(above). Preview and test
 email offers Continue to Go-live readiness only once its test is accepted,
 because the test is the step's purpose; Go-live readiness, the last step,
 has Back only. Back and Continue never save, discard or submit the page's
@@ -3751,83 +3852,259 @@ gate.
 #### Go live page
 
 > **Status:** this subsection is the target of
-> [#462](https://github.com/epiphany40223/parishkit/issues/462). Until its
-> implementation slices land, go-live still uses the separate readiness,
-> Testing cleanup, Family links, confirmation and progress pages, with their
-> 5-minute page limits, as the
+> [#462](https://github.com/epiphany40223/parishkit/issues/462), whose page
+> design [#1585](https://github.com/epiphany40223/parishkit/issues/1585)
+> amends (Administrator decision, 2026-10-17). #462's server side is built:
+> attempts, the refresh hold and the scheduler's go-live producer. The page
+> lands in #1585's slices: 2, the Check step and the Start go-live dialog;
+> 3, the Prepare step, where Start begins attempt 1 so the
+> [go-live sequencing](../background-processing/spec.md#go-live-sequencing)
+> runs, and the Testing cleanup and Family links pages retire; 4, the
+> Confirm Production step; 5, the Activation step and the Cancel go-live
+> dialog; 6, the runbooks. Until each slice lands, its part of go-live still
+> uses today's separate readiness, Testing cleanup, Family links,
+> confirmation, progress and cancellation pages, with their 5-minute page
+> limits, as the
 > [launch runbook](../../../guides/stewardship-launch-runbooks.md#production-activation)
-> describes. The page keeps its registry name, Go-live readiness, in the
-> [page-name table](#page-names-and-placement) until the slice that builds it
-> renames it Go live there and in the code together.
+> describes. In particular, after slice 2, Start go-live's Apply still
+> opens today's Testing cleanup page and begins no attempt until slice 3.
+> Until [#1560](https://github.com/epiphany40223/parishkit/pull/1560) lands,
+> Start go-live, Confirm Production and Cancel go-live still need the recent
+> Google sign-in that the [Production transition](#production-transition)
+> section describes, and the SQL confirmation guard still enforces it. The
+> page keeps its registry name, Go-live readiness, in the
+> [page-name table](#page-names-and-placement) until slice 2 renames it Go
+> live there and in the code together; the other rows change with the
+> slices that retire their pages. The shared stage boxes
+> ([#1517](https://github.com/epiphany40223/parishkit/pull/1517)) and the
+> rule that pages update themselves
+> ([#1586](https://github.com/epiphany40223/parishkit/issues/1586)) are
+> UX conventions this page follows once they land.
 
-Going live is one guided page, **Go live**, at the campaign's existing go-live
-address (today's Go-live readiness). It replaces the readiness, Testing
-cleanup, Family links and final confirmation pages, and needs no one to time a
-click against the [refresh schedule](../background-processing/spec.md#refresh-schedule).
-The Administrator acts twice: once to start, acknowledging the irreversible
-Testing cleanup, and once to confirm Production, each with a fresh Google
-sign-in. The system does everything in between. The page is a stepper with
-the same Next/Back and completion marks as the setup wizard, and each step
-shows only what applies now:
+Going live is one guided page, **Go live**, in four steps, each at its own
+address. It replaces the readiness, Testing cleanup, Family links, final
+confirmation and Cancel go-live pages, and needs no one to time a click
+against the [refresh schedule](../background-processing/spec.md#refresh-schedule).
+The Administrator acts twice, each time in the shared
+[review dialog](../ui-conventions/spec.md#review-dialog): **Start go-live**,
+which names what cannot be undone, and **Confirm Production**, with the
+typed `Production` word. The system does everything in between. Once
+[#1560](https://github.com/epiphany40223/parishkit/pull/1560) lands, neither
+action asks for a recent Google sign-in
+([#1547](https://github.com/epiphany40223/parishkit/issues/1547)), because
+the SQL confirmation guard then requires completed cleanup, not a sign-in
+made after it; until then the status note above applies.
+Every server rule above stays: the readiness problems and gates, the
+go-live gate, the irreversible cleanup, the state machine and confirmation
+guard, Cancel go-live's reason and pre-start-only rule, and the honoring of
+every emailed Family code and link (prepared links stay inactive until
+Confirm Production).
 
-1. **Check.** What is still missing for go-live, each item with a link to the
-   page that fixes it, and the ParishSoft, mail, public web address and test
-   email checks listed at the top of this section. The **Check readiness and
-   public web address** button runs the DNS and origin check and shows its
-   result in place, beside the button. The step also shows, as warnings that
-   do not block, when the last backup completed and whether debug logging is
-   on. This step is the last step, Go live, of the Campaign setup stepper
-   that Create the campaign
-   ([#142](https://github.com/epiphany40223/parishkit/issues/142)) adds, and
-   only this step shows that stepper's Back; once go-live has started, steps
-   2 to 5 show only the Go live page's own steps, because campaign settings
-   are locked by the go-live gate.
-2. **Start.** The cleanup inventory (counts first, then the Admin-only Family
-   list, each Testing Family named as the active parishioner family directory names it), the
-   acknowledgement that Testing cleanup cannot be undone, and **Start
-   go-live**. Starting needs a fresh Google sign-in, as it does today
-   ([#547](https://github.com/epiphany40223/parishkit/issues/547)); a stale
-   one gets **Confirm with Google** in place of the button. The server
-   re-checks readiness at the POST. Every problem still blocks except one: a full
-   refresh that is merely older than `source_stale_seconds`
-   (`full_refresh_stale`), which Start waives because it queues the go-live's
-   own full refresh in the same transaction. A missing full refresh
-   (`full_refresh_required`), a tenant or scope change
-   (`source_scope_changed`), a Family population that does not match the
-   current data, and every other problem still refuse Start.
-3. **Preparing.** One progress view, refreshed in place, with one line per
-   stage: Testing cleanup, the go-live's full ParishSoft refresh, and
-   preparing the inactive Family links. A stage that waits says what it waits
-   for in words ("Waiting for the ParishSoft refresh to finish"), never a
-   time to act by. A failed stage shows its sanitized reason and **Retry**,
-   which retries the same task and changes no data.
-   If ParishSoft data changes after the links were prepared, for example
-   after a manual refresh, the system
+**Addresses.** Each step has its own address, and none carries a request or
+preparation id: the open ProductionTransitionRequest is found from the
+campaign.
+
+| Step | Address | Notes |
+| --- | --- | --- |
+| 1. Check | `/admin/campaign/go-live/` | The menu entry **Go live** while the campaign is a Testing draft or a go-live is in progress. |
+| 2. Prepare | `/admin/campaign/go-live/preparing/` | Opens once go-live has started. |
+| 3. Confirm Production | `/admin/campaign/go-live/confirmation/` | Opens once the Family links are prepared on current data. |
+| 4. Activation | `/admin/campaign/production/` | Today's Production activation address; the menu entry once Production is confirmed. |
+
+**Testing submissions** (`/admin/campaign/go-live/families/`) stays a
+sub-page of Check, under the same rules as today (410 once go-live has
+started). Every step's trail is the Campaign setup group, then Go live; the
+step bar, not the trail, names the step, so the trail never grows a crumb
+per step.
+
+**One frame on every step.** Each step page has the heading **Go live**, an
+[About panel](../ui-conventions/spec.md#page-help) (which holds today's long
+notices; a caution sits beside the control it is about), the
+[step bar](../ui-conventions/spec.md#step-bars) with "Step N of 4: *name*",
+"K of 4 steps completed" and "Next: *name*", the step's content, and one
+action row: **Back** (secondary, first) where a previous step can be
+opened, a secondary back-out where the state allows one, and exactly one
+primary control (last), or none while there is nothing to do. A reserved
+status line sits under the row. The page follows the
+[wizard rules](../ui-conventions/spec.md#wizards) for where the reader is
+(rule 1), one primary action (rule 2) and never landing on a completed step
+(rule 8); its steps are checks and actions, not edits, so the rules for
+accepting and saving a step do not apply. A step that cannot open yet is an
+unavailable segment that says why ("Start go-live on the Check step
+first."), and its address answers with the step bar and the same reason.
+Words are plain: "Family links", not "inactive Family links", and "go
+live", not "Production", except in the typed word and the Confirm Production
+label. Times are browser-local.
+
+**Updates and reload.** Every step updates itself in place from passive
+reads, as [#1586](https://github.com/epiphany40223/parishkit/issues/1586)
+specifies for every Admin page, and no step has a Refresh link. Each step's
+address draws that step from durable state, so a browser reload returns to
+the same step with its current status and resumes the updates. When the
+step shown has moved on (cleanup finished while the page was closed), the
+page says so, and its primary action leads to the next step. Every action
+posts in place or through the dialog and ends on a step address; no POST
+draws a page, so a reload never asks to send a form again. Check's last
+passing public web address check is kept in the signed-in session with the
+inputs digest it checked, so a reload keeps **Start go-live** available
+until something it checked changes. A reload while a dialog is open closes
+it with nothing applied; an Apply already sent completes on the server
+(its request key makes it happen once), and the reloaded step shows the
+outcome.
+
+1. **Check.** The last step of the
+   [Campaign setup stepper](#create-the-campaign) opens this step, and
+   **Back** returns to Preview and test email. The page draws only the Go
+   live step bar, never the Campaign setup one beside it (one step bar per
+   page). Once go-live has started, campaign settings are locked by the
+   go-live gate, so Check shows when and by whom go-live was started, has
+   no Back, and its primary opens the step in progress.
+   - **Not ready.** "N things to fix before going live", one line each with
+     a link to the page that fixes it: the ParishSoft, mail, public web
+     address and test email checks listed at the top of this section, each
+     test email named by the email's name, not a number. Warnings that do
+     not block follow: when the last backup completed and whether debug
+     logging is on. Below them, one line says what going live now would do
+     ("The campaign becomes active at once and about 1,031 Family emails are
+     sent." or "The campaign is scheduled to start Sat, Nov 7, 9:00 AM;
+     nothing is sent until then."); the Family and Admin mail counts and
+     the Testing cleanup counts are in one
+     [disclosure](../ui-conventions/spec.md#disclosures). Primary: **Check
+     readiness and public web address**, which runs the DNS and origin
+     check and shows its result in place, beside the button.
+   - **Ready, web address not yet checked** (or its check is out of date):
+     "Everything else is ready." Primary: Check readiness and public web
+     address.
+   - **Check passed.** "Everything is ready." Primary: **Start go-live**,
+     which opens the Start go-live dialog.
+   - **Campaign closed.** "The campaign has closed and cannot go live with
+     these dates." Primary: **Review campaign dates**, which opens Dates and
+     mail schedules.
+   - **Stopping** (after **Stop go-live**, until cleanup has
+     stopped and any prepared Family links are discarded): "Stopping go-live.
+     Testing data deletion is stopping at the next safe point." or "Stopping
+     go-live. The prepared Family links are being discarded.", with the
+     progress as its detail line. No primary: Start go-live is not available
+     until both finish, and the readiness lines wait until then. When both
+     finish, the step shows "Go-live stopped at 3:42 PM." above its usual
+     readiness state.
+   - **Stop failed.** Stopping cleanup or discarding the links failed after
+     its automatic retries: "Stopping go-live did not finish: *sanitized
+     reason*." Primary: **Retry stopping go-live**, which retries the same
+     cancellation or disposal (today's **Retry failed disposal**) and changes
+     no other data. Start go-live stays unavailable until it succeeds.
+   - **Start go-live dialog** (a full review). Title "Start going live?";
+     the body says in three short lines what happens next (Testing data is
+     deleted; the system refreshes ParishSoft data and prepares new Family
+     links by itself; nothing reaches Families until you confirm), then the
+     cleanup counts with a link to Testing submissions, and the caution
+     "Deleted Testing data cannot be restored, even if you stop going live
+     later. Testing links and codes stop working now." Its buttons are
+     **Apply** and **Cancel**. Apply is the explicit acknowledgement that
+     cleanup cannot be undone (no separate tick box). The server re-checks
+     readiness at Apply. Every problem still blocks except one: a full
+     refresh that is merely older than `source_stale_seconds`
+     (`full_refresh_stale`), which Start waives because it queues the
+     go-live's own full refresh in the same transaction. A missing full
+     refresh (`full_refresh_required`), a tenant or scope change
+     (`source_scope_changed`), a Family population that does not match the
+     current data, and every other problem refuse Start inside the dialog.
+     An accepted Apply creates the request, acquires the gate, queues
+     cleanup, begins attempt 1 (which queues the attempt's refresh) and
+     opens Prepare. When two Administrators apply Start at once, the one
+     whose Apply loses sees "Another Administrator already started go-live."
+     and lands on the step in progress.
+2. **Prepare.** Three
+   [stage boxes](https://github.com/epiphany40223/parishkit/pull/1517), left
+   to right: **Delete Testing data**, **Refresh ParishSoft data** and
+   **Prepare Family links**, each Not started, In progress, Done or Failed
+   in words. Under them, one detail line for the current box ("4,210 of
+   9,800 Testing records deleted"; "Waiting for the ParishSoft refresh to
+   finish"; "Preparing links: 812 of 1,031 Families"; "ParishSoft data
+   changed, so new links are being prepared (2 of 4)"). A stage that waits
+   says what it waits for, never a time to act by. If ParishSoft data
+   changes after the links were prepared, for example after a manual
+   refresh, the system
    [prepares them again](../background-processing/spec.md#go-live-sequencing)
-   by itself and the line says so.
-4. **Confirm Production.** One impact preview, built once the links are
-   prepared: whether the campaign becomes `scheduled` or `active`, the
-   active, eligible and no-email Family counts, and the live messages due at
-   once. Below it, the typed `Production` box and **Confirm Production**.
-   When the Administrator's Google sign-in is older than the fresh window
-   **or was made before Testing cleanup completed** (the SQL confirmation
-   guard requires a sign-in after cleanup's `complete` event), the button
-   reads **Confirm with Google** and uses the existing
-   [step-up](../architecture/spec.md#identity-and-session-security): the same
-   preview comes back after the sign-in and the Administrator presses Confirm
-   Production once more. Nothing is confirmed automatically after a sign-in.
-5. **Activation.** The [Production activation](#production-transition)
-   progress: the campaign scheduled or active, and initial campaign mail
-   preparation, refreshed in place until it finishes.
+   by itself and the detail line says so. Every state offers the secondary
+   **Stop go-live**; Back is not offered, because Check cannot be redone
+   without stopping.
+   - **Running.** No primary: "Nothing to do here; this page updates by
+     itself. You can leave and come back."
+   - **A stage failed** after its automatic retries: its box is Failed with
+     the sanitized reason. Primary: **Retry**, which retries the same task
+     and changes no data.
+   - **Links keep going stale** ("ParishSoft data keeps changing") or **the
+     hold ended** (below). Primary: **Refresh and prepare again**.
+   - **All three done.** "Ready to confirm." Primary: **Continue to Confirm
+     Production**. The step also completes by itself, so a reload opens
+     Confirm Production.
+3. **Confirm Production.** One impact preview, built once the links are
+   prepared and labelled with its browser-local as-of time: whether the
+   campaign becomes active now or is scheduled (with its start time), the
+   Families with and without an eligible email, the Family emails due at
+   once and the report emails due at once; combined and skipped counts are
+   in a disclosure. It updates itself when its inputs change, with a line
+   naming what changed (the messages below). Back is not offered; the
+   secondary is **Stop go-live**.
+   - **Ready.** Primary: **Confirm Production**, which opens the Confirm
+     Production dialog.
+   - **Hold ended before confirming.** "ParishSoft refreshes resumed while
+     this waited." Primary: **Refresh and prepare again**, which returns to
+     Prepare.
+   - **Links went stale.** When ParishSoft data changes after the links were
+     prepared, the system prepares them again, so Prepare is no longer done:
+     the page returns to Prepare with the line "ParishSoft data changed, so
+     new links are being prepared."
+   - **Campaign closed** while waiting: "The campaign has ended, so it cannot
+     go live." No primary; the line adds "Stop go-live, then review the
+     campaign dates on Check." Prepare shows the same state if the campaign
+     closes before the links are ready.
+   - **Confirm Production dialog** (a full review). Title "Go live now?" or
+     "Schedule the campaign?"; the body repeats only the target, the two
+     headline counts and the caution "Families can open the form and emails
+     start being sent. This cannot be undone after the campaign starts.",
+     then the field "Type Production to confirm". Apply stays unavailable
+     until the field holds the word, ignoring spaces around it
+     ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)),
+     and the server refuses Apply without it. A refusal (below) is shown
+     inside the dialog, names the change and offers to review again.
+4. **Activation.** The [Production activation](#production-transition)
+   progress.
+   - **Direct activation.** Stage boxes **Go live** (Done), **Prepare
+     initial emails** (In progress, Done or Failed, with the items processed
+     as its detail) and **Sending**, which links to Outgoing mail once
+     preparation is done and never claims delivery. Failed: primary
+     **Retry** for mail preparation.
+   - **Scheduled.** "Scheduled to start Sat, Nov 7, 9:00 AM. Emails follow
+     the mail schedules from then." Secondary: **Cancel go-live**, while the
+     start has not passed and live delivery is not paused.
+   - Once initial mail preparation finishes, or once the campaign is
+     scheduled, the page is the ordinary Production activation menu page,
+     with no step bar
+     ([wizard rule 12](../ui-conventions/spec.md#wizards)).
+   - **Cancel go-live dialog** (a full review), in place of today's
+     separate page. The reason field (required,
+     [prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)),
+     the cancellation counts, and the caution "Testing data deleted earlier
+     is not restored; going live again starts from Check." Mail that blocks
+     the cancellation is a refusal inside the dialog, with links to Pause
+     and resume mail and Outgoing mail. Apply returns the campaign to a
+     Testing draft and opens Check with a status line.
+
+After Production is confirmed, the Check, Prepare and Confirm Production
+addresses are [unavailable menu pages](../ui-conventions/spec.md#unavailable-menu-pages)
+that point to Production activation, as Go-live readiness is today.
 
 **Server checks instead of page age.** No step refuses a form for the time it
 has been open. The preview shown stays valid until something it shows
 actually changes: each POST re-reads the inputs and compares them with the
-digest the page was built from. The final confirmation token, which the SQL
-confirmation guard requires to be at most 5 minutes old, is minted at the
-Confirm Production POST from that re-checked preview, so the guard's limit
-never reaches the Administrator. A real change is refused with a message that
-names it and shows the updated step, never "Check this value.":
+digest the page or dialog was built from. The final confirmation token,
+which the SQL confirmation guard requires to be at most 5 minutes old, is
+minted at the Confirm Production dialog's Apply from that re-checked
+preview, so the guard's limit never reaches the Administrator however long
+the dialog stays open. A real change is refused with a message that names
+it and shows the updated step, never "Check this value.":
 
 - "ParishSoft data changed since this preview. Review the updated preview,
   then confirm." when the inputs digest differs;
@@ -3837,10 +4114,10 @@ names it and shows the updated step, never "Check this value.":
 - "The campaign has ended, so it cannot go live." at or after its close;
 - "ParishSoft refreshes resumed while this waited." when the refresh hold
   has ended (below);
+- "Another Administrator already started go-live." when a second Start
+  loses to one already applied;
 - "Another Administrator stopped go-live." or "Another Administrator already
-  confirmed Production." when the request moved on in another tab;
-- "Confirm it's you with Google, then confirm again." when the sign-in is
-  older than the fresh window or predates cleanup's completion.
+  confirmed Production." when the request moved on in another tab.
 
 **Freshness during a go-live.** Each Start, and each **Refresh and prepare
 again** below, begins an **attempt**, numbered from 1 within the transition
@@ -3865,27 +4142,42 @@ readiness before Start.
 
 **After the hold ends.** When the hold end passes before confirmation,
 whether 60 minutes after the refresh or at the 3-hour cap, scheduled
-refreshes resume, the system stops preparing links for that attempt, and the
-Confirm step shows "ParishSoft refreshes resumed while this waited" with two
-choices: **Refresh and prepare again**, which starts the next attempt (a new
-refresh, a new 60-minute hold measured from its promotion and capped 3 hours
-after it started, and new link preparation, without a second cleanup), and
-**Stop go-live**. There is no limit on attempts; each needs the
-Administrator's click.
+refreshes resume, the system stops preparing links for that attempt, and
+Prepare or Confirm Production shows "ParishSoft refreshes resumed while
+this waited" with **Refresh and prepare again** as its primary, which
+starts the next attempt (a new refresh, a new 60-minute hold measured from
+its promotion and capped 3 hours after it started, and new link
+preparation, without a second cleanup), and **Stop go-live** as its
+secondary. There is no limit on attempts; each needs the Administrator's
+click.
 
-**Stop go-live.** Every step before confirmation offers **Stop go-live**. It
-asks for confirmation, says that Testing data already cleaned up is not
-restored, then cancels cleanup and any link preparation through their
-existing cancellation paths, releases the gate and the refresh hold, and
-returns to the Check step with the campaign still a Testing draft. **Cancel
-go-live** remains the name of the
-pre-start withdrawal after confirmation, described above.
+**Stop go-live.** Prepare and Confirm Production offer **Stop go-live** as
+their secondary action in every state, never as the primary. It confirms in
+the shared dialog (a confirmation): title "Stop going live?"; one sentence
+worded for the state ("Testing data deletion stops at the next safe
+point." or "The prepared Family links are discarded."), always followed by
+"Testing data already deleted is not restored. The campaign stays a
+Testing draft and Testing work can start again."; **Apply** and
+**Cancel**. Apply cancels cleanup and any link preparation through their
+existing cancellation and discard paths, releases the gate and the refresh
+hold, and opens Check, which shows **Stopping** until cleanup has stopped
+and the links are discarded, then the status line ("Go-live stopped at 3:42
+PM."). When another Administrator stops go-live, an open Prepare or Confirm
+Production page moves to Check in the same way, with the line "Another
+Administrator stopped go-live."
+**Cancel go-live** remains the name of the pre-start withdrawal after
+confirmation, described above.
 
-**Navigation and old addresses.** The Campaign setup menu keeps one **Go live**
-entry while the campaign is a Testing draft or a go-live is in progress, and
-**Production activation** afterwards. The retired cleanup, links and
-confirmation addresses are removed with no redirect
-([#864](https://github.com/epiphany40223/parishkit/issues/864)). The
+**Retired pages and addresses.** The Testing cleanup, Prepare Family links,
+Confirm Production and Cancel go-live pages retire, and their addresses
+(`/admin/campaign/go-live/cleanup/<request>/`, its `links/` and
+`links/<preparation>/confirmation/` pages, and
+`/admin/campaign/production/cancellation/`) are removed with no redirect
+([#864](https://github.com/epiphany40223/parishkit/issues/864)); they answer
+as any unknown address does
+([not-found pages](../ui-conventions/spec.md#not-found-pages)). The Campaign
+setup menu keeps one **Go live** entry while the campaign is a Testing draft
+or a go-live is in progress, and **Production activation** afterwards. The
 [command line](../admin-automation/spec.md#production-transition-and-withdrawal)
 follows the same two actions.
 
@@ -5338,6 +5630,11 @@ through the task's passive status read, with a link to that Background task
 page for the history and technical details. When the run ends, the page
 re-reads itself in place, so the data age above and the request key are
 fresh. The breadcrumb is the way back; the page has no Cancel link.
+While the current campaign is a Testing draft being prepared, the page is
+also step 2 of the campaign wizard, Load ParishSoft data, which shows
+the campaign's load in one state instead of this page's panels and
+Refresh now ([Create the campaign](#create-the-campaign), the steps page
+by page).
 
 The refresh page and the "Run a full refresh now" button say that a full
 refresh re-reads everything (including Ministry rosters and giving) and usually

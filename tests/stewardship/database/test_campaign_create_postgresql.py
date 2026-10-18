@@ -624,7 +624,7 @@ def test_local_seeder_creates_the_campaign_through_the_page(auth_service, google
 def test_create_the_campaign_is_step_one_of_the_campaign_wizard(auth_service, google):
     """Create the campaign draws step 1 and asks every setting once (#1404 PR 3).
 
-    The stepper says "Step 1 of 7: Campaign settings" with every later step
+    The stepper says "Step 1 of 8: Campaign settings" with every later step
     unavailable until the campaign exists; the form is Campaign settings'
     own, so it asks the Ministry leader roles too, the default ones ticked;
     its one primary is Create the campaign and continue, inside the form,
@@ -638,9 +638,9 @@ def test_create_the_campaign_is_step_one_of_the_campaign_wizard(auth_service, go
     page = browser.get(CREATE).content.decode()
     stepper = page[page.index('id="campaign-stepper"') :]
     stepper = stepper[: stepper.index("</nav>")]
-    assert "Step 1 of 7:" in stepper and "<strong>Campaign settings</strong>" in stepper
-    assert "0 of 7 steps completed" in stepper
-    assert stepper.count("Not available yet: Create the campaign first.") >= 6
+    assert "Step 1 of 8:" in stepper and "<strong>Campaign settings</strong>" in stepper
+    assert "0 of 8 steps completed" in stepper
+    assert stepper.count("Not available yet: Create the campaign first.") >= 7
     assert reverse("admin:share_settings") not in stepper
     assert 'id="campaign-step-actions"' not in page
     assert "stepper-v1.css" in page
@@ -669,6 +669,11 @@ def test_create_the_campaign_is_step_one_of_the_campaign_wizard(auth_service, go
     }
     preview = post(browser, CREATE, chosen)
     assert preview.status_code == 200, preview.content
+    # Once applied, the dialog opens step 2, Load ParishSoft data (PR 5).
+    assert (
+        f'data-review-return="{reverse("admin:source_refresh")}"'
+        in preview.content.decode()
+    )
     confirmed = {"action": "confirm", "preview": token(preview)}
     apply(store, post(browser, CREATE, confirmed))
     values = Campaign.objects.get().active_configuration.values
@@ -676,7 +681,7 @@ def test_create_the_campaign_is_step_one_of_the_campaign_wizard(auth_service, go
     # Step 1 is Campaign settings once the campaign exists: the same roles.
     settings = browser.get(reverse("admin:campaign_settings")).content.decode()
     # Without Financial stewardship Share options is no longer a step.
-    assert "Step 1 of 6:" in settings
+    assert "Step 1 of 7:" in settings
     assert re.search(
         r'<input type="checkbox" name="ministry_leader_roles" value="Chairperson"'
         r"[^>]*checked",

@@ -21,6 +21,7 @@ from django.urls import path
 from ..accounts import assisted_entry
 from ..reports import (
     census_change_views,
+    census_publication_views,
     comparison_export_views,
     comparison_views,
     digest_views,
@@ -93,6 +94,13 @@ patterns = [
         "reports/census/exports/",
         census_change_views.export,
         "census_changes_export",
+    ),
+    # Publish to ParishSoft (#528, ADM-09), linked from Census changes; its
+    # Check ParishSoft posts to the page itself.
+    _page(
+        "reports/census/publication/",
+        census_publication_views.page,
+        "census_publication",
     ),
     _page("reports/information/", information_views.queue, "information_queue"),
     _page(
