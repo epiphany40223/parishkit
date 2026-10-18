@@ -110,10 +110,12 @@ LOAD = "/campaign-stepper-load"
 LOAD_FAILED = "/campaign-stepper-load-failed"
 LOADING = "/campaign-stepper-loading"
 LOADED = "/campaign-stepper-loaded"
+LOAD_EMPTY = "/campaign-stepper-load-empty"
 LOAD_RUN = UUID(int=1405)
 LOAD_STATUS = reverse("admin:background_task_status", args=[LOAD_RUN])
 LOAD_STATUS_RUNNING = "/campaign-stepper-load-status-running"
 LOAD_STATUS_DONE = "/campaign-stepper-load-status-done"
+LOAD_STATUS_EMPTY = "/campaign-stepper-load-status-empty"
 POSTS = {
     PATH: (303, APPLIED, ""),
     DIRECT: (303, APPLIED, ""),
@@ -288,8 +290,11 @@ def components(context, admin):
     def load(state):
         """Load ParishSoft data with the campaign's data ``state`` (PR 5):
         offer, loading (the run just queued), failed (in Save the downloaded
-        records) or None, loaded with 1,234 Families."""
-        task = {"failed": UUID(int=1404), "loading": LOAD_RUN}.get(state)
+        records), empty (loaded, no Families matched) or None, loaded with
+        1,234 Families."""
+        task = {"failed": UUID(int=1404), "loading": LOAD_RUN, "empty": LOAD_RUN}.get(
+            state
+        )
         progress = {"failed": ("staging", 10, 40), "loading": ("unspecified", 0, 0)}
         chrome = admin | {
             "campaign_wizard": campaign_wizard.build(
@@ -325,7 +330,7 @@ def components(context, admin):
             ),
         )
 
-    def load_status(state, phase):
+    def load_status(state, phase, families=True):
         """The step's polled status for its run in ``state`` at ``phase``."""
         task = {
             "id": str(LOAD_RUN),
@@ -336,7 +341,7 @@ def components(context, admin):
             "text/html",
             render_to_string(
                 "stewardship/campaign-load-status.html",
-                campaign_wizard.load_status(task, families=True),
+                campaign_wizard.load_status(task, families=families),
             ),
         )
 
@@ -346,8 +351,10 @@ def components(context, admin):
         LOAD_FAILED: load("failed"),
         LOADING: load("loading"),
         LOADED: load(None),
+        LOAD_EMPTY: load("empty"),
         LOAD_STATUS_RUNNING: load_status("running", "staging"),
         LOAD_STATUS_DONE: load_status("succeeded", "promoting"),
+        LOAD_STATUS_EMPTY: load_status("succeeded", "promoting", families=False),
         PATH: share({"settings"}),
         DIRECT: share({"settings"}, direct=True),
         DIRECT_RETRY: share({"settings"}, direct=True, page=DIRECT_RETRY),

@@ -20,10 +20,13 @@ from django.urls import reverse
 from django.utils import timezone
 
 from parishkit.stewardship.accounts.models import PortalSession
+from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.campaigns.family_identity import FamilyStatus
 from parishkit.stewardship.campaigns.lifecycle import Action
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.models import TaskRun
+from parishkit.stewardship.source.canonical import canonical_payload
+from parishkit.stewardship.source.refresh_models import SourceRefreshRequest
 from parishkit.stewardship.source.requests import TASK_TYPE
 
 from .auth_builders import signed_in, unguarded
@@ -35,6 +38,7 @@ from .test_share_views_postgresql import setup
 
 pytestmark = pytest.mark.django_db(transaction=True)
 URL = reverse("admin:source_refresh")
+NO_FAMILIES = "The campaign's ParishSoft data loaded, but no Families matched."
 NOT_LOADED = "This campaign's ParishSoft data hasn't been loaded yet."
 LOADING = "Loading the campaign's ParishSoft data…"
 # The step's own button before any load.
@@ -62,17 +66,33 @@ def actions(html):
     return match.group(0)
 
 
-def refresh_run(state, **fields):
+def refresh_run(state, kind="full", **fields):
     """Seed one ParishSoft refresh run in ``state``, as the worker leaves it.
 
     Seeded as only a superuser could (the task tables' guards admit only
-    their own owners), with the run as its own retry root. ``fields`` sets
-    other columns, such as an earlier ``created_at``.
+    their own owners), with the run as its own retry root and a request of
+    the given ``kind`` ("full" or "delta"). ``fields`` sets other columns,
+    such as an earlier ``created_at``.
     """
-    task = uuid4()
+    task, request = uuid4(), uuid4()
+    canonical, digest = canonical_payload({"campaign_id": None, "periods": []})
     with unguarded():
         TaskRun.objects.create(
-            id=task, root_id=task, task_type=TASK_TYPE, state=state, **fields
+            id=task,
+            root_id=task,
+            task_type=TASK_TYPE,
+            state=state,
+            domain_request_id=request,
+            **fields,
+        )
+        SourceRefreshRequest.objects.create(
+            id=request,
+            task_root_id=task,
+            configuration_id=SystemConfiguration.objects.get().active_configuration_id,
+            organization_id=12345,
+            kind=kind,
+            window_canonical=canonical,
+            window_digest=digest,
         )
     return task
 
@@ -219,9 +239,9 @@ def test_only_refreshes_since_creation_and_families_count(auth_service, google):
 
     A refresh requested before the campaign was created could not load it
     (its request binds no campaign), so even a failed one leaves the plain
-    offer. A newest run that succeeded but left no Families also reads as
-    the offer, on the page and in its status poll alike: only the Families
-    complete the step.
+    offer. A newest run that succeeded but left no Families reads as
+    "loaded, no Families", on the page and in its status poll alike: only
+    the Families complete the step.
     """
     row, _, _ = setup(auth_service.store)
     browser, _ = signed_in()
@@ -233,14 +253,51 @@ def test_only_refreshes_since_creation_and_families_count(auth_service, google):
     html = page(browser)
     region = stepper(html.encode())
     assert status_of(region, "Load ParishSoft data") == "Current step — Not done yet"
-    assert OFFER in html and "did not load" not in html
+    assert state(html) == "empty" and NO_FAMILIES in html
+    assert OFFER not in html and NOT_LOADED not in html
+    # No button at all: not the plain Load again, and no Continue.
+    assert (
+        "<button"
+        not in html[html.index('id="refresh-run"') :].split(
+            'id="campaign-step-actions"'
+        )[0]
+    )
     assert "Continue" not in actions(html)
+    # Every stage is done; the run and Refresh from ParishSoft are linked.
+    assert html.count('data-stage-state="done"') == 4
+    assert f'href="{reverse("admin:background_task_page", args=[succeeded])}"' in html
+    assert ">See the load<" in html and ">Refresh from ParishSoft<" in html
+    assert "Check that ParishSoft has active Parishioner Families" in html
+    # Every other step says the same instead of offering the load.
+    content = page(browser, reverse("admin:content_catalog"))
+    assert NO_FAMILIES in content and "data-campaign-load-start" not in content
     # Its poll says the same, never "loaded" just before the re-read says
     # it is not (#1517 review, L2); once the Families exist, it is loaded.
     status = reverse("admin:background_task_status", args=[succeeded]) + "?view=load"
     polled = page(browser, status)
-    assert state(polled) == "offer" and NOT_LOADED in polled
+    assert state(polled) == "empty" and NO_FAMILIES in polled
     assert "is loaded." not in polled and "data-live-follow" in polled
     populate(row, keys(), [FamilyStatus(1, True, True, True, True)])
     polled = page(browser, status)
     assert state(polled) == "loaded" and "is loaded." in polled
+
+
+def test_quick_refreshes_never_count_as_the_load(auth_service, google):
+    """Only full refreshes decide the step; a quick one is invisible (#1587).
+
+    A quick refresh under way does not show Loading, a newer failed or
+    succeeded one does not hide the full load's failure, and with only quick
+    refreshes the step is still the plain offer.
+    """
+    setup(auth_service.store)
+    browser, _ = signed_in()
+    refresh_run("queued", kind="delta")
+    refresh_run("failed", kind="delta")
+    html = page(browser)
+    assert state(html) == "offer" and OFFER in html and NOT_LOADED in html
+    failed = refresh_run("failed")
+    refresh_run("succeeded", kind="delta")
+    refresh_run("queued", kind="delta")
+    html = page(browser)
+    assert state(html) == "failed" and "data-campaign-load-start>Try again" in html
+    assert f'href="{reverse("admin:background_task_page", args=[failed])}"' in html
