@@ -587,15 +587,27 @@ def test_each_radio_sits_beside_its_words(page, component_origin, scheme, width)
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 
 
-def hover_look(page, markup):
+def hover_look(page, markup, *, in_table=False):
     """Hover the one element ``markup`` adds to the page; return its
-    background, text colour and shadow once the colour transition ends."""
-    page.evaluate(
-        "markup => document.querySelector('main').insertAdjacentHTML('beforeend',"
-        " '<p id=\"hover-probe\">' + markup + '</p>')",
-        markup,
+    background, text colour and shadow once the colour transition ends.
+
+    ``in_table`` draws it in a data table's cell, where the portal uses it
+    (a recipient name, whose rest look is reset there so hovering it moves
+    nothing, #736); elsewhere it sits in a paragraph."""
+    wrap = (
+        (
+            '<table class="data-table" id="hover-probe"><tbody><tr><td>',
+            "</td></tr></tbody></table>",
+        )
+        if in_table
+        else ('<p id="hover-probe">', "</p>")
     )
-    probe = page.locator("#hover-probe > *")
+    page.evaluate(
+        "([markup, open, close]) => document.querySelector('main')"
+        ".insertAdjacentHTML('beforeend', open + markup + close)",
+        [markup, *wrap],
+    )
+    probe = page.locator("#hover-probe button")
     probe.hover()
     page.wait_for_timeout(300)
     look = probe.evaluate(
@@ -635,6 +647,10 @@ def test_the_aria_disabled_exclusion_leaves_class_hovers_alone(page, component_o
     assert tip[2] == "none"
     # A link-styled recipient name stays transparent.
     assert (
-        hover_look(page, '<button type="button" class="recipient-link">A</button>')[0]
+        hover_look(
+            page,
+            '<button type="button" class="recipient-link">A</button>',
+            in_table=True,
+        )[0]
         == "rgba(0, 0, 0, 0)"
     )
