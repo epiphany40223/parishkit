@@ -24,7 +24,7 @@ here, and the reserved status line below (schedules-outcome, the New page's
 review dialog's) then says what was applied. Each Edit link (in the grid and
 the table) gets ?calendar=<the month shown>, so Edit's Cancel, Apply and
 Delete return to that month. The page itself changes nothing.
-The table's region (id table.anchor, data-table-region) holds Show, a binary
+The table's region (id "table", data-table-region) holds Show, a binary
 choice (components/segmented-choice.html; Upcoming emails by default) and
 the table, whose When and Schedule headings sort it on the server; both
 refresh the region in place, keep each other's choice, and the script
@@ -49,7 +49,7 @@ adds the month shown to their links (and to the swapped-in Edit links).
 {% translate "Every email by date" as caption %}
 <section id="{{ table.anchor }}" class="panel" data-table-region aria-labelledby="calendar-sends-title">
 <h2 id="calendar-sends-title">{{ caption }}</h2>
-{% include "stewardship/components/segmented-choice.html" with choice_id="calendar-show" region_id=table.anchor label=_("Show") first_key="show-upcoming" first_label=_("Upcoming emails") first_href=show_links.upcoming second_key="show-all" second_label=_("Include past emails") second_href=show_links.all chosen="show-"|add:show %}
+{% include "stewardship/components/segmented-choice.html" with choice_id="calendar-show" region_id="table" label=_("Show") first_key="show-upcoming" first_label=_("Upcoming emails") first_href=show_links.upcoming second_key="show-all" second_label=_("Include past emails") second_href=show_links.all chosen="show-"|add:show %}
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="calendar-sends-caption">
 <table class="data-table whole-words calendar-sends">
   <caption id="calendar-sends-caption" class="visually-hidden">{{ caption }}</caption>
