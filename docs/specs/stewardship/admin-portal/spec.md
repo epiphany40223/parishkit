@@ -1139,7 +1139,8 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `go_live_prepare` | Go live | Go live (its Check step) | Administrator | (new, #1585) | `/admin/campaign/go-live/preparing/` | (same) | The Go live page's Prepare step (#1585 slice 3); its trail is Campaign setup › Go live and it marks the Go live menu entry. |
 | `go_live_cleanup` | (retired) | (retired) | Administrator | Testing cleanup; Testing cleanup progress | `/admin/campaign/go-live/cleanup/<request>/` | (retired; 404) | Retired with no redirect (#1585 slice 3): the Prepare step shows cleanup. |
 | `go_live_links` | (retired) | (retired) | Administrator | Prepare Family links; Family links | `/admin/campaign/go-live/cleanup/<request>/links/` | (retired; 404) | Retired with no redirect (#1585 slice 3): the system prepares the links, and the Prepare step shows them. |
-| `production_confirmation` | Confirm Production | Go live | Administrator | Final Production confirmation | `/admin/campaign/go-live/cleanup/<request>/links/<preparation>/confirmation/` | (same) |  |
+| `go_live_confirm` | Go live | Go live (its Check step) | Administrator | Confirm Production; Final Production confirmation | `/admin/campaign/go-live/confirmation/` | (same) | The Go live page's Confirm Production step (#1585 slice 4); its trail is Campaign setup › Go live and it marks the Go live menu entry. |
+| `production_confirmation` | (retired) | (retired) | Administrator | Confirm Production | `/admin/campaign/go-live/cleanup/<request>/links/<preparation>/confirmation/` | (retired; 404) | Retired with no redirect (#1585 slice 4): the Confirm Production step replaced it. |
 | `production_progress` | Production activation | Menu: Production activation | Administrator | Production activation progress | `/admin/campaign/production/` | (same) | Links its cleanup request and Sent mail. |
 | `production_withdrawal` | Cancel go-live | Production activation | Administrator | Withdraw from Production; Return to Testing | `/admin/campaign/production/cancellation/` | (same) | Links Pause and resume mail and Sent mail where it names them. |
 | `delivery_control` | Pause and resume mail | Menu: Pause and resume mail | Administrator | Campaign delivery controls; Delivery controls | `/admin/mail/controls/` | (same) |  |
@@ -1316,11 +1317,11 @@ Ministries), Campaign settings, New user and Edit user
 (whose review and Apply are in the
 [review dialog](../ui-conventions/spec.md#review-dialog), so the page
 stays at Make changes) and every change's status
-page; going live's pages after Prepare (Confirm Production and Production
-activation, numbered as the [Go live page](#go-live-page)'s four steps,
-Check, Prepare, Confirm Production and Activation, until #1585's later
-slices give them its step bar; Check and Prepare show only that bar, and
-Testing submissions none); sending to chosen Families (Choose Families, Review,
+page; going live's page after Confirm Production (Production activation,
+numbered as the [Go live page](#go-live-page)'s four steps, Check, Prepare,
+Confirm Production and Activation, until #1585 slice 5 gives it its step
+bar; Check, Prepare and Confirm Production show only that bar, and Testing
+submissions none); sending to chosen Families (Choose Families, Review,
 Send and follow); and report exports (Choose report, Prepare file, Download).
 Campaign settings with nothing open to change (a closed campaign's) is not
 in a flow. Import Ministry
@@ -1502,11 +1503,12 @@ the fifteen-minute backup-key proof and campaign clone seed):
   [configuration requests](../admin-automation/spec.md#schedules-and-configuration)
   use the same fifteen minutes.
 - **Five minutes** for the delivery-critical actions, whose previews bind a
-  live work inventory or a public web address check: **Start Testing
-  cleanup**, the controls on the Testing cleanup and Family links pages
-  (prepare, retry, cancel), **Confirm Production** (or sooner, when the
-  campaign's start or close, the ParishSoft data's expiry or the next newly
-  due mail comes first), **Retry failed mail preparation** on the activation
+  live work inventory or a public web address check: the Production
+  confirmation token (or sooner, when the campaign's start or close, the
+  ParishSoft data's expiry or the next newly due mail comes first), which
+  the [Go live page](#go-live-page)'s Confirm Production dialog mints at
+  its Apply so the limit never reaches the Administrator, **Retry failed
+  mail preparation** on the activation
   progress page, **Cancel go-live** (or sooner, at the campaign start), and
   pausing, resuming and resolving held messages on
   [Pause and resume mail](#live-delivery-pause). The
@@ -4175,14 +4177,13 @@ gate.
 > [go-live sequencing](../background-processing/spec.md#go-live-sequencing)
 > runs, and the Testing cleanup and Family links pages retire; 4, the
 > Confirm Production step; 5, the Activation step and the Cancel go-live
-> dialog; 6, the runbooks. Slices 2 and 3 have landed. Until the others
-> land, Confirm Production, Production activation and Cancel go-live are
-> still today's separate pages, with their 5-minute page limits, as the
+> dialog; 6, the runbooks. Slices 2 to 4 have landed. Until the others
+> land, Production activation and Cancel go-live are still today's
+> separate pages, with their 5-minute page limits, as the
 > [launch runbook](../../../guides/stewardship-launch-runbooks.md#production-activation)
-> describes (its Testing cleanup and Family links passages change with
-> slice 6). In particular, after slice 3 Prepare's **Continue to Confirm
-> Production** opens today's confirmation page, at its old address (whose
-> trail is now Campaign setup › Go live), until slice 4 moves it.
+> describes (its Testing cleanup, Family links and Confirm Production
+> passages change with slice 6). Confirm Production's Apply opens today's
+> Production activation page until slice 5.
 > Slice 2 renamed the page from Go-live readiness to Go live in the
 > [page-name table](#page-names-and-placement) and in the code together;
 > the other rows change with the slices that retire their pages. The page
@@ -4406,17 +4407,29 @@ outcome.
    Families with and without an eligible email, the Family emails due at
    once and the report emails due at once; combined and skipped counts are
    in a disclosure. It updates itself when its inputs change, with a line
-   naming what changed (the messages below). Back is not offered; the
-   secondary is **Stop go-live**.
+   naming what changed since go-live started: "The campaign start time has
+   passed, so it will become active at once." or "ParishSoft data changed
+   after go-live started, so the Family links were prepared again." A
+   change between the dialog's Review and its Apply is a refusal (below).
+   Back is not offered; the secondary is **Stop go-live**, the Prepare
+   step's own, so its dialog and Apply are Prepare's.
    - **Ready.** Primary: **Confirm Production**, which opens the Confirm
      Production dialog.
    - **Hold ended before confirming.** "ParishSoft refreshes resumed while
-     this waited." Primary: **Refresh and prepare again**, which returns to
-     Prepare.
+     this waited." Primary: **Refresh and prepare again**, which posts the
+     Prepare step's own control and opens Prepare.
    - **Links went stale.** When ParishSoft data changes after the links were
      prepared, the system prepares them again, so Prepare is no longer done:
      the page returns to Prepare with the line "ParishSoft data changed, so
-     new links are being prepared."
+     new links are being prepared." An open page moves there by itself; the
+     address opened before the links are ready answers with the step bar
+     and "Not available yet: the Family links are not prepared yet.", with
+     **Open Prepare** as its primary.
+   - **A readiness problem** that the step cannot resolve by itself
+     (another campaign is live, live mail is uncertain, an integration
+     check is out of date): "Something needs attention before going live."
+     with one line each and a link to the page that fixes it, as on Check.
+     No primary.
    - **Campaign closed** while waiting: "The campaign has ended, so it cannot
      go live." No primary; the line adds "Stop go-live, then review the
      campaign dates on Check." Prepare shows the same state if the campaign
@@ -4429,7 +4442,14 @@ outcome.
      until the field holds the word, ignoring spaces around it
      ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)),
      and the server refuses Apply without it. A refusal (below) is shown
-     inside the dialog, names the change and offers to review again.
+     inside the dialog, names the change and offers to review again. Apply
+     checks the typed word, then that the sign-in is still recent (until
+     [#1560](https://github.com/epiphany40223/parishkit/pull/1560)), runs
+     the public web address check again, builds the preview
+     again and compares its inputs digest and target with the Review's;
+     only then is the confirmation token minted and Production confirmed.
+     A resend of an Apply that already confirmed opens Activation (its
+     request key makes the confirmation happen once).
 4. **Activation.** The [Production activation](#production-transition)
    progress.
    - **Direct activation.** Stage boxes **Go live** (Done), **Prepare
@@ -4501,7 +4521,10 @@ than today's rule, which expires 30 minutes (`source_stale_seconds`) after
 the full refresh started: during the hold no scheduled refresh can change
 the data, so the go-live may take up to an hour after its refresh, or three
 hours in all. `source_stale_seconds` itself is unchanged and still governs
-readiness before Start.
+readiness before Start. Confirm Production's readiness re-check and
+deadline follow this rule since #1585 slice 4; a request with no attempt
+(started before slice 3) keeps the `source_stale_seconds` rule, and once
+the hold end has passed, readiness reports `go_live_hold_ended`.
 
 **After the hold ends.** When the hold end passes before confirmation,
 whether 60 minutes after the refresh or at the 3-hour cap, scheduled
