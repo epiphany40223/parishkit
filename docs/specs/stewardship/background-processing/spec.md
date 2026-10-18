@@ -292,6 +292,20 @@ retry allowance, and any other running task recovers through its lease as
 usual. Holds are logged at INFO or WARNING, never as an ERROR task
 failure; a mismatch with no installer running keeps its ordinary ERROR.
 
+### Refused claims
+
+A handler's admission may refuse a claim on purpose: Family and other mail
+refuses a new send while sending is paused or stopped (an outage pause, a
+SYSTEMIC stop), and other handlers refuse work their domain does not admit
+at that moment. The task stays queued, unchanged, for a later hint. The
+consumer logs such a refusal as one `task_failed` process-log line at INFO
+with `failure_kind` `task_not_admitted`, never as an ERROR and never as
+`filesystem_unavailable`; the pause or stop itself is reported by its own
+entries ([#1659](https://github.com/epiphany40223/parishkit/issues/1659)).
+Every other exception a consumer meets keeps its ERROR `task_failed` line
+and its own category, so a real filesystem failure is still
+`filesystem_unavailable`.
+
 ### Worker queues and processes
 
 Each consumer process executes one message at a time. The `worker` container
