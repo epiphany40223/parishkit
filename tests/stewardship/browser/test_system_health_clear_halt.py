@@ -176,13 +176,15 @@ def test_a_changed_halt_holds_both_buttons_for_good(page, component_origin):
 
 def test_the_section_follows_a_clear_and_a_lasting_halt(page, component_origin):
     """Right after a clear, while a sender still reports Halted, the line
-    says the senders start again within about 30 seconds; when no halt is
+    says the senders start again within about 30 seconds and the tile
+    follows within about a minute; when no halt is
     recorded for long it says to restart the mail sender, with the
     runbook link."""
     page.goto(component_origin + CLEAR_CLEARING_PAGE + "#health-mail")
     line = page.locator("#clear-halt-reason")
     expect(line).to_have_text(
-        "The halt was cleared; the mail senders start again within about 30 seconds."
+        "The halt was cleared; the mail senders start again within about 30 "
+        "seconds, and this tile shows it within about a minute."
     )
     expect(
         page.locator("#clear-halt").get_by_role("button", name="Clear the halt")

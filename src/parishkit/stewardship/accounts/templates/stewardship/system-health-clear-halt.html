@@ -37,7 +37,7 @@
 <form id="clear-halt-confirm-form" method="post" action="{% url 'admin:system_health' %}#clear-halt" data-in-place="clear-confirm" data-in-place-message="{% translate 'Halt cleared.' %}">{% csrf_token %}<input type="hidden" name="token" value="{{ preview.token }}"></form>
 <div data-live-mirror-target="clear-halt-check-{{ preview.halt.halt_id }}" data-live-mirror-hold>{% include 'stewardship/system-health-clear-halt-check.html' %}</div>
 </div>{% endwith %}
-{% else %}{% if clear.cleared %}<p data-clear-done>{% translate "Halt cleared. Both mail senders start again within about 30 seconds and send one email as a probe; if the fault is still there, sending halts again and this tile says so." %}</p>
+{% else %}{% if clear.cleared %}<p data-clear-done>{% translate "Halt cleared. Both mail senders start again within about 30 seconds (this tile shows it within about a minute) and send one email as a probe; if the fault is still there, sending halts again and this tile says so." %}</p>
 {% elif clear.refused == "busy" %}<p class="notice" data-clear-refused="changed">{% if clear.refusal_text %}{{ clear.refusal_text }}{% else %}{% translate "This changed since you looked; review it again." %}{% endif %} {% translate "Nothing was cleared." %}</p>
 {% elif clear.refused == "denied" %}<p class="notice notice-error" data-clear-refused="denied">{% translate "The server refused this, so nothing was cleared. System logs record why; ask the server operator to check the database grants." %}</p>
 {% elif clear.refused == "invalid" %}<p class="notice notice-error" data-clear-refused="invalid">{% if clear.refusal_text %}{{ clear.refusal_text }}{% else %}{% translate "That request could not be read. Nothing was cleared; review it again." %}{% endif %}</p>

@@ -53,7 +53,9 @@ HALT_ENTRIES_BEFORE = timedelta(minutes=10)
 HALT_ENTRIES_LIMIT = 500
 # How long after a clear (or after a mail sender began reporting Halted) the
 # senders may still take to lift, or the halt to be recorded: the consumers
-# poll about every 30 seconds and a status record is up to 10 more behind.
+# poll about every 30 seconds, and a sender's status record is rewritten
+# once a minute (at once when it lifts a halt), so a Halted one can be up
+# to 60 seconds more behind.
 # Past this a Halted sender is not explained by timing, and the page says to
 # restart the mail sender (runbook "Mail-provider outage").
 LIFT_WINDOW = timedelta(minutes=2)
