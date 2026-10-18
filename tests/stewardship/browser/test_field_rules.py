@@ -33,6 +33,14 @@ FIELDS = {
 PHONE_RULE = "Enter a ten-digit US telephone number, such as (212) 555-1234."
 # The browser's whole verdict on a field's current value.
 VALID = "field => field.validity.valid"
+# Puts a case's exact value in the field, as typing would, then lets the
+# page's input listeners see it. Playwright's fill() in Firefox drops C0
+# control characters such as U+001C, so the server-refused "212\x1c555-1234"
+# arrived as a valid "212555-1234".
+ENTER = """(field, value) => {
+  field.value = value;
+  field.dispatchEvent(new Event("input", {bubbles: true}));
+}"""
 
 
 def watch(page):
@@ -65,7 +73,8 @@ def test_every_example_gets_the_servers_verdict(page, component_origin, name):
     field = page.get_by_label(label)
     for verdict, values in CASES[name].items():
         for value in values:
-            field.fill(value)
+            field.evaluate(ENTER, value)
+            assert field.input_value() == value
             assert field.evaluate(VALID) is (verdict == "accept"), (value, verdict)
     assert not failures
 
