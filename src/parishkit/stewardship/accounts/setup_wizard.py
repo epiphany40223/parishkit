@@ -32,19 +32,22 @@ class Page:
 
 
 # The Parish profile comes first: it tells the administrator, before anything
-# technical, that they are configuring their own parish. The Google Workspace
-# and Slack credential pages follow, each right after the public settings its
-# staging depends on (mail and Testing for Google Workspace, Slack for its
-# token). A credential step accepts a sign-in of any age (#1547).
-# Logos and access come next. ParishSoft connection and Load parish data are
-# the last data-entry pages and next to each other (#1353): the load can take
-# a few minutes, so everything else is done before the wait, and a load that
-# fails on a wrong key or organization is one step after the page that fixes
-# it. No data-entry page needs the loaded data. The tests follow the load
-# (they need it), then Review, so Review is the last step before Finish setup
-# and shows the tests' results, and a failed test's fix never passes through
-# Review first (#1476). Setup collects nothing about a campaign (#142): an
-# Administrator creates it afterwards from Home, with Create the campaign.
+# technical, that they are configuring their own parish. Each test follows the
+# step whose input it proves, so a failed test is one step after the page that
+# fixes it (#1578): Outgoing email settings, Testing recipient and Google
+# Workspace connection (whose key is staged with those two as its public
+# scope), then Test email; then the one Slack step (switch, channel and bot
+# token), then Test Slack. A test needs only those inputs, never the loaded
+# data, the logos or the access lists. A credential step accepts a sign-in
+# of any age (#1547). Logos and access come next. ParishSoft
+# connection and Load parish data are the last data-entry pages and next to
+# each other (#1353): the load can take a few minutes, so everything else is
+# done before the wait, and a load that fails on a wrong key or organization
+# is one step after the page that fixes it. No data-entry page needs the
+# loaded data. Review comes last, so it is the last step before Finish setup
+# and shows the tests' results (#1476). Setup collects nothing about a
+# campaign (#142): an Administrator creates it afterwards from Home, with
+# Create the campaign.
 PAGES = (
     Page("parish", _("Parish profile"), "admin:setup_step", ("parish",)),
     Page("mail", _("Outgoing email settings"), "admin:setup_step", ("mail",)),
@@ -55,10 +58,9 @@ PAGES = (
         "admin:setup_credential",
         ("google_workspace",),
     ),
+    Page("mail_test", _("Test email"), "admin:setup_mail"),
     Page("slack", _("Slack notifications (optional)"), "admin:setup_step", ("slack",)),
-    Page(
-        "slack_credential", _("Slack connection"), "admin:setup_credential", ("slack",)
-    ),
+    Page("slack_test", _("Test Slack"), "admin:setup_notification"),
     Page("branding", _("Parish logos"), "admin:setup_branding"),
     Page("access", _("Administrative access"), "admin:setup_step", ("access",)),
     Page(
@@ -68,15 +70,14 @@ PAGES = (
         ("parishsoft",),
     ),
     Page("source", _("Load parish data"), "admin:setup_source"),
-    Page("mail_test", _("Test email"), "admin:setup_mail"),
-    Page("slack_test", _("Test Slack"), "admin:setup_notification"),
     Page("preview", _("Review"), "admin:setup_preview"),
     Page("finish", _("Finish setup"), "admin:setup_confirmation"),
 )
 BY_KEY = {page.key: page for page in PAGES}
-# The tests, Review and Finish setup need every required data-entry page
-# first.
-FINAL = frozenset({"mail_test", "slack_test", "preview", "finish"})
+# Review and Finish setup need every required page first, the tests included.
+FINAL = frozenset({"preview", "finish"})
+# The staged credential each test step proves.
+TESTS = {"mail_test": "google_workspace", "slack_test": "slack"}
 # Only an editable (or loading) attempt shows the stepper; frozen and ended
 # attempts have their own progress and status pages.
 ACTIVE = frozenset({SetupState.COLLECTING, SetupState.LOADING})
@@ -143,8 +144,8 @@ class Wizard:
 
 
 def applicable(key, sections):
-    """The optional Slack pages appear only when Slack is turned on."""
-    if key in {"slack_credential", "slack_test"}:
+    """Test Slack appears only when Slack is turned on."""
+    if key == "slack_test":
         return bool(sections.get("slack", {}).get("enabled"))
     return True
 
@@ -154,13 +155,19 @@ def _done(key, draft, credentials, tests):
 
     ``credentials`` maps each staged target to whether its staged settings still
     match the saved public settings; a mismatch must be re-entered. ``tests``
-    holds the accepted readiness tests of the current draft revision.
+    holds the readiness tests accepted for their current inputs (the staged
+    credential they used, still sealed with the current settings, #1578).
     """
     sections = draft.sections
     if key in {"parishsoft", "google_workspace"}:
         return credentials.get(key) is True
-    if key == "slack_credential":
-        return credentials.get("slack") is True
+    if key == "slack":
+        # One step saves the switch, the channel and the bot token (#1578):
+        # while Slack is on it is done only with a token current for the
+        # saved channel.
+        return key in sections and (
+            not sections[key]["enabled"] or credentials.get("slack") is True
+        )
     if key == "source":
         # Bound to a load whose staged data is still valid, by review's own
         # predicate (#1353): a failed load returns setup to collecting too,
@@ -203,6 +210,19 @@ def _blocker(key, draft, done):
             ("mail", "testing"),
             _("Save the outgoing email settings and Testing recipient first."),
         ),
+        # Each test needs only its own inputs (#1578); the email test also
+        # names the parish, from the first step.
+        "mail_test": (
+            ("parish", "mail", "testing", "google_workspace"),
+            _(
+                "Save the outgoing email settings, Testing recipient and Google "
+                "Workspace connection first."
+            ),
+        ),
+        "slack_test": (
+            ("slack",),
+            _("Save the Slack channel and bot token first."),
+        ),
     }
     if key in FINAL:
         needed = tuple(
@@ -217,6 +237,20 @@ def _blocker(key, draft, done):
         return None
     missing = next((name for name in needed if not done[name]), None)
     return (reason, missing) if missing else None
+
+
+def _unordered(key, draft):
+    """Whether an unfinished step stays open whatever comes before it.
+
+    The running load's own step stays the page to follow while it runs,
+    even when an earlier step is still to do (an attempt that loaded before
+    the email test, as the order before #1578 had it). A saved Slack step
+    stays a link from every step (#1499), since it is where Slack is turned
+    off, even while its token still needs entering (#1578).
+    """
+    if key == "source":
+        return draft.status.state == SetupState.LOADING
+    return key == "slack" and "slack" in draft.sections
 
 
 def build(draft, current=None, *, credentials=None, tests=frozenset()):
@@ -250,7 +284,12 @@ def build(draft, current=None, *, credentials=None, tests=frozenset()):
         locked = False
         if page.key == frontier:
             reached = False
-        elif not reached and not done[page.key] and not blocked:
+        elif (
+            not reached
+            and not done[page.key]
+            and not blocked
+            and not _unordered(page.key, draft)
+        ):
             blocked, locked = (_("Finish the earlier steps first."), frontier), True
         if page.key == "source" and draft.status.state == SetupState.LOADING:
             state, status = "todo", _("In progress")
@@ -290,45 +329,96 @@ def build(draft, current=None, *, credentials=None, tests=frozenset()):
     )
 
 
+def staged_scope(sections):
+    """The public settings each staged credential must be sealed with now.
+
+    A staged credential is current only while its settings equal these: the
+    Google Workspace key is sealed with the mail and Testing settings, the
+    Slack token with the saved channel. ParishSoft (None) carries its own
+    organization, which its page compares. A target whose settings are not
+    saved yet maps to False, which no staged settings equal.
+    """
+    from .provider_context import workspace_scope
+
+    return {
+        "parishsoft": None,
+        "google_workspace": "mail" in sections
+        and "testing" in sections
+        and workspace_scope(sections["mail"], sections["testing"]["testing_recipient"]),
+        "slack": sections.get("slack", {}).get("enabled", False)
+        and {"channel_id": sections["slack"]["channel_id"]},
+    }
+
+
+def _receipts(draft):
+    """Each staged target's freshness, and the binding of the current ones.
+
+    Returns ``(credentials, bindings)``: ``credentials`` maps each staged
+    target to whether its settings still match the saved public settings,
+    and ``bindings`` maps each current one to (id, version, fingerprint),
+    what a test of it is bound to (#1578). Only non-secret receipt columns
+    are read.
+    """
+    from .setup_secret_models import SetupSealedCredential
+
+    expected = staged_scope(draft.sections)
+    credentials, bindings = {}, {}
+    for target, *binding, settings in SetupSealedCredential.objects.filter(
+        attempt_id=draft.status.attempt_id, scrubbed_at=None
+    ).values_list("target", "id", "version", "fingerprint", "settings"):
+        credentials[target] = expected[target] is None or settings == expected[target]
+        if credentials[target]:
+            bindings[target] = tuple(binding)
+    return credentials, bindings
+
+
+def accepted_tests(draft, bindings=None):
+    """The newest accepted test of each kind whose inputs are still current.
+
+    Maps "mail_test" and "slack_test" to that delivery's id. A test counts
+    while the staged credential it used is unscrubbed at the same version
+    and key fingerprint and still sealed with the current settings (#1578),
+    whatever else was saved since; the readiness guard in SQL admits the
+    same binding. ``bindings`` is ``_receipts``'s, when already read.
+    """
+    from .setup_delivery_models import SetupMailDelivery
+    from .setup_notification_models import SetupSlackDelivery
+
+    if bindings is None:
+        bindings = _receipts(draft)[1]
+    found = {}
+    for key, model in (
+        ("mail_test", SetupMailDelivery),
+        ("slack_test", SetupSlackDelivery),
+    ):
+        binding = bindings.get(TESTS[key])
+        if binding is None:
+            continue
+        identifier = (
+            model.objects.filter(
+                attempt_id=draft.status.attempt_id,
+                state="accepted",
+                credential_id=binding[0],
+                credential_version=binding[1],
+                fingerprint=binding[2],
+            )
+            .order_by("-finished_at", "-id")
+            .values_list("id", flat=True)
+            .first()
+        )
+        if identifier is not None:
+            found[key] = identifier
+    return found
+
+
 def observed(draft):
     """Read staged-credential freshness and accepted tests for the stepper.
 
     Only non-secret receipt columns are read, exactly those the preview and
     test status pages already read for the same admitted original attempt.
     """
-    from .provider_context import workspace_scope
-    from .setup_delivery_models import SetupMailDelivery
-    from .setup_notification_models import SetupSlackDelivery
-    from .setup_secret_models import SetupSealedCredential
-
-    sections = draft.sections
-    expected = {
-        "parishsoft": None,
-        "google_workspace": "mail" in sections
-        and "testing" in sections
-        and workspace_scope(sections["mail"], sections["testing"]["testing_recipient"]),
-        "slack": "slack" in sections
-        and {"channel_id": sections["slack"]["channel_id"]},
-    }
-    credentials = {
-        target: expected[target] is None or settings == expected[target]
-        for target, settings in SetupSealedCredential.objects.filter(
-            attempt_id=draft.status.attempt_id, scrubbed_at=None
-        ).values_list("target", "settings")
-    }
-    tests = {
-        key
-        for key, model in (
-            ("mail_test", SetupMailDelivery),
-            ("slack_test", SetupSlackDelivery),
-        )
-        if model.objects.filter(
-            attempt_id=draft.status.attempt_id,
-            state="accepted",
-            attempt_version=draft.status.version,
-        ).exists()
-    }
-    return credentials, frozenset(tests)
+    credentials, bindings = _receipts(draft)
+    return credentials, frozenset(accepted_tests(draft, bindings))
 
 
 def wizard_for(draft, current=None):

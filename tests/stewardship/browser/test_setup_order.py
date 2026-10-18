@@ -1,8 +1,9 @@
-"""The setup wizard runs its tests before Review (#1476).
+"""The setup wizard runs each test right after its own input step (#1578).
 
-After Load parish data come Test email, Test Slack (when Slack is on),
-Review and Finish setup, so Review is the last step before finishing and
-shows the tests' results. A test that was not sent links the steps that fix
+Test email follows Google Workspace connection and Test Slack (when Slack
+is on) the one Slack notifications step; Review and Finish setup follow
+Load parish data, so Review is the last step before finishing and shows the
+tests' results (#1476). A test that was not sent links the steps that fix
 it, and saving a fix leads back to the test, never to Review first.
 """
 
@@ -16,12 +17,12 @@ from .setup_order_components import (
     RETEST,
     REVIEW_ACCEPTED,
     REVIEW_UNTESTED,
-    SLACK_CONNECTION,
     SLACK_FAILED,
     SLACK_OFF,
+    SLACK_STEP,
 )
 from .test_setup_mail import place
-from .waits import has_count, has_text, visible
+from .waits import has_count, has_text, hidden, same_place, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -57,8 +58,9 @@ def test_a_failed_test_links_its_fix_and_the_fix_leads_back_to_the_test(
     assert workspace.get_attribute("href") == workspace_url
     # The notice follows the action row, so it never moves Back or Send.
     assert place(page, ".setup-actions")[1] < place(page, NOTICE)[1]
+    # Back from Test email is the step whose key it proves (#1578).
     back = page.locator(".setup-actions a.setup-back")
-    assert back.get_attribute("href") == "/admin/setup/source"
+    assert back.get_attribute("href") == workspace_url
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert axe_violations(page, axe_source) == []
     notice.get_by_role("link", name="Go to “Outgoing email settings”").click()
@@ -73,18 +75,20 @@ def test_a_failed_test_links_its_fix_and_the_fix_leads_back_to_the_test(
 
 
 def test_review_is_last_and_shows_the_accepted_test(page, component_origin, axe_source):
-    """The step bar runs Load parish data, Test email, Review, Finish setup;
-    Review says the test was accepted and continues to Finish setup."""
+    """The step bar runs Google Workspace connection, Test email, and later
+    Load parish data, Review, Finish setup (#1578); Review says the test was
+    accepted and continues to Finish setup."""
     from .test_components import axe_violations
 
     page.goto(component_origin + REVIEW_ACCEPTED)
     labels = track_labels(page)
     assert labels[labels.index("Load parish data") :] == [
         "Load parish data",
-        "Test email",
         "Review",
         "Finish setup",
     ]
+    workspace = labels.index("Google Workspace connection")
+    assert labels[workspace + 1] == "Test email"
     readiness = page.locator("[data-setup-readiness]")
     has_text(
         readiness.locator("[data-setup-readiness-test]"),
@@ -95,7 +99,7 @@ def test_review_is_last_and_shows_the_accepted_test(page, component_origin, axe_
     assert finish.get_attribute("href") == "/admin/setup/confirm"
     assert "Finish setup" in finish.inner_text()
     back = page.locator(".setup-actions a.setup-back")
-    assert back.get_attribute("href") == "/admin/setup/mail-test"
+    assert back.get_attribute("href") == "/admin/setup/source"
     assert axe_violations(page, axe_source) == []
 
 
@@ -118,8 +122,9 @@ def test_a_failed_slack_test_turns_slack_off_and_moves_on(
     """A Slack test that was not sent says to use a real bot token or turn
     Slack off, with the button beside it and another above the test form;
     the button posts the Slack step's own form with Slack off, and setup
-    lands on Test email with the Slack connection and Test Slack steps gone
-    from the step bar (#1499)."""
+    lands on the next step not done (here Test email, whose test was not
+    sent) with Test Slack gone from the step bar (#1499). There is no Slack
+    connection step (#1578)."""
     from urllib.parse import parse_qs
 
     from .test_components import axe_violations
@@ -130,7 +135,11 @@ def test_a_failed_slack_test_turns_slack_off_and_moves_on(
     visible(notice)
     assert "Use a real Slack bot token" in notice.inner_text()
     labels = track_labels(page)
-    assert {"Slack connection", "Test Slack"} <= set(labels)
+    assert "Test Slack" in labels and "Slack connection" not in labels
+    # Test Slack follows the Slack step it proves.
+    assert (
+        labels.index("Test Slack") == labels.index("Slack notifications (optional)") + 1
+    )
     buttons = page.get_by_role("button", name="Turn off Slack notifications")
     has_count(buttons, 2)
     # One is above the test form, so it is reached without scrolling past
@@ -150,28 +159,65 @@ def test_a_failed_slack_test_turns_slack_off_and_moves_on(
     has_text(page.locator("h1"), "Test email")
     labels = track_labels(page)
     assert "Slack notifications (optional)" in labels
-    assert not {"Slack connection", "Test Slack"} & set(labels)
+    assert "Test Slack" not in labels
 
 
-def test_the_slack_connection_step_offers_turning_slack_off(
-    page, component_origin, axe_source
+@pytest.mark.parametrize("width", [320, 1280])
+def test_the_slack_step_takes_the_token_and_offers_turning_slack_off(
+    page, component_origin, axe_source, width
 ):
-    """The Slack connection step says it checks only the token's format and
-    that Slack is optional, with Turn off Slack notifications above its
-    form; the button leads on as on Test Slack (#1499)."""
+    """The one Slack step (#1578) shows the channel and bot token below
+    Enable Slack notifications while it is ticked. A saved token is kept by
+    leaving the field empty, unless the channel changes, when the token is
+    needed again; unticking hides both without moving the switch. Turn off
+    Slack notifications sits above the form and leads on as on Test Slack
+    (#1499)."""
     from .test_components import axe_violations
 
-    page.goto(component_origin + SLACK_CONNECTION)
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + SLACK_STEP)
+    has_text(page.locator("h1"), "Slack notifications (optional)")
     off = page.locator("[data-setup-slack-off]")
     visible(off)
     assert "Slack is optional." in off.inner_text()
     notice = page.locator(".notice", has=off).inner_text()
     assert "checks only that the token looks like a Slack bot token" in notice
     assert place(page, "[data-setup-slack-off]")[1] < place(page, "form.panel")[1]
+    has_text(
+        page.locator(".setup-saved strong"),
+        "A Slack bot token is saved for this channel.",
+    )
+    switch = page.get_by_label("Enable Slack notifications")
+    channel = page.get_by_label("Slack channel ID")
+    token = page.locator('input[name="candidate"]')
+    save = page.get_by_role("button", name="Save and continue")
+    visible(channel)
+    visible(token)
+    assert token.get_attribute("type") == "password"
+    # The saved token is kept for its own channel: Save is available empty.
+    assert not token.evaluate("node => node.required")
+    assert save.is_enabled()
+    # A new channel needs the token again, and Save waits for it.
+    channel.fill("C0NEWCHANNEL")
+    channel.dispatch_event("input")
+    assert token.evaluate("node => node.required")
+    assert save.is_disabled()
+    token.fill("xoxb-1-2-fixture")
+    token.dispatch_event("input")
+    assert save.is_enabled()
     assert axe_violations(page, axe_source) == []
+    # Unticking hides the channel and token, and the switch stays put.
+    before = place(page, "#" + switch.get_attribute("id"))
+    switch.uncheck()
+    hidden(channel)
+    hidden(token)
+    assert token.is_disabled()
+    assert same_place(place(page, "#" + switch.get_attribute("id")), before)
+    assert save.is_enabled()
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     off.get_by_role("button", name="Turn off Slack notifications").click()
     page.wait_for_url(component_origin + RETEST)
-    assert "Slack connection" not in track_labels(page)
+    assert "Test Slack" not in track_labels(page)
 
 
 def test_back_to_test_slack_after_turning_slack_off_opens_test_email(
@@ -212,4 +258,4 @@ def test_back_to_test_slack_after_turning_slack_off_opens_test_email(
     page.wait_for_url(component_origin + RETEST)
     has_text(page.locator("h1"), "Test email")
     assert len(served) == 2
-    assert not {"Slack connection", "Test Slack"} & set(track_labels(page))
+    assert "Test Slack" not in track_labels(page)

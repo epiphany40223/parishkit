@@ -18,7 +18,7 @@
 <h2 id="setup-tests-heading" tabindex="-1" data-in-place-focus>{% translate "Recent tests" %}</h2>
 <ul>{% for item in items %}<li data-mail-id="{{ item.id }}">
 <time data-local-instant datetime="{{ item.created_at }}">{{ item.created_at }}</time> — <span data-mail-state>{{ item.label }}</span>
-{% if not item.current %}<span>{% translate "Earlier setup revision" %}</span>{% endif %}
+{% if not item.current %}<span>{% translate "Sent with earlier settings" %}</span>{% endif %}
 </li>{% empty %}<li>{{ empty }}</li>{% endfor %}</ul>
 {% if not pending %}<a hidden data-live-follow data-in-place data-in-place-quiet href="#setup-test-panel">{% translate "Show the settled test" %}</a>{% endif %}
 </div>

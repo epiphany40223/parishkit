@@ -18,7 +18,7 @@ from .setup_drafts import view_draft
 from .setup_mail_views import LABELS, _status_data, page_status, status_response
 from .setup_notification_models import SetupSlackDelivery
 from .setup_notifications import request_notification
-from .setup_preview import PREVIEW_SALT, prepare_preview
+from .setup_tests import TEST_SALT, prepare_test
 from .setup_views import ERRORS, _checked, _closed, _context, error_response, page_error
 from .setup_wizard import wizard_for
 
@@ -32,14 +32,14 @@ SLACK_LABELS = LABELS | {
 }
 # The Recent tests list before any test (setup-test-status.html).
 EMPTY = _("No test has been requested yet. Select Send Slack test below to send one.")
-# A Slack test that was not sent links the Slack steps (#1476).
-FIX = ("slack", ("slack", "slack_credential"))
+# A Slack test that was not sent links the one Slack step (#1476, #1578).
+FIX = ("slack", ("slack",))
 
 
 class SetupNotificationForm(AdminForm):
     """Only explicit intent and uncertainty acknowledgement are client inputs."""
 
-    preview_token = forms.CharField(max_length=4096, widget=forms.HiddenInput)
+    test_token = forms.CharField(max_length=4096, widget=forms.HiddenInput)
     request_key = forms.UUIDField(widget=forms.HiddenInput)
     acknowledge_unknown = forms.BooleanField(
         widget=ACKNOWLEDGMENT,
@@ -69,7 +69,9 @@ def _skipped(request, service):
 
 def _data(draft):
     """No credential bytes, channel names or message bodies enter polling JSON."""
-    return _status_data(draft, model=SetupSlackDelivery, labels=SLACK_LABELS)
+    return _status_data(
+        draft, "slack_test", model=SetupSlackDelivery, labels=SLACK_LABELS
+    )
 
 
 @require_http_methods(["GET", "HEAD", "POST"])
@@ -81,13 +83,11 @@ def setup_notification(request):
         skipped = request.method != "POST" and _skipped(request, service)
         if skipped:
             return skipped
-        preview = prepare_preview(request, service)
-        if not preview.draft.sections["slack"]["enabled"]:
-            raise ValueError("Slack is disabled for this setup.")
+        inputs = prepare_test(request, service, "slack_test")
         form = SetupNotificationForm(
             request.POST if request.method == "POST" else None,
             initial={
-                "preview_token": signing.dumps(preview.binding(), salt=PREVIEW_SALT),
+                "test_token": signing.dumps(inputs.binding(), salt=TEST_SALT),
                 "request_key": uuid4(),
             },
         )
@@ -101,11 +101,11 @@ def setup_notification(request):
                     HttpResponseRedirect(reverse("admin:setup_notification")),
                 )
             status = 400
-        data = _data(preview.draft)
+        data = _data(inputs.draft)
         response = render(
             request,
             "stewardship/setup-notification.html",
-            _context(preview.draft, "slack_test")
+            _context(inputs.draft, "slack_test")
             | page_status(
                 form,
                 data,
@@ -113,12 +113,12 @@ def setup_notification(request):
                 reverse("admin:setup_notification_status") + "?format=status",
                 FIX,
             )
-            | {"channel_id": preview.draft.sections["slack"]["channel_id"]},
+            | {"channel_id": inputs.draft.sections["slack"]["channel_id"]},
             status=status,
         )
-        return _checked(request, service, response, preview.draft)
+        return _checked(request, service, response, inputs.draft)
     except signing.BadSignature:
-        error = ValueError("The setup preview has expired or changed.")
+        error = ValueError("The setup test page has expired or changed.")
         return page_error(request, error, "slack_test")
     except ERRORS as error:
         return page_error(request, error, "slack_test")

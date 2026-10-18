@@ -162,7 +162,9 @@ CREDENTIALS = {
             "it in the app's settings at api.slack.com under OAuth and "
             "Permissions. The app needs the chat:write permission and must be "
             "invited to the alert channel. It is stored encrypted and never "
-            "displayed again; enter a new token here to replace it."
+            "displayed again; enter a new token here to replace it, or leave "
+            "this empty to keep the saved one. A new channel ID needs the "
+            "token entered again."
         ),
     },
 }

@@ -60,6 +60,7 @@ from parishkit.stewardship.accounts.setup_mail_views import SetupMailForm
 from parishkit.stewardship.accounts.setup_notification_views import (
     SetupNotificationForm,
 )
+from parishkit.stewardship.accounts.setup_slack_step import SetupSlackStepForm
 from parishkit.stewardship.accounts.setup_wizard import BY_KEY as SETUP_STEPS
 from parishkit.stewardship.accounts.setup_wizard import build as setup_wizard
 from parishkit.stewardship.accounts.share_forms import (
@@ -1042,7 +1043,7 @@ def component_origin():
                 "unknown": False,
                 "form": SetupNotificationForm(
                     initial={
-                        "preview_token": "synthetic-preview",
+                        "test_token": "synthetic-preview",
                         "request_key": uuid4(),
                     }
                 ),
@@ -1069,7 +1070,7 @@ def component_origin():
                 "unknown": False,
                 "form": SetupMailForm(
                     initial={
-                        "preview_token": "synthetic-preview",
+                        "test_token": "synthetic-preview",
                         "request_key": uuid4(),
                         "slot": "initial",
                     }
@@ -1099,7 +1100,7 @@ def component_origin():
                 "unknown": False,
                 "form": SetupMailForm(
                     initial={
-                        "preview_token": "synthetic-preview",
+                        "test_token": "synthetic-preview",
                         "request_key": uuid4(),
                         "slot": "initial",
                     }
@@ -1129,7 +1130,7 @@ def component_origin():
                 "unknown": False,
                 "form": SetupMailForm(
                     initial={
-                        "preview_token": "synthetic-preview",
+                        "test_token": "synthetic-preview",
                         "request_key": uuid4(),
                         "slot": "initial",
                     }
@@ -1775,7 +1776,9 @@ def component_origin():
                 | {
                     "draft": setup_draft,
                     "wizard": wizard,
-                    "form": form_type(),
+                    # The Slack step's page form also takes the bot token
+                    # (#1578).
+                    "form": SetupSlackStepForm() if step == "slack" else form_type(),
                     "step": step,
                     "step_label": SETUP_STEPS[step].label,
                 },

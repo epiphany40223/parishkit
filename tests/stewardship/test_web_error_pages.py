@@ -93,7 +93,7 @@ def test_browser_pages_show_closed_messages_and_next_steps(code, status, title):
 
 def test_a_denial_offers_sign_in_and_no_step_up():
     """A refused Admin request links to sign-in; no page asks to confirm (#1547)."""
-    request = RequestFactory().post("/admin/setup/credentials/slack", **PAGE)
+    request = RequestFactory().post("/admin/setup/credentials/parishsoft", **PAGE)
     response = through(request, error_response(PermissionError("private")))
     body = response.content.decode()
     assert response.status_code == 403
@@ -120,7 +120,7 @@ def test_local_denial_carries_the_local_flag(monkeypatch, outage):
         return real(name, context, request=request)
 
     monkeypatch.setattr(error_pages, "render_to_string", render)
-    request = RequestFactory().get("/admin/setup/credentials/slack", **PAGE)
+    request = RequestFactory().get("/admin/setup/credentials/parishsoft", **PAGE)
     with override_settings(STEWARDSHIP_DEPLOYMENT_PROFILE=DeploymentProfile.LOCAL):
         response = through(request, error_response(PermissionError()))
     body = response.content.decode()

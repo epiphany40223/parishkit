@@ -39,7 +39,7 @@ def browser_for(service, monkeypatch, tmp_path):
 def values(response):
     """Extract the real signed binding and idempotency key from rendered fields."""
     form = response.context["form"]
-    return {name: form[name].value() for name in ("preview_token", "request_key")}
+    return {name: form[name].value() for name in ("test_token", "request_key")}
 
 
 def test_explicit_csrf_send_and_passive_status_do_not_extend_idle_expiry(
@@ -87,7 +87,7 @@ def test_unowned_fields_bad_signatures_and_duplicate_keys_are_rejected(
             {"channel_id": "COTHER"},
             {"text": "private"},
             {"candidate": "private"},
-            {"preview_token": "invalid"},
+            {"test_token": "invalid"},
             {"request_key": [payload["request_key"], payload["request_key"]]},
         ):
             assert post(browser, PATH, payload | extra).status_code == 400

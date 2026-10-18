@@ -520,6 +520,18 @@ def earlier_definition(name):
     return text[start : text.index(quote[1] + ";", quote.end()) + len(quote[1]) + 1]
 
 
+def restore_0102(cursor, text):
+    """Put back 0102's own email and Slack live checks, which 0169 (#1578)
+    replaced since, so 0102's check runs against what 0102 installed; the
+    caller rolls back."""
+    for name in ("stewardship_setup_mail_live_v1", "stewardship_setup_slack_live_v1"):
+        start = text.index(f"CREATE OR REPLACE FUNCTION public.{name}(")
+        quote = re.compile(r"\bAS\s+(\$\w*\$)").search(text, start)
+        cursor.execute(
+            text[start : text.index(quote[1] + ";", quote.end()) + len(quote[1]) + 1]
+        )
+
+
 def test_do_block_refuses_each_earlier_definition():
     """The file's closing check passes as installed and raises once any of
     the seven replaced functions is put back to its earlier body; the whole
@@ -530,13 +542,16 @@ def test_do_block_refuses_each_earlier_definition():
         re.findall(r"^CREATE OR REPLACE FUNCTION public\.(\w+)\(", text, re.M)
     )
     with transaction.atomic(), connection.cursor() as cursor:
+        restore_0102(cursor, text)
         cursor.execute(check)
+        transaction.set_rollback(True)
     for name in EARLIER:
         with (
             pytest.raises(DatabaseError, match="0102"),
             transaction.atomic(),
             connection.cursor() as cursor,
         ):
+            restore_0102(cursor, text)
             cursor.execute(earlier_definition(name))
             cursor.execute(check)
     with transaction.atomic(), connection.cursor() as cursor:

@@ -70,7 +70,11 @@ def progress(now, outcome):
 
 
 def wizard(task_state, current="source"):
-    """The stepper on ``current`` after a load that ended in ``task_state``."""
+    """The stepper on ``current`` after a load that ended in ``task_state``.
+
+    The email test, which comes before the load (#1578), was accepted, so
+    Review follows a load that is still valid.
+    """
     sections = VALUES | {
         "branding": {"bundle_id": str(uuid4())},
         "slack": {"enabled": False, "channel_id": ""},
@@ -79,6 +83,7 @@ def wizard(task_state, current="source"):
         draft(sections, source=uuid4(), task_state=task_state),
         current,
         credentials={"parishsoft": True, "google_workspace": True},
+        tests=frozenset({"mail_test"}),
     )
 
 

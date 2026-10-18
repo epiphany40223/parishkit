@@ -28,6 +28,7 @@ from .setup_notification_models import SetupSlackDelivery
 from .setup_preview import PREVIEW_SALT, verify_preview
 from .setup_readiness_models import SetupReadinessBinding
 from .setup_staging import _expiry
+from .setup_wizard import accepted_tests
 
 
 @dataclass(frozen=True)
@@ -40,41 +41,31 @@ class ReadyInputs:
 
 
 def ready_inputs(preview):
-    """Require accepted tests for this exact revision, not merely valid credentials."""
-    selected = {}
+    """Require accepted tests of the current settings, not merely valid credentials.
+
+    Each test counts while its own inputs are current (``accepted_tests``,
+    #1578): the staged credential it used and the settings sealed with it.
+    The SQL readiness guard admits the same binding.
+    """
     draft = preview.draft
+    accepted = accepted_tests(draft)
+    selected = {}
     for name, model, required in (
-        ("mail", SetupMailDelivery, True),
-        ("slack", SetupSlackDelivery, draft.sections["slack"]["enabled"]),
+        ("mail_test", SetupMailDelivery, True),
+        ("slack_test", SetupSlackDelivery, draft.sections["slack"]["enabled"]),
     ):
         rows = model.objects.filter(attempt_id=draft.status.attempt_id)
         if rows.filter(state__in=["queued", "submitting"]).exists():
             raise ValueError("Wait for pending setup tests before final confirmation.")
-        selected[name] = None
-        if required:
-            selected[name] = (
-                rows.filter(
-                    state="accepted",
-                    attempt_version=draft.status.version,
-                    candidate_digest=preview.compiled.candidate.digest,
-                    credential__version=F("credential_version"),
-                    credential__fingerprint=F("fingerprint"),
-                    credential__scrubbed_at=None,
-                )
-                .order_by("-finished_at", "-id")
-                .values_list("id", flat=True)
-                .first()
-            )
-            if selected[name] is None:
-                raise ValueError(
-                    "A successful test of the exact setup preview is required."
-                )
+        selected[name] = accepted.get(name) if required else None
+        if required and selected[name] is None:
+            raise ValueError("A successful test of the current settings is required.")
     return ReadyInputs(
         # Setup collects no campaign (#142): the source result is the
         # attempt's staged load, never a saved campaign section's.
         staged_source_result(draft.status.attempt_id),
-        selected["mail"],
-        selected["slack"],
+        selected["mail_test"],
+        selected["slack_test"],
     )
 
 

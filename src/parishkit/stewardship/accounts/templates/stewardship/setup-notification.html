@@ -14,8 +14,8 @@
 <section class="panel"><h2>{% translate "Send an explicit test" %}</h2>
 <p class="help">{% translate "A missing result is never automatically resent." %}</p>
 <form method="post" action="#setup-test-panel" id="setup-test" data-in-place>{% csrf_token %}
-{{ form.preview_token }}{{ form.request_key }}
-{{ form.non_field_errors }}{{ form.preview_token.errors }}{{ form.request_key.errors }}
+{{ form.test_token }}{{ form.request_key }}
+{{ form.non_field_errors }}{{ form.test_token.errors }}{{ form.request_key.errors }}
 <p data-mail-uncertain {% if not unknown %}hidden{% endif %}>
 {{ form.acknowledge_unknown }}<label for="{{ form.acknowledge_unknown.id_for_label }}">{{ form.acknowledge_unknown.label }}</label>{{ form.acknowledge_unknown.errors }}</p>
 {% if tested %}<p>{% button variant="secondary" data-mail-send type="submit" disabled=pending aria-describedby=pending|yesno:"setup-test-pending," data-live-problem-named=pending %}{% translate "Send another test" %}{% endbutton %}</p>{% endif %}
