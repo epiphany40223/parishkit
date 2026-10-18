@@ -188,11 +188,16 @@ def funnel_summary(stages, phrases=STAGE_PHRASES):
 def funnel_chart(metrics, *, keys=STAGES, labels=STAGE_LABELS, phrases=STAGE_PHRASES):
     """The response funnel: one bar per stage, labelled with its count.
 
-    ``keys`` selects the stages drawn, in funnel order, and ``labels`` and
-    ``phrases`` name them in the bars and the summary: the dashboard draws
-    all five with their own names, the daily digest only its four
-    (``digest_funnel.DIGEST_STAGES``, #1016) under its own names. Shares
-    are always of the first stage, Invited.
+    No page or email draws it any more: the daily digest dropped its chart
+    (#1370) and the Response dashboard's stage tiles replaced the page's
+    (#1537). It is kept, with ``funnel_summary`` and ``STAGE_PHRASES``, as
+    the chart engine's bar-chart test document (the browser ``/charts``
+    fixture, ``test_chart_rendering``, ``test_chart_specs``) and so the
+    funnel can come back if the Administrator asks for it.
+
+    ``keys`` selects the stages drawn, in funnel order (all five by
+    default), and ``labels`` and ``phrases`` name them in the bars and the
+    summary. Shares are always of the first stage, Invited.
     """
     if tuple(stage.key for stage in metrics.stages) != STAGES or not (
         keys[0] == "invited" and set(keys) <= set(STAGES)
