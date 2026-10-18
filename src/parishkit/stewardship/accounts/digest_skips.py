@@ -127,14 +127,19 @@ def refuse(identifier, values, campaign, slot, now):
     ``values`` are the digest's saved values (None for a schedule that is
     not saved, or that the change deletes) and ``campaign`` the applied
     campaign values; ``now`` is the database's clock. See the module's
-    refusals.
+    refusals. Both unknown-request refusals are about values, not field
+    names: the Delete view has already refused its post's unexpected or
+    repeated fields with its sources, and a ``schedule preview`` change
+    document has no posted form at all, so neither passes sources here.
     """
     if values is None or values["kind"] not in DIGESTS:
+        # No sources: the fields were allowed; the id is not a kept digest.
         raise unexpected_fields()
     if slot in skipped(values):
         raise stale_page()
     send = send_of(values, campaign, slot)
     if send is None:
+        # No sources: the fields were allowed; the date is not a send.
         raise unexpected_fields()
     if send.due_at <= now:
         raise _denied(SKIP_PASSED)
