@@ -455,8 +455,11 @@ def test_back_never_sends_a_bulk_confirm_again(page, component_origin):
     assert page.url.startswith(component_origin + OWN_ACTION + "?")
     assert page.evaluate("history.state.inPlaceView") is None
     # A Recipient (a read) adds an entry; Back returns to the Confirm's.
+    # Counted from here: whether the page's first load replaced the new
+    # tab's about:blank entry differs by engine (Firefox replaces it).
+    before = page.evaluate("history.length")
     page.locator("tbody .recipient-link").first.click()
-    eventually(page, "history.length", 3)
+    eventually(page, "history.length", before + 1)
     assert recipient_shown(page) == "12345"
     recorded(page, sent, 3)
     assert "action" not in sent[2]
