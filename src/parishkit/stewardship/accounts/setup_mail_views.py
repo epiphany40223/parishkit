@@ -14,6 +14,7 @@ from parishkit.stewardship.jobs.delivery_metadata import STATE_LABELS
 from parishkit.stewardship.web.acknowledgment import ACKNOWLEDGMENT
 from parishkit.stewardship.web.admin_forms import AdminForm
 
+from . import stages
 from .authentication import runtime
 from .integration_credentials import FAILED
 from .setup_delivery_models import SetupMailDelivery
@@ -55,6 +56,43 @@ class SetupMailForm(AdminForm):
         required=False,
         label=_("The previous test may have arrived; I want to send another test."),
     )
+
+
+# The stages a setup test moves through, drawn as the shared stage boxes on
+# Test email and Test Slack (#1578): the worker reports exactly these.
+STAGES = (
+    ("queued", _("Queued")),
+    ("sending", _("Sending")),
+    ("result", _("Result")),
+)
+# Each test state's place in STAGES: the box it reached and that box's state.
+# An accepted test has passed every stage; one not sent, or of unknown
+# delivery, failed at its Result; a cancelled one never left the queue.
+PLACES = {
+    "queued": (0, "active"),
+    "submitting": (1, "active"),
+    "accepted": (len(STAGES), "done"),
+    "not_sent": (2, "failed"),
+    "delivery_unknown": (2, "failed"),
+    "cancelled": (0, "failed"),
+}
+
+
+def progress(items):
+    """The newest test's stage boxes (``stages.rows``), or None before any.
+
+    A settled test's last box says its outcome in the list's own words
+    (its ``label``, e.g. Delivered or Not sure it arrived) instead of only Done
+    or Failed, so the boxes and the line above them agree.
+    """
+    if not items:
+        return None
+    newest = items[0]
+    index, current = PLACES[newest["state"]]
+    boxes = stages.rows(STAGES, index, current)
+    if newest["state"] not in {"queued", "submitting"}:
+        boxes[min(index, len(STAGES) - 1)]["status"] = newest["label"]
+    return boxes
 
 
 def _items(draft, binding, *, model=SetupMailDelivery, labels=LABELS):

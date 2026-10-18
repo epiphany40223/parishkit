@@ -1,4 +1,4 @@
-{% load i18n %}{% comment %}
+{% load i18n stewardship %}{% comment %}
   A setup test page's live status region (Test email, Test Slack; #1354): the
   recent tests and their states. The page and the passive status fragment
   the page polls (?format=status, never renewing idle time) both draw it, so
@@ -14,11 +14,22 @@
   The region's checking-problem line (live-status-v1.js) has the id
   setup-test-problem, which a Send held while a test is pending names
   beside setup-test-pending (setup-test-actions.html) while it shows (#1332).
+  The newest test is drawn with the shared stage boxes (UX conventions,
+  "Stage boxes"; the setup_test_stages filter, #1578): Queued,
+  Sending and its Result, each named with its state in words, the settled
+  box with the test's outcome. Earlier tests stay listed below it. Every
+  state draws the same boxes, so a poll moves nothing.
 {% endcomment %}<div class="setup-test-status" data-live-status="setup-test" data-live-problem-id="setup-test-problem"{% if status_url %} data-live-url="{{ status_url }}"{% endif %} data-live-announce="{% if items %}{% blocktranslate trimmed with state=items.0.label %}Latest test: {{ state }}.{% endblocktranslate %}{% endif %}"{% if pending %} data-live-pending{% endif %}>
 <h2 id="setup-tests-heading" tabindex="-1" data-in-place-focus>{% translate "Recent tests" %}</h2>
-<ul>{% for item in items %}<li data-mail-id="{{ item.id }}">
+{% for item in items %}{% if forloop.first %}<div class="setup-test-latest" data-mail-id="{{ item.id }}">
+<p><time data-local-instant datetime="{{ item.created_at }}">{{ item.created_at }}</time> — <span data-mail-state>{{ item.label }}</span>
+{% if not item.current %}<span>{% translate "Sent with earlier settings" %}</span>{% endif %}</p>
+{% translate "Latest test" as stages_label %}{% include 'stewardship/components/stage-boxes.html' with stages=items|setup_test_stages label=stages_label key_attribute="test-stage" %}
+</div>{% if items|length > 1 %}
+<h3>{% translate "Earlier tests" %}</h3>
+<ul>{% endif %}{% else %}<li data-mail-id="{{ item.id }}">
 <time data-local-instant datetime="{{ item.created_at }}">{{ item.created_at }}</time> — <span data-mail-state>{{ item.label }}</span>
 {% if not item.current %}<span>{% translate "Sent with earlier settings" %}</span>{% endif %}
-</li>{% empty %}<li>{{ empty }}</li>{% endfor %}</ul>
+</li>{% if forloop.last %}</ul>{% endif %}{% endif %}{% empty %}<p>{{ empty }}</p>{% endfor %}
 {% if not pending %}<a hidden data-live-follow data-in-place data-in-place-quiet href="#setup-test-panel">{% translate "Show the settled test" %}</a>{% endif %}
 </div>

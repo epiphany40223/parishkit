@@ -501,3 +501,66 @@ def test_a_slack_test_post_while_slack_is_off_is_still_refused(monkeypatch):
         RequestFactory().post("/admin/setup/slack-test", {})
     )
     assert response.status_code == 400
+
+
+@pytest.mark.parametrize(
+    ("state", "expected"),
+    [
+        ("queued", [("active", "In progress"), ("waiting", None), ("waiting", None)]),
+        ("submitting", [("done", None), ("active", "In progress"), ("waiting", None)]),
+        ("accepted", [("done", None), ("done", None), ("done", "Delivered")]),
+        ("not_sent", [("done", None), ("done", None), ("failed", "Failed")]),
+        (
+            "delivery_unknown",
+            [("done", None), ("done", None), ("failed", "Not sure it arrived")],
+        ),
+        (
+            "cancelled",
+            [("failed", "Not sent (cancelled)"), ("waiting", None), ("waiting", None)],
+        ),
+    ],
+)
+def test_the_newest_test_is_drawn_with_the_shared_stage_boxes(state, expected):
+    """Test email and Test Slack draw their newest test as the shared stage
+    boxes, Queued, Sending and Result, the box a settled test ended on in
+    the list's own words; earlier tests stay listed below (#1578)."""
+    from parishkit.stewardship.accounts.setup_mail_views import LABELS, progress
+
+    def row(identity, value):
+        """One Recent tests row, as ``setup_mail_views._items`` gives it."""
+        return {
+            "id": identity,
+            "state": value,
+            "label": str(LABELS[value]),
+            "created_at": NOW.isoformat(),
+            "current": True,
+        }
+
+    boxes = progress([row("new", state), row("old", "accepted")])
+    assert [box["key"] for box in boxes] == ["queued", "sending", "result"]
+    assert [box["label"] for box in boxes] == ["Queued", "Sending", "Result"]
+    for box, (box_state, words) in zip(boxes, expected, strict=True):
+        assert box["state"] == box_state
+        if words:
+            assert box["status"] == words
+    assert progress([]) is None
+    html = render_to_string(
+        "stewardship/setup-test-status.html",
+        {"items": [row("new", state), row("old", "accepted")], "empty": "None yet."},
+    )
+    (boxes_html,) = re.findall(r'<ol class="stage-boxes".*?</ol>', html, re.S)
+    assert 'aria-label="Latest test"' in boxes_html
+    assert boxes_html.count('data-test-stage="') == 3
+    # The newest test's line comes first, the earlier ones after the boxes.
+    assert html.index('data-mail-id="new"') < html.index("stage-boxes")
+    assert html.index("stage-boxes") < html.index("Earlier tests")
+    assert html.index("Earlier tests") < html.index('data-mail-id="old"')
+    empty = render_to_string(
+        "stewardship/setup-test-status.html", {"items": [], "empty": "None yet."}
+    )
+    assert "stage-boxes" not in empty and "None yet." in empty
+    single = render_to_string(
+        "stewardship/setup-test-status.html",
+        {"items": [row("new", state)], "empty": "None yet."},
+    )
+    assert "Earlier tests" not in single and "<ul>" not in single

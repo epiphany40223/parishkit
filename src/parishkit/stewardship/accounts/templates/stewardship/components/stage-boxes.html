@@ -16,8 +16,8 @@ lists the forms (stage dicts of the same shape) it can take while
 the work runs; each is drawn as an invisible ghost in the box's one grid
 cell (components/stage-box-body.html), so changing words never resize the
 box or its row (#1903). Loading parish data, Finishing
-setup, Load ParishSoft data (#1404 PR 5) and the Go live page's Prepare
-step (#1585) draw it.
+setup, Load ParishSoft data (#1404 PR 5), the Go live page's Prepare
+step (#1585) and Test email and Test Slack (#1578) draw it.
 {% endcomment %}<ol class="stage-boxes" aria-label="{{ label }}">{% for stage in stages %}
 <li class="stage-{{ stage.state }}" data-{{ key_attribute }}="{{ stage.key }}" data-stage-state="{{ stage.state }}">{% if stage.state == "active" %}{% include "stewardship/components/spinner.html" %}{% endif %}{% include "stewardship/components/stage-box-body.html" with ghost=False %}{% for form in stage.reserve %}{% include "stewardship/components/stage-box-body.html" with stage=form ghost=True %}{% endfor %}</li>{% endfor %}
 </ol>

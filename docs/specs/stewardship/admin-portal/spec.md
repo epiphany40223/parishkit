@@ -294,7 +294,12 @@ one live status region that it re-reads from a passive status fragment of
 its own status address (`?format=status`). The fragment admits exactly the
 sign-in its page admits and never renews idle time. On a test page, Send test
 is answered in place, and the Recent tests list is watched while a test is
-queued or being sent. While it is, Send (or Send another test) is
+queued or being sent. The newest test is drawn with the shared
+[stage boxes](../ui-conventions/spec.md#stage-boxes), Queued, Sending and
+Result; the box a settled test ended on names its outcome in the list's
+words (Delivered, Failed, Not sure it arrived, or a cancelled test's Queued
+box), and earlier tests are listed below it
+([#1578](https://github.com/epiphany40223/parishkit/issues/1578)). While it is, Send (or Send another test) is
 unavailable, named by a line after the action row saying a test is on its
 way, and, while the page cannot check the test's status, by that status line
 too ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates),

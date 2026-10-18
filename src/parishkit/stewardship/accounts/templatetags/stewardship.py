@@ -268,6 +268,19 @@ def _calendar(value):
 
 
 @register.filter
+def setup_test_stages(items):
+    """The newest setup test's stage boxes (``setup_mail_views.progress``).
+
+    Test email and Test Slack draw them from the same rows as their Recent
+    tests list (#1578), so the page and its polled status region need no
+    second copy of the newest test's state.
+    """
+    from parishkit.stewardship.accounts.setup_mail_views import progress
+
+    return progress(items)
+
+
+@register.filter
 def parish_date(value, style=None):
     """A calendar date, or its ISO text from a JSON projection, in the parish format.
 

@@ -3489,7 +3489,9 @@ the [Go live page](../admin-portal/spec.md#go-live-page)'s Prepare step
 and Production activation
 ([#1585](https://github.com/epiphany40223/parishkit/issues/1585)), and a
 ParishSoft refresh's Background task page and Refresh from ParishSoft
-([#1579](https://github.com/epiphany40223/parishkit/issues/1579)).
+([#1579](https://github.com/epiphany40223/parishkit/issues/1579)), and
+setup's Test email and Test Slack
+([#1578](https://github.com/epiphany40223/parishkit/issues/1578)).
 
 **Every stage-progress display.** Every page that shows a long piece of
 work moving through stages the server reports uses this one component, so
