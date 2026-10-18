@@ -45,6 +45,7 @@ from .financial import (
 )
 from .read_admission import admit_report_read
 from .report_paging import carried_filters, clamp_query, pop_page_size
+from .timeline_views import link_families
 
 # The element id of each filter field a refusal can be shown at (#1332).
 FIELD_IDS = {
@@ -219,6 +220,10 @@ def report(request, campaign_id):
                 query = moved
                 result = read()
             count, total = len(result["rows"]), result["total"]
+            # Each Family name opens its Timeline (#1570) for a viewer who
+            # may open it: one read of the page's Family record ids.
+            if allows(principal, Capability.CAMPAIGN_REPORT):
+                link_families(campaign_id, result["rows"])
             # The export form is offered disabled while the campaign cannot
             # accept new work, so the page never invites a request it refuses.
             mutable = True

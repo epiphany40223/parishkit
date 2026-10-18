@@ -79,9 +79,12 @@ KINDS = {
     "submitted": Kind("Submissions", "D", ACCENT_STRONG, GOLD),
     "other": Kind("Other lines", "P", MUTED),
 }
-# The words of each kind's lines (family_timeline.events and email_name).
+# The words of each kind's lines (timelines.events and email_name).
 # The capture keeps only English words, so a translated page would need kinds.
-VISITS = frozenset({"Signed in", "Staff opened the form", "Opened the form"})
+VISITS = frozenset(
+    {"Signed in", "Staff opened the form", "Signed out", "Session ended"}
+    | {"Opened the form"}
+)
 PROGRESS = frozenset({"Got past the first step", "Reached the furthest step so far"})
 SUBMITTED = frozenset({"Submitted a response"})
 EMAILS = frozenset(

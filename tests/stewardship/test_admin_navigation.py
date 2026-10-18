@@ -289,25 +289,29 @@ def test_a_test_email_trail_names_its_email_editor():
     assert navigation.back(match, placed)["url"] == trail[4]["url"]
 
 
-def test_a_timeline_export_trail_keeps_the_timeline_mode():
-    """A placed query reaches the ancestor's crumb and back link, nothing else."""
+def test_a_timeline_export_trail_keeps_the_family():
+    """A placed query reaches the ancestor's crumb and back link, nothing else.
+
+    The Timeline export's trail runs through its Family's Timeline (#1570).
+    """
     family = uuid4()
     placed = navigation.Placement(
-        parent="family_timeline",
+        parent="timeline",
         arguments={"family_id": family},
-        queries={"family_timeline": "mode=testing"},
+        queries={"timeline": "sort=when"},
     )
     match = _match("report_export", request_id=uuid4())
     _, trail = navigation.build(match, _items(), placed)
-    timeline = reverse("admin:family_timeline", args=[family])
+    timeline = reverse("admin:timeline", args=[family])
     assert [crumb["label"] for crumb in trail][2:] == [
         navigation.PAGES["family_directory"].label,
-        navigation.PAGES["family_timeline"].label,
+        navigation.PAGES["timeline"].label,
         navigation.PAGES["report_export"].label,
     ]
+    assert navigation.PAGES["timeline"].label == "Timeline"
     assert trail[2]["url"] == reverse("admin:family_directory")
-    assert trail[3]["url"] == timeline + "?mode=testing"
-    assert navigation.back(match, placed)["url"] == timeline + "?mode=testing"
+    assert trail[3]["url"] == timeline + "?sort=when"
+    assert navigation.back(match, placed)["url"] == timeline + "?sort=when"
 
 
 def test_a_placed_configuration_change_joins_its_origin_section():

@@ -170,7 +170,7 @@ def test_the_shared_renderer_writes_its_csv():
 
 TEMPLATE = (
     Path(__file__).resolve().parents[2]
-    / "src/parishkit/stewardship/accounts/templates/stewardship/family-timeline.html"
+    / "src/parishkit/stewardship/accounts/templates/stewardship/timeline.html"
 )
 
 

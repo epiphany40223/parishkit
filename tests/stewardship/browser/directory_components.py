@@ -32,6 +32,7 @@ from parishkit.stewardship.web.filter_errors import FilterError, error_context
 from parishkit.stewardship.web.tables import report_table
 
 from ..test_directories import RESPONSE_LIST_PRESETS
+from ..test_family_link import STAFF as VIEWER
 
 
 def _table(rows, total, mailing, query=None):
@@ -270,7 +271,9 @@ def components(context, admin):
         path: (
             "text/html",
             render_to_string(
-                "stewardship/directory.html", context | {"admin_chrome": admin} | data
+                "stewardship/directory.html",
+                # The viewer may open each Family's Timeline (#1570's link).
+                context | {"admin_chrome": admin, "request": VIEWER} | data,
             ),
         )
         for path, data in pages.items()

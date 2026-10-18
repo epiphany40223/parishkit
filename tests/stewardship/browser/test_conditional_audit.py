@@ -293,9 +293,9 @@ def test_rename_waits_for_a_new_valid_name(page, component_origin):
             "Release the site",
             "restore-release-reason",
         ),
-        ("/family-timeline-locked", "Open form", "open-form-reason"),
+        ("/timeline-locked", "Open form", "open-form-reason"),
         (
-            "/family-timeline-locked",
+            "/timeline-locked",
             "Queue timeline export",
             "timeline-export-unavailable",
         ),

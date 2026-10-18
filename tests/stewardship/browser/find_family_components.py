@@ -12,6 +12,8 @@ from uuid import UUID
 from django.template import engines
 from django.template.loader import render_to_string
 
+from ..test_family_link import STAFF as VIEWER
+
 PATH = "/find-family"
 FIND = "/find-family/find"
 DIRECTORY = "/find-family/directory"
@@ -42,6 +44,8 @@ def _answer(count, total):
             "campaign_id": CAMPAIGN,
             "directory_url": DIRECTORY,
             "csrf_token": "a" * 64,
+            # The viewer may open each Family's Timeline (#1570's link).
+            "request": VIEWER,
         },
     )
 

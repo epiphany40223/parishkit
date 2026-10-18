@@ -4110,9 +4110,11 @@ def _export_family_timeline_options(parser):
     )
     parser.add_argument(
         "--mode",
+        # "testing" stays a choice so a script that passes it gets the
+        # command's plain invalid answer rather than a usage error (#1570).
         choices=("production", "testing"),
         default="production",
-        help="production (default) or the Testing rehearsal",
+        help="production (the default and only export since #1570; testing is refused)",
     )
     _family_export_options(parser, filters=False)
 

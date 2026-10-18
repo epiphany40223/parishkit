@@ -7,7 +7,7 @@ from parishkit.stewardship.jobs.delivery_metadata import STATE_LABELS
 
 register = template.Library()
 # Outbox states use the shared plain words (STATE_LABELS), the same table the
-# Family timeline reads, so one email reads alike a click apart (#589).
+# Timeline reads, so one email reads alike a click apart (#589).
 # Attempt-history actions below describe events, not outcomes, and keep
 # their own wording.
 LABELS = STATE_LABELS | {

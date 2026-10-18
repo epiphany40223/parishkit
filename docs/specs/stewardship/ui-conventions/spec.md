@@ -420,7 +420,7 @@ never scrolls to show it (Administrator, pk-local review of
   each segment of a [binary choice](#binary-choices), such as the
   [Response dashboard](../reports/spec.md#response-dashboard)'s mode and
   Chart population, each of which refreshes the page's one region; the
-  [Family timeline](../reports/spec.md#family-timeline)'s mode and When sort,
+  [Timeline](../reports/spec.md#timeline)'s filters and When sort,
   the page links of a mail delivery's
   evidence and attempt history, an information item's and a Ministry
   follow-up request's history, and a weekly information report, and the
@@ -1117,7 +1117,7 @@ answer, it is drawn after the controls it disables, so nothing moves
 ([#1331](https://github.com/epiphany40223/parishkit/issues/1331)). Each
 feature spec lists its own cases, such as
 [Restore review](../admin-portal/spec.md#restore-release) and the
-[Family timeline](../reports/spec.md#family-timeline).
+[Timeline](../reports/spec.md#timeline).
 
 ### Field errors and live checks
 
@@ -1680,8 +1680,7 @@ Testing rehearsal.
 
 - **Where.** The Response dashboard's Responses shown (Production |
   Testing rehearsal) and Chart population (Historical as of day | Current
-  population), the Family timeline's Records shown (Production | Testing
-  rehearsal), the
+  population), the
   [family directory](../reports/spec.md#active-parishioner-family-directory)'s Responses shown
   (Production | Testing rehearsal), above its Filters panel, and
   [Roster changes to enter](../admin-portal/spec.md#roster-changes-to-enter)'s
@@ -3567,7 +3566,7 @@ the name cell into its parts, as [downloaded files](#downloaded-files)
 allows: the name stays in its column (blank when no name is known) and a
 **ParishSoft status** column right after it holds the same words, blank when
 there is nothing to mark. A file whose Family is a report detail rather than
-a column, such as the Family timeline's, has a ParishSoft status detail
+a column, such as the Timeline export's, has a ParishSoft status detail
 instead. Older phrases ("Unavailable Member", "Unavailable Family", "Not in
 the latest ParishSoft data", "Not in current ParishSoft data", "Name not in
 the current ParishSoft data", "No longer active in ParishSoft") are
@@ -3599,7 +3598,7 @@ installed function body.
 (Administrator, 2026-10-13, on #1131). Family pages use it since #1216's
 first change, and the Family-code directory, Census changes and Family
 timeline downloads have the ParishSoft status column (or detail) since its
-second. The Family timeline, Sent mail, Refused addresses, Testing
+second. The Timeline (then the Family timeline), Sent mail, Refused addresses, Testing
 submissions, the chosen-Family send page and "Families on the form now"
 word a blank surname "Name not recorded in ParishSoft" since that second
 change. Since its third (frozen migration 0094), the installed selections
@@ -3728,7 +3727,7 @@ format, CSV included (Administrator decision, 2026-10-10,
 [#956](https://github.com/epiphany40223/parishkit/issues/956)). Every Admin
 PDF and XLSX shares one design in the portal's design tokens; a PDF lays the
 columns out as one table, record cards, address cards or an infographic
-sheet (the [Family timeline](../reports/spec.md#file-design)) in a shared
+sheet (the [Timeline export](../reports/spec.md#file-design)) in a shared
 page frame. Identifiers a reader uses, such as Family and Member DUIDs and
 envelope numbers, are not internal references and stay. **Why.** Staff print
 and share these files; internal references mean nothing to a reader, and a
@@ -3837,7 +3836,7 @@ which forms ask. **Precedent.**
 Asking: System logs, Response lists, Financial stewardship, Limitations,
 Census changes, Additional information, Ministry requests' Export these
 requests (which replaced one Ministry's joining or leaving lists, #1157),
-Roster changes to enter, the Family timeline, and the Active parishioner
+Roster changes to enter, the Timeline, and the Active parishioner
 family directory code list only while its response columns are included
 (the field comes and
 goes with that applied choice, as the last field of its row, so nothing

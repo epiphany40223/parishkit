@@ -178,7 +178,7 @@ class FamilyTestNamesSnapshot(ImmutableRecord):
 class TimelineExportSnapshot(ImmutableRecord):
     """One Family's timeline as its page showed it, captured when requested.
 
-    The page builds the timeline in Python (``family_timeline.read_timeline``),
+    The page builds the timeline in Python (``timelines.read_timeline``),
     so the web captures that same read into ``document`` and SQL checks
     everything around it (migration 0063): an Administrator requester, an
     admitted campaign, the Family's campaign, the document's closed shape and

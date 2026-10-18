@@ -595,7 +595,7 @@ def export_directory(
 def export_family_timeline(
     caller, service, *, family_id, mode, fmt, zone, request_key, context
 ):
-    """``export family-timeline``: the Family timeline page's export form.
+    """``export family-timeline``: the Timeline page's export form.
 
     ``family_id`` is the Family's campaign record id, the opaque id in the
     page's address. Admits as the page's form post does (``CAMPAIGN_REPORT``,
@@ -609,9 +609,9 @@ def export_family_timeline(
     """
     from .accounts.sessions import sign_in_instant
     from .audit.schemas import Action
-    from .reports.family_timeline_views import _principal
     from .reports.read_admission import admit_report_read
     from .reports.timeline_exports import MODES, create_timeline_export
+    from .reports.timeline_views import _principal
 
     def parse(actor, campaign_id):
         """The page's checks, in its order: Administrator, campaign, mode."""
@@ -619,7 +619,11 @@ def export_family_timeline(
             raise PermissionError("The timeline export is for Administrators.")
         admit_report_read(campaign_id)
         if mode not in MODES:
-            raise ValueError("The mode is production or testing.")
+            # The page shows Production records only since #1570.
+            raise ValueError(
+                "Timeline exports are of Production records only; "
+                "the Testing view was removed."
+            )
         return None
 
     def create(actor, campaign_id, parsed):

@@ -119,6 +119,64 @@ def source_status(status):
     )
 
 
+def _may_open_timeline(context):
+    """Whether the page's viewer may open a Family's Timeline (#1570).
+
+    Reads the principal the owning view admitted (``request.principal``), as
+    the Admin chrome does: Administrators and Staff hold ``CAMPAIGN_REPORT``,
+    Ministry leaders and Family sessions do not. Presentation only; the
+    Timeline view rechecks access itself. A page rendered with its request
+    carries it on the context (``RequestContext.request``; no context
+    processor adds a ``request`` variable); a fragment rendered from a plain
+    dict may pass it as ``request``.
+    """
+    from parishkit.stewardship.accounts.policy import Capability, Principal, allows
+
+    request = getattr(context, "request", None) or context.get("request")
+    principal = getattr(request, "principal", None)
+    return (
+        isinstance(principal, Principal)
+        and bool(principal.roles)
+        and allows(principal, Capability.CAMPAIGN_REPORT)
+    )
+
+
+@register.simple_tag(takes_context=True)
+def family_timeline_url(context, family_id):
+    """A Family's Timeline address, or "" when the page draws no link (#1570).
+
+    ``family_id`` is the Family's campaign record id (``FamilyCampaign.pk``);
+    without one (a Family with no campaign record yet) or for a viewer who
+    may not open the Timeline there is no link. ``family_link`` and Find a
+    Family's results share this one decision.
+    """
+    if not family_id or not _may_open_timeline(context):
+        return ""
+    return reverse("admin:timeline", args=[family_id])
+
+
+@register.simple_tag(takes_context=True)
+def family_link(context, family_id, name, active=None):
+    """A Family's name in an Admin table, linked to its Timeline (#1570).
+
+    Usage: ``{% family_link row.family_id row.display_name active=row.active %}``.
+    ``name`` is the shared surname-and-heads name, or None when the current
+    ParishSoft data no longer has the Family: the shared "Not in ParishSoft"
+    badge then stands alone in its place. ``active`` False adds the
+    "Inactive in ParishSoft" badge after a known name, outside the link
+    (ui-conventions, #1216). The name links only when
+    ``family_timeline_url`` gives an address, so every table that names a
+    Family links it the same way, for the same viewers.
+    """
+    shown = source_status("missing") if name is None else conditional_escape(name)
+    href = family_timeline_url(context, family_id)
+    if href:
+        shown = format_html('<a href="{}">{}</a>', href, shown)
+    if name is not None and active is False:
+        shown = format_html("{} {}", shown, source_status("inactive"))
+    return shown
+
+
 def _calendar(value):
     """A calendar date from a date or its ISO text; None for blanks, and
     unparseable text unchanged so a page shows it rather than failing."""

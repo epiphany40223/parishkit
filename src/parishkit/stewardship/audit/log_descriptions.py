@@ -422,7 +422,7 @@ DESCRIPTIONS = {
     ),
     "admin_cmd_export_family_timeline": _(
         "An automation session requested one Family's timeline export, as the "
-        "Family timeline page's export form does."
+        "Timeline page's export form does."
     ),
     "admin_cmd_digest_weekly_request": _(
         "An automation session requested a manual weekly report, as the "

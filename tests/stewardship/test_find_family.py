@@ -20,6 +20,8 @@ from parishkit.stewardship.accounts import admin_context, admin_navigation
 from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.reports.directories import FIND_LIMIT
 
+from .test_family_link import STAFF
+
 CAMPAIGN = SimpleNamespace(
     pk=UUID(int=561),
     state="active",
@@ -105,6 +107,8 @@ def _results(rows, total, search="ex"):
             "search": search,
             "campaign_id": CAMPAIGN.pk,
             "directory_url": "/admin/directory/",
+            # A viewer who may open the Timeline (#1570's shared link).
+            "request": STAFF,
         },
     )
 
@@ -127,7 +131,7 @@ def test_results_open_the_timeline_and_offer_the_rest_in_the_directory():
     ]
     html = _results(rows, 1234, search='"><b>x')
     assert "1,234 Families found" in html
-    timeline = reverse("admin:family_timeline", args=[FAMILY])
+    timeline = reverse("admin:timeline", args=[FAMILY])
     assert f'<a href="{timeline}" data-find-family-result>' in html
     assert "DUID 12 · Envelope 345" in html
     # A Family without a campaign record has no timeline to open.

@@ -469,7 +469,7 @@ def directory(request, campaign_id):
 
 
 def _finder(request, store, *, read_only=False):
-    """A viewer who may open the directory page and the Family timeline."""
+    """A viewer who may open the directory page and the Timeline."""
     principal = _principal(request, store, read_only=read_only)
     if not allows(principal, Capability.CAMPAIGN_REPORT):
         raise PermissionError("Find a Family is unavailable.")
@@ -484,7 +484,7 @@ def find_family(request, campaign_id):
     here (CSRF-protected, so the text never enters a URL, a log line or the
     browser history) and shows the answer under the box. The viewer must be
     able to open both the directory page, whose search this runs, and the
-    Family timeline each result opens: Administrators and Staff. Both are
+    Timeline each result opens: Administrators and Staff. Both are
     rechecked inside the campaign read guard, as the directory does, and the
     search is audited as a directory view (search used, row counts; never
     the text). Refusals answer with an empty body and the status alone; the
