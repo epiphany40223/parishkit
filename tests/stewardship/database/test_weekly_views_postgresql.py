@@ -94,18 +94,18 @@ def test_weekly_list_page_recounts_the_emails_funnel(live_response_service, goog
             )
             assert panel, "The list page has no funnel panel."
             return re.findall(
-                rb'<th scope="row">([^<]+).*?</th><td>([^<]+)</td>'
-                rb"|<dt>([^<]+)</dt><dd>([^ <]+)",
+                rb'<th scope="row">([^<]+).*?</th><td>([^<]+)</td>',
                 panel.group(0),
                 re.S,
             )
 
         before = page_funnel()
-        rows = {(a or c).decode(): (b or d).decode() for a, b, c, d in before}
+        rows = {label.decode(): count.decode() for label, count in before}
         assert rows["Submitted"] == "1"
-        assert rows["Submitted more than once"] == "0"
+        # No side figures (#1532), in the page or the email.
+        assert "Submitted more than once" not in rows
         assert "\nSubmitted: 1 (" in email
-        assert "Submitted more than once: 0 (" in email
+        assert "more than once" not in email
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             _, content = read(browser, detail)
         assert b"data-digest-funnel" not in content

@@ -571,22 +571,27 @@ def test_old_response_list_addresses_are_gone():
                 resolve(old)
 
 
-def test_new_digest_emails_link_their_emailed_report_pages():
-    """New emails link the Emailed reports addresses, which open the reports."""
+def test_new_digest_emails_link_their_report_pages():
+    """The weekly email links its Emailed reports address; the daily the dashboard.
+
+    The daily email links the Response dashboard instead of its own saved
+    copy (#1532), which stays reachable from Emailed reports.
+    """
     from types import SimpleNamespace
 
+    from parishkit.stewardship.reports.daily_digest import response_dashboard_url
     from parishkit.stewardship.reports.links import report_url
 
     sent = SimpleNamespace(snapshot_id=TASK)
-    for document, name in (
-        (DailyDigestDocument, "daily_digest_snapshot"),
-        (WeeklyDigestDocument, "weekly_digest_snapshot"),
-    ):
-        path = document.report_path.fget(sent)
-        assert resolve(path).url_name == name, path
-        assert path == reverse(f"admin:{name}", args=[TASK])
-        assert path.startswith("/admin/reports/emailed/")
-        assert report_url("https://parish.example", path).endswith(path)
+    path = WeeklyDigestDocument.report_path.fget(sent)
+    assert resolve(path).url_name == "weekly_digest_snapshot", path
+    assert path == reverse("admin:weekly_digest_snapshot", args=[TASK])
+    assert path.startswith("/admin/reports/emailed/")
+    assert report_url("https://parish.example", path).endswith(path)
+    assert not hasattr(DailyDigestDocument, "report_path")
+    url = response_dashboard_url("https://parish.example", "production")
+    assert url == "https://parish.example/admin/reports/responses/"
+    assert resolve("/admin/reports/responses/").url_name == "response_dashboard"
 
 
 def test_every_export_shares_one_page():

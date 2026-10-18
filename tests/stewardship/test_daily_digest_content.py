@@ -63,6 +63,10 @@ def document():
     return DailyDigestDocument(UUID(int=5), chart, statistics, (chart.last_date,))
 
 
+# Where the email's Response dashboard links go (#1532).
+DASHBOARD = "https://campaign.example.org/admin/reports/responses/"
+
+
 def render(value):
     """Exercise compilation through the actual retention/delivery boundary."""
     result = render_daily_digest(value, public_origin="https://campaign.example.org")
@@ -93,14 +97,22 @@ def test_daily_digest_keeps_exact_values_and_accessible_inline_chart():
         result = render(value)
     assert result.subject == "Daily campaign digest — November 2, 2026"
     for required in (
-        "All data is as of the end of November 2, 2026 (EST).",
+        "Here is yesterday’s report; all data is as of the end of November 2, "
+        "2026 (EST).",
         "Families that have responded: 3 out of 1,234 (0.2%)",
         "First submissions that day: 1",
         "Cumulative annual pledges (USD): $3,234.56",
         "Nov 2, 2026 | 1 | 3 out of 1,234 (0.2%) | $3,234.56",
-        value.report_path,
     ):
         assert required in result.text
+    # The Response dashboard is linked at the top and the bottom (#1532);
+    # the saved copy of this email is not linked at all.
+    link = f"Open the Response dashboard (staff login required): {DASHBOARD}"
+    assert result.text.count(link) == 2
+    assert result.text.split("\n")[1] == link and result.text.endswith(link)
+    assert result.html.count(f'href="{DASHBOARD}"') == 2
+    assert "/emailed/" not in result.text + result.html
+    assert "Open this exact report" not in result.text + result.html
     # The send-time statistics (2 of 1,000 Families, $2,234.56) are live, so
     # they never appear: they would disagree with the chart's last point.
     live_figures = ("1,000", "2,345", "Active Members", "comparison")
@@ -115,17 +127,21 @@ def test_daily_digest_keeps_exact_values_and_accessible_inline_chart():
         assert jargon not in result.text
     assert ">Day by day</caption>" in result.html
     assert "Historical as of day" not in result.html
-    assert ">Campaign date</th>" in result.html
+    # Each day's date heads its own row (#1559); "Campaign date" stays in
+    # the text part, whose rows keep the four columns.
+    assert ">Campaign date</th>" not in result.html
+    assert ">Nov 2, 2026</th>" in result.html
     assert f"cid:{CHART_ID}" in result.html
     # Visuals first (#720): the as-of caption, then one line per total with
     # its bar, then the chart; the ParishSoft line is small print at the end.
     html = result.html
     assert (
-        html.index("All data is as of")
+        html.index("Here is yesterday’s report; all data is as of")
+        < html.index("Open the Response dashboard</a>")
         < html.index("Campaign totals")
         < html.index("cid:")
         < html.index("Day by day")
-        < html.index("Open this exact report")
+        < html.rindex("Open the Response dashboard</a>")
     )
     assert html.count(f'bgcolor="{BLUE}"') == 2
     assert "<strong>3 out of 1,234 (0.2%)</strong>" in html
@@ -188,11 +204,15 @@ def long_document(days):
     return replace(value, participation=chart)
 
 
-def test_table_shows_the_last_week_and_every_recovered_day():
-    """The table has at least the last 7 days, and all of a longer recovery (#720)."""
+def test_table_shows_the_last_five_days_and_every_recovered_day():
+    """The table has the last 5 days (#1532), and all of a longer recovery (#720)."""
     value = long_document(12)
     dates_shown = [row[0] for row in digest_rows(value)]
-    assert dates_shown[0] == "Oct 27, 2026" and len(dates_shown) == 7
+    assert dates_shown == [f"Oct {day}, 2026" for day in (29, 30, 31)] + [
+        "Nov 1, 2026",
+        "Nov 2, 2026",
+    ]
+    assert "Oct 28, 2026 |" not in render(value).text
     first = value.participation.first_date
     recovery = replace(
         value,
@@ -200,6 +220,87 @@ def test_table_shows_the_last_week_and_every_recovered_day():
     )
     assert len(digest_rows(recovery)) == 12
     assert "Oct 22, 2026 | 1 | 1 out of 1,234" in render(recovery).text
+
+
+def day_table(html):
+    """The "Day by day" table's markup, from its caption to its end."""
+    start = html.index("Day by day</caption>")
+    return html[start : html.index("</table>", start)]
+
+
+@pytest.mark.parametrize(("financial", "span"), [(True, "3"), (False, "2")])
+def test_day_table_gives_each_day_a_date_row_then_its_values(financial, span):
+    """Two rows per day fit a phone without losing a value (#1559)."""
+    value = long_document(12)
+    if not financial:
+        chart = replace(value.participation, financial_enabled=False)
+        statistics = replace(value.statistics, financial_enabled=False)
+        value = replace(value, participation=chart, statistics=statistics)
+    table = day_table(render(value).html)
+    headings = re.findall(
+        r'<th scope="col" align="(?:left|right)" style="([^"]+)">([^<]+)<', table
+    )
+    expected = ["First submissions", "Cumulative participation"]
+    expected += ["Cumulative annual pledges (USD)"] if financial else []
+    assert [label for _style, label in headings] == expected
+    # Only the first column has no gap before it, so the table starts flush.
+    assert [style for style, _label in headings] == [STYLES["th-lead"]] + [
+        STYLES["th"]
+    ] * (len(expected) - 1)
+    for row in digest_rows(value):
+        date, *figures = row
+        cells = "".join(
+            f'<td align="{"right" if index else "left"}" '
+            f'style="{STYLES["td-lead" if index == 0 else "td"]}">'
+            f"{figure}</td>"
+            for index, figure in enumerate(figures)
+        )
+        assert (
+            f'<tbody><tr><th scope="rowgroup" colspan="{span}" align="left" '
+            f'style="{STYLES["day"]}">{date}</th></tr><tr>{cells}</tr></tbody>'
+        ) in table
+    assert table.count("<tbody>") == len(digest_rows(value)) == 5
+
+
+def test_day_table_is_a_data_table_with_headers_and_no_role():
+    """No role: presentation would hide the headers from screen readers."""
+    html = render(long_document(12)).html
+    table_open = html[html.rindex("<table", 0, html.index("Day by day</caption>")) :]
+    assert table_open.startswith('<table width="100%"')
+    assert "role=" not in table_open[: table_open.index(">")]
+    table = day_table(html)
+    # Column headings, then per day one row-group heading and one value row.
+    assert table.count('<th scope="col"') == 3
+    assert table.count('<th scope="rowgroup"') == table.count("<tbody>") == 5
+    assert table.count("<td ") == 15
+
+
+def test_retained_reports_with_the_four_column_day_table_still_validate():
+    """A report compiled before the two-row day table (#1559) still delivers."""
+    result = render(document())
+    old_th = (
+        "padding:8px 12px 8px 0;font-size:14px;color:#4f5e66;"
+        "border-bottom:2px solid #c9d1cf;"
+    )
+    old_td = (
+        "padding:7px 12px 7px 0;font-size:15px;color:#1b2a31;"
+        "border-bottom:1px solid #e4e7ec;"
+    )
+    for tag, style in (("th", old_th), ("td", old_td)):
+        assert layout_attribute(tag, "style", style) == style
+    old = (
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        f'border="0" style="{STYLES["table"]}"><caption '
+        f'style="{STYLES["table-caption"]}">Day by day</caption><thead><tr>'
+        f'<th scope="col" align="left" style="{old_th}">Campaign date</th></tr>'
+        f'</thead><tbody><tr><td align="left" style="{old_td}">Nov 2, 2026</td>'
+        "</tr></tbody></table>"
+    )
+    html = result.html
+    end = html.index("</table>", html.index("Day by day</caption>")) + len("</table>")
+    start = html.rindex("<table", 0, html.index("Day by day</caption>"))
+    html = html[:start] + old + html[end:]
+    validate_digest_body(html, result.text, result.chart.data, result.images)
 
 
 @pytest.mark.parametrize(
@@ -402,13 +503,15 @@ def test_recovery_range_states_its_last_covered_day():
         "Recovery campaign digest — October 31, 2026 through November 2, 2026"
     )
     for required in (
-        "All data is as of the end of November 2, 2026 (EST).",
+        "Here is the report for October 31, 2026 through November 2, 2026; all "
+        "data is as of the end of November 2, 2026 (EST).",
         "Families that have responded: 3 out of 1,234 (0.2%)",
         "First submissions that day: 1",
         "Cumulative annual pledges (USD): $3,234.56",
         "Oct 31, 2026 | 1 | 1 out of 1,234 (0.1%) | $1,234.56",
     ):
         assert required in result.text
+    assert "yesterday" not in result.text
     # A report day before the change still says EDT.
     first = replace(
         value.participation,
@@ -470,7 +573,7 @@ def visible(html):
 
 
 def test_each_header_fact_appears_once():
-    """The body opens on the as-of line; the subject names everything else.
+    """The body opens on the opening line; the subject names everything else.
 
     The Administrator trimmed the header and small print (#720): the parish
     and campaign are left to the subject, the as-of line is the only place
@@ -487,10 +590,26 @@ def test_each_header_fact_appears_once():
         assert "Daily campaign digest" not in body
         assert body.count("November 2, 2026") == 1
         assert "ParishSoft" not in body and "sign-in" not in body
-    assert visible(result.html).lstrip().startswith("All data is as of")
-    # Prominent (#1016): body size and colour, not the muted caption style.
-    assert result.html.startswith(f'<p style="{STYLES["as-of"]}">All data is')
-    assert "font-size:16px" in STYLES["as-of"] and "#1b2a31" in STYLES["as-of"]
+    opening = "Here is yesterday’s report; all data is as of the end of November"
+    assert visible(result.html).lstrip().startswith(opening)
+    assert result.text.startswith(opening)
+    # Prominent (#1016): body size and colour, not the muted caption style;
+    # the dashboard link is right-aligned on the same line, in a 30%-wide
+    # cell that may wrap.
+    assert result.html.startswith(
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        f'border="0" style="{STYLES["track"]}"><tbody><tr>'
+        f'<td style="{STYLES["opening"]}">{opening}'
+    )
+    assert (
+        f'<td width="30%" align="right" style="{STYLES["opening-link"]}">'
+        f'<a href="{DASHBOARD}" '
+        f'style="{STYLES["link"]}" rel="noopener noreferrer">'
+        "Open the Response dashboard</a></td></tr></tbody></table>"
+    ) in result.html
+    assert "white-space" not in STYLES["opening-link"]
+    assert "vertical-align:top" in STYLES["opening-link"]
+    assert "font-size:16px" in STYLES["opening"] and "#1b2a31" in STYLES["opening"]
     assert result.subject == "Daily campaign digest — November 2, 2026"
 
 
@@ -516,7 +635,7 @@ def test_report_button_is_padded_for_outlook():
     result = render(document())
     assert 'bgcolor="#115e56"' in result.html
     assert "mso-padding-alt:10px 20px;" in result.html
-    assert "Open this exact report</a>" in result.html
+    assert "Open the Response dashboard</a></td></tr></tbody></table>" in result.html
 
 
 # The report button exactly as #720 compiled it, before it became the shared
@@ -566,6 +685,40 @@ def test_retained_reports_with_the_earlier_bar_and_rule_still_validate():
     assert layout_attribute("td", "bgcolor", "#b8620a") is None
 
 
+def test_retained_reports_from_before_the_opening_line_still_validate():
+    """A report compiled before #1532 and retained for a retry still delivers.
+
+    It opens with the as-of paragraph, has the "Submitted more than once"
+    row and ends with the button to its saved copy; the validator still
+    admits that markup although nothing compiles it any more.
+    """
+    result = render(replace(document(), funnel=funnel_metrics(), mode="production"))
+    opening_end = result.html.index("</table>") + len("</table>")
+    as_of = (
+        '<p style="margin:0 0 20px;font-size:16px;color:#1b2a31;">All data is as '
+        "of the end of November 2, 2026 (EST).</p>"
+    )
+    figure = (
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        f'border="0" style="{STYLES["rows"]}"><tbody><tr>'
+        f'<td width="34%" style="{STYLES["label"]}">Submitted more than once</td>'
+        f'<td width="40%" style="{STYLES["bar"]}"></td>'
+        f'<td width="26%" align="right" style="{STYLES["value"]}"><strong>7'
+        "</strong> (2% of Submitted)</td></tr></tbody></table>"
+    )
+    # The figure row followed the funnel, before "Daily participation".
+    body = result.html[opening_end:]
+    at = body.rindex("<h2", 0, body.index("Daily participation</h2>"))
+    retained = as_of + body[:at] + figure + body[at:]
+    assert "All data is as of" in retained and "more than once" in retained
+    validate_digest_body(retained, result.text, result.chart.data)
+    validate_digest_body(
+        as_of + result.html[opening_end:] + PRE_732_BUTTON,
+        result.text,
+        result.chart.data,
+    )
+
+
 def funnel_metrics():
     """A funnel as response_metrics returns it, without the rows behind it."""
     from datetime import UTC, datetime
@@ -603,7 +756,7 @@ def funnel_metrics():
 
 
 def test_a_production_digest_shows_the_response_funnel():
-    """Four stages with counts and shares, and one figure with its share."""
+    """Four stages with counts and shares, and none of the side figures."""
     result = render(replace(document(), funnel=funnel_metrics(), mode="production"))
     for body in (visible(result.html), result.text):
         assert "Response funnel" in body
@@ -615,47 +768,25 @@ def test_a_production_digest_shows_the_response_funnel():
         assert "Link followed" not in body and "640" not in body
         assert "mail-scanner" not in body
         assert "::" not in body
-        # Trimmed by the Administrator (#969): no caption and no "already
-        # responded" or "without a delivered invitation" figures.
+        # Trimmed by the Administrator (#969, #1532): no caption and none of
+        # the figures the dashboard reports beside the funnel.
+        assert "more than once" not in body
         assert "Families at each stage" not in body
         assert "Percentages are of" not in body
         assert "already responded" not in body
         assert "without a delivered invitation" not in body
     assert "Email invites sent: 1,000 (100%)" in result.text
-    # The figure has a share of Submitted, named as such, and a bar (#1016).
-    assert "Submitted more than once: 7 (2% of Submitted)" in result.text
-    assert ">Submitted more than once</td>" in result.html
-    assert "<strong>7</strong> (2% of Submitted)</td>" in result.html
-    figure = result.html[result.html.index(">Submitted more than once</td>") :]
-    assert figure.index(f'<td width="2%" bgcolor="{BLUE}"') < figure.index("</tr>")
-    # Four stage rows and one figure row, each with a bar.
+    assert "of Submitted" not in result.text + result.html
+    # Four stage rows in one table, each with a bar.
     funnel = result.html[
         result.html.index("Response funnel") : result.html.index("Daily participation")
     ]
-    assert funnel.count(f'style="{STYLES["bar"]}"') == 5
+    assert funnel.count(f'style="{STYLES["bar"]}"') == 4
+    assert funnel.count(f'style="{STYLES["rows"]}"') == 1
     # After the campaign totals, before the participation chart.
     html = result.html
     assert html.index("Campaign totals") < html.index("Response funnel")
     assert html.index("Response funnel") < html.index("Daily participation")
-
-
-def test_the_digest_funnel_figure_shares_handle_no_submissions():
-    """With nothing submitted, the figure's share is a dash and has no bar."""
-    from parishkit.stewardship.reports.digest_funnel import figure_rows
-    from parishkit.stewardship.reports.response_metrics import Stage
-
-    metrics = funnel_metrics()
-    empty = replace(
-        metrics,
-        stages=tuple(
-            Stage(stage.key, 0, stage.note) if stage.key == "submitted" else stage
-            for stage in metrics.stages
-        ),
-        submitted_again=0,
-    )
-    assert figure_rows(empty) == (("Submitted more than once", 0, 0, "— of Submitted"),)
-    result = render(replace(document(), funnel=empty, mode="production"))
-    assert "Submitted more than once: 0 (— of Submitted)" in result.text
 
 
 def test_a_testing_digest_says_where_the_funnel_is():
@@ -664,6 +795,10 @@ def test_a_testing_digest_says_where_the_funnel_is():
     for body in (visible(result.html), result.text):
         assert "Response funnel" not in body
         assert "Testing digests leave out the response funnel." in body
+    # Both dashboard links open its Testing view, where the funnel is.
+    testing = DASHBOARD + "?mode=testing"
+    assert result.html.count(f'href="{testing}"') == 2
+    assert result.text.count(f": {testing}") == 2
     # A document with no mode (older callers) shows neither.
     plain = render(document())
     assert "Response funnel" not in plain.text and "Testing digests" not in plain.text
@@ -684,10 +819,8 @@ def test_the_saved_page_shows_the_same_funnel():
         ("Submitted", 401),
     ]
     assert context["funnel_testing_note"] == ""
-    # Trimmed like the email (#969): one figure, with its share (#1016).
-    assert context["funnel_figures"] == (
-        ("Submitted more than once", 7, 401, "2% of Submitted"),
-    )
+    # Trimmed like the email (#969, #1532): no side figures.
+    assert "funnel_figures" not in context
     assert "funnel_caption" not in context
     testing = snapshot_context(
         replace(document(), mode="testing"),
@@ -794,7 +927,7 @@ def test_a_testing_digest_has_no_funnel_charts():
 
 
 def test_the_saved_page_draws_no_funnel_charts():
-    """The daily page's funnel panel is its table and figure only (#1370)."""
+    """The daily page's funnel panel is its table only (#1370, #1532)."""
     from parishkit.stewardship.reports.digest_presentation import snapshot_context
 
     context = snapshot_context(
