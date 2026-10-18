@@ -63,7 +63,9 @@ when it lands.
   [unavailable menu pages](#unavailable-menu-pages),
   [navigation rules](#navigation-rules), [wizards](#wizards).
 - Admin page layout: [page help](#page-help),
-  [button labels](#button-labels), [shared visual style](#shared-visual-style),
+  [button labels](#button-labels),
+  [review pipeline terms](#review-pipeline-terms),
+  [shared visual style](#shared-visual-style),
   [colour scheme](#colour-scheme),
   [status indicators](#status-indicators), [stat tiles](#stat-tiles),
   [stage boxes](#stage-boxes), [time entry](#time-entry),
@@ -287,6 +289,15 @@ first user is the planned
 [Campaign calendar editing](../admin-portal/spec.md#editing-from-the-calendar)
 ([#1521](https://github.com/epiphany40223/parishkit/issues/1521)).
 
+A checkbox or radio button sits on the same line as its own label, the
+box or circle first and the words beside it, and any help or reason for
+that one choice goes under the words, never between the control and its
+label. **Shared code.** The stylesheet lays out every form or fieldset
+`div` that holds one checkbox or radio and its `label` this way (and a
+`label` wrapping its control), so a template never adds its own rule
+(#1656, Edit scheduled email's Apply this edit to and Delete this
+scheduled email).
+
 Client validation improves feedback but never replaces server validation.
 Browser-local timezone conversion uses UTC ISO timestamps supplied by the
 server. The Admin portal [requires
@@ -508,6 +519,17 @@ never scrolls to show it (Administrator, pk-local review of
   new state through a live-status announcer (`data-live-announcer`) is marked
   `data-in-place-spoken` instead and announces nothing on success, so two
   live regions never speak at once (Load ParishSoft data, #1404 PR 5).
+- **Views the page script draws.** A view drawn by the page script from data
+  the page already holds (from #1656, the
+  [Campaign calendar](../admin-portal/spec.md#campaign-calendar)'s month)
+  changes with no request at all: the script redraws it, focus stays on the
+  control, the new view is announced, and the address's parameter for
+  that view is replaced (never added to the history), so reload, bookmarks
+  and returning to the page keep it. Its stepping controls (Previous, Next)
+  sit before the view's name, so a longer name moves neither, and at the end
+  of the range the control stays in place, focusable but unavailable, with
+  its reason in a reserved line ([prerequisite
+  gates](#prerequisite-gates)).
 - **Request.** The browser fetches exactly the request the control would
   have made, follows the server's Post/Redirect/Get redirect, and replaces
   every region the fetched page shares with this one, plus the counts,
@@ -952,7 +974,12 @@ only content after the toggle ([no layout shift](#no-layout-shift)).
 **Rule.** A button is unavailable until its prerequisites are met and there
 is something for it to do, and while it is unavailable a short visible reason
 says what is missing. A Review button is unavailable until the form differs
-from what is saved. The server still checks every submission. **Why.** A
+from what is saved. The server still checks every submission. An unavailable
+button looks the same whether it is `disabled` or kept focusable with
+`aria-disabled` (a stepping control at the end of its range): greyed, with
+the not-allowed pointer and no hover change. The busy (progress) pointer is
+only for a button whose request is in flight (`is-busy`, `aria-busy` on it
+or its form), never for one that is merely unavailable (#1656). **Why.** A
 button that is available but refuses afterwards wastes a round trip and reads
 as an error; a button greyed out with no reason reads as broken. **Shared
 code.** `ui-v1.js`: `data-require-complete` with `data-complete-hint` and
@@ -1685,7 +1712,8 @@ Testing rehearsal.
   (Production | Testing rehearsal), above its Filters panel, and
   [Roster changes to enter](../admin-portal/spec.md#roster-changes-to-enter)'s
   Show (Not yet entered | All, including entered), above its Ministry
-  filter.
+  filter, and the [Campaign calendar](../admin-portal/spec.md#campaign-calendar)'s
+  Show (Upcoming emails | Include past emails), above Every email by date.
 - **Links.** Each segment is a link to the page's own address with that
   choice (`a[data-in-place]`, marked `aria-current="page"` when chosen), so
   each view has a real address that a reload or bookmark keeps. The link
@@ -2352,6 +2380,25 @@ whole label, such as the confirm dialog's `accept`. Labels built in Python
 or written by JavaScript are not covered. Progress text such as "Saving…"
 and truncated names are not labels, so they are unaffected.
 
+### Review pipeline terms
+
+**Rule.** Every page, export, help text, notice, audit display and
+command that shows a Family-submitted change under review uses the words
+of the [review pipeline vocabulary](../review-pipeline/spec.md#pipeline-vocabulary),
+exactly as its table spells them. A stream never introduces its own word for
+a shared stage, and "Approve" and "Publish" are retired as user-facing
+words for Accept and Update ParishSoft. The words are display only:
+stored values and audit event types keep their names. **Why.** Staff and
+Ministry leaders review several streams; one set of words, learnt once,
+says the same thing on every page, and *To do* no longer means both
+"waiting to be updated" and "waiting to be typed in". **Shared code.**
+`parishkit.stewardship.pipeline` (the stage, decision and term words, and
+the stage each stream's stored state maps to). **Precedent.**
+[#1680](https://github.com/epiphany40223/parishkit/issues/1680),
+[#1691](https://github.com/epiphany40223/parishkit/issues/1691). Pages
+move to the words as each stream moves to the shared review worklist; until
+then a page keeps its current words.
+
 ### Shared visual style
 
 The portal and the emails share one visual style
@@ -2569,6 +2616,12 @@ look per state:
   outline, in `currentColor`. No icon has a fixed colour, so forced-colours
   mode keeps every shape and mark. Icon colours come only from the
   [design tokens](#shared-visual-style).
+- **Needs correction.** A status saying a recorded value is wrong and
+  must be fixed (the review pipeline's **Entered incorrectly**) uses the
+  Error look, and a status saying an expected result has not appeared yet
+  (**Not seen in ParishSoft**) uses the Warning look
+  ([review pipeline](../review-pipeline/spec.md#entered-incorrectly-stage),
+  [#1680](https://github.com/epiphany40223/parishkit/issues/1680)).
 - **Contrast.** Text meets 4.5:1, and icons and borders 3:1, against their
   background, checked by a contrast test over the token pairs above. Not
   current uses `--control-border` (3.3:1 on `--paper-soft`), because the
@@ -3275,6 +3328,13 @@ The shared `table-selection.html` include and its `ui-v1.js` wiring give
 every such table this behavior. The server validates every submitted
 selection.
 
+A **worklist** (a table a reader works through, such as the review
+pipeline's [review worklist](../review-pipeline/spec.md#review-worklist)) has its filters
+always open, never behind a disclosure, above the table, and its export
+pane below the table. A table's create action (the review worklist's
+**Add**) sits in its selection bar, shown only to readers allowed to add
+there ([#1680](https://github.com/epiphany40223/parishkit/issues/1680)).
+
 ### Row actions and confirmation
 
 **Rule.** Row actions are same-size icon buttons in the last column, Delete
@@ -3325,6 +3385,20 @@ inventory on #879 lists.
   action cannot be undone; so far only Census changes ([#879](https://github.com/epiphany40223/parishkit/issues/879)), whose
   decisions take an optional note and Reopen a required one. A row shows
   only the actions that apply to it; a row with none shows nothing there.
+- **Selected state.** On a table whose row actions record a state (a
+  review decision, a mark), the icon of the state in force is drawn
+  **selected**: filled with that state's status colour, with a white
+  glyph, and `aria-pressed="true"`; the row's other icons are drawn
+  unselected (outline, `aria-pressed="false"`). Choosing the selected icon
+  again is not an undo; the row's own undo action (the review pipeline's
+  Back to review) is. So the decision shows on the icons, not only in a
+  status column ([review pipeline](../review-pipeline/spec.md#selected-state-icons),
+  [#1680](https://github.com/epiphany40223/parishkit/issues/1680)).
+- **By role.** Row actions the reader's role does not allow are not shown,
+  not shown disabled, so a Ministry leader and Staff may see different icon
+  sets on the same table; the server and database still refuse them. The
+  bulk bar likewise offers only the actions that every ticked row allows
+  that reader ([role-specific actions](../review-pipeline/spec.md#role-specific-actions)).
 - **Edit** opens the item's edit page, which is the same page as New, filled
   in. Saving it goes through the [review dialog](#review-dialog), after which
   the reader returns to the table (until #750 converts the page, through its
@@ -3351,7 +3425,9 @@ inventory on #879 lists.
 - **Several rows.** A table that allows acting on several rows has the
   [selection column and bulk bar](#admin-tables) above; its only bulk action
   is usually Delete selected, which opens the same dialog naming the count.
-  Rows without actions have no selection box. Several bulk buttons may share
+  Rows without actions have no selection box, and every row with a
+  bulk-eligible action has one: a table never gives boxes to only some of
+  its actionable rows (#1680). Several bulk buttons may share
   one dialog, each setting its title and text. A bulk action that applies
   only to one kind of row is a [prerequisite gate](#prerequisite-gates): it
   is available only while every ticked row is of its kind, and the bulk

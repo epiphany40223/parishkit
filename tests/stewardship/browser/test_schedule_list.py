@@ -64,6 +64,9 @@ REVIEW = "Review changes"
 ADD = "Add the scheduled email"
 APPLIED_LINE = re.compile(r"Applied at \d{1,2}:\d{2}\s?[AP]M\.$")
 FOCUSED = "document.activeElement && document.activeElement.id"
+# The review dialog of Review changes (or New's Add): Edit also has its
+# Delete's own review dialog (#1656), which the Delete tests name.
+REVIEW_DIALOG = "dialog[data-review-dialog]:not(#schedule-delete-review)"
 
 
 def rows(page):
@@ -422,7 +425,7 @@ def test_new_repeating_reminder_lists_and_posts_the_dates_that_fit(
     assert fields["schedule-kind"] == ["reminder"]
     # The fixture answers every New Review alike; the server answers a
     # Repeat with its full review (test_a_repeat_after_a_confirmation...).
-    visible(page.locator("dialog[data-review-dialog]"))
+    visible(page.locator(REVIEW_DIALOG))
     assert not failures
 
 
@@ -519,7 +522,9 @@ def test_a_series_reminder_changes_this_and_following_in_place(
     )
     date = page.locator('[name="schedule-date"]')
     time = page.locator('[name="schedule-time"]')
-    this = page.get_by_role("radio", name="This reminder only")
+    this = page.locator("#schedule-entry-form").get_by_role(
+        "radio", name="This reminder only"
+    )
     assert this.is_checked() and date.is_enabled()
     button = page.get_by_role("button", name=REVIEW)
     assert button.is_disabled()
@@ -537,7 +542,9 @@ def test_a_series_reminder_changes_this_and_following_in_place(
     assert axe_violations(page, axe_source) == []
     this.check()
     assert date.is_enabled()
-    page.get_by_role("radio", name="The whole series").check()
+    page.locator("#schedule-entry-form").get_by_role(
+        "radio", name="The whole series"
+    ).check()
     time.fill("10:30")
     assert button.is_enabled()
     with page.expect_request(lambda request: request.method == "POST") as sent:
@@ -566,7 +573,9 @@ def test_an_unavailable_scope_says_why_and_a_refusal_shows_at_the_choice(
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + EDIT_SERIES_GATED)
     failures = watch(page)
-    whole = page.get_by_role("radio", name="The whole series")
+    whole = page.locator("#schedule-entry-form").get_by_role(
+        "radio", name="The whole series"
+    )
     assert whole.is_disabled()
     reason = page.locator(f"#{whole.get_attribute('aria-describedby')}")
     assert reason.inner_text() == f"Unavailable: {GATED_REASON}"
@@ -664,7 +673,7 @@ def test_a_repeat_compares_moments_in_a_zone_a_day_ahead(
         fields = posted(sent.value)
         assert fields["repeat-dates"] == ["2054-10-07", "2054-10-14", "2054-10-28"]
         assert fields["zone"] == ["Pacific/Auckland"]
-        visible(page.locator("dialog[data-review-dialog]"))
+        visible(page.locator(REVIEW_DIALOG))
         assert not failures
     finally:
         context.close()
@@ -711,7 +720,7 @@ def fill_new(page, origin, path=NEW):
 def review(page, name=ADD):
     """Choose New's Add the scheduled email (or ``name``); wait for the dialog."""
     page.get_by_role("button", name=name).click()
-    shown = page.locator("dialog[data-review-dialog]")
+    shown = page.locator(REVIEW_DIALOG)
     visible(shown)
     return shown
 
@@ -853,7 +862,7 @@ def test_a_field_error_stays_on_the_form(page, component_origin):
     summary = page.locator("[data-error-summary]")
     visible(summary)
     eventually(page, "document.activeElement?.matches('[data-error-summary]')")
-    assert not page.locator("dialog[data-review-dialog]").is_visible()
+    assert not page.locator(REVIEW_DIALOG).is_visible()
     message = page.locator("#id_schedule-date_error")
     visible(message)
     assert message.inner_text() == DATE_REFUSAL
@@ -884,7 +893,7 @@ def test_another_refusal_shows_in_the_dialog(page, component_origin):
     eventually(page, "true")
     assert len(held) == 1
     held[0].continue_()
-    shown = page.locator("dialog[data-review-dialog]")
+    shown = page.locator(REVIEW_DIALOG)
     visible(shown)
     error = shown.locator("[data-confirm-error]")
     visible(error)
@@ -1059,7 +1068,7 @@ def test_a_refused_date_change_marks_the_schedule_on_the_form(page, component_or
     summary = page.locator("[data-error-summary]")
     visible(summary)
     eventually(page, "document.activeElement?.matches('[data-error-summary]')")
-    assert not page.locator("dialog[data-review-dialog]").is_visible()
+    assert not page.locator(REVIEW_DIALOG).is_visible()
     visible(date)
     assert date.get_attribute("aria-invalid") == "true"
     visible(page.locator("#id_schedules-2-date_error"))
@@ -1191,7 +1200,7 @@ def test_edit_offers_the_schedules_own_email_below_its_choice(
     assert fields["generate_text"] == ["on"]
     # Generated text is the server's to make; it is not posted.
     assert "text" not in fields
-    visible(page.locator("dialog[data-review-dialog]"))
+    visible(page.locator(REVIEW_DIALOG))
     assert not failures
 
 
@@ -1360,7 +1369,7 @@ def test_a_refused_email_is_marked_at_its_html_source(page, component_origin):
     summary = page.locator("[data-error-summary]")
     visible(summary)
     eventually(page, "document.activeElement?.matches('[data-error-summary]')")
-    assert not page.locator("dialog[data-review-dialog]").is_visible()
+    assert not page.locator(REVIEW_DIALOG).is_visible()
     html = page.locator('[name="html"]')
     message = page.locator("#id_html_error")
     visible(message)

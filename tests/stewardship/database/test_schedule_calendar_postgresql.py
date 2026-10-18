@@ -65,9 +65,10 @@ def test_calendar_lists_each_send_and_changes_nothing(auth_service, google):
     actions = page.split("data-campaign-step-actions", 1)[1]
     assert "Return to Dates and mail schedules" in actions.split("</div>", 1)[0]
     assert ConfigurationChangeRequest.objects.count() == before
-    # The list links it; the calendar takes no parameters and no POST.
+    # The list links it; the calendar takes only its own parameters and no
+    # POST.
     assert f'href="{CALENDAR}"' in unescape(browser.get(LIST).content.decode())
-    assert browser.get(f"{CALENDAR}?sort=when").status_code == 400
+    assert browser.get(f"{CALENDAR}?page=2").status_code == 400
     assert browser.post(CALENDAR).status_code in {403, 405}
 
 
@@ -142,7 +143,7 @@ def test_add_on_a_day_opens_new_with_that_date_and_returns_here(
     browser, _ = signed_in()
     calendar = unescape(browser.get(CALENDAR).content.decode())
     assert f'data-add-url="{NEW}"' in calendar
-    assert 'data-add-name="Add an email on {date}"' in calendar
+    assert 'data-add-name="Add a scheduled email on {date}"' in calendar
     assert re.search(
         r'<p class="review-outcome" id="schedules-outcome" role="status" '
         r'tabindex="-1" data-review-outcome></p>',
@@ -157,11 +158,12 @@ def test_add_on_a_day_opens_new_with_that_date_and_returns_here(
         r'<input type="date" name="schedule-date" value="2054-10-12"', page
     )
     assert '<option value="reminder" selected>' in page
-    # Cancel and the dialog's return are the calendar; Apply still confirms
-    # on the list, and the page posts to its own path.
-    assert f'<a href="{CALENDAR}">Cancel</a>' in page
+    # Cancel and the dialog's return are the calendar on that day's month
+    # (#1656); Apply still confirms on the list, and the page posts to its
+    # own path.
+    assert f'<a href="{CALENDAR}?month=2054-10">Cancel</a>' in page
     dialog = page[page.index('<dialog id="schedule-review"') :]
-    assert f'data-review-return="{CALENDAR}"' in dialog
+    assert f'data-review-return="{CALENDAR}?month=2054-10"' in dialog
     assert 'data-review-outcome="schedules-outcome"' in dialog
     assert f'<form method="post" action="{LIST}" data-review-apply>' in dialog
     assert f'action="{NEW}" id="schedule-entry-form"' in page
@@ -215,3 +217,87 @@ def test_edit_takes_no_add_day(auth_service, google):
     reminder = definition("reminder")
     path = f"/admin/campaign/schedules/{reminder.pk}/"
     assert browser.get(f"{path}?date=2054-10-12").status_code == 400
+
+
+def test_edit_from_the_calendar_returns_to_its_month(auth_service, google, monkeypatch):
+    """?calendar=<month> (#1656) points Cancel and Apply at that month.
+
+    Outside the campaign wizard, as the Add test above is.
+    """
+    monkeypatch.setattr(campaign_wizard, "shown", lambda *_, **__: False)
+    store = auth_service.store
+    draft_with_schedules(store)
+    browser, _ = signed_in()
+    path = f"/admin/campaign/schedules/{definition('reminder').pk}/"
+    page = unescape(browser.get(f"{path}?calendar=2054-11").content.decode())
+    back = f"{CALENDAR}?month=2054-11"
+    assert f'<a href="{back}">Cancel</a>' in page
+    assert f'data-review-return="{back}"' in page
+    assert f'data-review-return="{LIST}"' not in page
+    plain = unescape(browser.get(path).content.decode())
+    assert f'data-review-return="{LIST}"' in plain
+    for refused in (
+        f"{path}?calendar=2054-13",
+        f"{path}?calendar=",
+        f"{path}?date=2054-10-12",
+    ):
+        assert browser.get(refused).status_code == 400, refused
+    # New from a day's Add returns to that day's month.
+    added = unescape(browser.get(f"{NEW}?date=2054-10-12").content.decode())
+    assert f'<a href="{CALENDAR}?month=2054-10">Cancel</a>' in added
+
+
+def test_the_calendar_takes_only_a_well_formed_month(auth_service, google):
+    """?month= (#1656) is the page script's; a malformed one is an unknown
+    address."""
+    store = auth_service.store
+    draft_with_schedules(store)
+    browser, _ = signed_in()
+    page = browser.get(f"{CALENDAR}?month=2054-11")
+    assert page.status_code == 200
+    assert b"data-calendar-step" in page.content
+    # A month outside the campaign is the script's to move to the nearer end.
+    assert browser.get(f"{CALENDAR}?month=2060-01").status_code == 200
+    for month in ("2054-13", "2054-1", "november", ""):
+        assert browser.get(f"{CALENDAR}?month={month}").status_code == 400, month
+    assert browser.get(f"{CALENDAR}?month=2054-10&month=2054-11").status_code == 400
+
+
+def test_every_email_by_date_shows_upcoming_and_sorts(
+    auth_service, google, monkeypatch
+):
+    """Show (#1656) leaves out a past email by default and Include past emails
+    lists it; When and Schedule sort the table, and each keeps the other's
+    choice. The grid's own list always holds every send."""
+    store = auth_service.store
+    draft_with_schedules(store)
+    browser, _ = signed_in()
+    initial = definition("initial")
+    later = initial.current_revision.due_at + timedelta(hours=1)
+    monkeypatch.setattr(
+        schedule_calendar_views, "timezone", SimpleNamespace(now=lambda: later)
+    )
+
+    def table(query=""):
+        page = unescape(browser.get(f"{CALENDAR}{query}").content.decode())
+        source = page.split("data-calendar-source", 1)[1].split("</ul>", 1)[0]
+        body = page.split('<table class="data-table whole-words calendar-sends">')[1]
+        return page, source, re.findall(r'<th scope="row">([^<]+)</th>', body)
+
+    page, source, rows = table()
+    assert source.count("data-calendar-send ") == 2
+    assert rows == ["Reminder 1"]
+    assert 'aria-current="page">Upcoming emails</a>' in page
+    assert f'href="{CALENDAR}?show=all&sort=when#table"' in page
+    assert 'href="?show=upcoming&sort=-when#table"' in page
+    _, source, rows = table("?show=all")
+    assert source.count("data-calendar-send ") == 2
+    assert rows == ["Initial invitation", "Reminder 1"]
+    _, _, rows = table("?show=all&sort=-when")
+    assert rows == ["Reminder 1", "Initial invitation"]
+    page, _, rows = table("?show=all&sort=-schedule")
+    assert rows == ["Reminder 1", "Initial invitation"]
+    assert 'href="?show=all&sort=schedule#table"' in page
+    assert f'href="{CALENDAR}?show=upcoming&sort=-schedule#table"' in page
+    for refused in ("?show=past", "?sort=email", "?show=all&show=upcoming"):
+        assert browser.get(f"{CALENDAR}{refused}").status_code == 400, refused
