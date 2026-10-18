@@ -1280,7 +1280,7 @@ must also be live and full scope (`stewardship_automation_fresh_v1(login,
 actor)`), so a read-only, revoked or expired automation session is refused in
 SQL as well as in Python. Before #1547 the guards instead required the
 instant to be within the last five minutes or that live full-scope
-automation session; frozen migration 0113
+automation session; frozen migration 0114
 (`stewardship_accounts.0027_no_sign_in_age`) re-created the thirteen guards
 without the age clause, under the
 [post-launch schema policy](../operations/spec.md#post-launch-schema-policy).
@@ -1436,10 +1436,10 @@ the setup-install branch and the rule about empty required consumers.
 Before #1547 they refused an instant older than five minutes unless
 `stewardship_automation_fresh_principal_v1(requested_by, instant)` (a
 `SECURITY DEFINER` function the web and installer logins may execute) admitted
-a live full-scope automation session with that instant; migration 0113 removed
+a live full-scope automation session with that instant; migration 0114 removed
 the age check, so the recorded instant may be of any age. Instead both guards
 call `stewardship_automation_instant_ended_v1(requested_by, instant)` (new in
-0113, `SECURITY DEFINER`, granted to the same logins): an instant that a
+0114, `SECURITY DEFINER`, granted to the same logins): an instant that a
 full-scope automation session of the requester holds needs one such session
 still live. So a request made through an automation session that was revoked
 or expired before the installer's test does not move to testing (it expires
@@ -1903,7 +1903,7 @@ checks that every other ledger route is named here.
 | `signed_in_sessions` (list and Sign out, new, #953) | Permanent: browser session chrome; the operator's offline recovery signs everyone out |
 | `maintenance` | Permanent: the status page the access gate shows |
 | `campaign_step_continue` ([#1404](https://github.com/epiphany40223/parishkit/issues/1404)) | Permanent: the browser [Campaign setup stepper](../admin-portal/spec.md#create-the-campaign)'s own progress (a step kept as is, then the next step page, or one Pages and emails item kept as is, then Pages and emails, #1404 PR 6b); the command line applies settings directly and has no stepper |
-| `held_emails` ([#757](https://github.com/epiphany40223/parishkit/issues/757)) | Permanent: held-email decisions stay in the browser. The exemption predates [#1547](https://github.com/epiphany40223/parishkit/issues/1547), when they needed a recent Google sign-in that the decision guard (migration 0017) checked; since migration 0113 the guard binds only a live session of the actor |
+| `held_emails` ([#757](https://github.com/epiphany40223/parishkit/issues/757)) | Permanent: held-email decisions stay in the browser. The exemption predates [#1547](https://github.com/epiphany40223/parishkit/issues/1547), when they needed a recent Google sign-in that the decision guard (migration 0017) checked; since migration 0114 the guard binds only a live session of the actor |
 | `automation_access`, `automation_approval`, `automation_sessions` (revoke) and `automation_notices` (acknowledgement) (new) | Permanent: these pages are the human side of the interface (PR 2); `sessions` takes the page's filter and sort for one's own sessions (#621) |
 | `response_dashboard` ([#517](https://github.com/epiphany40223/parishkit/issues/517)) | `report responses` with counts (PR 8c) |
 
@@ -3109,7 +3109,7 @@ value, name or note; the values stay in `export census`.
   `confirm_and_publish` with those counts. It is
   [fresh-gated](#fresh-gated-actions-from-the-command-line): a full-scope,
   live automation session runs it, as the confirmation's SQL guard
-  (migration 0087, without the sign-in age since 0113) accepts. The service records
+  (migration 0087, without the sign-in age since 0114) accepts. The service records
   `census_publication_confirmed`, and the command
   `admin_cmd_census_publish_confirm` in the same transaction, once per
   key. `--watch` follows the run.
@@ -4024,7 +4024,7 @@ time:
    - The **session guard** enforces the [pairing](#pairing) rules on insert:
      web login only; a live approving browser session of the principal that
      is not a command session (signed in within five minutes until migration
-     0113 removed the age check, #1547); the
+     0114 removed the age check, #1547); the
      principal an Administrator; `expires_at` after `statement_timestamp()`
      and at most 30 days after it; scope and digest formats. On update it
      admits only `last_used_at` forward to at most now (web), and `revoked_at`
@@ -4075,10 +4075,10 @@ time:
    function-equality test checks each copy against the baseline, and the
    upgrade-parity test checks the catalog. The Production confirmation's
    post-cleanup clause still requires cleanup's `complete` event; an
-   automation session only replaces the sign-in after it (migration 0113
+   automation session only replaces the sign-in after it (migration 0114
    later dropped the sign-in-after-cleanup and five-minute clauses; the
    session-bound guards still call `stewardship_automation_fresh_v1` for a
-   command session, and the secret request guards call 0113's
+   command session, and the secret request guards call 0114's
    `stewardship_automation_instant_ended_v1` instead of the principal
    helper). Admission
    (`admit_admin_action`) refuses an automation caller for
@@ -4169,7 +4169,7 @@ MUST prove:
 - **fresh gates:** `sign_in_instant` admits a full-scope, live automation
   caller at each listed call site, recording its event and notice, and
   refuses a read-only or no-longer-live session (`denied`); each guard that
-  migration 0113 replaced, run against its old and its new definition,
+  migration 0114 replaced, run against its old and its new definition,
   admits a session whose sign-in is older than five minutes only under the
   new, still refuses revoked, expired, idle and other actors' sessions, and
   admits a command session; the frozen file's `DO` block fails against an

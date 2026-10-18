@@ -1,7 +1,7 @@
 """Guards that 0013 opened to automation admit any live session (#1547).
 
 Frozen file 0013 let a live full-scope automation session stand in for a
-sign-in under five minutes old. 0113 removed the sign-in age from these
+sign-in under five minutes old. 0114 removed the sign-in age from these
 guards altogether, so a session is admitted at any sign-in age: the
 actor's live session (unrevoked, unexpired, active in the last 60 minutes),
 bound to the row's recorded sign-in instant where it was, and, for an
@@ -13,7 +13,7 @@ Family test guard through the real chosen-Family test form; the secret
 request guards through the real sealed intake and the installer's
 staged-to-testing step, on disposable roles; there an instant that a
 full-scope automation session holds still needs one such session live
-(``stewardship_automation_instant_ended_v1``, new in 0113). 0013's own DO block is run
+(``stewardship_automation_instant_ended_v1``, new in 0114). 0013's own DO block is run
 against 0013's bodies, put back in a rolled-back transaction, and refuses
 each pre-0013 guard. ``sign_in_instant`` and the still-installed, now unused
 ``stewardship_automation_fresh_principal_v1`` are covered directly.
@@ -365,7 +365,7 @@ def test_secret_request_guards_accept_a_sign_in_of_any_age(
 ):
     """Intake and staged-to-testing take an hours-old recorded instant.
 
-    0113 checks no age, but an instant that a full-scope automation session
+    0114 checks no age, but an instant that a full-scope automation session
     holds still needs one such session live (ADM-11): once it ends, a
     credential it staged cannot move to testing and it stages no other. An
     instant no automation session holds (a browser's) still passes.
@@ -523,7 +523,7 @@ def test_sign_in_instant_admits_a_live_full_session_only(auth_service, google):
 def test_the_frozen_files_check_refuses_an_unchanged_guard(auth_service):
     """The DO block passes on 0013's bodies, raises on each pre-0013 one.
 
-    0113 (#1547) replaced every body 0013 installs, so each rolled-back
+    0114 (#1547) replaced every body 0013 installs, so each rolled-back
     transaction first puts 0013's own bodies back.
     """
     check = FROZEN[FROZEN.index("DO $check$") :]

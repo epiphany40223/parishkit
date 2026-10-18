@@ -15,7 +15,7 @@ current baseline/review/CI acceptance; old counts do not certify the current tre
 Since [#1547](https://github.com/epiphany40223/parishkit/issues/1547)
 (2026-10-17) no Admin action checks how long ago the Admin signed in: the
 step-up ("Confirm with Google"), `require_fresh`, the setup sign-in hour and
-the SQL guards' sign-in age clauses (migration 0113) are gone. Evidence below
+the SQL guards' sign-in age clauses (migration 0114) are gone. Evidence below
 that mentions fresh sign-ins, step-ups or `require_fresh` records the
 behavior when that work landed; open tasks no longer include them.
 
@@ -333,7 +333,7 @@ session and still record `automation_fresh_gate` and the `fresh_gated` and
 requires a command session's live full-scope automation session
 (`stewardship_automation_fresh_v1`), and the secret request guards refuse a
 request whose full-scope automation session ended
-(`stewardship_automation_instant_ended_v1`, migration 0113);
+(`stewardship_automation_instant_ended_v1`, migration 0114);
 `stewardship_automation_fresh_principal_v1` stays in the schema, unused,
 until [#1550](https://github.com/epiphany40223/parishkit/issues/1550).
 

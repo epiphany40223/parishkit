@@ -54,7 +54,7 @@ OLD_CLEAR = re.search(
     TEXT,
     re.M | re.S,
 )[0]
-# 0078's own guard: 0088 and then 0113 (#1547, any sign-in age) replace it,
+# 0078's own guard: 0088 and then 0114 (#1547, any sign-in age) replace it,
 # so 0078's check gets it back inside its rolled-back transaction.
 OLD_GUARD = re.search(
     r"^CREATE FUNCTION public\.stewardship_debug_off_switch_guard_v1\(\).*?^END \$\$;",
@@ -450,7 +450,7 @@ def test_the_service_status_record_reports_the_effective_state(monkeypatch):
 def test_the_migration_check_passes_and_refuses_drift():
     """The closing DO block passes as installed and refuses each drift.
 
-    0098 dropped the count-only clear this check names, and 0113 replaced
+    0098 dropped the count-only clear this check names, and 0114 replaced
     the guard, so each run puts both back first, inside the rolled-back
     transaction.
     """

@@ -3,7 +3,7 @@
 A genuine go-live through cleanup and link preparation (the confirmation
 suites' fixtures), then a confirmation row built from a real signed preview,
 so every other clause of ``stewardship_production_confirmation_guard_v1``
-passes and only the session clause decides. Since 0113 (#1547) it checks no
+passes and only the session clause decides. Since 0114 (#1547) it checks no
 sign-in age and no sign-in after cleanup: the automation session's sign-in
 instant is moved a day back, before cleanup finished, and its live command
 session is admitted, while another Administrator, a revoked command

@@ -1,4 +1,4 @@
--- Frozen forward migration file 0113 (the repository-wide file sequence):
+-- Frozen forward migration file 0114 (the repository-wide file sequence):
 -- the Admin portal no longer asks for a recent sign-in (#1547). This file is
 -- installed by the Django migration that names it in FROZEN_SQL and must
 -- never change once released; tests/stewardship/test_schema_migration_files.py
@@ -50,7 +50,7 @@ SET LOCAL search_path = public;
 -- Each function's grants, rights and configuration before the replacement,
 -- compared in the DO block (a transaction-local setting: the migration
 -- login has no TEMP privilege).
-SELECT set_config('stewardship.migration_0113_attributes', (
+SELECT set_config('stewardship.migration_0114_attributes', (
     SELECT string_agg(p.proname||'='||coalesce(p.proacl::text,'default')||'|'||p.prosecdef::text||'|'||coalesce(array_to_string(p.proconfig,','),'')||'|'||p.prolang::text, ';' ORDER BY p.proname)
     FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
     WHERE n.nspname='public' AND p.proname IN (
@@ -1214,7 +1214,7 @@ BEGIN
           AND pg_get_function_identity_arguments(p.oid)='principal uuid, instant timestamp with time zone'
           AND md5(p.prosrc)='072f3027ffc72d9bb307036e4e4f036c'
           AND NOT has_function_privilege('public', p.oid, 'EXECUTE')) THEN
-        RAISE EXCEPTION 'Migration 0113: stewardship_automation_instant_ended_v1 is not installed as declared';
+        RAISE EXCEPTION 'Migration 0114: stewardship_automation_instant_ended_v1 is not installed as declared';
     END IF;
     -- Each replaced function is its one overload, with exactly the new body.
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
@@ -1231,7 +1231,7 @@ BEGIN
           AND p.prosrc NOT LIKE '%authenticated_at<statement_timestamp()-interval%'
           AND p.prosrc NOT LIKE '%reauthenticated_at<%'
           AND p.prosrc NOT LIKE '%authenticated_at>=stamp-interval%')<>1 THEN
-        RAISE EXCEPTION 'Migration 0113: stewardship_automation_session_guard_v1 is not installed as declared';
+        RAISE EXCEPTION 'Migration 0114: stewardship_automation_session_guard_v1 is not installed as declared';
     END IF;
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_backup_request_guard_v1'
@@ -1250,7 +1250,7 @@ BEGIN
           AND p.prosrc NOT LIKE '%authenticated_at<statement_timestamp()-interval%'
           AND p.prosrc NOT LIKE '%reauthenticated_at<%'
           AND p.prosrc NOT LIKE '%authenticated_at>=stamp-interval%')<>1 THEN
-        RAISE EXCEPTION 'Migration 0113: stewardship_backup_request_guard_v1 is not installed as declared';
+        RAISE EXCEPTION 'Migration 0114: stewardship_backup_request_guard_v1 is not installed as declared';
     END IF;
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_debug_off_switch_guard_v1'
@@ -1270,7 +1270,7 @@ BEGIN
           AND p.prosrc NOT LIKE '%authenticated_at<statement_timestamp()-interval%'
           AND p.prosrc NOT LIKE '%reauthenticated_at<%'
           AND p.prosrc NOT LIKE '%authenticated_at>=stamp-interval%')<>1 THEN
-        RAISE EXCEPTION 'Migration 0113: stewardship_debug_off_switch_guard_v1 is not installed as declared';
+        RAISE EXCEPTION 'Migration 0114: stewardship_debug_off_switch_guard_v1 is not installed as declared';
     END IF;
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_delivery_control_guard_v1'
@@ -1290,7 +1290,7 @@ BEGIN
           AND p.prosrc NOT LIKE '%authenticated_at<statement_timestamp()-interval%'
           AND p.prosrc NOT LIKE '%reauthenticated_at<%'
           AND p.prosrc NOT LIKE '%authenticated_at>=stamp-interval%')<>1 THEN
-        RAISE EXCEPTION 'Migration 0113: stewardship_delivery_control_guard_v1 is not installed as declared';
+        RAISE EXCEPTION 'Migration 0114: stewardship_delivery_control_guard_v1 is not installed as declared';
     END IF;
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_family_mail_test_guard_v1'
@@ -1307,7 +1307,7 @@ BEGIN
           AND p.prosrc NOT LIKE '%authenticated_at<statement_timestamp()-interval%'
           AND p.prosrc NOT LIKE '%reauthenticated_at<%'
           AND p.prosrc NOT LIKE '%authenticated_at>=stamp-interval%')<>1 THEN
-        RAISE EXCEPTION 'Migration 0113: stewardship_family_mail_test_guard_v1 is not installed as declared';
+        RAISE EXCEPTION 'Migration 0114: stewardship_family_mail_test_guard_v1 is not installed as declared';
     END IF;
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_production_confirmation_guard_v1'
@@ -1328,7 +1328,7 @@ BEGIN
           AND p.prosrc NOT LIKE '%authenticated_at<statement_timestamp()-interval%'
           AND p.prosrc NOT LIKE '%reauthenticated_at<%'
           AND p.prosrc NOT LIKE '%authenticated_at>=stamp-interval%')<>1 THEN
-        RAISE EXCEPTION 'Migration 0113: stewardship_production_confirmation_guard_v1 is not installed as declared';
+        RAISE EXCEPTION 'Migration 0114: stewardship_production_confirmation_guard_v1 is not installed as declared';
     END IF;
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_production_withdrawal_guard_v1'
@@ -1348,7 +1348,7 @@ BEGIN
           AND p.prosrc NOT LIKE '%authenticated_at<statement_timestamp()-interval%'
           AND p.prosrc NOT LIKE '%reauthenticated_at<%'
           AND p.prosrc NOT LIKE '%authenticated_at>=stamp-interval%')<>1 THEN
-        RAISE EXCEPTION 'Migration 0113: stewardship_production_withdrawal_guard_v1 is not installed as declared';
+        RAISE EXCEPTION 'Migration 0114: stewardship_production_withdrawal_guard_v1 is not installed as declared';
     END IF;
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_publication_confirmation_guard_v1'
@@ -1367,7 +1367,7 @@ BEGIN
           AND p.prosrc NOT LIKE '%authenticated_at<statement_timestamp()-interval%'
           AND p.prosrc NOT LIKE '%reauthenticated_at<%'
           AND p.prosrc NOT LIKE '%authenticated_at>=stamp-interval%')<>1 THEN
-        RAISE EXCEPTION 'Migration 0113: stewardship_publication_confirmation_guard_v1 is not installed as declared';
+        RAISE EXCEPTION 'Migration 0114: stewardship_publication_confirmation_guard_v1 is not installed as declared';
     END IF;
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_restore_decision_admitted_v1'
@@ -1385,7 +1385,7 @@ BEGIN
           AND p.prosrc NOT LIKE '%authenticated_at<statement_timestamp()-interval%'
           AND p.prosrc NOT LIKE '%reauthenticated_at<%'
           AND p.prosrc NOT LIKE '%authenticated_at>=stamp-interval%')<>1 THEN
-        RAISE EXCEPTION 'Migration 0113: stewardship_restore_decision_admitted_v1 is not installed as declared';
+        RAISE EXCEPTION 'Migration 0114: stewardship_restore_decision_admitted_v1 is not installed as declared';
     END IF;
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_sealed_intake_admission_v1'
@@ -1399,7 +1399,7 @@ BEGIN
           AND p.prosrc NOT LIKE '%authenticated_at<statement_timestamp()-interval%'
           AND p.prosrc NOT LIKE '%reauthenticated_at<%'
           AND p.prosrc NOT LIKE '%authenticated_at>=stamp-interval%')<>1 THEN
-        RAISE EXCEPTION 'Migration 0113: stewardship_sealed_intake_admission_v1 is not installed as declared';
+        RAISE EXCEPTION 'Migration 0114: stewardship_sealed_intake_admission_v1 is not installed as declared';
     END IF;
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_secret_state_v2'
@@ -1412,7 +1412,7 @@ BEGIN
           AND p.prosrc NOT LIKE '%authenticated_at<statement_timestamp()-interval%'
           AND p.prosrc NOT LIKE '%reauthenticated_at<%'
           AND p.prosrc NOT LIKE '%authenticated_at>=stamp-interval%')<>1 THEN
-        RAISE EXCEPTION 'Migration 0113: stewardship_secret_state_v2 is not installed as declared';
+        RAISE EXCEPTION 'Migration 0114: stewardship_secret_state_v2 is not installed as declared';
     END IF;
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_setup_secret_guard_v1'
@@ -1430,7 +1430,7 @@ BEGIN
           AND p.prosrc NOT LIKE '%authenticated_at<statement_timestamp()-interval%'
           AND p.prosrc NOT LIKE '%reauthenticated_at<%'
           AND p.prosrc NOT LIKE '%authenticated_at>=stamp-interval%')<>1 THEN
-        RAISE EXCEPTION 'Migration 0113: stewardship_setup_secret_guard_v1 is not installed as declared';
+        RAISE EXCEPTION 'Migration 0114: stewardship_setup_secret_guard_v1 is not installed as declared';
     END IF;
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_source_drop_acceptance_guard_v1'
@@ -1449,10 +1449,10 @@ BEGIN
           AND p.prosrc NOT LIKE '%authenticated_at<statement_timestamp()-interval%'
           AND p.prosrc NOT LIKE '%reauthenticated_at<%'
           AND p.prosrc NOT LIKE '%authenticated_at>=stamp-interval%')<>1 THEN
-        RAISE EXCEPTION 'Migration 0113: stewardship_source_drop_acceptance_guard_v1 is not installed as declared';
+        RAISE EXCEPTION 'Migration 0114: stewardship_source_drop_acceptance_guard_v1 is not installed as declared';
     END IF;
     -- Rights, search_path, language and grants are as before.
-    IF current_setting('stewardship.migration_0113_attributes', true) IS DISTINCT FROM (
+    IF current_setting('stewardship.migration_0114_attributes', true) IS DISTINCT FROM (
            SELECT string_agg(p.proname||'='||coalesce(p.proacl::text,'default')||'|'||p.prosecdef::text||'|'||coalesce(array_to_string(p.proconfig,','),'')||'|'||p.prolang::text, ';' ORDER BY p.proname)
            FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
            WHERE n.nspname='public' AND p.proname IN (
@@ -1468,7 +1468,7 @@ BEGIN
                'stewardship_sealed_intake_admission_v1','stewardship_secret_state_v2',
                'stewardship_setup_secret_guard_v1',
                'stewardship_source_drop_acceptance_guard_v1')) THEN
-        RAISE EXCEPTION 'Migration 0113: a replaced function changed its rights, configuration or grants';
+        RAISE EXCEPTION 'Migration 0114: a replaced function changed its rights, configuration or grants';
     END IF;
     -- Every trigger function still guards a table.
     IF EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
@@ -1486,7 +1486,7 @@ BEGIN
             'stewardship_setup_secret_guard_v1',
             'stewardship_source_drop_acceptance_guard_v1')
           AND NOT EXISTS (SELECT 1 FROM pg_trigger t WHERE t.tgfoid=p.oid AND t.tgenabled<>'D')) THEN
-        RAISE EXCEPTION 'Migration 0113: a replaced guard no longer has its trigger';
+        RAISE EXCEPTION 'Migration 0114: a replaced guard no longer has its trigger';
     END IF;
 END
 $check$;

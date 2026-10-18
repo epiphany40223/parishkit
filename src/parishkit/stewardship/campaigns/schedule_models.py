@@ -345,7 +345,7 @@ class RestoreHoldResolution(ImmutableRecord):
         ScheduleOccurrence, null=True, on_delete=models.PROTECT
     )
     # The deciding Administrator's session and its sign-in instant, which the
-    # guard binds to the live session (migrations 0017 and 0113).
+    # guard binds to the live session (migrations 0017 and 0114).
     session_id = models.UUIDField(null=True)
     authenticated_at = UTCDateTimeField(null=True)
 

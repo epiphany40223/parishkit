@@ -346,7 +346,7 @@ def test_the_migration_check_passes_and_refuses_the_old_guard():
     """0088's DO block passes with 0088's guard, and raises with 0078's guard
     (the definition an upgrade replaces) or a drifted one; all rolled back.
 
-    0113 (#1547) later replaces the guard, so each transaction first puts
+    0114 (#1547) later replaces the guard, so each transaction first puts
     0088's own body back.
     """
     old = (MIGRATIONS / "0078_debug_off_switch.sql").read_text(encoding="utf-8")

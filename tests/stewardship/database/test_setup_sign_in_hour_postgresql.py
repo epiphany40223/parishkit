@@ -84,7 +84,7 @@ def test_migration_check_refuses_each_earlier_or_weakened_body():
         ),
     )
     with transaction.atomic(), connection.cursor() as cursor:
-        # 0113 (#1547) later drops the hour, so 0104's own guard goes back
+        # 0114 (#1547) later drops the hour, so 0104's own guard goes back
         # first; the transaction rolls back.
         cursor.execute(guard)
         cursor.execute(capture)

@@ -1,6 +1,6 @@
-"""Migration 0113's DO block refuses every earlier or weakened body (#1547).
+"""Migration 0114's DO block refuses every earlier or weakened body (#1547).
 
-0113 (``schema/migrations/0113_no_sign_in_age.sql``) drops the sign-in age
+0114 (``schema/migrations/0114_no_sign_in_age.sql``) drops the sign-in age
 from every guard that checked it. Following the in-place SQL rule, its check
 runs here against each function's previous body (the latest earlier frozen
 file, or the baseline) and against weakened installs, inside a rolled-back
@@ -22,7 +22,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 SCHEMA = Path(__file__).resolve().parents[3] / "src/parishkit/stewardship/schema"
 MIGRATIONS = SCHEMA / "migrations"
-FROZEN = MIGRATIONS / "0113_no_sign_in_age.sql"
+FROZEN = MIGRATIONS / "0114_no_sign_in_age.sql"
 
 
 def statement(text, name):
@@ -39,7 +39,7 @@ def statement(text, name):
     return re.sub(r"^CREATE FUNCTION", "CREATE OR REPLACE FUNCTION", found)
 
 
-# The definer check 0113 adds (CREATE OR REPLACE only so the file can run
+# The definer check 0114 adds (CREATE OR REPLACE only so the file can run
 # again); it replaces nothing.
 ENDED = "stewardship_automation_instant_ended_v1"
 ENDED_REFUSED = f"{ENDED} is not installed"
@@ -77,7 +77,7 @@ KEY_CLAUSES = (
 
 
 def replaced_names():
-    """The functions 0113 replaces, in file order."""
+    """The functions 0114 replaces, in file order."""
     return [
         name
         for name in re.findall(
@@ -121,7 +121,7 @@ def weakened(text):
 
 
 def previous_body(name):
-    """The function's body before 0113: its latest earlier frozen copy."""
+    """The function's body before 0114: its latest earlier frozen copy."""
     body = None
     for path in sorted(MIGRATIONS.glob("*.sql")):
         if path.name >= FROZEN.name:
@@ -132,7 +132,7 @@ def previous_body(name):
 
 
 def test_migration_replaces_each_sign_in_age_guard():
-    """0113 names the thirteen guards that checked a sign-in's age."""
+    """0114 names the thirteen guards that checked a sign-in's age."""
     assert sorted(replaced_names()) == sorted(
         [
             "stewardship_automation_session_guard_v1",
@@ -170,7 +170,7 @@ def test_installed_guards_have_no_sign_in_age():
 
 
 def test_migration_check_refuses_each_earlier_or_weakened_body():
-    """0113's check passes as installed and refuses each regression."""
+    """0114's check passes as installed and refuses each regression."""
     text = FROZEN.read_text(encoding="utf-8")
     capture = text[text.index("SELECT set_config(") : text.index("true);") + 6]
     check = text[text.index("DO $check$") : text.index("$check$;") + len("$check$;")]
@@ -227,11 +227,11 @@ def test_migration_check_refuses_each_earlier_or_weakened_body():
         for change, message in changes:
             # The change is named on failure, so a passing regression is found.
             with (
-                pytest.raises(DatabaseError, match=f"Migration 0113.*{message}"),
+                pytest.raises(DatabaseError, match=f"Migration 0114.*{message}"),
                 transaction.atomic(),
             ):
                 cursor.execute(change)
                 cursor.execute(check)
-                pytest.fail(f"0113's check admitted: {change[:120]}")
+                pytest.fail(f"0114's check admitted: {change[:120]}")
         cursor.execute(check)
         transaction.set_rollback(True)

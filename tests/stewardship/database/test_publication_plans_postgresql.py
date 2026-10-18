@@ -453,7 +453,7 @@ def test_do_block_refuses_a_missing_guard(ready):
     """The file's closing check raises when an object it installs is gone."""
     text = FROZEN.read_text(encoding="utf-8")
     check = text[text.index("DO $check$") :]
-    # 0113 (#1547) replaced 0087's confirmation guard; each rolled-back
+    # 0114 (#1547) replaced 0087's confirmation guard; each rolled-back
     # transaction below first puts 0087's own body back.
     start = text.index(
         "CREATE FUNCTION public.stewardship_publication_confirmation_guard_v1("

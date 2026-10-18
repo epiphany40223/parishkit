@@ -306,7 +306,7 @@ AUTOMATION_FRESH_FUNCTION = (
     "stewardship_automation_fresh_principal_v1(uuid, timestamp with time zone)"
 )
 # Whether that instant is a full-scope automation session's and every such
-# session has ended (0113, #1547): the same guards call it now that a
+# session has ended (0114, #1547): the same guards call it now that a
 # request's sign-in may be of any age, so ending an automation session still
 # stops its secret requests. Granted to the same logins.
 AUTOMATION_ENDED_FUNCTION = (
@@ -513,7 +513,7 @@ CLOSURE_FUNCTIONS = {
         "stewardship_reports",
         "0029_point_in_time_exports",
     ),
-    # The ended-automation check of secret requests (0113, #1547).
+    # The ended-automation check of secret requests (0114, #1547).
     AUTOMATION_ENDED_FUNCTION: ("stewardship_accounts", "0027_no_sign_in_age"),
 }
 
@@ -996,7 +996,7 @@ def runtime_grants(role, *, target=None):
 
         columns["stewardship_task_run"] = {"UPDATE": set(SCHEDULER_CANCEL_COLUMNS)}
         # Allow debug logging again (ADM-13 PR 6c, #1207): the switch's guard
-        # (0088, 0113) admits a web clear only in Testing mode, for a live
+        # (0088, 0114) admits a web clear only in Testing mode, for a live
         # Administrator session, once; it keeps who set the switch and when.
         columns["stewardship_debug_off_switch"] = {
             "UPDATE": {"cleared_at", "cleared_by", "cleared_actor_id"}

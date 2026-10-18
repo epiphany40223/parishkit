@@ -92,7 +92,7 @@ LEDGER = {
     "maintenance": permanent("the status page the access gate shows"),
     "held_emails": permanent(
         "held-email decisions stay in the browser: the exemption predates "
-        "#1547, and the decision guard (migrations 0017 and 0113) now binds "
+        "#1547, and the decision guard (migrations 0017 and 0114) now binds "
         "only a live session of the deciding Administrator"
     ),
     # The human side of the automation interface (the specification's action

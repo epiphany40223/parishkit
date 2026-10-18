@@ -7504,7 +7504,7 @@ checks.
   `stewardship_automation_fresh_v1`, has landed, and no ADM-13 action was
   built before it, so its migration amended no ADM-13 guard. Each action's SQL
   guard admitted automation sessions from the start, and its route and
-  command land with it. Since migration 0113
+  command land with it. Since migration 0114
   ([#1547](https://github.com/epiphany40223/parishkit/issues/1547)) the guards
   no longer check a sign-in's age; they call that helper only to require a
   command session's live full-scope automation session.

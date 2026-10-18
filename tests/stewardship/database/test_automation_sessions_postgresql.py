@@ -474,7 +474,7 @@ def test_sign_in_instant_admits_a_live_full_session(auth_service, google):
 
 
 def test_fresh_v1_names_only_a_live_full_command_session(auth_service, google):
-    """The function the session-bound guards call (still, after 0113): true
+    """The function the session-bound guards call (still, after 0114): true
     for this command session only."""
     _, secret, row = paired(auth_service)
     caller = command(auth_service, secret)

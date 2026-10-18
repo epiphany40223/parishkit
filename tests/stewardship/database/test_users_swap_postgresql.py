@@ -859,7 +859,7 @@ CLOSURE_REPLACED_ONLY = {
             ),
         )
     },
-    # 0113 (#1547) drops the sign-in age from guards that closure files
+    # 0114 (#1547) drops the sign-in age from guards that closure files
     # (0062, 0078, 0080, 0087, 0088, 0090, 0104, and 0111/0112 once merged)
     # bring back older; its bodies all carry the issue number. It also
     # creates the ended-automation check, so it cannot run whole twice.

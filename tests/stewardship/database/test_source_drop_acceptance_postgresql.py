@@ -609,7 +609,7 @@ def test_the_migration_check_refuses_a_weakened_guard(old, new):
 def test_the_migration_check_passes_and_refuses_drift():
     """The closing DO block passes with 0080's guard and refuses each drift.
 
-    0113 (#1547) later replaces the guard, so each rolled-back transaction
+    0114 (#1547) later replaces the guard, so each rolled-back transaction
     first puts 0080's own body back.
     """
     with transaction.atomic(), connection.cursor() as cursor:

@@ -338,7 +338,7 @@ def test_a_sign_in_from_the_last_hour_saves_a_setup_credential(setup_service, ta
 
 @pytest.mark.parametrize("minutes", [61, 180])
 def test_sql_admits_a_setup_credential_of_any_sign_in_age(setup_service, minutes):
-    """A sign-in over an hour old passes the SQL guard too: 0113 removed
+    """A sign-in over an hour old passes the SQL guard too: 0114 removed
     0104's hour (#1547)."""
     staged(setup_service, age_minutes=minutes)
     assert SetupSealedCredential.objects.count() == 1

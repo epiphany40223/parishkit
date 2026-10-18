@@ -5,7 +5,7 @@ guard. Its closing DO block must pass on an installed database and refuse
 one where any part is missing or changed: the database as it was before
 (no table), a guard given definer's rights, a guard open to PUBLIC, or a
 dropped trigger. Each case runs in a rolled-back transaction, which first
-puts back 0062's own guard body: 0113 (#1547) later replaces it.
+puts back 0062's own guard body: 0114 (#1547) later replaces it.
 """
 
 import re
@@ -29,7 +29,7 @@ BODY = re.search(
     re.M | re.S,
 )[0]
 # 0062's own guard, put back inside each rolled-back transaction: the live
-# schema has 0113's body (#1547), which this file's check rightly refuses.
+# schema has 0114's body (#1547), which this file's check rightly refuses.
 OWN = BODY.replace("CREATE FUNCTION", "CREATE OR REPLACE FUNCTION")
 
 

@@ -2407,7 +2407,7 @@ class DebugOffRefused(ActionRefused):
     """The database refused to set the debug-off switch (see ``ActionRefused``)."""
 
 
-# The guards' words (0062, 0078, kept by 0113) for a session that is no
+# The guards' words (0062, 0078, kept by 0114) for a session that is no
 # longer live at the write: since #1547 they no longer check its age.
 SIGNED_OUT_REFUSAL = "requires fresh Administrator authentication"
 
@@ -3384,7 +3384,7 @@ def allow_debug(caller, store, *, key, command=False):
     or rolls back with it) and records ``debug_logging_allowed``
     naming the switch, and from the command line (``command``) also
     ``admin_cmd_system_debug_allow`` naming the automation session. The
-    switch's guard (0088, 0113) checks again that the mode is Testing, the
+    switch's guard (0088, 0114) checks again that the mode is Testing, the
     Administrator has a live session and the switch is cleared once. A repeat
     for a switch this Administrator already cleared returns it (``created`` false); one
     cleared by someone else, or a race lost to another clear, is refused
