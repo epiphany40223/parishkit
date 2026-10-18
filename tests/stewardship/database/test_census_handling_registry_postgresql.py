@@ -318,7 +318,7 @@ def test_the_old_guard_refused_the_corrected_handling(response_service):
         ),
         "stewardship_response_derived_guard_v1",
     )
-    # The installed body, not 0113's: a later file (0114, #1603) replaces it.
+    # The installed body, not 0113's: a later file (0118, #1603) replaces it.
     current = installed("stewardship_response_derived_guard_v1")
     with connection.cursor() as cursor:
         cursor.execute(old)

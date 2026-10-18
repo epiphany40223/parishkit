@@ -283,7 +283,7 @@ def test_a_value_the_put_schema_refuses_is_by_hand():
 def test_gender_is_by_hand_whatever_the_read_holds():
     """A gender PUT is accepted but never changes the Member (#1603), so the
     registry marks gender by hand: even a row stored as Automatic before
-    0114 is By hand, whatever gender the read returns (a code, a word, an
+    0118 is By hand, whatever gender the read returns (a code, a word, an
     unknown code or not text), and never blocks the entity's other writes."""
     for raw in ("F", "Female", "X", ["F"], 1):
         rows = [

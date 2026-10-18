@@ -2,7 +2,7 @@
 
 The live ParishSoft v2 gender test of 2026-10-17 found that a one-character
 ``gender`` PUT is accepted but never changes the Member in any read, so
-migration 0114 (``schema/migrations/0114_gender_by_hand.sql``) adds gender to
+migration 0118 (``schema/migrations/0118_gender_by_hand.sql``) adds gender to
 the derived guard's manual Member fields and re-marks open gender changes
 recorded before it. These tests run the real response path and SQL guard,
 Staff's worklist, the file's one-time correction against rows in the old
@@ -34,7 +34,7 @@ from .test_runtime_auth_grants_postgresql import web_login
 pytestmark = pytest.mark.django_db(transaction=True)
 
 MIGRATIONS = Path(__file__).resolve().parents[3] / "src/parishkit/stewardship/schema"
-FROZEN = MIGRATIONS / "migrations/0114_gender_by_hand.sql"
+FROZEN = MIGRATIONS / "migrations/0118_gender_by_hand.sql"
 GUARD = "stewardship_response_derived_guard_v1"
 
 
@@ -72,7 +72,7 @@ def change_gender(harness):
 
 
 def test_the_replaced_guard_is_0113s_plus_only_the_gender_rule():
-    """0114's guard is 0113's with 'gender' added to the manual Member fields
+    """0118's guard is 0113's with 'gender' added to the manual Member fields
     and its comment, nothing else, and the fresh-install baseline matches."""
     current = _replaced(FROZEN.read_text(encoding="utf-8"), GUARD)
     old = previous_guard()
@@ -106,7 +106,7 @@ def test_a_new_gender_change_is_by_hand_to_do(response_service):
 
 
 def test_the_correction_re_marks_only_open_gender_rows(response_service):
-    """Open Automatic gender rows stored before 0114 are re-marked By hand at
+    """Open Automatic gender rows stored before 0118 are re-marked By hand at
     the next version with their decision, edit and execution kept; queued
     and failed gender rows and other Automatic changes are left as they are,
     and one event records only the count. A second run changes nothing."""
