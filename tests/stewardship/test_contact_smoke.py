@@ -43,7 +43,7 @@ SYNTHETIC = {
     "dateOfBirth": "1970-01-02",
     "dateOfDeath": None,
     "emailAddress": "a@example.invalid; b@example.invalid",
-    "fax": None,
+    "fax": "(555) 555-0104",
     "firstName": "Synthetic",
     "gender": "F",
     "homePhone": "(555) 555-0102",
@@ -52,7 +52,7 @@ SYNTHETIC = {
     "maidenName": None,
     "middleName": None,
     "nickName": None,
-    "pager": None,
+    "pager": "(555) 555-0103",
     "workPhone": None,
 }
 
@@ -60,7 +60,10 @@ SYNTHETIC = {
 class FakeGateway:
     """One synthetic Member record; writes apply under the record's spelling.
 
-    Each accepted write bumps the volatile ``dateModified`` stamp. ``side``
+    A write is a partial update, as the live v2 contact PUT is (#528): fields
+    left out are kept, ``null`` is ignored and ``""`` is refused
+    (``write_rejected``) with nothing changed. Each accepted write bumps the
+    volatile ``dateModified`` stamp. ``side``
     is a dict of extra record changes every write makes, ``failures`` a list
     of failure words (or exceptions) for successive writes, None for success.
     """
@@ -86,8 +89,11 @@ class FakeGateway:
             raise failure
         if failure is not None:
             raise ContactGatewayError(failure)
+        if "" in payload.values():
+            raise ContactGatewayError("write_rejected")
         for name, value in payload.items():
-            self.record[self.spelling.get(name, name)] = value
+            if value is not None:
+                self.record[self.spelling.get(name, name)] = value
         self.record.update(self.side)
         self.record["dateModified"] = len(self.writes)
 
@@ -139,7 +145,7 @@ def test_the_probe_reports_names_types_shapes_and_encodings_but_no_values():
     assert result["parishkit_version"] == __version__
     assert result["record_keys"] == sorted(member())
     assert result["unsendable"] == [] and result["markers_present"] == []
-    assert result["unsettled"] == ["dateOfDeath", "fax", "pager", "workPhone"]
+    assert result["unsettled"] == ["dateOfDeath", "workPhone"]
     fields = result["fields"]
     assert set(fields) == set(MEMBER_CONTACT_FIELDS)
     assert fields["gender"] == {
@@ -157,6 +163,14 @@ def test_the_probe_reports_names_types_shapes_and_encodings_but_no_values():
     assert fields["pager"] == {
         "present": True,
         "source": "pager",
+        "type": "string",
+        "shape": "(999) 999-9999",
+        "encoder_matches_read": None,
+        "sendable": True,
+    }
+    assert fields["workPhone"] == {
+        "present": True,
+        "source": "workPhone",
         "type": "null",
         "sendable": True,
     }
@@ -168,7 +182,11 @@ def test_the_probe_reports_names_types_shapes_and_encodings_but_no_values():
 
 
 def test_the_encoder_check_and_the_schema_check_name_their_fields():
-    """A date-time, a long gender and a re-ordered email are reported."""
+    """A date-time, a long gender and a re-ordered email are reported.
+
+    Only the marker field is ever sent, so other unsendable fields do not
+    stop the round trip; an unsendable marker field does.
+    """
     record = member(
         dateOfBirth="1970-01-02T00:00:00",
         gender="Female",
@@ -185,6 +203,11 @@ def test_the_encoder_check_and_the_schema_check_name_their_fields():
     assert "encoder_matches_read" not in fields["homePhone"]
     assert result["unsendable"] == ["dateOfBirth", "gender", "homePhone"]
     assert "homePhone" in result["unsettled"]
+    assert result["write"] == "accepted" and result["confirmed"] is True
+    assert {name for _, body in gateway.writes for name in body} == {"pager"}
+    gateway = FakeGateway(member(pager="555-0103"))
+    result, _, _ = recorded_run(gateway, send=True)
+    assert result["unsendable"] == ["pager"]
     assert result["write"] == "refused_unsendable" and gateway.writes == []
 
 
@@ -194,13 +217,12 @@ def test_shapes_mask_every_letter_and_digit_not_only_ascii():
 
 
 def test_the_round_trip_writes_the_marker_then_restores_the_original():
-    """Two PUTs of the full payload as read; only the chosen field differs."""
+    """Two one-field PUTs, as publication sends (#1600): marker, then original."""
     gateway = FakeGateway(member())
     result, sleeps, reports = recorded_run(gateway, send=True)
-    original = {name: SYNTHETIC[name] for name in MEMBER_CONTACT_FIELDS}
     assert gateway.writes == [
-        (42, {**original, "pager": MARKERS["pager"]}),
-        (42, original),
+        (42, {"pager": MARKERS["pager"]}),
+        (42, {"pager": SYNTHETIC["pager"]}),
     ]
     assert gateway.record == member(dateModified=2)
     assert sleeps == []
@@ -218,16 +240,32 @@ def test_the_round_trip_writes_the_marker_then_restores_the_original():
     assert result["confirmed"] is True
 
 
-def test_an_incomplete_read_refuses_any_write():
-    """A field the read lacks could be cleared by a PUT, so nothing is sent."""
+def test_an_unread_marker_field_refuses_any_write():
+    """Without the marker field's original there is nothing to restore.
+
+    Another unread field is only reported: no PUT sends it, so it cannot be
+    cleared.
+    """
     record = member()
     del record["fax"]
     gateway = FakeGateway(record)
     result, _, _ = recorded_run(gateway, send=True)
-    assert gateway.writes == [] and result["sent"] is False
-    assert result["read_complete"] is False
-    assert result["write"] == "refused_incomplete_read"
+    assert result["read_complete"] is False and result["confirmed"] is True
     assert result["fields"]["fax"] == {"present": False, "ambiguous": False}
+    gateway = FakeGateway(record)
+    result, _, _ = recorded_run(gateway, send=True, field="fax")
+    assert gateway.writes == [] and result["sent"] is False
+    assert result["write"] == "refused_marker_field_unread"
+
+
+@pytest.mark.parametrize("blank", [None, "", "   "])
+def test_a_blank_marker_field_refuses_any_write(blank):
+    """The API cannot clear a value (null ignored, "" refused), so a blank
+    marker field could never be put back: nothing is sent."""
+    gateway = FakeGateway(member(pager=blank))
+    result, _, _ = recorded_run(gateway, send=True)
+    assert gateway.writes == [] and result["sent"] is False
+    assert result["write"] == "refused_blank_marker_field"
 
 
 def test_member_record_aliases_map_and_disagreeing_spellings_are_detailed():
@@ -309,9 +347,9 @@ def test_a_failed_marker_write_settles_before_the_restore_read():
     """A timed-out PUT may land late: wait, then read; the restore still runs."""
     gateway = FakeGateway(member(), failures=["write_unavailable"])
     result, sleeps, _ = recorded_run(gateway, send=True)
-    assert [payload["pager"] for _, payload in gateway.writes] == [
-        MARKERS["pager"],
-        None,
+    assert [payload for _, payload in gateway.writes] == [
+        {"pager": MARKERS["pager"]},
+        {"pager": SYNTHETIC["pager"]},
     ]
     assert result["write"] == "write_unavailable"
     assert result["restore_write"] == "accepted" and result["restored"] is True

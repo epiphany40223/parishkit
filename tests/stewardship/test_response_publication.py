@@ -75,9 +75,9 @@ ALLOWED_IMPORTS = {
     ("parishkit.parishsoft", "split_email_addresses"),
     ("capabilities", "Handling"),
     ("capabilities", "capability"),
-    ("capabilities", "clears_value"),
     ("comparison", "ComparisonValueError"),
     ("comparison", "ValueKind"),
+    ("contact_schema", "sendable"),
     ("member_census", "MEMBER_FIELDS"),
     ("member_census", "InvalidMemberSource"),
     ("member_census", "source_value"),
@@ -112,8 +112,12 @@ def test_planner_cannot_reach_parishsoft():
         assert not any(name.lower().startswith("put") for name in dir(owner))
 
 
-def test_approved_change_is_merged_into_the_full_payload():
-    """Only approved writes change the payload; every other field is as read."""
+def test_put_body_holds_only_the_approved_changes():
+    """The body is exactly the approved writes; the expected record adds them.
+
+    The contact PUT is a partial update (#528, #1600), so no field as read,
+    unapproved or by hand is ever echoed back.
+    """
     current = payload(
         firstName="Pat",
         lastName="Doe",
@@ -146,13 +150,13 @@ def test_approved_change_is_merged_into_the_full_payload():
     assert not plan.blocked
     assert plan.entity_key == "7"
     assert plan.payload == {
-        **current,
         "firstName": "Patricia",
         "cellPhone": "502-555-0199",
         "emailAddress": "a@example.org; b@example.org",
     }
     assert plan.current_digest == payload_digest(current)
-    assert plan.planned_digest == payload_digest(plan.payload)
+    # The read-back the worker requires: the read with the writes applied.
+    assert plan.planned_digest == payload_digest({**current, **plan.payload})
     assert plan.current_digest != plan.planned_digest
     # The read payload itself is never modified.
     assert current["firstName"] == "Pat"
@@ -162,7 +166,117 @@ def test_admin_edit_is_published_instead_of_the_family_value():
     """An Administrator's edited value is the one planned."""
     row = proposal("nickname", "Patty", None, admin_value_set=True, admin_value="P")
     plan = plan_entity("member", 1, [row], payload())
-    assert plan.payload["nickName"] == "P"
+    assert plan.payload == {"nickName": "P"}
+
+
+def test_one_change_sends_one_field():
+    """One approved change is a one-field body, whatever else was read."""
+    current = payload(firstName="Pat", lastName="Doe", homePhone="", fax="")
+    plan = plan_entity("member", 1, [proposal("nickname", "Patty", None)], current)
+    assert plan.payload == {"nickName": "Patty"}
+
+
+def test_several_changes_send_exactly_those_fields():
+    """Several changes are sent together, and an unchanged one is left out."""
+    current = payload(
+        firstName="Pat", middleName="Q", lastName="Doe", dateOfBirth="1980-01-02"
+    )
+    rows = [
+        proposal("first_name", "Patricia", "Pat"),
+        proposal("last_name", "Smith", "Doe"),
+        proposal("birth_date", "1980-02-01", "1980-01-02"),
+        # Already what ParishSoft holds: nothing to write.
+        proposal("middle_name", "Q", "R"),
+    ]
+    plan = plan_entity("member", 1, rows, current)
+    assert outcomes(plan)["middle_name"] is Outcome.ALREADY_IN_PARISHSOFT
+    assert plan.payload == {
+        "firstName": "Patricia",
+        "lastName": "Smith",
+        "dateOfBirth": "1980-02-01",
+    }
+
+
+def test_phones_are_sent_under_the_api_names_as_display_text():
+    """Each census phone maps to its own API field, sent as display text."""
+    rows = [
+        proposal("home_phone", phone_record("502-555-0101"), None),
+        proposal("mobile_phone", phone_record("(502) 555-0102"), None),
+        proposal("work_phone", phone_record("502.555.0103"), None),
+    ]
+    plan = plan_entity("member", 1, rows, payload())
+    assert plan.payload == {
+        "homePhone": "502-555-0101",
+        "cellPhone": "(502) 555-0102",
+        "workPhone": "502.555.0103",
+    }
+
+
+def test_no_blank_value_is_ever_sent():
+    """A blank value would ask to clear a field, which the API cannot do.
+
+    ``null`` is ignored and ``""`` is refused with HTTP 400 (#528), so such a
+    change is By hand and the rest of the entity is still written; blank
+    fields as read are never echoed either.
+    """
+    current = payload(emailAddress="a@example.org", homePhone="", nickName="")
+    rows = [
+        proposal("email", "", "a@example.org"),
+        proposal("mobile_phone", phone_record(""), None),
+        proposal("birth_date", None, "1970-05-01"),
+        proposal("first_name", "Pat", None, admin_value_set=True, admin_value=""),
+        proposal("last_name", "Smith", None),
+    ]
+    plan = plan_entity("member", 1, rows, current)
+    assert outcomes(plan) == {
+        "email": Outcome.BY_HAND,
+        "mobile_phone": Outcome.BY_HAND,
+        "birth_date": Outcome.BY_HAND,
+        "first_name": Outcome.BY_HAND,
+        "last_name": Outcome.WRITE,
+    }
+    assert plan.payload == {"lastName": "Smith"}
+
+
+def test_a_whitespace_only_value_is_blank():
+    """Spaces, or an email list of only separators, count as blank (By hand)."""
+    rows = [
+        proposal("nickname", "   ", "Pat"),
+        proposal("email", " , ", "a@example.org"),
+        proposal("first_name", "Pat", None, admin_value_set=True, admin_value="\t"),
+        proposal("last_name", "Smith", None),
+    ]
+    plan = plan_entity("member", 1, rows, payload())
+    assert outcomes(plan) == {
+        "nickname": Outcome.BY_HAND,
+        "email": Outcome.BY_HAND,
+        "first_name": Outcome.BY_HAND,
+        "last_name": Outcome.WRITE,
+    }
+    assert plan.payload == {"lastName": "Smith"}
+
+
+def test_a_value_the_put_schema_refuses_is_by_hand():
+    """The API would refuse it with HTTP 400, so it is never planned.
+
+    A phone under ten characters, a first name over thirty and a gender
+    longer than one character (the census holds ``Female``) are reported By
+    hand; the entity's other changes are still written.
+    """
+    rows = [
+        proposal("home_phone", phone_record("555-0101"), None),
+        proposal("first_name", "P" * 31, "Pat"),
+        proposal("gender", "Female", None),
+        proposal("last_name", "L" * 50, None),
+    ]
+    plan = plan_entity("member", 1, rows, payload(firstName="Pat"))
+    assert outcomes(plan) == {
+        "home_phone": Outcome.BY_HAND,
+        "first_name": Outcome.BY_HAND,
+        "gender": Outcome.BY_HAND,
+        "last_name": Outcome.WRITE,
+    }
+    assert plan.payload == {"lastName": "L" * 50}
 
 
 def test_matching_value_is_already_in_parishsoft():
@@ -206,14 +320,27 @@ def test_conflicts_block_the_whole_entity(row, current, expected):
     assert plan.payload is None and plan.planned_digest is None
 
 
-@pytest.mark.parametrize(
-    "current", [None, {"firstName": "Pat"}, {**payload(), "extra": 1}]
-)
-def test_incomplete_read_is_never_planned(current):
-    """A missing or partial read blocks the entity so no field can be cleared."""
+@pytest.mark.parametrize("current", [None, {"firstName": "Pat"}])
+def test_a_written_field_must_have_been_read(current):
+    """No read, or a read without the field to write, cannot be checked."""
     plan = plan_entity("member", 1, [proposal("nickname", "Patty", None)], current)
     assert outcomes(plan) == {"nickname": Outcome.CANNOT_CHECK}
     assert plan.blocked and plan.payload is None
+
+
+def test_a_read_lacking_other_fields_still_plans():
+    """The PUT leaves unsent fields alone, so only the written ones must be read.
+
+    The expected read-back is the read with the writes applied, so it never
+    gains a field the read lacked.
+    """
+    current = {"nickName": None, "lastName": "Doe"}
+    plan = plan_entity("member", 1, [proposal("nickname", "Patty", None)], current)
+    assert outcomes(plan) == {"nickname": Outcome.WRITE}
+    assert plan.payload == {"nickName": "Patty"}
+    assert plan.planned_digest == payload_digest(
+        {"nickName": "Patty", "lastName": "Doe"}
+    )
 
 
 def test_dates_compare_as_civil_dates():

@@ -147,13 +147,13 @@ def test_the_planner_merges_against_the_accepted_value(response_service):
     row = annotated(name)
     assert row.conflict_accepted
     written, payload = outcome(row, "Parish value")
-    assert written is Outcome.WRITE and payload["firstName"] == "Requested"
+    assert written is Outcome.WRITE and payload == {"firstName": "Requested"}
     assert outcome(row, "Someone else")[0] is Outcome.CONFLICT
     assert outcome(row, "Requested")[0] is Outcome.ALREADY_IN_PARISHSOFT
     assert outcome(fresh(name), "Parish value")[0] is Outcome.CONFLICT
     edit(harness, admin, fresh(name), "Corrected")
     written, payload = outcome(annotated(name), "Parish value")
-    assert written is Outcome.WRITE and payload["firstName"] == "Corrected"
+    assert written is Outcome.WRITE and payload == {"firstName": "Corrected"}
     # Once the source reference moves on (as reconciliation moves it when
     # ParishSoft changes), the accepted value no longer counts.
     owner(

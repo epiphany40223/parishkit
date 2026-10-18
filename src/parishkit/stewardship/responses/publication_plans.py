@@ -6,9 +6,9 @@ versions. This module keeps what a later worker needs to re-check, right
 before each PUT, that nothing changed since the Administrator confirmed:
 
 - ``record_plan`` (the worker, after preflight) stores the plans with each
-  proposal's version and the read and planned payload hashes and, in
-  Production mode, marks the changes already in ParishSoft
-  ``resolved_upstream`` in the same transaction;
+  proposal's version and the hashes of the record read and the record
+  expected after the PUT and, in Production mode, marks the changes already
+  in ParishSoft ``resolved_upstream`` in the same transaction;
 - ``confirm_plan`` (web) records an Administrator's freshly signed-in
   confirmation of exactly the counts shown;
 - ``matches_confirmed`` is the pure pre-PUT check of a fresh plan against
