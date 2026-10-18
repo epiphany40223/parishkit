@@ -35,7 +35,7 @@
 {# Columns in the Census changes order (UX conventions, "Table column order", #932). #}
 <caption>{% translate "Newest check" %}</caption><thead><tr>{% translate "Family" as heading %}{% sort_heading table "family" heading %}{% translate "Family DUID" as heading %}{% sort_heading table "duid" heading "numeric" %}{% translate "Who" as heading %}{% sort_heading table "who" heading %}{% translate "Member DUID" as heading %}{% sort_heading table "member_duid" heading "numeric" %}{% translate "What changed" as heading %}{% sort_heading table "what" heading %}<th scope="col">{% translate "ParishSoft at the check" %}</th><th scope="col">{% translate "Will write" %}</th>{% translate "Outcome" as heading %}{% sort_heading table "outcome" heading %}</tr></thead><tbody>
 {% for row in table.rows %}<tr data-outcome="{{ row.outcome }}">
-<td>{% if row.family_name %}{{ row.family_name }}{% else %}{% source_status "missing" %}{% endif %}</td>
+{# The shared Family-name link (#1570): the name opens its Timeline; a Family the current ParishSoft data no longer has shows only the shared mark (ui-conventions, #1216). #}<td>{% family_link row.family_id row.family_name %}</td>
 <td class="numeric">{{ row.family_duid|duid }}</td>
 <th scope="row">{{ row.who }}</th>
 <td class="numeric">{% if row.member_duid %}{{ row.member_duid|duid }}{% endif %}</td>

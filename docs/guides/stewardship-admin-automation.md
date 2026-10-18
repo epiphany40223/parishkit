@@ -2649,8 +2649,8 @@ has not failed is exit 1 (`stale_version`).
 
 #### One Family's timeline
 
-`export family-timeline` exports one Family's timeline, as the Family
-timeline page's **Export this timeline** does: every line of its timeline
+`export family-timeline` exports one Family's timeline, as the
+Timeline page's **Export this timeline** does: every line of its timeline
 (oldest first), in the page's columns, with the Family's details, the
 page's summary and its Family code as the report information of an XLSX or
 PDF file (a CSV is the timeline table alone). Like the page's full view, it is
@@ -2662,13 +2662,14 @@ show `automation_fresh_gate` beside it.
 ```sh
 pk-admin export family-timeline FAMILY_RECORD_ID --format pdf \
   --timezone America/New_York
-pk-admin export family-timeline FAMILY_RECORD_ID --mode testing \
-  --format csv --timezone America/New_York
 ```
 
 `FAMILY_RECORD_ID` is the id in the Family's timeline page address,
-`/admin/reports/families/FAMILY_RECORD_ID/`. `--mode testing` is
-the page's Testing rehearsal view. It takes `--request-key` like the other
+`/admin/reports/families/FAMILY_RECORD_ID/`. The export is of
+Production records, as the page shows: `--mode production` (the default)
+still works for scripts that pass it, and `--mode testing` is refused as
+`invalid` (exit 1), since the page no longer offers Testing records
+(#1570). It takes `--request-key` like the other
 exports. A Family that is not in the current campaign is exit 1
 (`not_available`).
 

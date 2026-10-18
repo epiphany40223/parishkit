@@ -607,7 +607,7 @@ pages (NAV-9: settings, Copy campaign, content and its history, images,
 schedules, Share options and Member talents; NAV-10: the test email pages,
 the go-live chain, Production activation and Cancel go-live, and Campaign
 Ministries under Ministries) and the report pages (NAV-11: every report, the
-response lists (since removed, #933) and the Family timeline, with the
+response lists (since removed, #933) and the Timeline, with the
 campaign choosers and the old Ministry reports root retired); the Campaign
 setup, Mail and Family portal and Parish data group roots open their first
 entry, and `/admin/reports/` keeps its meaning. Exports and the reports sent
@@ -770,7 +770,7 @@ open the [active parishioner family directory](../reports/spec.md#active-parishi
 directory's search query (the Family name with its heads of household, DUID
 and address) and its permission checks, so results show only Families the role
 may already see, and a result opens that Family's
-[Family timeline](../reports/spec.md#family-timeline) (the summary only for
+[Timeline](../reports/spec.md#timeline) (the summary only for
 Staff). It searches by a CSRF-protected POST, never a GET, so the search text
 stays out of URLs, logs and browser history, as the directory's code search
 does.
@@ -1082,7 +1082,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `ministry_followup_item` | Follow-up request | Ministry requests | Administrator, Staff, Ministry leader | Ministry follow-up (one request) | `/admin/reports/ministries/follow-up/<request>/` | (same) | Return to the queue keeps its filters and page. Status, notes and outcome only; no Assign to (#552). Shows the Member's contact details (#1157). A resolved join or leave's Entered in ParishSoft tick posts to `follow-up/<request>/roster/` (#528). |
 | `ministry_roster` | Roster changes to enter | Ministry requests | Administrator, Staff | (new, #528) | (none) | `/admin/reports/ministries/follow-up/roster/` | [Roster changes to enter](#roster-changes-to-enter); its CSV/XLSX/PDF download (`roster/exports/`) and its bulk Mark entered in ParishSoft (`roster/marks/`, #879) are non-page actions. |
 | `family_directory` | Active parishioner family directory | Menu: Active parishioner family directory | Administrator, Staff | (same) | `/admin/reports/families/` | (same) |  |
-| `family_timeline` | Family timeline | Active parishioner family directory | Administrator, Staff | (new, #477) | `/admin/reports/families/<family>/` | (same) | Opened from each directory row (and Find a Family, NAV-19); `<family>` is the opaque campaign record id. Staff see the summary only. |
+| `timeline` | Timeline | Active parishioner family directory | Administrator, Staff | (new, #477; renamed from Family timeline, #1570) | `/admin/reports/families/<family>/` | (same) | One Family's [Timeline](../reports/spec.md#timeline); opened from every Family name the shared `family_link` helper draws (directory rows, Find a Family, NAV-19, and every other Admin table that names a Family; see the [Timeline](../reports/spec.md#timeline) for the list); `<family>` is the opaque campaign record id. Staff see the summary only. |
 | `emailed_reports` | Emailed reports | Menu: Emailed reports | Administrator, Staff | (new) | `/admin/reports/emailed/` | (same) | New page (decision 7, ADM-12.17): the current campaign's daily reports (and weekly reports for Administrators), newest first, each linking its page; Send a weekly report now is on it and returns to it, linking the report it produced. |
 | `weekly_digest_manual` | Send a weekly report now | Emailed reports | Administrator | Request a manual information report; Manual information report | `/admin/reports/emailed/weekly/new/` | (same) | Was the Manual information report menu entry; now a button on Emailed reports, where it ends, linking the report it produced (or its background task until it is ready). Its address named the campaign until #865; that old address is gone, with no redirect (#864). |
 | `weekly_digest_snapshot` | Weekly report | Emailed reports | Administrator | Weekly information report; Weekly summary | `/admin/reports/emailed/weekly/<snapshot>/` | (same) | Its old address, which weekly report emails sent before NAV-12 link, is gone, with no redirect (#864). |
@@ -4536,7 +4536,7 @@ its outbox message state, or, before preparation, by its occurrence:
   until the retry fails again.
 - **Not sure it arrived**: delivery unknown, linked to Sent mail. Counts
   and links use the plain state words of
-  [the Family timeline](../reports/spec.md#family-timeline).
+  [the Timeline](../reports/spec.md#timeline).
 - **Remaining**: pending, waiting to retry or submitting, or not yet
   prepared, including the Families planning still owes. The part not yet
   prepared is shown beside it, in brackets.
@@ -5046,7 +5046,7 @@ in the order the Administrator asked for
    An email to an Administrator (a report or a notice), or to a Family
    that data no longer has, is named by its type alone. The browser title is the type alone, so browser
    history does not keep the Family's name, as on the
-   [Family timeline](../reports/spec.md#family-timeline).
+   [Timeline](../reports/spec.md#timeline).
 2. **Type, mode and state** on one line under the heading, such as
    "Initial invitation · Production · Not sure it arrived".
 3. **Family and recipients.** The Family's name and its Family DUID (the

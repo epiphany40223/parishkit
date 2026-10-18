@@ -11,6 +11,7 @@ from uuid import uuid4
 
 import pytest
 from django.db import connection, transaction
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from openpyxl import load_workbook
 
@@ -26,6 +27,7 @@ from parishkit.stewardship.responses.service import DEFAULT_TALENTS
 from parishkit.stewardship.source.models import SourceCurrent
 
 from .auth_builders import signed_in
+from .family_link_checks import link_reads
 from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
 from .test_export_views_postgresql import restricted_download_pool
@@ -166,9 +168,14 @@ def test_native_page_and_downloads(response_service, google, settings):
     browser, login = signed_in()
     assert login.status_code == 302
     with restricted_download_pool(settings):
-        response, body = get(browser, route)
+        with CaptureQueriesContext(connection) as queries:
+            response, body = get(browser, route)
         assert response.status_code == 200 and response["Cache-Control"] == "no-store"
         assert b"<h1>Limitations</h1>" in body and b"Organ" not in body
+        # The Member's Family name opens its Timeline (#1570): one record
+        # id read for both tables.
+        assert b'<td><a href="/admin/reports/families/' in body
+        assert len(link_reads(queries)) == 1
         assert b"Painter" not in body and b"Members who cannot participate" in body
         assert get(browser, route + "?search=x")[0].status_code == 400
         response, body = search(browser, route, {"show": "cannot_attend"})

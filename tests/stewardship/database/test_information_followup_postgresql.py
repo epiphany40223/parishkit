@@ -8,7 +8,9 @@ from uuid import uuid4
 
 import pytest
 from django.db import DatabaseError, connection, connections
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
+from django.utils.html import escape
 
 from parishkit.stewardship.accounts.models import PortalUser
 from parishkit.stewardship.audit.models import AuditContext, AuditEvent
@@ -30,6 +32,7 @@ from parishkit.stewardship.source.snapshot_names import snapshot_family_names
 from parishkit.stewardship.storage import StaleRecordError
 
 from .auth_builders import signed_in
+from .family_link_checks import link_reads, timeline_link
 from .test_admin_refusal_log_postgresql import entries as refusals
 from .test_background_grants_postgresql import task_login
 from .test_export_views_postgresql import post
@@ -157,13 +160,29 @@ def test_followup_history_replay_confirmation_and_sql_pairing(
             found = information_page(harness.campaign.pk, InformationQuery(search=text))
             assert [match["id"] for match in found["rows"]] == [row["id"]], text
         route = reverse("admin:information_queue")
-        response, body = read(browser, route)
+        with CaptureQueriesContext(connection) as queries:
+            response, body = read(browser, route)
         assert response.status_code == 200 and b"Please contact" in body
         assert response["Cache-Control"] == "no-store"
-        response, body = read(
-            browser, reverse("admin:information_item", args=[item.pk])
+        # The queue's Family name is the link to its request, drawn by the
+        # shared helper with no Timeline link, so no record ids are read.
+        item_link = reverse("admin:information_item", args=[item.pk])
+        assert re.search(
+            f'<th scope="row"><a href="{item_link}[^"]*">{re.escape(escape(shown))}'
+            "</a></th>",
+            body.decode(),
         )
+        assert link_reads(queries) == []
+        assert not re.search(rb'/admin/reports/families/[0-9a-f-]{36}/"', body)
+        with CaptureQueriesContext(connection) as queries:
+            response, body = read(
+                browser, reverse("admin:information_item", args=[item.pk])
+            )
         assert response.status_code == 200 and b"Called the Family" in body
+        # The request page's heading opens the Family's Timeline (#1570).
+        link = timeline_link(harness.campaign, duid, shown)
+        assert f"<h2>{link} — Family DUID".encode() in body
+        assert len(link_reads(queries)) == 1
         assert b"Staff edit history" in body
         rows, more = information_history(item.pk, 1, version=first.expected_version + 1)
         assert [row.pk for row in rows] == [first.pk] and not more

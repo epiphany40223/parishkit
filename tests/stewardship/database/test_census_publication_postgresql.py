@@ -11,6 +11,8 @@ unless a test turns the web's setting on.
 from uuid import uuid4
 
 import pytest
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 
 from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.campaigns.models import Campaign
@@ -19,6 +21,7 @@ from parishkit.stewardship.responses import publication_tasks as tasks
 from parishkit.stewardship.responses.models import PublicationPlan
 
 from .auth_builders import signed_in
+from .family_link_checks import link_reads
 from .leader_builders import make_leader
 from .test_information_followup_postgresql import search
 from .test_publication_plans_postgresql import ready  # noqa: F401
@@ -125,9 +128,13 @@ def test_check_parishsoft_queues_one_check_and_shows_its_plan(
     )
     assert world.gateway.writes == []
     plan = PublicationPlan.objects.get()
-    response, body = get(browser, ROUTE)
+    with CaptureQueriesContext(connection) as queries:
+        response, body = get(browser, ROUTE)
     assert response.status_code == 200
     assert b"1 change for 1 Member will be written." in body
+    # The row's Family name opens its Timeline (#1570): one record id read.
+    assert b'<td><a href="/admin/reports/families/' in body
+    assert len(link_reads(queries)) == 1
     assert b"Will be written" in body and b"Requested" in body
     assert b"admin@example.org" in body and not plan.testing
     # Sorting and paging are refused when malformed, as on every table.

@@ -21,7 +21,7 @@ from parishkit.stewardship.jobs.delivery_metadata import (
     STATES,
 )
 from parishkit.stewardship.jobs.models import TASK_STATES
-from parishkit.stewardship.reports import family_timeline
+from parishkit.stewardship.reports import timelines
 
 TEMPLATES = Path(accounts.__file__).parent / "templates" / "stewardship"
 
@@ -55,11 +55,11 @@ def test_every_delivery_purpose_has_a_label():
 def test_delivery_states_use_the_family_timeline_words():
     """Sent mail names each state with the timeline's outcome (#589).
 
-    The Family timeline and the delivery labels read one table, and every
+    The Timeline and the delivery labels read one table, and every
     state's label starts with its plain outcome; "Still sending" adds where
     the email is, so a retry stays visible.
     """
-    assert family_timeline.OUTCOMES is OUTCOMES
+    assert timelines.OUTCOMES is OUTCOMES
     for state in STATES[1 + len(STATE_GROUPS) :]:
         assert str(delivery_label(state)).startswith(str(OUTCOMES[state])), state
     assert [str(delivery_label(state)) for state in STATES] == [

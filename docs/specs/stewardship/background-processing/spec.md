@@ -1665,7 +1665,8 @@ counts them as skipped, confirming the resume writes them so, and none
 coalesces into the Family's due invitation, which is still selected and sent.
 Family email progress
 counts these skips separately ("Skipped: No-reminders WorkGroup"), never as owed
-or remaining, and the Family timeline names them.
+or remaining, and the Family's
+[Timeline](../reports/spec.md#timeline) names them.
 
 ### Addresses refused for now
 

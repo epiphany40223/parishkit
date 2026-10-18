@@ -33,6 +33,7 @@ from parishkit.stewardship.web.tables import report_table
 from .chart_specs import financial_charts
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
+from .family_links import link_families
 from .financial import (
     FIELD_MESSAGES,
     FINANCIAL_SORTING,
@@ -219,6 +220,10 @@ def report(request, campaign_id):
                 query = moved
                 result = read()
             count, total = len(result["rows"]), result["total"]
+            # Each Family name opens its Timeline (#1570) for a viewer who
+            # may open it: one read of the page's Family record ids.
+            if allows(principal, Capability.CAMPAIGN_REPORT):
+                link_families(campaign_id, result["rows"])
             # The export form is offered disabled while the campaign cannot
             # accept new work, so the page never invites a request it refuses.
             mutable = True

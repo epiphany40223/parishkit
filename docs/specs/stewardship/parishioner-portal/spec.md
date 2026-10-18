@@ -39,7 +39,7 @@ date-gating rule above; every other resulting state shows its ordinary no-
 campaign, before-start, or ended page.
 
 Staff can also open the Family form for a Family through
-[Open form](../reports/spec.md#family-timeline), which posts a single-use
+[Open form](../reports/spec.md#open-form), which posts a single-use
 hand-off to `/family/assisted` and signs that tab in as the Family.
 
 Manual credential generation, canonicalization, and generic denial follow the
@@ -320,7 +320,10 @@ Member terminal and still submit so Staff can resolve the household.
 When census is enabled, "Add a household member" creates a proposed Member with
 a local UUID and the same non-terminal census fields. The Family may remove a
 proposed Member before Submit. At least first/last names are required; unknown
-rules match existing Members.
+rules match existing Members. A proposed Member has no parish record to compare
+with, so its fields never say "Changed from parish records" or "Not available
+in parish records", neither on its page nor on Review; existing Members keep
+both ([#1675](https://github.com/epiphany40223/parishkit/issues/1675)).
 
 A proposed Member may select Ministries when Ministry stewardship is enabled.
 Those requests remain linked to the local proposed Member until Staff creates

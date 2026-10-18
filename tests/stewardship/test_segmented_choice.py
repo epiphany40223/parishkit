@@ -190,8 +190,10 @@ def test_every_pair_is_drawn_by_the_shared_component():
     for path in sorted(TEMPLATES.rglob("*.html")):
         assert "choice-links" not in path.read_text(), path.name
     assert (TEMPLATES / "response-dashboard.html").read_text().count(COMPONENT) == 2
-    for name in ("family-timeline.html", *CONVERTED):
+    for name in CONVERTED:
         assert COMPONENT in (TEMPLATES / name).read_text(), name
+    # The Timeline's Production / Testing pair was removed (#1570).
+    assert COMPONENT not in (TEMPLATES / "timeline.html").read_text()
 
 
 def test_converted_loop_menus_stay_gone():

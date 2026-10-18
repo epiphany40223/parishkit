@@ -526,7 +526,7 @@ def test_report_actions_and_records_resolve_to_their_own_routes():
     for path, name in (
         ("/admin/reports/families/exports/", "family_directory_export"),
         ("/admin/reports/families/search/", "find_family"),
-        (f"/admin/reports/families/{T}/", "family_timeline"),
+        (f"/admin/reports/families/{T}/", "timeline"),
         ("/admin/reports/information/exports/", "information_export"),
         (f"/admin/reports/information/{T}/", "information_item"),
         (f"/admin/reports/information/{T}/record/", "information_update"),
@@ -541,8 +541,8 @@ def test_report_actions_and_records_resolve_to_their_own_routes():
     ):
         assert resolve(path).url_name == name, path
     names = [pattern.name for pattern in reports.patterns]
-    assert names.index("family_directory_export") < names.index("family_timeline")
-    assert names.index("find_family") < names.index("family_timeline")
+    assert names.index("family_directory_export") < names.index("timeline")
+    assert names.index("find_family") < names.index("timeline")
     assert names.index("weekly_digest_manual") < names.index("weekly_digest_snapshot")
 
 

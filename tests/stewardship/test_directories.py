@@ -31,6 +31,8 @@ from parishkit.stewardship.reports.directories import (
     selection_parameters,
 )
 
+from .test_family_link import STAFF
+
 # The directory's closed link presets for each list of Families (reports
 # spec, "Response filters"), which the Response dashboard's Lists of
 # Families panel linked to until #1537 removed it; saved links still open.
@@ -321,6 +323,8 @@ def test_open_form_follows_the_mode_and_keeps_the_code_out_of_urls(testing):
                 ]
             ),
             "query": DirectoryQuery(),
+            # A viewer who may open the Timeline (#1570's shared link).
+            "request": STAFF,
         },
     )
     action = (
@@ -336,7 +340,7 @@ def test_open_form_follows_the_mode_and_keeps_the_code_out_of_urls(testing):
     # heads its row (#932).
     assert (
         '<th scope="row"><a href="'
-        f'{reverse("admin:family_timeline", args=[UUID(int=81)])}">'
+        f'{reverse("admin:timeline", args=[UUID(int=81)])}">'
         "Example, Anna and John</a></th>"
     ) in html
     assert '<th scope="row">Codeless</th>' in html

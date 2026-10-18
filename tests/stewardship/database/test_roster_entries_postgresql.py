@@ -16,6 +16,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 from django.db import DatabaseError, IntegrityError, connection, transaction
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 from openpyxl import load_workbook
 
@@ -29,6 +30,7 @@ from parishkit.stewardship.workflows.models import MinistryRequest, MinistryRost
 from parishkit.stewardship.workflows.roster import set_roster_entered
 
 from .auth_builders import signed_in
+from .family_link_checks import link_reads
 from .test_background_grants_postgresql import task_login
 from .test_export_views_postgresql import post, restricted_download_pool
 from .test_information_followup_postgresql import search
@@ -186,8 +188,13 @@ def test_pages_list_tick_and_download_the_roster_changes(
     assert login.status_code == 302
     route = "/admin/reports/ministries/follow-up/roster/"
     with restricted_download_pool(settings):
-        response, body = get(browser, route)
+        with CaptureQueriesContext(connection) as queries:
+            response, body = get(browser, route)
         assert response.status_code == 200 and b"<td>Not yet</td>" in body
+        # The Member's Family name opens its Timeline (#1570): one record id
+        # read for the page.
+        assert b'<td><a href="/admin/reports/families/' in body
+        assert len(link_reads(queries)) == 1
         assert b"Mark entered in ParishSoft" in body and b"Family DUID" in body
         assert get(browser, route + "?show=bad")[0].status_code == 400
         # The Ministry filter keeps one Ministry's changes; a malformed one

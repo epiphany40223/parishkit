@@ -383,7 +383,7 @@ def test_a_census_backed_campaign_is_navigable_without_naming_the_campaign(
         allocated(family_mail)
         browser = _sign_in(family_mail.service.store, google, role)
         reached = _check(browser, f"census {role}")
-    assert {"response_dashboard", "family_directory", "family_timeline"} <= reached
+    assert {"response_dashboard", "family_directory", "timeline"} <= reached
     assert ("census_publication" in reached) == (role == "administrator")
 
 
