@@ -32,6 +32,8 @@ from parishkit.stewardship.accounts.schedule_entry_views import (
     entry_form,
     entry_times,
     mailings,
+    return_url,
+    year_month,
 )
 from parishkit.stewardship.accounts.schedule_forms import (
     Schedules,
@@ -690,3 +692,20 @@ def test_a_series_time_is_checked_only_on_the_dates_it_changes():
     with pytest.raises(SeriesEditError) as refused:
         _series_edit(entry, rows[1], record, rows, campaign_row, scope="series", **edit)
     assert refused.value.reason == "day_moved"
+
+
+def test_year_month_takes_only_a_year_and_a_two_digit_month():
+    """The calendar's ?month= and Edit's ?calendar= (#1656): one form only."""
+    assert year_month({}, "month") is None
+    assert year_month({"month": "2054-11"}, "month") == "2054-11"
+    for text in ("2054-13", "2054-00", "2054-1", "54-11", "2054-11-01", " 2054-11"):
+        with pytest.raises(ValueError, match="Unknown filter input"):
+            year_month({"month": text}, "month")
+
+
+def test_return_url_goes_back_to_the_calendar_month_or_the_list():
+    """New from a day's Add and Edit from the calendar return to its month."""
+    assert return_url(None, None) == "/admin/campaign/schedules/"
+    calendar = "/admin/campaign/schedules/calendar/"
+    assert return_url("2054-10-12", None) == f"{calendar}?month=2054-10"
+    assert return_url(None, "2054-11") == f"{calendar}?month=2054-11"

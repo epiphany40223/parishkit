@@ -850,6 +850,15 @@ td > :last-child { margin-bottom: 0; }
 .schedule-table tr[data-schedule-choose] { cursor: pointer; }
 .schedule-table tr[data-schedule-choose]:hover { background: var(--accent-soft); }
 .schedule-table tr.schedule-past, .calendar-sends tr.schedule-past { color: var(--muted); }
+/* Campaign calendar's month navigation (#1656): Previous and Next, then the
+   month's name, so a longer name moves neither button. At an end the button
+   stays in place, greyed but focusable (aria-disabled), and the reason line
+   under them keeps one line's height while empty, so it moves nothing. */
+.calendar-nav { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; }
+.calendar-nav .button { margin: 0; }
+.calendar-nav-month { font-weight: var(--heading-weight); font-size: 1.125rem; }
+.calendar-nav .button[aria-disabled=true], .calendar-nav .button[aria-disabled=true]:hover { cursor: not-allowed; opacity: .55; background: var(--paper); color: var(--accent); box-shadow: none; }
+.calendar-nav-reason { min-height: 1.5em; margin-block: .25rem .5rem; }
 /* Campaign calendar (#469): month grids drawn by calendar-v1.js. Each grid
    keeps a readable width and scrolls inside its .table-scroll region on a
    phone; days hold short lines (time and schedule name) that wrap between
@@ -868,11 +877,14 @@ td > :last-child { margin-bottom: 0; }
 .calendar-month td { height: 4.5rem; vertical-align: top; font-size: .875rem; }
 .calendar-month td[aria-current="date"] { background: var(--accent-soft); }
 .calendar-day { display: block; font-weight: 650; }
-/* A campaign day's Add (#1521) sits on the number's line, at its end, with a
-   target at least 24px square (WCAG 2.2 SC 2.5.8). The grid is drawn once,
-   so it never moves anything later. */
+/* A campaign day's Add (#1521), a (+) icon (#1656), sits on the number's
+   line, at its end, with a target at least 24px square (WCAG 2.2 SC 2.5.8).
+   A month is drawn whole when it is shown, so it never moves anything
+   later. */
 .calendar-day-head { display: flex; justify-content: space-between; align-items: center; gap: .25rem; }
-.calendar-add { display: inline-flex; align-items: center; justify-content: center; min-width: 1.5rem; min-height: 1.5rem; padding-inline: .2rem; font-size: .8125rem; }
+.calendar-add { display: inline-flex; align-items: center; justify-content: center; width: 1.5rem; height: 1.5rem; border: 1px solid var(--accent); border-radius: 50%; color: var(--accent); }
+.calendar-add:hover { background: var(--accent-soft); color: var(--accent-strong); }
+.calendar-add .action-icon { width: .9rem; height: .9rem; }
 .calendar-marker { display: block; color: var(--accent-strong); font-weight: 600; }
 .calendar-month ul { list-style: none; margin: 0; padding: 0; }
 .calendar-month li { margin-block: .15rem; }

@@ -1,17 +1,20 @@
-"""The Campaign calendar (#469) and its Add on a day (#1521).
+"""The Campaign calendar (#469), its Add on a day (#1521) and its month view.
 
-The page script draws the table of sends as month grids, each send on its day
-in the browser's time zone. The campaign (October 1–31, 2054) is in New
-York's zone; the default page is Los Angeles's, three hours behind, and
-Auckland is a day ahead. The schedules are schedule_list_components': the
-Initial invitation (sent, October 1), Reminder 1 (October 10), Reminder 2
-(October 20) and a weekly digest on Mondays, each at 9:00 AM New York time,
-plus a daily digest at 7:00 AM from October 2 through November 1, the day
-after the campaign closes; "now" is October 5, so its first four sends have
-passed.
+The page script draws the table of sends as one month at a time, with
+Previous month and Next month limited to the campaign's months (#1656),
+each send on its day in the browser's time zone. The campaign (October
+1–31, 2054) is in New York's zone; the default page is Los Angeles's,
+three hours behind, and Auckland is a day ahead. The schedules are
+schedule_list_components': the Initial invitation (sent, October 1),
+Reminder 1 (October 10), Reminder 2 (October 20) and a weekly digest on
+Mondays, each at 9:00 AM New York time, plus a daily digest at 7:00 AM
+from October 2 through November 1, the day after the campaign closes;
+"now" is October 5, so its first four sends have passed.
 
-Each campaign day's Add opens New scheduled email with that send date
-(``ADD_ON``, October 12), whose Cancel and Apply return to the calendar.
+Each campaign day's (+) Add opens New scheduled email with that send date
+(``ADD_ON``, October 12), whose Cancel and Apply return to the calendar's
+October (``CALENDAR_OCTOBER``). Without a clock the browser's today (2026) is
+outside the campaign, so the calendar opens on its first month, October.
 """
 
 import re
@@ -24,7 +27,9 @@ from .schedule_list_components import (
     ADD_ON,
     APPLY,
     CALENDAR,
+    CALENDAR_OCTOBER,
     LIST,
+    MONTHS,
     NEW,
     NOW,
 )
@@ -39,7 +44,7 @@ from .test_schedule_list import (
     review,
     watch,
 )
-from .waits import eventually, visible
+from .waits import eventually, same_place, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -47,9 +52,19 @@ pytestmark = pytest.mark.parametrize(
 MONDAYS = [5, 12, 19, 26]
 
 
-def cell(page, number, month=0):
-    """Day ``number``'s cell in the ``month``-th grid (0 is October 2054)."""
-    grid = page.locator("table.calendar-month").nth(month)
+def page_place(locator):
+    """``locator``'s top-left corner on the page, not in the window, so a
+    scroll (Playwright scrolls a control into view before using it) is not
+    read as the control moving."""
+    return locator.evaluate(
+        "node => { const box = node.getBoundingClientRect();"
+        " return [box.left + window.scrollX, box.top + window.scrollY]; }"
+    )
+
+
+def cell(page, number):
+    """Day ``number``'s cell in the month shown."""
+    grid = page.locator("table.calendar-month")
     cells = grid.locator("td:has(.calendar-day)")
     texts = cells.locator(".calendar-day").all_inner_texts()
     return cells.nth(texts.index(str(number)))
@@ -59,15 +74,12 @@ def cell(page, number, month=0):
 def test_calendar_draws_each_send_on_its_local_day(
     page, component_origin, axe_source, width
 ):
-    """October and November grids, Sunday first, sends at Los Angeles times."""
+    """October, then November, Sunday first, sends at Los Angeles times."""
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + CALENDAR)
     failures = watch(page)
     grids = page.locator("table.calendar-month")
-    assert grids.locator("caption").all_inner_texts() == [
-        "October 2054",
-        "November 2054",
-    ]
+    assert grids.locator("caption").all_inner_texts() == ["October 2054"]
     headings = grids.locator("thead th .visually-hidden").all_inner_texts()
     assert headings[0] == "Sunday" and headings[-1] == "Saturday"
     # October 1, 2054 is a Thursday: four blank days before it.
@@ -93,10 +105,15 @@ def test_calendar_draws_each_send_on_its_local_day(
     assert past.get_by_role("link").count() == 0
     assert past.locator(".visually-hidden").inner_text() == ", Past"
     visible(cell(page, 6).get_by_role("link", name="4:00 AM Daily Admin digest"))
+    # A phone scrolls the grid inside its region; the page never scrolls sideways.
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert axe_violations(page, axe_source) == []
     # Its last send, the day after the campaign closes, is in November's grid,
     # which starts on a Sunday.
-    november = cell(page, 1, month=1)
-    assert grids.nth(1).locator("tbody td").first.inner_text().startswith("1")
+    page.get_by_role("button", name="Next month").click()
+    assert grids.locator("caption").all_inner_texts() == ["November 2054"]
+    november = cell(page, 1)
+    assert grids.locator("tbody td").first.inner_text().startswith("1")
     visible(november.get_by_role("link", name="4:00 AM Daily Admin digest"))
     assert "Campaign" not in november.inner_text()
     # The table lists the same sends as text, with compact times.
@@ -106,7 +123,6 @@ def test_calendar_draws_each_send_on_its_local_day(
     assert rows.first.locator("th").inner_text() == "Initial invitation"
     assert rows.first.get_by_role("link").count() == 0
     visible(page.get_by_role("link", name="Edit Reminder 1"))
-    # A phone scrolls the grid inside its region; the page never scrolls sideways.
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert axe_violations(page, axe_source) == []
     assert not failures
@@ -158,29 +174,34 @@ def at_now(page):
 
 def add_link(page, day):
     """October ``day``'s Add, by the name a screen reader hears."""
-    return page.get_by_role("link", name=f"Add an email on October {day}, 2054")
+    return page.get_by_role(
+        "link", name=f"Add a scheduled email on October {day}, 2054"
+    )
 
 
 def test_each_campaign_day_has_an_add_named_with_its_date(
     page, component_origin, axe_source
 ):
     """With "now" October 5, today and every later day through October 31
-    has one Add; October 1–4 (passed) and November 1 (after the campaign)
-    have none. Each opens New with its own day, and the grid is the same
-    before and after an Add takes focus (nothing moves)."""
+    has one (+) Add; October 1–4 (passed) and November 1 (after the
+    campaign) have none. Each opens New with its own day, is an icon whose
+    tooltip is its name, and the grid is the same before and after an Add
+    takes focus (nothing moves)."""
     page.set_viewport_size({"width": 1280, "height": 900})
     at_now(page)
     page.goto(component_origin + CALENDAR)
     failures = watch(page)
     adds = page.locator("table.calendar-month a.calendar-add")
     assert adds.count() == 27
-    assert set(adds.all_inner_texts()) == {"Add"}
+    # An icon only: no visible word, a decorative (+) and a matching tooltip.
+    assert set(adds.all_inner_texts()) == {""}
+    assert adds.first.locator("svg[aria-hidden=true]").count() == 1
     for day in (1, 2, 3, 4):
         assert cell(page, day).locator("a.calendar-add").count() == 0
     first = add_link(page, 5)
     assert first.get_attribute("href") == f"{NEW}?date=2054-10-05"
+    assert first.get_attribute("title") == "Add a scheduled email on October 5, 2054"
     assert add_link(page, 31).get_attribute("href") == f"{NEW}?date=2054-10-31"
-    assert cell(page, 1, month=1).locator("a.calendar-add").count() == 0
     # The Add sits on its day's number line, inside the cell.
     twelve = cell(page, 12)
     link = add_link(page, 12)
@@ -195,13 +216,14 @@ def test_each_campaign_day_has_an_add_named_with_its_date(
     # A target at least 24px square (WCAG 2.2 SC 2.5.8).
     assert box["width"] >= 24 and box["height"] >= 24
     reminder = cell(page, 10).get_by_role("link", name="6:00 AM Reminder 1")
-    before = reminder.bounding_box()
+    before = page_place(reminder)
     link.hover()
     link.focus()
-    after = reminder.bounding_box()
-    assert near(before["x"], after["x"]) and near(before["y"], after["y"])
+    assert same_place(page_place(reminder), before)
     assert axe_violations(page, axe_source) == []
     assert page.evaluate("window.notReloaded === true")
+    page.get_by_role("button", name="Next month").click()
+    assert cell(page, 1).locator("a.calendar-add").count() == 0
     assert not failures
 
 
@@ -241,7 +263,7 @@ def test_a_keyboard_reaches_a_day_add_and_opens_new_with_that_date(
     )
     tab_to_next(page)
     assert page.evaluate("document.activeElement.getAttribute('aria-label')") == (
-        "Add an email on October 12, 2054"
+        "Add a scheduled email on October 12, 2054"
     )
     with page.expect_navigation():
         page.keyboard.press("Enter")
@@ -255,7 +277,7 @@ def test_a_keyboard_reaches_a_day_add_and_opens_new_with_that_date(
     choose(page, "kind", "initial")
     assert date.input_value() == ADD_DAY
     cancel = page.get_by_role("link", name="Cancel")
-    assert cancel.get_attribute("href") == CALENDAR
+    assert cancel.get_attribute("href") == CALENDAR_OCTOBER
     assert not failures
 
 
@@ -289,7 +311,7 @@ def test_add_on_a_day_applies_and_returns_to_the_calendar(page, component_origin
     with page.expect_request(lambda request: request.method == "POST") as sent:
         shown.get_by_role("button", name="Apply").click()
     assert sent.value.url.endswith(APPLY)
-    page.wait_for_url(re.compile(re.escape(CALENDAR) + "$"))
+    page.wait_for_url(re.compile(re.escape(CALENDAR_OCTOBER) + "$"))
     eventually(page, "document.getElementById('schedules-outcome').textContent !== ''")
     line = page.locator("#schedules-outcome")
     assert line.inner_text().startswith("Scheduled email added. ")
@@ -297,3 +319,113 @@ def test_add_on_a_day_applies_and_returns_to_the_calendar(page, component_origin
     assert page.evaluate(FOCUSED) == "schedules-outcome"
     # The reserved line kept its space: the grids did not move down.
     assert near(page.locator("#calendar-months-title").bounding_box()["y"], heading)
+
+
+def month_shown(page):
+    """The caption of the month grid shown."""
+    return page.locator("table.calendar-month caption").inner_text()
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_months_change_in_place_within_the_campaign(
+    page, component_origin, axe_source, width
+):
+    """Previous and Next step through October and November 2054 only.
+
+    At an end the button stays where it is, focusable but unavailable, with
+    its reason in the reserved line; a change makes no request, keeps focus
+    on the button, announces the month, replaces the address and never moves
+    the buttons. Every month has six week rows.
+    """
+    page.set_viewport_size({"width": width, "height": 900})
+    at_now(page)
+    page.goto(component_origin + CALENDAR)
+    failures = watch(page)
+    previous = page.get_by_role("button", name="Previous month")
+    following = page.get_by_role("button", name="Next month")
+    reason = page.locator("[data-calendar-reason]")
+    assert month_shown(page) == "October 2054"
+    assert page.locator("[data-calendar-name]").inner_text() == "October 2054"
+    assert previous.get_attribute("aria-disabled") == "true"
+    assert previous.get_attribute("aria-describedby") == "calendar-nav-reason"
+    assert following.get_attribute("aria-disabled") is None
+    assert reason.inner_text() == "This is the campaign's first month."
+    assert page.locator("table.calendar-month tbody tr").count() == 6
+    places = [page_place(previous), page_place(following), page_place(reason)]
+    requests = []
+    page.on("request", lambda request: requests.append(request.url))
+    # The unavailable button does nothing (Playwright waits for an
+    # aria-disabled button to be enabled, so the click is forced).
+    previous.click(force=True)
+    assert month_shown(page) == "October 2054"
+    # By pointer, then (since macOS WebKit does not focus a clicked button)
+    # by keyboard from the focused button, which keeps focus.
+    following.click()
+    assert month_shown(page) == "November 2054"
+    assert page.url.endswith(f"{CALENDAR}?month=2054-11")
+    previous.click()
+    assert month_shown(page) == "October 2054"
+    following.focus()
+    page.keyboard.press("Enter")
+    assert month_shown(page) == "November 2054"
+    assert page.url.endswith(f"{CALENDAR}?month=2054-11")
+    assert page.evaluate("document.activeElement.textContent.trim()") == "Next month"
+    assert following.get_attribute("aria-disabled") == "true"
+    assert previous.get_attribute("aria-disabled") is None
+    assert reason.inner_text() == "This is the campaign's last month."
+    assert page.locator("[data-calendar-said]").inner_text() == "November 2054"
+    assert page.locator("table.calendar-month tbody tr").count() == 6
+    assert same_place(
+        [page_place(previous), page_place(following), page_place(reason)], places
+    )
+    # Focused and unavailable, Enter does nothing either.
+    page.keyboard.press("Enter")
+    assert month_shown(page) == "November 2054"
+    previous.focus()
+    page.keyboard.press("Enter")
+    assert month_shown(page) == "October 2054"
+    assert page.url.endswith(CALENDAR_OCTOBER)
+    assert requests == []
+    assert page.evaluate("window.notReloaded === true")
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert axe_violations(page, axe_source) == []
+    assert not failures
+
+
+def test_the_address_keeps_the_month_through_refresh_and_back(page, component_origin):
+    """Refresh and Back show the month the address names; a month outside the
+    campaign opens the nearer end, which the address then names."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + CALENDAR)
+    page.get_by_role("button", name="Next month").click()
+    assert page.url.endswith(MONTHS[1])
+    page.reload()
+    assert month_shown(page) == "November 2054"
+    page.goto(component_origin + LIST)
+    page.go_back()
+    assert page.url.endswith(MONTHS[1])
+    assert month_shown(page) == "November 2054"
+    page.goto(component_origin + MONTHS[2])
+    assert month_shown(page) == "October 2054"
+    assert page.url.endswith(CALENDAR_OCTOBER)
+    page.goto(component_origin + MONTHS[3])
+    assert month_shown(page) == "November 2054"
+    assert page.url.endswith(MONTHS[1])
+    # With "now" inside the campaign and no month named, today's month.
+    at_now(page)
+    page.goto(component_origin + CALENDAR)
+    assert month_shown(page) == "October 2054"
+
+
+def test_edit_links_carry_the_month_shown(page, component_origin):
+    """Each Edit link, in the grid and the table, returns to the month shown."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + CALENDAR)
+    reminder = cell(page, 10).get_by_role("link", name="6:00 AM Reminder 1")
+    assert reminder.get_attribute("href").endswith("/?calendar=2054-10")
+    table = page.get_by_role("link", name="Edit Reminder 1")
+    assert table.get_attribute("href").endswith("/?calendar=2054-10")
+    page.get_by_role("button", name="Next month").click()
+    assert table.get_attribute("href").endswith("/?calendar=2054-11")
+    digest = cell(page, 1).get_by_role("link", name="4:00 AM Daily Admin digest")
+    assert digest.get_attribute("href").endswith("/?calendar=2054-11")

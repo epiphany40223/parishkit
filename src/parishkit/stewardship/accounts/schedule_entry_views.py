@@ -44,6 +44,7 @@ even from an old link.
 """
 
 import json
+import re
 from datetime import date
 from uuid import UUID
 
@@ -211,6 +212,11 @@ ZONE = "zone"
 # calendar's Add on a day opened it for (#1521), an ISO date in the browser's
 # zone. That New fills it in as the send date and returns to the calendar.
 ADD_ON = "date"
+# Edit's one address parameter (#1656): the Campaign calendar month
+# (``2054-11``) it was opened from, which its Cancel and Apply return to.
+FROM_CALENDAR = "calendar"
+# A year and month as the calendar's addresses name one (``?month=``).
+YEAR_MONTH = re.compile(r"\d{4}-(0[1-9]|1[0-2])")
 # Edit's refusal of a save that changes nothing. The page's change gate
 # keeps Review unavailable until something changed, so only a request that
 # bypasses the page script meets it, in the review dialog (#750).
@@ -1076,6 +1082,33 @@ def added_on(parameters):
     return text
 
 
+def year_month(parameters, name):
+    """The calendar month (``2054-11``) the address's ``name`` names, or None.
+
+    ``parameters`` are the address's checked ones (``filters``). Anything
+    but a four-digit year and a two-digit month is refused as an unknown
+    address (a ``ValueError``, as ``filters`` refuses). Whether the month is
+    one of the campaign's is the calendar script's to say, since the months
+    it draws follow the browser's zone.
+    """
+    text = parameters.get(name)
+    if text is not None and not YEAR_MONTH.fullmatch(text):
+        raise ValueError("Unknown filter input.")
+    return text
+
+
+def return_url(on, month):
+    """Where New or Edit's Cancel goes and its Apply returns (#1521, #1656).
+
+    ``on`` is New's day from the calendar's Add, ``month`` Edit's calendar
+    month: either returns to the calendar showing that month; otherwise
+    the page returns to Dates and mail schedules.
+    """
+    if on is None and month is None:
+        return reverse("admin:schedule_settings")
+    return f"{reverse('admin:schedule_calendar')}?month={month or on[:7]}"
+
+
 def _entry(request, campaign_id, schedule_id=None):
     """New (``schedule_id`` None) or Edit scheduled email, GET or POST.
 
@@ -1098,7 +1131,9 @@ def _entry(request, campaign_id, schedule_id=None):
     posted then, so the date the page showed stands in for it. New opened by
     the Campaign calendar's Add on a day (``?date=``, ``added_on``, #1521)
     has that send date filled in, and its Cancel and Apply return to the
-    calendar; the page posts to its own path, without the parameter.
+    calendar on that day's month; Edit opened from the calendar
+    (``?calendar=<month>``, #1656) returns to that month (``return_url``).
+    The page posts to its own path, without the parameter.
 
     Inside the campaign wizard the page posts ``save`` instead (#1404 PR 4b):
     the same review, signed with the save's request key and recorded at once
@@ -1108,9 +1143,11 @@ def _entry(request, campaign_id, schedule_id=None):
     """
     service = runtime()
     actor = principal(request, service)
-    on = added_on(
-        filters(request.GET, allowed={ADD_ON} if schedule_id is None else set())
+    parameters = filters(
+        request.GET, allowed={ADD_ON} if schedule_id is None else {FROM_CALENDAR}
     )
+    on = added_on(parameters)
+    month = year_month(parameters, FROM_CALENDAR)
     if request.FILES:
         raise unexpected_fields(request.FILES, allowed=())
     new = schedule_id is None
@@ -1200,10 +1237,9 @@ def _entry(request, campaign_id, schedule_id=None):
             "series": part_of,
             "base_digest": state[0].active_configuration.digest,
             "post_url": request.path,
-            # Where Cancel goes and Apply returns: the calendar for its Add.
-            "list_url": reverse(
-                "admin:schedule_calendar" if on else "admin:schedule_settings"
-            ),
+            # Where Cancel goes and Apply returns: the calendar's month for
+            # its Add and its links (#1656), else the list.
+            "list_url": return_url(on, month),
             # The review dialog's Apply confirms on the list, then returns.
             "apply_url": reverse("admin:schedule_settings"),
             "window_text": window_text(values),

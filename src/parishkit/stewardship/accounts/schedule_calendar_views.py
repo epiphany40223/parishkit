@@ -5,14 +5,18 @@ each send the current schedule revisions make, in sending order: the
 Initial invitation, each reminder, and every day or week of the Daily and
 Weekly Admin digests, expanded with the scheduler's own evaluation
 (``SchedulePlan.page``). The table of sends is the page's text equivalent;
-the page script (``calendar-v1.js``) draws the same sends as month grids,
-bucketed by the browser's local day, since every Admin time is browser-local.
+the page script (``calendar-v1.js``) draws the same sends as a month grid,
+one month at a time with Previous and Next (#1656), bucketed by the
+browser's local day, since every Admin time is browser-local. The address's
+``?month=`` names the month shown; only its form is checked here, since the
+months the script draws follow the browser's zone.
 
 Each send is a ``schedule_table.ScheduleRow`` with its own send time, so the
 calendar shows the same names, emails, statuses and Edit links as the
 scheduled emails table and cannot describe a schedule differently. Status
 reads the same counts-only work summary, never Family data. Nothing here
-changes anything: Edit opens the existing Edit scheduled email page, and each
+changes anything: Edit opens the existing Edit scheduled email page (with
+the month shown, so it returns there, #1656), and each
 day's Add (#1521) the existing New scheduled email page with that send date
 (``schedule_entry_views.added_on``), whose review, Apply and audit are New's.
 """
@@ -34,7 +38,7 @@ from parishkit.stewardship.web.contracts import filters
 from .admin_editing import error_response, principal
 from .authentication import runtime
 from .content_views import _records
-from .schedule_entry_views import ERRORS, _recheck
+from .schedule_entry_views import ERRORS, _recheck, year_month
 from .schedule_forms import schedule_order
 from .schedule_preview import work_summary
 from .schedule_reads import campaign_schedules, schedule_state
@@ -44,6 +48,8 @@ from .schedule_views import campaign_email_names
 # ``SchedulePlan.page`` examines at most this many dates a call; a digest's
 # sends are read page by page to its last one, however long the campaign.
 PAGE_DATES = 1000
+# The address parameter naming the month shown (``2054-11``, #1656).
+MONTH = "month"
 # The month grids' weekday headings, Sunday first as parish calendars are:
 # the short name shown and the shared full name a screen reader reads.
 WEEK = tuple(
@@ -114,12 +120,13 @@ def schedule_calendar(request, campaign_id):
 
     It reads the applied configuration in one read-only snapshot, as the
     scheduled emails list does, and rechecks access after rendering so a
-    revocation committed meanwhile is not hidden.
+    revocation committed meanwhile is not hidden. ``?month=`` (#1656) is
+    the page script's; a malformed one is refused as an unknown address.
     """
     try:
         service = runtime()
         principal(request, service)
-        filters(request.GET, allowed=set())
+        year_month(filters(request.GET, allowed={MONTH}), MONTH)
         with read_transaction():
             state, campaign, _editable = schedule_state(service, campaign_id, page=True)
             configuration = state[0]

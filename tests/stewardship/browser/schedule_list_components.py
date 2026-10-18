@@ -64,7 +64,10 @@ checks need no database:
   (the day after the campaign closes), its first four days already past.
   Each campaign day's Add (#1521) opens ``NEW`` with ``?date=``; ``ADD_ON``
   (``NEW?date=2054-10-12``) is that New with October 12 filled in, as the
-  view draws it, whose Cancel and Apply return to ``CALENDAR``.
+  view draws it, whose Cancel and Apply return to ``CALENDAR`` on October
+  (``CALENDAR_OCTOBER``). The calendar shows one month (#1656); ``MONTHS``
+  are its addresses with ``?month=``, each the same page (the script reads
+  the month).
 
 ``POSTS`` lists the fixture server's answers to the pages' POSTs; it is
 filled in by ``components``, before the server starts.
@@ -171,6 +174,14 @@ CALENDAR = "/schedule-calendar"
 # New opened by the calendar's Add on October 12, 2054 (#1521).
 ADD_DAY = "2054-10-12"
 ADD_ON = f"{NEW}?date={ADD_DAY}"
+CALENDAR_OCTOBER = f"{CALENDAR}?month=2054-10"
+MONTHS = [
+    CALENDAR_OCTOBER,
+    f"{CALENDAR}?month=2054-11",
+    # Outside the campaign's months: the script opens the nearer end.
+    f"{CALENDAR}?month=2054-01",
+    f"{CALENDAR}?month=2060-01",
+]
 # The end date Campaign settings proposes; the saved one is October 31.
 DATES_END = "2054-10-25"
 # The refusal's own explanation, which the dialog shows.
@@ -613,6 +624,7 @@ def components(context, admin):
         REFUSED: _list(values, owner, emails, rows, delete_url=f"{REFUSED}/deletion"),
         FAILED: _list(values, owner, emails, rows, delete_url=f"{FAILED}/deletion"),
         CALENDAR: _calendar(values, owner, emails, rows),
+        **{month: _calendar(values, owner, emails, rows) for month in MONTHS},
         APPLIED: _status(values, "applied"),
         NOT_APPLIED: _status(values, "failed", failure_code="stale_base"),
         NEW: _entry(values, owner, emails, rows, post_url=f"{NEW}/review"),
@@ -623,7 +635,7 @@ def components(context, admin):
             rows,
             post_url=f"{NEW}/review",
             on=ADD_DAY,
-            list_url=CALENDAR,
+            list_url=CALENDAR_OCTOBER,
         ),
         EDIT: _entry(
             values, owner, emails, rows, schedule_row=first, post_url=f"{EDIT}/review"

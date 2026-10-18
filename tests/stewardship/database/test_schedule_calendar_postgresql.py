@@ -142,7 +142,7 @@ def test_add_on_a_day_opens_new_with_that_date_and_returns_here(
     browser, _ = signed_in()
     calendar = unescape(browser.get(CALENDAR).content.decode())
     assert f'data-add-url="{NEW}"' in calendar
-    assert 'data-add-name="Add an email on {date}"' in calendar
+    assert 'data-add-name="Add a scheduled email on {date}"' in calendar
     assert re.search(
         r'<p class="review-outcome" id="schedules-outcome" role="status" '
         r'tabindex="-1" data-review-outcome></p>',
@@ -157,11 +157,12 @@ def test_add_on_a_day_opens_new_with_that_date_and_returns_here(
         r'<input type="date" name="schedule-date" value="2054-10-12"', page
     )
     assert '<option value="reminder" selected>' in page
-    # Cancel and the dialog's return are the calendar; Apply still confirms
-    # on the list, and the page posts to its own path.
-    assert f'<a href="{CALENDAR}">Cancel</a>' in page
+    # Cancel and the dialog's return are the calendar on that day's month
+    # (#1656); Apply still confirms on the list, and the page posts to its
+    # own path.
+    assert f'<a href="{CALENDAR}?month=2054-10">Cancel</a>' in page
     dialog = page[page.index('<dialog id="schedule-review"') :]
-    assert f'data-review-return="{CALENDAR}"' in dialog
+    assert f'data-review-return="{CALENDAR}?month=2054-10"' in dialog
     assert 'data-review-outcome="schedules-outcome"' in dialog
     assert f'<form method="post" action="{LIST}" data-review-apply>' in dialog
     assert f'action="{NEW}" id="schedule-entry-form"' in page
@@ -215,3 +216,47 @@ def test_edit_takes_no_add_day(auth_service, google):
     reminder = definition("reminder")
     path = f"/admin/campaign/schedules/{reminder.pk}/"
     assert browser.get(f"{path}?date=2054-10-12").status_code == 400
+
+
+def test_edit_from_the_calendar_returns_to_its_month(auth_service, google, monkeypatch):
+    """?calendar=<month> (#1656) points Cancel and Apply at that month.
+
+    Outside the campaign wizard, as the Add test above is.
+    """
+    monkeypatch.setattr(campaign_wizard, "shown", lambda *_, **__: False)
+    store = auth_service.store
+    draft_with_schedules(store)
+    browser, _ = signed_in()
+    path = f"/admin/campaign/schedules/{definition('reminder').pk}/"
+    page = unescape(browser.get(f"{path}?calendar=2054-11").content.decode())
+    back = f"{CALENDAR}?month=2054-11"
+    assert f'<a href="{back}">Cancel</a>' in page
+    assert f'data-review-return="{back}"' in page
+    assert f'data-review-return="{LIST}"' not in page
+    plain = unescape(browser.get(path).content.decode())
+    assert f'data-review-return="{LIST}"' in plain
+    for refused in (
+        f"{path}?calendar=2054-13",
+        f"{path}?calendar=",
+        f"{path}?date=2054-10-12",
+    ):
+        assert browser.get(refused).status_code == 400, refused
+    # New from a day's Add returns to that day's month.
+    added = unescape(browser.get(f"{NEW}?date=2054-10-12").content.decode())
+    assert f'<a href="{CALENDAR}?month=2054-10">Cancel</a>' in added
+
+
+def test_the_calendar_takes_only_a_well_formed_month(auth_service, google):
+    """?month= (#1656) is the page script's; a malformed one is an unknown
+    address."""
+    store = auth_service.store
+    draft_with_schedules(store)
+    browser, _ = signed_in()
+    page = browser.get(f"{CALENDAR}?month=2054-11")
+    assert page.status_code == 200
+    assert b"data-calendar-step" in page.content
+    # A month outside the campaign is the script's to move to the nearer end.
+    assert browser.get(f"{CALENDAR}?month=2060-01").status_code == 200
+    for month in ("2054-13", "2054-1", "november", ""):
+        assert browser.get(f"{CALENDAR}?month={month}").status_code == 400, month
+    assert browser.get(f"{CALENDAR}?month=2054-10&month=2054-11").status_code == 400
