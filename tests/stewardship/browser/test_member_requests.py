@@ -322,3 +322,36 @@ def test_terminal_toggle_and_review_back_preserve_hidden_field_conflict(
         show(page, page.get_by_role("heading", name="Thank you!", include_hidden=True))
     ).to_be_visible()
     assert submitted[-1]["members"]["3"]["first_name"] == "Updated records"
+
+
+@pytest.mark.parametrize("width", [390, 1280])
+@pytest.mark.parametrize("scheme", ["light", "dark"])
+def test_proposed_member_shows_no_parish_record_taglines(
+    page, component_origin, width, scheme
+):
+    """A new person has no parish record to compare with (#1675).
+
+    Neither its page nor Review marks its fields "Changed from parish records"
+    or "Not available in parish records"; an existing Member's edit still is.
+    """
+    page.set_viewport_size({"width": width, "height": 900})
+    page.emulate_media(color_scheme=scheme)
+    start(page, component_origin)
+    show(page, page.locator("#member-3-nickname")).fill("Al")
+    identity = fill_new(page)
+    show(page, page.locator(f"#member-{identity}-email")).fill("new@example.org")
+    section = page.locator(f"#member-section-{identity}")
+    for text in ["Changed from parish records", "Not available in parish records"]:
+        expect(section.get_by_text(text)).to_have_count(0)
+    expect(page.locator("#member-3-nickname-status")).to_have_text(
+        "Changed from parish records."
+    )
+    review(page)
+    panels = page.locator("section.panel")
+    added = panels.filter(has=page.get_by_role("heading", name="New Household"))
+    expect(added.get_by_text("new@example.org")).to_be_visible()
+    expect(added.get_by_text("Changed from parish records")).to_have_count(0)
+    expect(added.locator("dd.changed")).to_have_count(0)
+    existing = panels.filter(has=page.get_by_role("heading", name="Alex Sample"))
+    expect(existing.get_by_text("— Changed from parish records")).to_have_count(1)
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
