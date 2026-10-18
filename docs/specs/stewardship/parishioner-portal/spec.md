@@ -337,14 +337,17 @@ Directly under each Member's "Ministry participation" heading, before the
 "cannot participate" checkbox and the continue, stop and join choices, a short
 plain notice that is always shown says: "If you choose to join a ministry
 or stop participating in one, that ministry's leaders will see this person's
-email address and phone numbers so they can follow up. Checking the physical
-limitations box below does not share them." The second sentence is there
-because checking that box stops every current Ministry, yet such a leave
-keeps ParishSoft's publish flags (Administrator decision, 2026-10-18, on
-[#1591](https://github.com/epiphany40223/parishkit/issues/1591)). The notice
-comes before the checkbox so Families and screen readers meet it before any
-Ministry choice. It
-is shown once per Member page, never per Ministry, and describes the
+email address and phone numbers so they can follow up." When the campaign
+includes the service module, so the "cannot participate" checkbox is drawn,
+the notice adds a second sentence: "Checking the physical limitations box
+below does not share them." That sentence is there because checking that box
+stops every current Ministry, yet such a leave keeps ParishSoft's publish
+flags (Administrator decision, 2026-10-18, on
+[#1591](https://github.com/epiphany40223/parishkit/issues/1591)). Without the
+service module there is no box, so the notice has only the first sentence. The
+notice comes before the checkbox so Families and screen readers meet it before
+any Ministry choice. It is shown once per Member page, never per Ministry, and
+describes the
 [leader contact rule](../reports/spec.md#ministry-change-summary) for a
 standing request
 ([#1625](https://github.com/epiphany40223/parishkit/issues/1625)).

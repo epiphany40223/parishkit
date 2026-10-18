@@ -37,8 +37,11 @@ def begin(page, origin, form, submit):
 NOTICE = (
     "If you choose to join a ministry or stop participating in one, that "
     "ministry's leaders will see this person's email address and phone numbers "
-    "so they can follow up. Checking the physical limitations box below does "
-    "not share them."
+    "so they can follow up."
+)
+# Appended only when the "cannot participate" checkbox is drawn.
+NOTICE_SERVICE = (
+    NOTICE + " Checking the physical limitations box below does not share them."
 )
 SERVE = (
     "Because of physical limitations, I/we cannot participate in any ministries "
@@ -71,7 +74,7 @@ def test_contact_notice_precedes_every_ministry_choice(
         "heading", name="Ministry participation", include_hidden=True
     )
     show(page, heading)
-    notice = page.get_by_text(NOTICE, exact=True)
+    notice = page.get_by_text(NOTICE_SERVICE if service else NOTICE, exact=True)
     expect(notice).to_have_count(1)
     choir = page.get_by_role("group", name="Choir", include_hidden=True)
     order = [heading, notice]
