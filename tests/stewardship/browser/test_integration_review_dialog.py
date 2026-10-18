@@ -63,6 +63,10 @@ PLACE = """(id) => {
     return [box.left + window.scrollX, box.top + window.scrollY];
 }"""
 SECRET = "xoxb-SYNTHETIC-SECRET-TOKEN"
+# What the review dialog's body holds (emptied whenever the dialog closes).
+REVIEW_BODY = (
+    "document.querySelector('#integration-review [data-review-body]').textContent"
+)
 
 
 def watch(page):
@@ -236,8 +240,8 @@ def test_a_pasted_key_is_confirmed_and_installed_in_place(page, component_origin
     assert "candidate" not in reviews[0][0] and "SYNTHETIC" not in reviews[0][0]
     dialog.get_by_role("button", name="Cancel").click()
     hidden(dialog)
-    review_body = page.locator("#integration-review [data-review-body]")
-    assert review_body.evaluate("node => node.textContent") == ""
+    # The dialog's close listener empties the body a task after close().
+    eventually(page, REVIEW_BODY, "")
     assert token.input_value() == SECRET and applies == []
     save.click()
     dialog = dialog_of(page, "Replace the Slack bot token?")
@@ -249,7 +253,7 @@ def test_a_pasted_key_is_confirmed_and_installed_in_place(page, component_origin
     body, navigated = applies[0]
     assert not navigated and f"candidate={SECRET}" in body
     visible(page.get_by_text("Key updated."))
-    assert review_body.evaluate("node => node.textContent") == ""
+    eventually(page, REVIEW_BODY, "")
     assert page.locator("input[name=candidate]").count() == 1
     assert page.locator("input[name=candidate]").input_value() == ""
     assert SECRET not in page.content()
