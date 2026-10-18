@@ -86,7 +86,7 @@ REASONS = frozenset(
         "send_time_passed",
         # A campaign wizard sub-page's direct save of a schedule change that
         # send work in progress blocks (#1404 PR 4b): INFO, the reader waits
-        # for it or resolves it on Outgoing mail, then saves again.
+        # for it or resolves it on Sent mail, then saves again.
         "send_work_blocks",
         # Publish to ParishSoft's Check ParishSoft (#528, ADM-09): the
         # switch off, nothing approved, a run unfinished, or other campaign
