@@ -2594,9 +2594,10 @@ first user).
 that sum up the page) are **stat tiles**, all drawn by one component: the
 server helper `parishkit.stewardship.web.stat_tiles` and the template
 `components/stat-tiles.html`. Each tile has a short label, one big value
-and up to two short explanation lines. A long list of figures, or facts
-that are not numbers (file names, dates, yes or no), stays a key/value
-list (`<dl>`). A state (Working, Warning, Error) is a
+and up to three short explanation lines. A long list of figures (such as
+Census changes' count for each of its statuses), or facts that are not
+numbers (file names, dates, yes or no), stays a key/value list (`<dl>`).
+A state (Working, Warning, Error) is a
 [status indicator](#status-indicators), not a stat tile.
 **Why.** The same card had been drawn by hand in several templates, with
 different markup, three ways of formatting numbers, three ways of showing
@@ -2634,7 +2635,8 @@ two ways of reading to a screen reader. **Precedent.**
   ([#1537](https://github.com/epiphany40223/parishkit/issues/1537)).
 - **Trend.** Where a comparison exists, a tile may end with one trend
   line, written in words with an arrow ("↑ 12.5% more"), never colour
-  alone.
+  alone. The arrow is hidden from assistive technology, because the words
+  already say the direction.
 - **Share bar.** A tile that states a share may also draw it as a plain
   progress bar at the tile's foot, so the bars of a row of tiles line up.
   Its exact figures are always printed in the tile, so it has no tooltip,
@@ -2671,11 +2673,13 @@ two ways of reading to a screen reader. **Precedent.**
   when they move onto the component
   ([#1540](https://github.com/epiphany40223/parishkit/issues/1540)).
 - **Shared code.** The helper's `tile()` builds each tile and the include
-  draws a row of them. A guard test fails when a template outside
-  `components/` draws stat-tile markup by hand; the templates not yet
-  moved onto the component are listed in it, each with why, and the list
-  may only shrink. Email and PDF reports cannot load the stylesheet and
-  keep their own layouts.
+  draws a row of them. Its `shown()` takes a value that is already text,
+  only for figures that must read word for word as another renderer
+  formats them: Campaign comparison's, shared with its PDF and the report
+  emails, and a saved daily report's, which shows exactly what was
+  emailed. A guard test fails when a template outside `components/` draws
+  stat-tile markup by hand, with no exceptions. Email and PDF reports
+  cannot load the stylesheet and keep their own layouts.
 
 ### Stage boxes
 

@@ -442,20 +442,27 @@ def test_compare_on_day_refuses_a_day_past_the_last_complete_one(
     assert not [url for url in sent if "day=" in url]
 
 
-def test_tiles_carry_their_full_wording(page, component_origin):
-    """Each tile's accessible text is the whole comparison, arrows and words."""
+@pytest.mark.parametrize("width", [1280, 320])
+def test_tiles_carry_their_full_wording(page, component_origin, width):
+    """Each tile reads its label, value and comparison lines, arrows and
+    words, in order, with nothing hidden but the arrows (the words say the
+    direction, #1637) and no mouse-only tooltip (#1540); at 320 pixels the
+    tiles stack and fit the window."""
+    page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + "/campaign-comparison")
+    expect(page.get_by_role("list", name="Headline figures")).to_be_visible()
     tiles = page.locator(".stat-tile")
     expect(tiles).to_have_count(5)
     families = tiles.first
-    expect(families).to_have_attribute(
-        "title",
-        "Families responded: 270 on day 12. Last year on day 12: 240; this year "
-        "is 12.5% more. 2025–2026 average: 230; this year is 17.4% more.",
+    expect(families).to_have_text(
+        "Families responded 270 Last year on day 12: 240 (↑ 12.5% more) "
+        "2025–2026 average: 230 (↑ 17.4% more)"
     )
-    expect(families.locator(".stat-detail").first).to_have_text(
-        "Last year on day 12: 240 (↑ 12.5% more)"
-    )
+    assert families.get_attribute("title") is None
+    hidden = page.locator(".stat-tile [aria-hidden=true]:not(.stat-bar)")
+    assert set(hidden.all_inner_texts()) <= {"↑", "↓", "→"}
+    assert hidden.count() > 0
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     # Money keeps its cents; the median sits beside the average.
     expect(tiles.nth(2).locator(".stat-value")).to_have_text("$345,000.50")
     expect(tiles.nth(3)).to_contain_text("Median so far: $1,000.00")

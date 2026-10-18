@@ -15,11 +15,19 @@ from uuid import UUID
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts import admin_context, admin_navigation
+from parishkit.stewardship.accounts.admin_dashboard import family_tiles
 from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.jobs.delivery_metadata import mode_split
 
 PATH = "/home-next-steps"
+# Home's Family participation counts, as admin_dashboard.summary reads them.
+FAMILIES = {
+    "active": 400,
+    "participation": Percentage(40, 400),
+    "responded": 160,
+    "recent": 12,
+}
 CAMPAIGN = SimpleNamespace(
     pk=UUID(int=1522),
     state="active",
@@ -88,12 +96,8 @@ def components(context, admin):
             "dashboard": {
                 "campaign": CAMPAIGN,
                 "refreshed_at": None,
-                "families": {
-                    "active": 400,
-                    "participation": Percentage(40, 400),
-                    "responded": 160,
-                    "recent": 12,
-                },
+                "families": FAMILIES,
+                "family_tiles": family_tiles(FAMILIES),
             },
         },
     )

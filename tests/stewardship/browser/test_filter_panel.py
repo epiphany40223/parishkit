@@ -118,7 +118,7 @@ FIRST_DATA = {
     "/census-changes": "#census-summary dl",
     "/information-unfiltered": "#information-matching",
     "/financial-unfiltered": ".stat-tiles",
-    "/limitations-report": "#limitations-summary dl",
+    "/limitations-report": "#limitations-summary .stat-tiles",
 }
 LAPTOP_VIEWPORT = {"width": 1366, "height": 650}
 # Fonts differ between platforms (Linux CI's are wider), so the check is

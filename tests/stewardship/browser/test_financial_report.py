@@ -57,7 +57,10 @@ def test_financial_mobile_keyboard_and_accessibility(
     # The installment shows its unit short and its frequency in full to a
     # screen reader (#1544).
     assert page.get_by_role("cell", name="$102.88 monthly", exact=True).count() == 1
-    assert page.locator("[data-summary=annual-total]").inner_text() == "$62,959.50"
+    assert (
+        page.locator("[data-stat=annual-total] .stat-value").inner_text()
+        == "$62,959.50"
+    )
     assert page.get_by_text("contributions through June 30, 2026", exact=False).count()
     # The share filter offers escaped labels and keeps the current choice.
     assert page.get_by_label("Share method", exact=True).input_value() == ONLINE
@@ -586,7 +589,7 @@ def test_applied_filters_redraw_the_summary_charts_in_place(page, component_orig
         lambda route: route.fulfill(body=answer, content_type="text/html"),
     )
     page.get_by_role("button", name="Apply filters").click()
-    expect(page.locator("[data-summary=families]")).to_have_text("4")
+    expect(page.locator("[data-stat=families] .stat-value")).to_have_text("4")
     expect(page.locator("[data-chart][data-chart-state=rendered]")).to_have_count(2)
     eventually(page, FITTED)
     assert page.evaluate("window.__financialMarker") == 1
@@ -695,7 +698,7 @@ def test_fixing_the_other_end_and_applying_clears_the_mark(page, component_origi
         line.querySelector("li").textContent = "stale";
     }""")
     page.get_by_role("button", name="Apply filters").click()
-    expect(page.locator("[data-summary=families]")).to_have_text("4")
+    expect(page.locator("[data-stat=families] .stat-value")).to_have_text("4")
     assert_cleared(page)
     assert_clean(page, errors)
 

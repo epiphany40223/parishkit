@@ -662,7 +662,7 @@ def test_limitations_filter_updates_both_tables_and_the_summary(page, component_
     ]
     members = page.locator("#members-table tbody th[scope=row]").all_inner_texts()
     assert len(members) == 1 and members[0].startswith("Amy")
-    summary = page.locator("#limitations-summary dd")
+    summary = page.locator("#limitations-summary .stat-value")
     assert summary.first.inner_text() == "1"
     assert page.evaluate(MARKED) == "kept"
 

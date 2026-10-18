@@ -18,6 +18,7 @@ from django.db import DatabaseError, connection, transaction
 from django.urls import reverse
 
 from parishkit.stewardship.accounts.policy_models import PortalUser
+from parishkit.stewardship.accounts.templatetags.stewardship import arrows_hidden
 from parishkit.stewardship.archive import imports
 from parishkit.stewardship.archive.check_worker import document
 from parishkit.stewardship.archive.workbook import (
@@ -310,15 +311,16 @@ def test_page_tiles_tables_notes_and_audit(scenario):
         assert "<h1>Campaign comparison</h1>" in text
         assert "Day 2 of" in text and "2052–2054 average" in text
         # Four Families responded; each imported year had two by day 2.
-        assert "Last year on day 2: 2 (↑ 100% more)" in text
-        assert "2052–2054 average: 2 (↑ 100% more)" in text
+        # The tiles hide their arrows from screen readers (#1637).
+        assert arrows_hidden("Last year on day 2: 2 (↑ 100% more)") in text
+        assert arrows_hidden("2052–2054 average: 2 (↑ 100% more)") in text
         # 4 of this cohort's 4 against 2 of an archive's 40 active Families.
-        assert "Last year on day 2: 5% (↑ 95 points more)" in text
+        assert arrows_hidden("Last year on day 2: 5% (↑ 95 points more)") in text
         assert "Average pledge" in text and "Median so far: $500.00" in text
         # Renewal: 2 of last year's 3 responders; last year renewed 1 of
         # 2053's 3 by day 2. 2053 cannot renew the old-system 2052, so
         # renewal has no average (it needs two years).
-        assert "66.7%" in text and "(↑ 33.3 points more)" in text
+        assert "66.7%" in text and arrows_hidden("(↑ 33.3 points more)") in text
         assert "average: 33.3%" not in text
         # The pledge distribution shows this campaign's bands so far.
         assert "$1,000 to under $1,500" in text and "$1,984.50" in text
