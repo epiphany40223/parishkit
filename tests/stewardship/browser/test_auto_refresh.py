@@ -24,6 +24,12 @@ from .in_place_components import (
 )
 from .test_in_place import MARK, MARKED, VIEWPORT, count_requests, scroll_below
 from .test_live_status_in_place import answer_reads, refresh_controls
+
+# Autouse: answer the header's Background work poll, which the component
+# server does not serve. Past 30 s a failed poll draws "Background status
+# unavailable", which wraps the header at 1280 px on Linux fonts and moves
+# the whole page down (52 px), as the scroll checks here would see.
+from .test_system_health import background_counts  # noqa: F401
 from .waits import eventually, has_text, hidden, recorded, visible
 
 pytestmark = pytest.mark.parametrize(
