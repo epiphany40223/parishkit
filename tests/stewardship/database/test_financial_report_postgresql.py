@@ -651,8 +651,21 @@ def test_native_page_filters_privately_and_denies_leaders(
     years = reported["metadata"]["comparison_years"].encode()
     assert years
     # The surname alone ("Example") also appears in unrelated page text, so
-    # match the Family's row header rather than the bare name.
-    name = b'<th scope="row" class="nowrap">' + name + b"</th>"
+    # match the Family's row header rather than the bare name. The name opens
+    # the Family's Timeline by its opaque campaign record id (#1570).
+    from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+
+    family = FamilyCampaign.objects.get(
+        campaign=harness.campaign, family_duid=reported["rows"][0]["family_duid"]
+    )
+    timeline = reverse("admin:timeline", args=[family.pk]).encode()
+    name = (
+        b'<th scope="row" class="nowrap"><a href="'
+        + timeline
+        + b'">'
+        + name
+        + b"</a></th>"
+    )
     route = reverse("admin:financial_report")
     browser, login = signed_in()
     assert login.status_code == 302

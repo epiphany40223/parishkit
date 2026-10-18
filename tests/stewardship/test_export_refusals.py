@@ -139,10 +139,11 @@ def test_native_download_denial_stays_uniform(monkeypatch):
             "?reach=email",
         ),
         (
+            # An old Testing export opens the (Production only) Timeline, #1570.
             "family_timeline",
             {"family_id": "00000000-0000-0000-0000-000000000007", "mode": "testing"},
-            "family_timeline",
-            "/00000000-0000-0000-0000-000000000007/?mode=testing",
+            "timeline",
+            "/00000000-0000-0000-0000-000000000007/",
         ),
     ],
 )

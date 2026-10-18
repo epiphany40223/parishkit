@@ -1,26 +1,31 @@
-"""The Family timeline page for Administrators and Staff (#477, PR 6).
+"""The Timeline page of one Family, for Administrators and Staff (#477, #1570).
 
 ``reports/families/<family>/`` shows one Family of the current campaign
-(``family_timeline``): a summary for both roles, and the full timeline for
+(``timeline``): a summary for both roles, and the full timeline for
 Administrators only. ``<family>`` is the Family's campaign record id, an
 opaque random UUID that, like a Mail message's, names no person; the Family's
 name, DUID, envelope number and code never enter the URL, and the page's title
-leaves the name out so browser history does not keep it.
+leaves the name out so browser history does not keep it. The page replaced
+the Family timeline at the same address (#1570): nothing is redirected.
 
 Admission, the campaign read guard, the role recheck inside it and the audit
 follow the other campaign report pages (the response dashboard's
-``response_dashboard``, say). Production is the
-default; Administrators may choose the campaign's active Testing rehearsal
-(``mode=testing``) and Staff may not. The Family code is decrypted under the
-credential key-set lock inside the guard, as the directory page does.
+``response_dashboard``, say). The page shows Production records only (the
+Administrator removed its Testing view on #1570), so a ``mode`` in the
+address is refused like any unknown filter. The Family code is decrypted
+under the credential key-set lock inside the guard, as the directory page
+does.
 
 The Administrator's timeline is a shared Admin table (``web/tables.py``)
 whose When heading sorts it in place, newest first by default. Its rows are
-few (one Family's events), so it shows them all: no paging, no navigator.
-The URL carries only closed choices: ``mode``, ``sort`` and ``size=all``.
+few (one Family's lines), so it shows them all: no paging, no navigator. A
+filter bar (``TimelineQuery``) narrows its lines by kind and by From and
+Through days in the browser's zone, in place. The URL carries only closed
+choices: ``kind``, ``start``, ``end``, ``zone``, ``sort`` and ``size=all``.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from datetime import date, timedelta
 from urllib.parse import urlencode
 
 from django.core.exceptions import ObjectDoesNotExist
@@ -48,56 +53,132 @@ from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.family_identity import code_context
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.observability import Event, emit_failure
+from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.source.snapshot_names import snapshot_family_facts
 from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
 from parishkit.stewardship.source.workgroups import applied_evidence
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.dates import browser_day_start
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.security import private_response
 from parishkit.stewardship.web.tables import ALL, paginate
 
 from .export_views import SAFE_FAILURES
-from .family_timeline import REACH, TIMELINE_SORTING, read_timeline
 from .read_admission import admit_report_read
-from .response_dashboard import rehearsal_epoch
-from .response_metrics import MODES, ResponseScope
+from .response_metrics import ResponseScope
+from .timelines import KINDS, REACH, TIMELINE_SORTING, narrow, read_timeline
+
+# The days a From or Through filter accepts, as on Census changes.
+EARLIEST, LATEST = date(2000, 1, 1), date(2999, 12, 31)
 
 
-def timeline_url(family_id, mode="production", sort=None):
-    """A Family's timeline URL with the closed ``mode`` and ``sort`` choices.
+@dataclass(frozen=True)
+class TimelineQuery:
+    """The timeline's filters: a ``KINDS`` key and From and Through days.
 
-    Defaults are left out; a sort other than the default is kept, so the
-    mode switch keeps the order the reader chose.
+    ``start`` and ``end`` are ISO days ("2026-10-04", or "" when unset) in
+    the browser's IANA ``zone``, which the page script fills in (the Admin
+    portal requires JavaScript, #565), as on System logs and Census changes.
+    The zone is kept only while a day needs it.
     """
-    path = reverse("admin:family_timeline", args=[family_id])
-    values = [("mode", mode)] if mode != "production" else []
-    if sort is not None and sort != TIMELINE_SORTING.default:
-        values.append(("sort", sort))
-    return path + ("?" + urlencode(values) if values else "")
+
+    kind: str = "all"
+    start: str = ""
+    end: str = ""
+    zone: str = ""
+
+    @classmethod
+    def parse(cls, values):
+        """Accept only closed choices; ValueError for anything else.
+
+        ``values`` holds single strings already checked by ``filters``. A day
+        must be a whole ISO date in range, From may not follow Through, and a
+        day needs a zone from the IANA catalog; without days, any zone is
+        dropped, so it never stays in the page's links.
+        """
+        query = cls(**values)
+        if query.kind not in KINDS:
+            raise ValueError("Invalid timeline kind.")
+        for value in (query.start, query.end):
+            if not value:
+                continue
+            # fromisoformat() alone also takes "20261004" and week dates.
+            day = date.fromisoformat(value)
+            if day.isoformat() != value or not EARLIEST <= day <= LATEST:
+                raise ValueError("Invalid timeline day.")
+        if query.start and query.end and query.start > query.end:
+            raise ValueError("From is after Through.")
+        if not (query.start or query.end):
+            return replace(query, zone="")
+        if query.zone not in timezone_names():
+            raise ValueError("Timeline days need the browser's time zone.")
+        return query
+
+    @property
+    def bounds(self):
+        """The From and Through days as a half-open UTC interval; None if unset.
+
+        Through is inclusive, so its bound is the start of the next day: a
+        daylight-saving day is 23 or 25 hours (``browser_day_start``).
+        """
+        start = date.fromisoformat(self.start) if self.start else None
+        end = date.fromisoformat(self.end) if self.end else None
+        return (
+            browser_day_start(start, self.zone) if start else None,
+            browser_day_start(end + timedelta(days=1), self.zone) if end else None,
+        )
+
+    @property
+    def carry(self):
+        """The filters as (name, value) pairs, defaults left out, for links."""
+        pairs = [("kind", self.kind if self.kind != "all" else "")]
+        pairs += [("start", self.start), ("end", self.end), ("zone", self.zone)]
+        return [(name, value) for name, value in pairs if value]
+
+    @property
+    def applied(self):
+        """Whether any filter other than the default is applied."""
+        return bool(self.carry)
+
+
+def timeline_url(family_id, sort=None):
+    """A Family's timeline URL, keeping a ``sort`` other than the default."""
+    path = reverse("admin:timeline", args=[family_id])
+    if sort is None or sort == TIMELINE_SORTING.default:
+        return path
+    return path + "?" + urlencode([("sort", sort)])
 
 
 def parse_query(parameters):
-    """The page's URL choices: ``(mode, table values)``; anything else refused.
+    """The page's URL choices: ``(query, table values)``; anything else refused.
 
-    ``mode`` is production or testing. The table's ``sort`` must be one of
+    The filters are ``TimelineQuery``'s. The table's ``sort`` must be one of
     the timeline's tokens and its ``size``, which the sort heading carries,
-    may only be ``all``: the timeline is never paged.
+    may only be ``all``: the timeline is never paged. ``mode`` is no longer a
+    choice (#1570), so it is refused as an unknown filter.
     """
-    values = filters(parameters, allowed={"mode", "sort", "size"})
-    mode = values.pop("mode", "production")
-    if mode not in MODES or values.get("size", ALL) != ALL:
-        raise ValueError("Invalid Family timeline choices.")
-    TIMELINE_SORTING.parse(values)
-    return mode, values
+    values = filters(
+        parameters, allowed={"kind", "start", "end", "zone", "sort", "size"}
+    )
+    table = {key: values.pop(key) for key in ("sort", "size") if key in values}
+    if table.get("size", ALL) != ALL:
+        raise ValueError("The timeline is never paged.")
+    TIMELINE_SORTING.parse(table)
+    return TimelineQuery.parse(values), table
 
 
-def timeline_table(events, mode, values):
-    """The timeline as one unpaged page of the shared table, in the chosen sort."""
-    carry = [("mode", mode)] if mode != "production" else []
-    return paginate(events, values, default=ALL, carry=carry, sorting=TIMELINE_SORTING)
+def timeline_table(lines, query, values):
+    """The filtered timeline as one unpaged page of the shared table."""
+    return paginate(
+        narrow(lines, query.kind, query.bounds),
+        values,
+        default=ALL,
+        carry=query.carry,
+        sorting=TIMELINE_SORTING,
+    )
 
 
 @dataclass(frozen=True)
@@ -145,44 +226,41 @@ def open_form(identity, *, testing_codes, current=True, eligible=True):
     return True, ""
 
 
-def page_context(campaign, family_id, identity, mode, timeline, as_of, **options):
+def page_context(campaign, family_id, identity, timeline, as_of, **options):
     """The page's template context; a pure function of its inputs.
 
-    ``timeline`` is the ``family_timeline.Timeline`` (None for a Testing view
-    with no rehearsal). The ``options`` are ``full`` (an Administrator's
-    view: the timeline and the mode switch), ``show_codes`` (the role may see
-    Family codes; without it the code and Open form are left out),
-    ``testing_codes`` and ``family_test_url`` (the active parishioner family directory's
-    Testing-mode link, given only to roles that may open that page),
-    ``current`` and ``eligible`` (whether the campaign is the current one
-    and the Family may use the Family form, for Open form), and
-    ``values``, the timeline table's validated ``sort`` and ``size``, and
-    ``export``, the export form's values (``export_context``), shown only on
-    the full view of a timeline (with no Testing rehearsal there is none).
+    ``timeline`` is the ``timelines.Timeline``. The ``options`` are ``full``
+    (an Administrator's view: the timeline, its filters and its export),
+    ``show_codes`` (the role may see Family codes; without it the code and
+    Open form are left out), ``testing_codes`` and ``family_test_url`` (the
+    chosen-Family test page's link in Testing mode, given only to roles
+    that may open that page), ``current`` and ``eligible`` (whether the
+    campaign is the current one and the Family may use the Family form, for
+    Open form), ``query``, the validated ``TimelineQuery``, ``values``, the
+    timeline table's validated ``sort`` and ``size``, and ``export``, the
+    export form's values (``export_context``), shown only on the full view.
     """
     full = options.get("full", False)
-    values = options.get("values", {})
+    query = options.get("query") or TimelineQuery()
     table = None
-    if full and timeline is not None:
-        table = timeline_table(timeline.events, mode, values)
-    # The checked request's sort, kept even when no table is shown (a Testing
-    # view with no rehearsal), so switching back to Production keeps it.
-    sort = table.sort if table is not None else values.get("sort")
-    testing_codes = options.get("testing_codes", False)
+    if full:
+        table = timeline_table(timeline.events, query, options.get("values", {}))
     available, reason = open_form(
         identity,
-        testing_codes=testing_codes,
+        testing_codes=options.get("testing_codes", False),
         current=options.get("current", True),
         eligible=options.get("eligible", True),
     )
     return {
         "campaign": campaign,
         "identity": identity,
-        "mode": mode,
-        "testing": mode == "testing",
         "full": full,
         "timeline": timeline,
         "table": table,
+        "query": query,
+        "kinds": KINDS,
+        # Every line was filtered out, rather than none recorded yet.
+        "filtered_out": table is not None and not table.rows and bool(timeline.events),
         "as_of": as_of,
         "show_codes": options.get("show_codes", False),
         "open_form": available,
@@ -190,18 +268,15 @@ def page_context(campaign, family_id, identity, mode, timeline, as_of, **options
         # Open form posts here (#529); the code never goes into a URL.
         "open_form_url": reverse("admin:family_open_form", args=[family_id]),
         "family_test_url": options.get("family_test_url"),
-        "production_url": timeline_url(family_id, sort=sort),
-        "testing_url": timeline_url(family_id, "testing", sort),
+        "page_url": reverse("admin:timeline", args=[family_id]),
         "directory_url": reverse("admin:family_directory"),
-        "export": options.get("export") if full and timeline is not None else None,
+        "export": options.get("export") if full else None,
     }
 
 
 def export_context(campaign_id, family_id):
     """The export form's values: its address, key, time zones and availability."""
     from uuid import uuid4
-
-    from parishkit.stewardship.schema_primitives import timezone_names
 
     from .export_services import admit_campaign
 
@@ -211,7 +286,7 @@ def export_context(campaign_id, family_id):
     except PermissionError:
         mutable = False
     return {
-        "url": reverse("admin:family_timeline_export", args=[family_id]),
+        "url": reverse("admin:timeline_export", args=[family_id]),
         "request_key": uuid4(),
         "timezones": sorted(timezone_names()),
         "mutable": mutable,
@@ -224,7 +299,7 @@ def _principal(request, store, *, read_only=False):
         request, store=store, activity=not read_only, read_only=read_only
     )
     if not allows(principal, Capability.CAMPAIGN_REPORT):
-        raise PermissionError("The Family timeline is unavailable.")
+        raise PermissionError("The timeline is unavailable.")
     return principal
 
 
@@ -233,21 +308,16 @@ def _full(principal):
     return "administrator" in principal.roles
 
 
-def _admit_mode(principal, mode):
-    """Testing records are shown to Administrators only."""
-    if mode == "testing" and not _full(principal):
-        raise PermissionError("Testing responses are shown to Administrators only.")
-
-
 def _audit(principal, campaign_id, family_id, outcome):
     """Record the view: who, which Family of which campaign, and how it ended.
 
     The subject is the Family's opaque campaign record id, as a Mail message
     view names its message (``DELIVERY_VIEWED``), so a later review can tell
     who looked at which Family; a view left unrecorded could never be filled
-    in. No name, DUID, code or shown value is copied. The Administrator
-    confirmed recording the Family on 2026-10-05 (reports spec). An
-    append takes no row locks, so it runs after the read guard closes.
+    in. No name, DUID, code, filter or shown value is copied. The
+    Administrator confirmed recording the Family on 2026-10-05 (reports
+    spec). An append takes no row locks, so it runs after the read guard
+    closes.
     """
     with transaction.atomic():
         system = SystemConfiguration.objects.select_related(
@@ -305,17 +375,16 @@ def read_identity(family, *, codes, workgroup=None):
 
 
 @require_safe
-def family_timeline(request, campaign_id, family_id):
+def timeline(request, campaign_id, family_id):
     """One Family's summary (Admin and Staff) and timeline (Admin only)."""
     finish, handed_off = None, False
     try:
         service = runtime()
         principal = _principal(request, service.store)
         try:
-            mode, values = parse_query(request.GET)
+            query, values = parse_query(request.GET)
         except ValueError:
             return private_response("Invalid report filters.\n", status=400)
-        _admit_mode(principal, mode)
         admit_report_read(campaign_id)
         finalized, found = False, False
 
@@ -346,8 +415,7 @@ def family_timeline(request, campaign_id, family_id):
             nonlocal principal
             fresh = _principal(request, service.store, read_only=True)
             if fresh.identity != principal.identity:
-                raise PermissionError("Family timeline access changed.")
-            _admit_mode(fresh, mode)
+                raise PermissionError("Timeline access changed.")
             principal = fresh
             admit_report_read(campaign_id)
 
@@ -366,15 +434,13 @@ def family_timeline(request, campaign_id, family_id):
             # whether a live code would be accepted now.
             system = SystemConfiguration.objects.get()
             testing_codes = system.mode == "testing"
-            epoch = rehearsal_epoch(campaign_id) if mode == "testing" else None
-            timeline = None
-            if mode == "production" or epoch is not None:
-                timeline = read_timeline(
-                    ResponseScope(campaign_id, mode, epoch),
-                    family.pk,
-                    full=full,
-                    current_mode=system.mode,
-                )
+            # Production records only (#1570): the Testing view was removed.
+            records = read_timeline(
+                ResponseScope(campaign_id),
+                family.pk,
+                full=full,
+                current_mode=system.mode,
+            )
             # The chosen-Family test page is Administrator only (CONFIGURE).
             test_url = None
             if codes and testing_codes and allows(principal, Capability.CONFIGURE):
@@ -387,8 +453,7 @@ def family_timeline(request, campaign_id, family_id):
                     codes=codes,
                     workgroup=campaign.active_configuration.values,
                 ),
-                mode,
-                timeline,
+                records,
                 database_now(),
                 full=full,
                 show_codes=codes,
@@ -396,11 +461,12 @@ def family_timeline(request, campaign_id, family_id):
                 current=system.current_campaign_id == campaign_id,
                 eligible=family.portal_eligible,
                 family_test_url=test_url,
+                query=query,
                 values=values,
                 export=export_context(campaign_id, family.pk) if full else None,
             )
             page = render_to_string(
-                "stewardship/family-timeline.html", context, request=request
+                "stewardship/timeline.html", context, request=request
             )
             return iter((page.encode(),))
 
@@ -422,7 +488,7 @@ def family_timeline(request, campaign_id, family_id):
     except (*SAFE_FAILURES, StorageInvariantError, CryptographicError):
         return report_unavailable()
     except ValueError as error:
-        # The mode was validated above, so this is a shaping fault.
+        # The filters were validated above, so this is a shaping fault.
         emit_failure(error, event=Event.REPORT_SHAPING_FAILED)
         return report_unavailable()
     finally:
@@ -436,8 +502,9 @@ def export(request, campaign_id, family_id):
 
     The page's full timeline is the Administrator's view, so only an
     Administrator may export it (``create_timeline_export`` rechecks inside its
-    lock). The form carries the page's mode, the format, the time zone and a
-    one-time request key; anything else is refused. The file can hold the
+    lock). The form carries the format, the time zone and a one-time request
+    key; anything else (a ``mode`` included, since #1570) is refused, and the
+    export is of Production records, as the page shows. The file can hold the
     Family's live code.
     """
     from uuid import UUID
@@ -453,7 +520,7 @@ def export(request, campaign_id, family_id):
             raise PermissionError("The timeline export is for Administrators.")
         parameters = request.POST.copy()
         parameters.pop("csrfmiddlewaretoken", None)
-        fields = {"mode", "format", "browser_timezone", "request_key"}
+        fields = {"format", "browser_timezone", "request_key"}
         if (
             request.GET
             or set(parameters) != fields
@@ -466,7 +533,7 @@ def export(request, campaign_id, family_id):
             principal.identity,
             campaign_id=campaign_id,
             family_id=family_id,
-            mode=parameters["mode"],
+            mode="production",
             format=parameters["format"],
             browser_timezone=parameters["browser_timezone"],
             request_key=UUID(parameters["request_key"]),
@@ -482,3 +549,25 @@ def export(request, campaign_id, family_id):
         return report_unavailable()
     except ValueError:
         return private_response("Invalid timeline export.\n", status=400)
+
+
+def link_families(campaign_id, rows):
+    """Give each report row its Family's campaign record id, for its link.
+
+    ``rows`` are dicts with a ``family_duid``; each gains ``family_id``, the
+    Family's ``FamilyCampaign`` id in ``campaign_id`` (the Timeline address's
+    opaque id), or None when the Family has no campaign record, so the
+    shared ``family_link`` tag draws its name unlinked. One indexed read for
+    the whole page, never one per row (#1570).
+    """
+    duids = {row["family_duid"] for row in rows if row.get("family_duid") is not None}
+    ids = {}
+    if duids:
+        ids = dict(
+            FamilyCampaign.objects.filter(
+                campaign_id=campaign_id, family_duid__in=duids
+            ).values_list("family_duid", "pk")
+        )
+    for row in rows:
+        row["family_id"] = ids.get(row.get("family_duid"))
+    return rows

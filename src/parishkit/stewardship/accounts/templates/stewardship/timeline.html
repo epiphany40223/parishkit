@@ -1,21 +1,13 @@
-{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship static %}{# One Family's summary (Administrators and Staff) and timeline (Administrators only), #477: reports/family_timeline_views.py builds the context and reports/family_timeline.py reads the records. Data first; the explanation sits in the About panel. The title leaves the Family's name out, so browser history does not keep it. #}
-{% block title %}{% translate "Family timeline" %}{% endblock %}
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship static %}{# One Family's Timeline (#477, #1570): the summary (Administrators and Staff) and the timeline with its filters (Administrators only). reports/timeline_views.py builds the context and reports/timelines.py reads the records. Data first; the explanation sits in the About panel. The heading names the Family, but the browser title leaves the name out, so browser history does not keep it. Production records only: the Testing view was removed (#1570). #}
+{% block title %}{% translate "Timeline" %}{% endblock %}
 {% block content %}
-<h1>{% translate "Family timeline" %}</h1>
-{% aboutpage "family-timeline" %}<p>{% if show_codes %}{% translate "What happened with one Family in this campaign: whether it submitted, the last email sent to it and its Family code." %}{% else %}{% translate "What happened with one Family in this campaign: whether it submitted and the last email sent to it." %}{% endif %}{% if full %} {% translate "The timeline below lists every email, sign-in, form open and submission, newest first; select the When heading to reverse the order." %}{% endif %}</p>
+<h1>{% if identity.name %}{% blocktranslate with name=identity.name trimmed %}{{ name }} — timeline{% endblocktranslate %}{% else %}{% translate "Timeline" %}{% endif %}</h1>
+{% aboutpage "timeline" %}<p>{% if show_codes %}{% translate "What happened with one Family in this campaign: whether it submitted, the last email sent to it and its Family code." %}{% else %}{% translate "What happened with one Family in this campaign: whether it submitted and the last email sent to it." %}{% endif %}{% if full %} {% translate "The timeline below lists every email, sign-in, sign-out, form open and submission, newest first; select the When heading to reverse the order. Kind, From and Through narrow the lines shown; the summary always covers everything." %}{% translate "Only Production records are shown; Testing rehearsal results are on Go-live readiness's Testing submissions." %}{% endif %}</p>
 <p>{% translate "Delivered means the mail service accepted the email; that does not prove it reached the inbox. Not sure it arrived means the mail service did not confirm either way." %}</p>
-{% if full %}<p>{% translate "A sign-in can also be a mail scanner checking the Family's personal link. Getting past the first step is recorded from ParishKit 1.2.0 on. Open an email to see its delivery history." %}</p>{% endif %}
+{% if full %}<p>{% translate "A sign-in can also be a mail scanner checking the Family's personal link. Session ended means the system ended the Family's form session, for example when the campaign or mode changed; a session that simply timed out shows no line. Getting past the first step is recorded from ParishKit 1.2.0 on. Open an email to see its delivery history." %}</p>{% endif %}
 <p>{% if show_codes %}{% translate "Open form opens the Family form in a new tab, signed in as the Family; a response submitted there is marked as entered by Staff." %} {% endif %}{% translate "Times are shown in your browser's time zone." %}</p>{% endaboutpage %}
-<p>{% if identity.name %}<strong>{{ identity.name }}</strong>{% else %}{% source_status "missing" %}{% endif %} · {% translate "Family DUID" %} {{ identity.duid|duid }}{% if identity.envelope is not None %} · {% translate "Envelope number" %} {{ identity.envelope|duid }}{% endif %} · <a href="{{ directory_url }}">{% translate "Active parishioner family directory" %}</a></p>
-{# One shared table region (web/tables.py, #488/#519): the mode binary choice (components/segmented-choice.html, #1535; a[data-in-place]) and the timeline's When heading (sort_heading) refresh it in place; each href ends in its id, the table's anchor "table". #}
-<div id="table" data-table-region>
-<p>{{ campaign.active_configuration.name }} — {% if testing %}{% translate "Testing rehearsal" %}{% else %}{% translate "Production" %}{% endif %}</p>
-{% if full %}{% include "stewardship/components/segmented-choice.html" with choice_id="timeline-mode" region_id="table" label=_("Records shown") first_key="mode-production" first_label=_("Production") first_href=production_url second_key="mode-testing" second_label=_("Testing rehearsal") second_href=testing_url chosen=testing|yesno:"mode-testing,mode-production" %}{% endif %}
-{% if timeline is None %}
-<section class="panel empty-state"><p>{% translate "This campaign has no Testing rehearsal now, so there are no Testing records to show. Choose Production to see live records." %}</p></section>
-{% else %}
-{% if testing %}<p class="notice">{% translate "Testing rehearsal: responses and test emails from the campaign's current rehearsal only. They are never counted in Production." %}</p>{% endif %}
-<p>{% translate "Counted at" %} <time datetime="{{ as_of|instant }}" data-local-instant>{{ as_of|instant }}</time></p>
+<p>{% if not identity.name %}{% source_status "missing" %} · {% endif %}{% translate "Family DUID" %} {{ identity.duid|duid }}{% if identity.envelope is not None %} · {% translate "Envelope number" %} {{ identity.envelope|duid }}{% endif %} · <a href="{{ directory_url }}">{% translate "Active parishioner family directory" %}</a></p>
+<p>{{ campaign.active_configuration.name }} · {% translate "Counted at" %} <time datetime="{{ as_of|instant }}" data-local-instant>{{ as_of|instant }}</time></p>
 {% with summary=timeline.summary email=timeline.summary.last_email %}
 <section class="panel" aria-labelledby="summary-heading">
 <h2 id="summary-heading">{% translate "Summary" %}</h2>
@@ -41,23 +33,34 @@
 {% endwith %}
 {% if full %}<section class="panel" aria-labelledby="events-heading">
 <h2 id="events-heading">{% translate "Timeline" %}</h2>
+{# The filter bar (#1570): a GET form whose closed choices stay in the address, applied in place (ui-v1.js, form#table-filters[data-table-sync]); it carries the When sort as hidden fields, and the sort heading carries the filters back. The zone is the browser's, filled by ui-v1.js (#558), so From and Through are days in this computer's time zone, as on System logs; the gate's hint keeps its line (data-complete-hint="reserve"), so nothing moves. #}
+<form id="table-filters" data-table-sync method="get" action="{{ page_url }}#table" class="filter-bar" data-require-complete data-missing-hint="{% translate 'Correct the filters to apply them.' %}">
+<input type="hidden" name="zone" value="{{ query.zone }}" data-browser-zone data-zone-missing-hint="{% translate "Your browser didn't report a time zone, so these dates can't be used. Clear From and Through, or check your computer's time zone setting." %}">
+{% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
+<div class="fit"><label for="timeline-kind">{% translate "Kind" %}</label><select id="timeline-kind" name="kind">{% for key, label in kinds.items %}<option value="{{ key }}"{% if query.kind == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+<div class="short" data-missing-hint="{% translate 'Enter a whole From date, or clear it.' %}"><label for="timeline-start">{% translate "From" %}</label><input id="timeline-start" type="date" name="start" value="{{ query.start }}" aria-describedby="timeline-zone-help" data-browser-zone-field></div>
+<div class="short" data-missing-hint="{% translate 'Enter a whole Through date, no earlier than From, or clear it.' %}"><label for="timeline-end">{% translate "Through" %}</label><input id="timeline-end" type="date" name="end" data-not-before="timeline-start" value="{{ query.end }}" aria-describedby="timeline-zone-help" data-browser-zone-field></div>
+{% button type="submit" %}{% translate "Show lines" %}{% endbutton %}
+<p class="help" id="timeline-zone-help" data-browser-zone-note hidden>{% translate "From and Through are days in this computer's time zone:" %} <span data-browser-zone-name></span>.</p>
+<p class="help" data-complete-hint="reserve" hidden></p>
+</form>
+{# One shared table region (web/tables.py, #488/#519): the filter bar and the When heading (sort_heading) refresh it in place; each href ends in its id, the table's anchor "table". #}
+<div id="table" data-table-region>
 <div class="table-scroll" tabindex="0" role="region" aria-labelledby="events-caption"><table class="data-table"><caption id="events-caption">{% translate "Everything recorded for this Family" %}</caption>
 <thead><tr>{% translate "When" as heading %}{% sort_heading table "when" heading %}<th scope="col">{% translate "What happened" %}</th><th scope="col">{% translate "Details" %}</th></tr></thead><tbody>
 {% for event in table.rows %}<tr><td><time datetime="{{ event.at|instant }}" data-local-instant data-compact>{{ event.at|instant }}</time></td><th scope="row">{% if event.message_id %}<a href="{% url 'admin:delivery' event.message_id %}">{{ event.what }}</a>{% else %}{{ event.what }}{% endif %}</th><td>{{ event.detail }}</td></tr>
-{% empty %}<tr><td colspan="3">{% translate "Nothing recorded for this Family yet. Emails, sign-ins and submissions appear here as they happen." %}</td></tr>{% endfor %}</tbody></table></div>
+{% empty %}<tr><td colspan="3">{% if filtered_out %}{% translate "No lines match these filters. Choose All in Kind and clear From and Through to see every line." %}{% else %}{% translate "Nothing recorded for this Family yet. Emails, sign-ins and submissions appear here as they happen." %}{% endif %}</td></tr>{% endfor %}</tbody></table></div>
+</div>
 </section>{% endif %}
-{# The export form is in the table region, so an in-place mode switch draws it with the mode it posts; with no Testing rehearsal there is nothing to export, and it is absent. #}
 {% if export %}<section class="panel" aria-labelledby="timeline-export-heading">
 <h2 id="timeline-export-heading">{% translate "Export this timeline" %}</h2>
-<p>{% if testing %}{% translate "The file holds this Family's details, the summary and every line of the Testing rehearsal timeline above, as they are when you queue the export; later activity is not included." %}{% else %}{% translate "The file holds this Family's details, the summary and every line of the timeline above, as they are when you queue the export; later activity is not included." %}{% endif %}{% if show_codes %} {% translate "It includes the Family code." %}{% endif %}</p>
+<p>{% translate "The file holds this Family's details, the summary and every line of the timeline, whatever Kind, From and Through show, as they are when you queue the export; later activity is not included." %}{% if show_codes %} {% translate "It includes the Family code." %}{% endif %}</p>
 <form id="timeline-export" data-submit-waits data-keep-choices method="post" action="{{ export.url }}">{% csrf_token %}
-<input type="hidden" name="mode" value="{{ mode }}"><input type="hidden" name="request_key" value="{{ export.request_key }}">
+<input type="hidden" name="request_key" value="{{ export.request_key }}">
 <fieldset{% if not export.mutable %} disabled aria-describedby="timeline-export-unavailable"{% endif %}><legend>{% translate "Timeline export options" %}</legend>
 {% if not export.mutable %}<p id="timeline-export-unavailable" class="help">{% translate "Exports are unavailable while other campaign work (a restore review, or a cleanup, purge or go-live step) is under way. Try again when it finishes." %}</p>{% endif %}
 <label for="timeline-format">{% translate "Export format" %}</label><select id="timeline-format" name="format">{% export_format_options "csv" "xlsx" "pdf" %}</select>
 <div class="label-row"><label for="timeline-export-timezone" id="timeline-export-timezone-label">{% translate "Export timezone" %}</label>{% translate "Your browser's time zone is selected when your browser allows it; otherwise UTC is selected. You can change it before exporting." as tip %}{% include "stewardship/components/toggletip.html" with tip_id="timeline-export-timezone-tip" tip_label_id="timeline-export-timezone-label" tip_text=tip %}</div><select id="timeline-export-timezone" name="browser_timezone" data-information-timezone>{% for zone in export.timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
 {# The fieldset greys the button while locked; the button names the reason itself too (#563, #1331). #}{% button type="submit" aria-describedby=export.mutable|yesno:",timeline-export-unavailable" %}{% translate "Queue timeline export" %}{% endbutton %}</fieldset></form></section>{% endif %}
-{% endif %}
-</div>
 <script src="{% static 'stewardship/information-export-v1.js' %}" defer></script>
 {% endblock %}

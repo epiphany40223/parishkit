@@ -236,8 +236,9 @@ PAGES = {
     # Resolved Ministry joins and leaves to enter in ParishSoft by hand (#528).
     "ministry_roster": Page("reports", _("Roster changes to enter"), "ministry_report"),
     "family_directory": Page("reports", _("Active parishioner family directory")),
-    # One Family's summary and timeline (#477), opened from its directory row.
-    "family_timeline": Page("reports", _("Family timeline"), "family_directory"),
+    # One Family's summary and timeline (#477; the Timeline since #1570),
+    # opened from every Family name the shared family_link tag draws.
+    "timeline": Page("reports", _("Timeline"), "family_directory"),
     # Parish data
     "parish_settings": Page("parish", _("Parish settings")),
     "branding_settings": Page("parish", _("Parish logos")),
@@ -707,7 +708,7 @@ NON_PAGES = frozenset(
         "family_email_progress_status",
         # The header's presence count, polled at the old presence address.
         "presence_count",
-        "family_timeline_export",
+        "timeline_export",
         "family_directory_export",
         # Open form's hand-off (#529): a POST that opens the Family form.
         "family_open_form",

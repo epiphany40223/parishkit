@@ -4,15 +4,13 @@
   let zone;
   try { zone = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (_) { return; }
   // Each export's time zone menu starts on this browser's zone when it offers
-  // it. An in-place refresh (ui-v1.js's parishkit:swap) draws a fresh menu,
-  // as the Family timeline's export form inside its table region is, so the
-  // fresh one is preselected too.
+  // it. An in-place refresh (ui-v1.js's parishkit:swap) may draw a fresh
+  // menu, so the fresh one is preselected too.
   const choose = (root) => root.querySelectorAll("[data-information-timezone]").forEach((select) => {
     if (Array.from(select.options).some(option => option.value === zone)) select.value = zone;
   });
-  // A form marked data-keep-choices (the Family timeline's export, which an
-  // in-place sort or mode change redraws, and the Active parishioner family
-  // directory's, whose
+  // A form marked data-keep-choices (the Timeline's export, and the Active
+  // parishioner family directory's, whose
   // time zone slot every in-place refresh redraws) keeps what the user picked: each
   // menu's last choice, by id, is put back on the fresh menu when offered
   // (Ministry follow-up's export too, whose format menu every Apply redraws).

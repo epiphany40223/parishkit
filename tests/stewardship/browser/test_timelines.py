@@ -1,24 +1,25 @@
-"""The Family timeline: accessible, browser-local times, mode in place (#477).
+"""A Family's Timeline: accessible, browser-local times, filters in place (#1570).
 
-The fixtures (``family_timeline_components``) serve the Administrator's page,
-the exact page its Testing switch leads to, Staff's reduced view and a page
-whose Open form is unavailable.
+The fixtures (``timeline_components``) serve the Administrator's page, the
+exact pages its When heading and Kind filter lead to, Staff's reduced view
+and a page whose Open form is unavailable. #477 built the page as the Family
+timeline; #1570 renamed it, removed its Production / Testing pair and added
+the filter bar.
 """
 
 import pytest
 
-from .family_timeline_components import (
-    ADMIN,
-    NEWEST,
-    OLDEST,
-    REHEARSED_ADMIN,
-    REHEARSED_TESTING,
-    STAFF,
-    TESTING,
-    UNAVAILABLE,
-)
+from .automation_components import canonical
 from .test_charts import assert_clean, watch
-from .waits import has_attribute, has_text, visible
+from .timeline_components import ADMIN, EMAILS, NEWEST, OLDEST, STAFF, UNAVAILABLE
+from .waits import (
+    focused,
+    has_attribute,
+    has_text,
+    has_value,
+    same_place,
+    visible,
+)
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -32,6 +33,8 @@ AXE = """async () => (await axe.run(document, {
 # A mark outside every region, which only a full page load could lose.
 MARK = "document.querySelector('h1').dataset.mark = 'kept'"
 MARKED = "document.querySelector('h1').dataset.mark"
+# The filter bar's fields, which share one row on a desktop.
+FIELDS = "#table-filters > div, #table-filters > button"
 
 
 @pytest.mark.parametrize("path", [ADMIN, STAFF, UNAVAILABLE])
@@ -49,6 +52,15 @@ def test_pages_are_accessible_and_fit_a_phone(page, component_origin, axe_source
     assert_clean(page, errors)
 
 
+def test_the_page_names_the_family_and_offers_no_testing_view(page, component_origin):
+    """The heading names the Family; no Production / Testing control (#1570)."""
+    page.goto(component_origin + ADMIN)
+    visible(page.get_by_role("heading", name="Adams, Ann — timeline"))
+    assert "Timeline" in page.title() and "Adams" not in page.title()
+    assert page.locator("[data-in-place^='mode-']").count() == 0
+    assert page.get_by_text("Testing rehearsal", exact=True).count() == 0
+
+
 def test_times_are_shown_in_the_browsers_time_zone(page, component_origin):
     """Every time is the browser's local time (the fixture browser is Pacific)."""
     page.goto(component_origin + ADMIN)
@@ -58,6 +70,9 @@ def test_times_are_shown_in_the_browsers_time_zone(page, component_origin):
     assert first.get_attribute("datetime") == "2026-10-03T14:00:00+00:00"
     # Table cells use the compact form, which names no zone (#1093).
     assert first.inner_text() == "Oct 3, 2026 7:00 AM"
+    # From and Through are days in the browser's zone, which the page names.
+    visible(page.locator("#timeline-zone-help"))
+    assert "America/Los_Angeles" in page.locator("#timeline-zone-help").inner_text()
     # No time is labeled UTC. The export form's time zone menu and its help
     # offer UTC as a choice, which is not a shown time.
     shown = page.evaluate(
@@ -68,29 +83,18 @@ def test_times_are_shown_in_the_browsers_time_zone(page, component_origin):
     assert "UTC" not in shown
 
 
-def test_mode_switch_refreshes_in_place(page, component_origin):
-    """Testing replaces the region without a reload and keeps focus on the switch."""
-    errors = watch(page)
-    page.goto(component_origin + ADMIN)
-    page.evaluate(MARK)
-    link = page.locator('[data-in-place="mode-testing"]')
-    link.focus()
-    page.keyboard.press("Enter")
-    page.wait_for_url(component_origin + TESTING + "#table")
-    visible(page.locator("#table").get_by_text("no Testing rehearsal now"))
-    assert page.evaluate(MARKED) == "kept"
-    assert page.evaluate("document.activeElement.dataset.inPlace") == "mode-testing"
-    assert page.locator("#table table").count() == 0
-    current = page.locator('#table [aria-current="page"]')
-    assert current.inner_text() == "Testing rehearsal"
-    assert_clean(page, errors)
-
-
 def times(page):
     """The timeline's When values (instants), in row order."""
     return [
         cell.get_attribute("datetime")
         for cell in page.locator("#table tbody tr td:first-child time").all()
+    ]
+
+
+def lines(page):
+    """The timeline's What happened words, in row order."""
+    return [
+        cell.inner_text() for cell in page.locator("#table tbody th[scope=row]").all()
     ]
 
 
@@ -121,6 +125,8 @@ def test_when_heading_sorts_in_place_both_ways(page, component_origin):
         page.get_by_role("status").filter(has_text="Sorted by"),
         "Sorted by When, ascending",
     )
+    # The filter bar now carries the chosen order.
+    assert page.locator('#table-filters input[name="sort"]').input_value() == "when"
     page.get_by_role("link", name="When (sort descending)").click()
     has_attribute(when, "aria-sort", "descending")
     assert times(page) == newest
@@ -133,8 +139,70 @@ def test_when_heading_sorts_in_place_both_ways(page, component_origin):
     assert_clean(page, errors)
 
 
+def test_the_kind_filter_narrows_the_lines_in_place(page, component_origin):
+    """Show lines swaps the table in place; nothing above it moves (#1570).
+
+    The window is tall enough to hold the whole page, so the shorter table
+    cannot clamp the scroll position and any move of the button is a shift.
+    """
+    errors = watch(page)
+    page.set_viewport_size({"width": 1280, "height": 2400})
+    page.goto(component_origin + ADMIN)
+    every = lines(page)
+    assert "Got past the first step" in every and "Invitation" in every
+    page.evaluate(MARK)
+    # The page script fills the browser's zone in on load; the request
+    # carries it, as a reader's would.
+    has_value(page.locator('#table-filters input[name="zone"]'), "America/Los_Angeles")
+    page.locator("#timeline-kind").select_option("emails")
+    button = page.get_by_role("button", name="Show lines")
+    before = button.bounding_box()
+    scrolled = page.evaluate("window.scrollY")
+    with page.expect_response(
+        lambda response: (
+            "kind=emails" in response.url and response.request.method == "GET"
+        )
+    ) as fetched:
+        button.click()
+    assert fetched.value.request.headers.get("x-requested-with") == "fetch"
+    assert fetched.value.status == 200, fetched.value.url
+    page.wait_for_function(
+        "!document.querySelector('#table tbody').textContent.includes('Got past')"
+    )
+    assert lines(page) == ["Submission receipt", "Reminder 1", "Invitation"]
+    assert page.evaluate(MARKED) == "kept"
+    assert page.evaluate("window.scrollY") == scrolled
+    assert same_place(button.bounding_box(), before)
+    focused(button)
+    assert page.locator("#timeline-kind").input_value() == "emails"
+    # The address keeps the choice, so a reload or bookmark shows it again.
+    assert page.url.endswith("#table")
+    address = page.url.removeprefix(component_origin).split("#")[0]
+    assert canonical(address) == EMAILS
+    # The summary is not filtered.
+    assert (
+        "2 times; most recently" in page.locator("#summary-heading + dl").inner_text()
+    )
+    assert_clean(page, errors)
+
+
+def test_the_filter_bar_is_one_row_on_a_desktop_and_wraps_on_a_phone(
+    page, component_origin
+):
+    """Kind, From, Through and Show lines share one row until the page narrows."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + ADMIN)
+    # The bar aligns its items' ends, so one row shares their bottoms.
+    bottoms = page.locator(FIELDS).evaluate_all(
+        "nodes => nodes.map(node => Math.round(node.getBoundingClientRect().bottom))"
+    )
+    assert len(bottoms) == 4 and max(bottoms) - min(bottoms) <= 4, bottoms
+    page.set_viewport_size({"width": 390, "height": 844})
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+
+
 def test_staff_see_the_summary_only(page, component_origin):
-    """Submitted, last email and code with Open form; no timeline or switch."""
+    """Submitted, last email and code with Open form; no timeline or filters."""
     page.goto(component_origin + STAFF)
     # Open form posts its hand-off to a new tab; no URL carries the code.
     button = page.get_by_role("button", name="Open form in a new tab")
@@ -144,7 +212,7 @@ def test_staff_see_the_summary_only(page, component_origin):
     assert form.get_attribute("action").endswith("/open-form/")
     assert page.locator("a[href*='#code=']").count() == 0
     assert page.get_by_role("heading", name="Timeline", exact=True).count() == 0
-    assert page.locator("[data-in-place]").count() == 0
+    assert page.locator("[data-in-place], #table-filters").count() == 0
 
 
 def test_unavailable_open_form_is_disabled_with_its_reason(page, component_origin):
@@ -158,17 +226,17 @@ def test_unavailable_open_form_is_disabled_with_its_reason(page, component_origi
 
 
 def export_form(page):
-    """The timeline export form in the table region."""
-    return page.locator("#table form#timeline-export")
+    """The timeline export form."""
+    return page.locator("form#timeline-export")
 
 
 def test_the_export_form_starts_on_the_browsers_zone(page, component_origin):
-    """The form posts this view's mode, with the browser's zone preselected."""
+    """The form posts no mode, with the browser's zone preselected."""
     errors = watch(page)
     page.goto(component_origin + ADMIN)
     form = export_form(page)
     visible(form)
-    assert form.locator('input[name="mode"]').get_attribute("value") == "production"
+    assert form.locator('input[name="mode"]').count() == 0
     # The fixture browser is Pacific; the menu starts there, not on UTC.
     assert form.locator("#timeline-export-timezone").input_value() == (
         "America/Los_Angeles"
@@ -176,41 +244,18 @@ def test_the_export_form_starts_on_the_browsers_zone(page, component_origin):
     assert_clean(page, errors)
 
 
-def test_the_export_form_follows_the_in_place_mode_switch(page, component_origin):
-    """Switching mode redraws the form with the mode it now posts, or removes it."""
+def test_the_export_form_keeps_choices_across_a_filter(page, component_origin):
+    """A format and zone picked before an in-place filter survive it."""
     errors = watch(page)
-    page.goto(component_origin + REHEARSED_ADMIN)
-    page.evaluate(MARK)
-    page.locator('[data-in-place="mode-testing"]').click()
-    page.wait_for_url(component_origin + REHEARSED_TESTING + "#table")
-    assert page.evaluate(MARKED) == "kept"
-    form = export_form(page)
-    visible(form)
-    assert form.locator('input[name="mode"]').get_attribute("value") == "testing"
-    # The fresh menu is preselected too.
-    assert form.locator("#timeline-export-timezone").input_value() == (
-        "America/Los_Angeles"
-    )
-    # Without a Testing rehearsal there is nothing to export: no form.
     page.goto(component_origin + ADMIN)
-    page.locator('[data-in-place="mode-testing"]').click()
-    page.wait_for_url(component_origin + TESTING + "#table")
-    visible(page.locator("#table").get_by_text("no Testing rehearsal now"))
-    assert export_form(page).count() == 0
-    assert_clean(page, errors)
-
-
-def test_the_export_form_keeps_choices_across_a_redraw(page, component_origin):
-    """A format and zone picked before an in-place mode switch survive it."""
-    errors = watch(page)
-    page.goto(component_origin + REHEARSED_ADMIN)
     form = export_form(page)
     form.locator("#timeline-format").select_option("pdf")
     form.locator("#timeline-export-timezone").select_option("UTC")
-    page.locator('[data-in-place="mode-testing"]').click()
-    page.wait_for_url(component_origin + REHEARSED_TESTING + "#table")
-    form = export_form(page)
-    assert form.locator('input[name="mode"]').get_attribute("value") == "testing"
+    page.locator("#timeline-kind").select_option("emails")
+    page.get_by_role("button", name="Show lines").click()
+    page.wait_for_function(
+        "!document.querySelector('#table tbody').textContent.includes('Got past')"
+    )
     assert form.locator("#timeline-format").input_value() == "pdf"
     assert form.locator("#timeline-export-timezone").input_value() == "UTC"
     assert_clean(page, errors)

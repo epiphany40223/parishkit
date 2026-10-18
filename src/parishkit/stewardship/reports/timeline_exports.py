@@ -1,6 +1,6 @@
 """The Family timeline export: one Family's timeline as a file (ADM-11 PR 8g).
 
-The Family timeline page (``family_timeline_views``) shows an Administrator one
+The Timeline page (``timeline_views``) shows an Administrator one
 Family's identity and every line of its timeline. This export captures what
 that page shows, through the page's own reads (``read_timeline`` and the
 identity read), into an immutable ``TimelineExportSnapshot`` when it is
@@ -36,7 +36,9 @@ from .export_services import (
 )
 
 REPORT = "family_timeline"
-MODES = ("production", "testing")
+# Production only since #1570: the page no longer shows Testing records,
+# so neither its form nor ``export family-timeline`` exports them.
+MODES = ("production",)
 
 
 def capture(campaign_id, family, mode, epoch, *, current_mode):
@@ -50,9 +52,9 @@ def capture(campaign_id, family, mode, epoch, *, current_mode):
     from parishkit.stewardship.accounts.sessions import database_now
     from parishkit.stewardship.campaigns.models import Campaign
 
-    from .family_timeline import read_timeline
-    from .family_timeline_views import read_identity
     from .response_metrics import ResponseScope
+    from .timeline_views import read_identity
+    from .timelines import read_timeline
 
     timeline = read_timeline(
         ResponseScope(campaign_id, mode, epoch),

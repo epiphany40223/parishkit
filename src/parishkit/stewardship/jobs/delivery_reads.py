@@ -200,7 +200,7 @@ def with_family_names(rows, snapshot, key="family__family_duid"):
 
     ``family_name`` is the directory's surname-and-heads name from
     ``snapshot`` (the one the list was sorted by), read by
-    ``snapshot_family_names`` as the Family timeline names a Family ("Name
+    ``snapshot_family_names`` as the Timeline names a Family ("Name
     not recorded in ParishSoft" for a blank surname, #1216), or None for an
     Administrator report and for a Family that snapshot lacks.
     The email itself stores no name, so the names are read for the shown

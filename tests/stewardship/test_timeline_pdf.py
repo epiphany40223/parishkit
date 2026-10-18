@@ -12,14 +12,14 @@ from uuid import UUID
 import pytest
 
 from parishkit.stewardship.reports import pdf_design, timeline_pdf
-from parishkit.stewardship.reports.family_timeline import (
+from parishkit.stewardship.reports.timeline_documents import timeline_document
+from parishkit.stewardship.reports.timelines import (
     Email,
     Engagement,
     Submitted,
     email_name,
     events,
 )
-from parishkit.stewardship.reports.timeline_documents import timeline_document
 from parishkit.stewardship.web import dates
 
 from .test_file_design import Recorder, assert_framed, assert_inside, frames
@@ -195,7 +195,7 @@ def test_the_body_stays_between_the_header_and_the_footer(count):
 
 
 def test_every_line_the_page_builds_has_a_known_marker():
-    """Each kind of line ``family_timeline.events`` makes maps to a marker.
+    """Each kind of line ``timelines.events`` makes maps to a marker.
 
     A line this module did not know would get the neutral "other" marker;
     this keeps the page's words and the PDF's kinds in step.

@@ -1,11 +1,14 @@
-"""The Family timeline's summary, events and page, without a database (#477).
+"""A Family's Timeline: summary, lines, filters and page, without a database.
+
+#477 built the page as the Family timeline; #1570 renamed it Timeline, made it
+Production only and added sign-outs, session ends and the Kind and day filters.
 
 The view's admission, read guard, Staff reduction and audit are covered
-against PostgreSQL in ``database/test_family_timeline_postgresql.py``.
+against PostgreSQL in ``database/test_timelines_postgresql.py``.
 """
 
 import re
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from uuid import UUID, uuid4
 
@@ -15,7 +18,16 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 
 from parishkit.stewardship.campaigns.configuration import REMINDER_WORKGROUP_NAME
-from parishkit.stewardship.reports.family_timeline import (
+from parishkit.stewardship.reports.response_metrics import ResponseScope
+from parishkit.stewardship.reports.timeline_views import (
+    Identity,
+    TimelineQuery,
+    open_form,
+    page_context,
+    parse_query,
+    timeline_url,
+)
+from parishkit.stewardship.reports.timelines import (
     Email,
     Engagement,
     Submitted,
@@ -23,18 +35,11 @@ from parishkit.stewardship.reports.family_timeline import (
     email_name,
     events,
     mode_at,
+    narrow,
     scope_sign_ins,
     scope_values,
     summary,
 )
-from parishkit.stewardship.reports.family_timeline_views import (
-    Identity,
-    open_form,
-    page_context,
-    parse_query,
-    timeline_url,
-)
-from parishkit.stewardship.reports.response_metrics import ResponseScope
 from parishkit.stewardship.web.dates import using
 
 from .test_response_metrics import START
@@ -201,21 +206,39 @@ def test_scope_values_name_one_family_in_one_mode():
 
 
 def test_the_url_carries_only_closed_choices():
-    """No name, DUID or code: the opaque record id, the mode and the sort."""
-    path = reverse("admin:family_timeline", args=[FAMILY])
+    """No name, DUID or code: the opaque record id, the filters and the sort."""
+    path = reverse("admin:timeline", args=[FAMILY])
+    assert path == f"/admin/reports/families/{FAMILY}/"
     assert timeline_url(FAMILY) == path
-    assert timeline_url(FAMILY, "testing") == path + "?mode=testing"
     # The default order (newest first) is left out; the other one is kept.
     assert timeline_url(FAMILY, sort="-when") == path
-    assert timeline_url(FAMILY, "testing", "when") == (path + "?mode=testing&sort=when")
-    assert parse_query(QueryDict("")) == ("production", {})
-    assert parse_query(QueryDict("mode=testing&sort=when&size=all")) == (
-        "testing",
+    assert timeline_url(FAMILY, "when") == path + "?sort=when"
+    assert parse_query(QueryDict("")) == (TimelineQuery(), {})
+    assert parse_query(
+        QueryDict(
+            "kind=emails&start=2054-10-01&end=2054-10-02&zone=America/New_York"
+            "&sort=when&size=all"
+        )
+    ) == (
+        TimelineQuery("emails", "2054-10-01", "2054-10-02", "America/New_York"),
         {"sort": "when", "size": "all"},
     )
+    # Without a day the zone is dropped, so it never stays in the links.
+    assert parse_query(QueryDict("zone=America/New_York"))[0] == TimelineQuery()
     for invalid in (
-        "mode=live",
-        "mode=testing&mode=production",
+        # Production only since #1570: any mode is an unknown filter.
+        "mode=production",
+        "mode=testing",
+        "kind=everything",
+        "kind=all&kind=emails",
+        "start=2054-10-1&zone=UTC",
+        "start=20541001&zone=UTC",
+        "start=2054-W40-1&zone=UTC",
+        "start=1999-12-31&zone=UTC",
+        "start=2054-10-02&end=2054-10-01&zone=UTC",
+        # A day needs the browser's zone from the IANA catalog.
+        "start=2054-10-01",
+        "start=2054-10-01&zone=Mars/Olympus",
         "name=Adams",
         "sort=what",
         "size=25",
@@ -223,6 +246,29 @@ def test_the_url_carries_only_closed_choices():
     ):
         with pytest.raises(ValueError):
             parse_query(QueryDict(invalid))
+
+
+def test_days_are_browser_local_and_through_is_inclusive():
+    """From and Through are whole days in the browser's zone, as UTC bounds.
+
+    The day clocks fall back (November 1, 2054 in New York) is 25 hours long,
+    so its Through bound is the next local midnight, not 24 hours later.
+    """
+    query = TimelineQuery("all", "2054-11-01", "2054-11-01", "America/New_York")
+    assert query.bounds == (
+        datetime(2054, 11, 1, 4, 0, tzinfo=UTC),
+        datetime(2054, 11, 2, 5, 0, tzinfo=UTC),
+    )
+    assert TimelineQuery().bounds == (None, None)
+    only_from = TimelineQuery("all", "2054-11-07", "", "UTC")
+    assert only_from.bounds == (datetime(2054, 11, 7, tzinfo=UTC), None)
+    assert TimelineQuery().carry == [] and not TimelineQuery().applied
+    assert query.carry == [
+        ("start", "2054-11-01"),
+        ("end", "2054-11-01"),
+        ("zone", "America/New_York"),
+    ]
+    assert TimelineQuery("sessions").carry == [("kind", "sessions")]
 
 
 def test_open_form_needs_a_code_and_production():
@@ -247,7 +293,7 @@ def test_open_form_needs_the_current_campaign_and_an_eligible_family():
     assert Identity(1, email_deliverable=True, reach="?").reach_label == "Yes"
 
 
-def render(timeline, *, full=True, mode="production", identity=IDENTITY, **options):
+def render(timeline, *, full=True, identity=IDENTITY, **options):
     """The page as the view renders it; codes are shown unless told otherwise."""
     options.setdefault("show_codes", True)
     with using("us_long"):
@@ -255,13 +301,12 @@ def render(timeline, *, full=True, mode="production", identity=IDENTITY, **optio
             CAMPAIGN,
             FAMILY,
             identity,
-            mode,
             timeline,
             START + timedelta(days=1),
             full=full,
             **options,
         )
-        return render_to_string("stewardship/family-timeline.html", context)
+        return render_to_string("stewardship/timeline.html", context)
 
 
 TIMELINE = Timeline(
@@ -275,18 +320,25 @@ def test_administrator_page_shows_summary_and_timeline():
     """Data first; the timeline links each email to its Mail message page."""
     page = render(TIMELINE)
     assert "<title>" not in page or "Adams" not in page.split("</title>")[0]
-    assert "<h1>Family timeline</h1>" in page
-    assert page.index("<h1>") < page.index('data-about-page="family-timeline"')
-    assert (
-        "<strong>Adams, Ann</strong> · Family DUID 1234 · Envelope number 101" in page
-    )
-    # One shared table region: the mode switch and the When heading both
-    # refresh it in place.
+    # The heading names the Family; the old page name is gone (#1570).
+    assert "<h1>Adams, Ann — timeline</h1>" in page
+    assert "Family timeline" not in page
+    assert page.index("<h1>") < page.index('data-about-page="timeline"')
+    assert "<p>Family DUID 1234 · Envelope number 101 · <a href=" in page
+    # One shared table region: the filter bar and the When heading both
+    # refresh it in place. No Production / Testing control is drawn.
     assert '<div id="table" data-table-region>' in page
+    assert "mode-testing" not in page and "Testing rehearsal</a>" not in page
     assert (
-        f'href="{reverse("admin:family_timeline", args=[FAMILY])}?mode=testing'
-        '#table" data-in-place="mode-testing"'
+        '<form id="table-filters" data-table-sync method="get" '
+        f'action="/admin/reports/families/{FAMILY}/#table" class="filter-bar"'
     ) in page
+    assert '<input type="hidden" name="size" value="all">' in page
+    assert '<input type="hidden" name="sort" value="-when">' in page
+    for kind in ("all", "form", "emails", "sessions"):
+        assert f'<option value="{kind}"' in page
+    assert '<option value="all" selected>All</option>' in page
+    assert 'name="mode"' not in page
     # When is a sort heading, newest first by default; choosing it reverses.
     assert 'aria-sort="descending" data-sort-column="when"' in page
     assert 'href="?size=all&amp;sort=when#table"' in page
@@ -325,18 +377,28 @@ def test_the_when_heading_reverses_the_order():
     assert rows == sorted(rows)
     assert 'aria-sort="ascending" data-sort-column="when"' in page
     assert 'href="?size=all&amp;sort=-when#table"' in page
-    # The mode switch keeps the chosen order.
-    assert "?mode=testing&amp;sort=when#table" in page
+    # The filter bar keeps the chosen order.
+    assert '<input type="hidden" name="sort" value="when">' in page
 
 
-def test_an_empty_testing_view_keeps_the_chosen_sort():
-    """With no rehearsal there is no table, but Production keeps sort=when."""
-    page = render(None, mode="testing", values={"sort": "when", "size": "all"})
-    assert "no Testing rehearsal now" in page
+def test_the_filters_narrow_the_lines_and_the_heading_keeps_them():
+    """Kind and days narrow the table only; the summary covers everything."""
+    query = TimelineQuery("emails", "2026-10-03", "2026-10-03", "UTC")
+    page = render(TIMELINE, query=query)
+    rows = re.findall(r"<th scope=\"row\">(?:<a [^>]*>)?([^<]+)", page)
+    assert rows == ["Submission receipt", "Reminder 1", "Invitation"]
+    assert "2 times; most recently" in page
+    assert '<option value="emails" selected>Emails</option>' in page
+    assert 'name="start" value="2026-10-03"' in page
+    # The When heading carries the filters back.
     assert (
-        f'href="{reverse("admin:family_timeline", args=[FAMILY])}?sort=when'
-        '#table" data-in-place="mode-production"'
+        'href="?kind=emails&amp;start=2026-10-03&amp;end=2026-10-03&amp;zone=UTC'
+        '&amp;size=all&amp;sort=when#table"'
     ) in page
+    # Filtered out: the empty table says so and names the way back.
+    page = render(TIMELINE, query=TimelineQuery("sessions"))
+    assert "No lines match these filters." in page
+    assert "Nothing recorded for this Family yet." not in page
 
 
 def test_staff_page_is_the_reduced_view():
@@ -347,6 +409,7 @@ def test_staff_page_is_the_reduced_view():
     assert "<code>ABCD-EFGH</code>" in page and "data-open-form" in page
     for absent in (
         "data-in-place=",
+        "table-filters",
         "/admin/mail/sent/",
         "Timeline</h2>",
         "Campaign email can reach",
@@ -392,14 +455,14 @@ def test_empty_states_say_what_to_do():
     page = render(Timeline(summary([], [])), identity=Identity(1234))
     assert "Not yet" in page and "None sent yet" in page
     assert "Nothing recorded for this Family yet." in page
+    assert "No lines match" not in page
+    # No name: the heading is the page's name alone, the badge leads the line.
+    assert "<h1>Timeline</h1>" in page
     assert (
         'data-source-status="missing">Not in ParishSoft</span> · Family DUID 1234 ·'
         in page
     )
     assert "None recorded" in page and "Never" in page
-    page = render(None, mode="testing")
-    assert "no Testing rehearsal now" in page and "Summary" not in page
-    assert 'aria-current="page">Testing rehearsal</a>' in page
 
 
 def test_staff_entered_responses_are_marked_without_a_name():
@@ -440,3 +503,45 @@ def test_a_staff_sign_in_reads_staff_opened_the_form():
     # Never names who: the line carries no actor.
     page = render(Timeline(summary([], []), lines))
     assert "Staff opened the form" in page and "admin@" not in page
+
+
+def test_sign_outs_and_session_ends_are_session_lines():
+    """Signed out and Session ended follow the Family's steps at one instant."""
+    same = START + 20 * MINUTE
+    lines = events(
+        [INVITATION],
+        [],
+        sign_ins=[same],
+        forms=[same],
+        session_ends=[(same, "family_logout"), (same + MINUTE, "family_session_ended")],
+    )
+    assert [(str(line.what), line.kind) for line in lines] == [
+        ("Invitation", "emails"),
+        ("Signed in", "sessions"),
+        ("Opened the form", "form"),
+        ("Signed out", "sessions"),
+        ("Session ended", "sessions"),
+    ]
+    assert "ended by the system" in str(lines[-1].detail)
+
+
+def test_narrow_keeps_one_kind_within_half_open_bounds():
+    """``narrow`` keeps the kind and the [start, end) interval, in order."""
+    lines = TIMELINE.events
+    assert narrow(lines) == lines
+    assert {line.kind for line in narrow(lines, "form")} == {"form"}
+    assert [str(line.what) for line in narrow(lines, "emails")] == [
+        "Invitation",
+        "Reminder 1",
+        "Submission receipt",
+    ]
+    assert narrow(lines, "sessions") == ()
+    # The receipt finished at START + 91 minutes: an end bound there leaves
+    # it out, a start bound there keeps only it.
+    at = START + 91 * MINUTE
+    assert RECEIPT.id not in {
+        line.message_id for line in narrow(lines, "all", (None, at))
+    }
+    assert [line.message_id for line in narrow(lines, "all", (at, None))] == [
+        RECEIPT.id
+    ]

@@ -1,37 +1,41 @@
-"""What happened with one Family: its timeline and the Staff summary (#477, PR 6).
+"""What happened with one Family: the Timeline page's reads (#477, #1570).
 
-``reports/families/<family>/`` answers "what happened with this
-Family?" for Administrators and "did you get my response?" for Staff. Both see
-a summary: whether the Family submitted and when, the last email sent to it
-(a cancelled email was never sent, so it is skipped) and whether that email
-reached the mail service, and its Family code with Open form. Administrators
-also see the full timeline, newest first unless the reader sorts it the other
-way (the Administrator's choice): each Family email and its outcome,
-the invitation skipped because the Family had already responded (in place of
-its cancelled email), each sign-in, each form open, getting past the first
-step and the furthest step reached, and each submission with its receipt
-outcome. Staff
+``reports/families/<family>/`` (the Timeline page, ``timeline_views``)
+answers "what happened with this Family?" for Administrators and "did you get
+my response?" for Staff. Both see a summary: whether the Family submitted and
+when, the last email sent to it (a cancelled email was never sent, so it is
+skipped) and whether that email reached the mail service, and its Family code
+with Open form. Administrators also see the full timeline, newest first
+unless the reader sorts it the other way (the Administrator's choice): each
+Family email and its outcome, the invitation skipped because the Family had
+already responded (in place of its cancelled email), each sign-in, sign-out
+and session end, each form open, getting past the first step and the
+furthest step reached, and each submission with its receipt outcome. Staff
 get the summary only (the Administrator's decision of 2026-10-04): no
 timeline, no Mail message links, nothing about any other Family, and the
 records only the timeline needs are not even read for them.
 
-The page is about one Family in one mode, as the response lists are:
-Production by default, or one rehearsal epoch's Testing records. Family
-emails, submissions, form opens and the engagement record carry their mode
-(and a Testing epoch); a sign-in is a ``family_login`` audit event, which
-carries neither, so it is attributed to the runtime mode in force at its
-instant (``RuntimeTransition``), and a Testing view keeps only the sign-ins
-within the epoch's lifetime. Testing receipts carry no epoch either; they are
-found through the submissions they answer.
+The reads are of one Family in one scope (``ResponseScope``). The page reads
+Production only since #1570 (the Administrator removed its Testing view), as
+does the timeline export; the scope stays a parameter so the reads keep one
+shape with the response lists. Family emails, submissions, form opens and
+the engagement record carry their mode (and a Testing epoch); a sign-in is a
+``family_login`` audit event, which carries neither, so it is attributed to
+the runtime mode in force at its instant (``RuntimeTransition``). A sign-out
+or session end is kept exactly when the sign-in of its Family session is, so
+a Production session that the switch to Testing ended still shows its end.
+
+Every line carries a ``kind`` (``KINDS``), which the page's Kind filter
+narrows by, with ``narrow`` also applying its From and Through bounds.
 
 Everything here except the ``read_*`` functions is pure, so the summary and
 the event order are unit tested without a database. The reads are small, run
 inside the report's read guard and take no lock. The emails, baselines and
 submissions are read through their ``family_id`` indexes and the skips
-through the campaign's invitation schedules. Sign-ins are not indexed by
-Family: they are read through the audit's ``(event_type, created_at)`` index,
-which scans every ``family_login`` event and keeps this Family's (a few
-thousand rows per campaign at launch scale).
+through the campaign's invitation schedules. Family session events are not
+indexed by Family: they are read in one statement through the audit's
+``(event_type, created_at)`` index, which scans the three event types and
+keeps this Family's (a few thousand rows per campaign at launch scale).
 """
 
 from dataclasses import dataclass
@@ -80,6 +84,16 @@ REACH = {
     "ineligible": _("No: not part of this campaign's mailing"),
     "population_pending": _("Not known yet: ParishSoft data is still loading"),
 }
+# The Kind filter's choices for a Family's timeline (#1570), in menu order;
+# "all" shows every line. A person's timeline (a later slice) adds its own.
+KINDS = {
+    "all": _("All"),
+    "form": _("Family form activity"),
+    "emails": _("Emails"),
+    "sessions": _("Sign-ins and sign-outs"),
+}
+# The audit events of a Family session: its start and its two ends.
+SESSION_EVENTS = ("family_login", "family_logout", "family_session_ended")
 
 # The Family's invitation, reminder and chosen-Family test emails in the mode
 # (a Testing email names its rehearsal epoch; Production ones none), each with
@@ -223,13 +237,15 @@ class Event:
     """One line of the timeline: when, what happened and any detail.
 
     ``message_id`` names the email a line is about, so the page can link its
-    Mail message page.
+    Mail message page. ``kind`` is its ``KINDS`` key (never "all"), for the
+    page's Kind filter.
     """
 
     at: datetime
     what: str
     detail: str = ""
     message_id: UUID | None = None
+    kind: str = "form"
 
 
 @dataclass(frozen=True)
@@ -330,6 +346,7 @@ def events(
     forms=(),
     engagement=None,
     workgroup_skips=(),
+    session_ends=(),
 ):
     """The Administrator's timeline: every line, oldest first.
 
@@ -347,6 +364,11 @@ def events(
     ``sign_ins`` are instants, or ``(instant, by_staff)`` pairs: a sign-in
     Staff started through Open form (#795) reads "Staff opened the form",
     since no link was followed, and never names who did.
+
+    ``session_ends`` are ``(instant, event_type)`` pairs, ``family_logout``
+    (the Family chose Sign out) or ``family_session_ended`` (the system ended
+    the session); they are built after the Family's own steps, so a sign-in,
+    a submission and the sign-out at one instant read in that order.
     """
 
     def sign_in(value):
@@ -357,8 +379,25 @@ def events(
                 at,
                 _("Staff opened the form"),
                 _("through Open form, signed in as the Family"),
+                kind="sessions",
             )
-        return Event(at, _("Signed in"), _("or a mail scanner checked the link"))
+        return Event(
+            at,
+            _("Signed in"),
+            _("or a mail scanner checked the link"),
+            kind="sessions",
+        )
+
+    def session_end(at, event_type):
+        """One sign-out or session-end line."""
+        if event_type == "family_logout":
+            return Event(at, _("Signed out"), kind="sessions")
+        return Event(
+            at,
+            _("Session ended"),
+            _("ended by the system, for example when the campaign or mode changed"),
+            kind="sessions",
+        )
 
     lines = [sign_in(value) for value in sign_ins]
     lines += [Event(at, _("Opened the form")) for at in forms]
@@ -381,8 +420,9 @@ def events(
         lines.append(
             Event(submission.at, _("Submitted a response"), "; ".join(details))
         )
+    lines += [session_end(at, event_type) for at, event_type in session_ends]
     lines += [
-        Event(at, _("Invitation not sent"), _("already responded"))
+        Event(at, _("Invitation not sent"), _("already responded"), kind="emails")
         for at, _occurrence in skips
     ]
     lines += [
@@ -390,17 +430,35 @@ def events(
             at,
             _("Reminder not sent"),
             _("in the ParishSoft %(name)s") % {"name": _(REMINDER_WORKGROUP_NAME)},
+            kind="emails",
         )
         for at, _occurrence in workgroup_skips
     ]
     skipped = {occurrence for _at, occurrence in (*skips, *workgroup_skips)}
     lines += [
-        Event(email.at, email.name, email.outcome, email.id)
+        Event(email.at, email.name, email.outcome, email.id, kind="emails")
         for email in emails
         if not (email.state == "cancelled" and email.occurrence in skipped)
     ]
     # sorted() is stable, so equal instants keep the order built above.
     return tuple(sorted(lines, key=lambda line: line.at))
+
+
+def narrow(lines, kind="all", bounds=(None, None)):
+    """The lines the page's filters keep: of ``kind`` and within ``bounds``.
+
+    ``kind`` is a ``KINDS`` key ("all" keeps every kind); ``bounds`` is the
+    From and Through days as a half-open UTC interval ``(start, end)``,
+    either None when unset (``TimelineQuery.bounds``). The order is kept.
+    """
+    start, end = bounds
+    return tuple(
+        line
+        for line in lines
+        if kind in ("all", line.kind)
+        and (start is None or line.at >= start)
+        and (end is None or line.at < end)
+    )
 
 
 def scope_values(scope, family_id):
@@ -459,26 +517,32 @@ def lifetime(scope):
     return epoch["created_at"], epoch["invalidated_at"]
 
 
-def read_sign_ins(family_id, scope, current_mode, bounds):
-    """The Family's sign-ins in the scope, oldest first, as (instant, by_staff).
+def read_sessions(family_id, scope, current_mode, bounds):
+    """The Family's sign-ins and session ends in the scope, oldest first.
 
+    Returns ``(sign_ins, session_ends)``: sign-ins as ``(instant, by_staff)``
+    and ends as ``(instant, event_type)``, the ``events`` arguments.
     ``by_staff`` says the sign-in's Family session was started by Staff
     through Open form; it is decided per session, so two sign-ins at the
-    same instant are never confused. Sign-in audit events carry no mode, so each one
-    is attributed to the runtime mode in force when it happened. A
-    ``family_login`` event's subject is the new Family session; an Open form
-    sign-in also records ``family_assisted_login`` with the same subject
-    (#529). That read uses the audit's ``(event_type, created_at)`` index
-    and filters by this Family's sessions, which is negligible at parish
-    scale.
+    same instant are never confused. Sign-in audit events carry no mode, so
+    each one is attributed to the runtime mode in force when it happened. A
+    ``family_login`` event's subject is the new Family session, and so is a
+    ``family_logout`` or ``family_session_ended`` event's; an end is kept
+    exactly when its session's sign-in is, since the switch to Testing ends
+    Production sessions at the instant that already counts as Testing. An
+    Open form sign-in also records ``family_assisted_login`` with the same
+    subject (#529). The session events are one read through the audit's
+    ``(event_type, created_at)`` index, filtered by this Family, which is
+    negligible at parish scale.
     """
     rows = list(
-        AuditEvent.objects.filter(event_type="family_login", actor_id=family_id)
-        .order_by("created_at")
-        .values_list("created_at", "subject_id")
+        AuditEvent.objects.filter(event_type__in=SESSION_EVENTS, actor_id=family_id)
+        .order_by("created_at", "id")
+        .values_list("created_at", "subject_id", "event_type")
     )
-    if not rows:
-        return []
+    logins = [(at, subject) for at, subject, kind in rows if kind == "family_login"]
+    if not logins:
+        return [], []
     transitions = list(
         RuntimeTransition.objects.order_by("created_at", "id").values_list(
             "created_at", "before_mode", "after_mode"
@@ -486,16 +550,27 @@ def read_sign_ins(family_id, scope, current_mode, bounds):
     )
     kept = set(
         scope_sign_ins(
-            [at for at, _subject in rows], transitions, current_mode, scope.mode, bounds
+            [at for at, _subject in logins],
+            transitions,
+            current_mode,
+            scope.mode,
+            bounds,
         )
     )
+    sessions = {subject for at, subject in logins if at in kept and subject}
     assisted = set(
         AuditEvent.objects.filter(
             event_type="family_assisted_login",
-            subject_id__in=[subject for _at, subject in rows if subject],
+            subject_id__in=[subject for _at, subject in logins if subject],
         ).values_list("subject_id", flat=True)
     )
-    return [(at, subject in assisted) for at, subject in rows if at in kept]
+    sign_ins = [(at, subject in assisted) for at, subject in logins if at in kept]
+    ends = [
+        (at, kind)
+        for at, subject, kind in rows
+        if kind != "family_login" and subject in sessions
+    ]
+    return sign_ins, ends
 
 
 def read_engagement(family_id, scope):
@@ -537,8 +612,9 @@ def read_timeline(scope, family_id, *, full, current_mode="production"):
 
     Runs inside the report's read guard and read-only transaction. The
     reduced view reads only the emails and submissions its summary needs;
-    the full view adds the skips, sign-ins (``current_mode`` is the runtime
-    mode now, for attributing them), form opens and the engagement record.
+    the full view adds the skips, sign-ins and session ends (``current_mode``
+    is the runtime mode now, for attributing them), form opens and the
+    engagement record.
     """
     values = scope_values(scope, family_id)
     with connection.cursor() as cursor:
@@ -558,7 +634,7 @@ def read_timeline(scope, family_id, *, full, current_mode="production"):
         rehearsal_epoch_id=scope.rehearsal_epoch_id,
     ).values_list("created_at", flat=True)
     engagement = read_engagement(family_id, scope)
-    sign_ins = read_sign_ins(family_id, scope, current_mode, bounds)
+    sign_ins, ends = read_sessions(family_id, scope, current_mode, bounds)
     return Timeline(
         summary(emails, submissions),
         events(
@@ -569,6 +645,7 @@ def read_timeline(scope, family_id, *, full, current_mode="production"):
             forms=sorted(forms),
             engagement=engagement,
             workgroup_skips=workgroup_skips,
+            session_ends=ends,
         ),
         engagement,
     )

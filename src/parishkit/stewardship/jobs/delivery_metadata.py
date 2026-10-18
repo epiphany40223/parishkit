@@ -151,7 +151,7 @@ STATES = (
     "cancelled",
 )
 # How each outbox state reads to an Administrator, in the plain words the
-# Family-question pages use (#523, #589). The Family timeline shows the
+# Family-question pages use (#523, #589). The Timeline shows the
 # outcome; Sent mail and the Mail message page show the state, which
 # adds where a "Still sending" email is, so a delivery problem (waiting to
 # retry) stays visible. "Delivered" means the mail service accepted the

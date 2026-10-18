@@ -84,7 +84,7 @@ def timeline_document(
         """
         return dates.display_text(instant(value)) if value else ""
 
-    # The page's own words and punctuation (family-timeline.html):
+    # The page's own words and punctuation (timeline.html):
     # "Yes, <first>", and for more than one, " · N times; most recently <last>".
     submitted = (
         f"Yes, {words(summary['first_submitted_at'])}"

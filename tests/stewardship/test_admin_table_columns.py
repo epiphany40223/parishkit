@@ -198,13 +198,13 @@ OTHER_DUID_LABEL = re.compile(
     r'|\(DUID |\{% translate "DUID" %\}'
 )
 # Printed values that hold a Family's DUID under a name that does not say
-# so: each template's rows are Families (the Family timeline's envelope
+# so: each template's rows are Families (the Timeline's envelope
 # number is printed with the same plain-digits filter).
 FAMILY_ROWS = {
     ("campaign-mail-families.html", "row.duid"),
     ("campaign-mail-families.html", "item.duid"),
-    ("family-timeline.html", "identity.duid"),
-    ("family-timeline.html", "identity.envelope"),
+    ("timeline.html", "identity.duid"),
+    ("timeline.html", "identity.envelope"),
     ("go-live-families.html", "row.duid"),
     ("presence.html", "row.duid"),
     ("system-health-accept.html", "duid"),
