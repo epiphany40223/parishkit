@@ -51,6 +51,15 @@
 #                           lists. Step 4 then converts the sign-in rules
 #                           between the release's two migrations (host
 #                           half's header). Refused with --rollback.
+#   STEWARDSHIP_PRUNE       on (default), dry-run or off: after a successful
+#                           run, remove old release images from the host
+#                           with tools/stewardship-prune-images.sh (#1661),
+#                           keeping the started and the replaced release;
+#                           dry-run only lists what it would remove. A
+#                           pruning failure is a warning, never a failure.
+#   STEWARDSHIP_KEEP_RELEASES  how many newest other release images the
+#                           pruning keeps besides those (1-99, default 4)
+#   STEWARDSHIP_KEEP_BUILD_CACHE  1 to leave Docker's build cache alone
 
 set -euo pipefail
 
@@ -69,12 +78,18 @@ project=${STEWARDSHIP_PROJECT:-stewardship}
 yaml=${STEWARDSHIP_YAML:-/etc/parishkit/stewardship-deployment.yaml}
 repo=${STEWARDSHIP_IMAGE_REPO:-ghcr.io/epiphany40223/parishkit/stewardship}
 schema_change=${STEWARDSHIP_SCHEMA_CHANGE:-0}
+prune=${STEWARDSHIP_PRUNE:-on}
+keep=${STEWARDSHIP_KEEP_RELEASES:-4}
 
 hex=${image#"${repo}@sha256:"}
 if [ "$hex" = "$image" ] || ! [[ $hex =~ ^[0-9a-f]{64}$ ]]; then
     echo "STEWARDSHIP_IMAGE must be ${repo}@sha256:<64 lowercase hex>; refusing." >&2
     exit 1
 fi
+case "$prune" in on | dry-run | off) ;; *)
+    echo "STEWARDSHIP_PRUNE must be on, dry-run or off; refusing." >&2; exit 1 ;;
+esac
+[[ $keep =~ ^[1-9][0-9]?$ ]] || { echo "STEWARDSHIP_KEEP_RELEASES must be 1-99; refusing." >&2; exit 1; }
 if [ "$mode" = rollback ] && [ "$schema_change" != 0 ]; then
     echo "A rollback never migrates; unset STEWARDSHIP_SCHEMA_CHANGE. Refusing." >&2
     echo "A release that changed the schema needs the runbook's database-restore rollback." >&2
@@ -102,5 +117,32 @@ fi
 args=$(printf '%q ' "$repo" "$image" "$root" "$project" "$yaml" "$uuid" "$schema_change" "$mode")
 host_script=$(CDPATH='' cd "$(dirname "$0")" && pwd)/stewardship-upgrade-host.sh
 [ -f "$host_script" ] || { echo "Missing $host_script; refusing." >&2; exit 1; }
+prune_script=${host_script%/*}/stewardship-prune-images.sh
+[ "$prune" = off ] || [ -f "$prune_script" ] || { echo "Missing $prune_script; refusing." >&2; exit 1; }
+# The host half's output is also kept here, so the pruning below can read
+# which release it replaced (its last line) and keep that rollback target.
+transcript=$(mktemp)
+trap 'rm -f "$transcript"' EXIT
+set +e
 # shellcheck disable=SC2029 # $args is meant to expand here, %q-quoted for the host
-ssh "$host" "f=\$(mktemp) && cat > \"\$f\" && ${users_env}bash \"\$f\" $args; rc=\$?; rm -f \"\$f\"; exit \$rc" <"$host_script"
+ssh "$host" "f=\$(mktemp) && cat > \"\$f\" && ${users_env}bash \"\$f\" $args; rc=\$?; rm -f \"\$f\"; exit \$rc" <"$host_script" |
+    tee "$transcript"
+rc=${PIPESTATUS[0]}
+set -e
+[ "$rc" -eq 0 ] || exit "$rc"
+[ "$prune" != off ] || exit 0
+
+# Prune old release images only after a run that succeeded (#1661). The
+# protected images are the release just started and the replaced one; the
+# prune script also keeps every image a container uses and the newest
+# STEWARDSHIP_KEEP_RELEASES others. Its failure never fails the upgrade.
+previous=$(sed -n "s/^    Record in the operators' notes\. Replaced release: //p" "$transcript" | tail -1)
+prune_args=(--repo "$repo" --keep "$keep" --protect "$image")
+[ -z "$previous" ] || prune_args+=(--protect "$previous")
+[ "$prune" = on ] || prune_args+=(--dry-run)
+[ "${STEWARDSHIP_KEEP_BUILD_CACHE:-0}" = 0 ] || prune_args+=(--keep-build-cache)
+args=$(printf '%q ' "${prune_args[@]}")
+# shellcheck disable=SC2029 # as above
+if ! ssh "$host" "f=\$(mktemp) && cat > \"\$f\" && bash \"\$f\" $args; rc=\$?; rm -f \"\$f\"; exit \$rc" <"$prune_script"; then
+    echo "WARNING: pruning old release images failed (see above); the $mode itself succeeded." >&2
+fi
