@@ -340,6 +340,28 @@ def test_native_leader_scope_private_post_audit_and_source_changes(
     assert result["emails"] == ["valid@example.org"]
     assert result["phones"] == {"home": "202-555-0123"}
     assert result["phone_visibility"] == "available"
+    # Publish flags still reach leaders where there is no consent: once the
+    # Family withdraws the join, the leader's history shows the now published
+    # email and not the now unpublished phone. The Family then asks again,
+    # so the source changes below meet a standing request.
+    for join in ([], [9]):
+        form = revisit(harness)
+        answers = answers_for(form)
+        answers["ministries"]["members"]["3"] = {"join": join, "leave": [4]}
+        respond(harness, form, answers)
+        if not join:
+            withdrawn = page(
+                harness,
+                roles=("ministry_leader",),
+                scope=(9,),
+                ministry=9,
+                history="all",
+                state="cancelled",
+            )["rows"]
+            assert [row["state"] for row in withdrawn] == ["cancelled"]
+            assert withdrawn[0]["emails"] == ["valid@example.org"]
+            assert withdrawn[0]["phones"] == {}
+            assert withdrawn[0]["phone_visibility"] == "not_published"
     data.members[3]["familyDUID"] = 2
     snapshot, claim = prepare(data)
     promote(snapshot, claim, harness.campaign, harness.rings)

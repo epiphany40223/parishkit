@@ -28,7 +28,9 @@ from .test_information_followup_postgresql import search
 from .test_ministry_exports_postgresql import leader
 from .test_ministry_followup_postgresql import requests
 from .test_ministry_reports_postgresql import drop_leader, setup
+from .test_ministry_responses_postgresql import respond, revisit
 from .test_report_workspace_postgresql import read
+from .test_response_http_postgresql import answers_for
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -81,9 +83,9 @@ def test_a_leader_sees_the_requesters_contacts_for_their_own_ministry_only(
     response_service, google, monkeypatch
 ):
     """The leader of Food pantry (9) sees its request's Member details,
-    the unpublished email too since the Member asked (#1591), and is
-    refused the Choir (4) request; the view is audited with the
-    request's Ministry and no values."""
+    the unpublished email too since the Member asked (#1591) but not once
+    the request is withdrawn, and is refused the Choir (4) request; the
+    view is audited with the request's Ministry and no values."""
     harness = setup(response_service)
     browser, _, _, _ = leader(harness, google)
     join, leave = requests()
@@ -107,6 +109,21 @@ def test_a_leader_sees_the_requesters_contacts_for_their_own_ministry_only(
             assert contact(item(browser, join)) == section
         path = reverse("admin:ministry_followup_item", args=[leave.pk])
         assert read(browser, path)[0].status_code == 403
+    # On a standing request the leader's view and Staff's are the same, so
+    # the scope check needs one where they differ: once the Family withdraws
+    # the join, the leader sees the email Not published again, and the outer
+    # Staff decision still shows no more than that.
+    form = revisit(harness)
+    answers = answers_for(form)
+    answers["ministries"]["members"]["3"] = {"join": [], "leave": [4]}
+    respond(harness, form, answers)
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        section = contact(item(browser, join))
+        assert "<dt>Email</dt><dd>Not published</dd>" in section
+        assert EMAIL not in section and PHONE in section
+        with monkeypatch.context() as patch:
+            patch.setattr(ministry_followup_views, "_principal", previously_staff)
+            assert contact(item(browser, join)) == section
     contexts = [
         AuditContext.objects.get(event=row).context
         for row in AuditEvent.objects.filter(event_type="ministry_followup_viewed")
