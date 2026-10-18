@@ -1790,7 +1790,7 @@ ParishSoft** tick; it is read and set on
 Ministry leaders never see the tick anywhere
 ([follow-up workflows](../admin-portal/spec.md#follow-up-workflows)).
 The contact details are read through the installed selections (no schema
-change for #1157; frozen migration 0117 changed their leader rule for
+change for #1157; frozen migration 0119 changed their leader rule for
 [#1591](https://github.com/epiphany40223/parishkit/issues/1591), below):
 `stewardship_ministry_report_v4`, read for one Ministry and
 request kind with every version, gives a join request's gender (a

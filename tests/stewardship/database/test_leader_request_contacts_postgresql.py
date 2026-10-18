@@ -3,10 +3,10 @@
 The Administrator decided (2026-10-17, "show own contacts") that a Member's
 standing request to a Ministry is consent to be contacted about it, so that
 Ministry's leaders see the requesting Member's own email and phones even when
-ParishSoft does not publish them. Frozen migration 0117 puts the rule in the
+ParishSoft does not publish them. Frozen migration 0119 puts the rule in the
 two selections the request page, Export these requests and the packet read.
 
-The first tests check 0117's closing check against 0094's bodies, as the
+The first tests check 0119's closing check against 0094's bodies, as the
 earlier selection migrations' tests do; each statement there runs in a
 transaction that is rolled back. The rest prove, through the real web
 database role, that nothing else widens: another Member of the Family, a
@@ -51,7 +51,7 @@ from .test_source_families_postgresql import promote
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
-MIGRATION = (SCHEMA_FILES / "migrations/0117_leader_request_contacts.sql").read_text(
+MIGRATION = (SCHEMA_FILES / "migrations/0119_leader_request_contacts.sql").read_text(
     encoding="utf-8"
 )
 EARLIER = (SCHEMA_FILES / "migrations/0094_source_status_names.sql").read_text(
@@ -61,8 +61,8 @@ CHECK = MIGRATION[MIGRATION.index("DO $check$") :]
 # The statement recording the replaced selections' grants, which the check
 # compares against (a transaction-local setting).
 ACL = MIGRATION[
-    MIGRATION.index("SELECT set_config('stewardship.migration_0117_acl'") : (
-        MIGRATION.index(", true);", MIGRATION.index("migration_0117_acl"))
+    MIGRATION.index("SELECT set_config('stewardship.migration_0119_acl'") : (
+        MIGRATION.index(", true);", MIGRATION.index("migration_0119_acl"))
         + len(", true);")
     )
 ]
@@ -78,9 +78,9 @@ LEADER_9 = dict(roles=("ministry_leader",), scope=(9,))
 
 
 def check_refuses(statement, message):
-    """Run ``statement`` and then 0117's closing check, which must refuse it."""
+    """Run ``statement`` and then 0119's closing check, which must refuse it."""
     with (
-        pytest.raises(DatabaseError, match=f"Migration 0117 {message}"),
+        pytest.raises(DatabaseError, match=f"Migration 0119 {message}"),
         transaction.atomic(),
         connection.cursor() as cursor,
     ):

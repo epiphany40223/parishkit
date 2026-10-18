@@ -409,10 +409,10 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # (gender By hand, on 0113's body) and re-marks open gender rows. Its body
 # keeps 0113's rules, so ``CLOSURE_REPLACED_ONLY`` runs 0118's replacement
 # statement alone, in place of 0113's.
-# 0117 (#1591) creates nothing: it replaces the baseline packet selection
+# 0119 (#1591) creates nothing: it replaces the baseline packet selection
 # and 0064's report selection in place, which 0094's rerun
 # (``CLOSURE_REPLACED``) brings back older, so ``CLOSURE_REPLACED`` runs
-# 0117's file after it.
+# 0119's file after it.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -725,7 +725,7 @@ CLOSURE_ALTERED = {
 # 0110 (#558) replaces the baseline financial selection that 0094's file,
 # run again above for the limitations report, puts back without the
 # browser-zone days, so its entry comes after 0094's.
-# 0117 (#1591) replaces the packet and report selections that 0094's file
+# 0119 (#1591) replaces the packet and report selections that 0094's file
 # puts back without the requesting Member's consent, so their entry comes
 # after 0094's, whose rerun the limitations report alone now triggers.
 CLOSURE_REPLACED = {

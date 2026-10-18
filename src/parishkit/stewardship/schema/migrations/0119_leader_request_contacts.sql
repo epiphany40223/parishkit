@@ -1,4 +1,4 @@
--- Frozen forward migration file 0117 (the repository-wide file sequence):
+-- Frozen forward migration file 0119 (the repository-wide file sequence):
 -- Ministry leaders see a requesting Member's own contact details (#1591).
 -- This file is installed by its Django migration in the reports app and must
 -- never change once released; tests/stewardship/test_schema_migration_files.py
@@ -57,7 +57,7 @@ SET LOCAL search_path = public;
 -- compared in sorted order: an installed database may hold them in the
 -- order of a later ALTER FUNCTION ... SET. A transaction-local setting holds
 -- them, not a temporary table: the migration login has no TEMP privilege.
-SELECT set_config('stewardship.migration_0117_acl', (
+SELECT set_config('stewardship.migration_0119_acl', (
     SELECT count(*)||':'||coalesce(string_agg(p.proname||'='||coalesce(p.proacl::text,'default')
             ||'/'||coalesce((SELECT array_agg(c ORDER BY c) FROM unnest(p.proconfig) c)::text,''),';'
         ORDER BY p.proname),'')
@@ -651,7 +651,7 @@ BEGIN
           AND p.prosrc NOT LIKE '%operational OR c.value->''publish_%'
           AND p.prosrc NOT LIKE '%(operational
 %OR c.value->''publish_%')<>2 THEN
-        RAISE EXCEPTION 'Migration 0117 (leaders see a requesting Member''s own contact) did not replace the selections';
+        RAISE EXCEPTION 'Migration 0119 (leaders see a requesting Member''s own contact) did not replace the selections';
     END IF;
     -- CREATE OR REPLACE keeps the grants and names the same settings; check
     -- that nothing changed them.
@@ -661,8 +661,8 @@ BEGIN
         FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname IN ('stewardship_ministry_packet_v1',
             'stewardship_ministry_report_v3'))
-        IS DISTINCT FROM current_setting('stewardship.migration_0117_acl') THEN
-        RAISE EXCEPTION 'Migration 0117 changed the selections'' grants or settings';
+        IS DISTINCT FROM current_setting('stewardship.migration_0119_acl') THEN
+        RAISE EXCEPTION 'Migration 0119 changed the selections'' grants or settings';
     END IF;
 END
 $check$;

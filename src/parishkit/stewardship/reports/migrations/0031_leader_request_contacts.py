@@ -1,7 +1,7 @@
 """Forward migration: Ministry leaders see a requesting Member's own contact.
 
-Its SQL is the frozen file ``schema/migrations/0117_leader_request_contacts.sql``
-(prefix 0117, assigned in the repository-wide file sequence), read whole and
+Its SQL is the frozen file ``schema/migrations/0119_leader_request_contacts.sql``
+(prefix 0119, assigned in the repository-wide file sequence), read whole and
 never parsed (#1591). It replaces ``stewardship_ministry_packet_v1`` and
 ``stewardship_ministry_report_v3`` so a Member's standing request to a
 Ministry (its latest version, not withdrawn) is their consent to be
@@ -25,18 +25,16 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0117_leader_request_contacts.sql"
+    / "0119_leader_request_contacts.sql"
 )
 
 
 class Migration(migrations.Migration):
     dependencies = [
         ("stewardship_reports", "0030_financial_local_days"),
-        # The migration that installs the previous frozen file on main
-        # (0113), so the files apply in prefix order. The numbers between
-        # are taken by open pull requests; whichever merges later moves its
-        # dependency to the newest frozen file's migration.
-        ("stewardship_responses", "0011_census_handling_registry"),
+        # The migration that installs the previous frozen file (0118,
+        # #1603), so the files apply in prefix order.
+        ("stewardship_responses", "0012_gender_by_hand"),
     ]
 
     operations = [migrations.RunSQL(FROZEN_SQL.read_text(encoding="utf-8"))]
