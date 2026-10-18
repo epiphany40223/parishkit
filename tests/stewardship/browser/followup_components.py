@@ -55,6 +55,7 @@ from parishkit.stewardship.reports.ministry_followup_views import (
     bulk_actions,
     count_links,
     packet_context,
+    totals_tiles,
 )
 from parishkit.stewardship.web.filter_errors import FilterError
 from parishkit.stewardship.web.tables import report_table
@@ -257,6 +258,7 @@ def components(context, admin):
         # the packet's choices, every Ministry in scope.
         totals=totals,
         followup_chart=ministry_followup(totals),
+        totals_tiles=totals_tiles(totals),
         by_ministry=by_ministry,
         show_marks=True,
         packet_choices=[
@@ -444,6 +446,7 @@ def components(context, admin):
             table=_table([row], counted, 51, campaign),
             totals=joined,
             followup_chart=ministry_followup(joined),
+            totals_tiles=totals_tiles(joined),
         ),
         SORTED: requests_page
         | dict(
@@ -453,7 +456,11 @@ def components(context, admin):
             table=_table([proposed, row], sorted_query, 51, campaign),
         ),
         SEARCHED: requests_page
-        | dict(totals=searched, followup_chart=ministry_followup(searched)),
+        | dict(
+            totals=searched,
+            followup_chart=ministry_followup(searched),
+            totals_tiles=totals_tiles(searched),
+        ),
         NOTHING: requests_page
         | dict(
             query=nothing_query,
@@ -463,6 +470,7 @@ def components(context, admin):
             table=_table([], nothing_query, 0, campaign),
             totals=nothing,
             followup_chart=ministry_followup(nothing),
+            totals_tiles=totals_tiles(nothing),
         ),
         # A leader of one Ministry: one line, no marks or campaign help.
         LEADER: requests_page

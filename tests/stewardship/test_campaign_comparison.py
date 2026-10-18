@@ -412,7 +412,7 @@ def test_the_data_line_names_the_years_the_averages_cover():
     principal = Principal(uuid4(), frozenset({"staff"}), frozenset())
     context = page_context(found, principal)
     assert context["average_years"] == "2053–2054"
-    assert context["tiles"][0]["lines"][1].startswith("2053–2054 average")
+    assert context["tiles"][0].details[1].startswith("2053–2054 average")
     assert not context["can_import"]
 
 

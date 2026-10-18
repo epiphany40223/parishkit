@@ -61,21 +61,44 @@ def tile(key, label, value, *, unknown_reason="", details=(), trend="", share=No
 
     An unknown value reads "—" and needs ``unknown_reason``, the plain
     sentence its toggletip says; a known value takes none. ``details`` are
-    up to two short explanation lines and ``trend`` an optional comparison
+    up to three short explanation lines and ``trend`` an optional comparison
     line in words. ``share`` is ``(count, whole)``: when the whole is above
     zero the tile draws its share bar.
     """
     text = formatted(value)
-    if (text is None) != bool(unknown_reason):
+    return shown(
+        key,
+        label,
+        UNKNOWN if text is None else text,
+        unknown_reason=unknown_reason,
+        details=details,
+        trend=trend,
+        share=share,
+    )
+
+
+def shown(key, label, text, *, unknown_reason="", details=(), trend="", share=None):
+    """Build one stat tile whose value is already display text.
+
+    Only for figures another renderer formats and that must read the same
+    word for word: Campaign comparison's figures, which its PDF and the
+    report emails share (``comparison.tiles``), and a saved daily report's,
+    which must show exactly what was emailed. Every other tile is built by
+    ``tile()``. ``text`` "—" is an unknown value and needs its reason; the
+    other arguments are as for ``tile()``.
+    """
+    if (text == UNKNOWN) != bool(unknown_reason):
         raise ValueError("Exactly the unknown stat tile values carry a reason.")
     details = tuple(line for line in details if line)
-    if len(details) > 2:
-        raise ValueError("A stat tile has at most two explanation lines.")
+    # Three lines fit Campaign comparison's average pledge: the median so far,
+    # then last year and the average of past campaigns.
+    if len(details) > 3:
+        raise ValueError("A stat tile has at most three explanation lines.")
     bar = share if share is not None and share[1] > 0 else None
     return StatTile(
         key=key,
         label=str(label),
-        text=UNKNOWN if text is None else text,
+        text=str(text),
         unknown_reason=str(unknown_reason),
         details=tuple(str(line) for line in details),
         trend=str(trend),

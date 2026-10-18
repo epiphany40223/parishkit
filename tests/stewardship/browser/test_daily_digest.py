@@ -295,7 +295,7 @@ def test_the_saved_comparison_section_draws_its_charts(
         "Families responded by campaign day",
         "Annual pledges by campaign day",
     ]
-    figures = section.locator(".digest-comparison-figures")
+    figures = section.get_by_role("list", name="Headline figures")
     assert "Last year on day 3: 30 (↑ 20% more)" in figures.inner_text()
     assert "Last year on day 3: Withheld" in figures.inner_text()
     section.get_by_text("Exact values").first.click()

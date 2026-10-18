@@ -7,6 +7,7 @@ from django.db import DatabaseError, transaction
 from django.http import HttpResponse
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils.translation import gettext as _
 from django.views.decorators.http import require_http_methods
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
@@ -15,6 +16,7 @@ from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
+from parishkit.stewardship.campaigns.domain import Money
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
 from parishkit.stewardship.schema_primitives import timezone_names
@@ -28,6 +30,7 @@ from parishkit.stewardship.web.filter_errors import (
 )
 from parishkit.stewardship.web.refusals import with_status_code
 from parishkit.stewardship.web.responses import campaign_response
+from parishkit.stewardship.web.stat_tiles import tile
 from parishkit.stewardship.web.tables import report_table
 
 from .chart_specs import financial_charts
@@ -45,6 +48,33 @@ from .financial import (
 )
 from .read_admission import admit_report_read
 from .report_paging import carried_filters, clamp_query, pop_page_size
+
+
+def summary_tiles(summary):
+    """The summary of matching pledges as stat tiles (#720, #1540).
+
+    The matching Families, their total annual pledges and how many said they
+    cannot contribute financially. A total that cannot be added up reads "—"
+    with its reason, never zero (ui-conventions "Stat tiles").
+    """
+    total = summary["annual_total"]
+    total = Money(total.cents) if total.available else None
+    return [
+        tile("families", _("Families"), summary["families"]),
+        tile(
+            "annual-total",
+            _("Total annual pledges"),
+            total,
+            unknown_reason=_(
+                "The total is added up only when every matching Family's "
+                "pledge amount is known."
+            )
+            if total is None
+            else "",
+        ),
+        tile("cannot-give", _("Cannot contribute financially"), summary["cannot_give"]),
+    ]
+
 
 # The element id of each filter field a refusal can be shown at (#1332).
 FIELD_IDS = {
@@ -231,7 +261,8 @@ def report(request, campaign_id):
                 "query": query,
                 "query_fields": query.form_values(),
                 "frequencies": FREQUENCY_LABELS,
-                # The summary's charts (#720), drawn by chart-v1.js.
+                # The summary's tiles and charts (#720), drawn by chart-v1.js.
+                "summary_tiles": summary_tiles(result["summary"]),
                 "charts": financial_charts(result["summary"], result["share_choices"]),
                 "table": report_table(
                     result["rows"],

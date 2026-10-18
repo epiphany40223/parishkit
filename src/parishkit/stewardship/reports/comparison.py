@@ -358,9 +358,9 @@ def tiles(comparison, *, outside=False):
     """The headline tiles, one per metric, in the spec's order.
 
     Each holds the current value and up to two comparison lines ("Last year
-    on day 12: 240 (↑ 12.5% more)", "2020–2026 average: 220 (…)"); ``title``
-    is the full wording for the tooltip and accessible name; ``reason``
-    explains a "—" current value.
+    on day 12: 240 (↑ 12.5% more)", "2020–2026 average: 220 (…)"); ``reason``
+    explains a "—" current value. The page draws them as stat tiles
+    (``comparison_views.headline_tiles``).
 
     ``outside`` gives the tiles as they may leave the Admin portal (the PDF
     summary): no median so far, since the current campaign's quartiles stay
@@ -378,9 +378,8 @@ def tiles(comparison, *, outside=False):
         if metric.financial and not comparison.financial:
             continue
         value = metric.value(current)
-        lines, sentences = [], []
+        lines = []
         shown = value_text(metric.kind, value)
-        sentences.append(f"{metric.label}: {shown} on day {number(day)}.")
         references = []
         if comparison.last_year is not None:
             last = comparison.last_year
@@ -401,16 +400,11 @@ def tiles(comparison, *, outside=False):
         for label, reference in references:
             if isinstance(reference, str):  # WITHHELD
                 lines.append(f"{label}: {WITHHELD}")
-                sentences.append(f"{label}: {WITHHELD.lower()}.")
                 continue
             text = value_text(metric.kind, reference)
             difference = change_text(metric.kind, value, reference)
             lines.append(
                 f"{label}: {text}" + (f" ({difference})" if difference else "")
-            )
-            sentences.append(
-                f"{label}: {text}"
-                + (f"; this year is {difference[2:]}." if difference else ".")
             )
         reason = None
         if value is None:
@@ -420,7 +414,6 @@ def tiles(comparison, *, outside=False):
             quartiles = current.distribution.quartiles
             if quartiles is not None:
                 median = money_text(quartiles[1])
-                sentences.append(f"Median so far: {median}.")
         result.append(
             {
                 "key": metric.key,
@@ -428,7 +421,6 @@ def tiles(comparison, *, outside=False):
                 "value": shown,
                 "median": median,
                 "lines": lines,
-                "title": " ".join(sentences),
                 "reason": reason,
             }
         )

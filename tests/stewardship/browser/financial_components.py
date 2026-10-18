@@ -14,7 +14,11 @@ from parishkit.stewardship.reports.financial import (
     PAGE_SIZES,
     FinancialQuery,
 )
-from parishkit.stewardship.reports.financial_views import FIELD_IDS, FIELD_LINES
+from parishkit.stewardship.reports.financial_views import (
+    FIELD_IDS,
+    FIELD_LINES,
+    summary_tiles,
+)
 from parishkit.stewardship.reports.money import MoneyAmount
 from parishkit.stewardship.web.filter_errors import (
     FilterError,
@@ -148,6 +152,7 @@ def components(context, admin):
         shares=[("Another way", 4), ("Online <giving>", 40)],
         share_counts={other: 4, online: 40},
         no_share=7,
+        cannot_give=2,
     )
     filtered = summary | dict(
         families=4,
@@ -183,7 +188,8 @@ def components(context, admin):
         # The filters' reserved message lines (#1332), as the view sizes them.
         filter_sizes=line_sizes(FIELD_MESSAGES, FIELD_LINES),
         summary=summary,
-        # The summary's charts (#720), as the view builds them.
+        # The summary's tiles and charts (#720), as the view builds them.
+        summary_tiles=summary_tiles(summary),
         charts=financial_charts(summary, choices),
         metadata=dict(
             name="Sample campaign",
@@ -214,7 +220,12 @@ def components(context, admin):
         # The answer to an applied filter: a smaller summary, its charts
         # drawn again in place (#720).
         "/financial-filtered": values
-        | dict(summary=filtered, charts=financial_charts(filtered, choices), total=4),
+        | dict(
+            summary=filtered,
+            summary_tiles=summary_tiles(filtered),
+            charts=financial_charts(filtered, choices),
+            total=4,
+        ),
         # Every Family chose one long-named method (#1266): its full-length
         # bar's label must still fit after it at phone width.
         "/financial-long-labels": values

@@ -12,12 +12,8 @@
 {% else %}<p class="notice">{% translate "ParishSoft pledges and contributions are unavailable: the latest giving data read from ParishSoft is not confirmed complete for this campaign's comparison period. Unavailable does not mean zero. A later full ParishSoft refresh may fill it in." %}</p>{% endif %}
 <p><a href="{% url 'admin:participation' %}">{% translate "Participation" %}</a></p>
 {# The summary follows the applied filters in place (data-table-sync): headline tiles, then the frequency and share-method charts (#720), each bar labelled with its count and share, the same values in its tooltip (#1266). #}
-<div id="financial-summary" data-table-sync><h2>{% translate "Summary of matching pledges" %}</h2>
-<ul class="stat-tiles">
-<li class="stat-tile"><span class="stat-label">{% translate "Families" %}</span> <span class="stat-value" data-summary="families">{{ summary.families|number }}</span></li>
-<li class="stat-tile"><span class="stat-label">{% translate "Total annual pledges" %}</span> <span class="stat-value" data-summary="annual-total">{{ summary.annual_total.display }}</span></li>
-<li class="stat-tile"><span class="stat-label">{% translate "Cannot contribute financially" %}</span> <span class="stat-value">{{ summary.cannot_give|default:0|number }}</span></li>
-</ul>
+<div id="financial-summary" data-table-sync><h2 id="financial-summary-heading">{% translate "Summary of matching pledges" %}</h2>
+{% include "stewardship/components/stat-tiles.html" with tiles=summary_tiles tiles_labelledby="financial-summary-heading" %}
 {% for chart in charts %}<h3>{{ chart.title }}</h3>
 {% include 'stewardship/components/chart.html' with no_table=True %}{% endfor %}
 </div>
