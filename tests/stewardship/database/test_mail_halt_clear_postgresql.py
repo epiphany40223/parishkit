@@ -37,6 +37,8 @@ from parishkit.stewardship.jobs.mail_halt_models import (
     MailHalt,
     MailHaltClear,
 )
+from parishkit.stewardship.jobs.service_status_models import ServiceStatus
+from parishkit.stewardship.service_status import ServiceStatusReporter
 
 from .auth_builders import signed_in, unguarded
 from .automation_builders import paired
@@ -449,6 +451,10 @@ def test_the_consumers_share_record_and_lift_one_halt(admin, tmp_path, monkeypat
     assert as_dispatch(mail_halt.sync, second) is False
     [row] = MailHalt.objects.all()
     assert (row.pk, row.kind) == (halt_id, "after_data")
+    # The first consumer's own status record, written as its idle pass does.
+    reporter = ServiceStatusReporter("mail-dispatch", sender=first.sender_state)
+    assert as_dispatch(reporter.report, connect=True) is True
+    assert ServiceStatus.objects.get(pk=reporter.id).sender_state == "halted"
     sender_status("halted")
     _, secret, session_row = paired(admin.service)
     # A recent sign-in is not needed (#1547): an old one is fine.
@@ -565,6 +571,11 @@ def test_the_consumers_share_record_and_lift_one_halt(admin, tmp_path, monkeypat
     assert as_dispatch(mail_halt.sync, first) is True
     assert not marker.exists() and first.current_halt() is None
     assert first.blocks_new_send() is False and first.sender_state()[0] == "running"
+    # Its record is not due for a minute, but the lift rewrites it at once
+    # (the idle pass's report(now=True)), so the Mail tile follows.
+    assert as_dispatch(reporter.report, connect=True) is False
+    assert as_dispatch(reporter.report, connect=True, now=True) is True
+    assert ServiceStatus.objects.get(pk=reporter.id).sender_state == "running"
     # Its probe meets the fault again before the second consumer has
     # looked: a new halt, under a new identity.
     first.observe(ProviderHealth.SYSTEMIC)

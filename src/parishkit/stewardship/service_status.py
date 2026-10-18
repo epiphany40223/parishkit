@@ -74,7 +74,7 @@ class ServiceStatusReporter:
         # Heartbeats can arrive on several threads; one writes, others skip.
         self.lock = Lock()
 
-    def report(self, *, connect=False):
+    def report(self, *, connect=False, now=False):
         """Write the record if it is due; return whether a write succeeded.
 
         Without ``connect`` it writes only on a connection this thread
@@ -82,9 +82,12 @@ class ServiceStatusReporter:
         with it, the caller allows a new one and closes it afterwards. It
         never writes inside a transaction: it would share that transaction's
         fate and hold its locks longer. Skipped calls stay due, so the next
-        suitable call writes.
+        suitable call writes. ``now`` writes before the record is due (a
+        mail sender that just lifted its halt), with the same other rules;
+        the next write is then due REPORT_SECONDS later.
         """
-        if monotonic() < self.due or not self.lock.acquire(blocking=False):
+        early = monotonic() < self.due and not now
+        if early or not self.lock.acquire(blocking=False):
             return False
         try:
             from django.db import connection
@@ -121,9 +124,10 @@ class ServiceStatusReporter:
         ``lock_timeout``), its seconds and the time the write took, naming
         no task even when the write ran on a task's thread (a bulk send's
         heartbeat), because no task was stopped. Every one is recorded: a
-        process attempts a write at most once every REPORT_SECONDS, so there
-        is at most one such entry a minute without any further throttle,
-        and each has its process-log line first. The installers have no operational-log
+        process attempts a write at most once every REPORT_SECONDS (and once
+        more when its mail sender lifts a halt), so there is about one such
+        entry a minute at most without any further throttle, and each has
+        its process-log line first. The installers have no operational-log
         grant, so theirs go to the process log only (an exception the
         operations specification lists). Any other failure is logged once
         until a write succeeds again.

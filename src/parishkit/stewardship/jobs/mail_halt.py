@@ -285,15 +285,19 @@ def idle(*, main, credential_path=None, profile=None, check=None):
     process's own lease check) stops the helper and is left to the
     consumer's liveness tick, which stops the process; a helper the system
     cannot drain still ends it (``ProviderCheckDrainFailure``).
+
+    Returns True when this pass lifted the consumer's halt, so the caller
+    writes its status record at once rather than up to a minute later.
     """
     from parishkit.stewardship.provider_checks import ProviderCheckOwnershipLost
 
     from . import family_mail_delivery_tasks
 
     circuit = family_mail_delivery_tasks.FAMILY_CIRCUIT
+    lifted = False
     try:
         if circuit is not None:
-            sync(circuit)
+            lifted = sync(circuit)
         if main and credential_path is not None:
             run_mailbox_check(
                 credential_path,
@@ -307,3 +311,4 @@ def idle(*, main, credential_path=None, profile=None, check=None):
         from parishkit.stewardship.observability import emit_failure
 
         emit_failure(error, level=logging.WARNING, name_class=True)
+    return lifted
