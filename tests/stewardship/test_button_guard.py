@@ -383,5 +383,5 @@ def test_only_the_class_makes_a_button_secondary():
     selectors = sorted({part.strip() for rule in rules for part in rule.split(",")})
     assert selectors == [
         ".button-secondary",
-        ".button-secondary:not(:disabled):hover",
+        ".button-secondary:not(:disabled):not([aria-disabled=true]):hover",
     ]

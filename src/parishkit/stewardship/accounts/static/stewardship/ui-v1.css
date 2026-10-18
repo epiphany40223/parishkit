@@ -640,19 +640,27 @@ button, .button { display: inline-block; vertical-align: middle; border: var(--b
    rule whether they are POST buttons or GET links (.sort-link), so the two
    kinds of heading wrap alike. */
 button, .button, .link-button, .sort-link, input[type=submit], input[type=button] { overflow-wrap: normal; word-break: normal; }
-button:not(:disabled):hover, .button:hover { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--paper); box-shadow: 0 2px 6px rgb(16 24 40 / 16%); }
+button:not(:disabled):not([aria-disabled=true]):hover, .button:not([aria-disabled=true]):hover { background: var(--accent-strong); border-color: var(--accent-strong); color: var(--paper); box-shadow: 0 2px 6px rgb(16 24 40 / 16%); }
 button:not(:disabled):active { box-shadow: none; }
 button:disabled { cursor: not-allowed; opacity: .55; box-shadow: none; }
 /* The secondary look comes only from its class ({% button variant="secondary" %}
    or class "button-secondary" in script), never from where a button sits, so
    a button's look is decided where it is drawn (#732). */
 .button-secondary { background: var(--paper); color: var(--accent); border-color: var(--accent); box-shadow: none; }
-.button-secondary:not(:disabled):hover { background: var(--accent-soft); color: var(--accent-strong); box-shadow: none; }
+.button-secondary:not(:disabled):not([aria-disabled=true]):hover { background: var(--accent-soft); color: var(--accent-strong); box-shadow: none; }
 .actions { display: flex; gap: .75rem 1rem; flex-wrap: wrap; align-items: center; }
+/* A button kept focusable but unavailable (aria-disabled; a stepping
+   control at the end of its range, #1656) looks as a disabled one does:
+   greyed, the not-allowed pointer, no hover change (the hover rules above
+   skip it). The busy "progress" pointer is only for a request in flight:
+   a submitted form's buttons (the form is aria-busy), the clicked one
+   (is-busy) or a button marked aria-busy itself while its fetch runs; such
+   a button keeps its colours, so it does not flash grey. */
+button[aria-disabled=true], .button[aria-disabled=true], input[type=submit][aria-disabled=true] { cursor: not-allowed; opacity: .55; box-shadow: none; }
+:is(button, .button, input[type=submit])[aria-disabled=true]:is(.is-busy, [aria-busy=true], [aria-busy=true] *) { cursor: progress; opacity: 1; }
 /* A submitted form (ui-v1.js): its clicked button turns muted with a small
    spinner and the form ignores repeat clicks until the next page loads. With
    reduced motion the spinner stays still (see the rule at the end). */
-button[aria-disabled=true], .button[aria-disabled=true], input[type=submit][aria-disabled=true] { cursor: progress; box-shadow: none; }
 button.is-busy[aria-disabled=true], .button.is-busy[aria-disabled=true], input[type=submit].is-busy[aria-disabled=true] { background: var(--muted); border-color: var(--muted); color: var(--paper); }
 button.is-busy::after, .button.is-busy::after { content: ""; display: inline-block; width: .85em; height: .85em; margin-inline-start: .5em; vertical-align: -.1em; border: 2px solid currentColor; border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
 @keyframes busy-spin { to { transform: rotate(360deg); } }
@@ -852,12 +860,12 @@ td > :last-child { margin-bottom: 0; }
 .schedule-table tr.schedule-past, .calendar-sends tr.schedule-past { color: var(--muted); }
 /* Campaign calendar's month navigation (#1656): Previous and Next, then the
    month's name, so a longer name moves neither button. At an end the button
-   stays in place, greyed but focusable (aria-disabled), and the reason line
+   stays in place, greyed but focusable (aria-disabled, the shared
+   unavailable look above), and the reason line
    under them keeps one line's height while empty, so it moves nothing. */
 .calendar-nav { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem 1rem; }
 .calendar-nav .button { margin: 0; }
 .calendar-nav-month { font-weight: var(--heading-weight); font-size: 1.125rem; }
-.calendar-nav .button[aria-disabled=true], .calendar-nav .button[aria-disabled=true]:hover { cursor: not-allowed; opacity: .55; background: var(--paper); color: var(--accent); box-shadow: none; }
 .calendar-nav-reason { min-height: 1.5em; margin-block: .25rem .5rem; }
 /* Campaign calendar (#469): month grids drawn by calendar-v1.js. Each grid
    keeps a readable width and scrolls inside its .table-scroll region on a
@@ -1319,9 +1327,10 @@ main nav.family-track { display: block; margin: 0; }
    content ignore the second declaration and keep the first. */
 .family-track button::after, .setup-track a::after { content: attr(data-tip); content: attr(data-tip) / ""; }
 /* A step not available yet (aria-disabled: one the Family has not reached,
-   #330, or an Admin step whose prerequisites are missing, #1402): not the busy
-   "progress" cursor. */
-.family-track button[aria-disabled=true], .setup-track a[aria-disabled=true] { cursor: not-allowed; }
+   #330, or an Admin step whose prerequisites are missing, #1402): the
+   not-allowed pointer, but drawn by its own track colours rather than the
+   shared unavailable button's dimming, which would also dim its tip. */
+.family-track button[aria-disabled=true], .setup-track a[aria-disabled=true] { cursor: not-allowed; opacity: 1; }
 .family-submitted { margin-block: 0 1rem; }
 .financial-conditional { border: 0; padding: 0; margin: 0; background: none; }
 /* Limitation checkboxes ("cannot attend", "cannot participate", "cannot
