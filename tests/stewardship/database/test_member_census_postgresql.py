@@ -499,3 +499,28 @@ def test_parishsoft_gender_code_shows_word_and_is_unchanged(
         code,
         "Unspecified",
     )
+
+
+def test_spaced_parishsoft_gender_code_kept_stores_code(response_service):
+    """A source ``" M "`` kept as Male stores the code and proposes nothing.
+
+    Outer spaces are ignored on decode (#1621); the database guard compares
+    the trimmed answer with the trimmed source, so it admits the submission.
+    """
+    harness = response_service
+    data = response_source()
+    data.members[3].update(sex=" M ")
+    snapshot, claim = prepare(data)
+    promote(snapshot, claim, harness.campaign, harness.rings)
+    with web_login():
+        form = load_form(harness)
+        assert field(form, "gender")["value"] == "Male"
+        assert not field(form, "gender")["changed"]
+        response = post(
+            harness.client,
+            "/family/submit",
+            {"baseline": form["baseline"], "answers": answers_for(form)},
+        )
+        assert response.status_code == 200, response.content
+    assert not ProposedChange.objects.exists()
+    assert Submission.objects.get().answers["members"]["3"]["gender"] == "M"

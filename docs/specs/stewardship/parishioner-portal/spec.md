@@ -281,9 +281,12 @@ and keeping that word is no change: the answer stores ParishSoft's code, the
 same baseline the database's submission guard reads, so no proposal is made.
 Choosing a different word is an ordinary change. Any other source text, such
 as an unknown code, still shows as the current record, and a blank is never
-read as Unspecified. Reports show the same words for an existing Member's code
-([#1621](https://github.com/epiphany40223/parishkit/issues/1621)). This
-decoding only reads; it writes nothing to ParishSoft.
+read as Unspecified. The Ministry follow-up page and its exports show the
+same words for an existing Member's code
+([#1621](https://github.com/epiphany40223/parishkit/issues/1621)); the Admin
+Census changes page and its downloads intentionally keep ParishSoft's raw code,
+which Staff enter By hand. This decoding only reads; it writes nothing to
+ParishSoft.
 
 The normalized internal model distinguishes a ParishSoft blank marital value
 from an accidentally omitted browser field while mapping explicit Unknown to
