@@ -140,6 +140,10 @@ HOSTED = {
     # Roster changes to enter.
     "roster-tick.html": ("ministry-followup.html",),
     "roster-tick-row.html": ("ministry-roster.html",),
+    # By Ministry's count links on Ministry requests apply their filters to
+    # the review worklist's table region, which the shared component draws
+    # (#1684).
+    "ministry-counts.html": ("components/review-worklist.html",),
     # Past campaigns' review region (#1018): Apply sits inside it.
     "past-campaigns-review.html": ("past-campaigns.html",),
     # The held-email table by send (#757): the Restore review page draws it

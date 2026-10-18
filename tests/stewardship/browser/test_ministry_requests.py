@@ -1,7 +1,6 @@
-"""Ministry requests (#1133): the follow-up queue with its totals, By Ministry
+"""Ministry requests (#1133): the review worklist (#1684) with its By Ministry
 counts and Follow-up packet, across engines and widths."""
 
-import re
 from urllib.parse import quote
 
 import pytest
@@ -11,7 +10,6 @@ from .followup_components import (
     COUNTED,
     GATED_REQUESTS,
     LEADER,
-    NOTHING,
     PACKET_LIMIT,
     PACKET_REFUSED,
     REQUESTS,
@@ -100,10 +98,9 @@ def test_a_count_filters_the_table_in_place(page, component_origin):
     link.click()
     expect(page.locator("#table tbody tr")).to_have_count(1)
     expect(page.get_by_label("Request", exact=True)).to_have_value("join")
-    expect(page.get_by_label("Status", exact=True)).to_have_value("any")
+    expect(page.get_by_label("Stage", exact=True)).to_have_value("all")
     expect(page.get_by_label("Ministry", exact=True)).to_have_value("9")
     expect(page.get_by_label("Search Member or Ministry name")).to_have_value("")
-    expect(page.locator("#ministry-totals .stat-value").nth(1)).to_have_text("0")
     assert page.evaluate("window.__requestsMarker") == 1
     assert page.url.endswith(COUNTED + "#table")
     # Focus stays on the count, found again in the redrawn By Ministry.
@@ -120,119 +117,58 @@ def test_a_count_filters_the_table_in_place(page, component_origin):
     assert_clean(page, errors)
 
 
-def test_applied_filters_redraw_the_totals_in_place(page, component_origin):
-    """Apply filters swaps in the view's totals and draws the fresh chart
-    without a reload, and By Ministry below does not move (#720, #1133)."""
+def test_applied_filters_redraw_the_worklist_in_place(page, component_origin):
+    """Apply filters swaps in the worklist's rows and Stage counts without a
+    reload, and By Ministry above does not move (#1133, #1684)."""
     from playwright.sync_api import expect
 
     errors = watch(page)
     answer = page.request.get(component_origin + SEARCHED).text()
     page.goto(component_origin + REQUESTS)
-    totals = page.locator("#ministry-totals")
-    expect(totals.locator("[data-chart][data-chart-state=rendered]")).to_have_count(1)
+    expect(page.locator("#table tbody tr")).to_have_count(2)
     page.evaluate("window.__requestsMarker = 1")
-    offset = """(() =>
-      document.querySelector("#by-ministry").getBoundingClientRect().top
-      - document.querySelector("#ministry-totals").getBoundingClientRect().top)()"""
-    held = page.evaluate(offset)
+    where = (
+        "() => document.querySelector('#by-ministry')"
+        ".getBoundingClientRect().top + scrollY"
+    )
+    held = page.evaluate(where)
     page.route(
         "**" + reverse("admin:ministry_report"),
         lambda route: route.fulfill(body=answer, content_type="text/html"),
     )
     page.get_by_role("button", name="Apply filters").click()
-    expect(totals.locator(".stat-value").nth(1)).to_have_text("9")
-    expect(totals.locator("[data-chart][data-chart-state=rendered]")).to_have_count(1)
+    expect(page.locator("#table tbody tr")).to_have_count(1)
+    expect(page.get_by_label("Stage", exact=True).locator("option").first).to_have_text(
+        "To review (1)"
+    )
     assert page.evaluate("window.__requestsMarker") == 1
-    eventually(page, FITTED)
-    assert abs(page.evaluate(offset) - held) < 2
-    ticks = totals.locator("svg .role-axis-label text:has(tspan)")
-    assert ticks.first.locator("tspan").all_text_contents() == [
-        "Resolved or closed",
-        "51 out of 60 (85%)",
-    ]
+    assert abs(page.evaluate(where) - held) < 2
     assert_clean(page, errors)
 
 
-def test_an_empty_search_keeps_the_chart_so_a_count_moves_nothing(
-    page, component_origin
-):
-    """A search that matches nothing still draws the chart, its bars at
-    zero, so a By Ministry count clicked next brings no chart back to push
-    By Ministry down under the pointer (no layout shift, #736)."""
-    from playwright.sync_api import expect
-
-    page.set_viewport_size({"width": 1280, "height": 700})
+def test_the_worklist_has_no_totals_or_chart(page, component_origin):
+    """The Join and Leave requests tiles and the Follow-up progress chart are
+    gone (#1676, folded into #1684): nothing sits between the worklist's
+    filters and its table, at a phone or a desktop width, and the page draws
+    no chart."""
     errors = watch(page)
-    answer = page.request.get(component_origin + NOTHING).text()
-    page.goto(component_origin + REQUESTS)
-    totals = page.locator("#ministry-totals")
-    expect(totals.locator("[data-chart][data-chart-state=rendered]")).to_have_count(1)
-    # Only the Apply filters post is answered with the empty search.
-    page.route(
-        "**" + reverse("admin:ministry_report"),
-        lambda route: (
-            route.fulfill(body=answer, content_type="text/html")
-            if route.request.method == "POST"
-            else route.continue_()
-        ),
-    )
-    page.get_by_role("button", name="Apply filters").click()
-    expect(page.locator("#table tbody tr")).to_have_text(
-        [re.compile("No matching requests")]
-    )
-    expect(totals.locator(".stat-value")).to_have_text(["0", "0"])
-    expect(totals.locator("[data-chart][data-chart-state=rendered]")).to_have_count(1)
-    eventually(page, FITTED)
-    link = page.locator("#by-ministry").get_by_role("link", name=JOINS)
-    # Scroll the count to the window's middle, as a reader would, so the
-    # click itself scrolls nothing.
-    page.mouse.move(640, 350)
-    page.mouse.wheel(0, link.bounding_box()["y"] - 350)
-    eventually(page, "() => window.scrollY > 0")
-    # Linux WebKit animates the wheel: measure where the scroll lands,
-    # not its first frame.
-    painted(page)
-    before = link.bounding_box()
-    link.click()
-    expect(totals.locator(".stat-value")).to_have_text(["51", "0"])
-    expect(totals.locator("[data-chart][data-chart-state=rendered]")).to_have_count(1)
-    eventually(page, FITTED)
-    after = page.locator("#by-ministry").get_by_role("link", name=JOINS)
-    assert abs(after.bounding_box()["y"] - before["y"]) < 2
-    assert_clean(page, errors)
-
-
-def test_totals_draw_follow_up_progress_bars(page, component_origin):
-    """The totals are two tiles, then follow-up progress bars (#720).
-
-    The chart draws under the CSP with no script error and is named and
-    focusable; each bar's axis label is its name over its value, so there is
-    no Exact values table or visible caption. At 320 and 1280 pixels the
-    page fits its window with no text drawn over other text.
-    """
-    from playwright.sync_api import expect
-
-    errors = watch(page)
-    page.goto(component_origin + REQUESTS)
-    totals = page.locator("#ministry-totals")
-    expect(totals.locator("[data-chart][data-chart-state=rendered]")).to_have_count(1)
-    assert totals.locator(".stat-tile").all_inner_texts() == [
-        "Join requests\n40",
-        "Leave requests\n11",
-    ]
-    view = totals.locator("[data-chart-view]")
-    assert view.get_attribute("aria-label") == "Follow-up progress"
-    assert view.get_attribute("tabindex") == "0"
-    assert totals.locator("figcaption").bounding_box()["width"] <= 1
-    ticks = totals.locator("svg .role-axis-label text:has(tspan)")
-    assert [tick.locator("tspan").all_text_contents() for tick in ticks.all()] == [
-        ["Resolved or closed", "11 out of 62 (17.7%)"],
-        ["Unresolved", "51 out of 62 (82.3%)"],
-    ]
-    expect(totals.get_by_text("Exact values")).to_have_count(0)
     for width in (320, 1280):
         page.set_viewport_size({"width": width, "height": 900})
-        eventually(page, FITTED)
+        page.goto(component_origin + REQUESTS)
+        assert page.locator("#ministry-totals, .stat-tile, [data-chart]").count() == 0
+        between = page.evaluate(
+            """() => {
+                const filters = document.querySelector("#table-filters");
+                const table = document.querySelector("#table");
+                let node = filters.nextElementSibling, found = [];
+                while (node && node !== table) {
+                    found.push(node.tagName);
+                    node = node.nextElementSibling;
+                }
+                return found;
+            }"""
+        )
+        assert between == []
         assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
         assert page.evaluate(COLLISIONS) == []
     assert_clean(page, errors)

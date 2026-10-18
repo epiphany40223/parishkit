@@ -21,7 +21,6 @@ from parishkit.stewardship.reports import (
     digest_presentation,
     financial_views,
     limitation_views,
-    ministry_followup_views,
 )
 from parishkit.stewardship.reports.money import MoneyAmount
 from parishkit.stewardship.web.stat_tiles import StatTile, shown, tile
@@ -247,15 +246,6 @@ def test_home_family_participation_tiles():
     assert (responded.text, responded.bar) == ("160", None)
     none = family_tiles(counts | {"participation": Percentage(0, 0)})[1]
     assert (none.text, none.details, none.bar) == ("0", ("out of 0 (—)",), None)
-
-
-def test_ministry_request_totals_tiles():
-    """Ministry requests: the Join and Leave request counts."""
-    found = ministry_followup_views.totals_tiles({"joining": 1234, "leaving": 0})
-    assert [(t.key, t.label, t.text) for t in found] == [
-        ("joining", "Join requests", "1,234"),
-        ("leaving", "Leave requests", "0"),
-    ]
 
 
 def test_financial_summary_tiles_never_read_an_unknown_total_as_zero():

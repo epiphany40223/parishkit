@@ -616,18 +616,18 @@ def test_native_queue_detail_and_edit_without_assignment(response_service, googl
         # Identifying filters are private POST state, never a URL.
         assert get(browser, route + "?search=Private")[0].status_code == 400
         # Filtering to one Ministry once revealed its bulk assignment panel.
-        response, body = search(browser, route, {"ministry": "9", "state": "any"})
+        response, body = search(browser, route, {"ministry": "9", "stage": "all"})
         assert response.status_code == 200 and b"?search=" not in body
         assert not [marker for marker in absent if marker in body]
         assert b"admin@example.org" not in body and b'datetime=""' not in body
-        # The Outcome filter always uses the combined labels, whatever the
-        # Request filter (#1132): the filter form stays in place on Apply,
-        # so per-kind option text would go stale.
-        for action in ("any", "join", "leave"):
-            _, shown = search(browser, route, {"action": action, "state": "any"})
-            assert b'<option value="declined">Declined / stayed</option>' in shown
-            assert b"Stayed in the Ministry</option>" not in shown
-            assert b"Declined / no longer interested</option>" not in shown
+        # The review worklist (#1684) replaced the Status and Outcome
+        # filters with Stage; a leader's choices hold Accepted, never the
+        # update phase (#1160).
+        for kind in ("any", "join", "leave"):
+            _, shown = search(browser, route, {"kind": kind, "stage": "all"})
+            assert b'<option value="accepted">Accepted (0)</option>' in shown
+            assert b'value="to_enter_by_hand"' not in shown
+            assert b'name="outcome"' not in shown and b'name="state"' not in shown
         # Shared table (#203): headings choose the selection's own sort values
         # through POST forms carrying the private filters; sorting stays
         # within the leader's scope and any other value is refused. The
@@ -638,12 +638,12 @@ def test_native_queue_detail_and_edit_without_assignment(response_service, googl
         assert b'name="sort" value="name"' in body
         assert b'value="oldest"' not in body
         response, body = search(
-            browser, route, {"state": "any", "sort": "ministry", "size": "25"}
+            browser, route, {"stage": "all", "sort": "ministry", "size": "25"}
         )
         assert response.status_code == 200 and str(leave.pk).encode() not in body
         assert b'aria-sort="ascending"' in body
         # A page past the end of the queue shows its last page.
-        response, body = search(browser, route, {"state": "any", "page": "9"})
+        response, body = search(browser, route, {"stage": "all", "page": "9"})
         assert response.status_code == 200 and b"Page 1 of 1" in body
         assert body.count(b"ministries/follow-up/" + str(join.pk).encode()) == 1
         for invalid in (
@@ -653,6 +653,8 @@ def test_native_queue_detail_and_edit_without_assignment(response_service, googl
             {"size": "all"},
             {"assignee": "any"},
             {"state": "assigned"},
+            {"stage": "history"},
+            {"members": "gone"},
         ):
             assert search(browser, route, invalid)[0].status_code == 400
         _, hidden = search(browser, route, {"ministry": "4"})
@@ -1478,100 +1480,6 @@ def test_bulk_outcome_is_all_or_none_with_one_revision_per_request(
     ]
 
 
-def test_bulk_outcome_route_refuses_in_the_dialog_and_marks_history(
-    response_service, google
-):
-    """The queue's bulk route (#1131): CSRF, scope, kind, version and a
-    future contact are each refused with nothing saved; a refusal the
-    dialog can explain names the row; success answers 204, and the request
-    page's history marks the edit "(bulk)". The queue offers no Withdrawn,
-    Replaced, Duplicate or Request history choice."""
-    harness = setup(response_service)
-    browser, head, _, _ = leader(harness, google)
-    join, leave = requests()
-    route = reverse("admin:ministry_followup_bulk")
-    queue = reverse("admin:ministry_report")
-    form = {
-        "outcome": "join:joined",
-        "bulk_key": str(uuid4()),
-        "request": [f"{join.pk}:1"],
-        "contact_channel": "phone",
-        "contact_date": "2026-01-02",
-        "contact_time": "3:04 PM",
-        "contact_zone": "America/Los_Angeles",
-        "contact_notes": "PRIVATE-NOTE spoke to them",
-    }
-
-    def refusal(response):
-        """The refusal message a JSON answer carries for the dialog."""
-        return json.loads(response.content)["refusal"]["message"]
-
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        response, body = get(browser, queue)
-        assert response.status_code == 200
-        assert f'value="{join.pk}:1" form="followup-bulk"'.encode() in body
-        assert str(leave.pk).encode() not in body
-        assert b'action="' + route.encode() + b'"' in body
-        for name in ("Joined", "Declined", "Left", "Stayed"):
-            assert f"Mark as {name}".encode() in body
-        assert b'value="join:declined" data-confirm-kind="join"' in body
-        assert b'data-kind-hint-mixed="Tick only requests to join' in body
-        assert b"filter-history" not in body and b"Request history" not in body
-        assert b"Withdrawn by Family" not in body and b"Replaced by Family" not in body
-        assert b'value="duplicate"' not in body
-        assert browser.post(route, form).status_code == 403  # No CSRF.
-        # Another Ministry's request is denied like an unknown one.
-        outside = post(browser, route, form | {"request": [f"{leave.pk}:1"]})
-        assert outside.status_code == 403
-        mixed = form | {"request": [f"{join.pk}:1", f"{leave.pk}:1"]}
-        assert post(browser, route, mixed).status_code == 403
-        # The page never offers a batch of the other kind; a crafted or
-        # outdated post is refused, naming the row and the batch's outcome.
-        kind = post(browser, route, form | {"outcome": "leave:declined"})
-        assert kind.status_code == 400
-        assert refusal(kind) == (
-            "Example, Member — Food pantry is a request to join, so Stayed in "
-            "the Ministry doesn't apply to it. Nothing was saved."
-        )
-        # The old kindless value and a pairing that is no bulk action are
-        # malformed.
-        assert post(browser, route, form | {"outcome": "joined"}).status_code == 400
-        assert (
-            post(browser, route, form | {"outcome": "leave:joined"}).status_code == 400
-        )
-        stale = post(browser, route, form | {"request": [f"{join.pk}:2"]})
-        assert stale.status_code == 409
-        assert refusal(stale).startswith("Example, Member — Food pantry changed after")
-        future = post(browser, route, form | {"contact_date": "2999-01-01"})
-        assert future.status_code == 400
-        assert refusal(future).startswith("The contact attempt's date and time")
-        # It names the dialog's Date and Time, so it shows there (#1332);
-        # the row refusals above name no field.
-        assert [e["field_id"] for e in json.loads(future.content)["errors"]] == [
-            "bulk-contact-date",
-            "bulk-contact-time",
-        ]
-        assert [e["field_id"] for e in json.loads(kind.content)["errors"]] == [None]
-        # A missing time zone is not Date's or Time's to fix: no field.
-        zoneless = post(browser, route, form | {"contact_zone": "Not/A_Zone"})
-        assert zoneless.status_code == 400
-        assert refusal(zoneless).startswith("The contact time came without")
-        assert [e["field_id"] for e in json.loads(zoneless.content)["errors"]] == [None]
-        assert post(browser, route, form | {"outcome": "join:other"}).status_code == 400
-        assert MinistryWorkflowRevision.objects.count() == 0
-        done = post(browser, route, form)
-        assert done.status_code == 204 and done["Cache-Control"] == "no-store"
-        assert post(browser, route, form).status_code == 204  # Replay.
-        assert MinistryWorkflowRevision.objects.count() == 1
-        join.refresh_from_db()
-        assert (join.state, join.outcome) == ("resolved", "joined")
-        detail = reverse("admin:ministry_followup_item", args=[join.pk])
-        response, body = get(browser, detail)
-        assert response.status_code == 200
-        assert b"Joined the Ministry (bulk)" in body
-        assert b"PRIVATE-NOTE spoke to them" in body
-
-
 def member_gone(harness, standing):
     """Promote ParishSoft again with Member 3 no longer current (#1217).
 
@@ -1752,18 +1660,17 @@ def test_member_standing_reads_the_snapshot_it_is_given(response_service):
 def test_queue_pages_mark_and_refuse_members_no_longer_in_parishsoft(
     response_service, google
 ):
-    """The pages (#1217): a leader's queue lists none and offers no choice
-    for them, and their request pages read as unknown; Staff get the one
-    off-by-default Status choice, which lists them marked with no selection
-    column or bulk bar, and a request page with a notice and no form. A
-    stale single save answers 409 and a stale bulk outcome names the row;
-    nothing is saved."""
+    """The pages (#1217): a leader's worklist lists none and offers no choice
+    for them, and their request pages read as unknown; Staff get the
+    off-by-default Members choice, which lists them marked with no box or
+    action, and a request page with a notice and no form. A stale single
+    save answers 409 and a stale bulk decision says so in the worklist's
+    notice (#1684), naming the row for Staff; nothing is saved."""
     harness = setup(response_service)
     browser, _, _, _ = leader(harness, google)
     join, leave = requests()
     route = reverse("admin:ministry_report")
-    bulk_route = reverse("admin:ministry_followup_bulk")
-    option = b'<option value="not_in_parishsoft"'
+    option = b'<option value="gone"'
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         _, before = get(browser, route)
         detail = reverse("admin:ministry_followup_item", args=[join.pk])
@@ -1790,35 +1697,38 @@ def test_queue_pages_mark_and_refuse_members_no_longer_in_parishsoft(
         "contact_channel": "",
     }
     bulk_form = {
-        "outcome": "join:joined",
+        "stage": "to_review",
+        "bulk": "accept",
         "bulk_key": str(uuid4()),
-        "request": [f"{join.pk}:1"],
-        "contact_channel": "",
+        "bulk_note": "",
+        "item": [f"{join.pk}:1"],
     }
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         assert option not in before
-        assert f'value="{join.pk}:1" form="followup-bulk"'.encode() in before
+        assert f'value="{join.pk}:1" form="requests-bulk"'.encode() in before
         # The leader: nothing listed, nothing to choose, nothing to open.
-        _, body = search(browser, route, {"state": "any"})
+        _, body = search(browser, route, {"stage": "all"})
         assert str(join.pk).encode() not in body and option not in body
-        assert b"No matching requests." in body
-        crafted = search(browser, route, {"state": "not_in_parishsoft"})[0]
+        assert b"Nothing to review yet." in body
+        crafted = search(browser, route, {"members": "gone"})[0]
         assert crafted.status_code == 400
         assert get(browser, detail)[0].status_code == 403
         # A page read before ParishSoft changed: refused, nothing saved.
         update = reverse("admin:ministry_followup_update", args=[join.pk])
         assert post(browser, update, single).status_code == 409
-        assert post(browser, bulk_route, bulk_form).status_code == 409
+        response, body = search(browser, route, bulk_form)
+        assert response.status_code == 200
+        assert b"A chosen item was changed by someone else first" in body
         # Staff: the default queue leaves them out too; the choice lists them.
         _, body = get(clerk, route)
         assert option in body and str(join.pk).encode() not in body
-        _, body = search(clerk, route, {"state": "not_in_parishsoft"})
+        _, body = search(clerk, route, {"members": "gone"})
         assert option + b" selected" in body
         assert str(join.pk).encode() in body and str(leave.pk).encode() in body
         assert body.count(b"data-source-status=") == 2
         assert b'data-source-status="inactive">Inactive in ParishSoft</span>' in body
-        assert b"data-select-row" not in body and b"data-select-all" not in body
-        assert b"data-bulk-action" not in body and b"bulk-bar" not in body
+        assert b"data-select-row" not in body
+        assert b'data-row-action="accept"' not in body
         response, body = get(clerk, detail)
         assert response.status_code == 200
         assert b'id="followup-not-in-source"' in body
@@ -1827,14 +1737,13 @@ def test_queue_pages_mark_and_refuse_members_no_longer_in_parishsoft(
             b"There is nothing to record" in body
         )
         assert b"followup-save" not in body
-        assert b"This request is closed." not in body
-        refused = post(clerk, bulk_route, bulk_form)
-        assert refused.status_code == 409
-        assert json.loads(refused.content)["refusal"]["message"] == (
-            "Example, Member — Food pantry is for a Member no longer in "
-            "ParishSoft, or inactive or deceased there, so nothing can be "
-            "recorded for it. Nothing was saved."
-        )
+        assert b"This request is decided." not in body
+        response, body = search(clerk, route, bulk_form | {"bulk_key": str(uuid4())})
+        assert response.status_code == 200
+        assert (
+            "Example, Member — Food pantry was changed by someone else first, "
+            "so nothing was recorded."
+        ).encode() in body
     assert MinistryWorkflowRevision.objects.count() == 0
 
 
@@ -1868,7 +1777,7 @@ def test_save_and_next_skips_members_no_longer_in_parishsoft(response_service, g
     def following():
         """The next request the proposed Member's page offers, or ""."""
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-            _, body = search(browser, route, {"state": "any", "sort": "name"})
+            _, body = search(browser, route, {"stage": "all", "sort": "name"})
             token = re.search(rb"\?queue=([0-9a-f]+)", body)[1].decode()
             _, page = get(browser, f"{item}?queue={token}")
         return re.search(rb'name="next" value="([^"]*)"', page)[1].decode()

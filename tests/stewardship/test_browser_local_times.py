@@ -250,16 +250,16 @@ def test_follow_up_page_labels_no_utc_entry():
     # both fields carry the gate marker for an unknown one.
     assert ZONE_NOTE in text
     assert text.count("data-browser-zone-field>") == 2
-    # The queue's Export these requests (#1157) offers UTC among its zone
-    # choices, as every export asking for a zone does; the follow-up itself
-    # names no fixed zone (the shared note names the browser's).
-    followup = text[: text.index('<details class="export-panel">')]
-    assert "UTC" not in followup
+    # The request page names no fixed zone (the shared note names the
+    # browser's); the worklist's Export these requests (#1157, #1684), on
+    # Ministry requests, offers UTC among its zone choices, as every export
+    # asking for a zone does.
+    assert "UTC" not in text
     # Every follow-up instant shown (the request's submitted time, history,
-    # contact, the queue's last contact, source as of) is converted in the
-    # browser. The queue has no Submitted column (#1064).
+    # contact, source as of) is converted in the browser; the worklist's own
+    # times (Submitted, Last contact, Last decision) are drawn the same way.
     shown = [line for line in text.splitlines() if "|date:'c'" in line]
-    assert len(shown) == 5
+    assert len(shown) == 4
     assert all("data-local-instant" in line for line in shown)
 
 

@@ -742,7 +742,6 @@ NON_PAGES = frozenset(
         "maintenance",
         "ministry_followup_export",
         "ministry_followup_update",
-        "ministry_followup_bulk",
         "ministry_followup_roster",
         "ministry_roster_export",
         "ministry_roster_bulk",

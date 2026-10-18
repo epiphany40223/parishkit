@@ -85,7 +85,7 @@ def test_export_these_requests_posts_the_applied_view(page, component_origin):
         page.get_by_role("button", name="Download these requests").click()
     body = sent.value.post_data
     assert "search=Example" in body and "ministry=9" in body
-    assert "format=xlsx" in body and "state=unresolved" in body
+    assert "format=xlsx" in body and "stage=to_review" in body
     assert "page=" not in body and "size=" not in body
     assert "?" not in sent.value.url
     visible(page.get_by_text("Downloaded", exact=True))
@@ -114,7 +114,7 @@ def test_export_follows_an_in_place_apply(page, component_origin):
     )
     assert form.locator("input[name=ministry]").input_value() == ""
     assert page.get_by_label("Export format").input_value() == "pdf"
-    assert "51" in page.locator("#followup-export-count").inner_text()
+    assert "all 2 requests" in page.locator("#followup-export-count").inner_text()
 
 
 def test_closed_export_follows_an_in_place_apply(page, component_origin):
@@ -136,7 +136,7 @@ def test_closed_export_follows_an_in_place_apply(page, component_origin):
     )
     assert page.locator("#table-export input[name=ministry]").input_value() == ""
     # The count is hidden while closed, so read its text, not its rendering.
-    assert "51" in page.locator("#followup-export-count").text_content()
+    assert "all 2 requests" in page.locator("#followup-export-count").text_content()
     assert panel.get_attribute("open") is None
 
 

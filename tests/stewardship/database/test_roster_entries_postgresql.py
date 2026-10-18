@@ -302,9 +302,11 @@ def test_a_leader_never_sees_the_tick_nor_the_list(response_service, google):
         ):
             assert words not in body, (entered, words)
         assert b"Staff enter roster changes in ParishSoft" in body
-        response, body = search(browser, queue, {"state": "any"})
+        response, body = search(browser, queue, {"stage": "all"})
         assert response.status_code == 200 and f"{join.pk}/".encode() in body
-        assert b"<br>Entered" not in body and b"Not yet entered" not in body
+        # A leader's worklist says Accepted, never the update phase (#1684).
+        assert b"Entered by hand" not in body and b"To enter by hand" not in body
+        assert b'<span class="status-word">Accepted</span>' in body
 
     hidden(False)
     tick(harness, admin, join, True)
@@ -329,7 +331,8 @@ def test_a_leader_never_sees_the_tick_nor_the_list(response_service, google):
     assert b"Clear Entered in ParishSoft" in body
     assert b"update ParishSoft yourself" in body
     assert b"Staff enter roster changes" not in body
-    assert b"<br>Entered" in search(staff, queue, {"state": "any"})[1]
+    shown = search(staff, queue, {"stage": "all"})[1]
+    assert b'<span class="status-word">Entered by hand</span>' in shown
 
 
 class Rollback(Exception):
@@ -365,9 +368,9 @@ def test_migration_self_check_refuses_a_database_without_the_guards():
 def test_a_resubmitted_family_keeps_its_resolved_change_on_the_list(
     response_service, google
 ):
-    """A Family answering again creates a new request for the same join; the
-    resolved one, not yet entered, stays on the list and its download
-    (#821 review)."""
+    """A Family answering again with the same join creates no new request
+    (#1684, "Family asked again"): the resolved one, not yet entered, stays
+    on the list and its download as the current request (#821 review)."""
     from .test_ministry_responses_postgresql import respond, revisit
     from .test_response_http_postgresql import answers_for
     from .test_runtime_auth_grants_postgresql import web_login
@@ -380,13 +383,14 @@ def test_a_resubmitted_family_keeps_its_resolved_change_on_the_list(
         respond(harness, form, answers)
     join.refresh_from_db()
     assert join.state == "resolved"
+    assert MinistryRequest.objects.filter(ministry_duid=9).count() == 1
     browser, _ = signed_in()
     route = "/admin/reports/ministries/follow-up/roster/"
     _, body = get(browser, route)
     assert f"follow-up/{join.pk}/".encode() in body
-    assert b"Replaced by a later response" in body and b"<td>Yes</td>" in body
+    assert b"Replaced by a later response" in body
     _, body = search(browser, route + "exports/", {"format": "csv", "timezone": "UTC"})
-    assert b"Food pantry" in body and b",Yes,Not yet," in body
+    assert b"Food pantry,Join" in body and b",,Not yet," in body
 
 
 def test_staff_tick_a_leave_but_not_a_source_resolved_request(response_service):

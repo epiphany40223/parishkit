@@ -84,7 +84,7 @@ def test_ministry_save_and_next_follows_the_remembered_view(response_service, go
     route = reverse("admin:ministry_report")
     # Request pages keep their addresses under follow-up/ (#1133).
     items = route + "follow-up/"
-    view = {"state": "any", "sort": "ministry", "size": "25"}
+    view = {"stage": "all", "sort": "ministry", "size": "25"}
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = search(browser, route, view)
         assert response.status_code == 200
@@ -95,7 +95,7 @@ def test_ministry_save_and_next_follows_the_remembered_view(response_service, go
         table = re.sub(
             rb'<section id="by-ministry".*?</section>', b"", body, flags=re.S
         )
-        assert b"?search=" not in body and b"state=any" not in table
+        assert b"?search=" not in body and b"stage=all" not in table
         first, second = order
         response, body = get(browser, f"{items}{first}/?queue={token}")
         assert response.status_code == 200 and following(body) == second
@@ -156,13 +156,13 @@ def test_ministry_save_and_next_follows_the_remembered_view(response_service, go
         assert response["Location"] == f"{route}?queue={token}"
         response, body = get(browser, f"{route}?queue={token}")
         assert response.status_code == 200
-        assert b'<option value="any" selected>Any status' in body
+        assert b'<option value="all" selected>Every stage' in body
         assert b'aria-sort="ascending"' in body
         assert linked(body, items) == (order, token)
         # An unknown token is the default view; anything else is refused.
         response, body = get(browser, f"{route}?queue={UNKNOWN}")
         assert response.status_code == 200
-        assert b'<option value="unresolved" selected>' in body
+        assert b'<option value="to_review" selected>' in body
         for suffix in ("?queue=Private", f"?queue={token}&search=x", "?state=any"):
             assert get(browser, route + suffix)[0].status_code == 400
         for invalid in (
@@ -194,7 +194,7 @@ def test_ministry_save_and_next_follows_the_remembered_view(response_service, go
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = get(other_browser, f"{route}?queue={token}")
         assert response.status_code == 200
-        assert b'<option value="unresolved" selected>' in body
+        assert b'<option value="to_review" selected>' in body
         assert token.encode() not in body
 
 
@@ -214,7 +214,7 @@ def test_ministry_leader_next_stays_in_scope(response_service, google):
     # Request pages keep their addresses under follow-up/ (#1133).
     items = route + "follow-up/"
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        response, body = search(browser, route, {"state": "any", "action": "leave"})
+        response, body = search(browser, route, {"stage": "all", "kind": "leave"})
         assert response.status_code == 200 and str(leave.pk).encode() not in body
         token = viewed(body)
         response, body = get(browser, f"{items}{join.pk}/?queue={token}")

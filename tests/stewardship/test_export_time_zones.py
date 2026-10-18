@@ -43,7 +43,7 @@ ASKS = {
     ("information.html", "admin:information_export"): True,
     # Export these requests (#1157), which replaced one Ministry's joining
     # and leaving exports: Last contact is an action time.
-    ("ministry-followup.html", "admin:ministry_followup_export"): True,
+    ("ministry-worklist-export.html", "admin:ministry_followup_export"): True,
     ("ministry-roster.html", "admin:ministry_roster_export"): True,
     ("timeline.html", "export.url"): True,
     ("ministry-packet.html", "admin:ministry_packet"): False,

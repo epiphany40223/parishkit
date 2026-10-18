@@ -11,20 +11,18 @@ second page (``OLDER``) and first page by number (``NEWER``) serve the
 in-place history pager tests (#519 PR 6). Save and next (#534) is served
 by a request whose save redirects to the next request (``ADVANCE_ITEM`` to
 ``NEXT_ITEM``) and one whose save, the last in the list, redirects to the
-remembered queue view (``LAST_ITEM`` to ``QUEUE_VIEW``). The bulk
-outcome queue (#1131, ``BULK_QUEUE``) has open join and leave requests and a
-closed one (``BULK_CLOSED_QUEUE`` lists the closed one alone, #1332); its
-dialog redraws the table from the remembered view ``BULK_VIEW``, which
-shows the join request resolved. The tests answer the
-dialog's POST (``BULK_POST``) themselves, with a route. ``GONE_QUEUE`` is
-Staff's Status choice for Members no longer in ParishSoft (#1217), and
+remembered worklist view (``LAST_ITEM`` to ``QUEUE_VIEW``). ``GONE_QUEUE``
+is Staff's Members choice for Members no longer in ParishSoft (#1217), and
 ``GONE_ITEM`` one of its request pages.
 
-Ministry requests (#1133) is this queue with its totals, By Ministry counts
-and Follow-up packet, served at its real address (``REQUESTS``) so a By
-Ministry count, a GET to that same address with its link filters
-(``COUNTED``), is followed in place. ``LEADER`` is a leader of one Ministry,
-``SORTED`` and ``SEARCHED`` the answers to an in-place re-sort and Apply.
+Ministry requests (#1133) is the Ministry stream's review worklist (#1684),
+with By Ministry counts and the Follow-up packet below it, served at its
+real address (``REQUESTS``) so a By Ministry count, a GET to that same
+address with its link filters (``COUNTED``), is followed in place. Its pages
+are drawn by the real ``ministry_worklist`` from detached rows
+(``_worklist``). ``LEADER`` is a leader of one Ministry, ``SORTED`` and
+``SEARCHED`` the answers to an in-place re-sort and Apply, ``DECIDED`` the
+page after an Accept, and ``STAGES`` a page of requests at every stage.
 """
 
 from datetime import UTC, datetime
@@ -35,30 +33,26 @@ from django.template.loader import render_to_string
 from django.urls import reverse
 
 from parishkit.stewardship.accounts.policy import Principal
-from parishkit.stewardship.reports.chart_specs import ministry_followup
 from parishkit.stewardship.reports.ministries import outcome_label
 from parishkit.stewardship.reports.ministry_export_views import PACKET_MESSAGE
 from parishkit.stewardship.reports.ministry_followup import (
     CHANNELS,
-    FILTER_OUTCOMES,
     HISTORY_STATES,
     MEMBER_STATUS_MARKS,
-    NOT_IN_SOURCE,
-    SORTING,
     STATES,
-    FollowupQuery,
 )
 from parishkit.stewardship.reports.ministry_followup_views import (
-    BULK_KIND_HINTS,
     REFUSALS,
     _refusal_error,
-    bulk_actions,
     count_links,
     packet_context,
-    totals_tiles,
+)
+from parishkit.stewardship.reports.ministry_worklist import (
+    WorklistQuery,
+    place,
+    worklist_context,
 )
 from parishkit.stewardship.web.filter_errors import FilterError
-from parishkit.stewardship.web.tables import report_table
 from parishkit.stewardship.workflows.followup import FollowupRefusal, outcomes_for
 from parishkit.stewardship.workflows.models import STAFF_STATES
 
@@ -92,22 +86,20 @@ TICK_REQUEST = UUID(int=101)
 TICK_ITEM = reverse("admin:ministry_followup_item", args=[TICK_REQUEST])
 TICK_POST = reverse("admin:ministry_followup_roster", args=[TICK_REQUEST])
 TICKED = TICK_ITEM + "?ticked=1"
-# The bulk outcome queue (#1131): its address, the remembered view the dialog
-# redraws it from, and where the dialog posts.
-BULK_QUEUE = "/followup-bulk"
-# A queue page whose only request is closed: rows, none selectable (#1332).
-BULK_CLOSED_QUEUE = "/followup-bulk-closed"
-BULK_TOKEN = "cd" * 16
-BULK_VIEW = reverse("admin:ministry_report") + f"?queue={BULK_TOKEN}"
-BULK_POST = reverse("admin:ministry_followup_bulk")
-BULK_KEY = UUID(int=104)
-BULK_JOIN, BULK_LEAVE, BULK_CLOSED = UUID(int=105), UUID(int=106), UUID(int=107)
+# The worklist after an Accept (#1684), which the tests answer the page's own
+# POST with, and a page of requests at every stage, for Staff and a leader.
+DECIDED, STAGES, LEADER_STAGES = (
+    "/ministry-requests-decided",
+    "/ministry-requests-stages",
+    "/ministry-requests-stages-leader",
+)
+DECIDED_NOTICE = "Example <Member> — Example <Ministry> accepted."
 # Staff's view of requests for Members no longer in ParishSoft (#1217).
 GONE_QUEUE, GONE_ITEM = "/followup-gone", "/followup-gone-item"
 # Ministry requests (#1133): the page at its real address, the answer to its
 # "51 join requests" count, and a leader of one Ministry.
 REQUESTS = reverse("admin:ministry_report")
-COUNTED = REQUESTS + "?ministry=9&action=join&state=any"
+COUNTED = REQUESTS + "?ministry=9&kind=join&stage=all"
 LEADER, SORTED, SEARCHED, NOTHING = (
     "/ministry-requests-leader",
     "/ministry-requests-sorted",
@@ -138,18 +130,60 @@ POSTS = {
 LONG_MINISTRY = "105-Religious Education Catechists and Aides"
 
 
-def _table(rows, query, total, campaign):
-    """The shared POST navigator/heading model the queue view builds (#203)."""
-    return report_table(
-        rows,
-        number=1,
-        size=50,
-        total=total,
-        carry=[(k, v) for k, v in query.form_values().items() if k != "sort"],
-        sorting=SORTING,
-        sort=query.sort,
+STAFF = Principal(UUID(int=97), frozenset({"staff"}))
+LEADS = Principal(UUID(int=98), frozenset({"ministry_leader"}), frozenset({9}))
+
+
+def _worklist(rows, *, query=None, principal=STAFF, mutable=True, marks=None):
+    """The worklist page's context for detached selection ``rows`` (#1684).
+
+    The real ``ministry_worklist`` places and decorates them, with no last
+    decision and no Family asked again (no database); ``marks`` are the
+    roster ticks, by request id.
+    """
+    query = query or WorklistQuery()
+    shaped = []
+    for row in rows:
+        shaped.append(
+            {
+                "member_label": row["member_name"] or "Not in ParishSoft",
+                "source_mark": None,
+                "member_status": None,
+                "in_campaign": True,
+                "cannot_serve": False,
+                "reviewed_ministry_duid": None,
+                "reviewed_ministry_name": None,
+                "parish_added": False,
+                "added_in_place_of_id": None,
+            }
+            | row
+        )
+    result = {
+        "rows": shaped,
+        "ministries": [
+            dict(duid=9, name="Example <Ministry>", in_campaign=True),
+            dict(duid=12, name="Another Ministry", in_campaign=True),
+        ],
+        "metadata": dict(name="Sample campaign", timezone="UTC"),
+    }
+    place(result, principal, marks=marks or {})
+    return worklist_context(
+        CAMPAIGN,
+        query,
+        principal,
+        result,
+        token="",
+        mutable=mutable,
         action=reverse("admin:ministry_report"),
-    )
+        decisions={},
+        asked={},
+    ) | {
+        "query": query,
+        "mutable": mutable,
+        "can_tick": "staff" in principal.roles,
+        "export_fields": query.form_values(),
+        "notice": None,
+    }
 
 
 def components(context, admin):
@@ -190,12 +224,13 @@ def components(context, admin):
         contact_at=moment,
         contact_notes="No <answer>",
         notes="Left a <private> voicemail",
+        reviewed_label="",
+        decision_note="",
     )
-    query = FollowupQuery(search="Example", ministry="9")
+    query = WorklistQuery(search="Example", ministry="9")
     # By Ministry (#1133): every Ministry in scope, with Staff's count links
     # and marks; one no longer in ParishSoft's data, one removed from the
     # campaign with nothing unresolved.
-    staff = Principal(UUID(int=97), frozenset({"staff"}))
     by_ministry = [
         dict(
             duid=9,
@@ -217,17 +252,12 @@ def components(context, admin):
         ),
     ]
     for summary in by_ministry:
-        summary["count_links"] = count_links(staff, summary)
-    totals = dict(joining=40, leaving=11, requests=62, unresolved=51, completed=11)
+        summary["count_links"] = count_links(STAFF, summary)
     values = dict(
         # Staff or an Administrator: the help explains the Removed badge
         # (#1135).
         campaign_marks=True,
-        # Staff's Status choice for Members no longer in ParishSoft (#1217).
-        not_in_source=NOT_IN_SOURCE,
         campaign_id=campaign,
-        query=query,
-        table=_table([row], query, 51, campaign),
         mutable=True,
         item=None,
         history=[],
@@ -239,26 +269,14 @@ def components(context, admin):
         resolved_outcomes=[
             (key, outcome_label(key, "join")) for key in outcomes_for("join")
         ],
-        outcomes=FILTER_OUTCOMES,
         channels=CHANNELS,
-        bulk_actions=bulk_actions(),
-        bulk_kind_hints=BULK_KIND_HINTS,
-        bulk_key=BULK_KEY,
-        refresh_url=reverse("admin:ministry_report"),
         future_message=REFUSALS["contact_future"][0],
-        total=51,
-        rows=[row],
-        ministries=[dict(duid=9, name="Example <Ministry>")],
         metadata=dict(name="Sample campaign", source_as_of=moment, timezone="UTC"),
-        # Export these requests (#1157): the applied view and zone choices.
-        export_fields=query.form_values(),
+        # Export these requests (#1157): the zone choices.
         export_timezones=["America/Detroit", "UTC"],
         export_pdf_limit=1000,
-        # Ministry requests' overview (#1133): the totals, By Ministry and
-        # the packet's choices, every Ministry in scope.
-        totals=totals,
-        followup_chart=ministry_followup(totals),
-        totals_tiles=totals_tiles(totals),
+        # Ministry requests' overview (#1133): By Ministry and the packet's
+        # choices, every Ministry in scope.
         by_ministry=by_ministry,
         show_marks=True,
         packet_choices=[
@@ -308,7 +326,8 @@ def components(context, admin):
         contact_zone="America/Los_Angeles",
         contact_notes="Kept <reply>",
     )
-    unfiltered = FollowupQuery()
+    unfiltered = WorklistQuery()
+    every = WorklistQuery(stage="all")
     # A Member added on the form has no DUID yet (#932), here in a Ministry
     # with a name too long for its column, since removed from the campaign.
     proposed = row | dict(
@@ -330,8 +349,7 @@ def components(context, admin):
         version=4, state="in_progress", state_label=STATES["in_progress"]
     )
     # A full page of 25 requests with typical data (#1064): joins and leaves,
-    # a leave from a Member who cannot participate, every status with its
-    # outcome (the longest is "Declined / no longer interested"), a Member
+    # a leave from a Member who cannot participate, every stage, a Member
     # added on the form, a Ministry since removed from the campaign, long
     # names (Ministry names as long as the longest in use, one with a digit
     # prefix, #1136), and requests with no contact recorded.
@@ -347,6 +365,9 @@ def components(context, admin):
     full_page = []
     for number in range(25):
         state, outcome = states[number % len(states)]
+        kind = "leave" if number % 3 == 0 else "join"
+        if outcome in ("joined", "leave_confirmed"):
+            outcome = "joined" if kind == "join" else "leave_confirmed"
         full_page.append(
             row
             | dict(
@@ -362,14 +383,10 @@ def components(context, admin):
                 ),
                 ministry_duid=1000 + number,
                 in_campaign=number != 6,
-                action="leave" if number % 3 == 0 else "join",
-                cannot_serve=number % 3 == 0 and number % 2 == 0,
+                action=kind,
+                cannot_serve=kind == "leave" and number % 2 == 0,
                 state=state,
-                state_label=STATES[state],
                 outcome=outcome,
-                outcome_label=outcome_label(
-                    outcome, "leave" if number % 3 == 0 else "join"
-                ),
                 last_contact_at=None if number % 4 == 0 else moment,
             )
         )
@@ -378,30 +395,56 @@ def components(context, admin):
         FollowupRefusal("outcome_kind", outcome="leave_confirmed", action="join"), {}
     )
     future = _refusal_error(FollowupRefusal("contact_future"), {})
-    # The bulk outcome queue: an open join, an open leave and a closed join;
-    # and the same view once the join is resolved as Joined.
-    bulk_rows = [
-        row | dict(id=str(BULK_JOIN), member_name="Joining <Member>"),
-        leave | dict(id=str(BULK_LEAVE), version=2, cannot_serve=False),
-        closed | dict(id=str(BULK_CLOSED), member_name="Closed <Member>"),
-    ]
-    bulk_after = [
-        bulk_rows[0]
+    # Requests at every stage a Staff reader meets (#1684): to review, an
+    # accepted join to enter by hand and one entered, an ignored leave, an
+    # edited join, one the parish added and one ParishSoft already shows.
+    accepted = row | dict(
+        id=str(UUID(int=120)),
+        member_name="Accepted <Member>",
+        state="resolved",
+        outcome="joined",
+    )
+    staged = [
+        row,
+        accepted,
+        accepted
+        | dict(id=str(UUID(int=121)), member_name="Entered <Member>", version=2),
+        leave
         | dict(
-            open=False,
-            version=4,
+            id=str(UUID(int=122)),
+            member_name="Ignored <Member>",
             state="resolved",
-            state_label=STATES["resolved"],
-            outcome="joined",
-            outcome_label=outcome_label("joined", "join"),
+            outcome="declined",
+            cannot_serve=False,
         ),
-        *bulk_rows[1:],
+        accepted
+        | dict(
+            id=str(UUID(int=123)),
+            member_name="Edited <Member>",
+            reviewed_ministry_duid=12,
+            reviewed_ministry_name="Another Ministry",
+        ),
+        accepted
+        | dict(
+            id=str(UUID(int=124)),
+            member_name="Added <Member>",
+            parish_added=True,
+            ministry_duid=12,
+            ministry_name="Another Ministry",
+        ),
+        accepted
+        | dict(
+            id=str(UUID(int=125)),
+            member_name="Confirmed <Member>",
+            source_resolved=True,
+        ),
     ]
+    ticked = {str(UUID(int=121)): {"entered": True, "sequence": 1}}
     # Two open requests whose Members ParishSoft no longer lists as current:
     # one inactive there, one deceased, with a name long enough to be cut
     # short. (A Member the data no longer has has no name; its badge alone
     # is the link, #1216.)
-    gone_query = FollowupQuery(state=NOT_IN_SOURCE)
+    gone_query = WorklistQuery(members="gone")
     gone_rows = [
         row
         | dict(
@@ -413,75 +456,47 @@ def components(context, admin):
         | dict(
             id=str(UUID(int=111)),
             member_name="Bartholomew-Fitzgerald, Maximilian <Example>",
+            cannot_serve=False,
             member_status="deceased",
             source_mark=MEMBER_STATUS_MARKS["deceased"],
         ),
     ]
-    bulk_page = values | dict(
-        query=unfiltered, queue_token=BULK_TOKEN, refresh_url=BULK_VIEW
-    )
-    counted = FollowupQuery(ministry="9", action="join", state="any")
-    sorted_query = FollowupQuery(sort="ministry")
-    joined = dict(joining=51, leaving=0, requests=51, unresolved=40, completed=11)
-    searched = dict(joining=0, leaving=9, requests=60, unresolved=9, completed=51)
-    nothing_query = FollowupQuery(search="No such Member")
-    nothing = dict.fromkeys(
-        ("joining", "leaving", "requests", "unresolved", "completed"), 0
-    )
-    requests_page = values | dict(
-        query=unfiltered,
-        export_fields=unfiltered.form_values(),
-        rows=[row, proposed],
-        table=_table([row, proposed], unfiltered, 51, campaign),
-    )
+    counted = WorklistQuery(ministry="9", kind="join", stage="all")
+    sorted_query = WorklistQuery(sort="ministry")
+    nothing_query = WorklistQuery(search="No such Member")
+    requests_page = values | _worklist([row, proposed])
     pages = {
         REQUESTS: requests_page,
         # The "51 join requests" count's answer: that Ministry's join
-        # requests of any status, with their totals.
-        COUNTED: requests_page
-        | dict(
-            query=counted,
-            export_fields=counted.form_values(),
-            rows=[row],
-            table=_table([row], counted, 51, campaign),
-            totals=joined,
-            followup_chart=ministry_followup(joined),
-            totals_tiles=totals_tiles(joined),
-        ),
-        SORTED: requests_page
-        | dict(
-            query=sorted_query,
-            export_fields=sorted_query.form_values(),
-            rows=[proposed, row],
-            table=_table([proposed, row], sorted_query, 51, campaign),
-        ),
-        SEARCHED: requests_page
-        | dict(
-            totals=searched,
-            followup_chart=ministry_followup(searched),
-            totals_tiles=totals_tiles(searched),
-        ),
-        NOTHING: requests_page
-        | dict(
-            query=nothing_query,
-            export_fields=nothing_query.form_values(),
-            rows=[],
-            total=0,
-            table=_table([], nothing_query, 0, campaign),
-            totals=nothing,
-            followup_chart=ministry_followup(nothing),
-            totals_tiles=totals_tiles(nothing),
-        ),
+        # requests at every stage.
+        COUNTED: requests_page | _worklist([row], query=counted),
+        SORTED: requests_page | _worklist([proposed, row], query=sorted_query),
+        SEARCHED: requests_page | _worklist([row], query=query),
+        NOTHING: requests_page | _worklist([], query=nothing_query),
+        # The page after Accept on the first row (#1684), with its notice.
+        DECIDED: requests_page
+        | _worklist(
+            [
+                accepted
+                | dict(id=row["id"], member_name=row["member_name"], version=4),
+                proposed,
+            ]
+        )
+        | dict(notice=DECIDED_NOTICE),
+        STAGES: requests_page | _worklist(staged, query=every, marks=ticked),
         # A leader of one Ministry: one line, no marks or campaign help.
         LEADER: requests_page
+        | _worklist([row], principal=LEADS)
         | dict(
             by_ministry=by_ministry[:1],
             packet_choices=[dict(duid=9, name="Example <Ministry>")],
             show_marks=False,
             campaign_marks=False,
-            not_in_source=None,
         ),
-        GATED_REQUESTS: requests_page | dict(mutable=False),
+        LEADER_STAGES: requests_page
+        | _worklist(staged, query=every, principal=LEADS, marks=ticked)
+        | dict(show_marks=False, campaign_marks=False),
+        GATED_REQUESTS: requests_page | _worklist([row, proposed], mutable=False),
         PACKET_LIMIT: requests_page | dict(packet_limit=1),
         PACKET_REFUSED: requests_page
         | dict(packet_limit=1)
@@ -489,50 +504,22 @@ def components(context, admin):
             FilterError("ministries", PACKET_MESSAGE, ("9", "12", "77")),
             requests_page["packet_choices"],
         ),
-        BULK_QUEUE: bulk_page
-        | dict(rows=bulk_rows, table=_table(bulk_rows, unfiltered, 3, campaign)),
-        BULK_CLOSED_QUEUE: bulk_page
-        | dict(
-            rows=bulk_rows[2:], table=_table(bulk_rows[2:], unfiltered, 1, campaign)
-        ),
-        BULK_VIEW: bulk_page
-        | dict(
-            rows=bulk_after,
-            table=_table(bulk_after, unfiltered, 3, campaign),
-            bulk_key=UUID(int=108),
-        ),
-        "/followup-queue": values,
-        "/followup-all": values
-        | dict(
-            query=unfiltered,
-            export_fields=unfiltered.form_values(),
-            rows=[row, proposed],
-            table=_table([row, proposed], unfiltered, 51, campaign),
-        ),
-        "/followup-page": values
-        | dict(
-            query=unfiltered,
-            export_fields=unfiltered.form_values(),
-            rows=full_page,
-            table=_table(full_page, unfiltered, 60, campaign),
-        ),
+        "/followup-queue": values | _worklist([row], query=query),
+        "/followup-all": values | _worklist([row, proposed], query=unfiltered),
+        "/followup-page": values | _worklist(full_page, query=every),
         # What a Ministry leader is served: no campaign help (#1135).
-        "/followup-leader": values | dict(campaign_marks=False, not_in_source=None),
-        GONE_QUEUE: values
-        | dict(
-            query=gone_query,
-            gone_view=True,
-            rows=gone_rows,
-            table=_table(gone_rows, gone_query, 2, campaign),
-            total=2,
-        ),
-        GONE_ITEM: values
-        | dict(item=gone_rows[0], form=form, history=[revision], gone_view=False),
-        "/followup-empty": values
-        | dict(rows=[], total=0, table=_table([], query, 0, campaign)),
-        "/followup-gated": values | dict(mutable=False),
+        "/followup-leader": values
+        | _worklist([row], query=query, principal=LEADS)
+        | dict(campaign_marks=False),
+        GONE_QUEUE: values | _worklist(gone_rows, query=gone_query),
+        "/followup-empty": values | _worklist([], query=query),
+        "/followup-gated": values | _worklist([row], query=query, mutable=False),
         # More requests than one PDF may hold (#1157): PDF is unavailable.
-        "/followup-over": values | dict(total=1001),
+        "/followup-over": values | _worklist([row], query=query) | dict(total=1001),
+        QUEUE_VIEW: values | _worklist([row], query=query) | dict(queue_token=TOKEN),
+    }
+    items = {
+        GONE_ITEM: values | dict(item=gone_rows[0], form=form, history=[revision]),
         # A request with no saved follow-up yet (#227 empty state).
         "/followup-item-new": values | dict(item=row, form=form, history=[]),
         # A history page past its end, as a bookmarked ?page= can ask for.
@@ -594,8 +581,7 @@ def components(context, admin):
             errors=[future],
             field_error=future,
         ),
-        "/followup-closed": values
-        | dict(item=closed, rows=[closed], history=[revision]),
+        "/followup-closed": values | dict(item=closed, history=[revision]),
         "/followup-item-gated": values | dict(item=row, form=form, mutable=False),
         # The request page at its real address, before and after a save that
         # moved it to In progress and added an edit to its history.
@@ -649,7 +635,7 @@ def components(context, admin):
             history=[],
         ),
         # Save and next: the next request follows; the last has none, so
-        # Save and next returns to the remembered queue view.
+        # Save and next returns to the remembered worklist view.
         ADVANCE_ITEM: values
         | dict(
             item=row | dict(id=str(ADVANCE_REQUEST), member_name="First <Member>"),
@@ -670,7 +656,6 @@ def components(context, admin):
             form=form,
             queue_token=TOKEN,
         ),
-        QUEUE_VIEW: values | dict(queue_token=TOKEN),
         SAVED: values
         | dict(
             item=saved,
@@ -693,11 +678,20 @@ def components(context, admin):
         path: (
             "text/html",
             render_to_string(
-                "stewardship/ministry-followup.html",
+                "stewardship/ministry-requests.html",
                 context | {"admin_chrome": admin} | data,
             ),
         )
         for path, data in pages.items()
+    } | {
+        path: (
+            "text/html",
+            render_to_string(
+                "stewardship/ministry-followup.html",
+                context | {"admin_chrome": admin} | data,
+            ),
+        )
+        for path, data in items.items()
     }
     for status in (400, 409, 503):
         result[f"/followup-error-{status}"] = (

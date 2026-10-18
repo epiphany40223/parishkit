@@ -1,0 +1,376 @@
+"""Ministry requests on the review worklist, under the real web role (#1684).
+
+Accept, Ignore, Edit, Back to review, Entered by hand and Add go through
+``workflows.review`` (the page's decision service) and migration 0132's
+guards; the worklist reads them back through the follow-up selection, whose
+scope now follows an edited request's Ministry. A Family that asks again for
+a decided request gets no second request.
+"""
+
+import re
+from uuid import uuid4
+
+import pytest
+from django.db import DatabaseError, transaction
+from django.urls import reverse
+
+from parishkit.stewardship.audit.models import AuditEvent
+from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.deployment import ServiceRole
+from parishkit.stewardship.pipeline import Action, Decision, Stage
+from parishkit.stewardship.reports.ministry_worklist import (
+    WorklistQuery,
+    read_rows,
+    worklist_context,
+)
+from parishkit.stewardship.web.review_worklist import (
+    StaleDecision,
+    WorklistDecision,
+)
+from parishkit.stewardship.workflows.models import (
+    MinistryRequest,
+    MinistryRosterEntry,
+    MinistryWorkflowRevision,
+)
+from parishkit.stewardship.workflows.review import (
+    DecisionRefusal,
+    MinistryDecisions,
+)
+
+from .test_background_grants_postgresql import task_login
+from .test_information_followup_postgresql import search
+from .test_ministry_exports_postgresql import leader
+from .test_ministry_reports_postgresql import actor, setup
+from .test_ministry_responses_postgresql import respond, revisit
+from .test_report_workspace_postgresql import read as get
+from .test_response_http_postgresql import answers_for
+
+pytestmark = pytest.mark.django_db(transaction=True)
+
+
+def requests():
+    """Member 3's current requests: join Food pantry (9), leave Ministry 4."""
+    rows = MinistryRequest.objects.exclude(state__in=["superseded", "cancelled"])
+    return rows.get(ministry_duid=9, action="join"), rows.get(
+        ministry_duid=4, action="leave"
+    )
+
+
+def decide(harness, principal, action, *targets, note="", fields=None, key=None):
+    """Record one worklist decision through the page's service as web."""
+    decision = WorklistDecision(
+        Action(action),
+        {str(target.pk): target.version for target in targets},
+        note,
+        key or uuid4(),
+        bulk=len(targets) > 1,
+        fields=fields or {},
+    )
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        service = MinistryDecisions(
+            harness.service.store,
+            harness.campaign.pk,
+            namer=lambda request_id: f"request {request_id}",
+        )
+        notice = service.decide(principal, decision)
+    for target in targets:
+        target.refresh_from_db()
+    return notice
+
+
+def view(harness, principal, **values):
+    """The worklist's rows for ``principal``, every stage, by request id."""
+    query = WorklistQuery.parse({"stage": "all"} | values)
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True), transaction.atomic():
+        result = read_rows(harness.campaign.pk, query, principal)
+    return {row["id"]: row for row in result["rows"]}
+
+
+def test_accept_ignore_and_back_to_review(response_service):
+    """Staff decide in one step and undo it; reopening an ignored one needs a
+    note, and a request ticked Entered in ParishSoft cannot go back."""
+    harness = setup(response_service)
+    staff = actor(harness, {"staff"}, ())
+    join, leave = requests()
+    notice = decide(harness, staff, "accept", join, note="Called them")
+    assert notice == f"request {join.pk} accepted."
+    assert (join.state, join.outcome, join.version) == ("resolved", "joined", 2)
+    revision = MinistryWorkflowRevision.objects.get(request=join, expected_version=1)
+    assert revision.decision_note == "Called them"
+    decide(harness, staff, "ignore", leave)
+    assert (leave.state, leave.outcome) == ("resolved", "declined")
+    rows = view(harness, staff)
+    assert rows[str(join.pk)]["placement"].stage is Stage.TO_ENTER_BY_HAND
+    assert rows[str(leave.pk)]["placement"].stage is Stage.IGNORED
+    assert rows[str(leave.pk)]["decision_label"] == "Ignored: Stayed in the Ministry"
+    # Reopening the ignored request needs its note.
+    with pytest.raises(ValueError):
+        decide(harness, staff, "back_to_review", leave)
+    decide(harness, staff, "back_to_review", leave, note="Asked again by phone")
+    assert (leave.state, leave.outcome) == ("in_progress", None)
+    assert leave.resolved_at is None
+    # Entered by hand ticks the accepted join; it can no longer go back.
+    decide(harness, staff, "entered_by_hand", join)
+    assert MinistryRosterEntry.objects.get(request=join).entered
+    assert view(harness, staff)[str(join.pk)]["placement"].stage is (
+        Stage.ENTERED_BY_HAND
+    )
+    with pytest.raises(StaleDecision):
+        decide(harness, staff, "back_to_review", join)
+    # A decision on a version someone else moved is stale; nothing is written.
+    stale = MinistryRequest.objects.get(pk=leave.pk)
+    stale.version = 1
+    with pytest.raises(StaleDecision):
+        decide(harness, staff, "accept", stale)
+    assert MinistryWorkflowRevision.objects.count() == 3
+
+
+def test_bulk_decisions_are_all_or_none(response_service):
+    """A bulk Accept records one revision a request and one bulk event; a
+    stale row refuses the whole batch."""
+    harness = setup(response_service)
+    staff = actor(harness, {"staff"}, ())
+    join, leave = requests()
+    stale = MinistryRequest.objects.get(pk=leave.pk)
+    stale.version = 7
+    with pytest.raises(StaleDecision):
+        decide(harness, staff, "accept", join, stale)
+    assert MinistryWorkflowRevision.objects.count() == 0
+    key = uuid4()
+    assert decide(harness, staff, "accept", join, leave, key=key) == (
+        "2 requests accepted."
+    )
+    assert (join.outcome, leave.outcome) == ("joined", "leave_confirmed")
+    assert (
+        AuditEvent.objects.filter(event_type="ministry_followup_bulk_applied").count()
+        == 1
+    )
+    # The same post again replays: nothing more is written.
+    join.version, leave.version = 1, 1
+    decide(harness, staff, "accept", join, leave, key=key)
+    assert MinistryWorkflowRevision.objects.count() == 2
+
+
+def test_edit_moves_the_request_into_another_leaders_scope(response_service):
+    """Staff edit a join into Ministry 4: its leaders now see and decide it;
+    the Food pantry leader still sees it, read only."""
+    harness = setup(response_service)
+    staff = actor(harness, {"staff"}, ())
+    pantry = actor(harness, {"ministry_leader"}, (9,))
+    fours = actor(harness, {"ministry_leader"}, (4,))
+    join, _leave = requests()
+    with pytest.raises(ValueError):
+        decide(harness, staff, "edit", join, fields={"value": ["9"]})
+    with pytest.raises(ValueError):
+        decide(harness, staff, "edit", join, fields={"value": ["77"]})
+    decide(harness, staff, "edit", join, fields={"value": ["4"]})
+    assert (join.state, join.outcome, join.reviewed_ministry_duid) == (
+        "resolved",
+        "joined",
+        4,
+    )
+    edited = view(harness, fours)[str(join.pk)]
+    assert edited["placement"].decision is Decision.ACCEPTED_EDITED
+    assert edited["stage"] == "accepted"
+    assert edited["stage_label"] == "Accepted (edited)"
+    assert str(join.pk) in view(harness, pantry)
+    # The Food pantry leader may no longer decide it; Ministry 4's may.
+    with pytest.raises(PermissionError):
+        decide(harness, pantry, "back_to_review", join)
+    decide(harness, fours, "back_to_review", join)
+    assert (join.state, join.reviewed_ministry_duid) == ("in_progress", None)
+    assert str(join.pk) not in view(harness, fours)
+
+
+def test_a_leader_edits_only_into_a_ministry_they_lead(response_service):
+    """A leader of Food pantry alone cannot move a request to Ministry 4; one
+    who leads both can, and the SQL guard refuses the same shortcut."""
+    harness = setup(response_service)
+    pantry = actor(harness, {"ministry_leader"}, (9,))
+    both = actor(harness, {"ministry_leader"}, (4, 9))
+    join, _leave = requests()
+    with pytest.raises(PermissionError):
+        decide(harness, pantry, "edit", join, fields={"value": ["4"]})
+    assert MinistryWorkflowRevision.objects.count() == 0
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        pytest.raises(DatabaseError, match="not valid for this request"),
+        work_transaction(),
+    ):
+        MinistryWorkflowRevision.objects.create(
+            request=join,
+            actor_id=pantry.identity,
+            request_key=uuid4(),
+            expected_version=join.version,
+            state="resolved",
+            outcome="joined",
+            reviewed_ministry_duid=4,
+        )
+    decide(harness, both, "edit", join, fields={"value": ["4"]})
+    assert join.reviewed_ministry_duid == 4
+
+
+def test_the_sql_guard_refuses_unpaired_reopens(response_service):
+    """Directly, the revision guard refuses a reopen with no note of an
+    ignored request and a withdrawal of a Family's request."""
+    harness = setup(response_service)
+    staff = actor(harness, {"staff"}, ())
+    join, _leave = requests()
+    decide(harness, staff, "ignore", join)
+    base = dict(
+        request=join,
+        actor_id=staff.identity,
+        request_key=uuid4(),
+        expected_version=join.version,
+    )
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        for values in (
+            dict(state="in_progress", decision_note=""),
+            dict(state="cancelled", decision_note="Withdraw it"),
+        ):
+            with (
+                pytest.raises(DatabaseError, match="not valid for this request"),
+                work_transaction(),
+            ):
+                MinistryWorkflowRevision.objects.create(**(base | values))
+
+
+def test_staff_add_a_request_in_place_of_an_ignored_one(response_service):
+    """Add puts an accepted request on the Family's latest response, named in
+    place of the ignored one; a replay writes nothing more, a second Add is
+    refused, and Back to review withdraws it."""
+    harness = setup(response_service)
+    staff = actor(harness, {"staff"}, ())
+    pantry = actor(harness, {"ministry_leader"}, (9,))
+    join, leave = requests()
+    decide(harness, staff, "ignore", join)
+    fields = {
+        "value_member": ["3"],
+        "value_ministry": ["4"],
+        "value_action": ["join"],
+        "value_in_place_of": [str(join.pk)],
+    }
+    # Member 3 still has a current request for Ministry 4 (the leave).
+    with pytest.raises(DecisionRefusal) as refused:
+        decide(harness, staff, "add", fields=fields)
+    assert refused.value.code == "add_exists"
+    for wrong, code in (("999999", "add_no_response"), ("abc", "add_member")):
+        with pytest.raises(DecisionRefusal) as refused:
+            decide(harness, staff, "add", fields=fields | {"value_member": [wrong]})
+        assert refused.value.code == code
+    with pytest.raises(PermissionError):
+        decide(harness, pantry, "add", fields=fields)
+    # The Family answers again without the leave, which withdraws it.
+    form = revisit(harness)
+    answers = answers_for(form)
+    answers["ministries"]["members"]["3"] = {"join": [], "leave": []}
+    latest = respond(harness, form, answers)
+    leave.refresh_from_db()
+    assert leave.state == "cancelled"
+    key = uuid4()
+    assert decide(harness, staff, "add", fields=fields, key=key).endswith(" added.")
+    added = MinistryRequest.objects.get(parish_added=True)
+    assert (added.submission_id, added.entity_key, added.ministry_duid) == (
+        latest.pk,
+        "3",
+        4,
+    )
+    assert (added.state, added.outcome, added.added_in_place_of_id) == (
+        "resolved",
+        "joined",
+        join.pk,
+    )
+    assert added.actor_id == staff.identity
+    row = view(harness, staff)[str(added.pk)]
+    assert row["placement"].stage is Stage.TO_ENTER_BY_HAND
+    assert row["placement"].decision is Decision.ADDED
+    # A replay writes nothing more; another Add is refused.
+    count = MinistryRequest.objects.count()
+    assert decide(harness, staff, "add", fields=fields, key=key).endswith(
+        "was already added."
+    )
+    with pytest.raises(DecisionRefusal) as refused:
+        decide(harness, staff, "add", fields=fields)
+    assert refused.value.code == "add_exists"
+    assert MinistryRequest.objects.count() == count
+    # Back to review withdraws an added request.
+    decide(harness, staff, "back_to_review", added)
+    assert added.state == "cancelled"
+    assert str(added.pk) not in view(harness, staff)
+
+
+def test_family_asked_again_creates_no_second_request(response_service):
+    """A Family that ticks a decided join again gets no new request; the
+    decided one keeps its decision and its row says when they asked."""
+    harness = setup(response_service)
+    staff = actor(harness, {"staff"}, ())
+    join, _leave = requests()
+    decide(harness, staff, "ignore", join)
+    before = MinistryRequest.objects.count()
+    form = revisit(harness)
+    answers = answers_for(form)
+    answers["ministries"]["members"]["3"] = {"join": [9], "leave": []}
+    respond(harness, form, answers)
+    assert MinistryRequest.objects.filter(ministry_duid=9).count() == 1
+    assert MinistryRequest.objects.count() == before
+    join.refresh_from_db()
+    assert (join.state, join.outcome) == ("resolved", "declined")
+    query = WorklistQuery.parse({"stage": "ignored"})
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True), transaction.atomic():
+        result = read_rows(harness.campaign.pk, query, staff)
+        context = worklist_context(
+            harness.campaign.pk,
+            query,
+            staff,
+            result,
+            token="",
+            mutable=True,
+            action="/admin/reports/ministries/",
+        )
+    (row,) = [r for r in context["worklist"].rows if r["id"] == str(join.pk)]
+    assert "Family asked again" in row["decision_label"]
+
+
+def test_the_page_records_a_decision_in_place(response_service, google):
+    """The worklist page posts a decision to itself and answers with the page
+    redrawn, its notice saying what was recorded."""
+    harness = setup(response_service)
+    browser, head, _, _ = leader(harness, google)
+    join, leave = requests()
+    route = reverse("admin:ministry_report")
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = get(browser, route)
+        assert response.status_code == 200
+        assert b"Ministry requests to review" in body
+        assert f'id="requests-row-{join.pk}"'.encode() in body
+        assert str(leave.pk).encode() not in body
+        assert b"Follow-up progress" not in body
+        assert b'name="decide" value="add"' not in body
+        key = re.search(
+            rb'data-confirm-with="decide=accept&amp;version=1&amp;request_key=([^"]+)"',
+            body,
+        )[1].decode()
+        response, body = search(
+            browser,
+            route,
+            {
+                "stage": "to_review",
+                "search": "",
+                "ministry": "",
+                "kind": "any",
+                "members": "current",
+                "page": "1",
+                "size": "50",
+                "sort": "newest",
+                "decide": "accept",
+                "item": str(join.pk),
+                "version": "1",
+                "request_key": key,
+                "note": "",
+            },
+        )
+    assert response.status_code == 200
+    assert b"accepted." in body
+    join.refresh_from_db()
+    assert (join.state, join.outcome) == ("resolved", "joined")
+    assert MinistryWorkflowRevision.objects.get(request=join).actor_id == head

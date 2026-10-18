@@ -1,4 +1,4 @@
-"""Export these requests: the follow-up queue's filtered set as a file (#1157).
+"""Export these requests: the worklist's filtered set as a file (#1157, #1684).
 
 The Members joining and Members leaving lists, and their CSV, XLSX and PDF
 exports, were retired (Administrator decision, 2026-10-12, option (a)). Their
@@ -64,6 +64,7 @@ from .ministry_contacts import request_contacts
 from .ministry_documents import MinistryDocument, new_member_labels
 from .ministry_followup import EXPORT_PDF_LIMIT, STATES, FollowupQuery, followup_page
 from .ministry_followup_views import _error, _principal
+from .ministry_worklist import WorklistQuery, chosen, place, read_rows
 from .read_admission import admit_report_read
 
 FORMATS = {
@@ -83,8 +84,9 @@ HEADINGS = (
     "Member DUID",
     "Ministry",
     "Request",
-    "Status",
-    "Outcome",
+    "Stage",
+    "Decision",
+    "Reviewer's value",
     "Last contact",
     "Email",
     "Phones",
@@ -204,8 +206,16 @@ def queue_document(result, contacts, query, *, parish_name, requested_at, zone):
                 else new_members.get(proposed, "New Member"),
                 row["ministry_name"],
                 request,
-                row["state_label"],
-                row["outcome_label"] or "",
+                # The review pipeline's words (#1684), as the worklist shows
+                # them to this reader.
+                row["stage_label"],
+                row["decision_label"],
+                (
+                    f"{'Join' if row['action'] == 'join' else 'Leave'} "
+                    f"{row['reviewed_ministry_name']}"
+                )
+                if row.get("reviewed_ministry_name")
+                else "",
                 instant(row["last_contact_at"]) or NO_CONTACT,
             )
             + _contact_values(details, row["action"])
@@ -281,21 +291,28 @@ def _choices(parameters):
     in ParishSoft never goes into the file (Administrator, 2026-10-13), even
     from the Staff-only Status choice that lists them (#1217).
     """
+    # The page's form posts the worklist's view (#1684), with its Stage;
+    # ``pk-admin followup export`` still posts the queue's Status and
+    # Outcome filters, until #1688 renames the commands.
+    worklist = "stage" in parameters or "members" in parameters
+    kind = WorklistQuery if worklist else FollowupQuery
     values = filters(
         parameters,
         allowed={
             "csrfmiddlewaretoken",
             "format",
             "timezone",
-            *FollowupQuery.__dataclass_fields__,
+            *kind.__dataclass_fields__,
         },
     )
     values.pop("csrfmiddlewaretoken", None)
     fmt, zone = values.pop("format", ""), values.pop("timezone", "")
     if fmt not in FORMATS or (zone != "UTC" and zone not in timezone_names()):
         raise ValueError("Invalid follow-up export choice.")
-    query = FollowupQuery.parse(values)
-    if query.state not in {"any", "unresolved", *STATES}:
+    query = kind.parse(values)
+    if worklist and query.members != "current":
+        raise ValueError("Invalid follow-up export choice.")
+    if not worklist and query.state not in {"any", "unresolved", *STATES}:
         raise ValueError("Invalid follow-up export choice.")
     return replace(query, page=1), fmt, ZoneInfo(zone)
 
@@ -347,7 +364,13 @@ def export_body(campaign_id, query, principal, fmt, zone, progress):
     # The queue's own selection with its default Member presence, so a
     # Member no longer in ParishSoft is left out of the file as from the
     # queue (#1217, Administrator, 2026-10-13).
-    result = followup_page(campaign_id, query, principal, whole=True)
+    if isinstance(query, WorklistQuery):
+        result = read_rows(campaign_id, query, principal)
+        result["rows"] = chosen(result["rows"], query.stage)
+    else:
+        result = place(
+            followup_page(campaign_id, query, principal, whole=True), principal
+        )
     progress["count"] = count = len(result["rows"])
     progress["ministries"] = tuple(row["ministry_duid"] for row in result["rows"])
     # Refused before any contact is read or page drawn. The page opens its
