@@ -61,14 +61,14 @@ EMPTY_PAGES = {
     ),
     "/source-form-none": ("Every Family that can use the portal can open the form,",),
 }
-# The Filters panel beside each empty table with one (#227): its summary and
-# whether it arrives open, from the same count the message is chosen by, so
-# the two can't disagree.
+# The Filters box beside each empty table with one (#227): its title, from
+# the same count the message is chosen by, so the two can't disagree. Census
+# changes' box is always open (#1682).
 FILTER_PANELS = {
-    "/census-changes-none": ("Filters: none applied", False),
-    "/census-changes-none-all": ("Filters: 1 applied", True),
-    "/census-changes-none-everything": ("Filters: 2 applied", True),
-    "/census-changes-none-searched": ("Filters: 1 applied", True),
+    "/census-changes-none": "Filters: none applied",
+    "/census-changes-none-all": "Filters: 1 applied",
+    "/census-changes-none-everything": "Filters: 2 applied",
+    "/census-changes-none-searched": "Filters: 1 applied",
 }
 
 
@@ -89,13 +89,9 @@ def test_empty_state_says_why_and_stays_put(page, component_origin, path):
         expect(message).to_have_count(1)
         visible(message)
     if path in FILTER_PANELS:
-        summary, opened = FILTER_PANELS[path]
-        filters = page.locator("details[data-filter-panel]")
-        has_text(filters.locator("summary"), summary)
-        if opened:
-            expect(filters).to_have_attribute("open", "")
-        else:
-            expect(filters).not_to_have_attribute("open", "")
+        filters = page.locator("section[data-filter-panel]")
+        has_text(filters.get_by_role("heading", level=2), FILTER_PANELS[path])
+        visible(filters.get_by_role("button", name="Apply filters"))
     before = [message.bounding_box() for message in messages]
     # Anything the page's scripts draw after load (times, counts, in-place
     # regions) must not move a message under the reader (no layout shift).

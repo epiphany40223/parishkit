@@ -357,7 +357,10 @@ def filterpanel(parser, token):
     because the choice overrides it (mailing columns always use "By postal
     mail only", so the reader's own Campaign mail can reach is not applied,
     #951). A final bare ``open`` word opens the panel by default; only
-    the Family directory passes it (Administrator decision, #227). Otherwise
+    the Family directory passes it (Administrator decision, #227). A final
+    bare ``fixed`` word draws no disclosure at all: an always-open box
+    titled the same way, for a worklist whose filters are never hidden
+    (Census changes, Administrator decision, #1682). Otherwise
     the panel starts closed so the report's data
     comes first, and renders open whenever any filter is applied, so an
     applied filter is never hidden behind it, or a filter is refused at its
@@ -368,9 +371,10 @@ def filterpanel(parser, token):
     ``syncControls``).
     """
     bits = token.split_contents()
-    # A trailing bare ``open`` makes the panel open by default.
-    default_open = bits[-1] == "open"
-    if default_open:
+    # A trailing bare ``open`` makes the panel open by default, and a
+    # trailing bare ``fixed`` makes it an always-open box.
+    mode = bits[-1] if bits[-1] in {"open", "fixed"} else ""
+    if mode:
         bits.pop()
     if len(bits) not in (2, 3, 4):
         raise template.TemplateSyntaxError(
@@ -380,17 +384,17 @@ def filterpanel(parser, token):
     nodelist = parser.parse(("endfilterpanel",))
     parser.delete_first_token()
     return FilterPanelNode(
-        [parser.compile_filter(bit) for bit in bits[1:]], nodelist, default_open
+        [parser.compile_filter(bit) for bit in bits[1:]], nodelist, mode
     )
 
 
 class FilterPanelNode(template.Node):
     """Render the panel, open with its count when any filter is applied."""
 
-    def __init__(self, arguments, nodelist, default_open=False):
+    def __init__(self, arguments, nodelist, mode=""):
         self.arguments = arguments
         self.nodelist = nodelist
-        self.default_open = default_open
+        self.mode = mode
 
     def render(self, context):
         query, extra, overridden = (
@@ -404,12 +408,25 @@ class FilterPanelNode(template.Node):
             }
         else:
             label = _("none applied")
+        if self.mode == "fixed":
+            # The same title and synced count as a heading, so the box is
+            # named for screen readers as the disclosure's summary names it.
+            return format_html(
+                '<section class="filter-panel" data-filter-panel'
+                ' aria-labelledby="table-filters-heading">'
+                '<h2 id="table-filters-heading">{}: '
+                '<span id="table-filters-applied" data-table-sync>{}</span></h2>'
+                "{}</section>",
+                _("Filters"),
+                label,
+                self.nodelist.render(context),
+            )
         return format_html(
             '<details class="filter-panel" data-filter-panel{}>'
             '<summary>{}: <span id="table-filters-applied" data-table-sync>{}</span>'
             "</summary>{}</details>",
             mark_safe(" open")
-            if count or self.default_open or context.get("filter_error")
+            if count or self.mode == "open" or context.get("filter_error")
             else "",
             _("Filters"),
             label,

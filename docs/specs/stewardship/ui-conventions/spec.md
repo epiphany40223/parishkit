@@ -2251,16 +2251,21 @@ open whenever the shown results use any filter other than the page's default,
 so an applied filter is never hidden. Open, a long form is a compact grid of
 its fields, each label tight above its box and Apply beside the last field
 when the row has room, in one column on a phone (#1411); the Family
-directory's short fields keep their filter bar. The Family directory is also
-the one exception to the closed start: its Filters panel is open by default
-(an Administrator decision, #227), and the other reports keep theirs closed.
+directory's short fields keep their filter bar. The Family directory and
+Census changes are the two exceptions to the closed start: the Family
+directory's Filters panel is open by default (an Administrator decision, #227),
+Census changes keeps its filters always open (below), and the other reports
+keep theirs closed.
 A panel's summary says how many are applied
 ("Filters: 2 applied", or "none applied"), and that count follows an in-place
 Apply while the panel and its form keep their elements. A report's export form
 is likewise a closed disclosure (for example, "Export complete results (CSV,
 XLSX or PDF)"). The Family directory,
-Additional information, Financial stewardship, Limitations, Census
-changes and Ministry requests follow this (#227). Ministry requests keeps its
+Additional information, Financial stewardship, Limitations and
+Ministry requests follow this (#227). Census changes, a worklist, keeps its
+filters always open and its download below the table, always shown
+([its filters and downloads](../reports/spec.md#census-change-filters-and-downloads),
+[#1682](https://github.com/epiphany40223/parishkit/issues/1682)). Ministry requests keeps its
 compact filter bar rather than a Filters panel: its By Ministry counts apply
 a Ministry and request into the filters in place, and a closed panel would
 hide what the link just applied. System logs and the remaining report pages

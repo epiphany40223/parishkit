@@ -251,7 +251,7 @@ def test_census_changes_links_to_the_page(administrator, on, expected):
             "table": paginate([], {}, sorting=SORTING),
             "query": CensusQuery(),
             "query_fields": {},
-            "summary": [],
+            "status_counts": {},
             "status_choices": [],
             "route_choices": [],
             "kind_choices": [],

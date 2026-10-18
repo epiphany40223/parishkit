@@ -1459,6 +1459,17 @@
         }
         return;
       }
+      // A select keeps its element, and so the reader's choice and focus,
+      // and takes only the fresh page's wording of each choice: Census
+      // changes' Status choices carry counts that follow every recorded
+      // action (#1682).
+      if (node instanceof HTMLSelectElement) {
+        [...node.options].forEach((option) => {
+          const copy = [...fresh.querySelectorAll("option")].find((other) => other.value === option.value);
+          if (copy) option.textContent = copy.textContent;
+        });
+        return;
+      }
       if (node instanceof HTMLFormElement) {
         syncHidden(node, fresh);
         // The state a submit-on-change box's form now shows (see

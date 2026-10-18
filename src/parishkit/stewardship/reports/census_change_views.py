@@ -80,6 +80,7 @@ from .census_changes import (
     census_csv,
     census_pdf,
     census_xlsx,
+    status_choice_counts,
 )
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
@@ -97,6 +98,14 @@ STATUS_LABELS = {
     **{key: STATUSES[key] for key in STATUS_CHOICES if key in STATUSES},
     "all": "Every status",
 }
+
+
+def status_choices(counts, *, administrator):
+    """The Status filter's (key, label, count) choices, in order (#1682)."""
+    listed = status_choice_counts(counts, administrator=administrator)
+    return [(key, label, listed[key]) for key, label in STATUS_LABELS.items()]
+
+
 ROUTE_LABELS = dict(
     zip(
         ROUTES,
@@ -850,7 +859,11 @@ def report(request, campaign_id):
                 "campaign_id": campaign_id,
                 "query": query,
                 "query_fields": query.form_values(),
-                "status_choices": STATUS_LABELS.items(),
+                # Each Status choice with how many changes it lists (#1682),
+                # the counts the retired summary above the table showed.
+                "status_choices": status_choices(
+                    result["status_counts"], administrator=result["administrator"]
+                ),
                 "route_choices": ROUTE_LABELS.items(),
                 "kind_choices": KIND_LABELS.items(),
                 "export_timezones": sorted(timezone_names()),
