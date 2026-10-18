@@ -2,7 +2,13 @@
 
 Status: **revised after the Administrator's review of 2026-10-18**
 ([epic #1680](https://github.com/epiphany40223/parishkit/issues/1680)); the
-[decisions](#decisions) are settled. Nothing here is built yet. Where this
+[decisions](#decisions) are settled. Nothing here is built yet. Every Staff
+and Ministry leader part ships during the current campaign. The
+Family-facing view of reviewed changes
+([#1705](https://github.com/epiphany40223/parishkit/issues/1705)) comes
+after all of them, and ships during this campaign only if it is ready in
+time ([Rolling out during this
+campaign](#rolling-out-during-this-campaign)). Where this
 document and a built page's spec disagree, the built page's spec describes
 what runs today until the slice that moves that page to the pipeline lands
 and updates it.
@@ -93,7 +99,9 @@ Family form showed it: one item per atomic change (one census field, one
 Ministry join or leave, one Family's pledge answer, one Member's
 cannot-participate answer, one Additional information text). Testing
 responses never enter the pipeline. A later response from the same Family
-follows the [resubmission rule](#family-resubmission). Staff entering a
+follows the resubmission rule: [with the setting
+off](#resubmission-while-the-setting-is-off) in this campaign, and
+[with it on](#family-resubmission) once #1705 ships. Staff entering a
 Family's answers through Open form create Submitted items like the Family's
 own.
 
@@ -234,7 +242,12 @@ applies.
 Each Family has, per stream item, exactly **one** working change: the
 Family's latest answer together with its review decision. There is no
 second set of reviewer changes to reconcile against the Family's next
-submission. The Family form shows the Family the baseline overlaid with the
+submission. The Family form follows the per-campaign setting **Families see
+reviewed changes** ([the setting](#families-see-reviewed-changes-setting)).
+While it is off, as it is until #1705 ships, the form shows the
+Family its own last answers, as today, and resubmission follows
+[the rule for the setting off](#resubmission-while-the-setting-is-off).
+When it is on, the form shows the Family the baseline overlaid with the
 reviewed result:
 
 | Item's state | What the Family form shows for it |
@@ -255,10 +268,96 @@ edit"): the slice that ships this updates the data spec's merge to start
 from the working change set. The financial and free-text streams show the
 same way (an edited pledge shows the edited amount and frequency).
 
+### Resubmission while the setting is off
+
+This is the rule until #1705 ships and the setting is on. The form shows the
+Family its own last answers over the baseline, exactly as the
+[Effective-value merge](../data/spec.md#effective-value-merge) does today, so
+nothing a Family sees changes. When the Family submits again, each item is
+compared with **the Family's previous answer for that item** (the answer
+of the item's current version), never with a review result the Family has
+not been shown:
+
+1. **Unchanged** (the new answer equals the previous answer in the stream's
+   canonical comparison): the item keeps its stage, decision, reviewer's
+   value, notes and A (the baseline it was answered against), whatever its
+   stage: To review, Conflict, Accepted, Accepted (edited), Ignored, Ready
+   to update, Updating, To enter by hand, Entered by hand, Updated in
+   ParishSoft, Entered incorrectly. History records "Submitted again,
+   unchanged", with no review event.
+2. **Changed** (the new answer differs from the previous answer and from
+   the current baseline): the item reopens as **To review** with the new
+   answer, and A becomes the baseline at this submit. The earlier version,
+   with its decision and notes, stays in history, not in force. An earlier
+   version on the Ready to update or To enter by hand list leaves it; one in
+   a running update is met by that run's own checks, as today; one already
+   Entered by hand or Updated in ParishSoft stays in history, and the
+   [refresh rules](#baseline-refresh-re-evaluation) judge the new version
+   only.
+3. **Set back to the ParishSoft value** (the new answer equals the current
+   baseline): the item is **withdrawn** by the Family and leaves every list.
+   If ParishSoft already holds the previous answer, it is Confirmed instead,
+   as today's `resolved_upstream`. An earlier version already Entered by
+   hand or Updated in ParishSoft is not undone: it stays in history with
+   "Withdrawn by the Family after it was entered", shown on its stream's To
+   enter by hand report, so Staff can decide whether to undo the entry.
+4. **New** (no earlier version): Submitted, To review.
+5. **Not presented** (a section not enabled, a Member out of scope, a
+   Ministry no longer offered): the item is left as it is. Leaving something
+   out of the form is never a withdrawal, as today.
+
+Rule 1 is what each stream already does for its open items: a census
+proposal resubmitted with the same value is replaced by a successor that
+carries its decision, edited value and baseline; a Ministry request
+resubmitted with the same action keeps its workflow state; repeated
+Additional information text creates no new item. Rules 2 to 5 are today's
+supersede, cancel and withdraw outcomes
+([Proposed changes](../data/spec.md#proposed-changes),
+[Follow-up records](../data/spec.md#follow-up-records)). Reading the code
+(2026-10-18) found three cases where today's behaviour departs from rule 1,
+each reopening or duplicating something already reviewed. The stream's
+slice closes each, with a test of today's behaviour first:
+
+- **Census, already entered.** A census proposal that is Entered by hand or
+  Updated in ParishSoft, but not yet in the promoted baseline, is not
+  "same intent" today (only open rows are), so an unchanged resubmission
+  creates a fresh unreviewed row: a duplicate To review item for work
+  already done. Under rule 1 the entered item stays as it is and no row is
+  created ([#1683](https://github.com/epiphany40223/parishkit/issues/1683)).
+- **Census, accepted over a ParishSoft change.** An Administrator's approval
+  given over a ParishSoft value they accepted as the new base is not
+  carried to the successor today, because that base belongs to the earlier
+  row; the successor silently becomes unreviewed. Reopening is right (the
+  Family answered again against the original baseline), but it must not be
+  silent: the item returns as **Conflict**, keeping the earlier decision
+  visible but not in force, and history records "Reopened: ParishSoft had
+  changed since this was accepted"
+  ([#1683](https://github.com/epiphany40223/parishkit/issues/1683)).
+- **Ministry, already decided.** Today's form offers only undecided
+  requests as choices and otherwise shows the roster, so an Accepted join
+  not yet in the roster, or an Ignored one, appears unticked. Leaving it
+  unticked is correctly not a withdrawal, but ticking it again creates a
+  second request, To review, beside the decided one. Under rule 1 the same
+  action is unchanged: the decided request keeps its decision, and its row
+  shows "Family asked again" with the date, so a reviewer sees a renewed
+  request without its decision being silently reopened. The reviewer can
+  use Back to review
+  ([#1684](https://github.com/epiphany40223/parishkit/issues/1684)).
+
+The two streams with no stored items today, financial and cannot
+participate, follow the same rule from their first slice
+([#1686](https://github.com/epiphany40223/parishkit/issues/1686),
+[#1685](https://github.com/epiphany40223/parishkit/issues/1685)): one pledge
+item per Family, one cannot-participate item per Member and one
+cannot-attend item per Family, each compared with the previous answer.
+
 ### Family resubmission
 
-When the Family submits again, each item is compared with **what the form
-showed for it** (the table above), not with the Family's earlier answer:
+This is the rule once **Families see reviewed changes** is on (after
+[#1705](https://github.com/epiphany40223/parishkit/issues/1705)). When the
+Family submits again, each item is compared with **what the form showed for
+it** (the table above), not with the Family's earlier
+answer:
 
 1. **Unchanged** (the Family left the shown value as it was): the item keeps
    its stage and decision; nothing is recorded for it.
@@ -282,32 +381,53 @@ reject the Family's submit: the form's
 item's version as shown, so an item the Family did not touch keeps the
 newer decision, and an item the Family did change follows rule 2.
 History keeps every version of every item, with who (the Family, or the
-Staff member using Open form) and when.
+Staff member using Open form) and when. The same holds with the setting
+off: a decision recorded while the Family had the form open is kept for an
+unchanged item by rule 1 above.
 
-### Rollout
+### Families see reviewed changes setting
 
-This changes what Families who already answered will see on their next
-visit, so it ships behind a per-campaign setting, **Families see reviewed
-changes**, default off, and is switched on only for a campaign that has not
-opened (the next campaign), never mid-campaign:
+The reviewed overlay ships behind a per-campaign setting, **Families see
+reviewed changes**, default off, which an Administrator switches on when
+[#1705](https://github.com/epiphany40223/parishkit/issues/1705) has shipped.
+It may be switched on mid-campaign ([decision 9](#decisions)); the setting
+is a rollout switch, not a campaign boundary.
 
-- Production Families are mid-campaign now. Switching on mid-campaign would
-  show Families staff edits and ignored answers they were not told about,
-  and a Family that signs in to change one answer would see others
-  differing from what it typed.
+No Family-facing explanation of reviewed values is needed, because the
+Administrator's stated intent (2026-10-18) limits what Staff change in a
+Family's submission to two kinds:
+
+1. consistency fixes that a Family will not notice ("123 Main Street" →
+   "123 Main St."); and
+2. corrections the Family asked for (a typo in the pledge amount, the wrong
+   Ministry selected).
+
+So a Family that signs in again sees either what it typed, a value it
+would not notice, or the correction it asked for. Ignored answers show the
+baseline, as the [table](#one-working-change-set) says. Staff guidance on
+Edit and Ignore states this intent; the form still never names the reviewer
+or gives a reason.
+
 - Codes and links are unaffected: the change is in what the form prefills,
   not in any credential. No code or link is revoked, rotated, reissued or
   re-sent, as the
   [honor-sent-credentials](../data/spec.md#review-and-publication) rule
   requires.
-- While the setting is off, the form keeps today's merge, and resubmission
-  keeps today's supersede rules (each stream's open items are superseded or
-  cancelled by a later response). The review pipeline itself (stages,
-  decisions, worklists, update and confirmation) does not depend on the
-  setting and can ship to the current campaign.
-- The migration that adds the working change set's item versions is
-  forward-only and backfills each open item's current version from today's
-  stored state; it changes no Family-visible value while the setting is off.
+- Until the setting is on, the form keeps today's merge, and resubmission
+  follows [the rule for the setting off](#resubmission-while-the-setting-is-off).
+  Every other part of the pipeline (stages, decisions, worklists, My review
+  work, update and confirmation) does not depend on the setting.
+- Switching it on mid-campaign: each submit is compared by the rule of the
+  form the Family was shown. The form's
+  [baseline reference](../data/spec.md#submission-concurrency) records
+  whether it was drawn with the setting on, so a Family whose form was open
+  across the switch is compared with its own previous answers (rule for the
+  setting off) and is never refused for the switch itself. The switch is
+  audited (who, when, on or off) and changes no stored answer or decision,
+  so switching it off again returns every Family's form to its own answers.
+- [#1705](https://github.com/epiphany40223/parishkit/issues/1705) comes after every Staff and Ministry leader slice. If it is ready
+  before the current campaign closes it may be switched on then; if not,
+  it waits, and nothing else depends on it.
 
 ## Baseline refresh re-evaluation
 
@@ -450,8 +570,12 @@ the Entered in ParishSoft tick on
 [Roster changes to enter](../admin-portal/spec.md#roster-changes-to-enter),
 then reconciliation resolving a request whose roster state is current.
 Mapping: new / in progress → To review; resolved joined or leave confirmed
-→ To enter by hand; ticked → Entered by hand; declined, duplicate, no
-response → Ignored; roster now current → Confirmed.
+→ To enter by hand; ticked → Entered by hand; declined, duplicate,
+other, no response → Ignored, keeping the outcome as the decision's label;
+roster now current → Confirmed
+([existing state to stage](#existing-state-to-stage)). A decided request is
+not offered again in today's form; a Family that ticks it again is handled
+by [rule 1](#resubmission-while-the-setting-is-off).
 
 Bulk outcomes already exist (Mark as Joined or Declined, Left or Stayed, one
 kind at a time) and so does a bulk Entered in ParishSoft tick. Gaps: no
@@ -518,9 +642,11 @@ Handled, so the office can record that it acted on each.
 Stored state: `AdditionalInformationItem` disposition and the
 `follow_up_needed` / `followed_up_at` workflow with Staff notes
 ([Follow-up records](../data/spec.md#follow-up-records)). Mapping: current
-actionable and not marked → To review; follow-up needed → To handle;
-follow-up not needed → Ignored (nothing to do); followed up → Handled;
-superseded / withdrawn → history. Gap: closest to the pipeline already, but
+actionable and follow-up not needed (the default) → To review, unless a
+Staff edit set it not needed, which is Ignored (a
+[one-time migration](#existing-state-to-stage) records this, because the
+default cannot be told from a Staff choice); follow-up needed → To handle;
+followed up → Handled; superseded / withdrawn → history. Gap: closest to the pipeline already, but
 per item only (no selection column or bulk action today); it needs the
 shared vocabulary, the shared table with bulk Accept / Handled, and its
 two booleans expressed as one stage.
@@ -786,7 +912,7 @@ here) in the vocabulary slice:
 ## Decisions
 
 The Administrator accepted every recommended default on 2026-10-18, with
-additions to 4–7:
+additions to 4–7, and answered 9 the same day:
 
 1. Who may review census changes that ParishSoft's API can write?
    **Staff may Accept, Edit and Ignore; only an Administrator starts an
@@ -813,54 +939,241 @@ additions to 4–7:
    aliases**; backwards compatibility is not needed.
 8. Does My review work replace Home for Staff and leaders? **Replace it.**
 
+9. When do Families see reviewed changes, and does the revamp wait for the
+   next campaign? **The Staff and Ministry leader pipeline ships during this
+   campaign, ahead of everything else. The Family view
+   ([#1705](https://github.com/epiphany40223/parishkit/issues/1705)) has
+   lower priority and comes after it; if it is ready before this campaign
+   closes it is switched on then, and if not, that is fine.** The
+   Administrator expects Staff to make only consistency fixes and the
+   corrections a Family asked for, so Families will not be surprised by
+   what they see ([the setting](#families-see-reviewed-changes-setting)).
+
 The review also settled the structure: [role-specific
 actions](#role-specific-actions) with Add, [one working change
 set](#one-working-change-set) per Family, and the exact
-[conflict rule](#baseline-refresh-re-evaluation).
-
-Still open, with the default the implementation follows:
-
-- When to switch on **Families see reviewed changes**: **at the next
-  campaign, before it opens** ([Rollout](#rollout)).
+[conflict rule](#baseline-refresh-re-evaluation). No decision is open.
 
 ## Delivery plan
 
-The epic's child issues, each a small pull request:
+The epic's child issues, each a small pull request, in delivery order (the
+[timeline](#timeline-to-campaign-close) gives target dates and what must
+land before the campaign closes):
 
 1. [#1691](https://github.com/epiphany40223/parishkit/issues/1691) Spec and
    vocabulary (this document, then the convention edits) and the shared
-   stage model, role-action table and refresh comparison, no UI change.
+   stage mapping, role-action table and refresh comparison, no UI change.
 2. [#1681](https://github.com/epiphany40223/parishkit/issues/1681) Review
    worklist component, selected-state icons, role-filtered actions, Add and
    full selection.
-3. [#1682](https://github.com/epiphany40223/parishkit/issues/1682) Census
-   changes page layout: the Administrator's concrete feedback, which can
-   land first.
-4. [#1683](https://github.com/epiphany40223/parishkit/issues/1683) Census
+3. [#1690](https://github.com/epiphany40223/parishkit/issues/1690) My
+   review work for Staff and leaders, linking to today's pages until each
+   stream moves.
+4. [#1682](https://github.com/epiphany40223/parishkit/issues/1682) Census
+   changes page layout: the Administrator's concrete feedback.
+5. [#1683](https://github.com/epiphany40223/parishkit/issues/1683) Census
    changes moves to the worklist; review and update separated; Staff review
-   of Automatic changes; Add.
-5. [#1684](https://github.com/epiphany40223/parishkit/issues/1684) Ministry
-   requests moves to it, with Edit (Ministry) and Staff Add.
-6. [#1685](https://github.com/epiphany40223/parishkit/issues/1685)
-   Additional information and Limitations move to it.
-7. [#1686](https://github.com/epiphany40223/parishkit/issues/1686)
+   of Automatic changes; Add; the census cases of the
+   [resubmission rule](#resubmission-while-the-setting-is-off).
+6. [#1684](https://github.com/epiphany40223/parishkit/issues/1684) Ministry
+   requests moves to it, with Edit (Ministry), Staff Add and the "Family
+   asked again" case.
+7. [#1687](https://github.com/epiphany40223/parishkit/issues/1687) Manual
+   handling reports on the shared export component (Entered incorrectly and
+   Not seen in ParishSoft appear once #1689 lands).
+8. [#1685](https://github.com/epiphany40223/parishkit/issues/1685)
+   Additional information and Limitations move to it, with the one-time
+   follow-up migration.
+9. [#1686](https://github.com/epiphany40223/parishkit/issues/1686)
    Financial review: per-pledge items, Edit amount and frequency, bulk
    Accept.
-8. [#1687](https://github.com/epiphany40223/parishkit/issues/1687) Manual
-   handling reports on the shared export component, with Entered
-   incorrectly and Not seen in ParishSoft.
-9. [#1688](https://github.com/epiphany40223/parishkit/issues/1688)
-   Automatic update: Publish to ParishSoft becomes Update ParishSoft over
-   Ready items, commands renamed with no aliases, and the Family address
-   smoke test.
 10. [#1689](https://github.com/epiphany40223/parishkit/issues/1689) Baseline
     refresh re-evaluation with the R/A/C rule, Entered incorrectly and Not
     seen in ParishSoft.
-11. [#1690](https://github.com/epiphany40223/parishkit/issues/1690) My
-    review work for Staff and leaders.
-12. [#1704](https://github.com/epiphany40223/parishkit/issues/1704) Pledge
+11. [#1704](https://github.com/epiphany40223/parishkit/issues/1704) Pledge
     confirmation: read the upcoming year's pledges and
     confirm entered pledges; frequency after its smoke check.
+12. [#1688](https://github.com/epiphany40223/parishkit/issues/1688)
+    Automatic update: Publish to ParishSoft becomes Update ParishSoft over
+    Ready items, commands renamed with no aliases, and the Family address
+    smoke test.
 13. [#1705](https://github.com/epiphany40223/parishkit/issues/1705)
     Families see reviewed changes: the working change set in
     the Family form, the resubmission rule, the per-campaign setting.
+    Lowest priority.
+
+## Rolling out during this campaign
+
+The Administrator's goal (2026-10-18) is the Staff and Ministry leader
+pipeline in use before the current campaign closes, without harming the
+existing database or the running campaign. Every slice except
+[#1705](https://github.com/epiphany40223/parishkit/issues/1705) ships to the
+current campaign; #1705 comes last and ships when ready
+([the setting](#families-see-reviewed-changes-setting)). This section is how
+that is done safely.
+
+### Data integrity
+
+- **Forward-only schema.** Every schema change is a new forward migration
+  with a frozen SQL file, following the
+  [post-launch schema policy](../operations/spec.md#post-launch-schema-policy),
+  never an edit to an applied migration. During the campaign the changes
+  are additive only: new tables (decision rows for Ministry Edit, Add,
+  financial and cannot-participate items, confirmation and mark records)
+  and new nullable columns. No column is dropped, renamed or narrowed, and
+  no CHECK is tightened over existing rows, before the campaign closes.
+- **Stages are derived, not copied.** A stage is computed from each stream's
+  stored state by the shared mapping
+  ([#1691](https://github.com/epiphany40223/parishkit/issues/1691)), unit
+  tested against every stored combination below. No migration updates an
+  existing decision, execution, workflow state, outcome, disposition, note,
+  contact attempt or audit row; history is never rewritten.
+- **Words change, stored values do not.** The vocabulary is display only:
+  `approved` stays `approved` in the database, and audit event types keep
+  their names. Only what pages, exports, help and `pk-admin` show changes.
+- **Today's write guards stay in force.** Each slice's new decisions pass
+  through the stream's existing SQL guards and resolution rows (for example
+  migration 0060's census resolution rows), extended, not bypassed.
+
+#### Existing state to stage
+
+| Stream | Stored today | Stage |
+| --- | --- | --- |
+| Census | `unreviewed` + `pending` | To review (By hand rows too: today's *To do*; Entered by hand on them still accepts and marks in one step, [decision 2](#decisions)) |
+| Census | `unreviewed` or `approved` + `conflict` | Conflict (an approval stays visible, not in force) |
+| Census | `approved` + `pending`, `api` / `manual` | Ready to update / To enter by hand; Accepted (edited) when an edited value is set |
+| Census | `approved` + `failed` | Ready to update, with the failure shown |
+| Census | `queued` / `published` | Updating / Updated in ParishSoft |
+| Census | `resolved_external` / `resolved_upstream` | Entered by hand / Confirmed |
+| Census | `ignored` (any open execution) | Ignored |
+| Census | `superseded`, `cancelled` | history |
+| Ministry | `new`, `assigned`, `in_progress` | To review |
+| Ministry | `resolved` + `joined` or `leave_confirmed`, not ticked / ticked | To enter by hand / Entered by hand |
+| Ministry | resolved by refresh reconciliation (roster current) | Confirmed |
+| Ministry | `resolved` + `declined` (join declined, or "Stayed in the Ministry"), `duplicate`, `other`; `closed_no_response` | Ignored, with the original outcome kept as the decision's label (so "Other" and "No response" still read as such) |
+| Ministry | `cancelled`, `superseded` | history |
+| Additional information | `current_actionable`, follow-up needed, not followed up | To handle |
+| Additional information | `current_actionable`, followed up | Handled |
+| Additional information | `current_actionable`, follow-up not needed, not followed up | To review, unless a Staff edit set it (below) |
+| Additional information | `superseded`, `withdrawn` | history |
+| Financial, cannot participate | the live answer only | To review |
+
+One state needs a one-time migration. `follow_up_needed` defaults to false,
+so "Not needed" cannot be told from "never looked at" by the item alone,
+and mapping every such item to Ignored would mark unread text as reviewed.
+A forward migration in
+[#1685](https://github.com/epiphany40223/parishkit/issues/1685) fills a new,
+nullable decision column with Ignored only for items whose audited edit
+history shows a Staff member setting follow-up to not needed; every other
+such item is To review. It writes no existing column, records one audit
+event with only the count, and is reversible: clearing the new column
+returns every item to today's reading, since the original fields are
+untouched.
+
+No other state needs a migration. Two derived values for items closed
+before their slice ships are read, not stored:
+
+- the value "recorded at the Entered mark" for a census item marked before
+  [#1689](https://github.com/epiphany40223/parishkit/issues/1689) is its A;
+- Not seen in ParishSoft counts only full refreshes promoted after the
+  release of #1689, so older marks are not all flagged on its first
+  refresh. #1689's migration records that start time once, audited; deleting
+  the row turns the flag off.
+
+Existing pledges and cannot-participate answers start as To review: there is
+no stored decision to carry, and bulk Accept handles them in a few clicks.
+
+### Continuity
+
+- **Family codes and links** are untouched by every slice: no credential is
+  migrated, revoked, rotated, reissued or re-sent.
+- **The Family form does not change** until #1705's setting is on. Each slice
+  that touches the submit path proves it with a render comparison of the
+  Family form against the base, and keeps the form's baseline reference
+  format, so a Family whose form was open across a deploy submits without a
+  stale-form refusal and is judged by [rule 1 to
+  5](#resubmission-while-the-setting-is-off).
+- **Existing pages keep working until their stream switches.** Each stream
+  moves to the worklist in one release, replacing its page at the same
+  address where it can; nothing redirects (no legacy URLs). Until then the
+  stream's current page, report, digest and `pk-admin` commands work as
+  today, and My review work links to them.
+- **No data loss if a later slice is delayed.** Each slice only adds. An item
+  a later slice will handle keeps its stored state and today's page;
+  confirmation by a refresh slice that lands late confirms earlier entries
+  on its first refresh, since it reads stored state. Publication stays
+  Administrator-only, behind its switch, unchanged until
+  [#1688](https://github.com/epiphany40223/parishkit/issues/1688).
+- **Review continues after close.** Staff and leader review, entering by
+  hand and the update run do not need the campaign to be open
+  ([Review and publication](../data/spec.md#review-and-publication)), so a
+  slice that misses the close is still useful the day it ships.
+
+### Timeline to campaign close
+
+The current campaign closes on or about **Monday, November 2, 2026**
+([v1 launch](../../../plans/stewardship/v1-launch.md#go-live-date)); the
+Campaign page holds the exact date. Releases are nightly, each deployed
+only with the Administrator's approval. Target release nights, ordered so
+Staff and leaders get value earliest:
+
+| Release night (target) | Slice | When |
+| --- | --- | --- |
+| Mon Oct 19 | [#1691](https://github.com/epiphany40223/parishkit/issues/1691) vocabulary, stage mapping, role table, R/A/C comparison; convention edits | before close |
+| Tue Oct 20 | [#1681](https://github.com/epiphany40223/parishkit/issues/1681) review worklist component | before close |
+| Wed Oct 21 | [#1690](https://github.com/epiphany40223/parishkit/issues/1690) My review work (links to today's pages until each stream switches) | before close |
+| Thu Oct 22 – Fri Oct 23 | [#1682](https://github.com/epiphany40223/parishkit/issues/1682) Census layout, then [#1683](https://github.com/epiphany40223/parishkit/issues/1683) Census on the worklist | before close |
+| Sat Oct 24 – Mon Oct 26 | [#1684](https://github.com/epiphany40223/parishkit/issues/1684) Ministry requests, Edit and Staff Add | before close |
+| Tue Oct 27 | [#1687](https://github.com/epiphany40223/parishkit/issues/1687) To enter by hand reports | before close |
+| Wed Oct 28 – Thu Oct 29 | [#1685](https://github.com/epiphany40223/parishkit/issues/1685) Additional information and Limitations; [#1686](https://github.com/epiphany40223/parishkit/issues/1686) financial review | before close if possible |
+| Fri Oct 30 – Sat Oct 31 | [#1689](https://github.com/epiphany40223/parishkit/issues/1689) refresh re-evaluation; [#1704](https://github.com/epiphany40223/parishkit/issues/1704) pledge confirmation | may follow close |
+| Sun Nov 1 | buffer; no schema change the night before close | |
+| week of Nov 2 | [#1688](https://github.com/epiphany40223/parishkit/issues/1688) Update ParishSoft, renamed commands, address smoke test | after close |
+| when ready | [#1705](https://github.com/epiphany40223/parishkit/issues/1705) Families see reviewed changes | lowest priority; before close only if time allows |
+
+**Must land before close:** #1691, #1681, #1690, #1682, #1683, #1684
+and #1687. With them, Staff and leaders sign in to My review work, review
+census and Ministry changes on one worklist, and work the To enter by hand
+lists. **Should land before close:** #1685 and #1686. **May follow
+close:** #1689, #1704 and #1688, because confirmation and the update run act on
+entries that mostly happen after close, and today's reconciliation and
+Publish page keep working meanwhile; and #1705, last of all.
+
+### Risks and what to cut first
+
+Risks:
+
+- **The Family submit path.** The [rule for the setting
+  off](#resubmission-while-the-setting-is-off) changes census, Ministry and
+  Additional information derivation inside the submit transaction mid-campaign.
+  Each slice first adds tests pinning today's outcome for every stage, then
+  changes only the three cases listed there, under the existing row-lock
+  order.
+- **Schema during a live campaign.** Additive migrations only, numbered
+  centrally, with self-verifying SQL; a failed migration fails the deploy,
+  not the campaign (fail forward).
+- **Staff habit.** Census By hand rows move from *To do* to To review, and
+  the words change mid-campaign. The release notes and page help say so;
+  Entered by hand still works in one step.
+- **Release slippage.** Each night needs a deploy approval and one review
+  round; a missed night moves everything after it by a day. Because #1689
+  and #1704 may follow close, their nights (Oct 30, 31) and the Nov 1
+  buffer absorb up to three missed nights for the must-land slices.
+- **Query cost.** Derived stages and the My review work counts add queries to
+  busy pages; each slice runs the page's query-count test.
+
+Cut first if time runs short, in this order:
+
+1. [#1705](https://github.com/epiphany40223/parishkit/issues/1705), already last; nothing depends on it;
+2. the Update ParishSoft rebuild and renaming in #1688 (the Publish page
+   keeps working, with the old words, Administrator-only);
+3. pledge confirmation in #1704;
+4. Entered incorrectly and Not seen in #1689 (today's reconciliation still
+   confirms census and Ministry);
+5. the Limitations half of #1685 (its report stays as it is);
+6. the pledge Edit in #1686 (keep Accept and the Pledges to enter
+   report; Staff correct a pledge through Open form, as today);
+7. census Add in #1683 (Staff use Open form).
+
+Never cut: #1691, #1681, #1690, #1683, #1684 and #1687, which are what
+Staff and Ministry leaders use.

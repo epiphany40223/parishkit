@@ -512,8 +512,9 @@ sections:
     "Confirmed stage": [DAT-08]
     "Entered incorrectly stage": [DAT-08, RPT-08]
     "One working change set": [FAM-06, DAT-06]
+    "Resubmission while the setting is off": [FAM-06, DAT-08]
     "Family resubmission": [FAM-06, DAT-08]
-    "Rollout": [DOM-01, FAM-06]
+    "Families see reviewed changes setting": [DOM-01, FAM-06]
     "Baseline refresh re-evaluation": [DAT-08]
     "What is confirmable": [DAT-08]
     "Pipeline vocabulary": [ADM-03]
@@ -539,6 +540,12 @@ sections:
     "Proposed convention changes": [ADM-03]
     "Decisions": [DOM-01]
     "Delivery plan": [ADM-09]
+    "Rolling out during this campaign": [DOM-01, OPS-08]
+    "Data integrity": [DAT-07, OPS-08]
+    "Existing state to stage": [DAT-06, DAT-07]
+    "Continuity": [FAM-06, OPS-08]
+    "Timeline to campaign close": [DOM-01]
+    "Risks and what to cut first": [DOM-01]
 scenarios:
   1:
     owners: [ADM-02, ARC-02, ARC-06, OPS-04, OPS-06]
