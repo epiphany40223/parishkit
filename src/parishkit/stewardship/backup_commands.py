@@ -10,11 +10,14 @@ keeps the private key, which is never the host.
 import json
 import logging
 import os
+import re
 import sys
 from pathlib import Path
 
+from parishkit import __version__
 from parishkit.config import ConfigError
 
+from .backup import MANIFEST
 from .backup_sealing import (
     MAX_PROOF_TEXT,
     display_code,
@@ -47,6 +50,40 @@ def _keygen(destination):
         "public_key": public.strip(),
         "recipient_fingerprint": fingerprint(load_private(destination).public_key),
     }
+
+
+_SAFE_TEXT = re.compile(r"[A-Za-z0-9._:/@+-]{1,200}")  # used with fullmatch
+
+
+def _other_release_hint(source):
+    """Name the release that took a set when it is not the running one (#1580).
+
+    A sealed file carries no release, but the set's plain ``manifest.json``
+    sits beside it. When that manifest names a different ``application_version``,
+    a failed open is most likely an image mismatch, so the refusal says which
+    release image to use. Anything unreadable or odd yields no hint, and only
+    short, plainly-shaped values are echoed, never paths or file content.
+    """
+    try:
+        with (Path(source).parent / MANIFEST).open("rb") as handle:
+            # A real manifest is a few hundred bytes; the cap keeps a huge
+            # or endless file from stalling the refusal.
+            manifest = json.loads(handle.read(65536).decode("utf-8"))
+        version = manifest["application_version"]
+        image = manifest.get("image")
+    except Exception:  # best-effort hint: any failure (even RecursionError) means none
+        return ""
+    if not isinstance(version, str) or not _SAFE_TEXT.fullmatch(version):
+        return ""
+    if version == __version__:
+        return ""
+    text = (
+        f" This set was taken by release {version}, and a set is opened with"
+        f" that set's own release image, not release {__version__}"
+    )
+    if isinstance(image, str) and _SAFE_TEXT.fullmatch(image):
+        text += f"; use {image}"
+    return text + "."
 
 
 def _open(key, source, destination):
@@ -601,12 +638,14 @@ def execute_backup_command(args):
                 return 0
     except Exception as error:
         emit_failure(error, event=Event.STARTUP_REJECTED)
+        hint = _other_release_hint(args.input) if args.command == "backup-open" else ""
         print(
             {
                 "backup-keygen": "ERROR: key generation refused; use a new "
                 "owner-only destination outside the runtime root",
                 "backup-open": "ERROR: the sealed backup could not be opened; "
-                "check the key and the file and use a new destination",
+                "check the key and the file and use a new destination."
+                + (hint or " A set is opened with that set's own release image."),
                 "backup-prove": "ERROR: the challenge could not be opened; check "
                 "that the key is the private key for the public key you pasted "
                 "and that the whole challenge line was copied",

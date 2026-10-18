@@ -165,11 +165,11 @@ def test_a_stale_saved_key_must_be_entered_again(setup_http, google):
         assert b"Enter it again so it matches the current settings" in kept.content
 
 
-def test_a_saved_key_on_a_blocked_step_says_why_not_stale(setup_http, google):
-    """A saved Slack token after Slack is turned off names that reason.
+def test_turning_slack_off_discards_the_saved_token(setup_http, google):
+    """After Slack is turned off its token is discarded (#1499).
 
-    The step is unavailable, not stale, so the page must not tell the
-    Administrator the token was entered for settings they have since changed.
+    The page names the prerequisite and no saved credential, and it never
+    tells the Administrator the token was entered for changed settings.
     """
     publish("slack")
     slack = "/admin/setup/credentials/slack"
@@ -189,7 +189,7 @@ def test_a_saved_key_on_a_blocked_step_says_why_not_stale(setup_http, google):
         assert post(browser, "/admin/setup/slack", off).status_code == 302
         page = browser.get(slack)
         assert page.status_code == 200
-        assert b"A Slack notifications credential is saved." in page.content
+        assert b"credential is saved" not in page.content
         assert b"Turn on Slack notifications and save the Slack channel first." in (
             page.content
         )

@@ -332,9 +332,9 @@ class Action(StrEnum):
     # events acknowledge: Home's security event and critical-problem
     # acknowledgements, with the page's own event in the same transaction.
     ADMIN_CMD_EVENTS_ACKNOWLEDGE = "admin_cmd_events_acknowledge"
-    # census resolve: a Census changes row's Record outcome (#528, #463).
+    # census resolve: a Census changes row's outcome (#528, #463).
     ADMIN_CMD_CENSUS_RESOLVE = "admin_cmd_census_resolve"
-    # census review: an Automatic row's Review (#528, ADM-09).
+    # census review: an Automatic row's review (#528, ADM-09).
     ADMIN_CMD_CENSUS_REVIEW = "admin_cmd_census_review"
     # followup update and followup bulk: a Ministry follow-up request's Save
     # and the queue's bulk outcome (#463 PR 11a).

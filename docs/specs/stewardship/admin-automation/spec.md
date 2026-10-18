@@ -2541,7 +2541,7 @@ These steps matter again only for the next campaign. The go-live redesign in
 match the [Go live page](../admin-portal/spec.md#go-live-page):
 `go-live readiness` and `go-live preview` as today (the preview runs the DNS
 check and prints the start token); `go-live start --token …` (Start
-go-live); `go-live status --watch` (the Preparing step); `go-live retry`
+go-live); `go-live status --watch` (the Prepare step); `go-live retry`
 (a failed stage's Retry, which retries the same task and changes no data);
 `go-live refresh-again` (Refresh and prepare again, which starts a new
 attempt); `go-live confirm-preview` and `go-live confirm --token …` (Confirm
@@ -2865,7 +2865,7 @@ lists the fields.
 `census resolve PROPOSAL_ID --action entered|ignored|reopened
 --expected-version VERSION [--note TEXT|-] [--request-key KEY]`
 ([#463](https://github.com/epiphany40223/parishkit/issues/463)) is a Census
-changes row's Record outcome
+changes row's Mark entered in ParishSoft, Ignore and Reopen
 ([#528](https://github.com/epiphany40223/parishkit/issues/528)): full scope,
 keyed, and not fresh-gated, as the page asks for no recent sign-in. Entered
 in ParishSoft cannot be undone and the page asks first, so `--action

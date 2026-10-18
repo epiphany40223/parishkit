@@ -344,6 +344,10 @@ def test_leader_roles_need_one_ticked(page, component_origin):
 NOT_SETTINGS = {
     r"csrfmiddlewaretoken": "the security token",
     r"action": "which step the post asks for, the same every time",
+    r"resolve": (
+        "which row action the post asks for, the same every time (Census"
+        " changes' Edit value dialog posts resolve=edit, #879)"
+    ),
     r".*-(TOTAL|INITIAL|MIN_NUM|MAX_NUM)_FORMS": "a formset's row counts",
     r"request_key": "a one-time request key a restored page renews",
     r"(.*-)?intent": "a signed one-time intent, drawn anew on every draw",

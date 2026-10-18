@@ -21,6 +21,7 @@ from parishkit.stewardship.responses.publication_models import (
 )
 from parishkit.stewardship.responses.publication_plans import (
     confirm_plan,
+    marked_upstream,
     matches_confirmed,
     record_outcome,
     record_plan,
@@ -72,6 +73,44 @@ def test_any_change_since_confirmation_invalidates_the_entity():
     assert not matches_confirmed(other, fields, fresh, rows)
     assert not matches_confirmed(entity, fields[:1], fresh, rows)
     assert not matches_confirmed(entity, fields, replace(fresh, payload=None), rows)
+
+
+def test_a_change_the_check_marked_is_left_out_and_nothing_else():
+    """A change the check marked Already in ParishSoft (resolved upstream at
+    the next version) is no longer planned, and the entity still matches;
+    the same row at any other version or state, or a marked write, does not."""
+    entity, fields, _, rows = confirmed()
+    last = proposal("last_name", "Example", "Old", version=5)
+    fields = [
+        *fields,
+        SimpleNamespace(
+            proposal_id="last_name",
+            proposal_version=5,
+            outcome="already_in_parishsoft",
+        ),
+    ]
+    read = payload(firstName="Pat", lastName="Example")
+    marked = [*rows, replace_row(last, execution="resolved_upstream", version=6)]
+    fresh = plan_entity("member", 7, marked, read)
+    entity.read_sha256, entity.planned_sha256 = (
+        fresh.current_digest,
+        fresh.planned_digest,
+    )
+    assert marked_upstream(fields, marked) == {"last_name"}
+    assert matches_confirmed(entity, fields, fresh, marked)
+    for moved in (
+        replace_row(last, execution="resolved_upstream", version=7),
+        replace_row(last, execution="cancelled", version=6),
+        replace_row(last, decision="ignored", version=6),
+    ):
+        changed = [*rows, moved]
+        assert marked_upstream(fields, changed) == set()
+        assert not matches_confirmed(
+            entity, fields, plan_entity("member", 7, changed, read), changed
+        )
+    # Only a field row that said already_in_parishsoft is ever left out.
+    written = [replace_row(rows[0], execution="resolved_upstream", version=4), rows[1]]
+    assert marked_upstream(fields, written) == set()
 
 
 def replace_row(row, **values):

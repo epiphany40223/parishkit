@@ -12,7 +12,8 @@ construction:
   Testing mode;
 - right before each PUT it reads the Member's contact record uncached,
   compares its SHA-256 with the confirmed ``read_sha256``, rebuilds the plan
-  from the current proposals and requires ``matches_confirmed``, then checks
+  from the current proposals and requires ``matches_confirmed`` (which
+  leaves out the changes the check marked *Already in ParishSoft*), then checks
   that the system is still in Production mode; any difference records
   ``invalidated`` without a write (a switch to Testing stops the whole run);
 - it queues the entity's written proposals (``pending|failed -> queued``)
@@ -70,7 +71,7 @@ from .publication_models import (
     PublicationEntity,
     PublicationOutcome,
 )
-from .publication_plans import matches_confirmed, record_outcome
+from .publication_plans import marked_upstream, matches_confirmed, record_outcome
 
 # Write attempts per entity in one run (the spec's bounded shared retries).
 ATTEMPTS = 3
@@ -192,14 +193,18 @@ class _Entity:
     def queue(self):
         """Queue the written proposals; False, changing nothing, if any moved.
 
-        Every planned proposal must still be at its recorded version, or be
-        a write this plan already queued (a retry), so a decision, an
-        Administrator edit or a later Family response since the plan stops
-        the write.
+        Every planned proposal must still be at its recorded version, be a
+        write this plan already queued (a retry), or be one the plan's own
+        check marked *Already in ParishSoft* (``marked_upstream``), so a
+        decision, an Administrator edit or a later Family response since the
+        plan stops the write.
         """
         rows = self._locked(self.recorded)
+        marked = marked_upstream(self.fields, rows)
         if len(rows) != len(self.recorded) or not all(
-            row.version == self.recorded[row.pk] or self.queued_by_plan(row)
+            row.version == self.recorded[row.pk]
+            or self.queued_by_plan(row)
+            or row.pk in marked
             for row in rows
         ):
             return False

@@ -8,15 +8,20 @@ it, and saving a fix leads back to the test, never to Review first.
 
 import pytest
 
+from parishkit.stewardship.accounts.setup_wizard import BY_KEY
+
 from .setup_order_components import (
     FAILED,
     FIX,
     RETEST,
     REVIEW_ACCEPTED,
     REVIEW_UNTESTED,
+    SLACK_CONNECTION,
+    SLACK_FAILED,
+    SLACK_OFF,
 )
 from .test_setup_mail import place
-from .waits import has_text, visible
+from .waits import has_count, has_text, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -104,3 +109,107 @@ def test_review_before_its_test_links_the_test_and_waits(page, component_origin)
     link = readiness.get_by_role("link", name="Go to “Test email”")
     assert link.get_attribute("href") == "/admin/setup/mail-test"
     assert page.locator(".setup-actions .setup-continue").count() == 0
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_a_failed_slack_test_turns_slack_off_and_moves_on(
+    page, component_origin, axe_source, width
+):
+    """A Slack test that was not sent says to use a real bot token or turn
+    Slack off, with the button beside it and another above the test form;
+    the button posts the Slack step's own form with Slack off, and setup
+    lands on Test email with the Slack connection and Test Slack steps gone
+    from the step bar (#1499)."""
+    from urllib.parse import parse_qs
+
+    from .test_components import axe_violations
+
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + SLACK_FAILED)
+    notice = page.locator(NOTICE)
+    visible(notice)
+    assert "Use a real Slack bot token" in notice.inner_text()
+    labels = track_labels(page)
+    assert {"Slack connection", "Test Slack"} <= set(labels)
+    buttons = page.get_by_role("button", name="Turn off Slack notifications")
+    has_count(buttons, 2)
+    # One is above the test form, so it is reached without scrolling past
+    # it; the notice's follows the action row, so neither moves Send.
+    assert place(page, "[data-setup-slack-off]")[1] < place(page, "#setup-test")[1]
+    assert place(page, ".setup-actions")[1] < place(page, NOTICE)[1]
+    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
+    assert axe_violations(page, axe_source) == []
+    with page.expect_request(
+        lambda request: request.method == "POST" and request.url.endswith(SLACK_OFF)
+    ) as posted:
+        notice.get_by_role("button", name="Turn off Slack notifications").click()
+    fields = parse_qs(posted.value.post_data, keep_blank_values=True)
+    assert fields["channel_id"] == [""] and fields["version"] == ["2"]
+    assert "enabled" not in fields
+    page.wait_for_url(component_origin + RETEST)
+    has_text(page.locator("h1"), "Test email")
+    labels = track_labels(page)
+    assert "Slack notifications (optional)" in labels
+    assert not {"Slack connection", "Test Slack"} & set(labels)
+
+
+def test_the_slack_connection_step_offers_turning_slack_off(
+    page, component_origin, axe_source
+):
+    """The Slack connection step says it checks only the token's format and
+    that Slack is optional, with Turn off Slack notifications above its
+    form; the button leads on as on Test Slack (#1499)."""
+    from .test_components import axe_violations
+
+    page.goto(component_origin + SLACK_CONNECTION)
+    off = page.locator("[data-setup-slack-off]")
+    visible(off)
+    assert "Slack is optional." in off.inner_text()
+    notice = page.locator(".notice", has=off).inner_text()
+    assert "checks only that the token looks like a Slack bot token" in notice
+    assert place(page, "[data-setup-slack-off]")[1] < place(page, "form.panel")[1]
+    assert axe_violations(page, axe_source) == []
+    off.get_by_role("button", name="Turn off Slack notifications").click()
+    page.wait_for_url(component_origin + RETEST)
+    assert "Slack connection" not in track_labels(page)
+
+
+def test_back_to_test_slack_after_turning_slack_off_opens_test_email(
+    page, component_origin
+):
+    """Going back to Test Slack after Turn off Slack notifications opens the
+    next step needing work, Test email, not an error page (#1505).
+
+    The Test Slack page is served at its real address the first time and,
+    from then on, the address answers as the real view does while Slack is
+    off (a redirect). The turn-off form posts to the Slack notifications
+    step's own address, a different one, so every engine keeps Test Slack
+    as a real history entry, and Back fetches it again: it is marked
+    no-store, as the real page is.
+    """
+    test_slack = component_origin + BY_KEY["slack_test"].url
+    served = []
+
+    def first_page_then_server(route):
+        """Serve the Test Slack page once, then let the server answer."""
+        served.append(route.request.url)
+        if len(served) > 1:
+            route.continue_()
+            return
+        answer = route.fetch(url=component_origin + SLACK_FAILED)
+        headers = answer.headers | {"cache-control": "no-store"}
+        route.fulfill(response=answer, headers=headers)
+
+    page.route(test_slack, first_page_then_server)
+    page.goto(test_slack)
+    has_text(page.locator("h1"), "Test Slack")
+    off = page.locator("[data-setup-slack-off]").first
+    off.get_by_role("button", name="Turn off Slack notifications").click()
+    page.wait_for_url(component_origin + RETEST)
+    with page.expect_response(test_slack) as back:
+        page.go_back()
+    assert back.value.status == 302
+    page.wait_for_url(component_origin + RETEST)
+    has_text(page.locator("h1"), "Test email")
+    assert len(served) == 2
+    assert not {"Slack connection", "Test Slack"} & set(track_labels(page))

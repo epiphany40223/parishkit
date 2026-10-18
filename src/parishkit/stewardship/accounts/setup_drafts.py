@@ -173,7 +173,9 @@ def save_sections(request, service, attempt_id, *, updates, expected_version):
 
     Only the wizard's own steps (``setup_forms.FORMS``) can be saved:
     ``validate_values`` refuses any other step, including the first-campaign
-    steps a draft saved before #142 may still hold.
+    steps a draft saved before #142 may still hold. A save that leaves Slack
+    off also discards the staged Slack token and a queued Slack test
+    (``setup_credentials.discard_slack``, #1499).
     """
     if type(updates) is not dict or not updates:
         raise ValueError("Setup edits are required.")
@@ -225,6 +227,12 @@ def save_sections(request, service, attempt_id, *, updates, expected_version):
         SetupAttempt.objects.filter(pk=attempt.pk, version=attempt.version).update(
             version=F("version") + 1, **context
         )
+        if "slack" in updates and not updates["slack"]["enabled"]:
+            # Slack off continues as if it had never been on (#1499). After
+            # the version bump, so no queued test of it is live any more.
+            from .setup_credentials import discard_slack
+
+            discard_slack(attempt, actor_id=actor.identity)
         authenticated_admin(request, store=service.store, activity=True)
         attempt.refresh_from_db()
         return _status(attempt)

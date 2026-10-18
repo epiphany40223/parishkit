@@ -997,6 +997,21 @@ for name in "${needed[@]}"; do
     has_command "$name" ||
         refuse "$image has no $name; restore this set by hand (runbook, Restore limitations in v1)"
 done
+# The container runs as the owner (UID:GID), not as the operator, so a YAML
+# it cannot read makes validate-deployment fail with a message that looks
+# like a schema error. Say the real cause first. Readable means: the
+# owner's read bit when the file is the container user's, the group's when
+# it shares the group, otherwise the world-read bit. (ls -ln is portable;
+# stat's format flags differ between GNU and BSD.)
+# Mode bits only: a POSIX ACL granting the container user read access is not
+# considered, so such a file is refused too; chmod 0644 is the fix anyway.
+read -r yaml_perms _ yaml_uid yaml_gid _ < <(ls -ln "$yaml") ||
+    refuse "cannot read the mode of $yaml"
+if [ "$yaml_uid" = "${owner%%:*}" ]; then yaml_bit=${yaml_perms:1:1}
+elif [ "$yaml_gid" = "${owner##*:}" ]; then yaml_bit=${yaml_perms:4:1}
+else yaml_bit=${yaml_perms:7:1}; fi
+[ "$yaml_bit" = r ] ||
+    refuse "the deployment YAML $yaml is not readable by the container's user $owner (mode ${yaml_perms:1:9}, owner $yaml_uid:$yaml_gid; ACLs are not considered); Production keeps it mode 0644 (it holds no secrets): chmod 0644 it and run again"
 # The deployment YAML must load in the set's image: a field that release
 # does not know makes step 7's retarget-image refuse (runbook, step 7).
 limited "$LIMIT_OFFLINE" "validate-deployment" "${isolated[@]}" \

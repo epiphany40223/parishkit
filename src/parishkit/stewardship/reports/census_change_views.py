@@ -17,6 +17,7 @@ in place, with a notice naming the row.
 
 from dataclasses import replace
 from datetime import UTC, datetime
+from urllib.parse import urlencode
 from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
@@ -251,7 +252,7 @@ EDITS = {
 EDIT_MATCHED = "no longer has an edited value: it matched the Family's answer."
 EDIT_UNCHANGED = "already has that value to publish, so nothing was recorded."
 # An Administrator's Use the Family's value anyway on a Conflict (#528,
-# ADM-09.03): the Review form's button value, and how the notice words it.
+# ADM-09.03): the review action's value, and how the notice words it.
 RESOLVE_CONFLICT = "use_family"
 CONFLICT_RESOLVED = "approved over ParishSoft's current value."
 # PostgreSQL's SQLSTATE for a unique violation.
@@ -484,13 +485,13 @@ def _review_many(service, principal, campaign_id, bulk):
 
 
 def bulk_actions():
-    """The bulk bar's buttons, one per review decision, in the Review's order.
+    """The bulk bar's buttons, one per review decision, in the review icons' order.
 
     Each opens the page's one confirmation dialog, which takes its title
     and announcement from the button and counts the ticked rows (ui-v1.js).
     Its value is also its kind (data-confirm-kind), which makes it
     available only while every ticked row allows that decision (each row's
-    box lists its Review's choices), so the dialog always acts on every
+    box lists its review icons' choices), so the dialog always acts on every
     ticked row; the service checks each row again.
     """
     # The button, then the dialog's title for one row and for several.
@@ -519,28 +520,182 @@ def bulk_actions():
     return actions
 
 
-def row_controls(rows):
-    """Give each shown row what its Record outcome form needs (#528).
+def row_controls(rows, *, administrator=False, mutable=False):
+    """Give each shown row what its Actions cell needs (#528, #879).
 
-    A fresh request key per drawn form makes a repeated submission of the
-    same form a replay, never a second resolution. The ids a row's controls
-    are described by name who and what changed, and Entered in ParishSoft
-    also points at the line saying it is final; they are built here because
-    the {% button %} tag takes each attribute as one value.
+    A fresh request key per drawn row makes a repeated submission of the
+    same action a replay, never a second resolution. ``actions`` lists the
+    row's icon buttons (``row_actions``) for this viewer.
     """
     for row in rows:
         row["request_key"] = uuid4()
-        # Edit value's form has its own key, so its replay is never taken
-        # for the Review form's (ADM-09.04).
+        # Edit value has its own key, so its replay is never taken for a
+        # decision's (ADM-09.04).
         row["edit_key"] = uuid4()
-        row["describedby"] = f"who-{row['id']} what-{row['id']}"
-        row["final_describedby"] = f"{row['describedby']} final-{row['id']}"
-        # Use the Family's value anyway is also described by its help line.
-        row["conflict_describedby"] = f"{row['describedby']} conflict-{row['id']}"
-        # Save value is also described by its complete-gate hint.
-        row["edit_describedby"] = f"{row['describedby']} edit-complete-{row['id']}"
-        # How the confirmation dialog names the row: what changed, and whose.
+        # How the confirmation dialog and the icons name the row: what
+        # changed, and whose.
         row["confirm_name"] = f"{row['label']} for {row['who']}"
+        # Save value is described by its complete-gate hint; built here
+        # because the {% button %} tag takes each attribute as one value.
+        row["edit_describedby"] = f"edit-complete-{row['id']}"
+        # Edit value's own form and dialog (one per row: its field differs).
+        row["edit_form"] = f"census-edit-{row['id']}"
+        row["edit_dialog"] = f"census-edit-dialog-{row['id']}"
+        row["actions"] = row_actions(row, administrator=administrator, mutable=mutable)
+
+
+# The page's shared confirmation dialogs for one row's action (#879): the
+# reversible decisions with an optional note, Entered in ParishSoft (final,
+# so its Confirm is the destructive one and it says so), and Reopen, whose
+# note is required. Edit value has one dialog per row (its field differs).
+DECIDE_DIALOG = "census-decide-dialog"
+ENTER_DIALOG = "census-enter-dialog"
+REOPEN_DIALOG = "census-reopen-dialog"
+
+
+def row_dialogs(administrator):
+    """The (form id, dialog id) of each shared row-action dialog drawn.
+
+    Reopen is the Administrator's alone, so only their page draws it.
+    """
+    found = [("census-decide", DECIDE_DIALOG), ("census-enter", ENTER_DIALOG)]
+    if administrator:
+        found.append(("census-reopen", REOPEN_DIALOG))
+    return found
+
+
+CONFLICT_BODY = (
+    "ParishSoft changed after the Family answered. {what} anyway approves "
+    "this change: publication writes {value} over the value in ParishSoft "
+    "now, but only while ParishSoft still has that value. If ParishSoft "
+    "changes again first, the approval is withdrawn and the change needs "
+    "review again. Ignore keeps ParishSoft's value."
+)
+
+
+def row_actions(row, *, administrator, mutable):
+    """The icon buttons of one row's Actions cell, in their order (#879).
+
+    Each is a dict: ``icon`` (components/action-icon.html), ``label`` (its
+    accessible name and tooltip, naming the row), ``dialog`` (the
+    confirmation dialog it opens), ``post`` (the row's other fields the
+    dialog posts beside the proposal, data-confirm-with), and the dialog's
+    ``title`` and ``done`` words for this action, with an optional ``body``.
+
+    The rows and roles are those the earlier Record outcome and Review forms
+    offered (#528): nothing while other campaign work holds the campaign;
+    on a By-hand row, Entered in ParishSoft and Ignore for anyone who may
+    resolve it, else Reopen for an Administrator; on an Automatic row an
+    Administrator's Edit value, Clear edit, Use the Family's value anyway
+    and the decisions its review icons allow, only while it allows one. The
+    service and SQL check every one again.
+    """
+    if not mutable:
+        return []
+    keys = {"version": row["version"], "request_key": row["request_key"]}
+
+    def action(icon, label, resolve, *, dialog=DECIDE_DIALOG, title, done, body=""):
+        """One icon button posting ``resolve`` for this row."""
+        return {
+            "icon": icon,
+            "label": label.format(name=row["confirm_name"]),
+            "dialog": dialog,
+            "post": urlencode({"resolve": resolve} | keys),
+            "title": title,
+            "done": f"{{name}} {done}",
+            "body": body,
+        }
+
+    if not row["automatic"]:
+        if row["can_resolve"]:
+            return [
+                action(
+                    "entered",
+                    "Mark {name} entered in ParishSoft",
+                    "entered",
+                    dialog=ENTER_DIALOG,
+                    title="Mark {name} entered in ParishSoft?",
+                    done=RESOLVED["entered"],
+                ),
+                action(
+                    "ignore",
+                    "Ignore {name}",
+                    "ignored",
+                    title="Ignore {name}?",
+                    done=RESOLVED["ignored"],
+                    body="Record that this change will not be entered in "
+                    "ParishSoft. An Administrator may reopen it.",
+                ),
+            ]
+        if row["can_reopen"] and administrator:
+            return [
+                action(
+                    "clear",
+                    "Reopen {name}",
+                    "reopened",
+                    dialog=REOPEN_DIALOG,
+                    title="Reopen {name}?",
+                    done=RESOLVED["reopened"],
+                )
+            ]
+        return []
+    if not (administrator and row["review_actions"]):
+        return []
+    found = []
+    if row["edit"]:
+        found.append(
+            {
+                "icon": "edit",
+                "label": f"Edit value of {row['confirm_name']}",
+                "dialog": row["edit_dialog"],
+                "post": "",
+                "title": "Edit value of {name}",
+                "done": "",
+                "body": "",
+            }
+        )
+        if row["edit"]["edited"]:
+            found.append(
+                action(
+                    "clear_edit",
+                    "Clear edit of {name}",
+                    "clear_edit",
+                    title="Clear the edit of {name}?",
+                    done=EDITS["clear_edit"],
+                    body="Publication goes back to writing the Family's answer.",
+                )
+            )
+    if row["resolve_conflict"]:
+        what = (
+            "Use the edited value"
+            if row["admin_value_set"]
+            else "Use the Family's value"
+        )
+        value = "the edited value" if row["admin_value_set"] else "the Family's answer"
+        found.append(
+            action(
+                "override",
+                f"{what} anyway for {{name}}",
+                RESOLVE_CONFLICT,
+                title=f"{what} anyway for {{name}}?",
+                done=CONFLICT_RESOLVED,
+                body=CONFLICT_BODY.format(what=what, value=value),
+            )
+        )
+    # The decisions, in the review icons' (and the bulk bar's) order.
+    words = {
+        "approve": ("entered", "Approve {name}", "Approve {name}?"),
+        "ignore_automatic": ("ignore", "Ignore {name}", "Ignore {name}?"),
+        "to_review": (
+            "clear",
+            "Send {name} back to To review",
+            "Send {name} back to To review?",
+        ),
+    }
+    for choice in row["review_actions"]:
+        icon, label, title = words[choice]
+        found.append(action(icon, label, choice, title=title, done=REVIEWED[choice]))
+    return found
 
 
 def _respond(request, campaign_id, *, export, render):
@@ -674,15 +829,15 @@ def report(request, campaign_id):
             carry=list(query.form_values().items()),
             sorting=SORTING,
         )
-        row_controls(table.rows)
         # Other campaign work (a restore review, cleanup, purge or go-live
-        # step) holds the campaign: the page offers no Record outcome, as
-        # the service would refuse it, and says why.
+        # step) holds the campaign: the page offers no row actions, as the
+        # service would refuse them, and says why.
         mutable = True
         try:
             admit_campaign(campaign_id, mutating=True)
         except PermissionError:
             mutable = False
+        row_controls(table.rows, administrator=result["administrator"], mutable=mutable)
         return render_to_string(
             "stewardship/census-changes.html",
             result
@@ -709,7 +864,7 @@ def report(request, campaign_id):
                 # Administrator's: unavailable, with its reason, while the
                 # deployment's parishsoft_publication setting is off.
                 "publication_on": census_publication.enabled(),
-                # Bulk review is the Administrator's, on rows a Review is
+                # Bulk review is the Administrator's, on rows a review is
                 # offered for, while the page shows no more rows than one
                 # bulk review covers (All rows can show more); one key per
                 # drawn page makes a repeated post a replay
@@ -722,6 +877,7 @@ def report(request, campaign_id):
                 and len(table.rows) > MAX_BULK,
                 "max_bulk": MAX_BULK,
                 "bulk_actions": bulk_actions(),
+                "row_dialogs": row_dialogs(result["administrator"]),
                 "bulk_key": uuid4(),
             },
             request=request,

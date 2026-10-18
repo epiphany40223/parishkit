@@ -12,6 +12,7 @@ from parishkit.stewardship.jobs.queue_wait import waited_words
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.refusals import unexpected_fields
 
+from . import stages
 from .authentication import runtime
 from .setup_drafts import view_draft
 from .setup_progress import source_progress
@@ -60,11 +61,6 @@ PHASES = (
     ("staging", _("Save the records for this setup")),
     ("validating", _("Check the saved records")),
 )
-PHASE_STATUS = {
-    "done": _("Done"),
-    "active": _("In progress"),
-    "waiting": _("Not started"),
-}
 
 # What each downloaded collection is, in the order the loader reports them.
 COLLECTIONS = {
@@ -86,22 +82,13 @@ COLLECTION_TEXT = {
 
 
 def phases(progress, status_key):
-    """Name each load phase's state for the live status region."""
+    """Name each load phase's state for the live status region (stage boxes)."""
     order = [key for key, _label in PHASES]
     # Before the download starts (queued, starting) no phase has begun.
     index = order.index(progress["phase"]) if progress["phase"] in order else -1
-    rows = []
-    for position, (key, label) in enumerate(PHASES):
-        if status_key == "done" or position < index:
-            state = "done"
-        elif position == index and progress["active"]:
-            state = "active"
-        else:
-            state = "waiting"
-        rows.append(
-            {"key": key, "label": label, "state": state, "status": PHASE_STATUS[state]}
-        )
-    return rows
+    if status_key == "done":
+        index = len(order)
+    return stages.rows(PHASES, index, "active" if progress["active"] else "waiting")
 
 
 def collections(progress):
