@@ -304,8 +304,9 @@ def test_campaign_test_send_is_in_place_and_live():
     """Send this test email posts in place (#519): its form sits in the
     notices' region and lands on Recent test results, whose heading takes
     focus. The list is a live status region, pending while a test is on its
-    way, whose settled copy carries a quiet follow-up that re-reads only the
-    form's region. The manual Refresh test results link is gone."""
+    way, whose settled copy carries a quiet follow-up that re-reads the
+    form's region (and Campaign setup's stepper and action row). The manual
+    Refresh test results link is gone."""
     text = (TEMPLATES / "campaign-mail.html").read_text()
     form = re.search(r'<form [^>]*data-in-place="campaign-test-send"[^>]*>', text)
     assert 'action="#campaign-tests"' in form.group(0)
@@ -326,6 +327,9 @@ def test_campaign_test_send_is_in_place_and_live():
     )
     follow = re.search(r"<a hidden data-live-follow[^>]*>", results).group(0)
     assert "data-in-place data-in-place-quiet data-in-place-only" in follow
+    # The settled re-read also redraws Campaign setup's stepper and action
+    # row, so the first accepted test shows Continue (#1583).
+    assert 'data-in-place-only="campaign-stepper campaign-step-actions"' in follow
     assert 'href="{{ page_url }}#campaign-test-send"' in follow
     assert "Refresh test results" not in text
     assert "live-status-v1.js" in text

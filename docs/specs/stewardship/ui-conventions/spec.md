@@ -538,7 +538,10 @@ never scrolls to show it (Administrator, pk-local review of
   heading takes focus. The list updates by itself while a test is on its
   way, and once the test settles a quiet follow-up re-reads only the
   form's region, so Send, the acknowledgement and a fresh preview come
-  back without moving focus; the page has no manual refresh link.
+  back without moving focus; the page has no manual refresh link. In
+  Campaign setup the follow-up also re-reads the stepper and its action
+  row, so the first accepted test marks the step completed and shows
+  Continue in place.
   Off-site backups' Test access posts in place as well: its status line
   is swapped in and watched while the check runs, focus stays on Test
   access, and the settled check re-reads that line in place, so a folder
