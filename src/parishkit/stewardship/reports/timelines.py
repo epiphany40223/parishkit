@@ -247,6 +247,9 @@ class Event:
     page's Kind filter. ``rank`` is the line's place in the oldest-first
     order ``events`` returns, which ``TIMELINE_SORTING`` uses to order lines
     at the same instant, so both sort directions read the same way.
+    ``portal`` marks a line that only the Family itself can cause on the
+    parishioner portal, the candidates for the hub's Last portal action
+    (``Timeline.last_action``).
     """
 
     at: datetime
@@ -255,6 +258,7 @@ class Event:
     message_id: UUID | None = None
     kind: str = "form"
     rank: int = 0
+    portal: bool = False
 
 
 @dataclass(frozen=True)
@@ -410,7 +414,7 @@ def events(
     def session_end(at, event_type):
         """One sign-out or session-end line."""
         if event_type == "family_logout":
-            return Event(at, _("Signed out"), kind="sessions")
+            return Event(at, _("Signed out"), kind="sessions", portal=True)
         return Event(
             at,
             _("Session ended"),
@@ -439,13 +443,16 @@ def events(
     lines += [sign_in(value) for value in sign_ins]
     lines += [Event(at, _("Opened the form")) for at in forms]
     if engagement is not None and engagement.progress_at is not None:
-        lines.append(Event(engagement.progress_at, _("Got past the first step")))
+        lines.append(
+            Event(engagement.progress_at, _("Got past the first step"), portal=True)
+        )
     if engagement is not None and engagement.furthest_at is not None:
         lines.append(
             Event(
                 engagement.furthest_at,
                 _("Reached the furthest step so far"),
                 engagement.furthest_label,
+                portal=True,
             )
         )
     for submission in submissions:
@@ -454,8 +461,15 @@ def events(
             details.append(str(_("Entered by Staff for the Family")))
         if submission.no_receipt:
             details.append(str(_("No receipt: no email address")))
+        # A response Staff entered through Open form is not the Family's
+        # own portal action.
         lines.append(
-            Event(submission.at, _("Submitted a response"), "; ".join(details))
+            Event(
+                submission.at,
+                _("Submitted a response"),
+                "; ".join(details),
+                portal=not submission.by_staff,
+            )
         )
     lines += [
         session_end(at, event_type)
@@ -648,6 +662,23 @@ class Timeline:
     summary: Summary
     events: tuple = ()
     engagement: Engagement | None = None
+
+    @property
+    def last_action(self):
+        """The Family's newest portal action (an ``Event``), or None.
+
+        The hub's Last portal action (#1678): the newest line marked
+        ``portal`` (a submission of the Family's own, a sign-out, or a form
+        step), the latest built when two share an instant. Sign-ins and form
+        opens never count: a mail scanner fetching the Family's personal
+        link makes both exactly as the Family would. Only the full view
+        reads these lines, so the reduced (Staff) view has none.
+        """
+        return max(
+            (line for line in self.events if line.portal),
+            key=lambda line: (line.at, line.rank),
+            default=None,
+        )
 
 
 def read_timeline(scope, family_id, *, full, current_mode="production"):

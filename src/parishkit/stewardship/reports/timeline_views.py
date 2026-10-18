@@ -21,7 +21,13 @@ whose When heading sorts it in place, newest first by default. Its rows are
 few (one Family's lines), so it shows them all: no paging, no navigator. A
 filter bar (``TimelineQuery``) narrows its lines by kind and by From and
 Through days in the browser's zone, in place. The URL carries only closed
-choices: ``kind``, ``start``, ``end``, ``zone``, ``sort`` and ``size=all``.
+choices: ``kind``, ``start``, ``end``, ``zone``, ``sort`` and ``size=all``,
+plus the hub's ``tab``.
+
+The page is the Family's information hub (#1678, admin-portal spec "Family
+information hub"): a header strip, then the shared tabs (``web/tabs.py``).
+The Timeline tab holds everything above; the other tabs come in later
+slices and are drawn unavailable ("Coming soon") until then (``hub_tabs``).
 """
 
 from dataclasses import dataclass, replace
@@ -65,6 +71,8 @@ from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.security import private_response
 from parishkit.stewardship.web.tables import ALL, paginate
+from parishkit.stewardship.web.tabs import PARAMETER as TAB
+from parishkit.stewardship.web.tabs import Tab, tab_set
 
 from .export_views import SAFE_FAILURES
 from .read_admission import admit_report_read
@@ -73,6 +81,16 @@ from .timelines import KINDS, REACH, TIMELINE_SORTING, narrow, read_timeline
 
 # The days a From or Through filter accepts, as on Census changes.
 EARLIEST, LATEST = date(2000, 1, 1), date(2999, 12, 31)
+# The hub's content tabs not built yet (#1678 slices 2 to 4), in tab order:
+# (key, label). Each is drawn unavailable with COMING_SOON while it applies
+# to the campaign (``hub_sections``). Member tabs (slice 2) need the census
+# read that slice adds, so none is drawn before it.
+HUB_TABS = (
+    ("family", _("Family")),
+    ("financial", _("Financial")),
+    ("other", _("Cannot participate and Additional information")),
+)
+COMING_SOON = _("Coming soon")
 
 
 @dataclass(frozen=True)
@@ -161,8 +179,11 @@ def parse_query(parameters):
     choice (#1570), so it is refused as an unknown filter.
     """
     values = filters(
-        parameters, allowed={"kind", "start", "end", "zone", "sort", "size"}
+        parameters, allowed={"kind", "start", "end", "zone", "sort", "size", TAB}
     )
+    # The hub's tab (#1678): tab_set reads it from the address itself, and
+    # any key it does not know shows the first tab, as the tab rules say.
+    values.pop(TAB, None)
     table = {key: values.pop(key) for key in ("sort", "size") if key in values}
     if table.get("size", ALL) != ALL:
         raise ValueError("The timeline is never paged.")
@@ -226,6 +247,42 @@ def open_form(identity, *, testing_codes, current=True, eligible=True):
     return True, ""
 
 
+def hub_sections(values):
+    """The hub's content tabs that apply to a campaign, as ``HUB_TABS`` keys.
+
+    ``values`` is the campaign configuration's values. The Family tab needs
+    census; Financial needs Financial stewardship; the last tab needs
+    Ministry stewardship (where cannot-participate answers are given) or
+    Additional information. A tab whose subject is not in the campaign is
+    left out (ui-conventions "Conditional fields").
+    """
+    modules = set(values.get("modules", ()))
+    applies = {
+        "family": "census" in modules,
+        "financial": "financial" in modules,
+        "other": "ministry" in modules or bool(values.get("additional_information")),
+    }
+    return tuple(key for key, _label in HUB_TABS if applies[key])
+
+
+def hub_tabs(page_url, parameters, sections):
+    """The hub's ``TabSet``: Timeline, then each of ``sections`` unavailable.
+
+    ``parameters`` is the address's (``request.GET``); ``sections`` are the
+    ``hub_sections`` keys that apply. Until its slice lands, each content
+    tab is drawn unavailable with the reason "Coming soon", so the hub's
+    whole shape shows from slice 1. A tab's link carries nothing but
+    ``tab``: the Timeline's filters are its panel's own.
+    """
+    tabs = [Tab("timeline", _("Timeline"), template="stewardship/timeline-panel.html")]
+    tabs += [
+        Tab(key, label, unavailable=COMING_SOON)
+        for key, label in HUB_TABS
+        if key in sections
+    ]
+    return tab_set(page_url, parameters, tabs)
+
+
 def page_context(campaign, family_id, identity, timeline, as_of, **options):
     """The page's template context; a pure function of its inputs.
 
@@ -237,8 +294,10 @@ def page_context(campaign, family_id, identity, timeline, as_of, **options):
     that may open that page), ``current`` and ``eligible`` (whether the
     campaign is the current one and the Family may use the Family form, for
     Open form), ``query``, the validated ``TimelineQuery``, ``values``, the
-    timeline table's validated ``sort`` and ``size``, and ``export``, the
-    export form's values (``export_context``), shown only on the full view.
+    timeline table's validated ``sort`` and ``size``, ``export``, the
+    export form's values (``export_context``), shown only on the full view,
+    and for the hub's tabs (``hub_tabs``) ``parameters``, the address's, and
+    ``sections``, the content tabs that apply (``hub_sections``).
     """
     full = options.get("full", False)
     query = options.get("query") or TimelineQuery()
@@ -251,11 +310,18 @@ def page_context(campaign, family_id, identity, timeline, as_of, **options):
         current=options.get("current", True),
         eligible=options.get("eligible", True),
     )
+    page_url = reverse("admin:timeline", args=[family_id])
     return {
         "campaign": campaign,
         "identity": identity,
         "full": full,
         "timeline": timeline,
+        # The hub's Last portal action (#1678), Administrators only: Staff's
+        # reduced view reads none of the lines it comes from.
+        "last_action": timeline.last_action if full else None,
+        "tabs": hub_tabs(
+            page_url, options.get("parameters", {}), options.get("sections", ())
+        ),
         "table": table,
         "query": query,
         "kinds": KINDS,
@@ -268,7 +334,7 @@ def page_context(campaign, family_id, identity, timeline, as_of, **options):
         # Open form posts here (#529); the code never goes into a URL.
         "open_form_url": reverse("admin:family_open_form", args=[family_id]),
         "family_test_url": options.get("family_test_url"),
-        "page_url": reverse("admin:timeline", args=[family_id]),
+        "page_url": page_url,
         "directory_url": reverse("admin:family_directory"),
         "export": options.get("export") if full else None,
     }
@@ -464,6 +530,8 @@ def timeline(request, campaign_id, family_id):
                 query=query,
                 values=values,
                 export=export_context(campaign_id, family.pk) if full else None,
+                parameters=request.GET,
+                sections=hub_sections(campaign.active_configuration.values),
             )
             page = render_to_string(
                 "stewardship/timeline.html", context, request=request

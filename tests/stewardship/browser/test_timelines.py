@@ -64,7 +64,7 @@ def test_pages_are_accessible_and_fit_a_phone(page, component_origin, axe_source
 def test_the_page_names_the_family_and_offers_no_testing_view(page, component_origin):
     """The heading names the Family; no Production / Testing control (#1570)."""
     page.goto(component_origin + ADMIN)
-    visible(page.get_by_role("heading", name="Adams, Ann — timeline"))
+    visible(page.get_by_role("heading", name="Adams, Ann", exact=True))
     assert "Timeline" in page.title() and "Adams" not in page.title()
     assert page.locator("[data-in-place^='mode-']").count() == 0
     assert page.get_by_text("Testing rehearsal", exact=True).count() == 0
@@ -275,7 +275,8 @@ def test_staff_see_the_summary_only(page, component_origin):
     assert form.get_attribute("action").endswith("/open-form/")
     assert page.locator("a[href*='#code=']").count() == 0
     assert page.get_by_role("heading", name="Timeline", exact=True).count() == 0
-    assert page.locator("[data-in-place], #table-filters").count() == 0
+    # No table and no in-place control but the hub's tabs (#1678).
+    assert page.locator("[data-in-place]:not([role=tab]), #table-filters").count() == 0
 
 
 def test_unavailable_open_form_is_disabled_with_its_reason(page, component_origin):
@@ -327,3 +328,54 @@ def test_staff_get_no_export_form(page, component_origin):
     page.goto(component_origin + STAFF)
     visible(page.get_by_role("heading", name="Summary"))
     assert export_form(page).count() == 0
+
+
+def test_the_hub_strip_and_tabs_frame_the_timeline(page, component_origin):
+    """The header strip names the last portal action; the Timeline tab is
+    chosen and the tabs not built yet say "Coming soon" and do nothing (#1678).
+    """
+    errors = watch(page)
+    requests = []
+    page.on("request", lambda request: requests.append(request.url))
+    page.goto(component_origin + ADMIN)
+    strip = page.locator("p", has_text="Last portal action:")
+    # The fixture's newest portal action is the second submission; the
+    # receipt email after it is not the Family's action.
+    visible(strip)
+    assert "Last portal action: Submitted a response, " in strip.inner_text()
+    visible(strip.locator("time[data-local-instant]"))
+    tablist = page.get_by_role("tablist", name="Family information")
+    timeline = tablist.get_by_role("tab", name="Timeline")
+    has_attribute(timeline, "aria-selected", "true")
+    panel = page.get_by_role("tabpanel", name="Timeline")
+    visible(panel.get_by_role("heading", name="Summary"))
+    visible(panel.locator("#table-filters"))
+    page.evaluate(MARK)
+    loaded = len(requests)
+    for name in ("Family", "Financial", "Cannot participate and Additional"):
+        other = tablist.get_by_role("tab", name=name)
+        has_attribute(other, "aria-disabled", "true")
+        other.focus()
+        tip = page.locator("#" + other.get_attribute("aria-describedby"))
+        visible(tip)
+        assert tip.text_content() == "Coming soon"
+        page.keyboard.press("Enter")
+        other.click(force=True)
+    page.wait_for_timeout(300)
+    has_attribute(timeline, "aria-selected", "true")
+    assert page.evaluate(MARKED) == "kept"
+    assert page.url == component_origin + ADMIN and len(requests) == loaded
+    # Tab from the chosen tab moves into its panel.
+    timeline.focus()
+    page.keyboard.press("Tab")
+    focused(panel)
+    assert_clean(page, errors)
+
+
+def test_staff_get_the_hub_without_the_last_portal_action(page, component_origin):
+    """Staff's strip has no Last portal action; their Timeline tab is the
+    summary, as before (#1678)."""
+    page.goto(component_origin + STAFF)
+    has_attribute(page.get_by_role("tab", name="Timeline"), "aria-selected", "true")
+    assert page.get_by_text("Last portal action").count() == 0
+    visible(page.get_by_role("tabpanel").get_by_role("heading", name="Summary"))

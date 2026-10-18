@@ -168,9 +168,10 @@ def test_the_shared_renderer_writes_its_csv():
     assert "ABCD-EFGH" in values
 
 
-TEMPLATE = (
-    Path(__file__).resolve().parents[2]
-    / "src/parishkit/stewardship/accounts/templates/stewardship/timeline.html"
+# The page and its Timeline tab's panel (#1678), which holds the Summary and
+# the table; read in that order, the page's own.
+TEMPLATES = Path(__file__).resolve().parents[2] / (
+    "src/parishkit/stewardship/accounts/templates/stewardship"
 )
 
 
@@ -182,7 +183,10 @@ def test_the_file_follows_its_page():
     and Details; its identity line and Summary panel become the report
     information, in the page's order, beside lines only a file needs.
     """
-    text = TEMPLATE.read_text(encoding="utf-8")
+    text = "".join(
+        (TEMPLATES / name).read_text(encoding="utf-8")
+        for name in ("timeline.html", "timeline-panel.html")
+    )
     head = text[text.index('id="events-heading"') :]
     head = head[head.index("<thead>") : head.index("</thead>")]
     assert tuple(re.findall(r'translate "([^"]+)"', head)) == HEADINGS

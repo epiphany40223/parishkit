@@ -21,6 +21,7 @@ from parishkit.stewardship.accounts.policy import Capability
 from parishkit.stewardship.accounts.sessions import database_now
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+from parishkit.stewardship.campaigns.engagement_models import FamilyEngagement
 from parishkit.stewardship.campaigns.family_identity import code_context
 from parishkit.stewardship.campaigns.schedule_models import ScheduleDefinition
 from parishkit.stewardship.deployment import ServiceRole
@@ -91,9 +92,10 @@ def test_timeline_for_administrators_and_staff(
     assert response["Cache-Control"] == "no-store"
     snapshot = SourceCurrent.objects.get().snapshot_id
     name = snapshot_family_names(snapshot, [1], NAME_NOT_RECORDED)[1]
-    # The heading names the Family; the title never does, so browser history
-    # does not keep it. The old page name is gone.
-    assert f"<h1>{name} — timeline</h1>".encode() in body
+    # The heading names the Family alone, the hub's (#1678); the title never
+    # does, so browser history does not keep it. The old page name is gone.
+    assert f"<h1>{name}</h1>".encode() in body
+    assert b'role="tablist" aria-label="Family information"' in body
     assert name.encode() not in body.split(b"</title>")[0]
     assert b"<title>Timeline" in body and b"Family timeline" not in body
     # Production only: every record so far is the Testing rehearsal's, and
@@ -263,6 +265,64 @@ def test_timeline_for_administrators_and_staff(
     assert set(events.values_list("auditcontext__context", flat=True).first()) <= {
         "outcome"
     }
+
+
+def test_last_portal_action_ignores_email_reader_fetches(request, auth_service, google):
+    """The hub's Last portal action counts only the Family's own steps (#1678).
+
+    An email reader fetching the personal link signs the Family in and opens
+    its form exactly as the Family would (``live_login`` and ``open_form``),
+    so neither counts, before or after a real action. Moving through the
+    form does, and so does Sign out; each is read from the real records the
+    Timeline reads, through the restricted web login.
+    """
+    from datetime import datetime
+
+    harness, _epoch = request.getfixturevalue("funnel")
+    harness = activate_response_service(harness)
+    complete_empty_catchup(harness.campaign, uuid4())
+    family = FamilyCampaign.objects.get(campaign=harness.campaign, family_duid=1)
+    page = reverse("admin:timeline", args=[family.pk])
+    admin, login = signed_in()
+    assert login.status_code == 302
+
+    def shown():
+        """The header strip's Last portal action: (words, instant or None)."""
+        response, body = as_web(admin, page)
+        assert response.status_code == 200
+        text = body.decode()
+        value = text[text.index("Last portal action: ") :].split(" · <a href=")[0]
+        words = value.removeprefix("Last portal action: ").split(", <time")[0]
+        at = re.search(r'<time datetime="([^"]+)"', value)
+        return words, datetime.fromisoformat(at.group(1)) if at else None
+
+    # An email reader's fetch: a sign-in and a form open, no action.
+    open_form(live_login(harness, 1))
+    assert shown() == ("None recorded", None)
+    # The Family itself gets past the first step to the Census step.
+    live = live_login(harness, 1)
+    open_form(live)
+    progress_to(live, "census")
+    words, at = shown()
+    assert words == "Reached the furthest step so far"
+    assert at == (
+        FamilyEngagement.objects.get(family_id=family.pk, mode="live").furthest_at
+    )
+    # It signs out: that is its newest action.
+    token = live.client.cookies["pk_family_csrf"].value
+    assert (
+        live.client.post("/family/logout", {"csrfmiddlewaretoken": token}).status_code
+        == 302
+    )
+    out = AuditEvent.objects.get(event_type="family_logout", actor_id=family.pk)
+    assert shown() == ("Signed out", out.created_at)
+    # Another fetch after it, and one more form open: still the sign-out.
+    later = live_login(harness, 1)
+    open_form(later)
+    assert shown() == ("Signed out", out.created_at)
+    assert AuditEvent.objects.filter(
+        event_type="family_login", actor_id=family.pk, created_at__gt=out.created_at
+    ).exists()
 
 
 def test_a_family_is_refused_under_another_real_campaign(
