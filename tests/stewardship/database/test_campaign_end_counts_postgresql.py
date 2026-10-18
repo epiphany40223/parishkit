@@ -13,6 +13,7 @@ from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
+from django.db import connection, transaction
 
 from parishkit.stewardship.accounts import admin_context
 from parishkit.stewardship.accounts.policy import Principal
@@ -25,7 +26,7 @@ from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
 from .test_census_changes_postgresql import ADMIN, LEADER, STAFF, submit_live, worklist
 from .test_ministry_exports_postgresql import leader
-from .test_ministry_followup_postgresql import _menu_count
+from .test_ministry_followup_postgresql import _menu_count, edit, member_gone
 from .test_ministry_reports_postgresql import actor
 from .test_ministry_responses_postgresql import start
 from .test_report_workspace_postgresql import read
@@ -134,6 +135,94 @@ def test_roster_count_is_the_lists_not_yet_entered_rows(response_service):
     # A draft has nothing to enter yet: the menu does not read the count.
     draft = SimpleNamespace(pk=campaign.pk, state="draft")
     assert roster_count(staff, draft) is None
+
+
+def agree(harness):
+    """A function returning the Roster changes to enter rows and the menu's
+    count for Staff, which must always be equal (#1660), on the web login."""
+    staff = actor(harness, ("staff",), ())
+    campaign = Campaign.objects.select_related("active_configuration").get(
+        pk=harness.campaign.pk
+    )
+
+    def counts():
+        """(page rows, menu count) of the default Not yet entered view."""
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            rows, _ = roster_rows(campaign.pk, staff, "todo")
+        return len(rows), roster_count(staff, campaign)
+
+    return counts
+
+
+def test_roster_count_includes_a_confirmed_leave(response_service):
+    """A resolved leave is a roster change too: it counts as the page lists
+    it, and a tick removes it from both."""
+    harness, admin, join, leave = resolved(response_service)
+    counts = agree(harness)
+    assert counts() == (1, 1)
+    edit(harness, admin, leave, state="resolved", outcome="leave_confirmed")
+    leave.refresh_from_db()
+    assert counts() == (2, 2)
+    tick(harness, admin, leave, True)
+    assert counts() == (1, 1)
+
+
+def test_roster_count_leaves_out_a_declined_request(response_service):
+    """A declined request is no roster change, so neither the page nor the
+    count lists it (the outcome filter, not the tick)."""
+    harness, admin, join, leave = resolved(response_service)
+    counts = agree(harness)
+    edit(harness, admin, leave, state="resolved", outcome="declined")
+    assert counts() == (1, 1)
+
+
+def test_roster_count_leaves_out_a_request_parishsoft_resolved(response_service):
+    """A join the ParishSoft roster already resolved needs no entering, on
+    the page and in the menu's count."""
+    from parishkit.stewardship.source.models import SourceCurrent
+
+    harness, admin, join, _ = resolved(response_service)
+    counts = agree(harness)
+    assert counts() == (1, 1)
+    snapshot = SourceCurrent.objects.values_list("snapshot_id", flat=True).get()
+    with transaction.atomic(), connection.cursor() as cursor:
+        # As a refresh would mark it (test_roster_entries_postgresql).
+        cursor.execute("SET LOCAL session_replication_role = replica")
+        cursor.execute(
+            "UPDATE stewardship_ministry_request SET resolution_source_id=%s,"
+            " version=version+1 WHERE id=%s",
+            [snapshot, join.pk],
+        )
+    assert counts() == (0, 0)
+
+
+def test_roster_count_keeps_a_change_for_a_member_who_is_gone(response_service):
+    """A Member ParishSoft no longer lists in the Family still needs their
+    change entered: the page keeps the row and so does the count."""
+    harness, admin, join, _ = resolved(response_service)
+    counts = agree(harness)
+    for standing in ("moved", "missing"):
+        member_gone(harness, standing)
+        assert counts() == (1, 1)
+
+
+def test_roster_count_ignores_the_request_a_resubmission_adds(response_service):
+    """A Family answering again adds an open request for the same join; the
+    resolved one stays, and only it counts, as on the page."""
+    from .test_ministry_responses_postgresql import respond, revisit
+    from .test_response_http_postgresql import answers_for
+    from .test_runtime_auth_grants_postgresql import web_login
+
+    harness, _, join, _ = resolved(response_service)
+    counts = agree(harness)
+    with web_login():
+        form = revisit(harness)
+        answers = answers_for(form)
+        answers["ministries"]["members"]["3"] = {"join": [9], "leave": []}
+        respond(harness, form, answers)
+    join.refresh_from_db()
+    assert join.state == "resolved"
+    assert counts() == (1, 1)
 
 
 def test_staff_home_lists_the_campaign_end_work_with_counts(response_service, google):
