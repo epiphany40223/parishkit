@@ -1029,11 +1029,12 @@ tiles' third tile instead (#1673), so it is not repeated.
 Each next step is a link card for the viewer's own menu entry: a card
 linking the page while the menu offers it, the page's name and the menu's
 reason as muted plain text while the menu greys it out, and left out when
-the viewer's role has no such entry. A card with a count shows it large,
-with what it means beneath ("4", "to do"), and its start bar is the
-warning colour while the count is above zero and the accent at zero; a
-card without a count has the plain edge. "Production being activated" is a
-scheduled campaign, or Production preparation in progress; "Mail paused" is
+the viewer's role has no such entry. A card with a count shows it large
+at the card's end, with what it means beneath the page's name ("4", "to
+do"), and its start bar is the warning colour while the count is above
+zero and the accent at zero; a card without a count has the plain edge.
+"Production being activated" is a scheduled campaign, or Production
+preparation in progress; "Mail paused" is
 Production with live mail paused, in any state not closed. Sent mail
 problems are the emails that may not have arrived (the header's "Not sure
 it arrived — review needed" counts), and the card links Sent mail filtered

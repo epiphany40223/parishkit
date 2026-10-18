@@ -2776,13 +2776,16 @@ without scrolling.
 - **Links to work are link cards.** A list of places to go next is a grid
   of **link cards**: each card is one link whose text reads the page's
   name, then its count in large tabular figures and what the count means
-  ("12", "not yet entered"), in that DOM order. The card's start bar
-  reinforces the count and is never its only signal: the warning colour
-  (`--warning-border`) while the count is above zero, the accent
-  (`--accent`) at zero, and the plain edge (`--border`) when the card has
-  no count. A card the menu greys out is plain text in the muted colour
-  with the menu's reason, never a link. Cards keep their size on hover and
-  focus ([no layout shift](#no-layout-shift)) and stack on a phone with no
+  ("12", "not yet entered"), in that DOM order. A card is two short
+  lines, so a row of them stays compact in wide fonts: the page's name
+  above what the count means, with the count large at the card's end,
+  spanning both lines. The card's start bar reinforces the count and is
+  never its only signal: the warning colour (`--warning-border`) while the
+  count is above zero, the accent (`--accent`) at zero, and the plain edge
+  (`--border`) when the card has no count. A card the menu greys out is
+  plain text in the muted colour with the menu's reason, never a link.
+  Cards keep their size on hover and focus
+  ([no layout shift](#no-layout-shift)) and stack on a phone with no
   sideways scroll.
 - **Acknowledgement queues move to their page.** A list someone works
   through item by item (notices to acknowledge, for example) lives on the
