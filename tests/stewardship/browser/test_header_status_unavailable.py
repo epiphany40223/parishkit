@@ -1,10 +1,11 @@
 """A failed header poll does not move the Admin page (#1643).
 
 The Admin header polls the background-work counts and the Families-on-the-
-form count. When a poll fails, the header says so ("Background status
-unavailable; open the list to retry.", "Presence status unavailable; ...").
-That sentence used to be an extra header item that appeared only on failure;
-at desktop widths it wrapped onto its own row and pushed the page down under
+form count. When a poll fails, the header says so ("Background work:
+unavailable", "Families on the form: unavailable"; the retry hint is
+visually hidden). That text used to be an extra header item that appeared
+only on failure; at desktop widths it wrapped onto its own row and pushed
+the page down under
 the reader's pointer, which the UI conventions forbid (ui-conventions spec,
 "No layout shift"). Each pill now holds both its counts and its unavailable
 sentence in one grid cell, so a failure swaps the text without changing the
@@ -13,6 +14,8 @@ header's size.
 The page is the Find a Family page (``find_family_components``) with the
 long parish name: the busiest header, with the search box and both pills.
 """
+
+import re
 
 import pytest
 
@@ -65,6 +68,16 @@ def test_failed_header_polls_do_not_move_the_page(page, component_origin, width)
     expect(unavailable).to_be_hidden()
     _wait_for(page, presence)
     before = page.evaluate(POSITIONS)
+    # Before any failure each pill is named by its counts alone: the
+    # invisible sizing copy of the failure text never reaches the name.
+    background_pill = page.locator("[data-background-indicator]")
+    presence_pill = page.locator("[data-presence-indicator]")
+    expect(background_pill).to_have_accessible_name(
+        re.compile(r"^Background work: \d+ \(running: \d+\)$")
+    )
+    expect(presence_pill).to_have_accessible_name(
+        re.compile(r"^Families on the form now: (\d+|—)$")
+    )
 
     presence[0].abort()
     page.clock.fast_forward(30000)
@@ -73,16 +86,26 @@ def test_failed_header_polls_do_not_move_the_page(page, component_origin, width)
     after = page.evaluate(POSITIONS)
     for name, edges in before.items():
         assert after[name] == pytest.approx(edges, abs=1), (name, before, after)
-    # The failure sentence replaces the counts rather than sitting beside
-    # them, so each pill's accessible name is the sentence alone.
+    # The failure text replaces the counts rather than sitting beside them:
+    # each pill's accessible name starts with the visible words and ends
+    # with the retry hint (a separate visually hidden element, hence the
+    # space; the tooltip carries the hint too).
     expect(page.locator("[data-background-total]")).to_be_hidden()
     expect(page.locator("[data-presence-count]")).to_be_hidden()
-    expect(page.locator("[data-background-indicator]")).to_have_accessible_name(
-        "Background status unavailable; open the list to retry."
+    expect(background_pill).to_have_accessible_name(
+        "Background work: unavailable Open the list to retry."
     )
-    expect(page.locator("[data-presence-indicator]")).to_have_accessible_name(
-        "Presence status unavailable; open the list to retry."
+    expect(presence_pill).to_have_accessible_name(
+        "Families on the form: unavailable Open the list to retry."
     )
+    for failed, visible in (
+        (background, "Background work: unavailable"),
+        (unavailable, "Families on the form: unavailable"),
+    ):
+        # The span's own first text node is the visible text; the hint
+        # inside it is clipped but still counted by inner_text.
+        assert failed.evaluate("el => el.firstChild.textContent") == visible
+        assert failed.get_attribute("title") == visible + ". Open the list to retry."
 
 
 def _wait_for(page, held, timeout=10):
