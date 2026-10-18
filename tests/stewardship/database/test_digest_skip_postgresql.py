@@ -6,8 +6,9 @@ the scheduler's digest planner, the database's occurrence guard refuses one
 even from a planner that ignored them, the canonical slot check answers no
 slot for them, and the weekly page proof accepts a skipped week without an
 occurrence. Frozen migration 0130's closing DO block passes on the installed
-functions and refuses each older body, and a guard that lost its definer
-rights.
+functions and refuses each older body, a weakened body (a guard that
+enforces Weekly skips alone, a slot check whose skip line can never run)
+and a guard that lost its definer rights.
 """
 
 import json
@@ -262,6 +263,49 @@ def test_migration_self_check_refuses_a_guard_without_definer_rights():
                 pytest.raises(DatabaseError, match="occurrence guard as a definer"),
                 transaction.atomic(),
             ):
+                cursor.execute(check())
+            transaction.set_rollback(True)
+        cursor.execute(check())
+
+
+def weakened(name):
+    """A body that keeps 0130's skip text but no longer enforces it fully."""
+    if name == "stewardship_occurrence_guard_v1":
+        text = body(name, "END $_$;")
+        # Daily skips are no longer refused; the clause's last line is kept.
+        replaced = text.replace(
+            "OR (d.kind IN ('daily_digest','weekly_digest') AND EXISTS (",
+            "OR (d.kind IN ('weekly_digest') AND EXISTS (",
+        )
+    else:
+        text = body(name, "END $$;")
+        # The skip line moved after the last branch, where it never runs.
+        replaced = text.replace(DUE_SKIP, "").replace(
+            "    ELSE RETURN NULL;\n", "    ELSE RETURN NULL;\n" + DUE_SKIP
+        )
+    assert replaced != text and replaced.count("skip_dates") == text.count("skip_dates")
+    return replaced
+
+
+@pytest.mark.parametrize(
+    ("name", "message"),
+    [
+        ("stewardship_occurrence_guard_v1", "did not replace the occurrence guard"),
+        ("stewardship_catchup_due_v1", "did not replace the slot check"),
+    ],
+)
+def test_migration_self_check_refuses_a_weakened_body(name, message):
+    """The pinned body (md5) refuses what a text match alone would pass."""
+    with connection.cursor() as cursor:
+        recorded_acl(cursor)
+        with transaction.atomic():
+            cursor.execute(weakened(name))
+            if name == "stewardship_occurrence_guard_v1":
+                cursor.execute(
+                    "ALTER FUNCTION public.stewardship_occurrence_guard_v1() "
+                    "SECURITY DEFINER"
+                )
+            with pytest.raises(DatabaseError, match=message), transaction.atomic():
                 cursor.execute(check())
             transaction.set_rollback(True)
         cursor.execute(check())

@@ -38,7 +38,8 @@
 -- other two are not SECURITY DEFINER, before or after. CREATE OR REPLACE
 -- keeps every function's grants, owner and settings (search_path). The DO
 -- block at the end refuses to commit unless all three new bodies are
--- installed with their attributes and arguments, the guard is a definer
+-- installed exactly (each body's md5, so no weakened clause or misplaced
+-- line passes) with their attributes and arguments, the guard is a definer
 -- again, and the grants, owner and settings are unchanged. Reversing needs
 -- its own forward migration.
 SET LOCAL check_function_bodies = false;
@@ -293,35 +294,41 @@ END $$;
 DO $check$
 BEGIN
     -- The occurrence guard: a definer again, plpgsql, a trigger function,
-    -- with the skipped-send refusal on insert.
+    -- with exactly this file's body (its md5; the LIKE spells out the
+    -- skipped-send refusal on insert for a reader).
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_occurrence_guard_v1'
           AND p.prosecdef AND p.provolatile='v'
           AND p.prolang=(SELECT oid FROM pg_language WHERE lanname='plpgsql')
           AND p.prorettype='trigger'::regtype
           AND pg_get_function_arguments(p.oid)=''
+          AND md5(p.prosrc)='669e74dff167d9deab8c081677e6855a'
           AND p.prosrc LIKE '%AND coalesce(skipping.values->''skip_dates'' ? NEW.slot,false))) THEN%')<>1 THEN
         RAISE EXCEPTION 'Migration 0130 (digest skip dates) did not replace the occurrence guard as a definer';
     END IF;
-    -- The slot check: invoker, stable, plpgsql, with its arguments and the
-    -- skip_dates refusal before any slot is resolved.
+    -- The slot check: invoker, stable, plpgsql, with its arguments and
+    -- exactly this file's body (its md5; the LIKE spells out the skip_dates
+    -- refusal before any slot is resolved).
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_catchup_due_v1'
           AND NOT p.prosecdef AND p.provolatile='s'
           AND p.prolang=(SELECT oid FROM pg_language WHERE lanname='plpgsql')
           AND p.prorettype='timestamptz'::regtype
           AND pg_get_function_arguments(p.oid)='definition uuid, slot text'
+          AND md5(p.prosrc)='ec0c597468418d43ffcbc8d9aa351097'
           AND p.prosrc LIKE '%IF coalesce(v.values->''skip_dates'' ? slot,false) THEN RETURN NULL; END IF;%')<>1 THEN
         RAISE EXCEPTION 'Migration 0130 (digest skip dates) did not replace the slot check';
     END IF;
     -- The weekly page proof: invoker, stable, plpgsql, with its arguments
-    -- and the skipped-week case.
+    -- and exactly this file's body (its md5; the LIKEs spell out the
+    -- skipped-week case).
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_weekly_digest_page_v1'
           AND NOT p.prosecdef AND p.provolatile='s'
           AND p.prolang=(SELECT oid FROM pg_language WHERE lanname='plpgsql')
           AND p.prorettype='boolean'::regtype
           AND pg_get_function_arguments(p.oid)='prior jsonb, proposed jsonb'
+          AND md5(p.prosrc)='076bc3352d235f7ba90da01a26ea705d'
           AND p.prosrc LIKE '%WHERE (expected.due IS NULL AND NOT coalesce(v.values->''skip_dates'' ? day::date::text,false))%'
           AND p.prosrc LIKE '%OR (expected.due IS NOT NULL%')<>1 THEN
         RAISE EXCEPTION 'Migration 0130 (digest skip dates) did not replace the weekly page proof';
