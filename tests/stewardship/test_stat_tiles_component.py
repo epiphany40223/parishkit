@@ -3,9 +3,8 @@
 ui-conventions "Stat tiles": every Admin headline figure is a tile built by
 ``web.stat_tiles.tile()`` and drawn by ``components/stat-tiles.html``. These
 tests check the builder's formatting and unknown values without rendering,
-render the include, and keep pages from drawing tiles by hand again: the
-templates that still do are listed, each with why, and the list fails on a
-stale entry too.
+render the include, check each page's tiles, and keep pages from drawing
+tiles by hand again: no template outside ``components/`` may.
 """
 
 import re
@@ -15,8 +14,17 @@ from pathlib import Path
 import pytest
 from django.template.loader import render_to_string
 
+from parishkit.stewardship.accounts.admin_dashboard import family_tiles
 from parishkit.stewardship.campaigns.domain import Money, Percentage
-from parishkit.stewardship.web.stat_tiles import StatTile, tile
+from parishkit.stewardship.reports import (
+    comparison_views,
+    digest_presentation,
+    financial_views,
+    limitation_views,
+    ministry_followup_views,
+)
+from parishkit.stewardship.reports.money import MoneyAmount
+from parishkit.stewardship.web.stat_tiles import StatTile, shown, tile
 
 TEMPLATES = (
     Path(__file__).parents[2]
@@ -29,19 +37,6 @@ HAND_DRAWN = re.compile(
     r"""class=(["'])[^"']*\bstat-(?:tiles?|value|label|detail|bar)\b"""
     r"|digest-comparison-figures"
 )
-# Templates that still draw stat tiles by hand, each with why. A template
-# leaves this list when it draws the include; the list may only shrink.
-STILL_HAND_DRAWN = {
-    # Home's Family participation, Ministry requests and Financial
-    # stewardship move onto the component in #1540 slice 2.
-    "home.html",
-    "ministry-followup.html",
-    "financial-report.html",
-    # Campaign comparison and the saved daily report's comparison figures
-    # move in #1540 slice 4, with the trend line.
-    "campaign-comparison.html",
-    "daily-digest.html",
-}
 
 
 def render(tiles, **names):
@@ -93,11 +88,25 @@ def test_the_builder_refuses_values_it_cannot_format_exactly(value):
         tile("k", "Label", value)
 
 
-def test_details_drop_empty_lines_and_stop_at_two():
-    """Empty explanation lines are left out; a third line is refused."""
+def test_details_drop_empty_lines_and_stop_at_three():
+    """Empty explanation lines are left out; a fourth line is refused."""
     assert tile("k", "L", 1, details=("", "one", None)).details == ("one",)
+    assert len(tile("k", "L", 1, details=("a", "b", "c")).details) == 3
     with pytest.raises(ValueError):
-        tile("k", "L", 1, details=("a", "b", "c"))
+        tile("k", "L", 1, details=("a", "b", "c", "d"))
+
+
+def test_shown_takes_text_as_given_and_a_dash_needs_its_reason():
+    """``shown`` keeps a value already formatted elsewhere word for word;
+    its "—" is unknown, so it needs a reason, and other text refuses one."""
+    assert shown("k", "L", "$1,000.50", details=("Last year: $900.00",)) == (
+        StatTile(key="k", label="L", text="$1,000.50", details=("Last year: $900.00",))
+    )
+    assert shown("k", "L", "—", unknown_reason="Why.").unknown_reason == "Why."
+    with pytest.raises(ValueError):
+        shown("k", "L", "—")
+    with pytest.raises(ValueError):
+        shown("k", "L", "12", unknown_reason="Why.")
 
 
 def test_a_share_bar_is_drawn_only_against_a_whole_above_zero():
@@ -109,7 +118,8 @@ def test_a_share_bar_is_drawn_only_against_a_whole_above_zero():
 def test_the_include_reads_label_value_and_details_in_order():
     """One list named by its heading, a tile per figure keyed for tests, the
     visible text in reading order with nothing hidden from assistive
-    technology but the bar, and no mouse-only title tooltip."""
+    technology but the bar and the trend's arrow (its words say the
+    direction), and no mouse-only title tooltip."""
     html = render(
         [
             tile(
@@ -129,7 +139,8 @@ def test_the_include_reads_label_value_and_details_in_order():
         '<span class="stat-label">Invited</span> '
         '<span class="stat-value">1,200</span> '
         '<span class="stat-detail">out of 1,500 (80%)</span> '
-        '<span class="stat-detail stat-trend">↑ 12.5% more</span>'
+        '<span class="stat-detail stat-trend">'
+        '<span aria-hidden="true">↑</span> 12.5% more</span>'
         '<span class="stat-bar" aria-hidden="true">'
         '<progress value="1200" max="1500"></progress></span></li></ul>'
     )
@@ -173,15 +184,16 @@ def test_the_include_gives_an_unknown_value_its_toggletip():
     assert "Not added up yet." in html
 
 
-def test_no_new_template_draws_stat_tiles_by_hand():
-    """Only the listed templates draw their own tiles; a stale entry fails."""
+def test_no_template_draws_stat_tiles_by_hand():
+    """Every headline figure is drawn by the include (#1540): no template
+    outside ``components/`` writes the tile classes itself."""
     found = {
         path.relative_to(TEMPLATES).as_posix()
         for path in TEMPLATES.rglob("*.html")
         if not path.relative_to(TEMPLATES).as_posix().startswith("components/")
         and HAND_DRAWN.search(path.read_text())
     }
-    assert found == STILL_HAND_DRAWN
+    assert found == set()
 
 
 def test_the_include_refuses_a_row_with_no_name():
@@ -219,3 +231,138 @@ def test_two_rows_on_one_page_never_share_a_toggletip_id():
 def test_the_guard_matches_both_quote_styles_and_every_tile_class(markup):
     """Single quotes, and detail or bar used alone, are hand-drawn too."""
     assert HAND_DRAWN.search(markup)
+
+
+def test_home_family_participation_tiles():
+    """Home: active Families, the eligible responses as a share of eligible
+    Families with its bar, and every response; no bar against nothing."""
+    counts = {"active": 400, "responded": 160, "participation": Percentage(40, 400)}
+    active, share, responded = family_tiles(counts)
+    assert (active.key, active.text, active.bar) == ("active", "400", None)
+    assert (share.text, share.details, share.bar) == (
+        "40",
+        ("out of 400 (10%)",),
+        (40, 400),
+    )
+    assert (responded.text, responded.bar) == ("160", None)
+    none = family_tiles(counts | {"participation": Percentage(0, 0)})[1]
+    assert (none.text, none.details, none.bar) == ("0", ("out of 0 (—)",), None)
+
+
+def test_ministry_request_totals_tiles():
+    """Ministry requests: the Join and Leave request counts."""
+    found = ministry_followup_views.totals_tiles({"joining": 1234, "leaving": 0})
+    assert [(t.key, t.label, t.text) for t in found] == [
+        ("joining", "Join requests", "1,234"),
+        ("leaving", "Leave requests", "0"),
+    ]
+
+
+def test_financial_summary_tiles_never_read_an_unknown_total_as_zero():
+    """Financial stewardship: Families, the total in dollars and cents and
+    the Families that cannot contribute; a total not added up is "—"."""
+    summary = {"families": 51, "annual_total": MoneyAmount(6295950), "cannot_give": 0}
+    found = financial_views.summary_tiles(summary)
+    assert [(t.key, t.text) for t in found] == [
+        ("families", "51"),
+        ("annual-total", "$62,959.50"),
+        ("cannot-give", "0"),
+    ]
+    unknown = financial_views.summary_tiles(
+        summary | {"annual_total": MoneyAmount(None)}
+    )[1]
+    assert unknown.text == "—" and "every matching Family" in unknown.unknown_reason
+
+
+def test_limitations_summary_tiles():
+    """Limitations: its two counts."""
+    found = limitation_views.summary_tiles({"cannot_serve": 2, "cannot_attend": 0})
+    assert [(t.label, t.text) for t in found] == [
+        ("Cannot participate in ministries", "2"),
+        ("Families that cannot attend Mass", "0"),
+    ]
+
+
+def test_campaign_comparison_tiles_keep_the_shared_wording():
+    """Campaign comparison: the PDF's and emails' own text, the median so
+    far before the comparison lines, and a "—" with its reason."""
+    found = comparison_views.headline_tiles(
+        [
+            {
+                "key": "average",
+                "label": "Average pledge",
+                "value": "$1,200.00",
+                "median": "$1,000.00",
+                "lines": ["Last year on day 12: $1,100.00 (↑ 9.1% more)"],
+                "reason": None,
+            },
+            {
+                "key": "renewal",
+                "label": "Renewal",
+                "value": "—",
+                "median": None,
+                "lines": [],
+                "reason": "No past year.",
+            },
+        ]
+    )
+    assert found == [
+        StatTile(
+            key="average",
+            label="Average pledge",
+            text="$1,200.00",
+            details=(
+                "Median so far: $1,000.00",
+                "Last year on day 12: $1,100.00 (↑ 9.1% more)",
+            ),
+        ),
+        StatTile(
+            key="renewal", label="Renewal", text="—", unknown_reason="No past year."
+        ),
+    ]
+
+
+def test_saved_daily_report_figures_are_drawn_as_emailed():
+    """The saved digest page draws the stored figures word for word; a
+    stored "—" says it was not available, since no reason was saved."""
+    found = digest_presentation.saved_tiles(
+        {
+            "tiles": [
+                {"label": "Families", "value": "36", "lines": ["Last year: 30"]},
+                {"label": "Renewal", "value": "—", "lines": []},
+            ]
+        }
+    )
+    assert [(t.key, t.text, t.details) for t in found] == [
+        ("figure-1", "36", ("Last year: 30",)),
+        ("figure-2", "—", ()),
+    ]
+    assert found[1].unknown_reason == (
+        "This figure was not available on the report day."
+    )
+
+
+def test_the_include_hides_every_arrow_of_a_line_and_escapes_its_text():
+    """A comparison line's arrows are hidden from screen readers, which read
+    the words; the rest of the line is escaped as plain text (#1637)."""
+    html = render(
+        [
+            shown(
+                "families",
+                "Families",
+                "40",
+                details=(
+                    "Last year: 30 (↑ 33.3% more)",
+                    "<b>2054</b>: 40 (→ the same)",
+                ),
+            )
+        ],
+        tiles_label="Headline figures",
+    )
+    assert (
+        '<span class="stat-detail">Last year: 30 '
+        '(<span aria-hidden="true">↑</span> 33.3% more)</span>'
+    ) in html
+    assert (
+        '&lt;b&gt;2054&lt;/b&gt;: 40 (<span aria-hidden="true">→</span> the same)'
+    ) in html

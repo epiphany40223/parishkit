@@ -32,6 +32,7 @@ from uuid import uuid4
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, transaction
 from django.template.loader import render_to_string
+from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
@@ -46,6 +47,7 @@ from parishkit.stewardship.web.refusals import with_default_code
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.security import private_response
+from parishkit.stewardship.web.stat_tiles import shown
 
 from .comparison import distribution_rows, table_rows, tiles
 from .comparison_charts import day_charts, distribution_chart, final_charts
@@ -109,6 +111,32 @@ def audit(principal, campaign_id, outcome, day=None):
         )
 
 
+def headline_tiles(figures):
+    """The page's headline figures as stat tiles (ui-conventions, #1540).
+
+    ``figures`` are ``comparison.tiles()``: display text the PDF summary and
+    the report emails share, so each tile takes its value as that text
+    (``shown``). The average pledge's median so far comes first, then the
+    last-year and average lines, each with its trend in words. A "—" value
+    keeps its reason for the toggletip.
+    """
+    return [
+        shown(
+            figure["key"],
+            figure["label"],
+            figure["value"],
+            unknown_reason=figure["reason"] or "",
+            details=(
+                _("Median so far: %(median)s") % {"median": figure["median"]}
+                if figure["median"]
+                else "",
+                *figure["lines"],
+            ),
+        )
+        for figure in figures
+    ]
+
+
 def page_context(comparison, principal, *, refused=False, mutable=True):
     """The template's context: display text only, formatted in Python.
 
@@ -138,7 +166,7 @@ def page_context(comparison, principal, *, refused=False, mutable=True):
         else [],
         "day_charts": day_charts(comparison),
         "final_charts": final_charts(comparison),
-        "tiles": tiles(comparison),
+        "tiles": headline_tiles(tiles(comparison)),
         "rows": table_rows(comparison),
         "distributions": distributions(comparison, BAND_EDGES),
         # The data notes, the shared ones once and each year's own (#1161).

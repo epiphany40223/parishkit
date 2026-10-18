@@ -52,6 +52,9 @@ OTHER_ID_SYSTEM = (
 )
 NO_PREVIOUS_YEAR = "The year before it is not imported."
 FINANCIAL_OFF = "This campaign does not include Financial stewardship."
+NO_PRIOR_RESPONDERS = "No Families responded last year, so none can renew."
+NO_ACTIVE_FAMILIES = "No Families were active on this day, so there is no share."
+NO_FIGURE_YET = "No figure is available for this day yet."
 OLDER_BANDS = (
     "Imported with an older pledge band set; import the year again to compare "
     "its bands."
@@ -358,9 +361,9 @@ def tiles(comparison, *, outside=False):
     """The headline tiles, one per metric, in the spec's order.
 
     Each holds the current value and up to two comparison lines ("Last year
-    on day 12: 240 (↑ 12.5% more)", "2020–2026 average: 220 (…)"); ``title``
-    is the full wording for the tooltip and accessible name; ``reason``
-    explains a "—" current value.
+    on day 12: 240 (↑ 12.5% more)", "2020–2026 average: 220 (…)"); ``reason``
+    explains a "—" current value. The page draws them as stat tiles
+    (``comparison_views.headline_tiles``).
 
     ``outside`` gives the tiles as they may leave the Admin portal (the PDF
     summary): no median so far, since the current campaign's quartiles stay
@@ -378,9 +381,8 @@ def tiles(comparison, *, outside=False):
         if metric.financial and not comparison.financial:
             continue
         value = metric.value(current)
-        lines, sentences = [], []
+        lines = []
         shown = value_text(metric.kind, value)
-        sentences.append(f"{metric.label}: {shown} on day {number(day)}.")
         references = []
         if comparison.last_year is not None:
             last = comparison.last_year
@@ -401,26 +403,21 @@ def tiles(comparison, *, outside=False):
         for label, reference in references:
             if isinstance(reference, str):  # WITHHELD
                 lines.append(f"{label}: {WITHHELD}")
-                sentences.append(f"{label}: {WITHHELD.lower()}.")
                 continue
             text = value_text(metric.kind, reference)
             difference = change_text(metric.kind, value, reference)
             lines.append(
                 f"{label}: {text}" + (f" ({difference})" if difference else "")
             )
-            sentences.append(
-                f"{label}: {text}"
-                + (f"; this year is {difference[2:]}." if difference else ".")
-            )
-        reason = None
-        if value is None:
-            reason = _reason(metric, current, comparison)
+        # A "—" always carries its reason (the stat tile requires one). The
+        # text, not the value, decides: a share of no Families is a value
+        # that still reads "—" (#1637).
+        reason = _reason(metric, current, comparison) if shown == "—" else None
         median = None
         if not outside and metric.key == "average" and current.distribution is not None:
             quartiles = current.distribution.quartiles
             if quartiles is not None:
                 median = money_text(quartiles[1])
-                sentences.append(f"Median so far: {median}.")
         result.append(
             {
                 "key": metric.key,
@@ -428,7 +425,6 @@ def tiles(comparison, *, outside=False):
                 "value": shown,
                 "median": median,
                 "lines": lines,
-                "title": " ".join(sentences),
                 "reason": reason,
             }
         )
@@ -436,12 +432,23 @@ def tiles(comparison, *, outside=False):
 
 
 def _reason(metric, current, comparison):
-    """Why the current campaign's ``metric`` is "—"."""
+    """Why the current campaign's ``metric`` is "—"; always plain text.
+
+    The specific cause when one is known (no comparable last year, no
+    responders last year, no active Families on the day), else that the
+    day has no figure yet.
+    """
+    at = current.at_day
     if metric.key == "renewal":
-        return current.renewal.reason
-    if metric.financial and not comparison.financial:
+        if current.renewal.reason:
+            return current.renewal.reason
+        if current.renewal.renewed is not None and not current.renewal.base:
+            return NO_PRIOR_RESPONDERS
+    elif metric.financial and not comparison.financial:
         return FINANCIAL_OFF
-    return "No figure is available for this day yet."
+    elif metric.key == "percent" and at is not None and not at.active:
+        return NO_ACTIVE_FAMILIES
+    return NO_FIGURE_YET
 
 
 def table_rows(comparison):
