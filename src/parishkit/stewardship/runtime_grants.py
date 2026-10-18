@@ -661,6 +661,12 @@ CLOSURE_COLUMNS = {
         "stewardship_reports",
         "0022_digest_funnel_charts",
     ),
+    # The review pipeline's Ministry Edit (0132, #1684): web updates a
+    # request's edited Ministry with its paired revision.
+    ("stewardship_ministry_request", "reviewed_ministry_duid"): (
+        "stewardship_workflows",
+        "0003_ministry_review_pipeline",
+    ),
 }
 
 

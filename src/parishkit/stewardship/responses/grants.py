@@ -60,8 +60,16 @@ def add_response_web_grants(tables, columns):
     # its decision, admitted only with its paired stewardship_proposal_review.
     tables["stewardship_proposal_review"] = {"SELECT", "INSERT"}
     # The guard sets resolved_at itself; Staff never write roster evidence.
+    # An Edit's Ministry (#1684) changes only with its paired revision.
     columns["stewardship_ministry_request"] = {
-        "UPDATE": {"state", "superseded_by_id", "version", "outcome", "assignee_id"}
+        "UPDATE": {
+            "state",
+            "superseded_by_id",
+            "version",
+            "outcome",
+            "assignee_id",
+            "reviewed_ministry_duid",
+        }
     }
     tables["stewardship_ministry_revision"] = {"SELECT", "INSERT"}
     # The roster Entered in ParishSoft tick's history (#528, step 4).

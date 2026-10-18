@@ -15,6 +15,10 @@ from parishkit.stewardship.storage import (
 STAFF_STATES = ("new", "in_progress", "resolved", "closed_no_response")
 OPEN_STATES = ("new", "assigned", "in_progress")
 RESOLVED_OUTCOMES = ("joined", "leave_confirmed", "declined", "duplicate", "other")
+# The outcomes that accept a request (the review pipeline's Accept): the
+# Member joins or leaves. Every other outcome, and Closed: no response, is
+# Ignored. Only these carry an Edit's Ministry.
+ACCEPTED_OUTCOMES = ("joined", "leave_confirmed")
 CONTACT_CHANNELS = ("email", "phone", "in_person", "other")
 
 
@@ -46,6 +50,17 @@ class MinistryRequest(MutableRecord):
     # Unused since follow-up assignment was removed (#552): Staff edits store
     # none, and only requests assigned before then still carry one.
     assignee_id = models.UUIDField(null=True)
+    # The review pipeline (#1684). An Edit's Ministry, carried forward in
+    # place of the Family's (``ministry_duid`` stays as answered); set only
+    # while the request is accepted, and cleared by Back to review.
+    reviewed_ministry_duid = models.IntegerField(null=True)
+    # A request Staff added with no Family answer behind it, attached to the
+    # Family's latest live response, and the same Member's ignored request it
+    # was added in place of, if any.
+    parish_added = models.BooleanField(default=False, db_default=False)
+    added_in_place_of = models.ForeignKey(
+        "self", on_delete=models.PROTECT, null=True, related_name="+"
+    )
 
     immutable_fields = MutableRecord.immutable_fields + (
         "submission_id",
@@ -53,7 +68,14 @@ class MinistryRequest(MutableRecord):
         "entity_key",
         "ministry_duid",
         "action",
+        "parish_added",
+        "added_in_place_of_id",
     )
+
+    @property
+    def current_ministry_duid(self):
+        """The Ministry the request is about now: an Edit's, else the Family's."""
+        return self.reviewed_ministry_duid or self.ministry_duid
 
     class Meta(MutableRecord.Meta):
         db_table = "stewardship_ministry_request"
@@ -134,6 +156,34 @@ class MinistryRequest(MutableRecord):
                 & (~models.Q(state="assigned") | models.Q(assignee_id__isnull=False)),
                 name="ministry_request_assignment",
             ),
+            # An Edit's Ministry only on an accepted request, never its own.
+            models.CheckConstraint(
+                condition=models.Q(reviewed_ministry_duid__isnull=True)
+                | (
+                    models.Q(
+                        reviewed_ministry_duid__gt=0,
+                        state="resolved",
+                        outcome__in=list(ACCEPTED_OUTCOMES),
+                    )
+                    & ~models.Q(reviewed_ministry_duid=models.F("ministry_duid"))
+                ),
+                name="ministry_request_reviewed",
+            ),
+            # Only an existing Member's request is added, and only an added
+            # request names the one it replaces (never itself).
+            models.CheckConstraint(
+                condition=(
+                    ~models.Q(parish_added=True) | models.Q(entity_kind="member")
+                )
+                & (
+                    models.Q(added_in_place_of__isnull=True)
+                    | (
+                        models.Q(parish_added=True)
+                        & ~models.Q(added_in_place_of=models.F("id"))
+                    )
+                ),
+                name="ministry_request_added",
+            ),
         ]
 
 
@@ -159,6 +209,10 @@ class MinistryWorkflowRevision(ImmutableRecord):
     contact_channel = models.CharField(max_length=10, null=True)
     contact_at = UTCDateTimeField(null=True)
     contact_notes = models.TextField(default="", blank=True)
+    # The review pipeline (#1684): the Ministry an Edit carried forward, and
+    # the optional note of the decision this revision records.
+    reviewed_ministry_duid = models.IntegerField(null=True)
+    decision_note = models.TextField(default="", db_default="", blank=True)
 
     class Meta:
         db_table = "stewardship_ministry_revision"
@@ -175,7 +229,11 @@ class MinistryWorkflowRevision(ImmutableRecord):
             ),
             models.CheckConstraint(
                 condition=(
-                    models.Q(state__in=list(OPEN_STATES), outcome__isnull=True)
+                    # A cancelled revision withdraws a request the parish
+                    # added (#1684).
+                    models.Q(
+                        state__in=[*OPEN_STATES, "cancelled"], outcome__isnull=True
+                    )
                     | models.Q(state="resolved", outcome__in=list(RESOLVED_OUTCOMES))
                     | models.Q(state="closed_no_response", outcome="no_response")
                 )
@@ -198,6 +256,15 @@ class MinistryWorkflowRevision(ImmutableRecord):
                     contact_channel__in=list(CONTACT_CHANNELS), contact_at__isnull=False
                 ),
                 name="ministry_revision_contact",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(reviewed_ministry_duid__isnull=True)
+                | models.Q(
+                    reviewed_ministry_duid__gt=0,
+                    state="resolved",
+                    outcome__in=list(ACCEPTED_OUTCOMES),
+                ),
+                name="ministry_revision_reviewed",
             ),
         ]
 
