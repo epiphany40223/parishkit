@@ -270,6 +270,34 @@
   // family-v1.js after this runs, so they are never wired here at all;
   // that script manages their marks.)
   const blurMarked = new WeakSet();
+  // A field with a shared format rule (data-field-rule; the server's
+  // web/field_rules.py gives it the same pattern and words) also says its
+  // refusal at the field when left: in its reserved error line ("<id>_error",
+  // file-size-field.html), which keeps its height while empty so the message
+  // coming or going moves nothing, and is a polite live region (#1577). The
+  // words are the rule's data-missing-hint, or data-empty-hint for an empty
+  // required field. The message follows the value while the mark stands and
+  // goes once the value is valid. A server's message in the same line is
+  // cleared on the first edit, as for any field.
+  const ruleLine = (field) => field.hasAttribute("data-field-rule") && field.id
+    && document.getElementById(`${field.id}_error`);
+  const sayRule = (field, invalid) => {
+    const line = ruleLine(field);
+    if (!line) return;
+    const message = !invalid ? ""
+      : (field.validity.valueMissing && field.dataset.emptyHint)
+        || field.dataset.missingHint || field.validationMessage;
+    // Unchanged words stay untouched: rewriting the live region on every
+    // keystroke would make a screen reader read them again.
+    if (line.hidden === !message && line.textContent === message) return;
+    line.hidden = !message;
+    line.replaceChildren(Object.assign(document.createElement("li"), {textContent: message}));
+    const ids = (field.getAttribute("aria-describedby") || "").split(/\s+/)
+      .filter((id) => id && id !== line.id);
+    if (message) ids.push(line.id);
+    if (ids.length) field.setAttribute("aria-describedby", ids.join(" "));
+    else field.removeAttribute("aria-describedby");
+  };
   const wireValidity = (root) => {
     root.querySelectorAll("input, select, textarea").forEach((field) => {
       if (field.getAttribute("aria-invalid") === "true") field.setAttribute("data-field-error", "");
@@ -278,7 +306,8 @@
         else if (blurMarked.has(field) && field.validity.valid) {
           field.setAttribute("aria-invalid", "false");
           blurMarked.delete(field);
-        }
+          sayRule(field, false);
+        } else if (blurMarked.has(field)) sayRule(field, true);
       };
       field.addEventListener("input", edited);
       field.addEventListener("change", edited);
@@ -286,7 +315,10 @@
         if (!field.willValidate) return;
         const invalid = field.hasAttribute("data-field-error") || !field.validity.valid;
         field.setAttribute("aria-invalid", String(invalid));
-        if (invalid && !field.hasAttribute("data-field-error")) blurMarked.add(field);
+        if (invalid && !field.hasAttribute("data-field-error")) {
+          blurMarked.add(field);
+          sayRule(field, true);
+        }
       });
     });
   };

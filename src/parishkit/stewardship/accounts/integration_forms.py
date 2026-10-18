@@ -4,6 +4,7 @@ from django import forms
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.web.admin_forms import AdminForm
+from parishkit.stewardship.web.field_rules import SPACE, FieldRule, RuleField
 from parishkit.stewardship.web.sender_name_field import SenderNameField
 
 from . import field_tips, setup_help
@@ -32,6 +33,15 @@ MISSING_HINTS = {
     "channel_id": _("Enter a Slack channel ID, such as C0123456789."),
     "target": _("Paste the Google Drive folder link."),
 }
+
+# A Slack channel ID, checked by the browser and the server alike (#1577);
+# spaces around it are admitted, as the server strips them.
+SLACK_CHANNEL = FieldRule(
+    name="slack_channel_id",
+    pattern=rf"[{SPACE}]*[CG][A-Z0-9]{{1,63}}[{SPACE}]*",
+    message=MISSING_HINTS["channel_id"],
+    code="invalid",
+)
 
 # What the browser checks of an off-site folder link (#1330), leniently: a
 # bare folder ID or any https link on drive.google.com, as folder_id_from_url
@@ -121,9 +131,9 @@ class IntegrationForm(AdminForm):
                 label=_("Reply-to address"), max_length=254
             )
         elif target == "slack":
-            self.fields["channel_id"] = forms.RegexField(
+            self.fields["channel_id"] = RuleField(
+                SLACK_CHANNEL,
                 label=_("Slack channel ID"),
-                regex=r"^[CG][A-Z0-9]{1,63}$",
                 max_length=64,
                 help_text=_(
                     "The ID (not the name) of the Slack channel for alerts, for "
@@ -154,12 +164,11 @@ class IntegrationForm(AdminForm):
                 self.fields[name].help_text = text
         # The page's complete gate (#563) holds Save while a required field
         # is empty or malformed; each says what it waits for. The channel ID
-        # is checked in the browser by the same rule as the server's.
+        # is checked in the browser by the same rule as the server's
+        # (SLACK_CHANNEL).
         for name, hint in MISSING_HINTS.items():
             if name in self.fields:
                 self.fields[name].widget.attrs["data-missing-hint"] = hint
-        if "channel_id" in self.fields:
-            self.fields["channel_id"].widget.attrs["pattern"] = "[CG][A-Z0-9]{1,63}"
         if "target" in self.fields:
             self.fields["target"].widget.attrs["pattern"] = FOLDER_LINK_PATTERN
         field_tips.shorten(

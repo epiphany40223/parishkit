@@ -138,7 +138,12 @@ def test_csrf_unknown_fields_duplicates_and_stale_versions_do_not_write(
         assert response.status_code == 400
         assert b"synthetic-private" not in response.content
     invalid = post(browser, "/admin/setup/parish", values | {"phone": "bad"})
-    assert invalid.status_code == 400 and b"id_phone_error" in invalid.content
+    # The field keeps a reserved error line (#1577); the refusal fills it.
+    assert invalid.status_code == 400
+    assert (
+        b'id="id_phone_error"><li>Enter a ten-digit US telephone number'
+        in invalid.content
+    )
     assert not SetupDraftSection.objects.exists()
     assert post(browser, "/admin/setup/parish", values).status_code == 302
     assert post(browser, "/admin/setup/parish", values).status_code == 409
