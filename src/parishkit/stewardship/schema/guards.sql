@@ -4774,7 +4774,12 @@ BEGIN
                 IF NEW.field='death_date' AND expected_submitted='null'::jsonb THEN
                     RAISE EXCEPTION 'Omitted terminal date cannot request source clearing' USING ERRCODE='23514';
                 END IF;
-                expected_handling := CASE WHEN NEW.field IN ('prefix','suffix','marital_status','moved_household','deceased_status')
+                -- The live ParishSoft API test (#1596): a death date leaves
+                -- the Member Active, so it is By hand with the deceased
+                -- status, and no value can be cleared, so an answer that
+                -- removes one (JSON null or "") is By hand too.
+                expected_handling := CASE WHEN NEW.field IN ('prefix','suffix','marital_status','moved_household','deceased_status','death_date')
+                    OR expected_submitted IN ('null'::jsonb,'""'::jsonb)
                     THEN 'manual' ELSE 'api' END;
                 source_field := public.stewardship_response_field_source_v1(
                     response.validation_source_id,response.family_id,NEW.entity_key,NEW.field);
@@ -4785,7 +4790,10 @@ BEGIN
                 source_field := jsonb_build_object('available',false,'value',NULL);
             ELSIF NEW.entity_kind='family' AND NEW.field IN ('home_address','mailing_address','email_opt_out') THEN
                 expected_submitted := response.answers#>ARRAY['family',NEW.field];
-                expected_handling := CASE WHEN NEW.field='email_opt_out' THEN 'manual' ELSE 'api' END;
+                -- Family addresses cannot be read back from ParishSoft, so
+                -- a write could not be confirmed: every Family field is By
+                -- hand (#1596).
+                expected_handling := 'manual';
                 source_field := public.stewardship_response_household_source_v1(
                     response.validation_source_id,response.family_id,NEW.entity_key,NEW.field);
             ELSE

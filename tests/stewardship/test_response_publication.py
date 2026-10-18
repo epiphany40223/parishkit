@@ -75,6 +75,7 @@ ALLOWED_IMPORTS = {
     ("parishkit.parishsoft", "split_email_addresses"),
     ("capabilities", "Handling"),
     ("capabilities", "capability"),
+    ("capabilities", "clears_value"),
     ("comparison", "ComparisonValueError"),
     ("comparison", "ValueKind"),
     ("member_census", "MEMBER_FIELDS"),
@@ -220,10 +221,41 @@ def test_dates_compare_as_civil_dates():
     plan = plan_entity(
         "member",
         1,
-        [proposal("death_date", "2026-05-01", None)],
-        payload(dateOfDeath="2026-05-01T00:00:00"),
+        [proposal("birth_date", "1970-05-01", None)],
+        payload(dateOfBirth="1970-05-01T00:00:00"),
     )
-    assert outcomes(plan) == {"death_date": Outcome.ALREADY_IN_PARISHSOFT}
+    assert outcomes(plan) == {"birth_date": Outcome.ALREADY_IN_PARISHSOFT}
+
+
+def test_a_death_date_is_never_planned_even_if_stored_as_automatic():
+    """Defence in depth (#1596): writing dateOfDeath leaves the Member Active,
+    so a row stored as api before migration 0113 is still By hand."""
+    plan = plan_entity(
+        "member", 1, [proposal("death_date", "2026-05-01", None)], payload()
+    )
+    assert outcomes(plan) == {"death_date": Outcome.BY_HAND}
+    assert plan.payload is None and not plan.blocked
+
+
+@pytest.mark.parametrize(
+    ("field", "row"),
+    [
+        ("birth_date", proposal("birth_date", None, "1970-05-01")),
+        ("email", proposal("email", "", "a@example.org")),
+        ("home_phone", proposal("home_phone", "", None)),
+        # An Administrator's edit is what would be written, so it decides.
+        (
+            "nickname",
+            proposal("nickname", "Pat", None, admin_value_set=True, admin_value=""),
+        ),
+    ],
+)
+def test_a_value_that_would_clear_a_field_is_never_planned(field, row):
+    """The API cannot clear a field (#1596): a blank value to write is By
+    hand, whatever handling the row was stored with."""
+    plan = plan_entity("member", 1, [row], payload(dateOfBirth="1970-05-01"))
+    assert outcomes(plan) == {field: Outcome.BY_HAND}
+    assert plan.payload is None and not plan.blocked
 
 
 def test_family_and_new_member_changes_are_by_hand():

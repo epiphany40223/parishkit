@@ -375,7 +375,8 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # 0087's confirmation guard in place, which 0087's (``CLOSURE_CREATED``),
 # 0090's (``CLOSURE_RERUN``) and 0108's (``CLOSURE_ALTERED``) files bring back
 # older, so ``CLOSURE_REPLACED`` runs 0112's file again afterwards. Its derived
-# guard keeps the phrase ``CLOSURE_REPLACED_ONLY`` (0096) looks for.
+# guard lacks 0113's phrase, so ``CLOSURE_REPLACED_ONLY`` then puts 0113's
+# guard back last.
 # 0103 (#1330) creates nothing: it replaces 0091's campaign pointer function
 # in place. No closure file installs that function again, and 0091's
 # ``CLOSURE_OLD_BODIES`` rerun touches only bodies still reading Ministry
@@ -389,6 +390,11 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # 0110 (#558) creates nothing: it replaces the baseline financial selection
 # in place, which 0094's rerun (``CLOSURE_REPLACED``) brings back older, so
 # ``CLOSURE_REPLACED`` runs 0110's file after it.
+# 0113 (#1596) creates nothing: it replaces the derived guard in place (the
+# corrected census handling, on 0112's body) and re-marks open rows. 0112's
+# rerun (``CLOSURE_REPLACED``) puts 0112's guard back, so
+# ``CLOSURE_REPLACED_ONLY``, which runs after it, runs 0113's replacement
+# statement alone; the one-time correction does not run again.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -813,11 +819,13 @@ def rerun_old_bodies(cursor, migrations):
 # Functions a later closure file replaces in place after a rerun above has
 # put an earlier body back, when that file also creates tables and so cannot
 # run whole twice: only its replacement statement runs again, unless the body
-# already has the phrase. 0096 (#528) replaces the derived guard after 0090.
+# already has the phrase. 0096 (#528) replaced the derived guard after 0090,
+# and 0113 (#1596) replaces it last, after 0108's and 0112's reruns; its body
+# keeps 0096's, 0108's and 0112's rules, so only the latest replacement runs.
 CLOSURE_REPLACED_ONLY = {
     "stewardship_response_derived_guard_v1": (
-        ("stewardship_responses", "0006_proposal_review"),
-        "stewardship_proposal_review v",
+        ("stewardship_responses", "0011_census_handling_registry"),
+        "OR expected_submitted IN ('null'::jsonb",
     ),
     # 0109 (#1398) widens 0106's safe context with the export report and
     # format keys; the reruns above bring back 0106's, and 0109's discard

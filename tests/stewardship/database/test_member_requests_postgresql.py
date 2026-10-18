@@ -69,8 +69,9 @@ def test_terminal_request_ignores_edits_and_round_trips(
     expected = {kind} | ({"death_date"} if date_value else set())
     proposals = list(ProposedChange.objects.filter(submission=second))
     assert {row.field for row in proposals} == expected
-    assert {row.handling for row in proposals if row.field == kind} == {"manual"}
-    assert all(row.handling == "api" for row in proposals if row.field == "death_date")
+    # A death date is By hand with the status since the live API test showed
+    # writing it leaves the Member Active (#1596).
+    assert {row.handling for row in proposals} == {"manual"}
     assert all(row.execution == "pending" for row in proposals)
     assert "first_name" not in second.answers["members"]["3"]
     assert set(

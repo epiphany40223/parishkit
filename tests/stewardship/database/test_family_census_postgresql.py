@@ -76,8 +76,8 @@ def test_household_http_complete_response_and_revisit(live_response_service, opt
         row.execution == "pending" and row.decision == "unreviewed" for row in current
     )
     assert {row.field: row.handling for row in current} == {
-        "home_address": "api",
-        "mailing_address": "api",
+        "home_address": "manual",
+        "mailing_address": "manual",
         "email_opt_out": "manual",
     }
 
@@ -116,7 +116,7 @@ def test_source_refresh_never_invents_household_values(live_response_service, in
         {"current_available": True},
         {"current_value": address()},
         {"submitted_value": address(line1="Forged address")},
-        {"handling": "manual"},
+        {"handling": "api"},
         {"decision": "approved"},
         {"execution": "conflict"},
     ],

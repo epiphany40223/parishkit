@@ -369,6 +369,9 @@ FROZEN = {
     "0112_upstream_at_check.sql": (
         "2ad93429256bc20dfc47c6f676981b13a993835c6e83ec70dbf8977a74776ffd"
     ),
+    "0113_census_handling_registry.sql": (
+        "a6c031014875eea7c98aa66a488e9f38e417ad8c3dbf38992622590e852cda1c"
+    ),
 }
 
 

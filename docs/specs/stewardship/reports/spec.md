@@ -1884,12 +1884,19 @@ then:
   verified ParishSoft read exists for the field (today every Family
   household field), so a Family address never shows a ParishSoft value or a
   conflict. Values appear in full: Admin and Staff need them to type into
-  ParishSoft, and every view and download is audited.
+  ParishSoft, and every view and download is audited. A blank Family's answer
+  means the Family removed the value: Staff remove it in ParishSoft, or
+  Ignore the row to keep it. A birth date the Family gave as Unknown shows
+  *Unknown*.
 - **How it reaches ParishSoft**: *Automatic* for a field the
   [handling registry](../data/spec.md#proposed-changes) marks API-writable,
-  *By hand* for every other row. A Family address is *By hand* until
-  publication may write it (see the
-  [data workflow](../data/spec.md#review-and-publication)).
+  *By hand* for every other row. A Family address, a death date, and any
+  answer that removes a recorded value are *By hand*, because ParishSoft's API
+  cannot carry them (see the
+  [handling registry](../data/spec.md#proposed-changes) and the
+  [data workflow](../data/spec.md#review-and-publication)). A deceased
+  Member has two rows, *Deceased* and *Death date*: Staff enter them in
+  ParishSoft together and mark both entered.
 - **Status**, derived from the row's decision and execution as below.
 - **Submitted**, in browser-local time.
 - **Recorded by**, **Recorded at** and **Note**: the latest *Entered in
@@ -2079,7 +2086,7 @@ the value publication writes instead of the Family's answer. The Family's
 answer is never changed and stays in its column, with the edit in *Edited
 value* beside it. The field starts with the value publication would write
 now (the edit, else the Family's answer): a date field no later than the
-campaign's today for a birth or death date, the census choices for Gender,
+campaign's today for a birth date, the census choices for Gender,
 and otherwise text no longer than ParishSoft's request schema takes for the
 field (First name 30 characters, Email address 150, a phone 25). **Save
 value** is unavailable until the value differs from the one shown, with its
@@ -2168,12 +2175,13 @@ its breadcrumb is Home › Responses and reports › Census changes › Publish 
 ParishSoft.
 
 What can be written is narrow. ParishSoft's v2 API writes only contact
-fields: a Member's contact record (names, birth and death date, language,
-gender, email and phones) and a Family's contact record. Publication writes
-only the Member fields the
-[handling registry](../data/spec.md#proposed-changes) marks API-writable;
-Family addresses wait for a verified address read, and every other census
-change (deceased, moved, new Members and the rest), as well as Ministry
+fields: a Member's contact record (names, birth date, language, gender,
+email and phones) and a Family's contact record. Publication writes only the
+Member changes the
+[handling registry](../data/spec.md#proposed-changes) marks API-writable,
+and never one that removes a value, which the API cannot do; Family
+addresses wait for a verified address read, and every other census change
+(deceased with its date, moved, new Members and the rest), as well as Ministry
 rosters, pledges and share methods, is entered by hand from Census changes
 or its own page. Publication never changes a Family's code or link, and
 never sends mail.
