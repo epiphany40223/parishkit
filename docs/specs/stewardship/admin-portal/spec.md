@@ -2505,7 +2505,7 @@ The campaign editor includes:
   an empty slot from built-in, parish-neutral default text or reset a saved
   slot to it (the editor is only pre-filled; nothing changes until the normal
   save or preview and apply), with the content list marking each slot as
-  default, customized or empty (see
+  default, edited or empty (see
   [default content](#default-content) below). Plain-text controls
   appear only where plain text is delivered: every email. The confirmation
   email is the whole receipt message; its former separate closing note is
@@ -3229,7 +3229,7 @@ ones, and, after an explicit confirmation, reset every applicable slot to its
 default in one versioned save; schedules that send a replaced email follow
 its new revision. A fill result names each slot it kept because it holds the
 Admin's own text, and the content list marks every slot as default,
-customized or empty, and
+edited or empty, and
 [flags saved text the sanitizer now cleans](../data/spec.md#content-and-email-templates).
 Each default passes the normal content validation described under
 [content and email templates](../data/spec.md#content-and-email-templates).
@@ -3239,7 +3239,7 @@ whole ([#446](https://github.com/epiphany40223/parishkit/issues/446)): the
 subject (linking to its editor, with the start of its ID when two of that
 type share a subject), the start of its plain text, the saved schedules that
 send it, named as on Dates and mail schedules ("No schedule" when none
-does), default or customized text, and its test page (Preview and send
+does), default or edited text, and its test page (Preview and send
 test, a link). Each table is an action table
 ([row actions](../ui-conventions/spec.md#row-actions-and-confirmation),
 [#879](https://github.com/epiphany40223/parishkit/issues/879)): Edit opens
@@ -3495,17 +3495,35 @@ live.
 - **Share options** and **Campaign images.** The existing pages in wizard
   mode. Removing an image keeps its confirmation, because it discards a file
   ([wizard rule 5](../ui-conventions/spec.md#wizards)).
-- **Pages and emails** (item states planned, #1404 PR 6). The list keeps its
-  order (pages, then emails) and gives each item one state, as text: **Default
-  text**, **Edited**, **Kept as is** (reviewed in the wizard without a change)
-  or **Empty** (a slot of a module turned on later). Each row's name opens its
-  editor, a sub-page; the editor's **Keep as is and go back** marks the item
-  Kept as is, and **Save and go back** saves it. Either returns to the list
-  with focus on the row and a status line ("Welcome page saved.", "Welcome
-  page kept as is."). The editor's preview, Start from the default text and
-  Remove stay as they are. The list's Continue is always available and
-  accepts every item not yet edited as is; the per-item marks are optional,
-  and Go-live readiness still flags content that must be saved again.
+- **Pages and emails** (#1404 PR 6b). The list keeps its order (pages, then
+  emails) and gives each item one state, as text: **Default text**,
+  **Edited**, **Kept as is** (reviewed in the wizard without a change) or
+  **Empty** (a slot of a module turned on later). Kept as is is shown only
+  while the wizard applies, and only in place of Default text: an Edited or
+  Empty item kept as is still says Edited or Empty, which says more about
+  what Families see. Each row's name opens its editor, a sub-page. While the
+  editor's form holds no change, its primary is **Keep as is and go back**,
+  which marks the item Kept as is; once the form holds a change, the same
+  place holds **Save and go back**, which saves it (the place is as wide as
+  the longer label, so the switch moves nothing). Where the editor offers
+  saving what is shown as it is (a started default text, a re-save notice,
+  a folded closing note) it offers Save and go back only, and a new email
+  (Create template) has nothing to keep, so it offers Save and go back
+  only. Either returns to the list with focus on the item's row (a saved
+  email is a new revision, so focus goes to its mail type's heading) and a
+  status line ("Family welcome kept as is.", "Family welcome saved.
+  Applied at 3:04 PM."). The mark is stored
+  ([`CampaignSetupReview`](../data/spec.md#campaign), step `content` with
+  the item) for the exact saved text that was reviewed: one email of a mail
+  type kept as is does not mark the others, and a later save of the item is
+  a new revision, which shows its own state. The server refuses a mark for
+  an item the list no longer shows ("That page or email has changed since
+  this page was opened, so it was not marked.", with the link "Return to
+  Pages and emails, then open it again."), with nothing stored. The editor's preview,
+  Start from the default text and Remove stay as they are. The list's
+  Continue is always available and accepts every item not yet edited as is;
+  the per-item marks are optional and never complete the step, and Go-live
+  readiness still flags content that must be saved again.
 - **Dates and mail schedules** (suggested schedules planned, #1404 PR 6).
   With no schedule saved, the page proposes a starting set under "Suggested
   schedules", drawn as the list draws saved schedules and marked "Not saved
@@ -3604,9 +3622,11 @@ stays; the Preview changes page with its fictional sample and the schedules
 the new text switches is not shown on a draft, whose schedules have sent
 nothing, and Preview and test email shows the sample. Send work in progress
 that would block a schedule change refuses the save with its reason, and the
-status line links Outgoing mail. The
-Keep as is and go back half of rule 10 waits for the item states (PR 6).
-The stepper is
+status line links Outgoing mail. Pages
+and emails' editor also has Keep as is and go back while it holds no change
+(Pages and emails, above). New and Edit scheduled email have no stored
+item mark, so Return to Dates and mail schedules is their way back while
+nothing has changed. The stepper is
 an [in-place](../ui-conventions/spec.md#in-place-controls) region: after a
 [review dialog](../ui-conventions/spec.md#review-dialog)'s Apply (Campaign
 images) the page's redraw from its own address, or an

@@ -46,6 +46,12 @@ While loading, the step polls ``LOAD_RUN``'s passive status
 then ``LOAD_STATUS_DONE``. Its form posts to the real refresh address,
 which another component already answers, so the test answers that POST
 (and the in-place re-read once the run ends) itself.
+
+``EDITOR_KEEP`` is that editor opened on a listed item (#1404 PR 6b): its
+action row also holds Keep as is and go back, posting to the step
+Continue's real address (answered with ``CONTENT``), and its Save and go
+back saves to itself (``APPLIED``). ``CONTENT`` lists the welcome page as
+kept as is, with the row id both return to.
 """
 
 from dataclasses import replace
@@ -86,6 +92,7 @@ DIRECT_SETTINGS = "/campaign-stepper-direct-settings"
 DIRECT_SETTINGS_REFUSED = "/campaign-stepper-direct-settings-refused"
 EDITOR_DIRECT = "/campaign-stepper-editor-direct"
 EDITOR_DIRECT_REFUSED = "/campaign-stepper-editor-direct-refused"
+EDITOR_KEEP = "/campaign-stepper-editor-keep"
 SCHEDULES = "/campaign-stepper-schedules"
 NEW_DIRECT = "/campaign-stepper-new-direct"
 EDIT_DIRECT = "/campaign-stepper-edit-direct"
@@ -113,6 +120,7 @@ POSTS = {
     DIRECT_RETRY: (303, NOT_APPLIED, ""),
     DIRECT_SETTINGS: (303, APPLIED, ""),
     EDITOR_DIRECT: (303, APPLIED, ""),
+    EDITOR_KEEP: (303, APPLIED, ""),
     NEW_DIRECT: (303, APPLIED, ""),
     EDIT_DIRECT: (303, APPLIED, ""),
     reverse("admin:campaign_step_continue"): (303, CONTENT, ""),
@@ -348,7 +356,15 @@ def components(context, admin):
         CONTENT: content(
             "content-catalog.html",
             {
-                "pages": [],
+                "pages": [
+                    {
+                        "label": "Welcome page",
+                        "url": EDITOR_KEEP,
+                        "state": "default",
+                        "kept": True,
+                        "row_id": "content-page-welcome",
+                    }
+                ],
                 "emails": [],
                 "base_digest": "a" * 64,
                 "refresh_url": CONTENT,
@@ -375,6 +391,19 @@ def components(context, admin):
                 ContentForm(kind="page", slot="welcome", initial=welcome),
                 EDITOR_DIRECT,
             ),
+            sub=True,
+            direct=True,
+        ),
+        EDITOR_KEEP: content(
+            "content-settings.html",
+            editor(
+                ContentForm(kind="page", slot="welcome", initial=welcome),
+                EDITOR_KEEP,
+            )
+            | {
+                "keep_item": {"item": "page:welcome", "focus": "content-page-welcome"},
+                "save_focus": "content-page-welcome",
+            },
             sub=True,
             direct=True,
         ),

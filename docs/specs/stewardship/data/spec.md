@@ -370,8 +370,11 @@ the dispatch claim must check both state and current pause version.
 0105, [#1404](https://github.com/epiphany40223/parishkit/issues/1404)) records a
 [Campaign setup step](../admin-portal/spec.md#create-the-campaign) an
 Administrator kept as is: campaign, step key (`settings`, `share_options`,
-`content`, `schedules` or `images`), item key (empty for the whole step, or
-one Pages and emails slot such as `page:welcome`), actor and time, unique on
+`content`, `schedules` or `images`), item key (empty for the whole step, or,
+for `content`, one Pages and emails item: its kind and slot and, when it has
+saved text, that revision's id without hyphens, such as
+`page:welcome_<32 hex digits>`, or `page:census` for an empty page; #1404
+PR 6b), actor and time, unique on
 campaign, step and item. It is insert-only: the web role holds SELECT and
 INSERT only, and its guard admits an INSERT only from a current Administrator,
 for the current campaign while the system is in Testing mode, the campaign is
@@ -1219,7 +1222,7 @@ verifying.
 Built-in default text can improve between releases. A change affects only
 slots filled or reset afterwards; saved content keeps its text. Content saved
 unmodified from an earlier default still counts as default rather than
-customized. For example, the confirmation email's online-giving sentence no
+edited. For example, the confirmation email's online-giving sentence no
 longer mentions a pledge (a campaign without the Financial module has none),
 and a slot that still holds the earlier sentence still reads as default (#385).
 

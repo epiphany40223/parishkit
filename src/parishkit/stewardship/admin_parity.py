@@ -155,9 +155,11 @@ LEDGER = {
     # ``refuse_campaign_creation(first=True)``), as this page does.
     "campaign_create": pending("PR 10", "campaign create-preview", "campaign create"),
     "campaign_clone": pending("PR 10", "campaign clone"),
-    # A Campaign setup step's Continue (#1404) only records the browser
-    # stepper's "kept as is" and opens the next step page; the command line
-    # applies settings directly and has no stepper to complete.
+    # A Campaign setup step's Continue (#1404), and Pages and emails'
+    # editor's Keep as is and go back (one item, #1404 PR 6b), only record
+    # the browser stepper's "kept as is" and open the next step page (or
+    # Pages and emails); the command line applies settings directly and has
+    # no stepper to complete.
     "campaign_step_continue": permanent(
         "the browser Campaign setup stepper's own progress; the command line "
         "has no stepper"

@@ -288,11 +288,15 @@ def test_resume_is_the_first_open_step():
     assert wizard.resume(stepper).key == "go_live"
 
 
-def actions(stepper):
-    """The action row the Admin layout draws under a page with ``stepper``."""
+def actions(stepper, **page):
+    """The action row the Admin layout draws under a page with ``stepper``.
+
+    ``page`` is the page's own context, which the row also reads (the
+    editor's ``keep_item`` and ``label``).
+    """
     return render_to_string(
         "stewardship/campaign-step-actions.html",
-        {"admin_chrome": {"campaign_wizard": stepper}},
+        {"admin_chrome": {"campaign_wizard": stepper}} | page,
     )
 
 
@@ -383,6 +387,64 @@ def test_action_row_saves_a_sub_page_and_goes_back(step, form, back):
     assert back in plain
     assert "data-campaign-save" not in plain and "data-next-url" not in plain
     assert "campaign-step-status" not in plain
+
+
+def test_the_editor_keeps_an_item_as_is_in_the_same_place():
+    """Pages and emails' editor holds Keep as is and go back (#1404 PR 6b).
+
+    With a listed item behind the change gate (``keep_item``), the
+    primary's cell holds a form posting the step and the item to the step
+    Continue, named for the status line and the row Pages and emails then
+    focuses, and Save and go back, inactive until the form holds a change.
+    """
+    stepper = wizard.build(
+        True, "content", done={"settings"}, mail_test_url=None, sub=True, direct=True
+    )
+    html = actions(
+        stepper,
+        label="Family welcome",
+        keep_item={"item": "page:welcome", "focus": "content-page-welcome"},
+    )
+    assert f'action="{reverse("admin:campaign_step_continue")}"' in html
+    assert '<input type="hidden" name="step" value="content">' in html
+    assert '<input type="hidden" name="item" value="page:welcome">' in html
+    assert 'data-kept-text="Family welcome kept as is."' in html
+    assert 'data-kept-focus="content-page-welcome"' in html
+    assert f'data-kept-return="{stepper.current.url}"' in html
+    assert ">Keep as is and go back</button></form>" in html
+    assert re.search(
+        r'<button type="submit" form="content-form" [^>]*data-campaign-save'
+        r" data-step-inactive[^>]*>Save and go back</button></div>",
+        html,
+    )
+
+
+def test_every_item_key_fits_the_stored_pattern():
+    """Each page and email slot, with a revision or without, is a valid item."""
+    from parishkit.stewardship.accounts.campaign_wizard_models import (
+        ITEM_PATTERN,
+        item_key,
+    )
+    from parishkit.stewardship.accounts.content_forms import (
+        EMAIL_LABELS,
+        PAGE_LABELS,
+    )
+
+    revision = str(uuid4())
+    # The retired closing note is never listed or edited (receipt_note).
+    pages = set(PAGE_LABELS) - {"submission_confirmation"}
+    for kind, slots in (("page", pages), ("email", EMAIL_LABELS)):
+        for slot in slots:
+            assert re.fullmatch(ITEM_PATTERN, item_key(kind, slot))
+            keyed = item_key(kind, slot, revision)
+            assert re.fullmatch(ITEM_PATTERN, keyed)
+            assert keyed == f"{kind}:{slot}_{revision.replace('-', '')}"
+
+
+def test_only_pages_and_emails_items_are_kept_one_by_one():
+    """An item on another step is refused before anything is read."""
+    with pytest.raises(ValueError, match="Only Pages and emails items"):
+        wizard.record_review(None, None, "settings", "page:welcome")
 
 
 def test_dates_with_no_schedules_continue_without_them():
