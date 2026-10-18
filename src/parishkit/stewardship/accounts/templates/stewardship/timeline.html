@@ -41,7 +41,7 @@
 <div class="short" data-missing-hint="{% translate 'Enter a whole From date, or clear it.' %}"><label for="timeline-start">{% translate "From" %}</label><input id="timeline-start" type="date" name="start" value="{{ query.start }}" aria-describedby="timeline-zone-help" data-browser-zone-field></div>
 <div class="short" data-missing-hint="{% translate 'Enter a whole Through date, no earlier than From, or clear it.' %}"><label for="timeline-end">{% translate "Through" %}</label><input id="timeline-end" type="date" name="end" data-not-before="timeline-start" value="{{ query.end }}" aria-describedby="timeline-zone-help" data-browser-zone-field></div>
 {% button type="submit" %}{% translate "Show lines" %}{% endbutton %}
-<p class="help" id="timeline-zone-help" data-browser-zone-note hidden>{% translate "From and Through are days in this computer's time zone:" %} <span data-browser-zone-name></span>.</p>
+{% translate "From and Through are days in this computer's time zone:" as zone_note %}{% include "stewardship/components/zone-note.html" with note_text=zone_note note_id="timeline-zone-help" %}
 <p class="help" data-complete-hint="reserve" hidden></p>
 </form>
 {# One shared table region (web/tables.py, #488/#519): the filter bar and the When heading (sort_heading) refresh it in place; each href ends in its id, the table's anchor "table". #}
