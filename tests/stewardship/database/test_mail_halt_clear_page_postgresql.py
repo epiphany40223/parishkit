@@ -196,7 +196,7 @@ def test_an_unsettled_email_holds_confirm(auth_service, google, family_mail):  #
         browser, action="clear_confirm", token=token_of(preview.content.decode())
     )
     assert refused.status_code == 409
-    assert "settle them on Outgoing mail first" in region(refused.content.decode())
+    assert "settle them on Sent mail first" in region(refused.content.decode())
     assert not MailHaltClear.objects.exists()
 
 

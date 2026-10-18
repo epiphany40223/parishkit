@@ -67,7 +67,7 @@ REASONS = {
     "check_needed": "No mailbox check passed in the last five minutes.",
     "unsettled": (
         "Some emails may have arrived and are not settled yet; settle them on "
-        "Outgoing mail first."
+        "Sent mail first."
     ),
 }
 # What a confirmation answers when the halt shown can no longer be cleared.
@@ -182,7 +182,7 @@ def _newest_check(now):
 
 
 def _unsettled():
-    """How many messages in Outgoing mail are delivery_unknown, and the
+    """How many messages in Sent mail are delivery_unknown, and the
     first ``UNSETTLED_LISTED`` of their ids, oldest first."""
     from .jobs.outbox_models import OutboxMessage
 
@@ -195,7 +195,7 @@ def _unsettled():
 
 
 def _waiting():
-    """How many messages in Outgoing mail wait to be sent (pending or retry)."""
+    """How many messages in Sent mail wait to be sent (pending or retry)."""
     from .jobs.outbox_models import OutboxMessage
 
     return OutboxMessage.objects.filter(state__in=("pending", "retry_wait")).count()
@@ -714,7 +714,7 @@ def clear_prompt_lines(service, token, caller):
         "Both mail senders start again with one email as a probe. If the fault "
         "is still there, the probe meets it and sending halts again.",
         "Nothing is resent: failed emails stay failed until they are retried on "
-        "Outgoing mail.",
+        "Sent mail.",
     )
 
 

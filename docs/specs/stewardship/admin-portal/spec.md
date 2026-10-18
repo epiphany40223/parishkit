@@ -7933,7 +7933,7 @@ yet, with a link to settle them on Sent mail.
 **Unavailable when** (greyed, with the reason): no consumer is halted, or
 its halt is not recorded yet; the mailbox check is running, did not pass,
 did not answer, or passed more than five minutes ago; or any email in
-Outgoing mail is in `delivery_unknown` and not settled yet. Requiring settlement first
+Sent mail is in `delivery_unknown` and not settled yet. Requiring settlement first
 means the Administrator decides about every message Gmail may have accepted
 before sending starts again, so nothing is sent twice by mistake. The rule
 covers every unsettled `delivery_unknown` email, not only the halt's
@@ -7944,7 +7944,7 @@ time window reliably separates the halt's attempts from earlier ones.
 without a recent sign-in; the halt matches the one the preview showed and
 is still current; the newest mailbox check was claimed after the halt
 began and passed within the last five minutes (a later check that was
-refused, unavailable or still running cancels an earlier pass); and no email in Outgoing mail is in
+refused, unavailable or still running cancels an earlier pass); and no email in Sent mail is in
 `delivery_unknown`. The clear signal's guard repeats each check in the
 signal's own transaction, serialized by a transaction advisory lock, so two
 confirmations cannot both clear a halt.
@@ -7984,7 +7984,7 @@ to restart the mail sender and links the
 [mail-provider outage runbook](../../../guides/stewardship-launch-runbooks.md#mail-provider-outage),
 rather than promising 30 seconds for ever (two more reads, only in that
 case). **Clear the halt** opens the preview in place: when the halt began and its kind, the waiting
-and unsettled emails (with a link to settle them on Outgoing mail),
+and unsettled emails (with a link to settle them on Sent mail),
 whether mail is also paused, and the mailbox check, which opening it asks
 for. The check's line and the two buttons, **Check again** and **Confirm:
 clear the halt**, follow the page's 10-second status read in place: the
