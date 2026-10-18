@@ -18,14 +18,17 @@ from django.urls import reverse
 
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
+from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports.hub_census import read_hub_census
-from parishkit.stewardship.responses.models import ProposedChange
+from parishkit.stewardship.responses.effective import proposal_index
+from parishkit.stewardship.responses.models import ProposedChange, Submission
 
 from ..census_factory import address, member
 from ..policy_factory import address as rule_address
 from .auth_builders import signed_in
 from .campaign_builders import change
+from .response_builders import response_source
 from .test_background_grants_postgresql import task_login
 from .test_census_resolution_postgresql import prepared, resolve
 from .test_census_review_postgresql import review
@@ -33,8 +36,16 @@ from .test_member_requests_postgresql import revisit, send
 from .test_report_workspace_postgresql import read as get
 from .test_response_http_postgresql import answers_for, load_form
 from .test_runtime_auth_grants_postgresql import web_login
+from .test_source_families_postgresql import prepare, promote
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+# Text only the hub's two census statements hold (hub_census.SUBMISSION and
+# PROPOSALS), to count them among a page load's statements.
+CENSUS_SQL = (
+    "'proposed_members', s.answers->'proposed_members'",
+    "FROM stewardship_proposed_change p\nJOIN stewardship_submission s",
+)
 
 
 def answer_twice(harness):
@@ -126,7 +137,14 @@ def as_web(client, path):
         CaptureQueriesContext(connection) as queries,
     ):
         response, body = get(client, path)
-    return response, body.decode(), len(queries)
+    # The hub's census statements, told apart by their own SQL text: the
+    # rest of the page (sessions, guards, the timeline) is slice 1's.
+    census = [
+        query["sql"]
+        for query in queries.captured_queries
+        if any(text in query["sql"] for text in CENSUS_SQL)
+    ]
+    return response, body.decode(), len(census)
 
 
 def test_the_hub_draws_each_census_panel_with_no_new_audit(
@@ -153,16 +171,12 @@ def test_the_hub_draws_each_census_panel_with_no_new_audit(
     response, body, member_statements = as_web(admin, page + "?tab=member-1")
     assert response.status_code == 200 and 'id="hub-member-1-changed-caption"' in body
     # The census read is the same two statements on every tab, so a Member
-    # panel costs what the Family or Timeline panel does. (The session's
-    # first load above also records its sign-in activity, so it is not
-    # compared.)
-    response, _, again = as_web(admin, page)
-    assert response.status_code == 200
-    assert again == family_statements == member_statements, timeline_statements
+    # panel costs what the Family or Timeline panel does.
+    assert timeline_statements == family_statements == member_statements == 2
     # Each load is one audited view, as before the hub; nothing else.
     assert (
         AuditEvent.objects.filter(event_type="family_timeline_viewed").count()
-        == viewed + 4
+        == viewed + 3
     )
     # Staff see the same tabs.
     store = auth_service.store
@@ -178,3 +192,54 @@ def test_the_hub_draws_each_census_panel_with_no_new_audit(
     staff, _ = signed_in()
     response, body, _ = as_web(staff, page + "?tab=family")
     assert response.status_code == 200 and "9 Census Way" in body
+
+
+def test_a_kept_request_names_a_member_parishsoft_no_longer_lists(
+    live_response_service,
+):
+    """Member 3's Deceased request survives ParishSoft moving the Member out
+    and a later response; the hub's rows equal ``proposal_index``'s."""
+    harness = live_response_service
+    with web_login():
+        form = load_form(harness)
+        answers = answers_for(form)
+        answers["members"]["3"] = {
+            "deceased_status": True,
+            "confirmed": True,
+            "death_date": "2026-01-01",
+        }
+        send(harness, form, answers)
+    data = response_source()
+    # Another active Member keeps the household able to sign in.
+    data.members[4] = {**data.members[3], "memberDUID": 4, "firstName": "Survivor"}
+    data.members[3]["familyDUID"] = 2
+    snapshot, claim = prepare(data)
+    with task_login(ServiceRole.WORKER, exact=True):
+        promote(snapshot, claim, harness.campaign, harness.rings)
+    with web_login():
+        form = revisit(harness)
+        send(harness, form, answers_for(form))
+    latest = Submission.objects.order_by("-family_version").first()
+    census, _ = hub(harness, latest.family_id)
+    kept = [item for item in census.members if item.mark == "missing"]
+    assert [item.label for item in census.members] == [
+        census.members[0].label,
+        kept[0].label,
+    ]
+    assert census.members[0].mark == "" and "Survivor" in census.members[0].label
+    # Named from the ParishSoft record the Family first answered from.
+    assert kept[0].label != "Name not recorded in ParishSoft"
+    assert [row.label for row in kept[0].rows] == ["Deceased", "Death date"]
+    # The SQL restatement selects exactly the rows proposal_index does.
+    with work_transaction():
+        expected = {
+            (kind, "" if kind == "family" else key, field): row.execution
+            for (kind, key, field), row in proposal_index(latest).items()
+            if row.execution not in {"superseded", "cancelled"}
+        }
+    shown = {
+        ("member", "3", "deceased_status"),
+        ("member", "3", "death_date"),
+    }
+    assert shown <= set(expected)
+    assert {key for key in expected if key[0] == "member"} == shown

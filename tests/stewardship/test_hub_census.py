@@ -125,19 +125,19 @@ def test_the_family_tab_compares_each_household_field():
 
 
 def test_member_tabs_follow_the_spec_order_with_their_marks():
-    """Existing by DUID (kept-only among them), then added by name; marks."""
+    """Existing by DUID, then kept-only ones, then added by name; marks."""
     members = shape(ANSWERS, NAMES, ROWS).members
     assert [(item.key, item.label, item.mark) for item in members] == [
         ("member-1", "Adams, Requested", ""),
         ("member-2", "Adams, Dee", "moved"),
         ("member-3", "Adams, Eve", "deceased"),
-        ("member-4", "Adams, Gus", "missing"),
-        ("member-5", "Adams, Bo", ""),
+        ("member-4", "Adams, Bo", ""),
+        ("member-5", "Adams, Gus", "missing"),
         ("member-6", "Adams, Cy", "new"),
         ("member-7", "Adams, Zed", "new"),
     ]
     assert str(members[1].mark_label) == "No longer in this household"
-    assert str(members[3].mark_label) == "Not in ParishSoft"
+    assert str(members[4].mark_label) == "Not in ParishSoft"
     assert "not in ParishSoft yet" in str(members[5].mark_note)
 
 
@@ -160,13 +160,13 @@ def test_a_member_tab_shows_its_change_stage_and_reviewers_value():
         (row.label, row.answer) for row in ann.unchanged
     ]
     # Bo's only row is history, so every field is unchanged.
-    assert members[4].changed == () and len(members[4].unchanged) == len(MEMBER_FIELDS)
+    assert members[3].changed == () and len(members[3].unchanged) == len(MEMBER_FIELDS)
 
 
 def test_moved_deceased_and_kept_members_show_only_their_requests():
     """The form asked nothing else about them; each request has its stage."""
     members = shape(ANSWERS, NAMES, ROWS).members
-    moved, deceased, kept = members[1:4]
+    moved, deceased, kept = members[1], members[2], members[4]
     assert [(row.label, row.answer, row.stage_label) for row in moved.rows] == [
         ("No longer in this household", "Yes", "Entered by hand")
     ]
@@ -287,3 +287,17 @@ def test_before_any_response_the_family_tab_says_so():
     page = render("family", HubCensus())
     assert "has not submitted census answers yet" in page
     assert 'data-tab="member-1"' not in page
+
+
+def test_a_change_with_no_stage_is_shown_without_one(caplog):
+    """A state the SQL guards never store neither breaks the page nor
+    guesses a stage: the change shows no chip and the failure is logged."""
+    rows = [change("family", "1", "home_address", NEW_HOME, HOME, decision="odd")]
+    with caplog.at_level("WARNING"):
+        (home,) = shape(ANSWERS, NAMES, rows).family.changed
+    assert home.placement is None and home.stage_label == ""
+    assert render_to_string("stewardship/hub-stage.html", {"row": home}).strip() == ""
+    (record,) = [
+        item for item in caplog.records if "report_shaping_failed" in item.getMessage()
+    ]
+    assert "hub_census_stage" in str(vars(record))

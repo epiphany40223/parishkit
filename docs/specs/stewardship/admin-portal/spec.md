@@ -6870,11 +6870,15 @@ from; its address key is the tab's place in that order (`member-1`,
 history. Before the Family's first response there are no Member tabs, and
 the Family tab says it has no census answers yet.
 
-**Marks.** A Member tab opens with the Member's mark, as a badge, when the
-Member is not a current Member: **New Member** (the Family added the
+**Marks.** Each panel opens with its subject's name as a heading, so a
+panel fetched after the Family answered again (which can renumber the
+Member tabs) still says whose it is. A Member tab then shows the Member's
+mark, as a badge, when the Member is not a current Member: **New Member** (the Family added the
 Member; not in ParishSoft yet), **No longer in this household**,
 **Deceased**, or **Not in ParishSoft** (ParishSoft no longer lists the
-Member in this Family). A moved or deceased Member's other fields were not
+Member in this Family; the shared
+[no longer in ParishSoft](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
+mark). A moved or deceased Member's other fields were not
 asked on the form, so the tab shows only the request's own fields and says
 so.
 
@@ -6885,7 +6889,9 @@ value** (drawn only when a change on the tab has one) and **Stage**, the
 stage's chip with its word ([pipeline vocabulary](../review-pipeline/spec.md#pipeline-vocabulary));
 an Entered incorrectly chip takes the Error look
 ([status indicators](../ui-conventions/spec.md#status-indicators)), and a
-failed update attempt adds "Last update failed". Unchanged fields follow in
+failed update attempt adds "Last update failed". A change whose stored
+state has no stage (one the SQL guards never store) shows no chip and is
+logged, so one bad row never takes down the page. Unchanged fields follow in
 a closed **Show unchanged** disclosure with **Field** and **Value**. A New
 Member's tab shows the addition's stage once, above a table of **Field** and
 **Family's answer**. The Not seen in ParishSoft flag is shown once the

@@ -18,11 +18,13 @@ test drives it from plain values.
 """
 
 import json
+import logging
 from dataclasses import dataclass
 
 from django.db import connection
 from django.utils.translation import gettext_lazy as _
 
+from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.pipeline import Stage, census_placement
 from parishkit.stewardship.responses.census import FAMILY_FIELDS
 from parishkit.stewardship.responses.member_census import MEMBER_FIELDS
@@ -51,6 +53,7 @@ MARKS = {
         _("Deceased"),
         _("The form did not ask about this Member's other details."),
     ),
+    # Drawn with the shared {% source_status "missing" %} mark.
     "missing": (
         _(NOT_IN_PARISHSOFT),
         _(
@@ -68,7 +71,7 @@ MARKS = {
 # reviewed snapshot, the newest naming each Member), so a Member the
 # Family no longer shows is still named. Takes %(family)s and %(campaign)s.
 SUBMISSION = """
-SELECT s.id::text,
+SELECT s.id,
     jsonb_build_object('family', s.answers->'family',
         'members', s.answers->'members',
         'proposed_members', s.answers->'proposed_members')::text,
@@ -96,7 +99,8 @@ LIMIT 1
 # The change rows in force (``effective.proposal_index``): the census
 # response's own rows, and for a Member's request fields the newest row of
 # any live response, the census response's first. Report-only rows belong
-# to other streams. Takes %(family)s, %(campaign)s and %(submission)s.
+# to other streams. Takes %(family)s, %(campaign)s, %(submission)s (a UUID)
+# and %(terminal)s (``TERMINAL``, a list).
 PROPOSALS = """
 SELECT DISTINCT ON (p.entity_kind, p.entity_key, p.field)
     p.entity_kind, p.entity_key, p.field, p.baseline_available,
@@ -106,10 +110,10 @@ FROM stewardship_proposed_change p
 JOIN stewardship_submission s ON s.id=p.submission_id
 WHERE s.family_id=%(family)s AND s.campaign_id=%(campaign)s AND s.mode='live'
     AND p.handling<>'report-only'
-    AND (s.id::text=%(submission)s OR (p.entity_kind='member'
-        AND p.field IN ('moved_household', 'deceased_status', 'death_date')))
+    AND (s.id=%(submission)s OR (p.entity_kind='member'
+        AND p.field = ANY(%(terminal)s)))
 ORDER BY p.entity_kind, p.entity_key, p.field,
-    s.id::text=%(submission)s DESC, s.family_version DESC
+    s.id=%(submission)s DESC, s.family_version DESC
 """
 COLUMNS = (
     "entity_kind",
@@ -243,7 +247,10 @@ def read_hub_census(campaign_id, family_id, *, census):
         submission, answers, names = found
         rows = []
         if census:
-            cursor.execute(PROPOSALS, parameters | {"submission": submission})
+            cursor.execute(
+                PROPOSALS,
+                parameters | {"submission": submission, "terminal": list(TERMINAL)},
+            )
             rows = [dict(zip(COLUMNS, values, strict=True)) for values in cursor]
     for row in rows:
         # JSON values arrive as text (cast in PROPOSALS) and are decoded once.
@@ -267,14 +274,28 @@ def member_label(answer, source):
 
 
 def placed(row):
-    """A change row's ``Placement``, the review worklist's own mapping."""
-    return census_placement(
-        decision=row["decision"],
-        execution=row["execution"],
-        handling=row["handling"],
-        entity_kind=row["entity_kind"],
-        admin_value_set=row["admin_value_set"],
-    )
+    """A change row's ``Placement``, the review worklist's own mapping.
+
+    ``census_placement`` refuses a state the SQL guards never store. One
+    such row must not take the whole Family page (its Timeline tab
+    included) down with it, so it is logged and shown with no stage.
+    """
+    try:
+        return census_placement(
+            decision=row["decision"],
+            execution=row["execution"],
+            handling=row["handling"],
+            entity_kind=row["entity_kind"],
+            admin_value_set=row["admin_value_set"],
+        )
+    except ValueError as error:
+        emit_failure(
+            error,
+            event=Event.REPORT_SHAPING_FAILED,
+            level=logging.WARNING,
+            shaping="hub_census_stage",
+        )
+        return None
 
 
 def changed_row(row, placement):
@@ -346,11 +367,11 @@ def shape(answers, names, rows, *, census=True):
     subjects = []
     # Existing Members by DUID, then those only earlier requests keep.
     kept = {key for kind, key in changes if kind == "member"} - set(members)
-    for key in sorted(set(members) | kept, key=int):
+    for key in [*sorted(members, key=int), *sorted(kept, key=int)]:
         answer = members.get(key)
         mine = changes.get(("member", key), {})
         if answer is None:
-            mark, fields = "missing", []
+            mark, fields = "missing", list(TERMINAL)
         elif answer.get("moved_household") is True:
             mark, fields = "moved", ["moved_household"]
         elif answer.get("deceased_status") is True:
