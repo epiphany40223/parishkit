@@ -257,3 +257,43 @@ def test_a_link_followed_before_the_zone_applies_gets_it_too(page, component_ori
         "America/Los_Angeles"
     )
     assert zones(page) == ["America/Los_Angeles"]
+
+
+# Each component-drawn value's overflow past its tile's border box, in px,
+# after writing ``text`` (at its StatTile.fit size) into every one: 0 when
+# it stays inside. Measured on a range around the text, not the value's
+# element: a tile is a flex column, so the element is stretched to the
+# tile's width and only the text inside it runs past the border.
+OVERFLOW = """([text, fit]) => [...document.querySelectorAll(
+    '.stat-tile[data-stat]')].map((tile) => {
+  const value = tile.querySelector('.stat-value');
+  value.textContent = text;
+  value.className = ('stat-value ' + fit).trim();
+  const outer = tile.getBoundingClientRect();
+  const range = document.createRange();
+  range.selectNodeContents(value);
+  const inner = range.getBoundingClientRect();
+  return Math.max(0, outer.left - inner.left, inner.right - outer.right);
+})"""
+
+
+@pytest.mark.parametrize("width", [760, 1100, 1600])
+@pytest.mark.parametrize("text", ["$9,999,999.99", "$1,000.00"])
+@pytest.mark.parametrize("font_size", ["100%", "150%"])
+def test_long_values_stay_inside_their_tiles(
+    page, component_origin, width, text, font_size
+):
+    """A one-line value stays inside its tile (#1537) at the widths where a
+    four-across row once sat at its narrowest column: without a wider
+    minimum column, a 13-character money value at the long size and a
+    9-character one at full size ran past the tile's border. 150% stands
+    in for a reader's 24px default font size."""
+    from parishkit.stewardship.web.stat_tiles import StatTile
+
+    page.set_viewport_size({"width": width, "height": 800})
+    page.goto(component_origin + REAL + "?" + ZONE)
+    page.evaluate(f"document.documentElement.style.fontSize = '{font_size}'")
+    fit = StatTile(key="probe", label="Probe", text=text).fit
+    overflow = page.evaluate(OVERFLOW, [text, fit])
+    assert len(overflow) >= 4
+    assert overflow == [0] * len(overflow)
