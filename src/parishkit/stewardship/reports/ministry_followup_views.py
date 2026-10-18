@@ -86,6 +86,7 @@ from parishkit.stewardship.workflows.roster import (
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .information import parse_page
+from .leader_coverage import leader_status, read_coverage
 from .ministries import (
     MinistryQuery,
     ministry_page,
@@ -482,6 +483,15 @@ def _page_response(
             )
             query = FollowupQuery(state="any", history="all")
         admit_report_read(campaign_id)
+        # The Leaders column (#1594), for Staff and Administrators on the
+        # queue page: read here, before the guarded read-only response,
+        # because its definer records its own audit event. A refused read
+        # is a refused page (PermissionError, below).
+        coverage = (
+            read_coverage(request.session.session_key)
+            if request_id is None and reads_every_ministry(principal)
+            else None
+        )
         _audit(principal, campaign_id, Outcome.STARTED)
         # The request's Ministry, once read, for the completion event.
         finalized, shown_ministry = False, None
@@ -535,7 +545,7 @@ def _page_response(
                     mutable=mutable,
                     action=reverse("admin:ministry_report"),
                 ),
-                **_overview(campaign_id, principal),
+                **_overview(campaign_id, principal, coverage),
                 campaign_id=campaign_id,
                 mutable=mutable,
                 notice=notice,
@@ -761,7 +771,7 @@ def count_links(principal, summary):
     }
 
 
-def _overview(campaign_id, principal):
+def _overview(campaign_id, principal, coverage):
     """Ministry requests' parts below the worklist (#1133).
 
     By Ministry and the packet's choices are every Ministry in the reader's
@@ -770,13 +780,21 @@ def _overview(campaign_id, principal):
     is how a reader picks one. Each By Ministry count is a link that applies
     its Ministry and request to the worklist. The totals and the Follow-up
     progress chart are gone (#1676): a review worklist has none (#1684).
+    ``coverage`` is the Leaders column's counts read before the response
+    (#1594), or None; it is shown only while the reader, rechecked inside
+    the guard, still reads every Ministry, so a Staff user who became a
+    Ministry leader meanwhile never sees it.
     """
     summaries = ministry_page(campaign_id, MinistryQuery(), principal, every=True)[
         "summaries"
     ]
+    show_leaders = coverage is not None and reads_every_ministry(principal)
     for summary in summaries:
         summary["count_links"] = count_links(principal, summary)
+        if show_leaders:
+            summary["leaders"] = leader_status(coverage.get(int(summary["duid"])))
     return {
+        "show_leaders": show_leaders,
         "by_ministry": summaries,
         # The "Not in ParishSoft data" and campaign marks, for Staff and
         # Administrators only (#1135).

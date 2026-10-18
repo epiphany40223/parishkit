@@ -2127,10 +2127,12 @@ icon and a colour):
 | --- | --- | --- |
 | No leader | ParishSoft lists nobody who leads this Ministry with a valid email address, under the [leaders definition](../data/spec.md#ministry-leaders): no active Member holds one of the campaign's Ministry leader roles on its roster, or none of them has a valid email address. | Warning |
 | No user yet | It has leaders, but none of their addresses is an Admin portal user yet, so none of them can sign in. An Administrator can import them on Users ([ParishSoft Ministry leaders without a user](../admin-portal/spec.md#parishsoft-ministry-leaders-without-a-user)). | Warning |
-| Not signed in yet | At least one leader's address is a user, but none of those users has ever signed in successfully. | Warning |
+| Not signed in yet | At least one leader's address is a user, but none of those users has signed in successfully, or none can now (a disabled Google identity counts as a user but not as signed in). | Warning |
 | 1 signed in, 2 signed in, … | How many of its leaders' users have signed in successfully at least once. | Working |
 
-A leader counts once per email address; an address that several leader
+Staff learn from this column whether a single-leader Ministry's leader has
+signed in; #1594 accepts that, since counts are enough to act on. A leader
+counts once per email address; an address that several leader
 Members list is one leader. A user counts when its role is Ministry leader,
 Staff or Administrator, the roles that give a leader's Ministries; a sign-in
 counts when it opened a session, as the Users page's Last successful sign-in
@@ -2161,8 +2163,9 @@ failed access check; if the read fails, the page shows the usual
 refresh, a users change or a first sign-in, and each read is an audited
 view, so the page does not re-read it on a timer (automatic re-reads are
 passive and never audited,
-[#1586](https://github.com/epiphany40223/parishkit/issues/1586)); a
-reload or any in-place refresh shows the current values. Its cells
+[#1586](https://github.com/epiphany40223/parishkit/issues/1586)); the
+Leaders column is excluded from any such timer re-read and shows the
+current values on each page view and in-place refresh. Its cells
 are ordinary table text, so the column keeps the table's row height
 ([no layout shift](../ui-conventions/spec.md#no-layout-shift)). `report
 ministry` prints the same status for each Ministry to Staff and

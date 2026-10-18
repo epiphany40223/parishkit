@@ -60,7 +60,7 @@ def test_by_ministry_marks_and_one_line_for_one_ministry(page, component_origin)
     open_by_ministry(page)
     section = page.locator("#by-ministry")
     rows = section.locator("tbody tr")
-    assert rows.count() == 2
+    assert rows.count() == 4
     assert "Not in ParishSoft data" in rows.first.inner_text()
     assert "No longer in this campaign" in rows.nth(1).inner_text()
     link = section.get_by_role("link", name=JOINS)
@@ -82,6 +82,52 @@ def test_by_ministry_marks_and_one_line_for_one_ministry(page, component_origin)
     text = section.text_content() + page.locator(".about-page").text_content()
     for hidden in ("Not in ParishSoft data", "No longer in this campaign"):
         assert hidden not in text
+
+
+def test_leaders_column_shows_each_ministrys_status_to_staff_only(
+    page, component_origin
+):
+    """Staff's By Ministry ends with Leaders: a status indicator per Ministry
+    (word and icon, Working or Warning), one line high, never a link; the
+    page help explains it. A Ministry leader gets neither (#1594)."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + REQUESTS)
+    section = page.locator("#by-ministry")
+    headers = section.locator("thead th")
+    assert headers.last.inner_text() == "Leaders"
+    cells = section.locator("tbody tr td:last-child .leader-status")
+    assert cells.count() == 4
+    assert [cells.nth(i).inner_text().strip() for i in range(4)] == [
+        "2 signed in",
+        "No leader",
+        "No user yet",
+        "Not signed in yet",
+    ]
+    assert "status-working" in cells.first.get_attribute("class")
+    assert "status-warning" in cells.nth(1).get_attribute("class")
+    # The icon differs in shape per state and is hidden from assistive
+    # technology: the word carries the state.
+    assert cells.first.locator("svg.level-icon-ok[aria-hidden=true]").count() == 1
+    assert cells.nth(1).locator("svg.level-icon-warning[aria-hidden=true]").count() == 1
+    assert section.locator("tbody .leader-status a").count() == 0
+    # One line, so the row keeps the height of its counts.
+    # The longest words (No user yet, Not signed in yet) stay one line and
+    # fit the page at 320 pixels as well.
+    for width in (1280, 320):
+        page.set_viewport_size({"width": width, "height": 900})
+        for index in range(4):
+            cell = cells.nth(index).bounding_box()
+            row = section.locator("tbody tr").nth(index).bounding_box()
+            assert cell["height"] < 2 * 16 and cell["height"] <= row["height"]
+        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    page.set_viewport_size({"width": 1280, "height": 900})
+    about = page.locator(".about-page").text_content()
+    assert "Leaders says whether anyone besides Staff" in about
+    page.goto(component_origin + LEADER)
+    section = page.locator("#by-ministry")
+    assert section.locator(".leader-status").count() == 0
+    assert "Leaders" not in section.inner_text()
+    assert "Leaders says whether" not in page.locator(".about-page").text_content()
 
 
 def test_a_count_filters_the_table_in_place(page, component_origin):
