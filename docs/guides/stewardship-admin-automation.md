@@ -3745,7 +3745,7 @@ Each change is recorded in System logs as on the page
   `--confirm`, the Users page's Email Ministry leaders review and Apply
   (full scope, the page's audit events and `admin_cmd_users_email_leaders`;
   `--confirm` prompts, `--yes` answers it).
-- `pk-admin/1` (#1658, migration 0130, a provisional number): additive. A
+- `pk-admin/1` (#1658, migration 0121): additive. A
   `schedule preview` change document may give a saved daily or weekly
   digest a `skip` date, which skips that one send; `schedule show` and each
   side of `schedule preview` list a digest's `skip_dates` (empty when none).

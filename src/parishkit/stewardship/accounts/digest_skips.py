@@ -8,7 +8,7 @@ change: the digest's values gain the send's slot date in ``skip_dates``
 lock and audited like every other change (``schedule_changes.build_preview``
 calls ``apply`` here). Every evaluator then leaves the slot out
 (``SchedulePlan``), and the database refuses an occurrence for it (frozen
-migration 0130).
+migration 0121).
 
 A skip is checked here before anything is signed, with nothing recorded on
 a refusal:

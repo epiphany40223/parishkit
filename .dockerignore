@@ -145,7 +145,7 @@
 !src/parishkit/stewardship/schema/migrations/0118_gender_by_hand.sql
 !src/parishkit/stewardship/schema/migrations/0119_leader_request_contacts.sql
 !src/parishkit/stewardship/schema/migrations/0120_leader_emails.sql
-!src/parishkit/stewardship/schema/migrations/0130_digest_skip_dates.sql
+!src/parishkit/stewardship/schema/migrations/0121_digest_skip_dates.sql
 !src/parishkit/stewardship/schema/due_work_health.sql
 !src/parishkit/stewardship/schema/family_dispatch.sql
 !src/parishkit/stewardship/schema/production.sql

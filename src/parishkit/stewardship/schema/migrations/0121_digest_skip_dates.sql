@@ -1,7 +1,7 @@
--- Frozen forward migration file 0130 (the repository-wide file sequence; a
--- provisional number until it merges): skip one send of a Daily or Weekly
--- Admin digest (#1658). This file is installed by its Django migration in
--- the campaigns app and must never change once released;
+-- Frozen forward migration file 0121 (the repository-wide file sequence):
+-- skip one send of a Daily or Weekly Admin digest (#1658). This file is
+-- installed by its Django migration in the campaigns app and must never
+-- change once released;
 -- tests/stewardship/test_schema_migration_files.py pins its digest and checks
 -- that its copies of the baseline functions equal the fresh-install
 -- baseline's. A fresh install runs the baseline, the earlier files and then
@@ -50,7 +50,7 @@ SET LOCAL search_path = public;
 -- are compared in sorted order: an installed database may hold them in the
 -- order of a later ALTER FUNCTION ... SET. A transaction-local setting holds
 -- them, not a temporary table: the migration login has no TEMP privilege.
-SELECT set_config('stewardship.migration_0130_acl', (
+SELECT set_config('stewardship.migration_0121_acl', (
     SELECT count(*)||':'||coalesce(string_agg(p.proname||'/'||coalesce(p.proacl::text,'default')
             ||'/'||coalesce((SELECT array_agg(c ORDER BY c) FROM unnest(p.proconfig) c)::text,'')
             ||'/'||p.proowner::regrole::text,';' ORDER BY p.proname),'')
@@ -304,7 +304,7 @@ BEGIN
           AND pg_get_function_arguments(p.oid)=''
           AND md5(p.prosrc)='669e74dff167d9deab8c081677e6855a'
           AND p.prosrc LIKE '%AND coalesce(skipping.values->''skip_dates'' ? NEW.slot,false))) THEN%')<>1 THEN
-        RAISE EXCEPTION 'Migration 0130 (digest skip dates) did not replace the occurrence guard as a definer';
+        RAISE EXCEPTION 'Migration 0121 (digest skip dates) did not replace the occurrence guard as a definer';
     END IF;
     -- The slot check: invoker, stable, plpgsql, with its arguments and
     -- exactly this file's body (its md5; the LIKE spells out the skip_dates
@@ -317,7 +317,7 @@ BEGIN
           AND pg_get_function_arguments(p.oid)='definition uuid, slot text'
           AND md5(p.prosrc)='ec0c597468418d43ffcbc8d9aa351097'
           AND p.prosrc LIKE '%IF coalesce(v.values->''skip_dates'' ? slot,false) THEN RETURN NULL; END IF;%')<>1 THEN
-        RAISE EXCEPTION 'Migration 0130 (digest skip dates) did not replace the slot check';
+        RAISE EXCEPTION 'Migration 0121 (digest skip dates) did not replace the slot check';
     END IF;
     -- The weekly page proof: invoker, stable, plpgsql, with its arguments
     -- and exactly this file's body (its md5; the LIKEs spell out the
@@ -331,7 +331,7 @@ BEGIN
           AND md5(p.prosrc)='076bc3352d235f7ba90da01a26ea705d'
           AND p.prosrc LIKE '%WHERE (expected.due IS NULL AND NOT coalesce(v.values->''skip_dates'' ? day::date::text,false))%'
           AND p.prosrc LIKE '%OR (expected.due IS NOT NULL%')<>1 THEN
-        RAISE EXCEPTION 'Migration 0130 (digest skip dates) did not replace the weekly page proof';
+        RAISE EXCEPTION 'Migration 0121 (digest skip dates) did not replace the weekly page proof';
     END IF;
     -- CREATE OR REPLACE keeps the grants, owner and settings; check that
     -- nothing changed them.
@@ -341,12 +341,12 @@ BEGIN
         FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname IN ('stewardship_occurrence_guard_v1',
             'stewardship_catchup_due_v1','stewardship_weekly_digest_page_v1'))
-        IS DISTINCT FROM current_setting('stewardship.migration_0130_acl') THEN
-        RAISE EXCEPTION 'Migration 0130 changed the grants, owner or settings of a replaced function';
+        IS DISTINCT FROM current_setting('stewardship.migration_0121_acl') THEN
+        RAISE EXCEPTION 'Migration 0121 changed the grants, owner or settings of a replaced function';
     END IF;
     -- An unknown schedule still has no slot, as before.
     IF public.stewardship_catchup_due_v1('00000000-0000-0000-0000-000000000000','2054-10-01') IS NOT NULL THEN
-        RAISE EXCEPTION 'Migration 0130 slot check answers a slot for an unknown schedule';
+        RAISE EXCEPTION 'Migration 0121 slot check answers a slot for an unknown schedule';
     END IF;
 END
 $check$;

@@ -5,7 +5,7 @@ whose revision carries ``skip_dates`` gets no occurrence for those slots from
 the scheduler's digest planner, the database's occurrence guard refuses one
 even from a planner that ignored them, the canonical slot check answers no
 slot for them, and the weekly page proof accepts a skipped week without an
-occurrence. Frozen migration 0130's closing DO block passes on the installed
+occurrence. Frozen migration 0121's closing DO block passes on the installed
 functions and refuses each older body, a weakened body (a guard that
 enforces Weekly skips alone, a slot check whose skip line can never run)
 and a guard that lost its definer rights.
@@ -40,8 +40,8 @@ pytestmark = pytest.mark.django_db(transaction=True)
 MIGRATIONS = (
     Path(__file__).resolve().parents[3] / "src/parishkit/stewardship/schema/migrations"
 )
-FROZEN = (MIGRATIONS / "0130_digest_skip_dates.sql").read_text(encoding="utf-8")
-# The occurrence guard's skipped-send refusal, as 0130 adds it after the
+FROZEN = (MIGRATIONS / "0121_digest_skip_dates.sql").read_text(encoding="utf-8")
+# The occurrence guard's skipped-send refusal, as 0121 adds it after the
 # post-close resolution check.
 GUARD_SKIP = """
            -- A digest's skipped send (#1658) is never planned, by any writer.
@@ -187,13 +187,13 @@ def test_the_weekly_page_proof_accepts_a_skipped_week_alone(
 
 
 def body(name, terminator):
-    """One replaced function's whole definition, as 0130 installs it."""
+    """One replaced function's whole definition, as 0121 installs it."""
     start = FROZEN.index(f"CREATE OR REPLACE FUNCTION public.{name}(")
     return FROZEN[start : FROZEN.index(terminator, start) + len(terminator)]
 
 
 def old_body(name):
-    """The definition 0130 replaced: its own copy without #1658's change."""
+    """The definition 0121 replaced: its own copy without #1658's change."""
     if name == "stewardship_occurrence_guard_v1":
         text = body(name, "END $_$;")
         replaced = text.replace(GUARD_SKIP, "")
@@ -208,14 +208,14 @@ def old_body(name):
 
 
 def check():
-    """0130's DO block, as the frozen file runs it."""
+    """0121's DO block, as the frozen file runs it."""
     return re.search(r"^DO \$check\$.*?\$check\$;", FROZEN, re.M | re.S)[0]
 
 
 def recorded_acl(cursor):
     """Record the grants, settings and owner as the frozen file does first."""
     statement = re.search(
-        r"^SELECT set_config\('stewardship\.migration_0130_acl'.*?, true\);",
+        r"^SELECT set_config\('stewardship\.migration_0121_acl'.*?, true\);",
         FROZEN,
         re.M | re.S,
     )[0]
@@ -269,7 +269,7 @@ def test_migration_self_check_refuses_a_guard_without_definer_rights():
 
 
 def weakened(name):
-    """A body that keeps 0130's skip text but no longer enforces it fully."""
+    """A body that keeps 0121's skip text but no longer enforces it fully."""
     if name == "stewardship_occurrence_guard_v1":
         text = body(name, "END $_$;")
         # Daily skips are no longer refused; the clause's last line is kept.

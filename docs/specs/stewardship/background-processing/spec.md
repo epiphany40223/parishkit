@@ -699,7 +699,7 @@ cancelled and counted as above. Every evaluator skips those slots
 (`SchedulePlan.page` and `next_slot` advance their cursor past them, as past
 a wholly skipped civil day), so planning, catch-up, recovery and every
 forecast agree. The database enforces them in three places (frozen
-migration 0130, a provisional number): the canonical slot check
+migration 0121): the canonical slot check
 (`stewardship_catchup_due_v1`) answers no slot for a skipped date, so no
 page or catch-up proof requires an occurrence for it; the occurrence guard
 (`stewardship_occurrence_guard_v1`) refuses to insert a digest occurrence for
