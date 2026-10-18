@@ -2658,7 +2658,9 @@
       note = document.createElement("p");
       note.className = "help submit-wait";
       note.setAttribute("role", "status");
-      (submitter || form).insertAdjacentElement("afterend", note);
+      // An export's buttons share one row (export-actions.html, #1679), so
+      // the note goes below the row rather than between two buttons.
+      (submitter?.closest(".export-actions") || submitter || form).insertAdjacentElement("afterend", note);
       waitNotes.set(form, note);
     }
     note.textContent = text;

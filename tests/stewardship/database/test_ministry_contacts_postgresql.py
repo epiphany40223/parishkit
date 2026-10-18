@@ -296,7 +296,7 @@ def test_a_pdf_above_its_limit_is_refused_and_not_offered(
             browser, queue, FollowupQuery(state="any").form_values()
         )
         assert response.status_code == 200
-        assert b'<option value="pdf" disabled>PDF</option>' in body
+        assert b'value="pdf" disabled data-server-disabled' in body
         assert b"The PDF is limited to 1 requests" in body
         response, body = export(browser, format="pdf", state="any")
         assert response.status_code == 400 and not body.startswith(b"%PDF")

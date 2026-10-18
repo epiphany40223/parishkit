@@ -276,7 +276,9 @@ def _choices(parameters):
 
     The form posts the applied queue view's filters, search and sort (the
     page and page size only window the screen, so they are ignored), the
-    format and the time zone; anything else, or a repeated value, is a 400.
+    format and the browser's zone, posted unasked (an explicit ``timezone``
+    from an older tab or ``pk-admin`` wins, #1679); anything else, or a
+    repeated value, is a 400.
     So is any Status choice but the queue's own statuses: a Member no longer
     in ParishSoft never goes into the file (Administrator, 2026-10-13), even
     from the Staff-only Status choice that lists them (#1217).
@@ -287,11 +289,15 @@ def _choices(parameters):
             "csrfmiddlewaretoken",
             "format",
             "timezone",
+            "browser_timezone",
             *FollowupQuery.__dataclass_fields__,
         },
     )
     values.pop("csrfmiddlewaretoken", None)
-    fmt, zone = values.pop("format", ""), values.pop("timezone", "")
+    fmt = values.pop("format", "")
+    zone = dates.download_zone(
+        values.pop("timezone", None), values.pop("browser_timezone", None)
+    )
     if fmt not in FORMATS or (zone != "UTC" and zone not in timezone_names()):
         raise ValueError("Invalid follow-up export choice.")
     query = FollowupQuery.parse(values)

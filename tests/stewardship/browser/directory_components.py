@@ -120,7 +120,6 @@ def components(context, admin):
         "total": 51,
         "mutable": True,
         "request_key": UUID(int=81),
-        "export_timezones": ("UTC", "America/Detroit"),
     }
     # The one directory page without and with its mailing columns.
     code_list = {
@@ -221,8 +220,6 @@ def components(context, admin):
         ),
         "table": _table([listed, gone, faded], 3, "no", responding),
         "total": 3,
-        # The code list with response columns asks for a zone (#1127).
-        "export_asks_zone": True,
     }
     pages = {
         "/directory-responses": values | code_list | responses,
@@ -326,7 +323,6 @@ def preset_pages(values, counted):
             ),
             "table": _table([row], 1, "no", query),
             "total": 1,
-            "export_asks_zone": query.responses == "yes",
             "page_address": page_address(
                 reverse("admin:family_directory"), query, postal=False
             ),

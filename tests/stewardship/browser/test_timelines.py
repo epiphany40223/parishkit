@@ -293,32 +293,40 @@ def export_form(page):
     return page.locator("form#timeline-export")
 
 
-def test_the_export_form_starts_on_the_browsers_zone(page, component_origin):
-    """The form posts no mode, with the browser's zone preselected."""
+def zone(form):
+    """The browser's zone the export row posts unasked (#1679)."""
+    return form.locator('input[name="browser_timezone"]').input_value()
+
+
+def test_the_export_form_posts_the_browsers_zone(page, component_origin):
+    """The form posts no mode, and the browser's zone unasked (#1679)."""
     errors = watch(page)
     page.goto(component_origin + ADMIN)
     form = export_form(page)
     visible(form)
     assert form.locator('input[name="mode"]').count() == 0
-    # The fixture browser is Pacific; the menu starts there, not on UTC.
-    assert form.locator("#timeline-export-timezone").input_value() == (
-        "America/Los_Angeles"
-    )
+    # The fixture browser is Pacific; no zone menu is offered.
+    assert zone(form) == "America/Los_Angeles"
+    assert form.locator("select").count() == 0
+    assert form.locator(".export-buttons button").all_inner_texts() == [
+        "Export XLSX",
+        "Export CSV",
+        "Export PDF",
+    ]
     assert_clean(page, errors)
 
 
-def test_the_export_form_keeps_choices_across_a_filter(page, component_origin):
-    """A format and zone picked before an in-place filter survive it."""
+def test_each_export_button_posts_its_format(page, component_origin):
+    """A button posts its own format and the browser's zone, no zone menu."""
     errors = watch(page)
     page.goto(component_origin + ADMIN)
-    form = export_form(page)
-    form.locator("#timeline-format").select_option("pdf")
-    form.locator("#timeline-export-timezone").select_option("UTC")
-    page.locator("#timeline-kind").select_option("emails")
-    page.get_by_role("button", name="Show lines").click()
-    has_count(page.locator("#table tbody tr", has_text="Got past"), 0)
-    assert form.locator("#timeline-format").input_value() == "pdf"
-    assert form.locator("#timeline-export-timezone").input_value() == "UTC"
+    page.route("**/timeline-export", lambda route: route.fulfill(body="Queued"))
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        export_form(page).get_by_role("button", name="Export PDF").click()
+    body = sent.value.post_data
+    assert "format=pdf" in body
+    assert "browser_timezone=America%2FLos_Angeles" in body
+    assert "timezone=" not in body.replace("browser_timezone=", "")
     assert_clean(page, errors)
 
 

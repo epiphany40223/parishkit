@@ -257,13 +257,13 @@ def test_statistics_panel_has_one_data_as_of_line():
 
 
 def test_export_panel_is_small_with_xlsx_first():
-    """One sentence, the format menu (XLSX first and chosen, no PNG) and
-    Generate export; no latest-data export (#1537)."""
+    """One sentence and the export row (XLSX first, no PNG, #1679); no
+    latest-data export (#1537)."""
     page = render()
     panel = page[page.index('id="participation-export"') :]
     assert "<p>Exports the daily participation data on this page.</p>" in panel
-    assert re.findall(r'<option value="(\w+)"', panel) == ["xlsx", "csv", "pdf"]
-    assert '<option value="xlsx" selected>' in panel
+    assert re.findall(r'name="format" value="(\w+)"', panel) == ["xlsx", "csv", "pdf"]
+    assert "Export XLSX" in panel and "<select" not in panel
     assert reverse("admin:report_export_create") in panel
     assert reverse("admin:report_export_create").startswith("/admin/reports/responses/")
     for gone in (

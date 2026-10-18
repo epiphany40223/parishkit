@@ -1,6 +1,5 @@
 """Three-engine private native directories and accessible contacts."""
 
-import re
 from urllib.parse import urlencode
 from uuid import UUID
 
@@ -180,23 +179,20 @@ def test_complete_directory_export_controls_are_private_native_and_gated(
     try:
         page = context.new_page()
         page.goto(component_origin + "/family-directory")
-        # The export controls are collapsed until asked for.
-        assert not page.get_by_label("Export format").is_visible()
-        page.get_by_text("Export complete results").click()
-        # A code list without response columns has no times in its rows, so
-        # it asks for no zone and sends the browser's unasked (#1127).
+        # The export row (#1679) is shown below the table, with no format
+        # menu and no zone question: the browser's zone is sent unasked.
+        assert page.get_by_label("Export format").count() == 0
         assert page.get_by_label("Export timezone").count() == 0
         visible(page.get_by_text("51 estimated matching Families", exact=False))
         page.get_by_label(
             "Search by Family name, any member's name, DUID, envelope number or address"
         ).fill("Unsaved private edit")
-        page.get_by_label("Export format").select_option("xlsx")
         page.route(
             "**" + reverse("admin:family_directory_export"),
             lambda route: route.fulfill(body="Export queued"),
         )
         with page.expect_request(lambda request: request.method == "POST") as sent:
-            page.get_by_role("button", name="Queue complete export").click()
+            page.get_by_role("button", name="Export XLSX").click()
         assert (
             "search=Example" in sent.value.post_data
             and "format=xlsx" in sent.value.post_data
@@ -212,9 +208,8 @@ def test_complete_directory_export_controls_are_private_native_and_gated(
         # which it would otherwise interrupt (#623).
         visible(page.get_by_text("Export queued", exact=True))
         page.goto(component_origin + "/directory-gated")
-        assert page.get_by_role(
-            "button", name="Queue complete export", include_hidden=True
-        ).is_disabled()
+        for name in ("Export XLSX", "Export CSV", "Export PDF"):
+            assert page.get_by_role("button", name=name).is_disabled()
     finally:
         context.close()
 
@@ -382,40 +377,28 @@ def test_mailing_columns_page_draws_reach_locked(page, component_origin):
     assert page_box(reach) == before
 
 
-def test_export_time_zone_follows_the_applied_response_columns(page, component_origin):
-    """Only the code list with response columns asks for a time zone (#1127).
-
-    Applying Include response columns brings the export's time zone field
-    in; applying without them takes it away again, and the browser's zone
-    is then sent unasked. The field is the last of its row with its help in
-    a toggletip, so the format menu and the Queue button do not move within
-    the export options (no layout shift); a re-sort keeps the zone the reader
-    chose. The columns line above the form
-    lists more columns with the response columns, so positions are compared
-    within the options fieldset.
+def test_the_export_row_never_asks_for_a_zone(page, component_origin):
+    """No directory file asks for a time zone (#1679), the code list with
+    response columns included: applying Include response columns adds no
+    field and moves no export button (no layout shift), and the browser's
+    zone is sent unasked, once.
     """
     from playwright.sync_api import expect
 
     page.goto(component_origin + "/family-directory")
-    page.get_by_text("Export complete results").click()
-    zone = page.get_by_label("Export timezone")
-    options = page.locator("#table-export fieldset")
-    controls = (
-        page.get_by_label("Export format"),
-        page.get_by_role("button", name="Queue complete export"),
-    )
+    buttons = page.locator("#directory-export-buttons button")
 
     def boxes():
-        """Where the export options' controls sit within their fieldset.
+        """Where the export buttons sit, relative to their row.
 
-        One flat list, so callers compare it with a sub-pixel tolerance:
-        Firefox can lay the same box out a few hundred-thousandths of a
-        pixel apart after a redraw, which no reader sees as a shift.
+        One flat list, compared with a sub-pixel tolerance: Firefox can lay
+        the same box out a few hundred-thousandths of a pixel apart after a
+        redraw, which no reader sees as a shift.
         """
-        frame = options.bounding_box()
+        frame = page.locator("#table-export .export-actions").bounding_box()
         return [
             value
-            for box in (item.bounding_box() for item in controls)
+            for box in (buttons.nth(index).bounding_box() for index in range(3))
             for value in (
                 box["x"] - frame["x"],
                 box["y"] - frame["y"],
@@ -424,38 +407,20 @@ def test_export_time_zone_follows_the_applied_response_columns(page, component_o
             )
         ]
 
-    def apply(fixture):
-        """Apply the filters, answered with the ``fixture`` page."""
-        page.unroute("**/families/")
-        page.route(
-            "**/families/",
-            lambda route: route.fulfill(
-                response=route.fetch(url=component_origin + fixture, method="GET")
-            ),
-        )
-        page.get_by_role("button", name="Apply filters").click()
-
-    assert zone.count() == 0
     before = boxes()
-    page.get_by_label("Include response columns").check()
-    apply("/directory-responses")
-    visible(zone)
-    assert page.locator("#table-export input[name=responses]").input_value() == "yes"
-    assert boxes() == pytest.approx(before, abs=0.5)
-    # A re-sort redraws the zone slot with the rows; the form is marked
-    # data-keep-choices, so the zone the reader chose is put back.
-    zone.select_option("America/Detroit")
-    zone.evaluate("node => { node.dataset.drawn = 'before'; }")
-    page.get_by_role("button", name=re.compile(r"^Family \(sort")).click()
-    expect(page.locator("#directory-export-timezone:not([data-drawn])")).to_have_count(
-        1
+    page.route(
+        "**/families/",
+        lambda route: route.fulfill(
+            response=route.fetch(
+                url=component_origin + "/directory-responses", method="GET"
+            )
+        ),
     )
-    expect(zone).to_have_value("America/Detroit")
-    page.get_by_label("Include response columns").uncheck()
-    apply("/family-directory")
-    expect(zone).to_have_count(0)
+    page.get_by_label("Include response columns").check()
+    page.get_by_role("button", name="Apply filters").click()
+    expect(page.locator("#table-export input[name=responses]")).to_have_value("yes")
+    assert page.get_by_label("Export timezone").count() == 0
     assert boxes() == pytest.approx(before, abs=0.5)
-    # The browser's zone goes unasked, once.
     hidden = page.locator("#table-export input[name=browser_timezone]")
     assert hidden.count() == 1 and hidden.input_value() == page.evaluate(
         "Intl.DateTimeFormat().resolvedOptions().timeZone"
@@ -463,23 +428,28 @@ def test_export_time_zone_follows_the_applied_response_columns(page, component_o
 
 
 @pytest.mark.parametrize("width", [320, 1280])
-def test_export_format_field_has_no_dates_explanation(page, component_origin, width):
-    """The export format is its menu and label only (#1538).
+def test_export_buttons_have_no_dates_explanation(page, component_origin, width):
+    """The export is its row of buttons only (#1538, #1679).
 
     The dates-and-money explanation (#221, #1158) was removed from every
-    export form: the field keeps its label as its accessible name, carries no
-    description or "i", and the filter-bar cell stays one field tall.
+    export: each button keeps its label as its accessible name, and the row
+    stays one button tall on a desktop and wraps on a phone without widening
+    the page.
     """
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + "/family-directory")
-    page.get_by_text("Export complete results").click()
-    menu = page.get_by_label("Export format")
-    visible(menu)
-    assert menu.get_attribute("aria-describedby") is None
-    assert page.locator("#table-export #directory-format ~ .toggletip").count() == 0
+    row = page.locator("#table-export .export-actions")
+    visible(row)
     assert "ISO 8601" not in page.locator("#table-export").text_content()
-    cell = page.locator("#table-export .filter-bar > div.short").first
-    assert cell.bounding_box()["height"] < 8 * 16
+    xlsx = page.get_by_role("button", name="Export XLSX")
+    assert xlsx.get_attribute("aria-describedby") is None
+    height = xlsx.bounding_box()["height"]
+    assert 24 <= height < 44
+    if width == 1280:
+        assert row.bounding_box()["height"] < 2 * height
+    assert page.evaluate(
+        "document.documentElement.scrollWidth <= document.documentElement.clientWidth"
+    )
 
 
 @pytest.mark.parametrize("width", [320, 375, 1280])

@@ -58,17 +58,16 @@
 {% else %}<p>{% translate "There are no campaign dates to display yet." %}</p>{% endif %}
 {% else %}<p>{% translate "Participation chart unavailable. No complete report is ready for this population yet; no zero values have been assumed. The chart is calculated in the background; refresh this page in a few minutes." %}</p>{% endif %}
 </section>
-{# A small export panel (#1537): one sentence, the format menu (XLSX first and chosen, #1190) and the button. Without a chart, or while other campaign work holds exports, the button is still drawn, unavailable and named by the sentence that says why (#563); the server refuses a forged request all the same. #}
+{# A small export panel (#1537): one sentence and the row of export buttons (export_actions, XLSX first, #1190, #1679), posting the zone the page was drawn in. Without a chart, or while other campaign work holds exports, the button is still drawn, unavailable and named by the sentence that says why (#563); the server refuses a forged request all the same. #}
 <section class="panel" id="participation-export" aria-labelledby="participation-export-heading"><h2 id="participation-export-heading">{% translate "Export" %}</h2>
 <p>{% translate "Exports the daily participation data on this page." %}</p>
 {% if not export_allowed %}<p class="notice" id="participation-export-locked">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so new exports are unavailable until it finishes or is cancelled; going live can take days. Files that are ready can still be downloaded." %}</p>{% endif %}
 {% if chart %}
 <form method="post" action="{% url 'admin:report_export_create' %}">{% csrf_token %}
-<input type="hidden" name="fact_set_id" value="{{ chart.fact_set_id }}"><input type="hidden" name="browser_timezone" value="{{ query.timezone }}"><input type="hidden" name="request_key" value="{{ export_key }}">
-<label for="export-format">{% translate "Export format" %}</label><select id="export-format" name="format">{% export_format_options "csv" "xlsx" "pdf" %}</select>
-{% button type="submit" enabled=export_allowed aria-describedby=export_allowed|yesno:",participation-export-locked" %}{% translate "Generate export" %}{% endbutton %}</form>
+<input type="hidden" name="fact_set_id" value="{{ chart.fact_set_id }}"><input type="hidden" name="request_key" value="{{ export_key }}">
+{% export_actions "csv" "xlsx" "pdf" name="participation" zone_value=query.timezone enabled=export_allowed describedby=export_allowed|yesno:",participation-export-locked" %}</form>
 {% else %}<p id="participation-chart-export-unavailable">{% translate "Exports of the chart become available once a complete chart has been calculated." %}</p>
-{% button type="submit" enabled=False aria-describedby=export_allowed|yesno:"participation-chart-export-unavailable,participation-chart-export-unavailable participation-export-locked" %}{% translate "Generate export" %}{% endbutton %}{% endif %}
+{% export_actions "csv" "xlsx" "pdf" name="participation" zone_value=query.timezone enabled=False describedby=export_allowed|yesno:"participation-chart-export-unavailable,participation-chart-export-unavailable participation-export-locked" %}{% endif %}
 </section>
 {% endif %}
 </div>

@@ -340,16 +340,13 @@ def test_export_choices_survive_a_sort_and_its_hidden_fields_follow(
     page, component_origin
 ):
     """Only table state is synchronised: an export form's hidden sort follows
-    the in-place re-sort while the reader's format and timezone, including
-    the browser zone a script added, stay as chosen."""
+    the in-place re-sort while the browser zone the script filled (#1679)
+    stays as it was."""
     page.goto(component_origin + "/information")
-    # The export starts closed (#227).
-    page.get_by_text("Export complete results").click()
     export = page.locator("#table-export")
-    export.locator("select[name=format]").select_option("xlsx")
-    zone = export.locator("select[data-information-timezone]")
+    zone = export.locator("input[name=browser_timezone]")
     chosen = zone.input_value()
-    options = zone.locator("option").count()
+    assert chosen == "America/Los_Angeles"
     assert export.locator("input[name=sort]").input_value() == "newest"
     fulfil_post_with(
         page,
@@ -360,9 +357,7 @@ def test_export_choices_survive_a_sort_and_its_hidden_fields_follow(
     page.get_by_role("button", name="Family (sort ascending)").click()
     has_attribute(sort_heading(page, "family"), "aria-sort", "ascending")
     assert export.locator("input[name=sort]").input_value() == "name"
-    assert export.locator("select[name=format]").input_value() == "xlsx"
     assert zone.input_value() == chosen
-    assert zone.locator("option").count() == options
 
 
 def test_packet_choices_keep_their_ticks_while_the_queue_is_resorted(
@@ -486,8 +481,7 @@ def test_post_filter_applies_in_place_with_csrf(page, component_origin):
     expect(chart).to_have_attribute("data-chart-state", "rendered")
     expect(chart.locator("svg tspan", has_text="20 out of 51 (39.2%)")).to_have_count(1)
     page.evaluate(MARK)
-    # The export starts closed (#227); its count is checked below.
-    page.get_by_text("Export complete results").click()
+    # The export row's count is checked below (#1679).
     page.get_by_label("Request history").select_option("withdrawn")
     offset = scroll_to_filters(page)
     fulfil_post_with(
@@ -542,13 +536,13 @@ def test_post_filter_with_no_matches_empties_the_counts(page, component_origin):
 
 def test_filter_that_adds_columns_and_notes_updates_them(page, component_origin):
     """Include mailing columns adds table columns, the unreachable-Families
-    notice and the export's mail-merge notes, all outside the table but the
-    columns; each follows the filter without a page load."""
+    notice and the export's mail-merge columns line, all outside the table
+    but the columns; each follows the filter without a page load."""
     page.goto(component_origin + "/family-directory")
     page.evaluate(MARK)
     assert page.locator("[data-unreachable-notice]").count() == 0
-    help_text = page.locator("#directory-export-mailing-help")
-    assert help_text.is_hidden()
+    columns = page.locator("#directory-export-columns")
+    assert "mail-merge file" not in columns.text_content()
     fulfil_post_with(
         page, "**/families/", component_origin, lambda request: "/postal-directory"
     )
@@ -559,9 +553,8 @@ def test_filter_that_adds_columns_and_notes_updates_them(page, component_origin)
     visible(page.locator("#table").get_by_role("columnheader", name="Addressee"))
     visible(page.locator("[data-unreachable-notice]"))
     assert page.locator("#table-export input[name=mailing]").input_value() == "yes"
-    assert help_text.get_attribute("hidden") is None
-    # The export panel is a closed disclosure, so its text is read, not seen.
-    assert "mail-merge file" in page.locator("#directory-export-columns").text_content()
+    # The export row's columns line follows (#1679), shown below the table.
+    visible(columns.get_by_text("mail-merge file", exact=False))
     assert page.evaluate(MARKED) == "kept"
 
 

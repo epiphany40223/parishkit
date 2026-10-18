@@ -5,7 +5,7 @@ from datetime import date, time
 
 from django import template
 from django.urls import reverse
-from django.utils.html import conditional_escape, format_html, format_html_join
+from django.utils.html import conditional_escape, format_html
 from django.utils.safestring import mark_safe
 from django.utils.translation import gettext as _
 from django.utils.translation import ngettext
@@ -83,38 +83,80 @@ def step_tip_side(number, total):
     )
 
 
-@register.simple_tag
-def export_format_options(*formats, disabled=""):
-    """The ``<option>`` list of an export form's format menu (#1190).
+@register.inclusion_tag("stewardship/components/export-actions.html")
+def export_actions(
+    *formats,
+    name,
+    label="",
+    disabled="",
+    enabled=True,
+    describedby="",
+    own_order=False,
+    tip="",
+    tip_more="",
+    zone_choice=False,
+    zone_value=None,
+    sync=False,
+):
+    """One export's row of small "Export XLSX" … buttons (#1679, #1190).
 
-    ``formats`` are the form's offered values. The default
-    (``DEFAULT_EXPORT_FORMAT``, XLSX) comes first and is selected, and the
-    rest keep the given order, so no form picks its own default and a new
-    export cannot forget the rule. The PDF-first comparison and Ministry
-    packet forms are documents, not data, and keep their own menus.
+    Usage: ``{% export_actions "csv" "xlsx" "pdf" name="financial"
+    enabled=mutable %}`` inside the export's form. Each button posts its
+    own ``format``, so there is no format menu and no separate Download
+    button (ui-conventions "Downloaded files", Export actions).
 
-    ``disabled`` names one offered format that is shown but unavailable
-    (for example a PDF above its row limit); an empty value disables none.
-    A disabled default is not selected, so the browser falls back to the
-    first available option.
+    ``formats`` are the download's offered values. The default
+    (``DEFAULT_EXPORT_FORMAT``, XLSX) comes first and the rest keep the
+    given order, so no form picks its own default; ``own_order`` keeps the
+    given order for a document (the Campaign comparison's PDF summary, the
+    follow-up packet). ``name`` prefixes the row's element ids; ``label``
+    is the row's group name, telling apart two rows on one page.
+    ``disabled`` names one offered format shown but unavailable (Ministry
+    requests' PDF above its row limit); ``enabled=False`` makes every button
+    unavailable (other campaign work holds exports). ``describedby`` names
+    the element ids that describe every button (the line saying why, or a
+    complete gate's hint). ``tip`` is the toggletip text closing the row, and
+    ``tip_more`` an optional sentence added to it (the Family timeline's
+    "It includes the Family code.").
+
+    Time zone (ui-conventions "Downloaded files", Time zones): the row posts
+    the browser's zone in a hidden ``browser_timezone`` field, which
+    ``ui-v1.js`` fills (``data-browser-zone``); ``zone_value`` posts that
+    value instead (the Response dashboard's drawn zone). ``zone_choice`` is
+    for a page that lets the reader view its times in UTC (System logs
+    only): a "Times in" menu of UTC and the browser's zone, which ``ui-v1.js``
+    adds and selects (``data-browser-timezone``), posted as ``timezone``.
+    ``sync`` makes the buttons a ``data-table-sync`` node, redrawn from each
+    applied view, for a row whose unavailable format follows the filters.
     """
+    if not formats or len(set(formats)) != len(formats):
+        raise template.TemplateSyntaxError("export_actions: name each format once.")
+    if disabled and disabled not in formats:
+        raise template.TemplateSyntaxError("export_actions: unknown disabled format.")
+    # A format's button label; any other is its value in capitals.
     labels = {"jsonl": _("JSON Lines")}
-    ordered = sorted(formats, key=lambda name: name != DEFAULT_EXPORT_FORMAT)
-    return format_html_join(
-        "",
-        '<option value="{}"{}{}>{}</option>',
-        (
-            (
-                name,
-                " selected"
-                if name == DEFAULT_EXPORT_FORMAT and name != disabled
-                else "",
-                " disabled" if name == disabled else "",
-                labels.get(name, name.upper()),
-            )
-            for name in ordered
-        ),
+    ordered = (
+        formats
+        if own_order
+        else sorted(formats, key=lambda value: value != DEFAULT_EXPORT_FORMAT)
     )
+    return {
+        "name": name,
+        "label": label or _("Export"),
+        "buttons": [
+            {
+                "value": value,
+                "label": labels.get(value, value.upper()),
+                "enabled": bool(enabled) and value != disabled,
+            }
+            for value in ordered
+        ],
+        "describedby": describedby,
+        "tip": " ".join(str(part) for part in (tip, tip_more) if part),
+        "zone_choice": zone_choice,
+        "zone_value": zone_value,
+        "sync": sync,
+    }
 
 
 @register.simple_tag

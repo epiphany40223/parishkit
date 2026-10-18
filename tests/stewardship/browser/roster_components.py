@@ -125,7 +125,6 @@ def components(context, admin):
                     "bulk_key": bulk_key,
                     "mutable": True,
                     "can_tick": True,
-                    "export_timezones": ["UTC", "America/Detroit"],
                 },
             ),
         )

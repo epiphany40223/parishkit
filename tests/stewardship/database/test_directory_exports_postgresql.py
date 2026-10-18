@@ -230,7 +230,7 @@ def test_native_directory_exports_render_and_download(
         )
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             response, body = read(browser, route)
-            assert response.status_code == 200 and b"Queue complete export" in body
+            assert response.status_code == 200 and b"Export XLSX" in body
             assert (
                 browser.post(
                     reverse("admin:family_directory_export"), fields
@@ -424,7 +424,8 @@ def test_directory_export_staff_gates_and_service_boundaries(
         with pytest.raises(PermissionError):
             create_directory_export(store, actor, **(values | {"request_key": uuid4()}))
         response, body = read(browser, route + "?mailing=yes")
-        assert response.status_code == 200 and b"<fieldset disabled>" in body
+        assert response.status_code == 200
+        assert b'value="xlsx" disabled data-server-disabled' in body
         assert b"Other campaign work" in body
         assert (
             read(browser, reverse("admin:report_export", args=[request.pk]))[

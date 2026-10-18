@@ -38,16 +38,6 @@
 {# After Apply, so the date fieldsets, pledge range and selects pack the grid's rows with Apply beside the last select (#1411): a full-width note between the dates would end their row early and add rows. It names the zone for all four dates. #}{% translate "The dates are days in this computer's time zone:" as zone_note %}{% include "stewardship/components/zone-note.html" with note_text=zone_note note_id="financial-zone-help" %}
 <p class="help" id="financial-filter-hint" data-complete-hint="reserve"></p></form>{% endfilterpanel %}
 <p id="financial-matching" data-table-sync>{% translate "Matching Families:" %} {{ total|number }}.</p>
-<details class="export-panel"><summary id="financial-export-heading">{% translate "Export complete results (CSV, XLSX or PDF)" %}</summary>
-<p id="financial-export-count" data-table-sync>{% blocktranslate with shown=total|number count counter=total %}{{ shown }} matching Family, using the applied filters and sort above—not just this page. The file uses every matching pledge and its ParishSoft comparison totals as they are when you queue the export; later submissions or ParishSoft refreshes are not included.{% plural %}{{ shown }} matching Families, using the applied filters and sort above—not just this page. The file uses every matching pledge and its ParishSoft comparison totals as they are when you queue the export; later submissions or ParishSoft refreshes are not included.{% endblocktranslate %}</p>
-<form id="table-export" data-table-sync data-submit-waits method="post" action="{% url 'admin:financial_export' %}">{% csrf_token %}
-{% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
-<input type="hidden" name="request_key" value="{{ request_key }}">
-<fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Complete-result export options" %}</legend>
-<label for="financial-format">{% translate "Export format" %}</label><select id="financial-format" name="format">{% export_format_options "csv" "xlsx" "pdf" %}</select>
-<div class="label-row"><label for="financial-export-timezone" id="financial-export-timezone-label">{% translate "Export timezone" %}</label>{% translate "Your browser's time zone is selected when your browser allows it; otherwise UTC is selected. You can change it before exporting." as tip %}{% include "stewardship/components/toggletip.html" with tip_id="financial-export-timezone-tip" tip_label_id="financial-export-timezone-label" tip_text=tip %}</div><select id="financial-export-timezone" name="browser_timezone" data-information-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
-{% button type="submit" %}{% translate "Queue complete export" %}{% endbutton %}</fieldset></form></details>
-<script src="{% static 'stewardship/information-export-v1.js' %}" defer></script>
 <div id="{{ table.anchor }}" data-table-region>
 {% translate "Financial result pages" as navigator_label %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Financial stewardship results' %}"><table class="data-table whole-words financial-table">
@@ -63,4 +53,10 @@
 {% empty %}<tr><td colspan="7">{% translate "No matching pledges. Try Any status and Any amount, or clear the search and date filters." %}</td></tr>{% endfor %}</tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 </div>
+{% comment %}The export (#1679, ui-conventions "Downloaded files"): one row of small export buttons (export_actions), each posting its format, below the table, in the browser's time zone; its form's hidden filters follow each in-place Apply, sort or page (data-table-sync).{% endcomment %}<div class="export-pane">
+<p class="help" id="financial-export-count" data-table-sync>{% blocktranslate with shown=total|number count counter=total %}Exports the {{ shown }} matching Family, every page.{% plural %}Exports all {{ shown }} matching Families, every page.{% endblocktranslate %}</p>
+<form id="table-export" data-table-sync data-submit-waits method="post" action="{% url 'admin:financial_export' %}">{% csrf_token %}
+{% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+<input type="hidden" name="request_key" value="{{ request_key }}">
+{% translate "The file uses the applied filters and sort above, not just this page, and every matching pledge and its ParishSoft comparison totals as they are when you export; later submissions or ParishSoft refreshes are not included." as tip %}{% export_actions "csv" "xlsx" "pdf" name="financial" label=_("Export complete results") tip=tip enabled=mutable %}</form></div>
 {% endblock %}
