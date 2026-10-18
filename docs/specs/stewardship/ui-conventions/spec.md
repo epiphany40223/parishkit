@@ -508,6 +508,17 @@ never scrolls to show it (Administrator, pk-local review of
   new state through a live-status announcer (`data-live-announcer`) is marked
   `data-in-place-spoken` instead and announces nothing on success, so two
   live regions never speak at once (Load ParishSoft data, #1404 PR 5).
+- **Views the page script draws.** A view drawn by the page script from data
+  the page already holds (from #1656, the
+  [Campaign calendar](../admin-portal/spec.md#campaign-calendar)'s month)
+  changes with no request at all: the script redraws it, focus stays on the
+  control, the new view is announced, and the address's parameter for
+  that view is replaced (never added to the history), so reload, bookmarks
+  and returning to the page keep it. Its stepping controls (Previous, Next)
+  sit before the view's name, so a longer name moves neither, and at the end
+  of the range the control stays in place, focusable but unavailable, with
+  its reason in a reserved line ([prerequisite
+  gates](#prerequisite-gates)).
 - **Request.** The browser fetches exactly the request the control would
   have made, follows the server's Post/Redirect/Get redirect, and replaces
   every region the fetched page shares with this one, plus the counts,
