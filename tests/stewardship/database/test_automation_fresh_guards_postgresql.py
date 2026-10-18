@@ -38,7 +38,7 @@ from parishkit.stewardship.jobs.family_mail_models import FamilyMailTest
 from parishkit.stewardship.storage import StorageInvariantError
 
 from .auth_builders import unguarded
-from .automation_builders import command, paired
+from .automation_builders import approve_now, command, paired, start
 from .test_automation_sessions_postgresql import owner
 from .test_credential_isolation_postgresql import (  # noqa: F401
     advance,
@@ -322,8 +322,12 @@ def test_the_family_test_guard_admits_a_command_session_of_any_age(
                     {"action": "confirm", "preview": token, "acknowledge": "on"},
                 ).status_code
 
-    # Refused (503: the guard) for an instant no live session holds.
-    assert confirm(instant - timedelta(seconds=1)) == 503
+    # Refused (503: the guard) for an instant no live session holds. Sign-in
+    # instants are whole seconds (the token's iat), and the fixture's own
+    # browser signed in a moment before paired()'s did, so instant - 1 s can
+    # be that browser's live instant on a slow runner: go before them all.
+    earliest = min(PortalSession.objects.values_list("authenticated_at", flat=True))
+    assert confirm(earliest - timedelta(seconds=1)) == 503
     assert not FamilyMailTest.objects.exists()
     assert confirm(instant) == 302
     [ticket] = FamilyMailTest.objects.all()
@@ -431,7 +435,13 @@ def test_instant_ended_is_true_only_once_every_full_session_ended(auth_service, 
     live.
     """
     _, _, row = paired(auth_service)
-    _, _, second = paired(auth_service)
+    # Approved from the same browser: paired() would sign in again, and a
+    # sign-in instant is a whole second, so the two could differ.
+    secret, code = start(auth_service)
+    approve_now(auth_service, code)
+    second = AutomationSession.objects.get(
+        secret_digest=automation.secret_digest(secret)
+    )
     _, _, reader = paired(auth_service, scope="read-only")
     shift(reader, timedelta(seconds=7))
     reader.refresh_from_db()
