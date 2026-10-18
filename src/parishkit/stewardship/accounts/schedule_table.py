@@ -47,14 +47,19 @@ STATUS_LABELS = {
     # One send of a digest whose time has passed (the Campaign calendar,
     # #469); the list's digest row itself always repeats.
     "passed": _("Past"),
+    # One send of a digest that it skips (#1658, the Campaign calendar).
+    "skipped": _("Skipped"),
 }
 # A schedule in one of these states has run, is running, or has work
 # prepared ahead of its time: it sent its email, failed to, or settled every
 # Family without one of its own. Moving it would make a new
 # revision and plan the send again, so the page shows it read-only; the
 # server still blocks changes to work in progress on its own. "passed" is
-# one past send of a digest on the Campaign calendar, shown read-only too.
-PAST = frozenset({"preparing", "sending", "sent", "failed", "done", "passed"})
+# one past send of a digest on the Campaign calendar, and "skipped" one it
+# skips (#1658), shown read-only too.
+PAST = frozenset(
+    {"preparing", "sending", "sent", "failed", "done", "passed", "skipped"}
+)
 
 
 @dataclass(frozen=True)
@@ -68,6 +73,9 @@ class ScheduleRow:
     change stays open so the reader sees it. ``email`` is the readable name
     of the email it sends (``schedule_forms.email_names``), and ``position``
     its place in sending order, which breaks ties in the When heading's sort.
+    ``slot`` is one digest send's slot key on the Campaign calendar
+    (#1658), which its Edit link names (``?send=``) so Delete can skip
+    that send alone.
     """
 
     id: str
@@ -83,6 +91,7 @@ class ScheduleRow:
     delivered: int = 0
     failed: int = 0
     open: bool = False
+    slot: str | None = None
 
     @property
     def status_label(self):
@@ -111,10 +120,14 @@ class ScheduleRow:
 
     @property
     def edit_url(self):
-        """This schedule's Edit scheduled email page, or None when read-only."""
-        return (
-            None if self.read_only else reverse("admin:schedule_edit", args=[self.id])
-        )
+        """This schedule's Edit scheduled email page, or None when read-only.
+
+        A digest send on the Campaign calendar names its slot (#1658).
+        """
+        if self.read_only:
+            return None
+        url = reverse("admin:schedule_edit", args=[self.id])
+        return f"{url}?send={self.slot}" if self.slot else url
 
 
 def when(row):

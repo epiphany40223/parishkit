@@ -31,12 +31,15 @@ The change document (default, pending Administrator confirmation) is JSON::
                                "end": "...", "weekdays": [0, 3]},
                     "time": "...", "template_version": "<uuid>"},
                    {"id": "<saved daily digest>", "comparison": true},
+                   {"id": "<saved digest>", "skip": "2054-11-03"},
                    {"series": "<id>", "scope": "following",
                     "from": "<reminder id>", "time": "..."},
                    {"series": "<id>", "delete": true}]}
 
 A saved schedule named by ``id`` keeps every field the document leaves out;
-``delete`` removes it; an entry without ``id`` adds a schedule. Saved
+``delete`` removes it; a saved digest's ``skip`` (#1658) skips its one send
+of that slot date, as Edit's Delete with This email only does
+(``accounts.digest_skips``); an entry without ``id`` adds a schedule. Saved
 schedules the document does not name stay as they are: as on the page,
 omission never removes one. A ``repeat`` entry (#469) adds one ordinary
 reminder per date its rule gives (``campaigns.recurrence``), each with the
@@ -266,6 +269,29 @@ def _series(entry, label):
     }
 
 
+def _skip(row, skips):
+    """Check one saved digest's ``skip`` member for shape (#1658).
+
+    A canonical ``YYYY-MM-DD`` slot date on a saved schedule's entry (one
+    with ``id``) that does not delete it, and at most one in a document, as
+    the page skips one send per review. Whether the date is a send of the
+    digest that may still be skipped is the review's
+    (``accounts.digest_skips.refuse``).
+    """
+    value = row["skip"]
+    try:
+        canonical = isinstance(value, str) and (
+            date.fromisoformat(value).isoformat() == value
+        )
+    except ValueError:
+        canonical = False
+    if not canonical or "id" not in row or "delete" in row or skips:
+        raise ValueError(
+            'A saved digest skips one send, by its "skip" date (YYYY-MM-DD), '
+            "once per change."
+        )
+
+
 def parse_changes(text):
     """Parse and check the shape of a change document; values are the forms' job.
 
@@ -307,6 +333,7 @@ def parse_changes(text):
     series = []
     edits = []
     added = 0
+    skips = 0
     for row in rows:
         if isinstance(row, dict) and "series" in row:
             edit = _series(row, f"new{added}")
@@ -332,10 +359,13 @@ def parse_changes(text):
             continue
         if (
             not isinstance(row, dict)
-            or set(row) - {"id", "delete", *ROW_FIELDS}
+            or set(row) - {"id", "delete", "skip", *ROW_FIELDS}
             or not all(_typed(name, row[name]) for name in ROW_FIELDS if name in row)
         ):
             raise ValueError("A schedule in the change document is not valid.")
+        if "skip" in row:
+            _skip(row, skips)
+            skips += 1
         if "id" in row:
             if not isinstance(row["id"], str) or row["id"] in seen:
                 raise ValueError("A schedule is named twice or not by its id.")
@@ -642,6 +672,8 @@ def _side(value):
         "template_version": value["template_version"],
         "subject": value["subject"],
         "comparison": value.get("comparison", False),
+        # The digest sends it skips (#1658), empty when none.
+        "skip_dates": value.get("skip_dates", []),
         "timezone": value["timezone"],
         "resolved": [
             {"key": slot["key"], "due_at": slot["due_at"]}
@@ -812,6 +844,12 @@ def preview_schedule(caller, service, campaign_id, *, expected_version, changes)
                 salt=preview_salt(target),
                 series=changes["series"],
                 series_changes=changes["series_changes"],
+                # A saved digest's one skipped send (#1658).
+                skips={
+                    entry["id"]: entry["skip"]
+                    for entry in changes["schedules"]
+                    if "skip" in entry
+                },
             )
             if context is None:
                 raise InvalidChange(field_errors(window, schedules, identifiers))

@@ -642,6 +642,8 @@ def schedule_entry(row, campaign):
         "template_version": values["template_version"],
         # A daily digest's Compared with past campaigns section (#1018).
         "comparison": values.get("comparison", False),
+        # A digest's skipped sends (#1658), empty when none.
+        "skip_dates": values.get("skip_dates", []),
         "resolved": [{"key": slot.key, "due_at": slot.due_at} for slot in page.slots],
         "more": not page.exhausted,
     }

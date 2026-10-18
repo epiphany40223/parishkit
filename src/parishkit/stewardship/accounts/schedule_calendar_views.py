@@ -28,7 +28,6 @@ the script to draw from.
 """
 
 from dataclasses import replace
-from datetime import UTC, datetime
 from urllib.parse import urlencode
 
 from django.shortcuts import render
@@ -37,7 +36,6 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.http import require_http_methods
 
-from parishkit.stewardship.campaigns.schedule_evaluation import SchedulePlan
 from parishkit.stewardship.campaigns.work_locks import read_transaction
 from parishkit.stewardship.wall_clock import WEEKDAYS
 from parishkit.stewardship.web.contracts import filters
@@ -46,6 +44,7 @@ from parishkit.stewardship.web.tables import Sorting, whole_table
 from .admin_editing import error_response, principal
 from .authentication import runtime
 from .content_views import _records
+from .digest_skips import digest_sends, skipped
 from .schedule_entry_views import ERRORS, _recheck, year_month
 from .schedule_forms import schedule_order
 from .schedule_preview import work_summary
@@ -53,9 +52,6 @@ from .schedule_reads import campaign_schedules, schedule_state
 from .schedule_table import DIGESTS, schedule_rows
 from .schedule_views import campaign_email_names
 
-# ``SchedulePlan.page`` examines at most this many dates a call; a digest's
-# sends are read page by page to its last one, however long the campaign.
-PAGE_DATES = 1000
 # The address parameter naming the month shown (``2054-11``, #1656).
 MONTH = "month"
 # The table's Show choice (#1656): upcoming emails only (the default), or
@@ -93,8 +89,11 @@ def calendar_sends(previous, campaign, summary, now, names=None):
     send's time in ``due``, so it keeps the digest's name, email, status and
     Edit link. A digest send whose time has passed is "passed" instead: muted
     and not linked, like a schedule that has run, since editing the digest
-    changes only its later sends. Sends at the same moment keep the table's
-    sending order.
+    changes only its later sends; and one the digest skips (#1658) is
+    "skipped", muted and not linked too. A digest send still to come names
+    its slot (``ScheduleRow.slot``), so its Edit link opens Edit for that
+    send (``?send=``) and Delete can offer This email only. Sends at the
+    same moment keep the table's sending order.
     """
     previous = sorted(previous, key=schedule_order)
     sends = []
@@ -106,35 +105,22 @@ def calendar_sends(previous, campaign, summary, now, names=None):
         if row.kind not in DIGESTS:
             sends.append(row)
             continue
+        skips = skipped(record["values"])
         sends.extend(
             replace(
                 row,
                 due=slot.due_at,
                 next_due=None,
-                status="passed" if slot.due_at <= now else row.status,
+                status="skipped"
+                if slot.key in skips
+                else "passed"
+                if slot.due_at <= now
+                else row.status,
+                slot=slot.key,
             )
-            for slot in digest_slots(record["values"], campaign)
+            for slot in digest_sends(record["values"], campaign)
         )
     return sorted(sends, key=lambda send: (send.due, send.position))
-
-
-def digest_slots(values, campaign):
-    """Every send of one digest, read with the scheduler's own evaluation.
-
-    Pages through ``SchedulePlan.page`` until it is exhausted, so no send is
-    left out. It ends: a weekly digest stops at the campaign's close and a
-    daily one the day after it.
-    """
-    plan = SchedulePlan.from_values(values, campaign)
-    slots, cursor = [], None
-    while True:
-        page = plan.page(
-            through=datetime.max.replace(tzinfo=UTC), after=cursor, limit=PAGE_DATES
-        )
-        slots.extend(page.slots)
-        if page.exhausted:
-            return slots
-        cursor = page.cursor
 
 
 def is_past(send, now):
