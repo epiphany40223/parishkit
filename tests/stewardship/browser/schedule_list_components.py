@@ -75,7 +75,11 @@ checks need no database:
   answered with the review of deleting its whole series; ``EDIT_INITIAL``
   to ``INITIAL_DELETE``, refused with ``REFUSAL`` in the server's words.
   ``EDIT_FROM_CALENDAR`` is ``EDIT`` opened from the calendar's October,
-  whose Cancel and Apply return there.
+  whose Cancel and Apply return there. ``EDIT_DIGEST_SEND`` is
+  ``EDIT_DIGEST`` opened from the calendar for its October 12 send
+  (``SKIP_DAY``, #1658), whose Delete offers This email only and The whole
+  digest and posts to ``DIGEST_SKIP``, answered with the review of skipping
+  that send.
 
 ``POSTS`` lists the fixture server's answers to the pages' POSTs; it is
 filled in by ``components``, before the server starts.
@@ -91,6 +95,7 @@ from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts import schedule_email
 from parishkit.stewardship.accounts.campaign_mail import NOT_OPEN as CLOSED
+from parishkit.stewardship.accounts.digest_skips import send_of
 from parishkit.stewardship.accounts.schedule_calendar_views import (
     WEEK,
     calendar_sends,
@@ -205,6 +210,10 @@ EDIT_DELETE = f"{EDIT}/deletion"
 SERIES_DELETE = f"{EDIT_SERIES}/deletion"
 INITIAL_DELETE = f"{EDIT_INITIAL}/deletion"
 EDIT_FROM_CALENDAR = f"{EDIT}?calendar=2054-10"
+# The weekly digest's Monday send Edit is opened for from the calendar (#1658).
+SKIP_DAY = "2054-10-12"
+EDIT_DIGEST_SEND = f"{EDIT_DIGEST}?send={SKIP_DAY}&calendar=2054-10"
+DIGEST_SKIP = f"{EDIT_DIGEST}/deletion"
 # The end date Campaign settings proposes; the saved one is October 31.
 DATES_END = "2054-10-25"
 # The refusal's own explanation, which the dialog shows.
@@ -345,6 +354,7 @@ def _entry(
     on=None,
     list_url=LIST,
     delete_url=EDIT_DELETE,
+    skip_send=None,
 ):
     """New scheduled email, or Edit scheduled email for ``schedule_row``.
 
@@ -356,6 +366,7 @@ def _entry(
     at the choice, with its summary. ``on`` is New's send date from the
     calendar's Add on a day (#1521), ``list_url`` where Cancel and Apply
     return, and ``delete_url`` where Edit's Delete posts its review (#1656).
+    ``skip_send`` is the digest send Delete may skip alone (#1658).
     """
     entry = entry_form(None, emails, rows, schedule_row, on=on)
     scope_data = QueryDict("series-scope=following") if scope_error else None
@@ -393,6 +404,7 @@ def _entry(
             "list_url": list_url,
             "apply_url": apply_url,
             "delete_url": delete_url,
+            "skip_send": skip_send,
             "window_text": window_text(owner["values"]),
         }
         | entry_times(owner["values"], rows, schedule_row, NOW, bound=False)
@@ -539,12 +551,22 @@ def _dates_refused(values, owner, emails, rows):
     )
 
 
-def _review(owner, changes, *, new=True, blocking=0, series_notes=(), deleting=None):
+def _review(
+    owner,
+    changes,
+    *,
+    new=True,
+    blocking=0,
+    series_notes=(),
+    deleting=None,
+    skipped_send=None,
+):
     """The review dialog's fragment for ``changes`` (schedule-review.html).
 
     A New review adding one schedule that sends once is the view's
     confirmation (``_sends_once``, #1356), as the server draws it.
-    ``deleting`` is Edit's Delete's scope (#1656).
+    ``deleting`` is Edit's Delete's scope (#1656), and ``skipped_send`` the
+    digest send This email only skips (#1658).
     """
     reviewed = {
         "campaign": {"pk": owner["id"], "active_configuration": owner["values"]},
@@ -555,6 +577,7 @@ def _review(owner, changes, *, new=True, blocking=0, series_notes=(), deleting=N
         "new": new,
         "series_notes": series_notes,
         "deleting": deleting,
+        "skipped_send": skipped_send,
     }
     return render_to_string(
         "stewardship/schedule-review.html",
@@ -689,6 +712,17 @@ def components(context, admin):
         ),
         EDIT_DIGEST: _entry(
             values, owner, emails, rows, schedule_row=digest, post_url=f"{EDIT}/review"
+        ),
+        EDIT_DIGEST_SEND: _entry(
+            values,
+            owner,
+            emails,
+            rows,
+            schedule_row=digest,
+            post_url=f"{EDIT}/review",
+            list_url=CALENDAR_OCTOBER,
+            delete_url=DIGEST_SKIP,
+            skip_send=send_of(digest["values"], owner["values"], SKIP_DAY),
         ),
         EDIT_EMAIL_REFUSED: _entry(
             values,
@@ -839,6 +873,25 @@ def components(context, admin):
         deleting="series",
         series_notes=[SERIES_DELETED % {"rule": rule_text(SERIES_RULE)}],
     )
+    # This email only (#1658): the weekly digest skips its October 12 send.
+    skip_send = send_of(digest["values"], owner["values"], SKIP_DAY)
+    skip_review = _review(
+        owner,
+        [
+            {
+                "label": "Weekly Admin digest",
+                "operation": "update",
+                "before": describe(digest["values"], owner["values"]),
+                "after": describe(
+                    digest["values"] | {"skip_dates": [SKIP_DAY]}, owner["values"]
+                ),
+                "impact": {},
+            }
+        ],
+        new=False,
+        deleting="send",
+        skipped_send={"key": SKIP_DAY, "due_at": skip_send.due_at.isoformat()},
+    )
     blocked = _review(
         owner,
         [
@@ -875,6 +928,7 @@ def components(context, admin):
             f"{NEW}/review": (200, None, review),
             EDIT_DELETE: (200, None, delete_review),
             SERIES_DELETE: (200, None, series_delete),
+            DIGEST_SKIP: (200, None, skip_review),
             INITIAL_DELETE: (
                 400,
                 None,

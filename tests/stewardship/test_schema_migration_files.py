@@ -393,6 +393,9 @@ FROZEN = {
     "0120_leader_emails.sql": (
         "982e9bc23b68c7a5e953122b8f6eda0310b66b5f62340d475314480166f0468a"
     ),
+    "0121_digest_skip_dates.sql": (
+        "cc88c09f4be01751997f1144be6ac2ade39bc3a760f90dc99baf09da17ced446"
+    ),
 }
 
 

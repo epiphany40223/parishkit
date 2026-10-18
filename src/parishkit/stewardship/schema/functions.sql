@@ -3429,6 +3429,8 @@ BEGIN
     IF slot !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' THEN RETURN NULL; END IF;
     day:=slot::date;
     IF day<p.start_date OR day>p.end_date OR day::text<>slot THEN RETURN NULL; END IF;
+    -- A digest's skipped send (#1658) is no slot: nothing may plan it.
+    IF coalesce(v.values->'skip_dates' ? slot,false) THEN RETURN NULL; END IF;
     IF d.kind='weekly_digest' THEN
         IF extract(isodow FROM day)::integer-1<>(v.values->>'weekday')::integer THEN RETURN NULL; END IF;
     ELSIF d.kind='daily_digest' THEN
@@ -3674,7 +3676,11 @@ BEGIN
            OR EXISTS (SELECT 1 FROM stewardship_postclose_resolution resolved
                JOIN public.stewardship_postclose_current covered ON covered.id=resolved.id
                WHERE resolved.campaign_id=c.id AND resolved.mode=NEW.mode
-                   AND resolved.obligation_key='schedule:'||d.id::text||':'||NEW.slot) THEN
+                   AND resolved.obligation_key='schedule:'||d.id::text||':'||NEW.slot)
+           -- A digest's skipped send (#1658) is never planned, by any writer.
+           OR (d.kind IN ('daily_digest','weekly_digest') AND EXISTS (
+               SELECT 1 FROM stewardship_schedule_revision skipping WHERE skipping.id=NEW.revision_id
+                   AND coalesce(skipping.values->'skip_dates' ? NEW.slot,false))) THEN
             RAISE EXCEPTION 'Occurrence creation is not admitted' USING ERRCODE='23514'; END IF;
     ELSE
         IF session_user='pk_stewardship_scheduler' AND (

@@ -2011,7 +2011,15 @@ document leaves alone keeps its wall-clock time in that zone. A saved schedule n
 document leaves out, `delete` removes it, an entry without `id` adds one,
 and saved schedules it does not name stay unchanged; a daily digest's
 `comparison` is the page's Include Compared with past campaigns checkbox,
-which `schedule show` lists too. A `repeat` entry
+which `schedule show` lists too. A saved digest's `skip` (one slot date,
+`YYYY-MM-DD`) is Edit's Delete with
+[This email only](../admin-portal/spec.md#delete-a-scheduled-email)
+([#1658](https://github.com/epiphany40223/parishkit/issues/1658)): it adds
+that send to the digest's `skip_dates`, which `schedule show` and each side
+of `schedule preview` list, with the page's refusals (a send already past
+or with Production work, one already skipped, or a date that is not a send
+of the digest). An entry with `skip` may not also give `date`, `time` or
+`weekday` (`invalid`), so the skip always names a send of the saved digest. A `repeat` entry
 ([#469](https://github.com/epiphany40223/parishkit/issues/469)) takes a
 repeat rule, a `time` and a `template_version` and adds one ordinary
 reminder per date the rule gives, expanded by the server's copy of the

@@ -39,6 +39,11 @@ A Repeat is also remembered as a reminder series, and Edit of a series'
 reminder shows "Part of" its rule with the Change scope
 (schedule-series-scope.html, drawn by schedule-row.html, #469); the review
 then lists the series it keeps or changes.
+Edit opened for one send of a digest from the Campaign calendar (?send=,
+skip_send, #1658) offers "This email only" (scope=send, the default, with
+that send's slot in the hidden send field), which skips just that send, and
+"The whole digest" (scope=this); otherwise a digest's Delete is the whole
+digest alone.
 Edit has Delete in a section of its own after the form (#1656): a second
 form, posting action=preview to Delete scheduled emails, that opens its own
 review dialog (schedule-delete-review) with the server's review of removing
@@ -76,8 +81,11 @@ Dates and mail schedules again, its status line saying what was saved.
 {% if series %}<fieldset class="field" aria-describedby="schedule-delete-help"><legend>{% translate "Delete" %}</legend>
 <div><input type="radio" name="scope" value="this" id="schedule-delete-this" checked> <label for="schedule-delete-this">{% translate "This reminder only" %}</label></div>
 <div><input type="radio" name="scope" value="series" id="schedule-delete-series"> <label for="schedule-delete-series">{% translate "The whole series" %}</label></div>
+</fieldset>{% elif skip_send %}<input type="hidden" name="send" value="{{ skip_send.key }}"><fieldset class="field" aria-describedby="schedule-delete-help"><legend>{% translate "Delete" %}</legend>
+<div><input type="radio" name="scope" value="send" id="schedule-delete-send" checked> <label for="schedule-delete-send">{% translate "This email only" %}</label></div>
+<div><input type="radio" name="scope" value="this" id="schedule-delete-digest"> <label for="schedule-delete-digest">{% translate "The whole digest" %}</label></div>
 </fieldset>{% endif %}
-<p class="help" id="schedule-delete-help">{% if series %}{% translate "This reminder only deletes just this reminder, which then leaves its series. The whole series deletes every reminder of the series that has not sent or been prepared; those that sent stay as ordinary reminders." %}{% elif schedule.values.kind == "daily_digest" or schedule.values.kind == "weekly_digest" %}{% translate "This digest repeats, so deleting it stops every send of it still to come. You review what is removed before anything changes." %}{% else %}{% translate "Deleting cancels this email's sends that have not started. You review what is removed before anything changes." %}{% endif %}</p>
+<p class="help" id="schedule-delete-help">{% if skip_send %}{% translate "This email only skips just the digest's send at" %} <time datetime="{{ skip_send.due_at|instant }}" data-local-instant>{{ skip_send.due_at|instant }}</time>. {% translate "The digest keeps every other send. The whole digest stops every send of it still to come. You review what changes before anything does." %}{% elif series %}{% translate "This reminder only deletes just this reminder, which then leaves its series. The whole series deletes every reminder of the series that has not sent or been prepared; those that sent stay as ordinary reminders." %}{% elif schedule.values.kind == "daily_digest" or schedule.values.kind == "weekly_digest" %}{% translate "This digest repeats, so deleting it stops every send of it still to come. You review what is removed before anything changes." %}{% else %}{% translate "Deleting cancels this email's sends that have not started. You review what is removed before anything changes." %}{% endif %}</p>
 <p>{% button type="submit" class="button-danger" autocomplete="off" aria-describedby="schedule-delete-help" %}{% translate "Delete" %}{% endbutton %}</p>
 </form>
 </section>

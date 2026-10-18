@@ -42,7 +42,13 @@ class SchedulePage:
 
 @dataclass(frozen=True)
 class SchedulePlan:
-    """Validated immutable civil configuration without subject or recipient data."""
+    """Validated immutable civil configuration without subject or recipient data.
+
+    ``skipped`` holds a digest's ``skip_dates`` (#1658): slot dates it never
+    sends. Every evaluation leaves them out, advancing its cursor past them
+    as past a wholly skipped civil day, so planners, catch-up and forecasts
+    agree with the database's slot check (``stewardship_catchup_due_v1``).
+    """
 
     kind: str
     timezone: str
@@ -52,6 +58,7 @@ class SchedulePlan:
     weekday: int | None
     one_time_due: datetime | None
     one_time_date: date | None
+    skipped: frozenset[date] = frozenset()
 
     @classmethod
     def from_values(cls, values, campaign):
@@ -67,6 +74,7 @@ class SchedulePlan:
             values["weekday"],
             due,
             date.fromisoformat(values["date"]) if values["date"] else None,
+            frozenset(map(date.fromisoformat, values.get("skip_dates", ()))),
         )
 
     def page(self, *, through, after=None, limit=100, include_final_weekly=False):
@@ -101,8 +109,9 @@ class SchedulePlan:
                 return SchedulePage(tuple(slots), cursor, True)
             cursor = candidate
             # A wholly skipped civil day is not an active campaign day. Its
-            # cursor still advances, rather than trapping a one-row batch.
-            if self.kind != "daily_digest" or self._active_day(candidate):
+            # cursor still advances, rather than trapping a one-row batch, and
+            # so does a skipped send's (#1658).
+            if self._sends(candidate):
                 slots.append(
                     ScheduleSlot(
                         candidate.isoformat(),
@@ -113,6 +122,12 @@ class SchedulePlan:
                 )
             candidate = self._advance(candidate)
         return SchedulePage(tuple(slots), cursor, False)
+
+    def _sends(self, day):
+        """Whether a candidate date in range is a send: active and not skipped."""
+        if day in self.skipped:
+            return False
+        return self.kind != "daily_digest" or self._active_day(day)
 
     def _active_day(self, day):
         """A daily reporting obligation requires a nonempty campaign-local day."""
@@ -144,9 +159,7 @@ class SchedulePlan:
         last = self._last_date(include_final_weekly)
         while candidate is not None and candidate <= last:
             due = self._due(candidate)
-            if due > after and (
-                self.kind != "daily_digest" or self._active_day(candidate)
-            ):
+            if due > after and self._sends(candidate):
                 return ScheduleSlot(
                     candidate.isoformat(),
                     candidate,
