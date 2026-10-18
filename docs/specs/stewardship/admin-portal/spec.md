@@ -659,6 +659,7 @@ Home, then these groups, each listing the entries the viewer's role may open:
 | Responses and reports | Census changes | `/admin/reports/census/` | Administrator, Staff | The campaign does not include the census |
 | Responses and reports | Additional information | `/admin/reports/information/` | Administrator, Staff | No current campaign, or ParishSoft data has not been downloaded yet |
 | Responses and reports | Ministry requests | `/admin/reports/ministries/` | Administrator, Staff, Ministry leader | The campaign has no Ministry module |
+| Responses and reports | Roster changes to enter | `/admin/reports/ministries/follow-up/roster/` | Administrator, Staff | The campaign has no Ministry module |
 | Responses and reports | Active parishioner family directory | `/admin/reports/families/` | Administrator, Staff | No current campaign, or ParishSoft data has not been downloaded yet |
 | Responses and reports | Emailed reports | `/admin/reports/emailed/` | Administrator, Staff | Never |
 | Parish data | Parish settings | `/admin/parish/settings/` | Administrator | Never |
@@ -694,8 +695,12 @@ Notes on the groups:
   [active parishioner family directory](../reports/spec.md#active-parishioner-family-directory) (with Family
   campaign codes and its mailing columns). Reports always show the current
   campaign. Ministry leaders see only their own Ministries in the Ministry
-  entry. Census changes, Additional information and Ministry requests show
-  their open counts ([#585](https://github.com/epiphany40223/parishkit/issues/585),
+  entry. [Roster changes to enter](#roster-changes-to-enter), the list Staff
+  enter roster changes from, is an entry of its own beside Ministry requests
+  ([#1660](https://github.com/epiphany40223/parishkit/issues/1660)), for
+  Administrators and Staff only. Census changes, Additional information,
+  Ministry requests and Roster changes to enter show their open counts
+  ([#585](https://github.com/epiphany40223/parishkit/issues/585),
   [#1590](https://github.com/epiphany40223/parishkit/issues/1590)): for
   Census changes, the rows of its default Work to do view (To do and
   Conflict, plus To review for an Administrator, who decides automatic
@@ -705,10 +710,12 @@ Notes on the groups:
   requests, the total of its queue's default Unresolved view, read through that
   page's own selection with every filter it applies (only the leader's own
   Ministries for a Ministry leader); where that page would say the follow-up
-  is unavailable, no number shows. All three ride on one statement.
-  [Roster changes to enter](#roster-changes-to-enter) is not a menu entry
-  (Ministry requests links it), so its count shows only in Home's Next
-  steps. Each is a plain number after the entry's
+  is unavailable, no number shows; for Roster changes to enter, the rows of
+  its default Not yet entered view, read through that page's own selection
+  with its eligibility (a person resolved the request as Joined or Left) and
+  each row's current Entered in ParishSoft mark, only once the campaign is
+  past go-live (active, closed or archived; a draft has no resolved request
+  to enter). All four ride on one statement. Each is a plain number after the entry's
   name that screen readers announce as "(N open)". No number shows at zero,
   nor on a greyed-out entry. The counts are read when a page loads, never
   updated in place, so a number never appears or disappears under the
@@ -870,9 +877,10 @@ state, modules and mode the chrome already reads, and from whether
 ParishSoft data has been downloaded yet (#1242): one small query, run once
 per request and only when an entry's condition needs it, for a viewer whose
 menu has Ministries, Additional information or the directory. The other
-exception is the open counts on Additional information and
-Ministry requests ([Menu groups](#menu-groups)): one query reads both, only
-when the viewer's menu offers either entry as a link, once per request.
+exception is the open counts on Census changes, Additional information,
+Ministry requests and Roster changes to enter
+([Menu groups](#menu-groups)): one query reads them all, only when the
+viewer's menu offers one of those entries as a link, once per request.
 
 #### Home page
 
@@ -975,23 +983,20 @@ link opens ([#1576](https://github.com/epiphany40223/parishkit/issues/1576)).
 At campaign end the Staff work through four lists, so an active, paused,
 closed or archived campaign offers Administrators and Staff each of them
 with its count ([#1590](https://github.com/epiphany40223/parishkit/issues/1590)),
-and each count is the number of rows its link opens by default: Census
-changes as "N to do" (the menu's count: its Work to do view); Roster changes
-to enter as "N not yet entered" (the page's default Not yet entered view,
-read through the page's own selection, eligibility and ticks); Additional
-information and Ministry requests as "N open" (the menu's counts). Roster
-changes to enter is offered, and greyed with the same reason, exactly as the
-viewer's Ministry requests entry is, and only to Administrators and Staff,
-who alone may open it; when its count cannot be read (the follow-up is
-turned off or unavailable) the link shows no number. A Ministry leader's
+and each count is the menu's, the number of rows its link opens by
+default: Census changes as "N to do" (its Work to do view); Roster changes
+to enter as "N not yet entered" (its Not yet entered view); Additional
+information and Ministry requests as "N open". Roster changes to enter is
+offered, and greyed with its reason, exactly as the viewer's menu entry is
+([#1660](https://github.com/epiphany40223/parishkit/issues/1660)), so only
+Administrators and Staff see it; when its count cannot be read (the
+follow-up is turned off or unavailable) the link shows no number. A Ministry leader's
 Closed list keeps Ministry requests with its open count, as in Active.
 These steps send no email. Preview and
 test email opens the initial invitation's first email and follows Pages and
 emails' availability. With no current campaign there is no Next steps panel:
 the campaign panel offers Create the campaign or says why there is none.
-Building the list adds no query of its own except the Roster changes to
-enter count, which Home reads (its follow-up selection and ticks) only for
-Administrators and Staff on a campaign past go-live with the Ministry module;
+Building the list adds no query: every count is the menu's;
 Home reads the Today count on its Family participation statement, and the
 invitation's email only for an Administrator in a Testing draft.
 
@@ -1083,7 +1088,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `ministry_leavers` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry requests — Requested leavers; Leaving; Members leaving | `/admin/reports/ministries/leaving/` | (retired; 404) | Retired with no redirect (#1157), as Members joining. |
 | `ministry_followup` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry follow-up; Follow-up | `/admin/reports/ministries/follow-up/` | (retired; 404) | Retired with no redirect ([#1133](https://github.com/epiphany40223/parishkit/issues/1133)): the queue is now Ministry requests, at `/admin/reports/ministries/`. |
 | `ministry_followup_item` | Follow-up request | Ministry requests | Administrator, Staff, Ministry leader | Ministry follow-up (one request) | `/admin/reports/ministries/follow-up/<request>/` | (same) | Return to the queue keeps its filters and page. Status, notes and outcome only; no Assign to (#552). Shows the Member's contact details (#1157). A resolved join or leave's Entered in ParishSoft tick posts to `follow-up/<request>/roster/` (#528). |
-| `ministry_roster` | Roster changes to enter | Ministry requests | Administrator, Staff | (new, #528) | (none) | `/admin/reports/ministries/follow-up/roster/` | [Roster changes to enter](#roster-changes-to-enter); its CSV/XLSX/PDF download (`roster/exports/`) and its bulk Mark entered in ParishSoft (`roster/marks/`, #879) are non-page actions. |
+| `ministry_roster` | Roster changes to enter | Menu: Roster changes to enter | Administrator, Staff | (new, #528) | (none) | `/admin/reports/ministries/follow-up/roster/` | [Roster changes to enter](#roster-changes-to-enter); its CSV/XLSX/PDF download (`roster/exports/`) and its bulk Mark entered in ParishSoft (`roster/marks/`, #879) are non-page actions. |
 | `family_directory` | Active parishioner family directory | Menu: Active parishioner family directory | Administrator, Staff | (same) | `/admin/reports/families/` | (same) |  |
 | `timeline` | Timeline | Active parishioner family directory | Administrator, Staff | (new, #477; renamed from Family timeline, #1570) | `/admin/reports/families/<family>/` | (same) | One Family's [Timeline](../reports/spec.md#timeline); opened from every Family name the shared `family_link` helper draws (directory rows, Find a Family, NAV-19, and every other Admin table that names a Family; see the [Timeline](../reports/spec.md#timeline) for the list); `<family>` is the opaque campaign record id. Staff see the summary only. |
 | `emailed_reports` | Emailed reports | Menu: Emailed reports | Administrator, Staff | (new) | `/admin/reports/emailed/` | (same) | New page (decision 7, ADM-12.17): the current campaign's daily reports (and weekly reports for Administrators), newest first, each linking its page; Send a weekly report now is on it and returns to it, linking the report it produced. |
@@ -6064,7 +6069,7 @@ role may not see left out:
 | 1 | Families the form cannot open | Families that cannot open the Family form because a Member's ParishSoft data has a value the form cannot accept | [Families the form cannot open](#system-health-page) | Administrator | `reports.source_form.blocked_families`, the System health sentence's own read, with its per-campaign and per-snapshot cache |
 | 2 | Refused email addresses | Unresolved refused addresses, and how many Families they belong to | [Refused addresses](#refused-addresses) | Administrator | `jobs.delivery_reads.unresolved_refusals()`, the set behind Sent mail's link-line count, counted in one query |
 | 3 | Families no mail can reach | Active parishioner Families with no deliverable email and no usable mailing address | The [active parishioner family directory](../reports/spec.md#active-parishioner-family-directory) with its "Can't be reached by email or mail" preset | Administrator, Staff | `accounts.admin_dashboard.unreachable_families`, Home's count, which is the directory's own "neither" selection |
-| 4 | Census and roster changes to enter | Census changes in the [Census changes](../reports/spec.md#pending-census-changes) default view for the viewer (To do and Conflict, plus To review for an Administrator); later, roster changes to enter | Census changes; later, *Roster changes to enter* (under Ministry requests) | Administrator, Staff | `reports.census_changes.census_changes` with the page's default query; later, the roster filter's own read |
+| 4 | Census and roster changes to enter | Census changes in the [Census changes](../reports/spec.md#pending-census-changes) default view for the viewer (To do and Conflict, plus To review for an Administrator); later, roster changes to enter | Census changes; later, *Roster changes to enter* | Administrator, Staff | `reports.census_changes.census_changes` with the page's default query; later, the roster filter's own read |
 
 Notes on the sections:
 
@@ -6546,8 +6551,10 @@ ParishSoft, and this tick only records that a person did.
 ### Roster changes to enter
 
 **Roster changes to enter** (`/admin/reports/ministries/follow-up/roster/`,
-Administrators and Staff, linked from Ministry requests, which is its
-breadcrumb parent) is the list staff work from. It lists the resolved joins
+Administrators and Staff) is the list staff work from: a menu entry of its
+own with its count ([Menu groups](#menu-groups),
+[#1660](https://github.com/epiphany40223/parishkit/issues/1660)), also
+linked from Ministry requests. It lists the resolved joins
 and leaves with no resolution source that are not yet ticked, or, with
 **Show** set to All, including entered, every one of them, to find and
 clear a mistaken mark, and **Ministry** narrows it to one Ministry (a closed
@@ -6599,8 +6606,8 @@ Its CSV, XLSX and PDF downloads carry the page's columns, without the tick
 ([downloaded files](../ui-conventions/spec.md#downloaded-files)), for every
 row of the chosen Show and Ministry, in the browser's time zone (the PDF in the parish's
 compact date format). The view and each download are audited as counts.
-Home's [Next steps](#home-page) give its default Not yet entered view's
-count (#1590).
+Its menu entry and Home's [Next steps](#home-page) give its default Not
+yet entered view's count (#1590, #1660).
 
 The [Ministry change summary](../reports/spec.md#ministry-change-summary)
 does not show the tick: its stored export cannot carry it without replacing

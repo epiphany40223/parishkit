@@ -1,7 +1,6 @@
 """Read-only campaign overview with role-appropriate aggregates and no credentials."""
 
 import json
-import logging
 from datetime import timedelta
 from uuid import uuid4
 
@@ -238,8 +237,6 @@ def summary(actor, configuration, now, *, home=False):
         result["health_listed"] = health_listed(
             result["health_problems"], result.get("offsite")
         )
-    if home and campaign is not None:
-        result["roster_todo"] = roster_todo(actor, campaign)
     if home and campaign is not None and leads_ministries(actor):
         from parishkit.stewardship.reports.ministry_followup import my_ministries
 
@@ -289,56 +286,6 @@ def promoted_at():
         .values_list("promoted_at", flat=True)
         .first()
     )
-
-
-# Campaign states whose Home Next steps list Roster changes to enter
-# (home_steps: Active, Mail paused, Closed or archived). A draft or a
-# scheduled campaign has no resolved request to enter yet, so Home does not
-# read the count there. Home still lists the Roster step, with no number, in
-# the other states it maps to Closed or Paused (purging, purge cleanup
-# failed, and a scheduled campaign with mail paused): the count is not read.
-ROSTER_STATES = frozenset({"active", "closed", "archived"})
-
-
-def roster_todo(actor, campaign):
-    """Roster changes to enter's default count for Home's Next steps, or None.
-
-    Read only where Home lists the step (an Administrator or Staff member,
-    who alone may open the list, on a campaign in ``ROSTER_STATES`` with the
-    Ministry module) through the page's own selection
-    (``ministry_roster_views.to_enter``), so the number is the rows the link
-    opens. Where the page would refuse or fail (the follow-up is turned off
-    or its inputs are unavailable) Home shows the link with no number. The
-    read runs in its own savepoint: Home's snapshot stays usable after a
-    database error, which is logged as the menu's failed counts are.
-    """
-    from django.core.exceptions import ObjectDoesNotExist
-    from django.db import DatabaseError, transaction
-
-    from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
-    from parishkit.stewardship.observability import Event, emit_failure
-    from parishkit.stewardship.reports.ministry_roster_views import to_enter
-
-    modules = (campaign.active_configuration.values or {}).get("modules", ())
-    if (
-        campaign.state not in ROSTER_STATES
-        or "ministry" not in modules
-        or not allows(actor, Capability.MINISTRY_FOLLOWUP)
-    ):
-        return None
-    try:
-        with transaction.atomic():
-            return to_enter(campaign.pk, actor)
-    except (PermissionError, ReadUnavailable, ObjectDoesNotExist):
-        return None
-    except DatabaseError as error:
-        emit_failure(
-            error,
-            event=Event.REPORT_SHAPING_FAILED,
-            level=logging.WARNING,
-            name_class=True,
-        )
-        return None
 
 
 def leads_ministries(actor):

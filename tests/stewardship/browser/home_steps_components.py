@@ -59,7 +59,12 @@ CLOSED = SimpleNamespace(
         }
     )
 )
-CLOSED_COUNTS = {"census_changes": 4, "information_queue": 3, "ministry_report": 2}
+CLOSED_COUNTS = {
+    "census_changes": 4,
+    "ministry_roster": 5,
+    "information_queue": 3,
+    "ministry_report": 2,
+}
 # Emails that may not have arrived: two in Production, one in Testing.
 UNKNOWN = mode_split({"production": 2, "testing": 1}, "production")
 
@@ -111,9 +116,8 @@ def components(context, admin):
 def closed_components(context, admin):
     """Home on a closed campaign for Staff and for a Ministry leader (#1590).
 
-    The menu is each role's real one, with the counts the chrome would read;
-    Staff also get Roster changes to enter's count, as Home's dashboard
-    reads it.
+    The menu is each role's real one, with the counts the chrome would read,
+    Roster changes to enter's among them (#1660).
     """
     configuration = SimpleNamespace(mode="production")
     pages = {}
@@ -139,7 +143,6 @@ def closed_components(context, admin):
                     CLOSED_COUNTS.get(entry["name"]) if entry["url"] else None
                 )
         chrome = admin | {"admin": False, "sections": sections, "breadcrumbs": []}
-        staff = "staff" in actor.roles
         pages[path] = (
             "text/html",
             render_to_string(
@@ -149,11 +152,7 @@ def closed_components(context, admin):
                     "admin_chrome": chrome,
                     "principal": actor,
                     "configuration": configuration,
-                    "dashboard": {
-                        "campaign": CLOSED,
-                        "refreshed_at": None,
-                        "roster_todo": 5 if staff else None,
-                    },
+                    "dashboard": {"campaign": CLOSED, "refreshed_at": None},
                 },
             ),
         )
