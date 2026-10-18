@@ -1369,6 +1369,9 @@ td.family-code { position: relative; }
    cell the long labels took all the room and the values collapsed to zero
    width. Stack label and value here, and keep the column from collapsing. */
 td.contact-details { min-width: 16rem; }
+/* The visually hidden Family names are absolutely positioned; anchor them to
+   the summary so they cannot widen the page (#1654). */
+td.contact-details summary { position: relative; }
 td.contact-details dl { display: block; }
 td.contact-details dd { margin: 0 0 .5rem; }
 

@@ -27,6 +27,20 @@ def page_box(locator):
     return {key: round(value, 2) for key, value in box.items()}
 
 
+def contact_summary(page, names):
+    """Return the Contact details summary for a Family (#1654).
+
+    The visible text is just "Contact details"; the Family's names follow in
+    visually hidden text so the accessible name still begins with the visible
+    label (label-in-name) and stays distinguishable between rows.
+    """
+    summary = page.locator("summary", has_text=f"Contact details for {names}")
+    assert summary.evaluate("el => el.firstChild.textContent") == "Contact details"
+    assert summary.locator(".visually-hidden").text_content() == f" for {names}"
+    assert summary.text_content() == f"Contact details for {names}"
+    return summary
+
+
 @pytest.mark.parametrize("width", [320, 1280])
 def test_directories_are_accessible_and_keep_filters_in_post(
     page,
@@ -54,9 +68,8 @@ def test_directories_are_accessible_and_keep_filters_in_post(
     page.goto(component_origin + "/family-directory")
     visible(page.get_by_text("ABCDEFGH", exact=True))
     assert page.locator("Family").count() == 0
-    page.get_by_text(
-        "Contact details for Example <Family>, Example Head", exact=True
-    ).click()
+    summary = contact_summary(page, "Example <Family>, Example Head")
+    summary.click()
     visible(page.get_by_role("link", name="head@example.org", exact=True))
     visible(page.get_by_text("1 Example Street", exact=False))
     search = page.get_by_label(
@@ -274,9 +287,7 @@ def test_contact_details_show_each_heads_email(
     # The Family name's timeline link (#590) is separate from the pane.
     timeline = page.get_by_role("link", name="Example, Anna, Ben and John", exact=True)
     assert timeline.get_attribute("href").endswith(f"/{UUID(int=82)}/")
-    page.get_by_text(
-        "Contact details for Example, Anna, Ben and John", exact=True
-    ).click()
+    contact_summary(page, "Example, Anna, Ben and John").click()
     emails = page.locator("dd.head-emails")
     visible(emails)
     link = emails.get_by_role("link", name="anna@example.org", exact=True)
