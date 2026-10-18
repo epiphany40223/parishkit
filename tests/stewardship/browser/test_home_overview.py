@@ -4,6 +4,11 @@ At a laptop window (1366 x 768) with the menu open, a busy Administrator's
 Home shows the Needs attention row, the campaign strip, the response tiles
 and every Next steps card without scrolling; at 390 px nothing scrolls
 sideways. Each count line links the page that lists its items.
+
+The fold depends on the fonts: CI's Linux engines draw DejaVu Sans, wider
+than macOS's system font, so text wraps onto more lines there. Measure a
+layout change in the Linux engines too (the playwright/python image with
+fonts-dejavu-core), not only on macOS.
 """
 
 import pytest
