@@ -394,3 +394,37 @@ def test_dates_with_another_change_wait_while_schedules_exist(page, component_or
     page.get_by_label("Campaign name").fill("Renamed campaign")
     enabled(page.get_by_role("button", name="Save", exact=True))
     assert not failures
+
+
+# A setting's whole block (its label row, any help and the control): the
+# <div> directly inside the form, a fieldset or a require-one group, and the
+# control's offset inside it.
+BLOCK = """(node) => {
+    let block = node.parentElement;
+    while (!block.parentElement.matches('form, fieldset, [data-require-one]')) {
+        block = block.parentElement;
+    }
+    return [block.getBoundingClientRect().height,
+            node.getBoundingClientRect().top - block.getBoundingClientRect().top];
+}"""
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+@pytest.mark.parametrize("name", ["name", "census", "additional_information"])
+def test_a_setting_is_as_tall_locked_as_open(page, component_origin, width, name):
+    """Locking or freeing a setting never changes its block's height, nor
+    where its control sits in the block: the locked label row's "i" tip
+    adds no height to the row (no layout shift, #1630). A freed setting is
+    redrawn in place, so any difference would move the settings below it."""
+    page.set_viewport_size({"width": width, "height": 900})
+    found = {}
+    for state, path in (("open", DRAFT), ("locked", LOCKED)):
+        page.goto(component_origin + path)
+        control = page.locator(f"#id_{name}")
+        assert control.is_disabled() == (state == "locked")
+        found[state] = control.evaluate(BLOCK)
+    assert same_place(found["locked"], found["open"], tolerance=0.01), (
+        name,
+        width,
+        found,
+    )

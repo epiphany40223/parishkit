@@ -1101,7 +1101,11 @@ def generated_text(page):
 
 
 def page_top(locator):
-    """Where ``locator`` sits on the page, whatever the scroll position."""
+    """Where ``locator`` sits on the page, whatever the scroll position.
+
+    Compare two readings within a pixel: Firefox reports subpixel edges that
+    differ by rounding noise with no move.
+    """
     return locator.evaluate(
         "(node) => node.getBoundingClientRect().top + window.scrollY"
     )
@@ -1130,7 +1134,8 @@ def test_edit_offers_the_schedules_own_email_below_its_choice(
     box.check()
     visible(subject)
     # Opening the fields moves nothing above them or under the pointer.
-    assert (page_top(choice), page_top(box)) == (above, box_at)
+    assert page_top(choice) == pytest.approx(above, abs=1)
+    assert page_top(box) == pytest.approx(box_at, abs=1)
     # Reminder 1 sends the second reminder email, with hand-written plain
     # text, so generation starts unticked.
     generate = page.get_by_label("Generate plain text from HTML")
@@ -1159,7 +1164,7 @@ def test_edit_offers_the_schedules_own_email_below_its_choice(
     reset = page.get_by_role("button", name="Reset to the default text")
     reset_at = page_top(reset)
     reset.click()
-    assert page_top(reset) == reset_at
+    assert page_top(reset) == pytest.approx(reset_at, abs=1)
     assert subject.input_value() not in {"Last call", "reminder mail", ""}
     assert "{{ family_code }}" in html.input_value()
     # Generated plain text follows the HTML as it is typed.

@@ -433,7 +433,7 @@ dd { margin: 0 0 .5rem; }
 label, legend { font-weight: 600; }
 label { display: block; margin-block: 1rem .35rem; }
 .help, .helptext { color: var(--muted); font-size: .925rem; }
-label + .help, label + .helptext { margin-block: -.15rem .5rem; }
+label + .help, label + .helptext, .label-row + .help, .label-row + .helptext { margin-block: -.15rem .5rem; }
 .errorlist { list-style: none; padding: 0; margin-block: .25rem .5rem; color: var(--error-ink); font-weight: 600; }
 /* A field checked as it is typed keeps one line for its error, shown or not,
    so the message coming and going never moves the controls below (#944).
@@ -596,10 +596,13 @@ textarea { max-width: 56rem; }
 :is(form, fieldset) > div:has(> input[type=checkbox]):not(:has(> :is(select, textarea, input:not([type=checkbox], [type=hidden])))) > :is(.helptext, .errorlist) { grid-column: 2; margin: .2rem 0 0; }
 /* A locked checkbox (Campaign settings, #1119) labels itself in a .label-row
    that also holds the "i" tip with why it is locked. The row takes the
-   label's place, and the box keeps to the top, so opening the tip (which
-   grows the row) never moves the box (no layout shift, #736). */
-:is(form, fieldset) > div:has(> input[type=checkbox]):has(> .label-row):not(:has(> :is(select, textarea, input:not([type=checkbox], [type=hidden])))) { align-items: start; }
-:is(form, fieldset) > div:has(> input[type=checkbox]):not(:has(> :is(select, textarea, input:not([type=checkbox], [type=hidden])))) > .label-row { grid-column: 2; grid-row: 1; margin: 0; }
+   label's place. It must be exactly as tall as the open checkbox's plain
+   label, with the box in the same place, so freeing the setting moves
+   nothing (no layout shift, #1630): the box centres on the first line as
+   an open one does, the row's "i" stays beside a long label (the label
+   wraps, not the "i") and the row never gets the extra line a wrapped "i"
+   would add. Opening the tip does not grow the row (its bubble floats). */
+:is(form, fieldset) > div:has(> input[type=checkbox]):not(:has(> :is(select, textarea, input:not([type=checkbox], [type=hidden])))) > .label-row { grid-column: 2; grid-row: 1; margin: 0; flex-wrap: nowrap; }
 :is(form, fieldset) > div:has(> input[type=checkbox]):not(:has(> :is(select, textarea, input:not([type=checkbox], [type=hidden])))) > .label-row > label { font-weight: 550; }
 /* On desktop, consecutive short fields (dates, times, numbers) share a row.
    (!important: it must win over the help-text column rule above, whose
@@ -1210,6 +1213,14 @@ details.technical-details dd { overflow-wrap: anywhere; }
 /* In a label row the button is the row's own flex item, centred on the
    label's line. */
 .label-row > .toggletip { display: contents; }
+/* The 1.75rem circle is taller than the label's 1.6 line (1.6rem), so beside a
+   label it would make this row 1-2px taller than the same label drawn
+   alone, and freeing a locked Campaign setting (which drops its "i") would
+   shift the fields below it (#1630). Trimming .1rem off each side of its
+   margin box keeps the circle (and its touch target) as drawn but lets the
+   row be exactly as tall as its label; a wrapped "i" on a line of its own
+   still gets its full 1.55rem line. */
+.label-row > .toggletip > .toggletip-button { margin-block: -.1rem; }
 .toggletip-button { display: inline-flex; align-items: center; justify-content: center; width: 1.75rem; height: 1.75rem; min-height: 0; margin: 0; padding: 0; border: 2px solid var(--accent); border-radius: 50%; background: var(--paper); color: var(--accent); font-family: Georgia, "Times New Roman", serif; font-style: italic; font-weight: 700; line-height: 1; box-shadow: none; position: relative; }
 /* A 44px touch target around the 28px circle, without enlarging the icon. */
 .toggletip-button::before { content: ""; position: absolute; inset: -.5rem; }
