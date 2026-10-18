@@ -26,8 +26,9 @@ Ministries.
 Ministry leaders receive only their assigned Ministries, and email and phone
 follow the Ministry report's leader contact rule: published values, and the
 requesting Member's own on a standing request (#1591), rendering
-`Not published` rather than any other source value. That rule applies identically to
-CSV, XLSX and PDF because all three render one captured document.
+`Not published` rather than any other source value. That rule applies
+identically to CSV, XLSX and PDF because all three render one captured
+document.
 
 ## Design
 
