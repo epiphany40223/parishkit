@@ -92,20 +92,28 @@ def test_the_primary_becomes_save_and_continue_in_the_same_place(
     # The page draws no Save of its own and no review dialog's opener.
     assert page.locator("#settings-form button", has_text="Save").count() == 0
     assert page.locator("form[data-review-open]").count() == 0
-    row = page.locator("[data-campaign-step-actions]")
 
     def placed(button):
-        """The cell's and the visible ``button``'s boxes within the row."""
-        frame = row.bounding_box()
+        """The cell's and the visible ``button``'s boxes within the row.
 
-        def within(box):
-            """``box`` relative to the row."""
-            return [box["x"] - frame["x"], box["y"] - frame["y"]] + [
-                box["width"],
-                box["height"],
-            ]
-
-        return within(cell.bounding_box()) + within(button.bounding_box())
+        All three boxes are read in one script, so they come from one
+        layout. Firefox scrolls the filled field into view and can settle
+        that scroll a pixel later (scrollY 38, then 37); separate
+        ``bounding_box()`` calls straddling it read the unmoved row and cell
+        a whole pixel apart, as if the cell had moved within the row.
+        """
+        return button.evaluate(
+            """(button, cell) => {
+              const row = cell
+                .closest("[data-campaign-step-actions]")
+                .getBoundingClientRect();
+              return [cell, button].flatMap((node) => {
+                const box = node.getBoundingClientRect();
+                return [box.x - row.x, box.y - row.y, box.width, box.height];
+              });
+            }""",
+            cell.element_handle(),
+        )
 
     before = placed(proceed)
     assert same_place(before[:4], before[4:])
