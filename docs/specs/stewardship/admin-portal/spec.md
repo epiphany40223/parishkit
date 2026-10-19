@@ -4503,9 +4503,11 @@ outcome.
      closed campaign, say so in one line, with no action.
    - While a direct activation's initial mail preparation is unfinished,
      the page draws the Go live step bar (Step 4 of 4: Activation, 3 of 4
-     steps completed). Once that preparation finishes, or when the campaign
-     is scheduled, it is the ordinary Production activation menu page, with
-     no step bar
+     steps completed), above its self-updating part, so a page being
+     watched keeps it until it is next opened rather than moving when
+     preparation finishes. Once that preparation finishes, or when the
+     campaign is scheduled, it is the ordinary Production activation menu
+     page, with no step bar
      ([wizard rule 12](../ui-conventions/spec.md#wizards)).
    - The page updates itself in place (no Refresh link): closely while
      preparation runs, every 30 seconds while a Retry waits or the campaign

@@ -1487,7 +1487,8 @@ with `data-review-open`; its Review answers a fragment marked
 `data-review-answer` (with `data-review-done`, the start of the status
 line), whose hidden fields Apply posts, the signed preview marked
 `data-review-preview`. A field in the answer marked `data-review-require`
-(the Confirm Production dialog's typed word) names Apply's form in its
+(the Confirm Production dialog's typed word and the Cancel go-live
+dialog's reason) names Apply's form in its
 `form` attribute, so Apply posts it, and holds Apply until it is valid
 ([prerequisite gates](#prerequisite-gates)). A field-value refusal answers
 the form again (status 400); any other refusal is the closed JSON refusal, or a fragment marked

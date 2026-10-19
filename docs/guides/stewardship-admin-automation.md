@@ -304,7 +304,7 @@ current Testing draft is exit 1 (`stale_version`), as on the page.
 | `campaign_id`, `campaign_state` | The campaign and its state (`scheduled`, `active` or `closed`) |
 | `confirmation_id`, `confirmed_at` | The Production confirmation |
 | `withdrawal_available` | Whether the page offers withdrawal (before the start only) |
-| `preparation` | The initial mail preparation, or `null` when the campaign was confirmed before its start and has none: `complete`, `task_id` (follow it with `task show`), `task_state`, `updated_at`, `phase`, `items_completed`, `groups_completed`, `failure` (a stored code, or `null`) and `retry_available` (the page offers **Retry failed mail preparation**) |
+| `preparation` | The initial mail preparation, or `null` when the campaign was confirmed before its start and has none: `complete`, `task_id` (follow it with `task show`), `task_state`, `updated_at`, `phase`, `items_completed`, `groups_completed`, `failure` (a stored code, or `null`) and `retry_available` (the page offers mail preparation's **Retry**) |
 | `outcomes` | Each count the confirmation previewed, by `key` (`family_messages`, `daily_messages`, `weekly_messages`, `coalesced_slots`, `active_families`, `eligible_families`, `no_email_families`): `preview`, `actual`, `difference`, and `complete` once that count is final |
 
 A campaign that is not the current Production campaign, a Testing draft
