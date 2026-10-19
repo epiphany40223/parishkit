@@ -2815,6 +2815,70 @@ broken is refused at that field
 of order at its Through date or At most, with both ends marked. Its access
 audit ends denied.
 
+This report stays the financial stream's statistics page. Reviewing each
+pledge and entering it in ParishSoft is on [Pledges to enter](#pledges-to-enter).
+
+### Pledges to enter
+
+**Access:** Admin and Staff only; no Ministry leader sees it.
+
+**Pledges to enter** (`/admin/reports/financial/pledges/`,
+[#1686](https://github.com/epiphany40223/parishkit/issues/1686)) is the
+financial stream's [review worklist](../review-pipeline/spec.md#review-worklist)
+and its [manual handling report](../review-pipeline/spec.md#manual-handling-reports)
+in one page, a menu entry of its own after Financial stewardship. The stream's
+stages, decisions and resubmission rule are the
+[Financial stream](../review-pipeline/spec.md#financial-stream)'s; this
+section is the page.
+
+- **Rows.** One row per Family whose current live response answers the
+  financial questions: the rows of
+  [Financial stewardship detail](#financial-stewardship-detail) with no filter.
+- **Filters**, always open: **Stage** first, To review by default, then To
+  enter by hand, Entered by hand, Ignored and Every stage, each with its count;
+  then the Family name or Family DUID search of Financial stewardship detail.
+- **Columns**, in the shared order: Family (the Family-name link), Family DUID,
+  Family's answer (the annual pledge, then its frequency, or "Cannot
+  contribute", then the share methods chosen), Reviewer's value (an Edit's
+  annual pledge and frequency), Stage, Submitted (the Family's latest
+  response), Last decision and Actions. There is no Baseline column: ParishSoft's
+  pledge for the upcoming year is read only once
+  [#1704](https://github.com/epiphany40223/parishkit/issues/1704) lands.
+- **Row and bulk actions** are the role table's for the stream: a To review row
+  offers Accept, Edit and Ignore; an Ignored row Back to review, with a required
+  note; a To enter by hand row Entered by hand and Back to review; an Entered by
+  hand row nothing (the mark is final). The bulk bar offers Accept, Ignore, Back
+  to review and Entered by hand, so the Administrator's flow ("a handful of
+  manual edits ... and then bulk approve all the financial pledges") is a few
+  Edits, then select all and Accept, then Stage To enter by hand, export, type
+  the pledges into ParishSoft, select all and Entered by hand.
+- **Edit** opens the row's own dialog with the annual pledge (the Family form's
+  format and limit: dollars and cents, under $1,000,000,000) and the frequency
+  (Weekly, Monthly, Quarterly, Annual, or No frequency for a zero pledge; a
+  pledge above zero needs one), filled from the value carried forward, and the
+  optional note. Save records Accepted (edited), the Family's answer stays
+  beside it, and the pledge to enter is the reviewer's value. A value the
+  server refuses is shown at its field
+  ([field errors](../ui-conventions/spec.md#field-errors-and-live-checks)).
+  Share methods and Cannot contribute are not edited here: Staff change those
+  through [Open form](#open-form), as before.
+- **Download.** The shared export buttons below the table download the applied
+  Stage and search as CSV, XLSX or PDF in the browser's time zone, rendered on
+  request as Roster changes to enter's are, with the page's columns and its
+  combined cells split
+  ([downloaded files](../ui-conventions/spec.md#downloaded-files)): Family,
+  Family DUID, ParishSoft status, Annual pledge, Frequency, Share methods,
+  Reviewer's annual pledge, Reviewer's frequency, Annual pledge to enter,
+  Frequency to enter, Stage, Decision, Entered by, Entered at, Submitted, Last
+  decision, Last decision at and Note. Money keeps its cents.
+- **Audit.** Each decision is one immutable history row (frozen migration
+  0135, provisional number) with a `pledge_review_updated` event that names
+  only versions; viewing and downloading the page are audited as a count only
+  (`pledges_to_enter_viewed`, `pledges_to_enter_exported`).
+
+Pledges are never written to ParishSoft (pledges are read-only in its API), so
+the stream has no Ready to update stage.
+
 ## Limitations
 
 **Access:** Admin and Staff only.
