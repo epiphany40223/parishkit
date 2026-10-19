@@ -64,6 +64,10 @@
     {% else %}<p>{% translate "None of your Ministries is part of the current campaign." %}</p>{% endif %}
     <p><a href="{% url 'admin:ministry_report' %}">{% translate "Ministry requests" %}</a> · <a href="{% url 'admin:ministry_report' %}#ministry-packet-heading">{% translate "Follow-up packet for my Ministries" %}</a></p>
   </section>{% endwith %}{% endif %}
+  {# Review work (#1690; review pipeline spec, "Role views"): the panels Staff and Ministry leaders land on, with Ready to update, for an Administrator. #}{% if dashboard.review %}{% load review_work %}{% review_panels dashboard.review as review_panels %}{% if review_panels %}<section class="panel" aria-labelledby="review-work-heading" data-review-work>
+    <h2 id="review-work-heading">{% translate "Review work" %}</h2>
+    {% include "stewardship/review-work-panels.html" with panels=review_panels nested=True %}
+  </section>{% endif %}{% endif %}
   {% include "stewardship/home-next-steps.html" %}
   {# Detail after the overview (#1673): Ministries ParishSoft changed recently. #}{% if dashboard.ministry_catalog %}{% include "stewardship/ministry-catalog-notice.html" with notice=dashboard.ministry_catalog %}{% endif %}
 {% endblock %}

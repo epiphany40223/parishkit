@@ -1141,7 +1141,14 @@ def test_menu_shows_open_follow_up_counts_scoped_to_the_viewer(
         assert (
             _menu_count(get(admin_browser, "/admin/")[1], "Additional information") == 1
         )
-        assert b"Additional information" not in get(browser, "/admin/")[1]
+        # The menu only: a leader's landing (My review work, #1690) may name
+        # other streams in its own text.
+        menu = re.search(
+            rb'<nav[^>]*aria-label="Administration".*?</nav>',
+            get(browser, "/admin/")[1],
+            re.S,
+        ).group(0)
+        assert b"Additional information" not in menu
 
 
 def test_a_leaders_open_count_costs_the_chrome_one_query(
