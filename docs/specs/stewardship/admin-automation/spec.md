@@ -971,7 +971,7 @@ success or failure, to standard error:
 ```json
 {
   "schema": "pk-admin/1",
-  "command": "send progress",
+  "command": "mail queue",
   "correlation_id": "<uuid>",
   "ok": true,
   "final": true,
@@ -1007,7 +1007,10 @@ success or failure, to standard error:
   list`'s filters in
   [#1562](https://github.com/epiphany40223/parishkit/issues/1562):
   `--search` became `--recipient` (which also takes an email address) and
-  stayed on `pk-admin/1`.
+  stayed on `pk-admin/1`. So did `send progress`, which became `mail queue`
+  in the same issue, with no alias: its document keeps `campaign_id`,
+  `mode`, `paused`, `upcoming` and `send` unchanged and adds the queue's
+  counts, with a changelog entry.
 - A documented exception: the `content` commands' state value `custom`
   was renamed `edited` (#1404) and stayed on `pk-admin/1`, with a guide
   changelog entry, for the same reasons as the #931 exception above.
@@ -2544,10 +2547,25 @@ PR 12 (default, pending Administrator confirmation).
 
 | URL names | Command or exemption |
 | --- | --- |
-| `family_email_progress`, `family_email_progress_status` | `send progress --watch` (PR 3a) |
+| `mail_queue`, `mail_queue_status` | `mail queue --watch` ([#1562](https://github.com/epiphany40223/parishkit/issues/1562); replaced `send progress`, PR 3a; see below) |
 | `family_email_sends` | `send history` (PR 3a) |
 | `delivery_control` | `send controls` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), the page's read (any session; no event, as the page's read records none; see below); `send pause-preview`, `send resume-preview`, `send resolve-preview` and `send confirm --token …` (PR 7b; see below) |
 | `family_portal` | `portal maintenance show` (any session; no event, as the page's read records none), `portal maintenance set --state closed\|open [--message TEXT\|-]` (PR 7a; see below) |
+
+`mail queue` is the [Mail queue](../admin-portal/spec.md#mail-queue) page's
+read, through the same request-free function (`jobs.send_reads`), and
+records the page's `delivery_viewed` event on its first read only, as the
+page does. Its document holds the operating `mode`, whether live delivery
+is `paused`, the current `campaign_id` (null with none), the four
+headline counts as `counts` (`queued`, `sending`, `retry_wait`, `paused`),
+`other_mode_queued`, and `kinds`: one row per row of the page's By kind
+table (a purpose kept only for past emails has none), in that order, with the
+same four counts. `send` and `upcoming` are the Family send panel's
+document, exactly as `send progress` printed them. With `--watch`, the read
+is terminal once nothing is queued in the operating mode, no Family send
+is in progress and none is about to start. It replaced `send progress` in
+[#1562](https://github.com/epiphany40223/parishkit/issues/1562) with no
+alias (see [output documents](#output-documents)).
 
 `portal maintenance show` returns `closed`, `since`, `message` (the
 Administrator's own note Families see) and `closed_by_id`, the closing
@@ -2633,7 +2651,7 @@ read after the commit.
 There is no separate "cancel" action today. Stopping a send is the delivery
 pause, and closing work is the closed-campaign resolution. See
 [live delivery pause](../admin-portal/spec.md#live-delivery-pause) and
-[Family email progress](../admin-portal/spec.md#family-email-progress).
+[Mail queue](../admin-portal/spec.md#mail-queue).
 
 ### Testing sends
 

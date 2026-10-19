@@ -1692,7 +1692,8 @@ Family's due reminders as `workgroup_excluded`, in the same order of reasons
 ([#866](https://github.com/epiphany40223/parishkit/issues/866)). The preview
 counts them as skipped, confirming the resume writes them so, and none
 coalesces into the Family's due invitation, which is still selected and sent.
-Family email progress
+The Mail queue's
+[Family send progress](../admin-portal/spec.md#family-send-progress) panel
 counts these skips separately ("Skipped: No-reminders WorkGroup"), never as owed
 or remaining, and the Family's
 [Timeline](../reports/spec.md#timeline) names them.

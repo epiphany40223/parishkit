@@ -926,11 +926,12 @@ names stay unlinked where the page must not open a Timeline: the Additional
 information queue (each name is already the link to its request, and the
 request page links the Timeline), Go-live's Testing submissions and the
 chosen-Family test send (Testing only), and the examples of a refused
-ParishSoft load. Sent mail's Recipient stays the button that lists
-everything that recipient was sent, in place
-([#1571](https://github.com/epiphany40223/parishkit/issues/1571); see
-[Sent mail](../admin-portal/spec.md#sent-mail)), so it is not a Timeline
-link, and the Mail message page follows
+ParishSoft load. Sent mail's Recipient links a Production Family email's
+Family here; every other Recipient stays the button that lists everything
+that recipient was sent, in place
+([#1562](https://github.com/epiphany40223/parishkit/issues/1562); see
+[Sent mail](../admin-portal/spec.md#sent-mail) for which), and the Mail
+message page follows
 [#1563](https://github.com/epiphany40223/parishkit/issues/1563). Its breadcrumb
 parent is the active parishioner family directory. The page reads the
 Family's records at the database's current instant (**Counted at**).
@@ -955,8 +956,9 @@ that both roles see:
   message page name each email's state in the same words, from one shared
   table, adding where a Still sending email is (queued, waiting to retry, or
   being handed to the mail service) and Not sent (cancelled). The Admin
-  status bar, the pause and resume pages, Family email progress and sends,
-  and the test-email results use the same words.
+  status bar, the pause and resume pages, the Mail queue's Family send
+  panel, Family email history and the test-email results use the same
+  words.
 - **Family code**, for roles that may see Family codes (`FAMILY_CODES`; the
   code is neither decrypted nor shown otherwise), as the directory shows it,
   with **Open form** (described below), as the directory has. Unlike the

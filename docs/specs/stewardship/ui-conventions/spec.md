@@ -812,7 +812,8 @@ browser reload lands on the same page and view with the current status.
 2026-10-17). **Shared code.** `live-status-v1.js` status regions and
 `ui-v1.js`'s periodic quiet re-read (`a[data-reread-every]`), both built on
 the [in-place controls](#in-place-controls); no other mechanism.
-**Precedent.** System health (#1214), Family email progress, #869, #1353.
+**Precedent.** System health (#1214), Family email progress (now the
+Mail queue, #1562), #869, #1353.
 
 - **Passive reads only.** Every automatic read is one the page already
   makes: a status region's passive status read
