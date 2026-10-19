@@ -168,6 +168,10 @@ MARK_ICON = {
 # stage is a plain badge.
 STAGE_LOOK = {Stage.ENTERED_INCORRECTLY: "error"}
 NOT_SEEN = "not_seen"
+# The line an Ignored item gains when a refresh finds ParishSoft holding the
+# Family's answer (refresh rule 1, #1689): the reviewer's note, never a
+# change of stage.
+NOW_MATCHES = "ParishSoft now matches the Family's answer."
 EVERY_STAGE = "all"
 
 
@@ -410,6 +414,8 @@ def _decorate(stream, row, roles, prefix, columns):
     row["stage_label"] = placement.stage.label
     row["stage_look"] = STAGE_LOOK.get(placement.stage, "")
     row["decision_label"] = decision_label(placement)
+    if row.get("now_matches"):
+        row["decision_label"] = f"{row['decision_label']} {NOW_MATCHES}".strip()
     row["edit_form"] = f"{prefix}-edit-{row['id']}"
     row["edit_dialog"] = f"{prefix}-edit-dialog-{row['id']}"
     row["edit_hint"] = f"{prefix}-edit-hint-{row['id']}"
@@ -557,7 +563,8 @@ def build(
     ``note``); ``items`` is the plural the bulk dialogs count ("changes")
     and ``caption`` the table's name; optionally ``leads`` (the reader
     leads its Ministry), ``by_hand`` (a By hand census change),
-    ``not_seen`` (the Not seen in ParishSoft flag) and ``withheld``
+    ``not_seen`` (the Not seen in ParishSoft flag), ``now_matches``
+    (ParishSoft now holds an Ignored item's Family answer) and ``withheld``
     (actions this item cannot take). ``roles`` is the reader's role set.
     ``stage`` is the Stage filter's value and ``fields`` the stream's other
     filters, posted by every form. ``templates`` takes the stream's

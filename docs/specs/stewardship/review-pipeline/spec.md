@@ -533,10 +533,11 @@ The value recorded at a census Entered by hand mark is the change's stored
 ParishSoft value, which the mark freezes (for a mark made before #1689 too;
 normally it equals A). Not seen in ParishSoft counts the unchanged full
 refresh checks written after the mark and after the start that migration
-0136 (provisional number) records once, with an audit event, on a row of
-its own; the threshold (default two) is kept on that row, and deleting the
-row turns the flag off. The Stage filter has a Not seen in ParishSoft
-choice (Staff), counted beside the stages it is a flag of.
+0136 (provisional number) records once on a row of its own (with an
+audit event when the database already holds Family responses); the threshold (default two) is kept on that row, and deleting the
+row turns the flag off. While some item has the flag, the Stage filter
+has a Not seen in ParishSoft choice (Staff and Administrators), counted
+beside the stages it is a flag of.
 
 Left for later, each in its own issue:
 

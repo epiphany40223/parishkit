@@ -205,7 +205,15 @@ def census_by_hand(handling, entity_kind):
     return handling != "api" or entity_kind == "family"
 
 
-def census_placement(*, decision, execution, handling, entity_kind, admin_value_set):
+# The refresh check outcomes (#1689) that move a final census change on:
+# Confirmed for an entered or published change, Entered incorrectly for an
+# entered one. Unchanged (or no check) leaves it where its execution says.
+CENSUS_CHECKS = frozenset({None, "unchanged", "confirmed", "entered_incorrectly"})
+
+
+def census_placement(
+    *, decision, execution, handling, entity_kind, admin_value_set, check=None
+):
     """A ``ProposedChange``'s stage from its decision × execution.
 
     Returns None for a ``report-only`` change (pledges, share methods,
@@ -218,6 +226,12 @@ def census_placement(*, decision, execution, handling, entity_kind, admin_value_
     with no approval is Confirmed with no reviewer ("Already in
     ParishSoft"). A pair in ``CENSUS_IMPOSSIBLE`` raises, as an unknown
     state does: its decision would be a guess.
+
+    ``check`` is the latest refresh check's outcome (``responses.
+    refresh_checks``), read only for a final change: a refresh that found
+    the change's value in ParishSoft Confirms an entered or published
+    change, and one that found a third value makes an entered change
+    Entered incorrectly. Both keep the decision behind them.
     """
     if (
         (decision, execution) in CENSUS_IMPOSSIBLE
@@ -226,6 +240,7 @@ def census_placement(*, decision, execution, handling, entity_kind, admin_value_
         or handling not in CENSUS_HANDLINGS
         or entity_kind not in CENSUS_ENTITIES
         or type(admin_value_set) is not bool
+        or check not in CENSUS_CHECKS
     ):
         raise ValueError("Unknown census change state.")
     if handling == "report-only":
@@ -238,6 +253,10 @@ def census_placement(*, decision, execution, handling, entity_kind, admin_value_
             return Placement(stage)
         if stage is Stage.CONFIRMED and decision != "approved":
             return Placement(stage)
+        if check == "confirmed" and stage in (Stage.ENTERED_BY_HAND, Stage.UPDATED):
+            stage = Stage.CONFIRMED
+        elif check == "entered_incorrectly" and stage is Stage.ENTERED_BY_HAND:
+            stage = Stage.ENTERED_INCORRECTLY
         return Placement(stage, accepted)
     if decision == "ignored":
         return Placement(Stage.IGNORED, Decision.IGNORED)
@@ -269,7 +288,9 @@ MINISTRY_ROSTER_OUTCOMES = frozenset({"joined", "leave_confirmed"})
 MINISTRY_IGNORED_OUTCOMES = frozenset({"declined", "duplicate", "other"})
 
 
-def ministry_placement(*, state, outcome, source_resolved, roster_entered):
+def ministry_placement(
+    *, state, outcome, source_resolved, roster_entered, confirmed=False
+):
     """A ``MinistryRequest``'s stage from its workflow, outcome and roster tick.
 
     ``source_resolved`` is whether refresh reconciliation resolved it (it
@@ -277,12 +298,15 @@ def ministry_placement(*, state, outcome, source_resolved, roster_entered):
     ``roster_entered`` is its latest Entered in ParishSoft tick. A request
     resolved by a person as joined or left is To enter by hand until
     ticked; declined, duplicate, other and closed with no response are
-    Ignored, keeping the outcome as the decision's label.
+    Ignored, keeping the outcome as the decision's label. ``confirmed`` is
+    whether a refresh check (#1689) found a person's accepted request in
+    the roster since: it is then Confirmed, keeping its Accepted.
     """
     if (
         state not in MINISTRY_STATES
         or type(source_resolved) is not bool
         or type(roster_entered) is not bool
+        or type(confirmed) is not bool
     ):
         raise ValueError("Unknown Ministry request state.")
     if state in MINISTRY_OPEN_STATES:
@@ -296,6 +320,8 @@ def ministry_placement(*, state, outcome, source_resolved, roster_entered):
     if state == "resolved" and outcome in MINISTRY_ROSTER_OUTCOMES:
         if source_resolved:
             return Placement(Stage.CONFIRMED, outcome=outcome)
+        if confirmed:
+            return Placement(Stage.CONFIRMED, Decision.ACCEPTED, outcome=outcome)
         stage = Stage.ENTERED_BY_HAND if roster_entered else Stage.TO_ENTER_BY_HAND
         return Placement(stage, Decision.ACCEPTED, outcome=outcome)
     raise ValueError("Unknown Ministry request outcome.")

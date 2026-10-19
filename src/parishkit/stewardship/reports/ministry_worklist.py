@@ -32,11 +32,17 @@ from django.utils.safestring import mark_safe
 
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.policy_models import PortalUser
-from parishkit.stewardship.pipeline import Decision, Stage, Stream
+from parishkit.stewardship.pipeline import TERMS, Decision, Stage, Stream
+from parishkit.stewardship.responses.refresh_checks import check_states
 from parishkit.stewardship.source.source_status import source_status_label
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
-from parishkit.stewardship.web.review_worklist import Column, build
+from parishkit.stewardship.web.review_worklist import (
+    NOT_SEEN,
+    NOW_MATCHES,
+    Column,
+    build,
+)
 from parishkit.stewardship.web.tables import PAGE_SIZES, report_table
 from parishkit.stewardship.workflows.review import (
     leads,
@@ -69,7 +75,11 @@ STAFF_STAGES = (
 ACCEPTED = "accepted"
 LEADER_STAGES = (Stage.TO_REVIEW.value, ACCEPTED, Stage.IGNORED.value, "confirmed")
 EVERY = "all"
-STAGE_VALUES = frozenset({*(stage.value for stage in STAFF_STAGES), ACCEPTED, EVERY})
+# Not seen in ParishSoft (#1689) is a flag on Entered by hand, chosen like a
+# stage; only Staff and Administrators see it, as they alone see the update.
+STAGE_VALUES = frozenset(
+    {*(stage.value for stage in STAFF_STAGES), ACCEPTED, NOT_SEEN, EVERY}
+)
 # The Members filter (Staff only, #1217): the requests for Members ParishSoft
 # still lists in their Family (the default), or only those it no longer does.
 MEMBERS = {"current": "In ParishSoft", "gone": "No longer in ParishSoft"}
@@ -192,21 +202,40 @@ def read_rows(campaign_id, query, principal, *, empty=False):
     return place(result, principal)
 
 
-def place(result, principal, *, marks=None):
+def place(result, principal, *, marks=None, checks=None):
     """Give each row of a follow-up selection result its stage, in place.
 
-    One read of the rows' roster ticks, unless ``marks`` gives them (a
-    detached page). Each row gains ``placement`` (the pipeline's),
-    ``stage`` (the reader's Stage choice) and the words a file shows for
-    them (``stage_label``, ``decision_label``). Returns ``result``.
+    One read of the rows' roster ticks and one of their refresh checks
+    (#1689), unless ``marks`` gives the ticks (a detached page, which then
+    gives its ``checks`` too, or has none). Each row gains
+    ``placement`` (the pipeline's), ``stage`` (the reader's Stage choice),
+    the Not seen in ParishSoft flag (Staff only) and whether ParishSoft now
+    matches an ignored request (``not_seen``, ``now_matches``), and the
+    words a file shows for them (``stage_label``, ``decision_label``).
+    Returns ``result``.
     """
     if marks is None:
         marks = roster_marks(row["id"] for row in result["rows"])
+        checks = check_states(
+            requests=[row["id"] for row in result["rows"]], marks=marks
+        )
+    checks = checks or {}
     leader = is_leader(principal)
     for row in result["rows"]:
-        placement = ministry_placement_of(row, marks)
+        placement = ministry_placement_of(row, marks, checks)
+        check = checks.get(str(row["id"]))
         row["placement"] = placement
         row["stage"] = stage_of(placement, leader)
+        row["not_seen"] = bool(
+            not leader
+            and check
+            and check.not_seen(placement.stage is Stage.ENTERED_BY_HAND)
+        )
+        row["now_matches"] = bool(
+            placement.stage is Stage.IGNORED
+            and check
+            and check.outcome == "ignored_now_matches"
+        )
         row["stage_label"] = (
             placement.decision.label
             if row["stage"] == ACCEPTED
@@ -223,10 +252,15 @@ def place(result, principal, *, marks=None):
 
 
 def stage_counts(rows):
-    """How many of ``rows`` are at each Stage choice's value."""
+    """How many of ``rows`` are at each Stage choice's value.
+
+    Not seen in ParishSoft is counted beside the stage its rows are at.
+    """
     counts = {}
     for row in rows:
         counts[row["stage"]] = counts.get(row["stage"], 0) + 1
+        if row.get("not_seen"):
+            counts[NOT_SEEN] = counts.get(NOT_SEEN, 0) + 1
     return counts
 
 
@@ -239,10 +273,13 @@ def stage_choices(counts, leader):
         if leader
         else [(stage.value, stage.label) for stage in STAFF_STAGES]
     )
+    if NOT_SEEN in counts and not leader:
+        labels.append((NOT_SEEN, TERMS["not_seen"]))
     choices = [
         (value, f"{label} ({counts.get(value, 0):,})") for value, label in labels
     ]
-    choices.append((EVERY, f"Every stage ({sum(counts.values()):,})"))
+    every = sum(count for value, count in counts.items() if value != NOT_SEEN)
+    choices.append((EVERY, f"Every stage ({every:,})"))
     return choices
 
 
@@ -250,6 +287,8 @@ def _keeps(row, stage):
     """Whether a row is at the chosen Stage (Every stage keeps every row)."""
     if stage == EVERY:
         return True
+    if stage == NOT_SEEN:
+        return bool(row.get("not_seen"))
     if stage == ACCEPTED:
         return row["stage"] in (
             ACCEPTED,
@@ -442,6 +481,8 @@ def _decision_line(row, leader, asked, replaced_by, reader_leads):
         parts.append(format_html("{}", placement.decision.label))
     if not reader_leads and leader and row.get("reviewed_ministry_name"):
         parts.append(format_html("{}", "Read only: edited into another Ministry"))
+    if row.get("now_matches"):
+        parts.append(format_html("{}", NOW_MATCHES))
     if replaced_by:
         parts.append(format_html("Added in its place: {}", replaced_by))
     if asked:
@@ -508,7 +549,18 @@ def decorate(rows, result, principal, *, token, every, decisions=None, asked=Non
                 "baseline": "",
                 "family_answer": "" if row.get("parish_added") else _request_words(row),
                 "reviewer_value": reviewer_value(row),
-                "parishsoft_now": "",
+                # Shown only beside Not seen in ParishSoft: the roster still
+                # shows the Member as before the entry.
+                "not_seen": row.get("not_seen", False),
+                "parishsoft_now": (
+                    (
+                        "Not in the roster"
+                        if row["action"] == "join"
+                        else "In the roster"
+                    )
+                    if row.get("not_seen")
+                    else ""
+                ),
                 "submitted_at": row["submitted_at"],
                 "decided_by": decided_by,
                 "decided_at": decided_at,

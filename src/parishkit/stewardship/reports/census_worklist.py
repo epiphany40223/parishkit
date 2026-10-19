@@ -35,6 +35,7 @@ from parishkit.stewardship.responses.models import ProposedChange
 from parishkit.stewardship.source.source_status import source_status_label
 from parishkit.stewardship.web.presentation import duid
 from parishkit.stewardship.web.review_worklist import (
+    NOT_SEEN,
     WORDS,
     Column,
     StaleDecision,
@@ -83,13 +84,17 @@ def _withheld(row):
     Edit for a field no value can be typed for (moved, deceased, the email
     opt-out, a New Member), and Accept and Edit on a Conflict whose
     ParishSoft value is unknown, which waits for a refresh: Accept on a
-    Conflict is decided against ParishSoft's current value.
+    Conflict is decided against ParishSoft's current value. Entered
+    incorrectly's two fixes come with #1737; until then a refresh confirms
+    the change once ParishSoft holds the reviewer's value.
     """
     withheld = set()
     if row["editor"] is None:
         withheld.add(Action.EDIT)
     if row["placement"].stage is Stage.CONFLICT and not row["resolvable"]:
         withheld |= {Action.ACCEPT, Action.EDIT}
+    if row["placement"].stage is Stage.ENTERED_INCORRECTLY:
+        withheld |= {Action.BACK_TO_REVIEW, Action.ENTERED_BY_HAND}
     return withheld
 
 
@@ -140,11 +145,15 @@ def worklist_rows(rows):
 
 
 def stage_counts(counts):
-    """The Stage filter's counts without History, which Every stage leaves out."""
+    """The Stage filter's counts without History, which Every stage leaves out.
+
+    Not seen in ParishSoft (#1689) is a choice only while some change has
+    the flag.
+    """
     return {
-        stage.value: counts.get(stage.value, 0)
-        for stage in STAGES
-        if counts.get(stage.value)
+        value: counts.get(value, 0)
+        for value in (*(stage.value for stage in STAGES), NOT_SEEN)
+        if counts.get(value)
     }
 
 

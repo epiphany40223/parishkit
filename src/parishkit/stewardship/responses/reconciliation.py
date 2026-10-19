@@ -201,12 +201,17 @@ def _proposal_updates(corpus, campaign_id, *, record=True):
             )
         ):
             continue
+        # The refresh rules compare ParishSoft's value (R) with the baseline
+        # the change was answered against (A) and its carried-forward value
+        # (C): the reviewer's value when it was Edited, else the Family's
+        # answer (review pipeline spec, "Baseline refresh re-evaluation").
+        carried = row.admin_value if row.admin_value_set else row.submitted_value
         result = merge_value(
             field.kind,
             current,
             PriorChange(
                 KnownValue(row.baseline_available, row.baseline_value),
-                row.submitted_value,
+                carried,
             ),
         )
         execution = (
@@ -218,6 +223,11 @@ def _proposal_updates(corpus, campaign_id, *, record=True):
             if unusable or result.conflict
             else "pending"
         )
+        if execution == "resolved_upstream" and row.decision == "ignored":
+            # An Ignored change stays Ignored when ParishSoft reaches the
+            # Family's answer: no change was wanted, so it is not Confirmed;
+            # its row says ParishSoft now matches (#1689).
+            execution = "pending"
         decision = "unreviewed" if resets_approval(row, execution) else row.decision
         yield row, current, execution, decision
 
