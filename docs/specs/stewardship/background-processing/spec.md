@@ -2412,7 +2412,17 @@ it is not "yesterday" when read later. It is body text in the body's size
 and colour, not small muted print
 ([#1016](https://github.com/epiphany40223/parishkit/issues/1016)). The zone
 abbreviation is the one in
-force at the end of the report day (EST after daylight saving time ends). The
+force at the end of the report day (EST after daylight saving time ends).
+The saved report page draws the Campaign totals as
+[stat tiles](../ui-conventions/spec.md#stat-tiles), each with the email's
+own value text: Families that have responded show their count, with "out of
+93 (10.8%)" as the tile's line and a share bar. A total the email reads
+"Unavailable" reads "—" on the page, with a toggletip saying why: the
+ParishSoft data for that day was not available, or (for pledges) a
+responding Family's pledge amount is not known, so the total is not added
+up. The email keeps the word "Unavailable", as its day-by-day table does,
+because a mail program cannot show a toggletip
+([#1639](https://github.com/epiphany40223/parishkit/issues/1639)). The
 email's day-by-day table is captioned "Day by day". Live population figures
 (Members, eligible or deliverable email, comparison pledges) are not in the
 digest, because they cannot be stated as of the end of a past day; the
