@@ -1,7 +1,7 @@
 """Forward migration: census Add on the review worklist (#1710).
 
-Its SQL is the frozen file ``schema/migrations/0137_census_additions.sql``
-(number 0137, provisional until it is assigned in merge order), read whole
+Its SQL is the frozen file ``schema/migrations/0129_census_additions.sql``
+(number 0129, provisional until it is assigned in merge order), read whole
 and never parsed. It creates ``stewardship_census_addition`` (a census change
 Staff or an Administrator added that no Family answer asked for) and
 ``stewardship_census_addition_resolution`` (its one later step: Entered by
@@ -29,16 +29,16 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0137_census_additions.sql"
+    / "0129_census_additions.sql"
 )
 
 
 class Migration(migrations.Migration):
     dependencies = [
         # This app's previous migration, which installs the previous frozen
-        # file (0131), so the files apply in prefix order and the app keeps
+        # file (0128), so the files apply in prefix order and the app keeps
         # one leaf.
-        ("stewardship_responses", "0013_census_pipeline_review"),
+        ("stewardship_responses", "0014_census_pipeline_review"),
     ]
 
     operations = [

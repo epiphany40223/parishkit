@@ -29,7 +29,7 @@ that edit (``edit_census_change``, ADM-09.04): the same kind of review row,
 which keeps the decision and changes only the edit fields
 (``schema/migrations/0107_proposal_review_edit.sql``). The worklist's Edit
 is Accept with a value: one review row that approves and edits together
-(``decide_census_changes``, ``schema/migrations/0131_census_pipeline_review.sql``).
+(``decide_census_changes``, ``schema/migrations/0128_census_pipeline_review.sql``).
 The Family's answer is never changed. An edit is per change only, never in
 bulk.
 

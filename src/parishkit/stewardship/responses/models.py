@@ -503,7 +503,7 @@ class CensusAddition(ImmutableRecord):
     Who, when and the note are the row's own; its one later step (Entered
     by hand or withdrawn) is a ``CensusAdditionResolution``. SQL checks the
     actor, the campaign, the Family, the field and the value's shape again
-    (schema/migrations/0137_census_additions.sql).
+    (schema/migrations/0129_census_additions.sql).
     """
 
     family = models.ForeignKey(

@@ -591,14 +591,14 @@ them.
 review gaps: Census changes is the shared worklist, Staff and Administrators
 Accept, Edit (By hand fields and Family addresses included), Ignore and send
 back to review every change, Entered by hand on a To review By hand row
-accepts and marks it in one step, and forward migration 0131 (provisional
+accepts and marks it in one step, and forward migration 0128 (provisional
 number) widens the review guard for it
 ([Automatic census review](../reports/spec.md#automatic-census-review)).
 Census **Add** was cut from that slice (7th on the
 [cut list](#risks-and-what-to-cut-first)) and built in
 [#1710](https://github.com/epiphany40223/parishkit/issues/1710): a change
 with no Family answer behind it is a row of its own tables (forward
-migration 0137, provisional number), not a proposal, so the Family submit
+migration 0129, provisional number), not a proposal, so the Family submit
 path and its guards are unchanged, and it is To enter by hand until #1688
 ([Census Add](../reports/spec.md#census-add)).
 

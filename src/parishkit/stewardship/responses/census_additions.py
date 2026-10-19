@@ -19,7 +19,7 @@ writes an addition to ParishSoft, so each is To enter by hand
 ``CensusAdditionResolution``: Entered by hand, or withdrawn by Back to
 review. SQL checks the actor, the campaign, the Family, the Member, the field
 and the value's shape again, and pairs each row with its audit event
-(``schema/migrations/0137_census_additions.sql``).
+(``schema/migrations/0129_census_additions.sql``).
 """
 
 from uuid import UUID

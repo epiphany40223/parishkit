@@ -2351,7 +2351,7 @@ may change a proposal's decision only with such a row, and the row's own
 guard checks again that the actor may review, the campaign admits changes,
 the version is current, the change is open, and the decision or the edit
 changes. Migrations 0107 and 0108 added the edit and the accepted base.
-Forward migration 0131 (provisional number,
+Forward migration 0128 (provisional number,
 [#1683](https://github.com/epiphany40223/parishkit/issues/1683)) widens the
 guard for the pipeline: a current Staff member or Administrator; any census
 change the worklist lists, By hand ones included; a decision and an edit
@@ -2425,12 +2425,12 @@ commands act on the Family's changes only.
 
 An addition is not a proposed change: proposals belong to the Family submit
 path, whose guards stay as they are, and the Family form never shows an
-addition. Forward migration 0137 (provisional number) adds two
+addition. Forward migration 0129 (provisional number) adds two
 migration-owned tables, each INSERT only: the addition (who, when, the note,
 the Family, the Member or Family, the field, the value and the change it
 replaced) and its one later step (Entered by hand or withdrawn, at most one
 per addition). Their guards check the actor and campaign again and,
-for an addition, the rules above, the value's shape as 0131 checks an
+for an addition, the rules above, the value's shape as 0128 checks an
 edit's, and record the baseline themselves. Each row is paired with a
 `census_change_updated` audit event naming only its id and version.
 

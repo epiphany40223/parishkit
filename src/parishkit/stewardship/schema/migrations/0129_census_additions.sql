@@ -1,4 +1,4 @@
--- Frozen forward migration file 0137 (the repository-wide file sequence;
+-- Frozen forward migration file 0129 (the repository-wide file sequence;
 -- provisional, the number is assigned centrally in merge order): census
 -- Add on the review worklist (#1710). This file is installed by its Django
 -- migration in the responses app and must never change once released;
@@ -21,7 +21,7 @@
 -- with a live response; it names a Member that the current ParishSoft data
 -- lists as current in that Family, or the Family itself for an address; it
 -- is for a field a value can be typed for (the fields the worklist's Edit
--- takes), with a value of that field's shape (as 0131's edit check reads
+-- takes), with a value of that field's shape (as 0128's edit check reads
 -- one), not blank; the change it is added in place of is that Family's
 -- open ignored census change; and no open change for the same field is
 -- waiting already (an open addition, or a Family's change not ignored),
@@ -94,7 +94,7 @@ BEGIN
         USING ERRCODE='23514'; END IF;
     -- The comparison validates the shape and raises on a bad one; a blank
     -- value has an empty key (a phone's display and an address's street
-    -- line are read the same way), as 0131's edit check reads one.
+    -- line are read the same way), as 0128's edit check reads one.
     edit_key := public.stewardship_response_comparison_v1(NEW.field,NEW.value);
     edit_text := CASE
         WHEN NEW.field IN ('home_phone','mobile_phone','work_phone')

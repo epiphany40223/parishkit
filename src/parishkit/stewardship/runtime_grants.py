@@ -619,11 +619,11 @@ CLOSURE_TABLES = {
     # An Administrator's review of an Automatic census change (0096, #528),
     # which web records and reads.
     "stewardship_proposal_review": ("stewardship_responses", "0006_proposal_review"),
-    # A census change the parish added and its later step (0137, #1710),
+    # A census change the parish added and its later step (0129, #1710),
     # which web records and reads.
     **dict.fromkeys(
         ("stewardship_census_addition", "stewardship_census_addition_resolution"),
-        ("stewardship_responses", "0014_census_additions"),
+        ("stewardship_responses", "0015_census_additions"),
     ),
     # A Campaign setup step an Administrator kept as is (0105, #1404), which
     # web records and reads.

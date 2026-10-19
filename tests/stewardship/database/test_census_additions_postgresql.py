@@ -3,7 +3,7 @@
 Staff and Administrators add a census change no Family answer asked for,
 checked as an Edit's value is and against the Family, the Member and the
 field's open changes; its one later step is Entered by hand or withdrawn.
-The frozen file 0137 creates the tables; their guards are tested here with
+The frozen file 0129 creates the tables; their guards are tested here with
 the service bypassed. The worklist's side is test_census_add_page.
 """
 
@@ -37,7 +37,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 FROZEN = (
     Path(__file__).resolve().parents[3]
-    / "src/parishkit/stewardship/schema/migrations/0137_census_additions.sql"
+    / "src/parishkit/stewardship/schema/migrations/0129_census_additions.sql"
 )
 
 
@@ -251,7 +251,7 @@ INSERT = (
 def test_sql_refuses_a_forged_addition(
     response_service, who, kind, key, field, value, message
 ):
-    """The 0137 guard holds every writer to Add's rules, and its deferred
+    """The 0129 guard holds every writer to Add's rules, and its deferred
     check to the audit event."""
     harness, admin, staff, rows = prepared(response_service)
     actor = leader(harness, admin) if who == "leader" else staff
