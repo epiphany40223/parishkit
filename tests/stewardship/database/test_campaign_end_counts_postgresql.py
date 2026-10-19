@@ -292,7 +292,7 @@ def test_staff_home_lists_the_campaign_end_work_with_counts(response_service, go
 
 def test_roster_page_is_its_own_menu_entry(response_service, google):
     """Roster changes to enter opens with its own menu entry current and a
-    trail of Home › Responses and reports › the page (#1660)."""
+    trail of Home › Review work › the page (#1660)."""
     harness, _, _, _ = resolved(response_service)
     browser, _, _, _ = leader(harness, google, roles=("staff",))
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
