@@ -384,7 +384,8 @@ def report_day_bars(document):
 def funnel_html(document, plain):
     """The response funnel section of the email, or "" when there is none.
 
-    One row per stage like the campaign totals (no charts since #1370):
+    One row per stage (no charts since #1370): its short values fit a phone
+    on one row, unlike the campaign totals (#1564). Each row has
     the stage (with its note), a bar of its share of email invites sent, and
     its count and share. The figures the dashboard reports beside the funnel
     are left out (#1532). A Testing digest says where the funnel is.
@@ -495,11 +496,46 @@ def day_table_html(headings, rows, plain):
     return html + "</table>"
 
 
+def unbroken(text):
+    """Escape a value so it wraps only before a parenthesis (#1564).
+
+    "1,234 out of 2,345 (52.6%)" may break before "(52.6%)" and nowhere else:
+    ``&nbsp;`` keeps the other words together in every mail program, where
+    ``white-space`` on part of a cell is not reliable.
+    """
+    parts = escape(text, quote=False).split(" (")
+    return " (".join(part.replace(" ", "&nbsp;") for part in parts)
+
+
+def totals_html(totals, plain):
+    """The "Campaign totals" rows, two table rows per figure (#1564).
+
+    One row of label, bar and value needed about 310px with four-digit
+    counts, wider than a 320px phone leaves inside the email's card, and mail
+    programs cannot scroll a table. So each figure's label has a row of its
+    own, and its bar and exact value share the next one. The value wraps only
+    before its parenthesis (see unbroken), so it stays readable when narrow.
+    ``plain`` escapes a text node.
+    """
+    html = (
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        f'border="0"{_style("rows")}><tbody>'
+    )
+    html += "".join(
+        f'<tr><td colspan="2"{_style("total-label")}>{plain(label)}</td></tr>'
+        f'<tr><td width="55%"{_style("total-bar")}>{bar_html}</td>'
+        f'<td width="45%" align="right"{_style("total-value")}>'
+        f"<strong>{unbroken(value)}</strong>{unbroken(note)}</td></tr>"
+        for label, value, bar_html, note in totals
+    )
+    return html + "</tbody></table>"
+
+
 def _render_daily_digest(document, *, public_origin, charts=True):
     """Compile the report body; the caller has pinned the parish date format.
 
     Visuals come first (#720): the opening line with a Response dashboard
-    link beside it (#1532), then one line per campaign total with its bar,
+    link beside it (#1532), then the campaign totals with their bars,
     the chart, the day-by-day table and a Response dashboard button.
     The subject names the parish, campaign and report day (see
     render_digest_envelope), so the body has no header or small print. Every
@@ -556,18 +592,7 @@ def _render_daily_digest(document, *, public_origin, charts=True):
         "</tr></tbody></table>"
     )
     html += f"<h2{_style('heading')}>Campaign totals</h2>"
-    html += (
-        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-        f'border="0"{_style("rows")}><tbody>'
-    )
-    html += "".join(
-        f'<tr><td width="34%"{_style("label")}>{plain(label)}</td>'
-        f'<td width="40%"{_style("bar")}>{bar_html}</td>'
-        f'<td width="26%" align="right"{_style("value")}>'
-        f"<strong>{plain(value)}</strong>{plain(note)}</td></tr>"
-        for label, value, bar_html, note in totals
-    )
-    html += "</tbody></table>"
+    html += totals_html(totals, plain)
     html += funnel_html(document, plain)
     html += f"<h2{_style('heading')}>Daily participation</h2>"
     html += (
