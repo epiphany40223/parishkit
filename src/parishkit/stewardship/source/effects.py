@@ -84,7 +84,10 @@ def _unchanged(snapshot, corpus, execution, claim, *, suppressions):
       generation raises here exactly as promotion would;
     - proposals and Ministry requests: reconciliation would change none
       (``proposals_current``, ``ministry_requests_current``), so a new
-      submission or a staff edit does not force a promotion.
+      submission or a staff edit does not force a promotion;
+    - added Member links (#1670): none is waiting to be recorded
+      (``added_members_current``, against the current snapshot, whose
+      corpus equals this one).
 
     Runs in the caller's work-order transaction. Anything unexpected answers
     False, and the quick update stages and promotes as before.
@@ -93,6 +96,7 @@ def _unchanged(snapshot, corpus, execution, claim, *, suppressions):
     from parishkit.stewardship.campaigns.link_tokens import (
         require_current_generation,
     )
+    from parishkit.stewardship.responses.added_members import added_members_current
     from parishkit.stewardship.responses.ministry_reconciliation import (
         ministry_requests_current,
     )
@@ -117,6 +121,7 @@ def _unchanged(snapshot, corpus, execution, claim, *, suppressions):
     return (
         proposals_current(corpus, campaign_id=campaign.pk)
         and ministry_requests_current(corpus, campaign_id=campaign.pk)
+        and added_members_current(current.snapshot_id, campaign_id=campaign.pk)
         and population_current(
             campaign,
             source_snapshot_id=current.snapshot_id,

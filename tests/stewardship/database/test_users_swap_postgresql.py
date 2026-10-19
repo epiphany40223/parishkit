@@ -679,6 +679,17 @@ CLOSURE_CREATED = {
         ),
         ("stewardship_jobs", "0035_leader_emails"),
     ),
+    # 0149 (#1670, provisional number) creates the added Member link table
+    # (in CLOSURE_TABLES), its guard and the definer candidates function;
+    # all go, so its file installs whole again (and replaces the two
+    # Ministry selections; see CLOSURE_REPLACED_ONLY).
+    **dict.fromkeys(
+        (
+            "public.stewardship_added_member_candidates_v1(uuid,uuid)",
+            "public.stewardship_added_member_link_guard_v1()",
+        ),
+        ("stewardship_responses", "0013_added_member_links"),
+    ),
 }
 
 
@@ -908,6 +919,16 @@ def rerun_old_bodies(cursor, migrations):
 # reruns; 0118's body keeps 0096's, 0108's, 0112's and 0113's rules, so only
 # the latest replacement runs.
 CLOSURE_REPLACED_ONLY = {
+    # 0149 (#1670) replaces both Ministry selections last, reading added
+    # Member links; 0144's rerun (CLOSURE_REPLACED) can put 0144's bodies
+    # back, and 0149 creates a table, so only its replacements run again.
+    **dict.fromkeys(
+        ("stewardship_ministry_packet_v1", "stewardship_ministry_report_v3"),
+        (
+            ("stewardship_responses", "0013_added_member_links"),
+            "bool_or(v.cannot_serve) AS cannot_serve",
+        ),
+    ),
     # 0132 (#1684) replaces the follow-up selection last; 0094's rerun
     # (above) puts back its older body, and 0132 adds columns, so only its
     # replacement statement runs again.
@@ -1532,6 +1553,9 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
                 ),
                 ("pk_stewardship_worker", "INSERT"),
             ),
+            # Added Member links (0149, #1670): the worker records them in
+            # promotion; web only reads them.
+            "stewardship_added_member_link": ("pk_stewardship_worker", "INSERT"),
         }
         for table in CLOSURE_TABLES:
             login, privilege = writers.get(table, ("pk_stewardship_web", "INSERT"))

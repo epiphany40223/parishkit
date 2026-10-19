@@ -521,3 +521,48 @@ from .publication_models import (  # noqa: E402,F401
     PublicationOutcome,
     PublicationPlan,
 )
+
+
+class AddedMemberLink(ImmutableRecord):
+    """The ParishSoft Member a Member the Family added on the form became.
+
+    A Member added on the form has only the form's local UUID
+    (``proposed_key``, the ``proposed_member`` entity key); once Staff
+    create the person in ParishSoft the Family answers for them under the
+    new Member DUID (``member_key``). Promotion records this link when the
+    evidence is causal and unique (``responses/added_members.py``; data
+    spec, "Proposed changes"; #1670), and the Ministry leader contact rule
+    reads both keys as one person. ``proposal`` is the Entered by hand New
+    Member change the link rests on and ``snapshot_id`` the promoted snapshot
+    that showed the Member. Only the promoting source worker inserts one,
+    SQL checks the evidence again, and a link never changes
+    (schema/migrations/0149_added_member_links.sql).
+    """
+
+    family = models.ForeignKey(
+        "stewardship_campaigns.FamilyCampaign",
+        on_delete=models.PROTECT,
+        related_name="+",
+    )
+    proposed_key = models.CharField(max_length=36)
+    member_key = models.CharField(max_length=20)
+    proposal = models.ForeignKey(
+        ProposedChange, on_delete=models.PROTECT, related_name="+"
+    )
+    snapshot_id = models.UUIDField()
+
+    class Meta:
+        db_table = "stewardship_added_member_link"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("family", "proposed_key"),
+                name="added_member_link_proposed_once",
+            ),
+            models.UniqueConstraint(
+                fields=("family", "member_key"), name="added_member_link_member_once"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(actor_id__isnull=True),
+                name="added_member_link_identity",
+            ),
+        ]

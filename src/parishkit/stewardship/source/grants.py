@@ -153,6 +153,10 @@ def add_refresh_worker_grants(tables, columns):
     # Whether a proposal's conflict was resolved at its current ParishSoft
     # value (the accepted base), read by reconciliation and publication.
     tables["stewardship_proposal_review"] = {"SELECT"}
+    # Added Member links (#1670): promotion records them; its guard admits
+    # INSERT alone, and only for a link the snapshot's evidence supports.
+    # The worker also reads them through the Ministry selections.
+    tables["stewardship_added_member_link"] = {"SELECT", "INSERT"}
     columns["stewardship_submission"] = {
         "SELECT": {
             "id",

@@ -74,6 +74,9 @@ def add_response_web_grants(tables, columns):
     tables["stewardship_ministry_revision"] = {"SELECT", "INSERT"}
     # The roster Entered in ParishSoft tick's history (#528, step 4).
     tables["stewardship_ministry_roster_entry"] = {"SELECT", "INSERT"}
+    # Added Member links (#1670): the Ministry selections read them for the
+    # cannot-participate contact rule; only the worker records them.
+    tables["stewardship_added_member_link"] = {"SELECT"}
     # Publication plans and outcomes (#528, DAT-09.01): web reads them all and
     # writes only an Administrator's confirmation; the worker writes the rest.
     for table in (
