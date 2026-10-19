@@ -9,14 +9,19 @@ from types import SimpleNamespace
 
 import pytest
 
+from parishkit.stewardship.pipeline import RefreshOutcome, Stage, refresh_outcome
 from parishkit.stewardship.responses.comparison import ValueKind
 from parishkit.stewardship.responses.merge import KnownValue
 from parishkit.stewardship.responses.refresh_checks import (
     CHECKED_FAMILY_FIELDS,
     CHECKED_FIELDS,
+    STORED,
     CheckState,
+    _address_key,
     _census_same,
+    _mailing_primary,
     _owed,
+    _same,
     _summaries,
     census_source,
 )
@@ -92,11 +97,12 @@ def test_census_comparison_is_canonical_and_availability_aware():
 
 def test_checked_fields_are_the_confirmable_member_fields():
     """The contact read's fields, a death date, and (#1738) a move and a
-    death; a New Member waits for a staff association (#1749)."""
+    death; the Family's opt-out and (#1749) home address, never its mailing
+    address. A New Member is checked as its own kind (``CHECKED``)."""
     assert {"prefix", "email", "death_date"} <= CHECKED_FIELDS
     assert {"moved_household", "deceased_status"} <= CHECKED_FIELDS
     assert "new_member" not in CHECKED_FIELDS
-    assert {"email_opt_out"} == CHECKED_FAMILY_FIELDS
+    assert {"email_opt_out", "home_address"} == CHECKED_FAMILY_FIELDS
 
 
 def member(*, family="1", status="Active", **values):
@@ -120,9 +126,21 @@ def corpus(found=None, *, family=None):
     }
 
 
-def change(field, kind="member", key="3"):
+def primary(fields):
+    """The snapshot's primary address record of Family 1 with ``fields``."""
+    return {
+        "owner_kind": "family",
+        "owner_key": "1",
+        "kind": "primary",
+        "fields": fields,
+    }
+
+
+def change(field, kind="member", key="3", **extra):
     """A census change of ``field``, annotated with its Family's DUID."""
-    return SimpleNamespace(entity_kind=kind, entity_key=key, field=field, family_duid=1)
+    return SimpleNamespace(
+        entity_kind=kind, entity_key=key, field=field, family_duid=1, **extra
+    )
 
 
 @pytest.mark.parametrize(
@@ -190,3 +208,147 @@ def test_a_contact_field_needs_an_active_living_member_of_the_family():
     assert census_source(change("death_date"), corpus(died)) == KnownValue(
         True, "2026-01-01"
     )
+
+
+@pytest.mark.parametrize(
+    "found,added,expected",
+    [
+        (member(), 3, KnownValue(True, True)),
+        (member(family="2"), 3, KnownValue(True, False)),
+        (member(status="Inactive"), 3, KnownValue(True, False)),
+        (member(status="Deceased"), 3, KnownValue(True, False)),
+        (None, 3, KnownValue(True, False)),
+        (member(), None, None),
+    ],
+)
+def test_a_new_member_reads_the_member_id_recorded_at_its_mark(found, added, expected):
+    """Listed when the data has that Member, active and living, in the
+    change's Family (the shared status's ``current``); no ID, no evidence
+    (#1749)."""
+    row = change("new_member", "proposed_member", "local-key", added_duid=added)
+    assert census_source(row, corpus(found)) == expected
+
+
+HOME = {
+    "primaryAddress1": "1 Main St",
+    "primaryAddress2": "Apt 2",
+    "primaryAddress3": "Rear",
+    "primaryCity": "Louisville",
+    "primaryState": "KY",
+    "primaryPostalCode": "40202",
+    "primaryZipPlus": "1234",
+}
+
+
+def address(**parts):
+    """A census address answer, a Louisville one unless ``parts`` say."""
+    return {
+        "line1": "1 Main St",
+        "line2": "Apt 2 Rear",
+        "city": "Louisville",
+        "region": "KY",
+        "postal_code": "40202",
+        "country": "US",
+    } | parts
+
+
+def test_a_home_address_reads_the_active_familys_primary_address():
+    """ParishSoft's primary address, lines two and three joined, no country;
+    none for an inactive Family or one with no primary address (#1749)."""
+    home = change("home_address", "family", "1", primary_address=primary(HOME))
+    active = {"active": True}
+    assert census_source(home, corpus(family=active)) == KnownValue(
+        True, address(country="")
+    )
+    one = {"primaryAddress1": "2 Oak Ave", "primaryCity": "Louisville"}
+    home.primary_address = primary(one)
+    assert census_source(home, corpus(family=active)).value == {
+        "line1": "2 Oak Ave",
+        "line2": "",
+        "city": "Louisville",
+        "region": "",
+        "postal_code": "",
+        "country": "",
+    }
+    home.primary_address = primary(HOME)
+    assert census_source(home, corpus(family={"active": False})) is None
+    home.primary_address = None
+    assert census_source(home, corpus(family=active)) is None
+    mailing = change("mailing_address", "family", "1", primary_address=primary(HOME))
+    assert census_source(mailing, corpus(family=active)) is None
+
+
+def test_an_address_compares_without_country_case_or_zip_plus_four():
+    """The census compare rules, with the country and a ZIP+4 suffix left
+    out, since no read returns them."""
+    same = _same("home_address", ValueKind.ADDRESS)
+    read = KnownValue(True, address(country=""))
+    assert same(read, KnownValue(True, address(postal_code="40202-1234")))
+    assert same(read, KnownValue(True, address(city="LOUISVILLE ")))
+    assert not same(read, KnownValue(True, address(line1="2 Oak Ave")))
+    assert not same(read, KnownValue(True, None))
+    assert _address_key(address(postal_code="4020-1234")) != _address_key(
+        address(postal_code="4020")
+    )
+
+
+def test_a_home_address_never_reads_entered_incorrectly():
+    """A different primary address is unchanged, since the Family's primary
+    may be its mailing block: confirmed only when it holds the answer."""
+    same = _same("home_address", ValueKind.ADDRESS)
+    answer = address()
+    for refreshed, expected in (
+        (address(country=""), RefreshOutcome.CONFIRMED),
+        (address(line1="9 Elm St", country=""), RefreshOutcome.UNCHANGED),
+    ):
+        current = KnownValue(True, refreshed)
+        assert (
+            refresh_outcome(
+                Stage.ENTERED_BY_HAND,
+                refreshed=current,
+                answered_against=KnownValue(False),
+                carried_forward=KnownValue(True, answer),
+                # No third value: the refresh's own value is the mark.
+                marked_against=current,
+                same=same,
+            )
+            is expected
+        )
+
+
+def test_a_primary_address_holding_the_mailing_answer_is_no_evidence():
+    """ParishSoft's primary is evidently the mailing block when it holds the
+    mailing answer and not the home one."""
+    mailing = address(line1="PO Box 9", line2="")
+    row = change(
+        "home_address",
+        "family",
+        "1",
+        admin_value_set=False,
+        admin_value=None,
+        submitted_value=address(),
+        mailing_answer=mailing,
+    )
+    assert _mailing_primary(row, KnownValue(True, mailing | {"country": ""}))
+    assert not _mailing_primary(row, KnownValue(True, address(country="")))
+    row.mailing_answer = None
+    assert not _mailing_primary(row, KnownValue(True, mailing))
+    # A mailing answer the same as home: confirmed, not skipped.
+    row.mailing_answer = address()
+    assert not _mailing_primary(row, KnownValue(True, address(country="")))
+
+
+def test_an_updated_change_parishsoft_no_longer_holds_is_a_conflict():
+    """Rule 2's exception and rule 3 (#1749): back at A, or at a third value,
+    an Updated in ParishSoft change is a Conflict, stored as one."""
+    same = _census_same(ValueKind.TEXT)
+    for refreshed in ("Ann", "Anna"):
+        result = refresh_outcome(
+            Stage.UPDATED,
+            refreshed=KnownValue(True, refreshed),
+            answered_against=KnownValue(True, "Ann"),
+            carried_forward=KnownValue(True, "Annie"),
+            same=same,
+        )
+        assert result is RefreshOutcome.CONFLICT
+        assert STORED[result] == "conflict"

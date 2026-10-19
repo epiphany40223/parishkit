@@ -18,7 +18,12 @@ checks"):
   ``ministry_placement``) and the Not seen in ParishSoft flag;
 - ``census_source`` reads a census change's value from the promoted data:
   a Member contact field as reconciliation does, and a Member's move or
-  death and the Family's email opt-out each its own way (#1738).
+  death and the Family's email opt-out each its own way (#1738), and the
+  Family's home address and a New Member by the ParishSoft Member ID
+  recorded at its mark (#1749);
+- an Updated in ParishSoft change ParishSoft no longer holds gets a
+  ``conflict`` check, and ``record_refresh_checks`` moves it to Conflict
+  in the same promotion (#1749).
 
 The comparison is ``pipeline.refresh_outcome`` with each stream's canonical
 comparison: the census compare rules (``comparison.canonical_value``) and a
@@ -30,6 +35,8 @@ Ministry left the data gets no check (rule 4: it keeps its stage), except a
 move, which leaving the Family is the evidence of.
 """
 
+import json
+import re
 from dataclasses import dataclass
 
 from django.db.models import F, Max, Q
@@ -41,6 +48,8 @@ from parishkit.stewardship.pipeline import (
     Stage,
     refresh_outcome,
 )
+from parishkit.stewardship.source.pins import pin_snapshot
+from parishkit.stewardship.source.version_models import SnapshotAddress
 from parishkit.stewardship.workflows.models import (
     ACCEPTED_OUTCOMES,
     MinistryRequest,
@@ -49,12 +58,14 @@ from parishkit.stewardship.workflows.models import (
     RefreshCheckStart,
 )
 
+from .baselines import _pin_admission
 from .census import FAMILY_FIELDS
-from .comparison import canonical_value
+from .comparison import ValueKind, canonical_value
 from .inputs import MEMBER_FIELDS, MemberSourceUnavailable, member_field_value
 from .member_requests import REQUEST_FIELDS
 from .merge import KnownValue
-from .models import ProposedChange
+from .models import ProposalResolution, ProposedChange, Submission
+from .reconciliation import _release_unused_source
 
 # The census executions a refresh check is for: final in the census guard.
 FINAL_EXECUTIONS = ("published", "resolved_external")
@@ -64,24 +75,49 @@ DEFINITIONS = {field.name: field for field in (*MEMBER_FIELDS, *REQUEST_FIELDS)}
 CHECKED_FIELDS = frozenset(
     name for name in DEFINITIONS if CENSUS_CONFIRMABLE.get(("member", name))
 )
-# The Family field a refresh confirms: the email opt-out, against the
-# Family's sendNoMail flag (Administrator, 2026-10-18, #1680). The
-# addresses wait for #1688's smoke test (#1749).
-CHECKED_FAMILY_FIELDS = frozenset({"email_opt_out"})
-# A yes-or-no request (moved, deceased) and an opt-out whose baseline was
-# never read have no third value to be wrong at: never Entered incorrectly.
-NO_THIRD_VALUE = frozenset({"moved_household", "deceased_status", "email_opt_out"})
+# The Family fields a refresh confirms: the email opt-out, against the
+# Family's sendNoMail flag (Administrator, 2026-10-18, #1680), and the home
+# address, against ParishSoft's primary address, which follows the home
+# block when home is primary (#1688's smoke test, #1749). The mailing
+# address is never read.
+CHECKED_FAMILY_FIELDS = frozenset({"email_opt_out", "home_address"})
+# The census changes a refresh checks, by entity kind and field: a New
+# Member by the ParishSoft Member ID recorded at its mark (#1749).
+CHECKED = (
+    Q(entity_kind="member", field__in=CHECKED_FIELDS)
+    | Q(entity_kind="family", field__in=CHECKED_FAMILY_FIELDS)
+    | Q(entity_kind="proposed_member", field="new_member")
+)
+# A yes-or-no request (moved, deceased), an opt-out whose baseline was never
+# read, a New Member (listed or not) and a home address whose ParishSoft
+# block is not known (a Family whose primary is the mailing block may hold
+# any address there) have no third value to be wrong at: never Entered
+# incorrectly, and no value recorded at the mark.
+NO_THIRD_VALUE = frozenset(
+    {
+        "moved_household",
+        "deceased_status",
+        "email_opt_out",
+        "home_address",
+        "new_member",
+    }
+)
 FAMILY_KINDS = {field.name: field.kind for field in FAMILY_FIELDS}
 # The stored outcome of each comparison result. A published change found
-# back at A or at a third value would be a Conflict, which a final change
-# cannot take yet (#1738), so it records nothing.
+# back at A or at a third value is a Conflict (#1749), which
+# ``record_refresh_checks`` then moves the change to.
 STORED = {
     RefreshOutcome.CONFIRMED: "confirmed",
     RefreshOutcome.UNCHANGED: "unchanged",
     RefreshOutcome.NOT_SEEN: "unchanged",
     RefreshOutcome.ENTERED_INCORRECTLY: "entered_incorrectly",
     RefreshOutcome.IGNORED_NOW_MATCHES: "ignored_now_matches",
+    RefreshOutcome.CONFLICT: "conflict",
 }
+CONFLICT = "conflict"
+# ParishSoft keeps a ZIP+4's four digits apart, so a ZIP+4 is compared by
+# its five digits (``_address_key``).
+ZIP_PLUS_FOUR = re.compile(r"([0-9]{5})-[0-9]{4}")
 UNCHANGED = "unchanged"
 
 
@@ -302,8 +338,25 @@ def census_source(row, corpus):
     - a death: whether the data marks the Member deceased, only while it
       lists them in the Family;
     - the Family's email opt-out: its ``sendNoMail`` flag while the Family
-      is active.
+      is active;
+    - the Family's home address: ParishSoft's primary address of an active
+      Family (``row.primary_address``, the snapshot's address fields;
+      ``_primary_address``), migration 0150's (provisional number) reading;
+    - a New Member: whether the data lists the Member ID recorded at its
+      mark (``row.added_duid``) as an active, living Member of the Family,
+      as the shared SQL status says ``current``; none without an ID.
     """
+    if row.entity_kind == "proposed_member":
+        if row.field != "new_member" or row.added_duid is None:
+            return None
+        added = corpus["member"].get(str(row.added_duid))
+        return KnownValue(
+            True,
+            added is not None
+            and added["family_key"] == str(row.family_duid)
+            and added["active"] is not False
+            and added["deceased"] is not True,
+        )
     if row.entity_kind == "family":
         family = corpus["family"].get(str(row.family_duid))
         if (
@@ -311,8 +364,11 @@ def census_source(row, corpus):
             or row.entity_key != str(row.family_duid)
             or family is None
             or family.get("active") is not True
-            or type(family.get("sendNoMail")) is not bool
         ):
+            return None
+        if row.field == "home_address":
+            return _primary_address(row.primary_address)
+        if type(family.get("sendNoMail")) is not bool:
             return None
         return KnownValue(True, family["sendNoMail"])
     member = corpus["member"].get(row.entity_key)
@@ -340,21 +396,153 @@ def census_source(row, corpus):
     return current if current.available else None
 
 
+def _primary_address(found):
+    """ParishSoft's primary address, in the census address shape.
+
+    ``found`` is the snapshot's primary address record of the Family (its
+    ``fields``), or None when the data has none. No read returns the
+    country, so it is blank; ParishSoft's second and third street lines are
+    joined into the second. Migration 0150's
+    ``stewardship_refresh_census_source_v1`` builds the same.
+    """
+    if found is None or type(found.get("fields")) is not dict:
+        return None
+    fields = found["fields"]
+    return KnownValue(
+        True,
+        {
+            "line1": fields.get("primaryAddress1", ""),
+            "line2": " ".join(
+                line
+                for line in (
+                    fields.get("primaryAddress2", ""),
+                    fields.get("primaryAddress3", ""),
+                )
+                if line
+            ),
+            "city": fields.get("primaryCity", ""),
+            "region": fields.get("primaryState", ""),
+            "postal_code": fields.get("primaryPostalCode", ""),
+            "country": "",
+        },
+    )
+
+
+def _address_key(value):
+    """An address's confirmation key: the census comparison without the
+    country (no read returns ParishSoft's) and with a ZIP+4 read as its
+    five digits. Migration 0150's ``stewardship_refresh_address_key_v1``."""
+    if value is None:
+        return None
+    postal = value.get("postal_code", "")
+    found = ZIP_PLUS_FOUR.fullmatch(postal)
+    return canonical_value(
+        ValueKind.ADDRESS,
+        value | {"country": "", "postal_code": found[1] if found else postal},
+    )
+
+
+def _same(field, kind):
+    """The comparison of two ``KnownValue``s of one census field.
+
+    A home address compares by ``_address_key``; a New Member's value is
+    whether the Member is listed, so plain equality; every other field by
+    the census compare rules.
+    """
+    if field == "new_member":
+        return lambda left, right: left == right
+    if field != "home_address":
+        return _census_same(kind)
+
+    def same(left, right):
+        """Equal when both are unavailable, or both read with one key."""
+        if left.available != right.available:
+            return False
+        return not left.available or _address_key(left.value) == _address_key(
+            right.value
+        )
+
+    return same
+
+
+def _annotate_marks(snapshot, rows):
+    """Give each change what ``census_source`` reads besides the corpus.
+
+    ``added_duid``: a New Member's ParishSoft Member ID, from the
+    resolution that made its current mark (the one at the version before
+    its current one). For a home address, ``mailing_answer`` (the Family's
+    mailing address answer in the same response) and ``primary_address``
+    (``snapshot``'s primary address record of the Family, which the
+    promotion's decoded corpus does not carry). One query each, only when
+    some change needs it.
+    """
+    members = [row for row in rows if row.field == "new_member"]
+    found = {}
+    if members:
+        found = {
+            (proposal, version): duid
+            for proposal, version, duid in ProposalResolution.objects.filter(
+                proposal_id__in=[row.pk for row in members], action="entered"
+            ).values_list("proposal_id", "expected_version", "member_duid")
+        }
+    homes = {row.submission_id for row in rows if row.field == "home_address"}
+    answers = {}
+    if homes:
+        answers = {
+            pk: (answer or {}).get("family", {}).get("mailing_address")
+            for pk, answer in Submission.objects.filter(pk__in=homes).values_list(
+                "pk", "answers"
+            )
+        }
+    addresses = {}
+    keys = {
+        f"family:{row.family_duid}:primary"
+        for row in rows
+        if row.field == "home_address"
+    }
+    if keys:
+        addresses = {
+            key: json.loads(canonical)
+            for key, canonical in SnapshotAddress.objects.filter(
+                snapshot_id=snapshot.pk, source_key__in=keys
+            ).values_list("source_key", "payload__canonical")
+        }
+    for row in rows:
+        row.added_duid = found.get((row.pk, row.version - 1))
+        row.mailing_answer = answers.get(row.submission_id)
+        row.primary_address = addresses.get(f"family:{row.family_duid}:primary")
+
+
+def _mailing_primary(row, current):
+    """Whether ParishSoft's primary address is evidently the mailing block.
+
+    It is when it holds the Family's mailing answer and not its home one:
+    the home address then has no evidence and gets no check (#1749).
+    """
+    carried = row.admin_value if row.admin_value_set else row.submitted_value
+    mailing = row.mailing_answer
+    return (
+        mailing is not None
+        and _address_key(current.value) == _address_key(mailing)
+        and _address_key(current.value) != _address_key(carried)
+    )
+
+
 def _census_checks(snapshot, corpus, campaign_id, full, start):
     """Yield the census checks this promotion owes, unsaved.
 
     Not for a change a later response of the Family replaced (``replaced``).
 
     For every live census change Entered by hand or Updated in ParishSoft of
-    a confirmable Member field or the Family's email opt-out for which the
-    data gives evidence (``census_source``). The value recorded at the mark
+    a confirmable Member field, the Family's email opt-out or home address,
+    or a New Member (``CHECKED``), for which the data gives evidence
+    (``census_source``). The value recorded at the mark
     is the change's stored ParishSoft value, which the mark froze, or for a
     mark made again over Entered incorrectly the ParishSoft value the check
     before it found (``_remarked``, #1737).
     """
     rows = ProposedChange.objects.filter(
-        Q(entity_kind="member", field__in=CHECKED_FIELDS)
-        | Q(entity_kind="family", field__in=CHECKED_FAMILY_FIELDS),
+        CHECKED,
         submission__campaign_id=campaign_id,
         submission__mode="live",
         execution__in=FINAL_EXECUTIONS,
@@ -369,8 +557,7 @@ def _census_checks(snapshot, corpus, campaign_id, full, start):
         (
             ((family, kind, key, field), version)
             for family, kind, key, field, version in ProposedChange.objects.filter(
-                Q(entity_kind="member", field__in=CHECKED_FIELDS)
-                | Q(entity_kind="family", field__in=CHECKED_FAMILY_FIELDS),
+                CHECKED,
                 submission__campaign_id=campaign_id,
                 submission__mode="live",
             )
@@ -385,6 +572,7 @@ def _census_checks(snapshot, corpus, campaign_id, full, start):
         >= latest[(row.family_id, row.entity_kind, row.entity_key, row.field)]
     ]
     remarked = _remarked(rows)
+    _annotate_marks(snapshot, rows)
     states = (
         check_states(
             proposals=[row.pk for row in rows],
@@ -399,11 +587,15 @@ def _census_checks(snapshot, corpus, campaign_id, full, start):
         if state.outcome == "confirmed":
             continue
         current = census_source(row, corpus)
-        if current is None:
+        if current is None or (
+            row.field == "home_address" and _mailing_primary(row, current)
+        ):
             continue
         kind = (
             FAMILY_KINDS[row.field]
             if row.entity_kind == "family"
+            else ValueKind.BOOLEAN
+            if row.field == "new_member"
             else DEFINITIONS[row.field].kind
         )
         entered = row.execution == "resolved_external"
@@ -417,7 +609,12 @@ def _census_checks(snapshot, corpus, campaign_id, full, start):
             else Stage.UPDATED
         )
         carried = row.admin_value if row.admin_value_set else row.submitted_value
-        same = _census_same(kind)
+        answered = KnownValue(row.baseline_available, row.baseline_value)
+        if row.field == "new_member":
+            # A New Member's value is whether the data lists them: wanted
+            # listed, answered against not listed (#1749).
+            carried, answered = True, KnownValue(True, False)
+        same = _same(row.field, kind)
         # The value recorded at the mark: ParishSoft's at a mark made again
         # (#1737), else the change's own, which the first mark froze. One
         # ParishSoft could not report then is no evidence the entry went
@@ -436,7 +633,7 @@ def _census_checks(snapshot, corpus, campaign_id, full, start):
         result = refresh_outcome(
             stage,
             refreshed=current,
-            answered_against=KnownValue(row.baseline_available, row.baseline_value),
+            answered_against=answered,
             carried_forward=KnownValue(True, carried),
             marked_against=marked,
             full_refreshes_unchanged=state.unseen + full,
@@ -578,7 +775,41 @@ def record_refresh_checks(snapshot, corpus, *, campaign_id, full):
     require_work_order()
     checks = list(_checks(snapshot, corpus, campaign_id, full))
     RefreshCheck.objects.bulk_create(checks)
+    for check in checks:
+        if check.outcome == CONFLICT:
+            _to_conflict(snapshot, check)
     return len(checks)
+
+
+def _to_conflict(snapshot, check):
+    """Move the Updated in ParishSoft change ``check`` found changed to Conflict.
+
+    As reconciliation moves an open change (#1749): ParishSoft's value
+    from this snapshot, pinned for the change's response, at the next
+    version, with the decision kept (visible, not in force) and an
+    Administrator's accepted value at the earlier data no longer current,
+    since the change's data reference moves on. The census guard admits it
+    only with this check, recorded just before at the change's version.
+    """
+    row = ProposedChange.objects.only("submission_id", "current_source_id").get(
+        pk=check.proposal_id
+    )
+    pin_snapshot(
+        snapshot.pk,
+        parent_kind="submission",
+        parent_id=row.submission_id,
+        admit=_pin_admission,
+    )
+    ProposedChange.objects.filter(
+        pk=check.proposal_id, execution="published", version=check.item_version
+    ).update(
+        current_available=True,
+        current_value=check.observed["value"],
+        current_source_id=snapshot.pk,
+        execution="conflict",
+        version=F("version") + 1,
+    )
+    _release_unused_source(row.submission_id, row.current_source_id)
 
 
 def refresh_checks_current(snapshot, corpus, *, campaign_id):
