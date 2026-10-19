@@ -961,11 +961,13 @@ the grid. First user: the
 
 Recorded exception (Administrator, 2026-10-11, on
 [#1015](https://github.com/epiphany40223/parishkit/issues/1015)): on the
-[Mail message page](../admin-portal/spec.md#mail-message-page), the
-attempt history sits above the resolution forms, so paging it with the
-upper pager can change its height and move the forms and the evidence list
-below it. The Administrator accepted this so the page reads in the order
-asked for.
+[Mail message page](../admin-portal/spec.md#mail-message-page), paging
+the attempt history with its pager can change its height and move what
+follows it (the bounce report, the note form and the evidence list). The
+Administrator accepted this so the page reads in the order asked for.
+Since [#1563](https://github.com/epiphany40223/parishkit/issues/1563) the
+outcome panel and its resolution question sit above the history, so paging
+never moves them.
 
 ### Disclosures
 

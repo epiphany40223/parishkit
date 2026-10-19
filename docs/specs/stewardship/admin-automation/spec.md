@@ -3292,7 +3292,15 @@ DUID- or address-filtered read still links that Family to its delivery or refusa
 (counts, states, times); that is intended, for sessions only Administrators
 approve, as on the pages. `delivery show` lists in `actions` what the page
 offers: `resend` is `delivery resend` (PR 9c), and each other action is a
-`delivery resolve` action. A check or uniqueness refusal from the database
+`delivery resolve` action. It also reports the page's question model
+([#1563](https://github.com/epiphany40223/parishkit/issues/1563)):
+`outcome` (`delivered`, `still_sending`, `needs_resolution` or
+`cancelled`, as the [outcome panel](../admin-portal/spec.md#outcome-panel)
+picks it) and `choices`, each answer the panel offers with its `choice`,
+the `action` it maps to and `unavailable`, the reason code that
+[resolution questions](../admin-portal/spec.md#resolution-questions)
+lists (null when the answer is allowed), so a script can follow the same
+questions; an allowed choice's action is always in `actions`. A check or uniqueness refusal from the database
 (SQLSTATE 23514 or 23505) during `task retry`, `delivery resolve`,
 `delivery resend` or `delivery refusal-clear` is `stale_version`, as the
 pages answer 409. The refusal's detail is its own verb,
