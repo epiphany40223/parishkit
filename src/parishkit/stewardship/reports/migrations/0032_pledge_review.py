@@ -157,6 +157,7 @@ class Migration(migrations.Migration):
                                 condition=(
                                     models.Q(
                                         decision="accepted_edited",
+                                        decision__isnull=False,
                                         reviewed_annual_pledge__isnull=False,
                                         reviewed_annual_pledge__gte=0,
                                         reviewed_annual_pledge__lte=Decimal(
@@ -181,6 +182,7 @@ class Migration(migrations.Migration):
                                 )
                                 | models.Q(
                                     decision__in=("accepted", "ignored"),
+                                    decision__isnull=False,
                                     reviewed_annual_pledge__isnull=True,
                                     reviewed_frequency__isnull=True,
                                 ),

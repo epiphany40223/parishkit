@@ -276,7 +276,7 @@ def forge(submission, actor, **values):
             "reviewed_annual_pledge,reviewed_frequency,entered,answer,"
             "marked_pledge_known,note) VALUES (gen_random_uuid(),"
             "gen_random_uuid(),%s,%s,%s,%s,gen_random_uuid(),%s,%s,%s,%s,%s,"
-            "'{}',%s,'') RETURNING id",
+            "'{}',%s,%s) RETURNING id",
             [
                 actor,
                 submission.family_id,
@@ -288,6 +288,7 @@ def forge(submission, actor, **values):
                 row.get("frequency"),
                 row["entered"],
                 row.get("known", False),
+                row.get("note", ""),
             ],
         )
         return cursor.fetchone()[0]
@@ -311,7 +312,41 @@ FORGED = {
         "pledge_review_value_shape",
     ),
     "null_decision": ({"decision": None}, "pledge_review_action_state"),
+    "back_with_values": (
+        {
+            "sequence": 2,
+            "action": "back_to_review",
+            "decision": None,
+            "amount": "500.00",
+            "frequency": "weekly",
+        },
+        "pledge_review_value_shape",
+    ),
+    "mark_other_decision": (
+        {
+            "sequence": 2,
+            "action": "entered_by_hand",
+            "decision": "accepted_edited",
+            "amount": "500.00",
+            "frequency": "weekly",
+            "entered": True,
+        },
+        GUARD,
+    ),
+    "reopen_without_note": (
+        {"sequence": 2, "action": "back_to_review", "decision": None},
+        GUARD,
+    ),
+    "long_note": ({"note": "x" * 2001}, GUARD),
     "audit": ({}, "Pledge review requires its audit"),
+}
+
+
+PRIOR = {
+    "known": "accept",
+    "back_with_values": "accept",
+    "mark_other_decision": "accept",
+    "reopen_without_note": "ignore",
 }
 
 
@@ -321,15 +356,17 @@ def test_the_guard_refuses_rows_the_service_never_writes(
 ):
     """Outside the writers' order, at another version, from a Ministry leader,
     at a stage that does not offer it, with a ParishSoft pledge, an Edit
-    above zero with no frequency, an action with no decision, or without
-    its audit event, the database refuses the row, each for its own
-    reason."""
+    above zero with no frequency, an action with no decision, Back to review
+    carrying values, a mark changing the decision, an ignored pledge reopened
+    without a note, a note too long, or without its audit event, the
+    database refuses the row, each for its own reason."""
     harness, submission = pledged(response_service)
     actor = admin()
-    if case == "known":
-        # Accepted, so the mark itself is offered; only the ParishSoft
-        # pledge it claims to record is refused.
-        decide(harness, actor, "accept", [submission])
+    # The decision each case starts from, so the forged row's action is
+    # offered and only the check under test can refuse it.
+    first = PRIOR.get(case)
+    if first:
+        decide(harness, actor, first, [submission])
     if case == "leader":
         _browser, actor, _rule, _ = leader(harness, google)
     values, reason = FORGED[case]
@@ -345,7 +382,7 @@ def test_the_guard_refuses_rows_the_service_never_writes(
             assert at_insert
             raise
         assert not at_insert
-    assert PledgeReview.objects.count() == (1 if case == "known" else 0)
+    assert PledgeReview.objects.count() == (1 if first else 0)
 
 
 def test_review_rows_are_immutable(response_service):

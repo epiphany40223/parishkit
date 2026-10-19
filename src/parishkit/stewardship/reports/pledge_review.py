@@ -66,6 +66,8 @@ RECORDED = {
     Action.ENTERED_BY_HAND: ("entered_by_hand", None),
 }
 ITEMS = "pledges"
+# PostgreSQL's SQLSTATE for a unique violation: a racing decision.
+UNIQUE_VIOLATION = "23505"
 MAX_NOTE = 2000
 # An Edit that carries forward exactly the Family's answer is recorded as
 # what it is: an Accept.
@@ -234,9 +236,13 @@ class PledgeDecisions:
         try:
             with correlation(bound_correlation()), work_transaction():
                 return self._decide(principal.identity, decision, ids, value)
-        except IntegrityError:
-            # A second decision of the same version raced this one past its
-            # checks; the unique sequence refused it.
+        except IntegrityError as error:
+            # Only a unique violation is a race: a second decision of the
+            # same version passed its checks and the unique sequence refused
+            # it. Any other refusal (a guard, a check, the audit check) is a
+            # defect, never dressed up as someone else's change.
+            if getattr(error.__cause__, "sqlstate", None) != UNIQUE_VIOLATION:
+                raise
             raise StaleDecision() from None
 
     def _decide(self, actor, decision, ids, value):

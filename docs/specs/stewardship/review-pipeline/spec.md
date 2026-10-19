@@ -638,13 +638,17 @@ row guard share:
 "Changed" follows [rule 2 of the setting-off
 rule](#resubmission-while-the-setting-is-off): a live response that answers
 the financial questions after the decided one with a different pledge answer
-(compared as typed values: money exactly, the share methods as a set with
-their Other text, as the Family form stores them; a form change that stored
-share methods differently would need the comparison changed with it) reopens the item, even if a later response returns to the
-decided answer; an unchanged resubmission keeps the decision at any stage
-(rule 1); a response without the financial questions is not presented (rule
-5). Rules 3 and 4 need ParishSoft's upcoming-year pledge, which no read
-returns yet (#1704). An Entered by hand mark records ParishSoft's pledge for
+reopens the item, even if a later response returns to the decided answer.
+Pledge answers are compared as typed values: money exactly, and the share
+methods as a set with their Other text, as the Family form stores them (a
+form change that stored share methods differently would need the comparison
+changed with it). An unchanged resubmission keeps the decision at any stage
+(rule 1). A response without the financial questions changes no decision
+(rule 5), but the item is listed only while the Family's current response
+answers them, as on Financial stewardship detail: a Family that answers
+again while the financial section is switched off leaves the list until it
+answers the financial questions again, keeping its history. Rules 3 and 4
+need ParishSoft's upcoming-year pledge, which no read returns yet (#1704). An Entered by hand mark records ParishSoft's pledge for
 the upcoming year when a read gives it; until #1704 adds that read the mark
 records none, and #1704 reads such a mark against A, which is then no pledge.
 Pledges and funds are read-only in ParishSoft's API, so the stream never has
