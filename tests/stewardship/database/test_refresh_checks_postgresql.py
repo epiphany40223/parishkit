@@ -209,6 +209,10 @@ def test_a_third_value_is_entered_incorrectly_until_corrected(
     # The same wrong value again records nothing new.
     refresh(harness, member={"salutation": "Rev."})
     assert checks(proposal=rows["prefix"]) == ["entered_incorrectly"]
+    # ParishSoft back at the value recorded at the mark: it stays (rule 2).
+    refresh(harness)
+    assert checks(proposal=rows["prefix"]) == ["entered_incorrectly"]
+    assert census_row(harness, rows["prefix"])["stage"] == Stage.ENTERED_INCORRECTLY
     refresh(harness, member={"salutation": "Dr."})
     assert checks(proposal=rows["prefix"]) == ["entered_incorrectly", "confirmed"]
     assert census_row(harness, rows["prefix"])["stage"] == Stage.CONFIRMED
@@ -236,6 +240,19 @@ def test_an_edited_change_compares_with_the_reviewers_value(response_service):
     refresh(harness, member={"firstName": "Requested"})
     assert fresh(rows["first_name"]).execution == "conflict"
     refresh(harness, member={"firstName": "Corrected"})
+    assert fresh(rows["first_name"]).execution == "resolved_upstream"
+
+
+def test_an_edit_back_to_the_baseline_is_still_re_evaluated(response_service):
+    """An Edit to ParishSoft's own value (C = A): a third value is a Conflict,
+    and ParishSoft back at it holds the reviewer's value."""
+    harness, staff, rows = prepared(response_service)
+    baseline = rows["first_name"].baseline_value
+    census_decide(harness, staff, [rows["first_name"]], "edit", value=baseline)
+    assert fresh(rows["first_name"]).admin_value == baseline
+    refresh(harness, member={"firstName": "Someone else"})
+    assert fresh(rows["first_name"]).execution == "conflict"
+    refresh(harness, member={"firstName": baseline})
     assert fresh(rows["first_name"]).execution == "resolved_upstream"
 
 
@@ -315,9 +332,19 @@ def test_an_ignored_request_notes_parishsoft_now_matches(response_service):
     assert checks(request=join) == ["ignored_now_matches"]
     row = view(harness, staff)[str(join.pk)]
     assert row["placement"].stage is Stage.IGNORED and row["now_matches"]
+    # Decided again, the request's earlier checks no longer speak for it.
+    ministry_decide(harness, staff, "back_to_review", join, note="Asked again")
+    ministry_decide(harness, staff, "ignore", join)
+    assert not view(harness, staff)[str(join.pk)]["now_matches"]
+    refresh(harness, joins=(9,))
+    assert view(harness, staff)[str(join.pk)]["now_matches"]
     # The roster dropping the Member again clears the note.
     refresh(harness)
-    assert checks(request=join) == ["ignored_now_matches", "unchanged"]
+    assert checks(request=join) == [
+        "ignored_now_matches",
+        "ignored_now_matches",
+        "unchanged",
+    ]
     assert not view(harness, staff)[str(join.pk)]["now_matches"]
     assert NOW_MATCHES == "ParishSoft now matches the Family's answer."
 
@@ -497,3 +524,101 @@ def test_the_quick_update_check_agrees_with_what_promotion_writes(
     snapshot.refresh_from_db()
     assert checks(proposal=rows["prefix"]) == ["confirmed"]
     assert current(snapshot)
+
+
+# Forged checks the guard refuses inside a real promotion: (stream, the
+# check's fields over a truthful unchanged one, the refusal's words, the
+# refresh). ``second`` first lets a real refresh confirm the change.
+FORGERIES = {
+    "census value not the snapshot's": (
+        "census",
+        {"observed": {"available": True, "value": "Sir"}},
+        "its source value",
+        {},
+    ),
+    "census stale version": ("census", {"item_version": 99}, "its source value", {}),
+    "census full flag not the lease's": (
+        "census",
+        {"full_refresh": False},
+        "promoting source worker",
+        {},
+    ),
+    "census checked after Confirmed": (
+        "census",
+        {"outcome": "confirmed", "observed": {"available": True, "value": "Dr."}},
+        "not checked again",
+        {"member": {"salutation": "Dr."}, "second": True},
+    ),
+    "ministry entered incorrectly": (
+        "ministry",
+        {"outcome": "entered_incorrectly"},
+        "decided request",
+        {},
+    ),
+    "ministry ignored note on an accepted request": (
+        "ministry",
+        {"outcome": "ignored_now_matches"},
+        "decided request",
+        {},
+    ),
+    "ministry stale version": ("ministry", {"item_version": 99}, "decided request", {}),
+    "ministry resolved by the refresh": (
+        "ministry",
+        {"outcome": "confirmed", "leave": True},
+        "decided request",
+        {"leaves": (4,)},
+    ),
+}
+
+
+@pytest.mark.parametrize("case", sorted(FORGERIES))
+def test_the_guard_refuses_each_forgery_inside_a_promotion(
+    response_service, monkeypatch, case
+):
+    """Each of the guard's refusals, met inside a real promotion: the refresh
+    is rolled back and no forged check is written."""
+    from parishkit.stewardship.responses import refresh_checks
+
+    stream, fields, words, options = FORGERIES[case]
+    fields = dict(fields)
+    options = dict(options)
+    if stream == "census":
+        harness, staff, rows = prepared(response_service)
+        census_decide(harness, staff, [rows["prefix"]], "entered_by_hand")
+        target = fresh(rows["prefix"])
+        base = {
+            "proposal_id": target.pk,
+            "outcome": "unchanged",
+            "observed": {"available": True, "value": "Mr."},
+        }
+    else:
+        harness = setup(response_service)
+        staff = actor(harness, {"staff"}, ())
+        join, leave = requests()
+        ministry_decide(harness, staff, "accept", join)
+        target = leave if fields.pop("leave", False) else join
+        base = {"request_id": target.pk, "outcome": "unchanged"}
+    member = options.pop("member", None)
+    if options.pop("second", False):
+        refresh(harness, member=member)
+    before = RefreshCheck.objects.count()
+
+    def forged(snapshot, corpus, campaign_id, full):
+        """One check that the snapshot does not bear out."""
+        target.refresh_from_db()
+        yield RefreshCheck(
+            **(
+                base
+                | {
+                    "snapshot_id": snapshot.pk,
+                    "full_refresh": full,
+                    "item_version": target.version,
+                }
+                | fields
+            )
+        )
+
+    monkeypatch.setattr(refresh_checks, "_checks", forged)
+    with pytest.raises(DatabaseError, match=words):
+        refresh(harness, member=member, **options)
+    assert RefreshCheck.objects.count() == before

@@ -17,18 +17,17 @@
 --     incorrectly, or ParishSoft now matching an ignored request), the
 --     census value ParishSoft held and whether the refresh was full. Its
 --     guard admits an INSERT only inside the promotion of the current
---     snapshot (the same owner check as refresh reconciliation; only the
---     source worker's login is granted INSERT), for a live census change
---     that is Entered by hand or Updated in ParishSoft, or a live Ministry
---     request a person resolved
---     or closed, at its current version, never after a confirmed check, and
---     only with the evidence the snapshot itself holds: the census value
---     must be the snapshot's (stewardship_response_field_source_v1) and
---     match the carried-forward value exactly when the outcome says
+--     snapshot (the owner check refresh reconciliation uses; only the source
+--     worker's login is granted INSERT). The item must be a live census
+--     change Entered by hand or Updated in ParishSoft, or a live Ministry
+--     request a person resolved or closed, at its current version, with no
+--     confirmed check yet. The evidence must be the snapshot's own: the
+--     census value is the snapshot's (stewardship_response_field_source_v1)
+--     and matches the carried-forward value exactly when the outcome says
 --     confirmed; the Member's roster state for the request's Ministry
---     (stewardship_response_ministry_current_v1) must match the request
---     exactly when the outcome says so. It stamps the time. Rows are
---     retained with their items: no path deletes one.
+--     (stewardship_response_ministry_current_v1) matches the request exactly
+--     when the outcome says so. It stamps the time. Rows are retained with
+--     their items: no path deletes one.
 --   * stewardship_refresh_check_start (new, migration-owned): one row,
 --     written here once (with a count-only refresh_checks_started audit
 --     event when the database already holds live responses), recording

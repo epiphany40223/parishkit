@@ -214,13 +214,23 @@ def _proposal_updates(corpus, campaign_id, *, record=True):
                 carried,
             ),
         )
+        # An Edit back to the baseline value (C = A) takes the merge's
+        # unchanged-answer path; read it as publication does
+        # (``publication._MERGE_OUTCOMES``): ParishSoft still at it holds
+        # the reviewer's value, and any other value is a third one.
+        caught_up = result.state is MergeState.UPSTREAM_CAUGHT_UP or (
+            row.admin_value_set and result.state is MergeState.CURRENT
+        )
+        third = result.conflict or (
+            row.admin_value_set and result.state is MergeState.SOURCE_CHANGED
+        )
         execution = (
             ("conflict" if row.field == "death_date" else "cancelled")
             if member is None
             else "resolved_upstream"
-            if result.state is MergeState.UPSTREAM_CAUGHT_UP
+            if caught_up
             else "conflict"
-            if unusable or result.conflict
+            if unusable or third
             else "pending"
         )
         if execution == "resolved_upstream" and row.decision == "ignored":

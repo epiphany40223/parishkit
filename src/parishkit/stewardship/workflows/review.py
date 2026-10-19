@@ -161,7 +161,7 @@ def _locked_placement(target):
         reviewed=target.reviewed_ministry_duid is not None,
         added=target.parish_added,
         confirmed=RefreshCheck.objects.filter(
-            request_id=target.pk, outcome="confirmed"
+            request_id=target.pk, item_version=target.version, outcome="confirmed"
         ).exists(),
     )
 

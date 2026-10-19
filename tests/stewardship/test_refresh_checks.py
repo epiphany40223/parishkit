@@ -68,12 +68,8 @@ def test_a_check_is_owed_only_when_something_changed():
     )
     assert _owed("confirmed", quiet, full=False, marked=False)
     wrong = CheckState("entered_incorrectly", {"value": "a"}, 0, 2)
-    assert not _owed(
-        "entered_incorrectly", wrong, full=True, marked=True, observed={"value": "a"}
-    )
-    assert _owed(
-        "entered_incorrectly", wrong, full=True, marked=True, observed={"value": "b"}
-    )
+    assert not _owed("entered_incorrectly", wrong, full=True, marked=True)
+    assert _owed("entered_incorrectly", wrong, full=True, marked=True, moved=True)
 
 
 def test_census_comparison_is_canonical_and_availability_aware():

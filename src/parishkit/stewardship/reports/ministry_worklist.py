@@ -217,7 +217,9 @@ def place(result, principal, *, marks=None, checks=None):
     if marks is None:
         marks = roster_marks(row["id"] for row in result["rows"])
         checks = check_states(
-            requests=[row["id"] for row in result["rows"]], marks=marks
+            requests=[row["id"] for row in result["rows"]],
+            marks=marks,
+            versions={str(row["id"]): row["version"] for row in result["rows"]},
         )
     checks = checks or {}
     leader = is_leader(principal)

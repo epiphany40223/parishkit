@@ -131,13 +131,16 @@ def _summaries(checks, start, marks):
     }
 
 
-def check_states(*, proposals=(), requests=(), marks=None):
+def check_states(*, proposals=(), requests=(), marks=None, versions=None):
     """The latest check state of each census change and Ministry request.
 
     ``proposals`` and ``requests`` are item ids; ``marks`` maps a request id
     (text) to its current tick (``workflows.roster.roster_marks``), whose
-    time starts its Not seen count. Returns ``{id text: CheckState}``; an
-    item with no check is absent. Two queries: the start row and the checks.
+    time starts its Not seen count. ``versions`` maps an id (text) to the
+    item's current version: a check made at another version (a request
+    decided again since) is about a decision no longer in force and is
+    left out. Returns ``{id text: CheckState}``; an item with no check is
+    absent. Two queries: the start row and the checks.
     """
     proposals, requests = list(proposals), list(requests)
     if not proposals and not requests:
@@ -155,11 +158,14 @@ def check_states(*, proposals=(), requests=(), marks=None):
             "outcome",
             "full_refresh",
             "observed",
+            "item_version",
         )
     )
+    versions = versions or {}
     checks = [
         (str(proposal or request), created_at, outcome, full, observed)
-        for proposal, request, created_at, outcome, full, observed in rows
+        for proposal, request, created_at, outcome, full, observed, version in rows
+        if versions.get(str(proposal or request), version) == version
     ]
     ticked = {
         key: mark["at"] for key, mark in (marks or {}).items() if mark.get("entered")
@@ -181,17 +187,18 @@ def _census_same(kind):
     return same
 
 
-def _owed(stored, state, *, full, marked, observed=None):
+def _owed(stored, state, *, full, marked, moved=False):
     """Whether a check with outcome ``stored`` is owed for an item now.
 
     When the outcome changed (an item with no check reads as unchanged); for
-    Entered incorrectly also when ParishSoft moved to yet another value; and
-    for a marked item, once per full refresh until Not seen is reached.
+    Entered incorrectly also when ParishSoft ``moved`` to yet another value
+    (canonically, so a formatting change is not one); and for a marked item,
+    once per full refresh until Not seen is reached.
     """
     if stored != state.outcome:
         return True
     if stored == "entered_incorrectly":
-        return observed != state.observed
+        return moved
     return (
         stored == UNCHANGED
         and full
@@ -219,7 +226,14 @@ def _census_checks(snapshot, corpus, campaign_id, full, start):
         field__in=CHECKED_FIELDS,
     ).annotate(family_duid=F("submission__family__family_duid"))
     rows = list(rows)
-    states = check_states(proposals=[row.pk for row in rows]) if rows else {}
+    states = (
+        check_states(
+            proposals=[row.pk for row in rows],
+            versions={str(row.pk): row.version for row in rows},
+        )
+        if rows
+        else {}
+    )
     threshold = None if start is None else start.not_seen_after
     for row in rows:
         state = states.get(str(row.pk), CheckState(not_seen_after=threshold))
@@ -252,6 +266,7 @@ def _census_checks(snapshot, corpus, campaign_id, full, start):
             else Stage.UPDATED
         )
         carried = row.admin_value if row.admin_value_set else row.submitted_value
+        same = _census_same(field.kind)
         # The value recorded at the mark; one ParishSoft could not report
         # then is no evidence the entry went wrong, so the refresh's own
         # value stands in for it (unchanged, never Entered incorrectly).
@@ -266,12 +281,20 @@ def _census_checks(snapshot, corpus, campaign_id, full, start):
             marked_against=marked,
             full_refreshes_unchanged=state.unseen + full,
             not_seen_after=threshold if threshold is not None else float("inf"),
-            same=_census_same(field.kind),
+            same=same,
         )
         stored = STORED.get(result)
+        if stored == UNCHANGED and state.outcome == "entered_incorrectly":
+            # Rule 2: ParishSoft back at the value recorded at the mark is
+            # no new evidence; the item stays where it is (#1737's fixes,
+            # or ParishSoft holding the reviewer's value, move it on).
+            continue
         observed = {"available": True, "value": current.value}
+        moved = state.observed is None or not same(
+            KnownValue(True, state.observed.get("value")), current
+        )
         if stored is None or not _owed(
-            stored, state, full=full, marked=entered, observed=observed
+            stored, state, full=full, marked=entered, moved=moved
         ):
             continue
         yield RefreshCheck(
@@ -318,7 +341,11 @@ def _ministry_checks(snapshot, corpus, campaign_id, full, start):
         .values_list("request_id", "entered", "created_at")
     ):
         ticks[str(request_id)] = {"entered": entered, "at": created_at}
-    states = check_states(requests=[row.pk for row in rows], marks=ticks)
+    states = check_states(
+        requests=[row.pk for row in rows],
+        marks=ticks,
+        versions={str(row.pk): row.version for row in rows},
+    )
     threshold = None if start is None else start.not_seen_after
     for row in rows:
         key = str(row.pk)
