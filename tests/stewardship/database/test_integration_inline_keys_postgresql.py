@@ -135,12 +135,13 @@ def install(value, request_id):
         )
 
 
-def test_key_paste_after_the_approved_sessions_ended_says_sign_in_again(working):
-    """An ended automation session makes the browser's key paste a 403 sign-in.
+def test_key_paste_after_the_approved_sessions_ended_still_stages(working):
+    """An ended automation session does not block its approving browser's paste.
 
-    The browser approved a full-scope automation session and then ended it, so
-    no session holds its sign-in instant live and the intake guard would refuse
-    (#1547). The page says so, with the sign-in link, instead of an outage.
+    The browser approved a full-scope automation session and then ended it.
+    The browser's own sign-in is still live, and its request names no
+    automation session, so its key replacement no longer depends on the
+    sessions it approved (#1763; before that, #1547 showed a sign-in page).
     """
     from parishkit.stewardship.accounts import automation_sessions as automation
 
@@ -153,11 +154,14 @@ def test_key_paste_after_the_approved_sessions_ended_says_sign_in_again(working)
     row = AutomationSession.objects.get(secret_digest=automation.secret_digest(secret))
     assert automation.revoke(row.pk, owner(service), reason="revoked_by_owner")
     response = save(working)
-    assert response.status_code == 403
-    assert b"Your sign-in has ended" in response.content
-    assert b"/admin/login" in response.content
-    assert not SecretReplacementRequest.objects.exists()
-    assert not SealedCredentialStaging.objects.exists()
+    assert response.status_code == 302
+    assert response["Location"] == URL
+    staged = SecretReplacementRequest.objects.get()
+    # The request holds the ended session's sign-in instant, so this is the
+    # shared-instant case 0114's check used to refuse.
+    assert staged.reauthenticated_at == row.authenticated_at
+    assert staged.automation_session_id is None
+    assert SealedCredentialStaging.objects.count() == 1
 
 
 def test_saved_key_installs_acknowledges_and_is_selected(working):
