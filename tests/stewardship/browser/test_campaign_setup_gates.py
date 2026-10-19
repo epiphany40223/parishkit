@@ -266,8 +266,10 @@ def test_slack_channel_shows_and_is_required_only_while_enabled(page, component_
     assert not failures
 
 
-TESTING_HINT = "Enter a valid Testing email address to save."
-MAIL_HINT = "Enter a valid mailbox, From address and Reply-to address to save."
+# Each address field's own words, the shared email rule's (#1577).
+TESTING_HINT = "Enter a valid Testing email address."
+MAILBOX_HINT = "Enter a valid delegated mailbox address."
+REPLY_HINT = "Enter a valid reply-to address."
 
 
 def test_setup_testing_step_waits_for_a_valid_address(page, component_origin):
@@ -284,6 +286,10 @@ def test_setup_testing_step_waits_for_a_valid_address(page, component_origin):
     place = spot(save)
     address.fill("not an address")
     waits_with(save, hint, TESTING_HINT)
+    # The browser's own email check takes a@b; the server, and so the
+    # shared rule, does not.
+    address.fill("testing@example")
+    waits_with(save, hint, TESTING_HINT)
     address.fill("testing@example.org")
     ready(save, hint)
     assert spot(save) == place
@@ -298,10 +304,10 @@ def test_setup_mail_step_waits_for_every_address(page, component_origin):
     page.goto(component_origin + "/setup-mail")
     save = page.get_by_role("button", name="Save and continue")
     hint = page.locator("#setup-complete-hint")
-    waits_with(save, hint, MAIL_HINT)
+    waits_with(save, hint, MAILBOX_HINT)
     page.get_by_label("Delegated mailbox").fill("stewardship@example.org")
     page.get_by_label("From address").fill("stewardship@example.org")
-    waits_with(save, hint, MAIL_HINT)
+    waits_with(save, hint, REPLY_HINT)
     page.get_by_label("Reply-to address").fill("office@example.org")
     ready(save, hint)
 
