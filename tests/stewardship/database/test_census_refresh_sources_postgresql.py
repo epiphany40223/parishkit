@@ -97,6 +97,11 @@ def opt_out(answers):
     answers["family"]["email_opt_out"] = True
 
 
+def first_name(answers):
+    """The Family changes Member 3's first name (an Automatic change)."""
+    answers["members"]["3"]["first_name"] = "Requested"
+
+
 def entered(harness, staff, row):
     """Mark ``row`` Entered by hand (accepting it in the same step)."""
     decide(harness, staff, [row], "entered_by_hand")
@@ -128,6 +133,7 @@ def test_an_entered_move_is_confirmed_when_the_member_leaves(
     assert checks(proposal=proposal) == ["unchanged", "confirmed"]
     row = census_row(harness, proposal)
     assert row["stage"] == Stage.CONFIRMED
+    assert row["member_status"] in {"moved", "inactive"}
     refresh(harness)
     assert checks(proposal=proposal) == ["unchanged", "confirmed"]
 
@@ -196,6 +202,40 @@ def test_an_opt_out_without_the_flag_gets_no_check(response_service):
     proposal = entered(harness, staff, rows["email_opt_out"])
     refresh(harness)
     assert checks(proposal=proposal) == []
+
+
+@pytest.mark.parametrize(
+    "leaving,status",
+    [
+        ({"familyDUID": 2}, "moved"),
+        ({"memberStatus": "Inactive"}, "inactive"),
+        ({"memberStatus": "Deceased"}, "deceased"),
+    ],
+)
+def test_an_open_change_whose_member_left_keeps_its_stage(
+    response_service, leaving, status
+):
+    """Rule 4: the refresh no longer cancels an open change whose Member
+    left the Family; it is left as it was, at its version, and the page
+    marks the Member with the shared status."""
+    harness, staff, rows = answered(response_service, first_name)
+    accepted = fresh(rows["first_name"])
+    decide(harness, staff, [accepted], "accept")
+    accepted = fresh(accepted)
+    refresh(harness, member=leaving | {"firstName": "Someone else"})
+    kept = fresh(accepted)
+    assert (kept.execution, kept.decision, kept.version) == (
+        accepted.execution,
+        "approved",
+        accepted.version,
+    )
+    assert kept.current_value == accepted.current_value
+    row = census_row(harness, kept)
+    assert row["stage"] == Stage.READY_TO_UPDATE
+    assert row["member_status"] == status
+    # Back in the Family, the change is compared again as before.
+    refresh(harness, member={"firstName": "Requested"})
+    assert fresh(kept).execution == "resolved_upstream"
 
 
 @pytest.mark.parametrize(

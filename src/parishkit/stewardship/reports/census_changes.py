@@ -300,7 +300,12 @@ SELECT p.id::text, p.entity_kind, p.entity_key, p.field,
           AND NOT EXISTS (SELECT 1 FROM stewardship_proposal_review later
               WHERE later.proposal_id=pr.id
                 AND later.expected_version>base.expected_version
-                AND later.decision<>'approved')) AS reopened
+                AND later.decision<>'approved')) AS reopened,
+    -- A Member change's Member standing in the current data, by the shared
+    -- status (#1217): a change whose Member left the Family keeps its stage
+    -- (rule 4, #1738), and the Who cell shows the shared badge for it.
+    CASE WHEN p.entity_kind='member' THEN stewardship_member_source_status_v1(
+        sc.snapshot_id, p.entity_key, f.family_duid) END AS member_status
 FROM stewardship_campaign c
 LEFT JOIN stewardship_source_current sc ON sc.singleton
 JOIN stewardship_submission s ON s.campaign_id=c.id AND s.mode='live'
@@ -354,6 +359,7 @@ COLUMNS = (
     "resolution_at",
     "resolution_by",
     "reopened",
+    "member_status",
 )
 
 # The menu's open count (#585, #1590; admin_context.OPEN_COUNTS embeds it):

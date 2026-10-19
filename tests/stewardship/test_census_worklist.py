@@ -383,3 +383,40 @@ def test_refresh_checks_place_final_changes_and_flag_not_seen():
     assert choices["all"] == "Every stage (3)"
     worklist, _ = page(rows, stage="not_seen")
     assert [row["id"] for row in worklist.rows] == ["unseen"]
+
+
+@pytest.mark.parametrize(
+    "status,label",
+    [
+        ("moved", "Not in ParishSoft"),
+        ("missing", "Not in ParishSoft"),
+        ("inactive", "Inactive in ParishSoft"),
+        ("deceased", "Deceased in ParishSoft"),
+    ],
+)
+def test_a_member_who_left_keeps_the_stage_with_the_shared_badge(status, label):
+    """Rule 4 (#1738): the change keeps its stage, and the Who cell shows the
+    shared ParishSoft status badge beside the name; the row's name for
+    screen readers and notices stays the plain name."""
+    worklist, html = page([shaped(member_status=status)])
+    (found,) = worklist.rows
+    assert found["placement"].stage is Stage.TO_REVIEW
+    assert found["name"] == "Mobile phone for Pat Sample"
+    assert (
+        f'Pat Sample <span class="status-badge" data-source-status="{status}">'
+        f"{label}</span>"
+    ) in html
+
+
+def test_a_current_member_has_no_badge():
+    """A Member the data still lists in the Family (and a household change)
+    reads as the name alone."""
+    _, html = page(
+        [
+            shaped(member_status="current"),
+            shaped(
+                id="2", entity_kind="family", field="email_opt_out", handling="manual"
+            ),
+        ]
+    )
+    assert "data-source-status" not in html

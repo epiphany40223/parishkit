@@ -75,6 +75,24 @@ def _family(row):
     )
 
 
+def _who(row):
+    """The Who cell: the name, with the shared ParishSoft status badge beside it.
+
+    A Member change whose Member the current data no longer lists, active
+    and living, in the Family keeps its stage (rule 4, #1738), so the badge
+    (Not in ParishSoft, Inactive or Deceased in ParishSoft) says why.
+    """
+    label = source_status_label(row.get("member_status"))
+    if not label:
+        return row["who"]
+    return format_html(
+        '{} <span class="status-badge" data-source-status="{}">{}</span>',
+        row["who"],
+        row["member_status"],
+        label,
+    )
+
+
 def _member_duid(row):
     """The Member DUID cell: the DUID, "New Member" or blank (a household change)."""
     if row["member_duid"] is not None:
@@ -136,6 +154,7 @@ def worklist_rows(rows):
                 "withheld": _withheld(row),
                 "family": _family(row),
                 "family_duid": duid(row["family_duid"]),
+                "who": _who(row),
                 "member_duid": _member_duid(row),
                 "what": row["label"],
                 "route": row["route_label"],

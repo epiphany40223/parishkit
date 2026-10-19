@@ -92,6 +92,9 @@ def components(context, admin):
                 "resolution_at": None,
                 "resolution_by": None,
                 "reopened": False,
+                # Member 01 moved to another Family (#1738): the change keeps
+                # its stage and the Who cell shows the shared badge.
+                "member_status": "moved" if index == 1 else None,
             }
         )
 
