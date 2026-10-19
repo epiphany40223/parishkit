@@ -4361,18 +4361,11 @@ CREATE FUNCTION public.stewardship_portal_session_mutable_v1() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
             BEGIN
-                IF NEW."id" IS DISTINCT FROM OLD."id" OR NEW."created_at" IS DISTINCT FROM OLD."created_at" OR NEW."principal_id" IS DISTINCT FROM OLD."principal_id" OR NEW."session_id" IS DISTINCT FROM OLD."session_id" OR NEW."expires_at" IS DISTINCT FROM OLD."expires_at" OR (OLD."revoked_at" IS NOT NULL AND NEW."revoked_at" IS DISTINCT FROM OLD."revoked_at") THEN
+                -- The verified Google instant is fixed when the session is
+                -- issued: a new sign-in issues a new session (#1547), so
+                -- nothing advances it in place any more (#1550).
+                IF NEW."id" IS DISTINCT FROM OLD."id" OR NEW."created_at" IS DISTINCT FROM OLD."created_at" OR NEW."principal_id" IS DISTINCT FROM OLD."principal_id" OR NEW."session_id" IS DISTINCT FROM OLD."session_id" OR NEW."expires_at" IS DISTINCT FROM OLD."expires_at" OR NEW."authenticated_at" IS DISTINCT FROM OLD."authenticated_at" OR (OLD."revoked_at" IS NOT NULL AND NEW."revoked_at" IS DISTINCT FROM OLD."revoked_at") THEN
                     RAISE EXCEPTION 'Record identity and bindings are immutable'
-                        USING ERRCODE = '23514';
-                END IF;
-                -- Step-up reauthentication advances a live session's verified
-                -- Google instant in place. It never moves backwards, never past
-                -- this statement's clock, and never changes on a revoked row.
-                IF NEW."authenticated_at" IS DISTINCT FROM OLD."authenticated_at"
-                   AND (OLD."revoked_at" IS NOT NULL
-                        OR NEW."authenticated_at" < OLD."authenticated_at"
-                        OR NEW."authenticated_at" > statement_timestamp()) THEN
-                    RAISE EXCEPTION 'Session authentication may only advance to a verified past instant'
                         USING ERRCODE = '23514';
                 END IF;
                 -- #306 M2: activity renews the idle limit only up to this

@@ -1301,9 +1301,14 @@ without the age clause, under the
 The command-session rule holds in every one of them, restore decisions and
 staged setup credentials included. The secret request guards keep their
 own tie to the automation session (see [secret replacement](#secret-replacement)).
-`stewardship_automation_fresh_principal_v1(principal, instant)` stays
-installed but unused, as do the recorded sign-in columns; dropping them is
-[#1550](https://github.com/epiphany40223/parishkit/issues/1550).
+Frozen migration 0123 (`stewardship_accounts.0028_sign_in_leftovers`,
+[#1550](https://github.com/epiphany40223/parishkit/issues/1550)) dropped
+`stewardship_automation_fresh_principal_v1(principal, instant)`, which no
+guard called after 0114, with its grants. It also made an Admin session's
+sign-in instant (`authenticated_at`) immutable: only the retired step-up
+sign-in moved it, and a new sign-in issues a new session. The recorded
+sign-in columns stay, as audit evidence that several guards still bind to
+the live session.
 
 ### Secret replacement
 

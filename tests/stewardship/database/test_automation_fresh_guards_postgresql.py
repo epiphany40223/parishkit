@@ -15,8 +15,9 @@ staged-to-testing step, on disposable roles; there an instant that a
 full-scope automation session holds still needs one such session live
 (``stewardship_automation_instant_ended_v1``, new in 0114). 0013's own DO block is run
 against 0013's bodies, put back in a rolled-back transaction, and refuses
-each pre-0013 guard. ``sign_in_instant`` and the still-installed, now unused
-``stewardship_automation_fresh_principal_v1`` are covered directly.
+each pre-0013 guard. ``sign_in_instant`` is covered directly. 0123 (#1550)
+dropped 0013's ``stewardship_automation_fresh_principal_v1``, which no guard
+called after 0114, so only that DO-block test makes it again, rolled back.
 """
 
 import re
@@ -459,42 +460,6 @@ def test_instant_ended_is_true_only_once_every_full_session_ended(auth_service, 
     assert instant_ended(reader.principal_id, reader.authenticated_at) is False
 
 
-def fresh_principal(principal, instant):
-    """``stewardship_automation_fresh_principal_v1``'s answer."""
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT public.stewardship_automation_fresh_principal_v1(%s,%s)",
-            [principal, instant],
-        )
-        return cursor.fetchone()[0]
-
-
-def test_fresh_principal_is_true_only_for_a_live_full_session(auth_service, google):
-    """Never NULL; false for a read-only, revoked or expired session."""
-    _, _, row = paired(auth_service)
-    _, _, reader = paired(auth_service, scope="read-only")
-    assert fresh_principal(row.principal_id, row.authenticated_at) is True
-    assert fresh_principal(reader.principal_id, reader.authenticated_at) is (
-        reader.authenticated_at == row.authenticated_at
-    )
-    assert fresh_principal(uuid4(), row.authenticated_at) is False
-    assert fresh_principal(row.principal_id, None) is False
-    assert (
-        fresh_principal(row.principal_id, row.authenticated_at + timedelta(seconds=1))
-        is False
-    )
-    with transaction.atomic(), connection.cursor() as cursor:
-        cursor.execute(
-            "ALTER TABLE stewardship_automation_session DISABLE TRIGGER USER"
-        )
-        cursor.execute(
-            "UPDATE stewardship_automation_session SET expires_at=now() WHERE id=%s",
-            [row.pk],
-        )
-        cursor.execute("ALTER TABLE stewardship_automation_session ENABLE TRIGGER USER")
-    assert fresh_principal(row.principal_id, row.authenticated_at) is False
-
-
 def test_sign_in_instant_admits_a_live_full_session_only(auth_service, google):
     """The automation branch: the session's sign-in instant, until it ends."""
     _, secret, row = paired(auth_service)
@@ -533,13 +498,20 @@ def test_sign_in_instant_admits_a_live_full_session_only(auth_service, google):
 def test_the_frozen_files_check_refuses_an_unchanged_guard(auth_service):
     """The DO block passes on 0013's bodies, raises on each pre-0013 one.
 
-    0114 (#1547) replaced every body 0013 installs, so each rolled-back
-    transaction first puts 0013's own bodies back.
+    0114 (#1547) replaced every body 0013 installs and 0123 (#1550) dropped
+    the function it created, so each rolled-back transaction first puts
+    0013's own function and bodies back.
     """
     check = FROZEN[FROZEN.index("DO $check$") :]
+    created = FROZEN.index(
+        "CREATE FUNCTION public.stewardship_automation_fresh_principal_v1("
+    )
+    revoked = "FROM PUBLIC;"
+    principal = FROZEN[created : FROZEN.index(revoked, created) + len(revoked)]
 
     def install(cursor):
-        """0013's own definitions, inside the caller's transaction."""
+        """0013's own function and definitions, in the caller's transaction."""
+        cursor.execute(principal)
         for name in CLAUSES:
             cursor.execute(definition(name))
 
