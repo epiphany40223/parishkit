@@ -5403,10 +5403,10 @@ BEGIN
                   WHERE later_sent.occurrence_id=later.id AND later_sent.disposition='delivered'))) THEN
         RAISE EXCEPTION 'A later reminder reached this Family or is on its way; assume this one sent'
             USING ERRCODE='23514'; END IF;
-    -- Settling a held email is an Administrator's decision made within five
-    -- minutes of a Google sign-in (migration 0017, #537).
+    -- Settling a held email is the decision of an Administrator whose
+    -- session is live (migration 0017, #537; any sign-in age, #1547).
     IF NOT public.stewardship_restore_decision_admitted_v1(NEW.actor_id,NEW.session_id,NEW.authenticated_at) THEN
-        RAISE EXCEPTION 'A restore decision requires fresh Administrator authentication' USING ERRCODE='42501'; END IF;
+        RAISE EXCEPTION 'A restore decision requires a live Administrator session' USING ERRCODE='42501'; END IF;
     RETURN NEW;
 END $$;
 
@@ -5571,7 +5571,7 @@ BEGIN
         IF r.restore_review_required AND NEW.backup_at IS NOT DISTINCT FROM r.restore_backup_at THEN
             RAISE EXCEPTION 'A restore review is already open for this backup' USING ERRCODE='23514'; END IF;
     ELSIF NEW.action='restore_release' THEN
-        -- A freshly signed-in Administrator releases the site after review.
+        -- An Administrator whose session is live releases the site after review.
         -- Refused while any email still needs a hold: the list must be found
         -- first, during the review, so every hold can still be decided (none
         -- is decided after release). Mode and campaign stay as restored.
@@ -5584,7 +5584,7 @@ BEGIN
            OR EXISTS (SELECT 1 FROM stewardship_campaign_work_gate WHERE state IN ('preparing','running')) THEN
             RAISE EXCEPTION 'This restore review cannot be released' USING ERRCODE='23514'; END IF;
         IF NOT public.stewardship_restore_decision_admitted_v1(NEW.actor_id,NEW.session_id,NEW.authenticated_at) THEN
-            RAISE EXCEPTION 'A restore decision requires fresh Administrator authentication' USING ERRCODE='42501'; END IF;
+            RAISE EXCEPTION 'A restore decision requires a live Administrator session' USING ERRCODE='42501'; END IF;
         IF EXISTS(SELECT 1 FROM public.stewardship_restore_hold_candidates_v1()) THEN
             RAISE EXCEPTION 'The held-email list is stale: find the held emails again before release'
                 USING ERRCODE='23514'; END IF;
@@ -6016,7 +6016,7 @@ BEGIN
                 NEW.requested_by_id,NEW.reauthenticated_at),false);
         END IF;
         IF ended THEN
-            RAISE EXCEPTION 'Sealed intake requires fresh authentication'
+            RAISE EXCEPTION 'Sealed intake requires a live automation session'
                 USING ERRCODE='23514';
         END IF;
     ELSE
@@ -7653,8 +7653,8 @@ BEGIN
         OR request.requested_by_id IS DISTINCT FROM attempt.owner_id
         OR request.actor_id IS DISTINCT FROM attempt.owner_id
         OR request.state IS DISTINCT FROM 'staged' OR request.version<>1
-        -- The installer copies the login's instant, but a concurrent step-up
-        -- may advance that session before this check; never a later claim.
+        -- The installer copies the login's instant, which never changes in
+        -- place (#1550); never a later claim.
         OR login.id IS NULL OR request.reauthenticated_at>login.authenticated_at
         OR request.expires_at>login.expires_at OR request.expires_at<=clock_timestamp()
         OR request.required_consumers IS DISTINCT FROM stewardship_credential_consumers_v1(NEW.target)
@@ -8474,8 +8474,8 @@ BEGIN
         CASE WHEN NEW.scrubbed_at IS NULL THEN 'changed' ELSE 'cancelled' END);
     IF NEW.scrubbed_at IS NULL THEN
         -- How old the setup session's Google sign-in was when the credential
-        -- was sealed (#1402): a later step-up in the same session overwrites
-        -- authenticated_at, so the age is recorded now. A separate statement,
+        -- was sealed (#1402), recorded as audit evidence when it is staged
+        -- (the instant never changes in place, #1550). A separate statement,
         -- run only for a staged credential: the scrubbing scheduler cannot
         -- read the session.
         SELECT greatest(0,floor(extract(epoch FROM clock_timestamp()-login.authenticated_at)))::bigint

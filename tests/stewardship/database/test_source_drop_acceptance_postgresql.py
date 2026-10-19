@@ -218,7 +218,7 @@ def test_the_web_accepts_the_newest_refusal_once_for_an_administrator(tmp_path):
             {"actor_id": uuid4()},
             {"session_id": uuid4()},
         ):
-            with refused("fresh Administrator"):
+            with refused("requires a live Administrator session"):
                 web_accept(attempt, **values)
         # The counts must be exactly the recorded ones.
         reviewed = reviewed_counts(FELL)
@@ -725,7 +725,7 @@ def test_the_guard_refuses_repeatable_read_and_non_administrators(tmp_path):
         )
     with web_with("SELECT", "INSERT"):
         for session_row in (current, outsider):
-            with refused("fresh Administrator"):
+            with refused("requires a live Administrator session"):
                 web_accept(attempt, session_row)
     assert not SourceDropAcceptance.objects.exists()
 
@@ -752,7 +752,10 @@ def test_a_live_session_of_any_sign_in_age_is_admitted(tmp_path):
         }[kind]
         with unguarded():
             PortalSession.objects.filter(pk=login.pk).update(**values)
-        with web_with("SELECT", "INSERT"), refused("fresh Administrator"):
+        with (
+            web_with("SELECT", "INSERT"),
+            refused("requires a live Administrator session"),
+        ):
             web_accept(attempt, login)
     login = unguarded_session(user, authenticated_at=hours_ago)
     with web_with("SELECT", "INSERT"):

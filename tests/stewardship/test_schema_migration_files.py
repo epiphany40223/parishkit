@@ -402,6 +402,9 @@ FROZEN = {
     "0123_sign_in_leftovers.sql": (
         "8894706e2b79c2e72ecfba500995bfc6c4c281363feb5b235a084678bac22d8c"
     ),
+    "0124_guard_wording.sql": (
+        "cbe60936ca8d92a473280cbb173b2c0c379b295135eef83b114750c7b2ce035c"
+    ),
 }
 
 
