@@ -67,6 +67,18 @@ def principal_function():
     return text[start : text.index("FROM PUBLIC;", start) + len("FROM PUBLIC;")]
 
 
+def ended_function():
+    """0114's ``CREATE FUNCTION`` of the ended-instant check, with its revoke.
+
+    0125 (#1763) has since dropped it; 0123's check requires it, so the
+    state before 0123 puts it back (rolled back with each test).
+    """
+    text = (MIGRATIONS / "0114_no_sign_in_age.sql").read_text(encoding="utf-8")
+    name = "stewardship_automation_instant_ended_v1"
+    start = text.index(f"CREATE FUNCTION public.{name}(")
+    return text[start : text.index("FROM PUBLIC;", start) + len("FROM PUBLIC;")]
+
+
 def previous_guard():
     """The guard as it was before 0123, from 0123's own copy.
 
@@ -137,6 +149,7 @@ def test_the_file_runs_on_the_earlier_state_and_keeps_every_session():
     )
     with transaction.atomic(), connection.cursor() as cursor:
         cursor.execute(principal_function())
+        cursor.execute(ended_function())
         cursor.execute(previous_guard())
         cursor.execute(
             "SELECT md5(prosrc) FROM pg_proc WHERE oid=%s::regprocedure",
@@ -218,6 +231,7 @@ def test_migration_check_refuses_each_earlier_or_weakened_install():
         ),
     ]
     with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(ended_function())
         cursor.execute(capture)
         cursor.execute(check)
         for change, message in changes:
