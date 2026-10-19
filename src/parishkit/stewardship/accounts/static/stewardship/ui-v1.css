@@ -602,6 +602,9 @@ input:is([type=date], [type=time], [type=datetime-local], [type=month]) { max-wi
 input[type=number] { max-width: 10rem; }
 input:is([type=email], [type=url], [type=tel]) { max-width: 34rem; }
 input:is([type=text], [type=search], [type=password], :not([type])) { max-width: 40rem; }
+/* An address or link typed in a text box that asks for an email or URL
+   keyboard (a shared format rule's field, #1577) is as wide as those types. */
+input:is([inputmode=email], [inputmode=url]) { max-width: 34rem; }
 /* A typed time of day (#631) is as short as a native time control; a list of
    times is medium. Its reading (ui-v1.js) sits under the box in the help
    style, and in the error style while the entry cannot be read; a visually

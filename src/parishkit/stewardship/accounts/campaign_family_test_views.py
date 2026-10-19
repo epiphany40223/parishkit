@@ -1,5 +1,7 @@
 """Preview, confirm and passively follow chosen-Family Testing sends."""
 
+import json
+
 from django import forms
 from django.core import signing
 from django.core.exceptions import ObjectDoesNotExist
@@ -24,6 +26,7 @@ from .admin_editing import form_action, summary_errors
 from .authentication import runtime
 from .campaign_family_test import (
     SALT,
+    duid_list_rules,
     parse_family_duids,
     prepare,
     recent_tickets,
@@ -65,6 +68,9 @@ class FamilyTestForm(AdminForm):
                 "rows": 4,
                 # The complete gate's hint while the box is empty (#563).
                 "data-missing-hint": _("Enter at least one Family DUID to check."),
+                # The page reads a typed list as parse_family_duids does, and
+                # Check waits, with its words, for one it accepts (#1577).
+                "data-duid-list": json.dumps(duid_list_rules()),
             }
         ),
         label=_("Family DUIDs, one per line (at most ten)"),

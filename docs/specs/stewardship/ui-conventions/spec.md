@@ -1151,7 +1151,8 @@ unavailable, named by the notice that says why. The Pages and emails editor's
 Preview changes waits for a change, except while the page offers saving what
 it shows as it is (the default text filled in, a saved text that needs
 re-saving, a confirmation email with a retired receipt closing note folded
-in, a refused Preview drawn again). On Campaign settings the Ministry
+in, a refused Preview drawn again); it and Share options' Save also wait for
+a subject or option labels whose placeholders the server admits (#1577). On Campaign settings the Ministry
 leader roles need one ticked while Ministry stewardship is on, and on a live
 campaign Save waits while the Ministries and another setting both changed
 (`data-change-alone`), with the server's own words. The automation
@@ -1253,9 +1254,21 @@ gate ([prerequisite gates](#prerequisite-gates)), so Save, Review or Save
 and continue waits, with the same words as its reason, while any field is
 invalid. Each rule has accepted and refused examples in one shared table
 (`tests/stewardship/fixtures/field_rule_cases.json`), run through the
-server's form field and through every browser engine. A server rule the
-browser does not check yet is a gap
-([#1577](https://github.com/epiphany40223/parishkit/issues/1577)).
+server's form field and through every browser engine. A textarea, which has
+no `pattern`, carries its rule as `data-pattern` (one address per line). An
+email address or a URL is a text box that asks phones for that keyboard
+(`inputmode`), not `type="email"` or `type="url"`: the browser's own check of
+those types admits values the server refuses (`a@b`) and refuses some it
+admits (a quoted user name, a padded value), so the rule is the one check
+both sides share. Where no pattern can say the rule, the page script checks
+it with the server's own limits and words, and its examples sit in the same
+table where they can: a list of Family DUIDs (no number twice), a financial
+period's end (exactly the day the start gives, drawn as its `min` and
+`max`) and a chosen file of 0 bytes (`data-empty-file-message`, beside
+`data-max-bytes`). A rule only the server can decide stays the server's,
+shown at the field after Save: a mail schedule's send date, typed in the
+browser's time zone and judged on the campaign's days
+([#1787](https://github.com/epiphany40223/parishkit/issues/1787)).
 
 A report's filters follow the same rule (#1332). A filter the server
 refuses at one field (a request built by hand, or a browser whose check did

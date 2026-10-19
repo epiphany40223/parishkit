@@ -18,6 +18,7 @@ from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts import integration_views
 from parishkit.stewardship.accounts.integration_forms import (
+    KEY_RULES,
     InlineCredentialForm,
     IntegrationForm,
 )
@@ -64,16 +65,18 @@ def field(html, name):
 
 
 def test_a_slack_key_is_required_only_while_slack_is_not_set_up():
-    """Not set up, the token is required with set-up wording and a missing hint;
-    once set up, a blank token keeps the current one."""
+    """Not set up, the token is required with set-up wording and an empty
+    hint (a malformed one says the key rule's words, #1577); once set up, a
+    blank token keeps the current one."""
     setup = InlineCredentialForm("slack", initial={"intent": "x"}, required=True)
     candidate = setup.fields["candidate"]
     assert candidate.required and candidate.label == "Slack bot token"
     assert "Leave this blank" not in str(candidate.help_text)
     assert (
-        candidate.widget.attrs["data-missing-hint"]
+        candidate.widget.attrs["data-empty-hint"]
         == "Paste the Slack bot token to set up Slack."
     )
+    assert candidate.widget.attrs["data-missing-hint"] == KEY_RULES["slack"].message
     refused = InlineCredentialForm(
         "slack", {"intent": "x", "candidate": ""}, required=True
     )
@@ -81,7 +84,7 @@ def test_a_slack_key_is_required_only_while_slack_is_not_set_up():
     assert refused.errors["candidate"] == ["Paste the Slack bot token to set up Slack."]
     replace = InlineCredentialForm("slack", {"intent": "x", "candidate": ""})
     assert replace.is_valid()
-    assert "data-missing-hint" not in replace.fields["candidate"].widget.attrs
+    assert "data-empty-hint" not in replace.fields["candidate"].widget.attrs
 
 
 def test_the_parishsoft_key_says_it_is_not_saved_with_a_schedule_change():
@@ -113,7 +116,7 @@ def test_a_slack_page_not_set_up_requires_its_token():
     html = settings_page("slack", credential=credential)
     candidate = field(html, "candidate")
     assert " required" in candidate
-    assert 'data-missing-hint="Paste the Slack bot token to set up Slack."' in candidate
+    assert 'data-empty-hint="Paste the Slack bot token to set up Slack."' in candidate
 
 
 def test_test_access_is_unavailable_with_why_until_workspace_mail_is_set_up():
