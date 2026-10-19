@@ -531,12 +531,11 @@ def test_download_follows_the_day_shown(page, component_origin):
     expect(form.get_by_label("Time zone", exact=True)).to_have_count(0)
     zone = form.locator("input[type=hidden][name=browser_timezone]")
     expect(zone).to_have_value("America/Los_Angeles")
-    assert page.get_by_label("Format", exact=True).locator(
-        "option"
-    ).all_text_contents() == [
-        "PDF summary",
-        "XLSX",
-        "CSV",
+    # The shared export row (#1679), the PDF summary first.
+    assert form.locator(".export-buttons button").all_text_contents() == [
+        "Export PDF",
+        "Export XLSX",
+        "Export CSV",
     ]
     page.get_by_label("Compare on day").fill("5")
     with page.expect_request(lambda request: request.url.endswith(DAY_5)):
@@ -546,9 +545,8 @@ def test_download_follows_the_day_shown(page, component_origin):
     expect(zone).to_have_value("America/Los_Angeles")
     route = reverse("admin:campaign_comparison_export")
     page.route("**" + route, lambda found: found.fulfill(body="Queued"))
-    page.get_by_label("Format", exact=True).select_option("xlsx")
     with page.expect_request(lambda request: request.method == "POST") as sent:
-        page.get_by_role("button", name="Queue download").click()
+        page.get_by_role("button", name="Export XLSX").click()
     body = sent.value.post_data
     assert sent.value.url.endswith(route)
     assert "day=5" in body and "format=xlsx" in body

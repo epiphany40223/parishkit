@@ -160,16 +160,12 @@ BANNER_PROBLEMS = {
 # that, and reading the halt records (ADM-13 PR 4a) would add a query to
 # every Admin page.
 UNLINKED_EVENTS = frozenset({"mail_provider_failed"})
-# Kinds whose sentence on Home already links its own tile ("See Mail
-# sender", "See the counts", "See Version"), so Home's line adds no second
-# link to it (system-health-home-line.html).
-SENTENCE_LINKS_TILE = frozenset(
-    {"mail_provider_unavailable", "source_destructive_change", "versions_differ"}
-)
-# Kinds whose Home line links no tile at all: while the configured backup
-# key cannot be read, the System health page cannot be shown (it answers
-# 503), so a link to its Backups tile would lead nowhere useful.
-NO_TILE_LINK = frozenset({"backup_key_unchecked"})
+# Kinds that keep the System health page from opening: while the
+# configured backup key cannot be read, the page answers 503. Home counts
+# the other problems with a link to System health (#1673), so it shows
+# these by their own sentence instead, with no link
+# (system-health-home-line.html), and its count line then links nothing.
+BLOCKS_PAGE = frozenset({"backup_key_unchecked"})
 # Problems a short watch cannot wait out, so ``system health --watch``
 # stops with them still listed (SystemHealth.terminal): off-site copies that
 # are not set up, which need an Administrator, and a requested backup that
@@ -395,33 +391,6 @@ class Problem:
     def tiles(self):
         """The tiles that show this problem, in page order."""
         return tuple(tile for tile, _, _ in tile_parts(self))
-
-    @property
-    def tile(self):
-        """The tile Home's line links: the first that shows the problem."""
-        return self.tiles[0]
-
-    @property
-    def tile_name(self):
-        """That tile's area name."""
-        return tile_name(self.tile)
-
-    @property
-    def word(self):
-        """The state word Home's line shows beside its icon."""
-        from django.utils.translation import gettext as _
-
-        return {"warning": _("Warning"), "error": _("Error")}[self.severity]
-
-    @property
-    def links_tile(self):
-        """Whether Home's sentence already links the problem's tile."""
-        return self.kind in SENTENCE_LINKS_TILE
-
-    @property
-    def tile_link(self):
-        """Whether Home's line adds its own link to the problem's tile."""
-        return not self.links_tile and self.kind not in NO_TILE_LINK
 
     @property
     def runbooks(self):

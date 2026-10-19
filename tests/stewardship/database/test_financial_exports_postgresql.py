@@ -204,8 +204,10 @@ def test_native_financial_exports_use_real_worker_and_guarded_downloads(
         )
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             response, body = read(browser, route)
-            assert response.status_code == 200 and b"Queue complete export" in body
-            assert b'name="request_key"' in body and b"<fieldset disabled" not in body
+            assert response.status_code == 200 and b"Export XLSX" in body
+            assert (
+                b'name="request_key"' in body and b'value="xlsx" disabled' not in body
+            )
             assert (
                 browser.post(reverse("admin:financial_export"), fields).status_code
                 == 403
