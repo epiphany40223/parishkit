@@ -414,9 +414,15 @@ def _find_family(actor, items, campaign):
 
 
 # Menu entries that show how many open items their queue holds (#585,
-# #1590, #1660).
+# #1590, #1660; Limitations since R39 finding 10).
 COUNTED = frozenset(
-    {"census_changes", "information_queue", "ministry_report", "ministry_roster"}
+    {
+        "census_changes",
+        "information_queue",
+        "ministry_report",
+        "ministry_roster",
+        "limitations_report",
+    }
 )
 # Campaign states in which Roster changes to enter's count is read: past
 # go-live (active, closed or archived). A draft or a scheduled campaign has
@@ -455,6 +461,12 @@ ROSTER_STATES = frozenset({"active", "closed", "archived"})
 # the page's Python keeps the menu at one statement; a database test holds
 # the count equal to the page's rows. Its Ministries get the same Python
 # cross-check as Ministry requests' count.
+# Limitations (R39 finding 10) runs its page's own selection with the page's
+# default filters (stewardship_limitations_report_v2, every answer) and
+# counts the answers its default To review stage lists: no decision in
+# force, or Back to review (pipeline.cannot_participate_placement). An
+# unavailable report (no Family record or source) lists no answer, so it
+# counts nothing and no number shows.
 OPEN_COUNTS = """
 SELECT
     CASE WHEN %(information)s THEN (
@@ -471,7 +483,15 @@ SELECT
     f.ministries,
     CASE WHEN %(census)s THEN ({census}) END,
     t.total,
-    t.ministries
+    t.ministries,
+    CASE WHEN %(limitations)s THEN (
+        SELECT count(*) FROM stewardship_limitations_report_v2(
+            %(campaign)s, %(limitation_filters)s::jsonb) v,
+        jsonb_array_elements(coalesce(v->'members','[]'::jsonb)
+            || coalesce(v->'families','[]'::jsonb)) a
+        WHERE NOT coalesce((a->>'in_force')::boolean, false)
+           OR coalesce(a->>'decision','none')='none')
+    END
 FROM (SELECT NULL) one
 LEFT JOIN LATERAL (
     SELECT CASE WHEN (v->>'authorized')::boolean THEN (v->>'total')::bigint END
@@ -547,6 +567,7 @@ def _open_counts(request, actor, items, campaign):
 def _read_open_counts(offered, actor, campaign):
     """Run ``OPEN_COUNTS`` for the ``offered`` entries; see ``_open_counts``."""
     from parishkit.stewardship.reports.census_changes import OPEN_GROUPS, open_count
+    from parishkit.stewardship.reports.limitations import LimitationsQuery
     from parishkit.stewardship.reports.ministry_followup import (
         FollowupQuery,
         in_scope,
@@ -573,6 +594,11 @@ def _read_open_counts(offered, actor, campaign):
                 "information": "information_queue" in offered,
                 "ministry": "ministry_report" in offered,
                 "roster": roster,
+                # The page admits CAMPAIGN_REPORT; checked again here, as
+                # for Census changes.
+                "limitations": "limitations_report" in offered
+                and allows(actor, Capability.CAMPAIGN_REPORT),
+                "limitation_filters": json.dumps(LimitationsQuery().form_values()),
                 "campaign": campaign.pk,
                 "filters": selection_filters(FollowupQuery()),
                 # The page's own selection (roster_rows, via _ticked).
@@ -590,6 +616,7 @@ def _read_open_counts(offered, actor, campaign):
             groups,
             roster_count,
             roster_ministries,
+            limitations,
         ) = cursor.fetchone()
     # A count naming a Ministry outside Python's view of the actor would be
     # refused by the page (in_scope), so it gets no count either.
@@ -616,6 +643,7 @@ def _read_open_counts(offered, actor, campaign):
             ("information_queue", information),
             ("ministry_report", ministry),
             ("ministry_roster", roster_count),
+            ("limitations_report", limitations),
         )
         if count is not None
     }
