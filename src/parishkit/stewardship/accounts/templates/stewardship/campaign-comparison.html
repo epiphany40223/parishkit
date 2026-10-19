@@ -1,6 +1,7 @@
-{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship %}
+{% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
 {% block title %}{% translate "Campaign comparison" %}{% endblock %}
-{% block head %}{% include 'stewardship/components/chart-scripts.html' %}{% endblock %}
+{% block head %}{% include 'stewardship/components/chart-scripts.html' %}
+<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
 {% block content %}
 <h1>{% translate "Campaign comparison" %}</h1>
 {% aboutpage "campaign-comparison" %}<p>{% translate "Compares this campaign with the past campaigns imported on Past campaigns. Campaigns are lined up by campaign day, not by calendar date: day 1 is each campaign's first invitation day. This campaign is compared on its last complete day, the day before today in the campaign's time zone." %}</p>
@@ -18,10 +19,10 @@
 </form>{% endif %}
 <div id="comparison-report" data-in-place-region>
 <p>{% if comparison.day %}{% blocktranslate with day=comparison.day|number name=comparison.campaign_name date=comparison.report_date|parish_date %}Day {{ day }} of {{ name }} · through {{ date }}{% endblocktranslate %}{% if comparison.last_year or average_years %} · {% translate "compared with" %}{% if comparison.last_year %} {{ comparison.last_year.year }}{% endif %}{% if comparison.last_year and average_years %} {% translate "and" %}{% endif %}{% if average_years %} {% blocktranslate with years=average_years %}the {{ years }} average{% endblocktranslate %}{% endif %}{% endif %}{% else %}{{ comparison.campaign_name }} · {% translate "Day 1 has not ended yet, so the past campaigns' final results are shown." %}{% endif %}</p>
-{% if comparison.status != 'current' %}<p class="notice notice-info" role="status">{% translate "Updating — the latest complete figures are shown. They may not yet include the newest ParishSoft data or responses. Refresh this page to check progress." %}</p>{% endif %}
+{# The Updating notice, in the region that follows the newest figures by itself (#1586). #}{% include 'stewardship/report-figures-status.html' %}
 {% if not comparison.imported %}<p class="notice">{% translate "No past campaigns are imported, so only this campaign is shown." %}{% if can_import %} <a href="{% url 'admin:past_campaigns' %}">{% translate "Import them on Past campaigns" %}</a>{% endif %}</p>{% endif %}
 {% if tiles %}{% include "stewardship/components/stat-tiles.html" with tiles=tiles tiles_label=_("Headline figures") %}
-{% elif comparison.day %}<p>{% translate "This campaign's figures are not ready yet. They are calculated in the background; refresh this page in a few minutes." %}</p>{% endif %}
+{% elif comparison.day %}<p>{% translate "This campaign's figures are not ready yet. They are calculated in the background and appear here by themselves once they are ready." %}</p>{% endif %}
 {% if day_charts %}<section aria-labelledby="day-charts-heading"><h2 id="day-charts-heading">{% translate "Day by day" %}</h2>
 <p class="help">{% translate "Campaign day 1 is each campaign's first invitation day. Every figure is also in" %} <a href="#numbers-heading">{% translate "Every number" %}</a>.</p>
 {% for chart in day_charts %}<section class="panel" aria-labelledby="{{ chart.key }}-heading"><h3 id="{{ chart.key }}-heading">{{ chart.title }}</h3>

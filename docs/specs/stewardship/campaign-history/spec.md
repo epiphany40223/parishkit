@@ -1064,8 +1064,14 @@ Each view reads under the campaign's
 [read guard](../data/spec.md#campaign-read-guards), sends `Cache-Control:
 no-store` (the figures are financial), and records one
 `campaign_comparison_viewed` audit event with the day and outcome, no
-figure. If the current fact set is not ready, the page shows the last ready
-one with the participation graph's **Updating** notice.
+figure; a view the page made by itself to bring newer figures in is marked
+`automatic: true`. If the current fact set is not ready, the page shows the
+last ready one with the participation graph's **Updating** notice, and
+brings the new figures in by itself once they are ready, as the Response
+dashboard does
+([pages that update themselves](../ui-conventions/spec.md#pages-that-update-themselves)).
+A page that refuses the day asked for (a 400) still shows the notice but
+does not follow, since its own re-read would only be refused again.
 
 ### Downloads and sharing
 
