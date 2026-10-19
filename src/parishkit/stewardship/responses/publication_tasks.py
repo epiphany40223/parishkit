@@ -198,8 +198,10 @@ def _request_binding(execution):
 def approved_changes(campaign_id):
     """Every open, approved, Automatic Member change of the campaign.
 
-    The changes a preflight plans, from the campaign's live responses; the
-    Publish to ParishSoft page counts the same ones as waiting (#528).
+    The changes a preflight considers, from the campaign's live responses.
+    Preflight and the Publish to ParishSoft page's waiting count (#528)
+    both leave out those whose Member left the Family
+    (``publication_plans.unlisted_changes``, #1738).
     """
     return ProposedChange.objects.filter(
         submission__campaign_id=campaign_id,

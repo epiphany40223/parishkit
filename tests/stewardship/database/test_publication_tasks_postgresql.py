@@ -10,6 +10,7 @@ carry the #1245 review notes the dispatch must honour (notes 2, 4 and 5;
 notes 1 and 3 are the worker's, in test_publication_worker_postgresql).
 """
 
+import json
 from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
@@ -337,6 +338,90 @@ def test_a_member_who_left_after_the_plan_is_not_written(world, how):
     reads = len(world.gateway.reads)
     assert world.execute(run.run_id) and state(run) == "succeeded"
     assert len(world.gateway.reads) == reads and world.gateway.writes == []
+    entity = PublicationEntity.objects.get(plan=plan)
+    assert list(entity.outcomes.values_list("result", flat=True)) == ["invalidated"]
+    assert proposal(world.first) == "pending"
+
+
+def copy(table, row_id, **values):
+    """Copy one row of ``table`` with a new id and ``values``; the new id.
+
+    Forged as the schema owner with triggers off, as the other world
+    changes here are: the copy stands for a second Family's response.
+    """
+    new_id = uuid4()
+    owner(
+        f"INSERT INTO {table} SELECT (jsonb_populate_record(NULL::{table}, "
+        f"to_jsonb(t) || %s::jsonb)).* FROM {table} t WHERE id=%s",
+        [json.dumps({"id": str(new_id), **values}), row_id],
+    )
+    return new_id
+
+
+def test_a_member_with_changes_from_two_families_plans_the_current_one(
+    world, monkeypatch
+):
+    """A Member who moved has an open change from the Family they left (kept
+    by rule 4) and one from the Family they are in now, for one field. The
+    left Family's change is left out, so the planner meets one open change
+    per field (two would raise and fail every preflight): the Member is read
+    once and only the current change is planned (#1738)."""
+    answered = world.first.submission
+    baseline = copy("stewardship_family_form_baseline", answered.baseline_id)
+    submission = copy(
+        "stewardship_submission",
+        answered.pk,
+        baseline_id=str(baseline),
+        family_version=answered.family_version + 100,
+        campaign_sequence=answered.campaign_sequence + 100,
+    )
+    current = copy(
+        "stewardship_proposed_change", world.first.pk, submission_id=str(submission)
+    )
+    # The original change stands for the Family the Member left.
+    monkeypatch.setattr(tasks, "unlisted_changes", lambda ids: {world.first.pk})
+    plan = world.planned(uuid4())
+    assert world.gateway.reads == [world.first.entity_key]
+    assert list(
+        PublicationField.objects.filter(entity__plan=plan).values_list(
+            "proposal_id", "outcome"
+        )
+    ) == [(current, "write")]
+    assert proposal(world.first) == "pending"
+
+
+def test_the_waiting_count_leaves_out_a_member_who_left(world):
+    """The Publish page counts only what preflight would plan, so a change
+    whose Member left the Family cannot offer Check ParishSoft alone."""
+    from parishkit.stewardship.reports.census_publication import waiting
+
+    campaign = world.first.submission.campaign_id
+    assert waiting(campaign) == {"changes": 1, "members": 1}
+    leave(world.first, "moved")
+    assert waiting(campaign) == {"changes": 0, "members": 0}
+
+
+def test_the_queueing_transaction_checks_the_member_again(world, monkeypatch):
+    """Should the pre-read check pass, the queue's own check still refuses a
+    Member who left: one read, no write, the entity invalidated."""
+    from parishkit.stewardship.responses import publication_worker
+
+    real = publication_worker.unlisted_changes
+    calls = []
+
+    def first_passes(ids):
+        """The pre-read check answers "still listed"; later ones are real."""
+        calls.append(ids)
+        return set() if len(calls) == 1 else real(ids)
+
+    plan = world.planned(uuid4())
+    _, run = world.confirm(plan)
+    leave(world.first, "moved")
+    reads = len(world.gateway.reads)
+    monkeypatch.setattr(publication_worker, "unlisted_changes", first_passes)
+    assert world.execute(run.run_id) and state(run) == "succeeded"
+    assert len(calls) == 2
+    assert len(world.gateway.reads) == reads + 1 and world.gateway.writes == []
     entity = PublicationEntity.objects.get(plan=plan)
     assert list(entity.outcomes.values_list("result", flat=True)) == ["invalidated"]
     assert proposal(world.first) == "pending"

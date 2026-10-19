@@ -54,9 +54,10 @@ def reconcile_proposals(snapshot, corpus, *, campaign_id):
     """Use the promotion owner's coherent corpus, never fetch a second generation.
 
     Family membership is checked before reading a Member's new values, even for
-    staff-derived reconciliation. A Member moved elsewhere (or gone, inactive
-    or deceased) is never read, so another household's private data is not
-    a source, and the change is kept as it is (rule 4). Canonically unchanged
+    staff-derived reconciliation. A Member moved elsewhere or gone is never
+    read, so another household's private data is not a source; nor is an
+    inactive or deceased one, except for a death date. Such a change is kept
+    as it is (rule 4). Canonically unchanged
     inputs keep their old reference; unrelated nightly refreshes do not create
     new retention pins or rewrite every pending proposal.
     """

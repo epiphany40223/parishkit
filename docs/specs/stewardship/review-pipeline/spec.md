@@ -522,8 +522,8 @@ change whose Member is no longer an active, living Member of its Family
 keeps its stage (rule 4) instead of being cancelled (or, for a death date,
 put in Conflict). That is safe because the update run refuses such a
 Member: its preflight leaves the change unplanned and does not read the
-Member for it, and the publish worker checks again before each read and
-write
+Member for it, and the publish worker checks again before it reads or
+writes
 ([review and publication](../data/spec.md#review-and-publication)). The
 worklist's Who cell shows the shared
 [ParishSoft status badge](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)

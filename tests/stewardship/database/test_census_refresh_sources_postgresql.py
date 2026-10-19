@@ -323,6 +323,16 @@ VARIANTS = {
         True,
     ),
     "removed": ({}, {}, False),
+    "moved and deceased": (
+        {"familyDUID": 2, "memberStatus": "Deceased"},
+        {"sendNoMail": True},
+        True,
+    ),
+    "moved and inactive": (
+        {"familyDUID": 2, "memberStatus": "Inactive"},
+        {"sendNoMail": True},
+        True,
+    ),
     "family inactive": ({}, {"sendNoMail": True, "famGroupID": 8}, True),
 }
 # (kind, key, field) of each census change the twins read for Family 1.
