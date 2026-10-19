@@ -121,6 +121,9 @@ class Action(StrEnum):
     # showed publication cannot carry as By hand; count: how many. Written
     # once, by the migration, as a system event with no subject.
     CENSUS_HANDLING_CORRECTED = "census_handling_corrected"
+    # The baseline refresh re-evaluation's Not seen start (#1689): written
+    # once, by migration 0132, as a system event with no subject.
+    REFRESH_CHECKS_STARTED = "refresh_checks_started"
     MINISTRY_ROSTER_ENTERED = "ministry_roster_entered"
     # Publication to ParishSoft (#528, DAT-09.01): a preflight's plan (count:
     # its entities), an Administrator's confirmation (count: entities to

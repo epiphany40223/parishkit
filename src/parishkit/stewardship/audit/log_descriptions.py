@@ -900,6 +900,12 @@ DESCRIPTIONS = {
         "automatically (a gender, a death date, a Family address, or an "
         "answer that removes a value) to By hand. Count is how many."
     ),
+    "refresh_checks_started": _(
+        "An upgrade started recording what each ParishSoft refresh finds for "
+        "census changes and Ministry requests already entered or decided, so "
+        "an entry ParishSoft does not show yet can be flagged Not seen in "
+        "ParishSoft."
+    ),
     "census_publication_planned": _(
         "The server checked approved census changes against ParishSoft and "
         "recorded what publishing them would write."

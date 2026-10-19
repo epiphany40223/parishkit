@@ -50,10 +50,18 @@ from parishkit.stewardship.responses.census_review import (
     resolvable,
     reviewable,
 )
-from parishkit.stewardship.responses.comparison import ADDRESS_COMPONENTS, ValueKind
+from parishkit.stewardship.responses.comparison import (
+    ADDRESS_COMPONENTS,
+    ValueKind,
+    canonical_value,
+)
 from parishkit.stewardship.responses.member_census import MEMBER_FIELDS, browser_value
 from parishkit.stewardship.responses.member_requests import REQUEST_FIELDS
 from parishkit.stewardship.responses.merge import KnownValue
+from parishkit.stewardship.responses.refresh_checks import (
+    FINAL_EXECUTIONS,
+    check_states,
+)
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.source.source_status import (
     NAME_NOT_RECORDED,
@@ -66,6 +74,7 @@ from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.dates import UnknownZone, browser_day_start
 from parishkit.stewardship.web.exports import csv_cell
+from parishkit.stewardship.web.review_worklist import NOT_SEEN
 
 # Plain labels for "What changed", from the census forms' own field labels.
 LABELS = {
@@ -94,7 +103,8 @@ HISTORY = frozenset({"superseded", "cancelled"})
 # The review worklist's Stage filter (#1683): the stages a census change
 # reaches, in the order the filter lists them, then History (superseded and
 # cancelled rows) and Every stage, which counts everything but History.
-# Entered incorrectly and Not seen in ParishSoft come with #1689.
+# Entered incorrectly and the Not seen in ParishSoft flag come from the
+# refresh checks (#1689); the flag is a choice of its own, after the stages.
 STAGES = (
     Stage.TO_REVIEW,
     Stage.CONFLICT,
@@ -102,6 +112,7 @@ STAGES = (
     Stage.UPDATING,
     Stage.TO_ENTER_BY_HAND,
     Stage.ENTERED_BY_HAND,
+    Stage.ENTERED_INCORRECTLY,
     Stage.UPDATED,
     Stage.CONFIRMED,
     Stage.IGNORED,
@@ -109,6 +120,7 @@ STAGES = (
 EVERY_STAGE = "all"
 STAGE_CHOICES = (
     *(stage.value for stage in STAGES),
+    NOT_SEEN,
     Stage.HISTORY.value,
     EVERY_STAGE,
 )
@@ -564,11 +576,16 @@ def census_rows(campaign_id):
             raise ReadUnavailable("Census change inputs are unavailable.")
         cursor.execute(ROWS, [NAME_NOT_RECORDED, campaign_id])
         rows = [dict(zip(COLUMNS, values, strict=True)) for values in cursor]
+    # The refresh checks (#1689) of the final changes, which place them.
+    checks = check_states(
+        proposals=[row["id"] for row in rows if row["execution"] in FINAL_EXECUTIONS]
+    )
     for row in rows:
         # JSON values arrive as text (cast in ROWS), whatever the driver's
         # own JSON handling, and are decoded once here.
         for name in JSON_COLUMNS:
             row[name] = None if row[name] is None else json.loads(row[name])
+        row["check"] = checks.get(row["id"])
     return [shape(row) for row in rows]
 
 
@@ -805,17 +822,44 @@ def placement(row):
     Accepted visible, not in force (the resubmission rule's census case,
     #1683).
     """
+    check = row.get("check")
     found = census_placement(
         decision=row["decision"],
         execution=row["execution"],
         handling=row["handling"],
         entity_kind=row["entity_kind"],
         admin_value_set=row["admin_value_set"],
+        check=check.outcome if check else None,
     )
     if row.get("reopened") and found.stage is Stage.CONFLICT and not found.decision:
         held = Decision.ACCEPTED_EDITED if row["admin_value_set"] else Decision.ACCEPTED
         return Placement(Stage.CONFLICT, held_decision=held)
     return found
+
+
+# Each Member field's comparison kind, for the Ignored rows' check below.
+MEMBER_KINDS = {field.name: field.kind for field in MEMBER_FIELDS}
+
+
+def now_matches(row):
+    """Whether ParishSoft now holds an Ignored change's Family answer.
+
+    Refresh rule 1 leaves an Ignored change Ignored and only notes this for
+    the reviewer (#1689). Its stored ParishSoft value is the latest refresh's
+    (reconciliation keeps it current while the change is open), compared by
+    the census compare rules. Only a Member field has a verified read.
+    """
+    kind = MEMBER_KINDS.get(row["field"])
+    if (
+        row["decision"] != "ignored"
+        or row["entity_kind"] != "member"
+        or kind is None
+        or not row["current_available"]
+    ):
+        return False
+    return canonical_value(kind, row["current_value"]) == canonical_value(
+        kind, row["submitted_value"]
+    )
 
 
 def family_answer(row):
@@ -865,6 +909,20 @@ def shape(row):
     shown["placement"] = placement(row)
     shown["stage"] = shown["placement"].stage.value
     shown["stage_label"] = shown["placement"].stage.label
+    # What the refresh checks found for a final change (#1689): ParishSoft's
+    # value now (the change's own stored value is frozen at its mark), and
+    # whether an Entered by hand change is still not seen there.
+    check = row.get("check")
+    if check is not None and check.observed and row["entity_kind"] == "member":
+        shown["parishsoft_read"] = bool(check.observed.get("available"))
+        shown["parishsoft_now"] = display(check.observed.get("value"))
+    shown["not_seen"] = bool(
+        check is not None
+        and check.not_seen(shown["placement"].stage is Stage.ENTERED_BY_HAND)
+    )
+    shown["now_matches"] = shown["placement"].stage is Stage.IGNORED and now_matches(
+        row
+    )
     # What a person may record on this row now (#528): the page offers only
     # these, and the service and SQL check them again. Reopen is the
     # Administrator's; the page shows it only to them.
@@ -911,6 +969,8 @@ def shape(row):
 
 def wanted(row, query, *, administrator):
     """Whether the Stage filter (or pk-admin's status filter) keeps ``row``."""
+    if query.stage == NOT_SEEN:
+        return row["not_seen"]
     if query.stage:
         return query.stage == row["stage"] or (
             query.stage == EVERY_STAGE and row["stage"] != Stage.HISTORY.value
@@ -963,6 +1023,9 @@ def select(rows, query, *, administrator):
     stages = {}
     for row in rows:
         stages[row["stage"]] = stages.get(row["stage"], 0) + 1
+        if row["not_seen"]:
+            # A flag on Entered by hand, counted beside it.
+            stages[NOT_SEEN] = stages.get(NOT_SEEN, 0) + 1
     return {
         "rows": kept,
         "status_counts": counts,

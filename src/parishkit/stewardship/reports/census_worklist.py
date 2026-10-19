@@ -57,9 +57,14 @@ from parishkit.stewardship.responses.models import (
     CensusAdditionResolution,
     ProposedChange,
 )
+from parishkit.stewardship.responses.refresh_checks import (
+    FINAL_EXECUTIONS,
+    check_states,
+)
 from parishkit.stewardship.source.source_status import source_status_label
 from parishkit.stewardship.web.presentation import duid
 from parishkit.stewardship.web.review_worklist import (
+    NOT_SEEN,
     WORDS,
     Column,
     StaleDecision,
@@ -110,13 +115,17 @@ def _withheld(row):
     Edit for a field no value can be typed for (moved, deceased, the email
     opt-out, a New Member), and Accept and Edit on a Conflict whose
     ParishSoft value is unknown, which waits for a refresh: Accept on a
-    Conflict is decided against ParishSoft's current value.
+    Conflict is decided against ParishSoft's current value. Entered
+    incorrectly's two fixes come with #1737; until then a refresh confirms
+    the change once ParishSoft holds the reviewer's value.
     """
     withheld = set()
     if row["editor"] is None:
         withheld.add(Action.EDIT)
     if row["placement"].stage is Stage.CONFLICT and not row["resolvable"]:
         withheld |= {Action.ACCEPT, Action.EDIT}
+    if row["placement"].stage is Stage.ENTERED_INCORRECTLY:
+        withheld |= {Action.BACK_TO_REVIEW, Action.ENTERED_BY_HAND}
     if row.get("covered"):
         # An open addition of the field stands in for it (#1710).
         withheld.add(Action.BACK_TO_REVIEW)
@@ -169,11 +178,15 @@ def worklist_rows(rows):
 
 
 def stage_counts(counts):
-    """The Stage filter's counts without History, which Every stage leaves out."""
+    """The Stage filter's counts without History, which Every stage leaves out.
+
+    Not seen in ParishSoft (#1689) is a choice only while some change has
+    the flag.
+    """
     return {
-        stage.value: counts.get(stage.value, 0)
-        for stage in STAGES
-        if counts.get(stage.value)
+        value: counts.get(value, 0)
+        for value in (*(stage.value for stage in STAGES), NOT_SEEN)
+        if counts.get(value)
     }
 
 
@@ -468,6 +481,15 @@ class CensusDecisions:
         additions' placements, which offer only their own later steps.
         """
         roles = self._roles(principal)
+        # A final change is placed by its latest refresh check (#1689), as
+        # the page placed it.
+        checks = check_states(
+            proposals=[
+                pk
+                for pk, proposal in proposals.items()
+                if proposal.execution in FINAL_EXECUTIONS
+            ]
+        )
         stages = [
             (
                 census_placement(
@@ -476,6 +498,7 @@ class CensusDecisions:
                     handling=proposal.handling,
                     entity_kind=proposal.entity_kind,
                     admin_value_set=proposal.admin_value_set,
+                    check=checks[str(pk)].outcome if str(pk) in checks else None,
                 ).stage,
                 census_by_hand(proposal.handling, proposal.entity_kind),
             )
