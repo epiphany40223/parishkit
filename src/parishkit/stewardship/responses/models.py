@@ -497,7 +497,9 @@ class CensusAddition(ImmutableRecord):
     ParishSoft, shown as *Added by the parish*. It never touches the
     Family's submitted answers or the proposals derived from them, so the
     Family submit path and its guards are unchanged. It may name the
-    Family's ignored change it was added in place of (``in_place_of``).
+    Family's ignored change it was added in place of (``in_place_of``),
+    and the database records ParishSoft's value of the field at that moment
+    (``baseline``).
     Who, when and the note are the row's own; its one later step (Entered
     by hand or withdrawn) is a ``CensusAdditionResolution``. SQL checks the
     actor, the campaign, the Family, the field and the value's shape again
@@ -519,6 +521,13 @@ class CensusAddition(ImmutableRecord):
     )
     request_key = models.UUIDField()
     note = models.TextField(default="", blank=True)
+    # ParishSoft's value of the field when the change was added, as the
+    # census source reads it ({"available": ..., "value": ...}), and the
+    # snapshot it came from: the baseline a refresh re-evaluates the
+    # addition against (review pipeline, "Baseline refresh re-evaluation",
+    # #1689). The guard sets both; NULL when the source has no such field.
+    baseline = models.JSONField(null=True, editable=False)
+    baseline_source_id = models.UUIDField(null=True, editable=False)
 
     class Meta:
         db_table = "stewardship_census_addition"

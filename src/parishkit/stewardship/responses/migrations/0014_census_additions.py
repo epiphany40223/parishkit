@@ -84,6 +84,11 @@ class Migration(migrations.Migration):
                         ("value", models.JSONField()),
                         ("request_key", models.UUIDField()),
                         ("note", models.TextField(blank=True, default="")),
+                        ("baseline", models.JSONField(editable=False, null=True)),
+                        (
+                            "baseline_source_id",
+                            models.UUIDField(editable=False, null=True),
+                        ),
                         (
                             "family",
                             models.ForeignKey(

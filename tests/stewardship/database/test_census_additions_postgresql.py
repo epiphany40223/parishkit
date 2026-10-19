@@ -96,6 +96,11 @@ def test_an_address_add_follows_the_familys_address_rules(response_service):
     assert refused.value.code == "add_value"
     addition, _ = add(harness, staff, campaign, address_form(rows, line1="5 New St"))
     assert addition.entity_kind == "family"
+    # A Family address is never read from ParishSoft: no known baseline.
+    assert CensusAddition.objects.get(pk=addition.pk).baseline == {
+        "available": False,
+        "value": None,
+    }
     assert addition.entity_key == str(family_duid(rows))
     assert addition.value["line1"] == "5 New St"
 
@@ -303,3 +308,40 @@ def test_do_block_refuses_a_missing_guard_and_installs_whole():
             " ON stewardship_census_addition"
         )
         cursor.execute(check)
+
+
+def test_the_guard_records_parishsofts_value_when_added(response_service):
+    """The database, not the writer, records ParishSoft's value of the field
+    at the Add and the snapshot it came from (#1689 re-evaluates against it)."""
+    harness, _, staff, rows = prepared(response_service)
+    addition, _ = add(
+        harness, staff, campaign_of(rows), member_form(rows, "last_name", "Newname")
+    )
+    stored = CensusAddition.objects.get(pk=addition.pk)
+    assert stored.baseline["available"] is True
+    assert stored.baseline_source_id == rows["first_name"].current_source_id
+
+
+def test_a_replayed_key_with_another_value_is_refused(response_service):
+    """The value is part of an Add's intent: the same key with another value
+    is refused, not read as a replay."""
+    harness, _, staff, rows = prepared(response_service)
+    campaign, key = campaign_of(rows), uuid4()
+    add(harness, staff, campaign, member_form(rows, "nickname", "Bo"), key=key)
+    with pytest.raises(KeyRebound):
+        add(harness, staff, campaign, member_form(rows, "nickname", "Bob"), key=key)
+    assert CensusAddition.objects.count() == 1
+
+
+def test_sql_refuses_a_forged_replacement_of_an_open_change(response_service):
+    """An addition may name only the Family's open ignored change."""
+    harness, _, staff, rows = prepared(response_service)
+    family = rows["prefix"].submission.family_id
+    with pytest.raises((IntegrityError, DatabaseError), match="replaces no ignored"):
+        forge(
+            "INSERT INTO stewardship_census_addition (id,correlation_id,actor_id,"
+            "request_key,family_id,entity_kind,entity_key,field,value,note,"
+            "in_place_of_id) VALUES (gen_random_uuid(),gen_random_uuid(),%s,"
+            "gen_random_uuid(),%s,'member','3','nickname','\"Bo\"'::jsonb,'',%s)",
+            [staff, family, rows["prefix"].pk],
+        )

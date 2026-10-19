@@ -304,24 +304,34 @@ def add_census_change(store, actor_id, campaign_id, add, *, note, request_key):
             if add["entity_kind"] == "member"
             else str(family.family_duid)
         )
-        identity = (family.pk, add["entity_kind"], entity_key, add["field"])
+        campaign = Campaign.objects.select_related("active_configuration").get(
+            pk=campaign_id
+        )
         previous = CensusAddition.objects.filter(
             actor_id=actor_id, request_key=request_key
         ).first()
         if previous is not None:
-            if identity != (
+            # The whole Add is the intent: a lost answer sent again replays,
+            # the same key with any other Family, field, value or replaced
+            # change is refused.
+            if (family.pk, add["entity_kind"], entity_key, add["field"]) != (
                 previous.family_id,
                 previous.entity_kind,
                 previous.entity_key,
                 previous.field,
+            ) or (add["in_place_of"] or None) != (
+                str(previous.in_place_of_id) if previous.in_place_of_id else None
             ):
+                raise KeyRebound("This request key is already bound.")
+            try:
+                same = _value(add, campaign) == previous.value
+            except AddRefusal:
+                same = False
+            if not same:
                 raise KeyRebound("This request key is already bound.")
             return previous, False
         if add["entity_kind"] == "member":
             _member_listed(family, entity_key)
-        campaign = Campaign.objects.select_related("active_configuration").get(
-            pk=campaign_id
-        )
         value = _value(add, campaign)
         _no_open_change(family, add["entity_kind"], entity_key, add["field"])
         replaced = _in_place_of(family, add["in_place_of"])
@@ -347,6 +357,27 @@ def add_census_change(store, actor_id, campaign_id, add, *, note, request_key):
             context={"outcome": Outcome.CHANGED, "version": 1},
         )
         return addition, True
+
+
+def covering_additions(proposals):
+    """The ids of ``proposals`` that an open addition covers.
+
+    An open addition of the same Family, Member (or Family) and field. An
+    ignored change it covers is not reopened while it is open, so the
+    field never has two open changes, one Ready to update and the other To
+    enter by hand with another value (#1710).
+    """
+    covered = set()
+    for proposal in proposals:
+        if CensusAddition.objects.filter(
+            family_id=proposal.submission.family_id,
+            entity_kind=proposal.entity_kind,
+            entity_key=proposal.entity_key,
+            field=proposal.field,
+            resolution__isnull=True,
+        ).exists():
+            covered.add(proposal.pk)
+    return covered
 
 
 def resolve_census_additions(

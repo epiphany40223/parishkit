@@ -25,7 +25,10 @@
 -- one), not blank; the change it is added in place of is that Family's
 -- open ignored census change; and no open change for the same field is
 -- waiting already (an open addition, or a Family's change not ignored),
--- since that one is decided with its own icons. A resolution comes from a
+-- since that one is decided with its own icons. The guard records
+-- ParishSoft's value of the field from the current snapshot (baseline,
+-- baseline_source_id), the baseline a refresh re-evaluates the addition
+-- against (#1689). A resolution comes from a
 -- current Staff member or Administrator, in a campaign that admits
 -- changes. A deferred check on each requires its census_change_updated
 -- audit event, as the review and resolution rows have theirs. Neither
@@ -34,7 +37,7 @@
 SET LOCAL check_function_bodies = false;
 SET LOCAL search_path = public;
 
-CREATE TABLE "stewardship_census_addition" ("id" uuid NOT NULL PRIMARY KEY, "created_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL, "actor_id" uuid NULL, "correlation_id" uuid NOT NULL, "entity_kind" varchar(20) NOT NULL, "entity_key" varchar(36) NOT NULL, "field" varchar(40) NOT NULL, "value" jsonb NOT NULL, "request_key" uuid NOT NULL, "note" text NOT NULL, "family_id" uuid NOT NULL, "in_place_of_id" uuid NULL, CONSTRAINT "census_addition_replay" UNIQUE ("actor_id", "request_key"), CONSTRAINT "census_addition_identity" CHECK (("actor_id" IS NOT NULL AND ((entity_kind)::text = ANY ((ARRAY['family'::character varying, 'member'::character varying])::text[])) AND NOT ("entity_key" = '') AND NOT ("field" = ''))));
+CREATE TABLE "stewardship_census_addition" ("id" uuid NOT NULL PRIMARY KEY, "created_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL, "actor_id" uuid NULL, "correlation_id" uuid NOT NULL, "entity_kind" varchar(20) NOT NULL, "entity_key" varchar(36) NOT NULL, "field" varchar(40) NOT NULL, "value" jsonb NOT NULL, "request_key" uuid NOT NULL, "note" text NOT NULL, "baseline" jsonb NULL, "baseline_source_id" uuid NULL, "family_id" uuid NOT NULL, "in_place_of_id" uuid NULL, CONSTRAINT "census_addition_replay" UNIQUE ("actor_id", "request_key"), CONSTRAINT "census_addition_identity" CHECK (("actor_id" IS NOT NULL AND ((entity_kind)::text = ANY ((ARRAY['family'::character varying, 'member'::character varying])::text[])) AND NOT ("entity_key" = '') AND NOT ("field" = ''))));
 CREATE TABLE "stewardship_census_addition_resolution" ("id" uuid NOT NULL PRIMARY KEY, "created_at" timestamp with time zone DEFAULT (STATEMENT_TIMESTAMP()) NOT NULL, "actor_id" uuid NULL, "correlation_id" uuid NOT NULL, "action" varchar(12) NOT NULL, "request_key" uuid NOT NULL, "note" text NOT NULL, "addition_id" uuid NOT NULL UNIQUE, CONSTRAINT "census_addition_resolution_replay" UNIQUE ("actor_id", "request_key"), CONSTRAINT "census_addition_resolution_identity" CHECK (("actor_id" IS NOT NULL AND ((action)::text = ANY ((ARRAY['entered'::character varying, 'withdrawn'::character varying])::text[])))));
 ALTER TABLE "stewardship_census_addition" ADD CONSTRAINT "stewardship_census_a_family_id_02c8104c_fk_stewardsh" FOREIGN KEY ("family_id") REFERENCES "stewardship_family_campaign" ("id") DEFERRABLE INITIALLY DEFERRED;
 ALTER TABLE "stewardship_census_addition" ADD CONSTRAINT "stewardship_census_a_in_place_of_id_4bd55dee_fk_stewardsh" FOREIGN KEY ("in_place_of_id") REFERENCES "stewardship_proposed_change" ("id") DEFERRABLE INITIALLY DEFERRED;
@@ -127,6 +130,16 @@ BEGIN
              AND p.execution IN ('pending','conflict','queued','failed'))
     THEN RAISE EXCEPTION 'Census addition duplicates an open change'
         USING ERRCODE='23514'; END IF;
+    -- ParishSoft's value of the field now, from the current snapshot, as
+    -- the census source reads it: the baseline a refresh re-evaluates the
+    -- addition against. Database-owned, as attribution time is.
+    SELECT c.snapshot_id INTO NEW.baseline_source_id
+        FROM public.stewardship_source_current c WHERE c.singleton;
+    NEW.baseline := CASE NEW.entity_kind
+        WHEN 'family' THEN public.stewardship_response_household_source_v1(
+            NEW.baseline_source_id,NEW.family_id,NEW.entity_key,NEW.field)
+        ELSE public.stewardship_response_field_source_v1(
+            NEW.baseline_source_id,NEW.family_id,NEW.entity_key,NEW.field) END;
     -- Attribution time is database-owned.
     NEW.created_at:=statement_timestamp();
     RETURN NEW;
@@ -217,6 +230,7 @@ BEGIN
               AND prosrc LIKE '%stewardship_member_source_status_v1(%'
               AND prosrc LIKE '%Census addition replaces no ignored change%'
               AND prosrc LIKE '%Census addition duplicates an open change%'
+              AND prosrc LIKE '%NEW.baseline := CASE NEW.entity_kind%'
               AND NOT prosecdef
               AND proconfig=ARRAY['search_path=pg_catalog, public, pg_temp'])
        OR NOT EXISTS(SELECT 1 FROM pg_proc

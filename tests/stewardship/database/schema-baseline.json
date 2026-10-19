@@ -1,7 +1,7 @@
 {
   "columns": {
-    "count": 2903,
-    "sha256": "fb60d44b4e40003836128030daafcfc27dcdc4cd652a6b61e23846b9990149fc"
+    "count": 2905,
+    "sha256": "d67a717c291250050b27af6eab1b1bfb902da293606b47f9d66ccb1f725fe952"
   },
   "constraints": {
     "count": 4011,
@@ -9,7 +9,7 @@
   },
   "functions": {
     "count": 753,
-    "sha256": "1b2e9a4c6d7cc7e8d84a985385d447976e6855f1e528eff782b05c9e296e5902"
+    "sha256": "a74b2349f05617785158471904d866284d409a1659399f561f00c04a238fd596"
   },
   "indexes": {
     "count": 1177,
