@@ -1447,31 +1447,45 @@ as it runs the other
 `DESTRUCTIVE_CONFIRMATION` has no caller today; a later workflow that uses it
 decides in its own specification whether automation may.
 
-Two secret request guards check the sign-in instant recorded on the request,
-not a session row: `stewardship_sealed_intake_admission_v1` (on insert of a
-`stewardship_secret_request` by the web login) and `stewardship_secret_state_v2`
-(at the staged-to-testing step, run as the target's installer login
-`pk_stewardship_credential_<target>`). Every other condition stays, including
-the setup-install branch and the rule about empty required consumers.
-Before #1547 they refused an instant older than five minutes unless
-`stewardship_automation_fresh_principal_v1(requested_by, instant)` (a
-`SECURITY DEFINER` function the web and installer logins may execute) admitted
-a live full-scope automation session with that instant; migration 0114 removed
-the age check, so the recorded instant may be of any age. Instead both guards
-call `stewardship_automation_instant_ended_v1(requested_by, instant)` (new in
-0114, `SECURITY DEFINER`, granted to the same logins): an instant that a
-full-scope automation session of the requester holds needs one such session
-still live. So a request made through an automation session that was revoked
-or expired before the installer's test does not move to testing (it expires
-and is cleaned up), and that session can stage no other. A request's instant
-cannot tell a browser from an automation session, because an automation
-session records its approving browser sign-in: once every full-scope
-automation session a browser session approved has ended, that browser
-session's own requests are refused too, and the Administrator signs in again
-(a new instant) to replace a key. An instant that no full-scope automation
-session holds, an ordinary browser sign-in, always passes. Python's check
-(`sign_in_instant`) still requires the live full-scope session at submission,
-under the intake lock and again under the work lock.
+A request made through an automation session records that session in
+`stewardship_secret_request.automation_session_id` (frozen migration 0125,
+[#1763](https://github.com/epiphany40223/parishkit/issues/1763)); a browser
+request records none (NULL, as every request made before 0125 does). Python
+sets it only for an automation caller, from the admitted caller, never from
+the request's input. Two secret request guards check it:
+`stewardship_sealed_intake_admission_v1` (on insert of a
+`stewardship_secret_request`) and `stewardship_secret_state_v2` (at the
+staged-to-testing step, run as the target's installer login
+`pk_stewardship_credential_<target>`). For a request that names a session,
+both call `stewardship_automation_request_live_v1(session, requested_by,
+instant)` (`SECURITY DEFINER`, granted to the web and the parishsoft,
+google_workspace and slack installer logins, never to PUBLIC): the session
+must be live, of full scope, the requester's and hold the request's recorded
+sign-in instant. So a request made through an automation session that was
+revoked or expired before the installer's test does not move to testing (it
+expires and is cleaned up), and that session can stage no other. Only the web
+or the schema owner may insert a request that names a session, and only those
+three targets take one; any other login or target is refused. A request that
+names no session gets no automation check, so a browser session's key
+replacements never depend on the automation sessions it approved. The
+recorded sign-in instant may be of any age (#1547). Intake checks a named
+session whatever the required consumers; staged-to-testing still refuses
+empty required consumers, and every other condition stays. A setup install's
+request names no session, so 0114's skip of the automation check for a live
+setup install is gone with the check it skipped. The named session cannot
+change after intake. Python's check (`sign_in_instant`) still requires the
+live full-scope session at submission, under the intake lock and again under
+the work lock.
+
+Before #1547 the guards refused an instant older than five minutes unless
+`stewardship_automation_fresh_principal_v1(requested_by, instant)` admitted a
+live full-scope automation session with that instant. Migration 0114 removed
+the age check and called `stewardship_automation_instant_ended_v1(requested_by,
+instant)` instead, which refused an instant once every full-scope automation
+session holding it had ended. Because an automation session records its
+approving browser's sign-in instant, that also refused the browser session's
+own requests until the Administrator signed in again; 0125 replaced it with
+the named session and dropped it.
 
 The setup guards (`stewardship_setup_install_binding_v1`,
 `stewardship_setup_secret_guard_v1`) do not change.
@@ -2731,6 +2745,7 @@ deleted when the export ends, so nothing regenerates it.
 | `campaign_comparison_export` | `export comparison [--day N] --format F [--timezone Z]` ([#1018](https://github.com/epiphany40223/parishkit/issues/1018) slice 6, [downloads](../campaign-history/spec.md#downloads-and-sharing)): the page's download form, through the same capture (`comparison_exports.read_capture`) and service (`create_comparison_export`), with the page's `campaign_comparison_exported` and `admin_cmd_export_comparison`; without `--timezone` the file's request time uses the parish's time zone ([#1161](https://github.com/epiphany40223/parishkit/issues/1161)) |
 | `daily_digest_chart`, `daily_digest_download` | Permanent: PNG images; the data is in the matching report or digest read |
 | `financial_report`, `limitations_report`, `information_queue` | `report financial`, `report limitations`, `report information`: summaries and counts (PR 8c; `report limitations` was `report talents` until #970), by worklist stage with `--stage` ([#1735](https://github.com/epiphany40223/parishkit/issues/1735)); Family-level rows only as exports (PR 8e, PR 8h for limitations). The worklists' decisions ([#1685](https://github.com/epiphany40223/parishkit/issues/1685)) are `limitations decide` and `information decide`, through the pages' own `LimitationDecisions` and `InformationDecisions` services; `information list` prints the requests' ids, versions, stages and actions, never their content ([#1735](https://github.com/epiphany40223/parishkit/issues/1735)) |
+| `pledges_to_enter`, `pledges_to_enter_export` ([#1686](https://github.com/epiphany40223/parishkit/issues/1686)) | `report pledges` (counts by stage), `pledges decide` and `export pledges` ([#1733](https://github.com/epiphany40223/parishkit/issues/1733)), through the page's own read, `PledgeDecisions` service and `export_body`; the rows with their ids and versions only as `export pledges --format jsonl`, as for `export census` |
 | `information_item` | One Family's submission and its follow-up history: `followup information-show ITEM_ID` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11b; see [users and follow-up](#users-and-follow-up)); it prints only the item's state and history, and the submission's content comes through `export information` (PR 8e) |
 | `ministry_report` | `report ministry`, and `report ministry --ministry DUID --requests join\|leave` for one Ministry's join or leave count (PR 8c); rows only as exports (PR 8e). The Members joining and leaving pages (`ministry_joiners`, `ministry_leavers`) were retired ([#1157](https://github.com/epiphany40223/parishkit/issues/1157)); the commands stay, and `export ministry`, which writes one Ministry's join or leave list, now covers this summary, whose counts it lists. Since [#1133](https://github.com/epiphany40223/parishkit/issues/1133) the page is one Ministry requests page with the follow-up queue: its By Ministry counts are `report ministry`'s summary, and its queue is `followup list` (PR 11a) |
 | `ministry_packet` | A packet of Members' contacts, so export only: `export ministry-packet` (PR 8e) |
@@ -2902,6 +2917,61 @@ ids, version and time and whether an edit is now set (`edited`);
 `census resolve-conflict` prints `census review`'s document. Neither prints
 the value, the note, the Family or the Member. Standard input carries only
 one of `--value -` and `--note -`.
+
+`report pledges [--stage to_review|to_enter_by_hand|entered_by_hand|ignored|all]`
+([#1733](https://github.com/epiphany40223/parishkit/issues/1733)) counts
+[Pledges](../reports/spec.md#pledges) as `report census`
+counts Census changes: the page's admission (`pledge_review_views._principal`:
+Administrators and Staff, never a Ministry leader), passive so any session
+scope reads, the shared report read, and the page's `pledge_rows` without a
+search. A campaign without Financial stewardship is `not_available`. Each row
+names a Family and its pledge, so it prints counts only: `matching` (the
+rows at `--stage`, To review by default, as on the page), `total`, and
+`stages`, every pledge by stage including zeros. It records the page's
+`pledges_to_enter_viewed` with a `count` of 0, and `report list` offers it,
+as the menu does. `export pledges` takes the same `--stage` with `--format
+csv|xlsx|pdf|jsonl` and `--timezone`, streamed as `export census` is: CSV,
+XLSX and PDF are the page's own file (`pledge_review_views.export_body`);
+`jsonl` is the command's own format, the files' columns under fixed keys plus
+`item_id`, `version` and `actions` (the decisions the reader may record on
+the row now, empty while other campaign work holds the campaign), the same
+recorded exception as `export census`'s. It records the page's
+`pledges_to_enter_exported` with the rows in the file, and no `admin_cmd_*`
+event.
+
+`pledges decide --action accept|edit|ignore|back_to_review|entered_by_hand
+--item ID:VERSION [--item ...] [--amount TEXT --frequency F] [--note TEXT|-]
+[--request-key KEY]`
+([#1733](https://github.com/epiphany40223/parishkit/issues/1733)) is a
+Pledges row's action or its bulk bar: full scope, keyed and not
+fresh-gated. Entered by hand is final, so `entered_by_hand` [prompts by
+default](#mitigations) (or takes `--yes`); the others can be changed again
+and ask nothing, as on the page. It checks the page's admission first, so a
+Ministry leader is `denied` before any input or prompt, and refuses a choice
+the page could not post (more than 100 pledges, an Edit of more than one, a
+note over 2,000 characters, or an Edit value the Family form would refuse)
+before the prompt. In the page's command scope it checks the current
+campaign as the page does (one without Financial stewardship is
+`not_available`), finds every item as a Live response of it (any other is
+`not_available`), and builds the `WorklistDecision` the page would
+post (one item with the key itself, several as the bulk bar with each item's
+key derived from it) for the page's `pledge_review.PledgeDecisions`, so every
+rule is the page's, in Python and in the SQL guard of the
+[financial stream](../review-pipeline/spec.md): the role, the item's version,
+the actions its stage offers, a note to reopen an ignored pledge, and an
+Edit's amount and frequency checked as the Family form checks them. All or
+none: an item someone decided first, or that the Family answered again since,
+is `stale_version`; anything else refused is `invalid`, an Edit value at its
+option (`amount`, `frequency`) with the service's static reason, never the
+value. The service records `pledge_review_updated` for each row, with the
+session's user as the actor, and the command `admin_cmd_pledges_decide` once
+in the same transaction, only for a new key: a repeat with the same
+pledges, decision and Edit value returns the recorded rows (`created`
+false), and any other use of the key (other pledges, another decision or
+another value; matched against the key itself and each pledge's key
+derived from it) is `invalid`, so one key never records two decisions. It prints each recorded row's `id`,
+`item_id`, `sequence`, `action`, `decision`, `entered` and `created_at`,
+never the amount, the note or the Family.
 
 The digest commands (PR 8d) read a retained report an emailed digest
 links to from its stored snapshot, through its page's own functions
@@ -4238,18 +4308,22 @@ time:
    automation session only replaces the sign-in after it (migration 0114
    later dropped the sign-in-after-cleanup and five-minute clauses; the
    session-bound guards still call `stewardship_automation_fresh_v1` for a
-   command session, and the secret request guards call 0114's
+   command session, and the secret request guards called 0114's
    `stewardship_automation_instant_ended_v1` instead of the principal
-   helper). Admission
+   helper, until 0125 bound a request to its named automation session).
+   Admission
    (`admit_admin_action`) refuses an automation caller for
    `DESTRUCTIVE_CONFIRMATION`, which no workflow uses yet. As the
    [secret replacement](#secret-replacement) rules accept, the two secret
    request guards bind the principal and the recorded sign-in instant, not
    a session row: any live full-scope session of that Administrator with
-   that instant admits the request. The secret guards call the function
+   that instant admits the request (until frozen migration 0125, #1763,
+   bound a request to the automation session it names). The secret guards
+   call the function
    only for the logins granted it (the web or the schema owner at intake;
    the parishsoft, google_workspace and slack installers at testing), so
-   any other login keeps its plain refusal. `sign_in_instant` refuses an
+   any other login keeps its plain refusal (since 0125, any other login
+   that names a session is refused). `sign_in_instant` refuses an
    automation caller outside a transaction, since the row lock must last
    until the action commits. Telling an automation action apart in the
    audit trail (its `admin_cmd_*` event and the fresh-gated notice) comes

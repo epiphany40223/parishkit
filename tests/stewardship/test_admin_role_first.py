@@ -23,6 +23,7 @@ from parishkit.stewardship import (
     admin_hosted_files,
     admin_integration_changes,
     admin_integration_keys,
+    admin_pledges,
     admin_roster_tick,
     admin_tests,
     admin_worklists,
@@ -90,6 +91,9 @@ ADMITTING_READ = {
     # (#1735).
     "information decide": (admin_worklists, "admit_decide", {}),
     "limitations decide": (admin_worklists, "admit_decide", {}),
+    # The worklist pages' own admission: Administrators and Staff only
+    # (#1733).
+    "pledges decide": (admin_pledges, "admit_decide", {}),
 }
 
 # Everything a handler may read, look up or prompt with after its role check.

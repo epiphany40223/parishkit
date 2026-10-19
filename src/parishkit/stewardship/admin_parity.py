@@ -272,6 +272,12 @@ LEDGER = {
     "daily_digest_chart": permanent(IMAGES),
     "daily_digest_download": permanent(IMAGES),
     "financial_report": command("report financial"),
+    # Pledges (#1686, #1733): counts only, as its rows name
+    # Families and their pledges; its decisions go through the page's own
+    # PledgeDecisions service, and its rows with their ids and versions are
+    # export pledges --format jsonl's.
+    "pledges_to_enter": command("report pledges", "pledges decide"),
+    "pledges_to_enter_export": command("export pledges"),
     # Limitations (#1685, #1735): counts by stage only, as its rows name
     # Families and Members; its decisions go through the page's own
     # LimitationDecisions service, and its rows with their ids and versions

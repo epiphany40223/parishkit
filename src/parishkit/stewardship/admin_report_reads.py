@@ -57,6 +57,7 @@ REPORT_COMMANDS = {
     "response_dashboard": ("report responses", "report participation"),
     "campaign_comparison": ("report comparison",),
     "financial_report": ("report financial",),
+    "pledges_to_enter": ("report pledges",),
     "limitations_report": ("report limitations",),
     "census_changes": ("report census",),
     "information_queue": ("report information",),
@@ -907,7 +908,8 @@ def read_limitations(caller, service, stage="all"):
         # As the page: the snapshot is named only when no refresh promoted
         # another between the statements of the read.
         before = current_snapshot()
-        result = limitations_report(campaign_id, query, actor)
+        # Only the summary is printed, so Pledges' rows are not read.
+        result = limitations_report(campaign_id, query, actor, contributions=False)
         snapshot = before if current_snapshot() == before else None
         model = limitations_model(campaign_id, result, stage)
         return model, audit_choices(query, snapshot)

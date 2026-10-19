@@ -10,7 +10,13 @@ Families' answers, its Show filter and its download below the table.
 
 import pytest
 
-from .limitations_components import ACCEPTED, ACCEPTED_NOTICE, PATH
+from .limitations_components import (
+    ACCEPTED,
+    ACCEPTED_NOTICE,
+    CONTRIBUTION,
+    PATH,
+    PLEDGES_LINK,
+)
 from .test_bulk_bar import assert_accessible
 from .test_table_sorting import MARK, MARKED, fulfil_post_with
 from .waits import has_text
@@ -84,3 +90,17 @@ def test_the_page_fits_and_has_no_wcag_violation(
     page.goto(component_origin + "/limitations-report")
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     assert_accessible(page, axe_source)
+
+
+def test_cannot_contribute_is_listed_but_decided_on_pledges(page, component_origin):
+    """A Family's Cannot contribute financially answer is a row with its
+    Pledges stage and a link to Pledges, and no box or icon (R39 finding
+    11): it is decided once, on Pledges."""
+    page.goto(component_origin + CONTRIBUTION)
+    row = page.locator("#table tbody tr").filter(has_text="Dalton")
+    assert "Cannot contribute financially" in row.inner_text()
+    assert "To review" in row.inner_text()
+    link = row.get_by_role("link", name="Open in Pledges: the answer of Dalton")
+    assert link.get_attribute("href") == PLEDGES_LINK
+    assert row.locator("input[type=checkbox]").count() == 0
+    assert row.locator("[data-row-action]").count() == 0

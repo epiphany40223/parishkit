@@ -145,6 +145,12 @@ class Action(StrEnum):
     CENSUS_PUBLICATION_VIEWED = "census_publication_viewed"
     ROSTER_CHANGES_VIEWED = "roster_changes_viewed"
     ROSTER_CHANGES_EXPORTED = "roster_changes_exported"
+    # Pledges (#1686): opening and downloading it (count: rows),
+    # and one decision on a Family's pledge, whose subject is its
+    # stewardship_pledge_review row; no event holds an amount.
+    PLEDGES_TO_ENTER_VIEWED = "pledges_to_enter_viewed"
+    PLEDGES_TO_ENTER_EXPORTED = "pledges_to_enter_exported"
+    PLEDGE_REVIEW_UPDATED = "pledge_review_updated"
     RESPONSE_DASHBOARD_VIEWED = "response_dashboard_viewed"
     # The lists of Families behind the response funnel (#477): one event type
     # per list, so the audit names the list without a new context field. The
@@ -374,6 +380,9 @@ class Action(StrEnum):
     # item or in bulk (#1735).
     ADMIN_CMD_INFORMATION_DECIDE = "admin_cmd_information_decide"
     ADMIN_CMD_LIMITATIONS_DECIDE = "admin_cmd_limitations_decide"
+    # pledges decide: a Pledges decision, one pledge or in bulk
+    # (#1733).
+    ADMIN_CMD_PLEDGES_DECIDE = "admin_cmd_pledges_decide"
 
 
 # Closed field identifiers are operational metadata, never census values.

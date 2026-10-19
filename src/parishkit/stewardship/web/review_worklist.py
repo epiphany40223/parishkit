@@ -353,13 +353,20 @@ def _decorate(stream, row, roles, prefix, columns):
     """
     placement = row["placement"]
     name = row["name"]
-    icons = row_icons(
-        stream,
-        placement,
-        roles,
-        name=name,
-        leads=row.get("leads", False),
-        by_hand=row.get("by_hand", False),
+    # A row decided on another page (``elsewhere``: its label and link, a
+    # Limitations page's Cannot contribute financially row, decided on
+    # Pledges) offers no icon and so no box; its Actions cell is the link.
+    icons = (
+        []
+        if row.get("elsewhere")
+        else row_icons(
+            stream,
+            placement,
+            roles,
+            name=name,
+            leads=row.get("leads", False),
+            by_hand=row.get("by_hand", False),
+        )
     )
     key = uuid4()
     reopen = placement.stage is Stage.IGNORED

@@ -137,10 +137,12 @@ def test_a_key_is_staged_installed_and_switched_with_its_trail(keys, caplog):  #
     # The prompt named the integration, never the key.
     assert "This replaces the ParishSoft key" in errors
     # Staged as the session's Administrator, with the automation sign-in
-    # instant standing in for the page's fresh sign-in.
+    # instant standing in for the page's fresh sign-in, and naming the
+    # session the guards require live (#1763).
     session = AutomationSession.objects.get(pk=row.pk)
     assert staged.requested_by_id == session.principal_id
     assert staged.reauthenticated_at == session.authenticated_at
+    assert staged.automation_session_id == row.pk
     assert staged.expected_fingerprint == file_fingerprint(PRIOR)
     assert trail() == (1, 1, 1, 1)
     event = AuditEvent.objects.get(event_type=EVENT)

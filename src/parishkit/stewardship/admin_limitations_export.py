@@ -159,7 +159,12 @@ def export_limitations(caller, service, *, show, fmt, zone_name, context, stage=
         export_body,
         export_file_name,
     )
-    from .reports.limitations import LimitationsQuery, at_stage, limitations_report
+    from .reports.limitations import (
+        LimitationsQuery,
+        at_stage,
+        limitations_report,
+        row_count,
+    )
     from .source.snapshot_names import current_snapshot
 
     principal = partial(_principal, export=True)
@@ -192,9 +197,9 @@ def export_limitations(caller, service, *, show, fmt, zone_name, context, stage=
         # The page's event counts every answer its read returned, before the
         # Stage keeps the file's rows (limitation_views._respond), so the
         # command's event does too; ``count`` in the document is the file's.
-        read_count = len(whole["members"]) + len(whole["families"])
+        read_count = row_count(whole)
         result = at_stage(whole, stage)
-        count = len(result["members"]) + len(result["families"])
+        count = row_count(result)
         if choice["format"] == "jsonl":
             body = limitations_jsonl(
                 result, choice["zone"], mutable=mutable(campaign_id)

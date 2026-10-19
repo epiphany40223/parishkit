@@ -282,6 +282,11 @@ DESCRIPTIONS = {
         "An automation session accepted, ignored, reopened or handled "
         "Limitations answers, as the actions on Limitations do."
     ),
+    "admin_cmd_pledges_decide": _(
+        "An automation session accepted, edited, ignored or reopened pledges, "
+        "or marked them entered in ParishSoft, as the actions on Pledges to "
+        "enter do."
+    ),
     "admin_cmd_followup_information_update": _(
         "An automation session recorded follow-up on an Additional "
         "information request, as the request's Save does."
@@ -879,6 +884,12 @@ DESCRIPTIONS = {
     ),
     "roster_changes_exported": _(
         "Someone downloaded the Roster changes to enter list."
+    ),
+    "pledges_to_enter_viewed": _("Someone opened the Pledges list."),
+    "pledges_to_enter_exported": _("Someone downloaded the Pledges list."),
+    "pledge_review_updated": _(
+        "Someone accepted, edited, ignored or reopened a Family's pledge, or "
+        "marked it entered in ParishSoft."
     ),
     "census_change_updated": _(
         "Someone marked a census change entered in ParishSoft, ignored it, "

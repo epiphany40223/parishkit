@@ -2270,6 +2270,68 @@ Each row names a Family and often a Member, with their contact details, so
 the rows stay on the page and its downloads. It records the page's
 "viewed" event with a count of 0.
 
+### Pledges
+
+`report pledges` counts **Pledges**, the Families' pledges that
+staff review and then enter in ParishSoft by hand. Like the page,
+Administrators and Staff may run it, from a session of any scope; a Ministry
+leader is refused (`denied`), and a campaign without Financial stewardship
+is exit 1 (`not_available`). `--stage` is the page's Stage filter:
+`to_review` (the default), `to_enter_by_hand`, `entered_by_hand`, `ignored`
+or `all`. It prints `stage`, `matching` (the pledges at that stage), `total`
+and `stages` (every pledge by stage, zeros included). Each row names a
+Family and its pledge, so the rows stay on the page and in `export pledges`.
+It records the page's "viewed" event with a count of 0.
+
+`export pledges` writes the page's download to standard output and its
+document (`campaign_id`, `stage`, `file_name`, `content_type`, `format`,
+`timezone`, `size`, `sha256`, `count`) to standard error, as `export census`
+does. It needs a full-scope session and takes the same `--stage`, plus
+`--format` (`xlsx`, the default, `csv`, `pdf` or `jsonl`) and `--timezone`
+(UTC, the default, or a time zone name). JSON Lines is for scripts: one
+object per pledge, the files' columns under the keys `family`,
+`family_duid`, `parishsoft_status`, `annual_pledge`, `frequency`,
+`share_methods`, `reviewer_annual_pledge`, `reviewer_frequency`,
+`annual_pledge_to_enter`, `frequency_to_enter`, `stage`, `decision`,
+`entered_by`, `entered_at`, `submitted`, `last_decision`, `last_decision_at`
+and `note`, plus `item_id` and `version`, which `pledges decide` takes, and
+`actions`, the decisions you may record on it now. The file names Families,
+so create it private and delete it once used; the wrapper refuses to write
+it to a terminal.
+
+```sh
+(umask 077; pk-admin export pledges --stage all --format jsonl > pledges.jsonl)
+pk-admin pledges decide --action accept --item ITEM_ID:0 --item ITEM_ID:2
+pk-admin pledges decide --action edit --item ITEM_ID:0 \
+    --amount 1,300 --frequency monthly
+pk-admin pledges decide --action entered_by_hand --item ITEM_ID:1
+```
+
+`pledges decide` records one decision, as a row's icon or the bulk bar does:
+`accept`, `edit` (one pledge, with `--amount` and, for a pledge above zero,
+`--frequency`: `weekly`, `monthly`, `quarterly` or `annual`), `ignore`,
+`back_to_review` (a `--note` saying why is required to reopen an ignored
+pledge) or `entered_by_hand`. It needs a full-scope session; Administrators
+and Staff may run it. Entered by hand is final, so it asks for `yes` first
+(see [Confirmations](#confirmations)), or takes `--yes`; the others ask
+nothing. Each `--item` is a pledge's `item_id` and `version` from the JSON
+Lines; up to 100 at once, all or none. A campaign without Financial
+stewardship is exit 1 (`not_available`). A pledge someone decided since, or
+that the Family answered again, is exit 1 (`stale_version`): export again.
+A decision the pledge's stage does not offer, or an amount the Family form
+would refuse, is exit 1 (`invalid`, the amount's problem at `amount` or
+`frequency`). `--note -` reads the note from standard input (then
+`entered_by_hand` needs `--yes`). `--request-key` is made for you when left
+out; repeating with the same key, pledges, decision and value returns the
+same rows (`created` false), and using the key for other pledges, another
+decision or another value is `invalid`. A note longer than 2,000
+characters, or an amount the Edit would refuse, is refused before the
+question is asked. The result has
+`created`, `request_key` and `decisions` (each row's `id`, `item_id`,
+`sequence`, `action`, `decision`, `entered` and `created_at`), never the
+amount or the note. System logs show the page's `pledge_review_updated` and
+the command's `admin_cmd_pledges_decide`.
+
 ### Recording a census change's outcome
 
 `census resolve` is a Census changes row's **Mark entered in ParishSoft**

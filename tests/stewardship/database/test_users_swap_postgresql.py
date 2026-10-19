@@ -429,6 +429,14 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # (0114's) and 0104's setup credential audit come back older from closure
 # files, so ``CLOSURE_REPLACED_ONLY`` runs 0124's replacements of those;
 # the rest (baseline guards no closure file installs again) survive.
+# 0125 (#1763) adds a request column (IF NOT EXISTS, so its file runs again)
+# and a definer check granted to web and three installers
+# (runtime_grants.CLOSURE_FUNCTIONS, so ``closure_functions_absent`` drops it
+# and installs the file whole again), drops 0114's ended-instant check (IF
+# EXISTS; 0114 is no longer in CLOSURE_FUNCTIONS, so nothing makes it
+# again) and replaces three bodies (0124's intake check, 0114's state guard,
+# the baseline's request guard) that no closure file installs again, so
+# nothing else is registered.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -706,6 +714,18 @@ CLOSURE_CREATED = {
             "public.stewardship_limitations_report_v2(uuid,jsonb)",
         ),
         ("stewardship_responses", "0013_information_limitation_review"),
+    ),
+    # 0127 (#1686, provisional number) creates the pledge review table (in
+    # CLOSURE_TABLES) with these functions; all go, so its file installs
+    # whole again.
+    **dict.fromkeys(
+        (
+            "public.stewardship_pledge_answer_v1(jsonb,numeric)",
+            "public.stewardship_pledge_review_states_v1(uuid,uuid)",
+            "public.stewardship_pledge_review_guard_v1()",
+            "public.stewardship_pledge_review_effect_v1()",
+        ),
+        ("stewardship_reports", "0032_pledge_review"),
     ),
 }
 
