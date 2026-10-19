@@ -1,7 +1,7 @@
 """Ministry requests on the review worklist, under the real web role (#1684).
 
 Accept, Ignore, Edit, Back to review, Entered by hand and Add go through
-``workflows.review`` (the page's decision service) and migration 0132's
+``workflows.review`` (the page's decision service) and migration 0131's
 guards; the worklist reads them back through the follow-up selection, whose
 scope now follows an edited request's Ministry. A Family that asks again for
 a decided request gets no second request.

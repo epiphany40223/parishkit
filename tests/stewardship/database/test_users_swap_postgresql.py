@@ -738,7 +738,7 @@ CLOSURE_ALTERED = {
         "stewardship_responses",
         "0009_conflict_resolution",
     ),
-    # 0132 (#1684, provisional number) adds five Ministry request and
+    # 0131 (#1684, provisional number) adds five Ministry request and
     # revision columns; one entry, so its file runs once
     # (``before_ministry_review_pipeline`` drops them all).
     ("stewardship_ministry_request", "reviewed_ministry_duid"): (
@@ -913,8 +913,8 @@ def rerun_old_bodies(cursor, migrations):
 # reruns; 0118's body keeps 0096's, 0108's, 0112's and 0113's rules, so only
 # the latest replacement runs.
 CLOSURE_REPLACED_ONLY = {
-    # 0132 (#1684) replaces the follow-up selection last; 0094's rerun
-    # (above) puts back its older body, and 0132 adds columns, so only its
+    # 0131 (#1684) replaces the follow-up selection last; 0094's rerun
+    # (above) puts back its older body, and 0131 adds columns, so only its
     # replacement statement runs again.
     "stewardship_ministry_followup_v1": (
         ("stewardship_workflows", "0003_ministry_review_pipeline"),
@@ -1211,14 +1211,14 @@ def before_leader_changes():
 
 
 def before_ministry_review_pipeline():
-    """The statements that put Ministry requests back as they were before 0132.
+    """The statements that put Ministry requests back as they were before 0131.
 
-    #1684's 0132 adds the Edit's Ministry, the parish-added mark and the
+    #1684's 0131 adds the Edit's Ministry, the parish-added mark and the
     request an addition replaces to ``stewardship_ministry_request``, and
     the Edit's Ministry and the decision note to its revisions; dropping
     the columns drops their checks and foreign key with them. The guards and
-    selection it replaced keep their 0132 bodies, which nothing on the
-    users upgrade's base calls; 0132's file (or the full migration) adds
+    selection it replaced keep their 0131 bodies, which nothing on the
+    users upgrade's base calls; 0131's file (or the full migration) adds
     the columns again.
     """
     return [

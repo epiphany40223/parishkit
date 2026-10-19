@@ -91,7 +91,7 @@ COLUMNS = (
 FORMER = "Former portal user"
 REPLACED = "Replaced by a later response"
 # A current request: the newest revision, neither withdrawn nor replaced
-# (the follow-up selection's own "current" history, schema 0132).
+# (the follow-up selection's own "current" history, schema 0131).
 NOT_CURRENT = frozenset({"cancelled", "superseded"})
 
 

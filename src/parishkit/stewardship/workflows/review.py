@@ -20,7 +20,7 @@ Every decision is one revision of its request, written through
 order with the requests locked first; a bulk decision is all or none. What
 each reader may do is the pipeline's role-action table
 (``pipeline.allowed_actions``) at the request's current stage, and the SQL
-guards (migration 0132) check it all again. The stage is the pipeline's
+guards (migration 0131) check it all again. The stage is the pipeline's
 mapping (``ministry_placement``) of the locked row, so a decision against a
 row someone else changed first is a ``StaleDecision``, never a guess.
 """

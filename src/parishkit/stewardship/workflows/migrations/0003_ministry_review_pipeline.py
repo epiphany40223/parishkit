@@ -1,7 +1,7 @@
 """Forward migration: Ministry requests adopt the review pipeline (#1684).
 
-Its SQL is the frozen file ``schema/migrations/0132_ministry_review_pipeline.sql``
-(number 0132, provisional until it is assigned in merge order), read whole
+Its SQL is the frozen file ``schema/migrations/0131_ministry_review_pipeline.sql``
+(number 0131, provisional until it is assigned in merge order), read whole
 and never parsed. It adds a request's Edit Ministry, the parish-added mark
 and the request an addition replaces, and a revision's Edit Ministry and
 decision note, and widens the revision outcome check to admit withdrawing
@@ -24,7 +24,7 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0132_ministry_review_pipeline.sql"
+    / "0131_ministry_review_pipeline.sql"
 )
 
 
