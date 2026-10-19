@@ -123,6 +123,7 @@ from .go_live_components import components as go_live_components
 from .go_live_components import posts as go_live_posts
 from .go_live_families_components import components as go_live_families_components
 from .held_emails_components import components as held_emails_components
+from .home_overview_components import components as home_overview_components
 from .home_steps_components import components as home_steps_components
 from .hosted_file_components import IMAGE_TOKEN
 from .hosted_file_components import POSTS as HOSTED_FILE_POSTS
@@ -2302,6 +2303,7 @@ def component_origin():
     responses.update(menu_components(context, admin))
     responses.update(my_ministries_components(context, admin))
     responses.update(home_steps_components(context, admin))
+    responses.update(home_overview_components(context, admin))
     responses.update(automation_components(context, admin))
     responses.update(signed_in_components(context, admin))
     responses.update(stepper_components(context, admin))

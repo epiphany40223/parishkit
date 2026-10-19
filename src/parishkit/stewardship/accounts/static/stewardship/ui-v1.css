@@ -379,6 +379,57 @@ hr { border: 0; border-top: 1px solid var(--border); margin-block: 2rem; }
 /* A card inside a card is a flat inset rather than a second floating layer. */
 .panel .panel { background: var(--paper-soft); box-shadow: none; }
 .empty-state { text-align: center; background: transparent; border-style: dashed; border-color: var(--control-border); box-shadow: none; color: var(--muted); }
+/* Overview pages (ui-conventions "Overview pages", #1673). Home's Needs attention row: short
+   count lines side by side, wrapping onto more lines and stacking on a phone. */
+.home-alerts { display: flex; flex-wrap: wrap; gap: .5rem; list-style: none; margin: 0 0 .5rem; padding: 0; }
+:where(.admin-body) .home-alerts > li.notice { flex: 1 1 20rem; margin: 0; padding: .35rem .85rem; line-height: 1.4; }
+/* Home's panels, count lines and tiles are tighter than a form page's, so the overview fits a
+   laptop window (1366 x 768) without scrolling, with room to spare in Linux's wider fonts
+   (DejaVu Sans), where the count lines wrap onto more lines than in macOS's (#1673). */
+:where(.admin-body) .panel.home-panel { padding: .75rem 1.25rem; margin-block: .5rem; }
+.home-participation { margin-top: .4rem; }
+.home-participation .stat-tiles { margin-bottom: .5rem; }
+.home-participation .stat-tiles:last-child { margin-bottom: 0; }
+.home-participation .stat-tile { padding: .4rem .85rem; gap: .1rem; }
+.home-participation-foot { margin: 0; }
+/* The campaign panel's fact strip: one key/value row (label above value), wrapping. */
+.home-facts { display: flex; flex-wrap: wrap; gap: .5rem 2rem; margin: 0; }
+.home-facts > div { display: flex; flex-direction: column; }
+.home-facts dt { font-size: .85rem; font-weight: 600; color: var(--muted); }
+.home-facts dd { margin: 0; font-weight: 600; }
+/* A panel heading with its "See the page" link on the same line. */
+.home-panel-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .25rem 1rem; margin-bottom: .5rem; }
+.home-panel-head > h2, .home-panel-links { margin: 0; }
+.home-next-steps > h2 { margin-block: 0 .4rem; }
+/* Link cards (components/link-cards.html): a grid of cards, each one link whose text reads the
+   page's name, then its count large and what it means. Each card is two short lines, so a row
+   of three stays compact even in Linux's wider fonts (#1673): the name above what the count
+   means, and the count large at the end, spanning both lines. The DOM order (name, count,
+   meaning) is the order the link's name reads. 16rem columns put three cards on a row in a
+   laptop window, leaving each name room for one line. The start bar reinforces the count
+   (warning above zero, accent at zero); the words carry it. Hover and focus change only the
+   underline, never the size (no layout shift). */
+.link-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr)); gap: .5rem; list-style: none; margin: 0; padding: 0; }
+.link-card { border: 1px solid var(--border); border-inline-start-width: .35rem; border-radius: var(--radius-small); background: var(--paper-soft); }
+.link-card > a, .link-card.link-card-off { display: grid; grid-template-columns: 1fr auto; grid-template-areas: "label count" "note count"; align-items: center; column-gap: .75rem; box-sizing: border-box; height: 100%; padding: .35rem .85rem; }
+.link-card > a { text-decoration: none; }
+.link-card > a:hover .link-card-label, .link-card > a:focus-visible .link-card-label { text-decoration: underline; }
+.link-card-label { grid-area: label; font-weight: 600; }
+.link-card-count { grid-area: count; font-size: 1.5rem; font-weight: 650; line-height: 1.9rem; font-variant-numeric: tabular-nums; color: var(--ink); }
+.link-card-note { grid-area: note; font-size: .875rem; line-height: 1.35; color: var(--muted); }
+.link-card-attention { border-inline-start-color: var(--warning-border); }
+.link-card-clear { border-inline-start-color: var(--accent); }
+.link-card-off { color: var(--muted); }
+/* A card with a second, small link (#1576: Sent mail's other-mode count) puts it at the card's
+   end, beside the main link's count and divided from it, so the card stays two lines; on a
+   narrow card it wraps under the main link. Its padding and gaps are a little tighter than a
+   plain card's so both fit a third of a laptop window's row in Linux's DejaVu Sans. */
+.link-card-split { display: flex; flex-wrap: wrap; }
+.link-card-split > a:first-child { flex: 1 1 auto; height: auto; column-gap: .4rem; padding-inline-end: .5rem; }
+.link-card > a.link-card-other { display: flex; align-items: center; flex: 0 0 auto; padding: .35rem .5rem; border-inline-start: 1px solid var(--border); font-size: .8125rem; }
+.link-card > a.link-card-other:hover, .link-card > a.link-card-other:focus-visible { text-decoration: underline; }
+/* A card without a count leaves the count column empty, so it needs no gap beside it. */
+.link-card-off, .link-card > a:not(:has(> .link-card-count)) { column-gap: 0; }
 /* Stat tiles (ui-conventions "Stat tiles", #1540), drawn by components/stat-tiles.html: a row of
    cards, wrapping, each its label, value and up to two explanation lines; a row's tiles stretch
    to one height. */
