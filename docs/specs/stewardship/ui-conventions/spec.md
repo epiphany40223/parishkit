@@ -3287,6 +3287,30 @@ learned once. **Shared code.**
   (`tests/stewardship/fixtures/dst_cases.json`) pin the server and the page
   script to the same instants
   ([#1129](https://github.com/epiphany40223/parishkit/issues/1129)).
+- **Send dates inside the campaign.** A mail send date and time typed in
+  the browser's zone are checked as they are typed against the campaign
+  dates, by the server's own rule: the moment they stand for (read by the
+  daylight-saving rule above) must fall on a campaign day, in the
+  campaign's zone, from its start date to its end date. A date-only `min`
+  and `max` would be looser or stricter than the server on the edge days,
+  so the date control carries neither. Where the page edits the campaign
+  dates or time zone, the dates and zone being proposed are the ones
+  judged; a saved send posted with the date and time the page showed keeps
+  its saved day, as the server keeps it. While a send date is outside
+  them the form's button waits, with the server's words as its reason;
+  once typing pauses or focus leaves the field, the words show in the
+  date's reserved error line (so nothing moves), the date is marked
+  invalid, and a closed editor holding such a send opens, as a refused
+  Review opens it, so a date still being typed opens nothing. Dates or a
+  zone the page cannot read yet judge nothing, and while the server
+  refuses the proposed dates themselves (an unconfirmed financial overlap)
+  it judges the schedules against the saved ones; the server stays the
+  authority. **Shared code.**
+  `schedule_forms.send_window_attrs` (`data-send-window`) and the page
+  script's `ParishSendWindow.judge` (`data-window-gated`); the cases in
+  `tests/stewardship/fixtures/schedule_window_cases.json` run through the
+  server's schedule forms and every browser engine
+  ([#1787](https://github.com/epiphany40223/parishkit/issues/1787)).
 - **Preview.** Before Review, an editor shows the schedule's next
   occurrences in plain words, each with its weekday and date, in the
   browser's zone only, as every review does
