@@ -3635,8 +3635,8 @@ Actions column. **Why.** One pattern for every list of editable things; a dialog
 names exactly what will be removed. **Shared code.** The `table_actions`
 template tag, `components/confirm-dialog.html` and `data-confirm-open` in
 `ui-v1.js`. **Precedent.** #879, #882 (first user), #947 (second slice),
-the Pages and emails email tables (third slice), Roster changes to enter
-(a recording action), Census changes (actions with a note); #1065 (row
+the Pages and emails email tables (third slice), Ministry requests'
+Entered by hand (a recording action), Census changes (actions with a note); #1065 (row
 links, System logs).
 
 A table whose rows can be acted on follows one pattern
@@ -3651,7 +3651,7 @@ sessions of
 decisions of the [Ministry requests](../admin-portal/spec.md#follow-up-workflows)
 review worklist (#1131, #1684) and the
 Entered in ParishSoft tick of
-[Roster changes to enter](../admin-portal/spec.md#roster-changes-to-enter) and
+[Ministry requests](../admin-portal/spec.md#roster-entry-on-ministry-requests) and
 the row actions of
 [Census changes](../reports/spec.md#manual-census-resolution); the
 other Admin tables with per-row actions move to it in later changes, as the
@@ -3671,7 +3671,7 @@ inventory on #879 lists.
   Revoke ("Revoke nightly export") on Automation access. An action that
   records rather than removes, and that the row's other action undoes, also
   takes an icon of its own and acts [in place](#in-place-controls) without a
-  dialog; so far only Roster changes to enter's tick, "Mark … entered in
+  dialog; so far only the request page's tick, "Mark … entered in
   ParishSoft" (a check mark) and "Clear Entered in ParishSoft for …" (an
   undo arrow). An action that carries a note opens the confirmation dialog
   instead, which holds the note, with an ordinary confirm button unless the
@@ -3801,7 +3801,7 @@ of ParishSoft DUID:
 - **Family DUID:** wherever a Family is named, in its own column; staff
   search and match Families by it.
 - **Member DUID:** only where staff act on a specific Member in ParishSoft:
-  Census changes, Publish to ParishSoft, Roster changes to enter, the follow-up queue on Ministry
+  Census changes, Publish to ParishSoft, the follow-up queue on Ministry
   requests and its Export these requests, the host's join and leave lists
   and the packets, the Limitations report, Families the form cannot open, and the
   Users page's ParishSoft Ministry leaders table and its import review

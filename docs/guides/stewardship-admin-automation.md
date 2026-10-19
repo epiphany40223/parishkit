@@ -2235,8 +2235,10 @@ A section that cannot count never fails the command. It prints counts
 only, never a name or address, and records the page's "viewed" event with
 the total it printed. A restore under review is exit 3 (`unavailable`).
 
-`report roster` counts **Roster changes to enter**, the resolved Ministry
-joins and leaves that staff enter in ParishSoft by hand. Like the page,
+`report roster` counts the roster changes to enter, the resolved Ministry
+joins and leaves that staff enter in ParishSoft by hand (on the page,
+Ministry requests' Stage To enter by hand; the Roster changes to enter page
+was folded into it). Like the page,
 Administrators and Staff may run it, from a session of any scope; a
 Ministry leader is refused (`denied`). Its options are the page's:
 `--show todo` (the default: not yet marked Entered in ParishSoft) or
@@ -2761,8 +2763,8 @@ delete it once used; the wrapper refuses to write it to a terminal.
 
 ### Roster changes download
 
-`export roster` writes the page's download of **Roster changes to enter**
-to standard output, and its document (`campaign_id`, `file_name`,
+`export roster` writes the roster changes to enter (the file the retired
+Roster changes to enter page downloaded) to standard output, and its document (`campaign_id`, `file_name`,
 `content_type`, `format`, `timezone`, `size`, `sha256`, `count`) to
 standard error, as `export limitations` does. It needs a full-scope
 session, as every export does; Administrators and Staff may run it, and a
@@ -3205,9 +3207,9 @@ Find the requests with `followup list --state resolved`: a row whose
 `roster.eligible` is true and `roster.entered` is false is one to enter, and
 its `id` and `roster.sequence` are the `ID` and `VERSION`. The list shows
 only each Member's newest request for a Ministry (as the queue does), but
-**Roster changes to enter** also lists an older resolved request that a
-newer request has replaced, so such a request can be missing from
-`followup list`. That is a known gap: mark it on the page, or with
+Ministry requests' To enter by hand Stage also lists an older resolved
+request that a newer request has replaced, so such a request can be
+missing from `followup list`. That is a known gap: mark it on the page, or with
 `followup roster-entered` if you already have its ID.
 
 `followup information-update` takes `--needed yes|no` (Follow-up needed),

@@ -918,7 +918,7 @@ the [active parishioner family directory](#active-parishioner-family-directory)
 (each row), the header's Find a Family box (each match; see
 [Admin navigation](../admin-portal/spec.md#admin-navigation)), the
 [Financial stewardship](#financial-stewardship-detail) Family table, Census
-changes, Publish to ParishSoft's newest check, Roster changes to enter, both
+changes, Publish to ParishSoft's newest check, Ministry requests, both
 Limitations tables, Families on the form now, the Additional information
 request page's heading, each Weekly report item, Refused addresses and each
 Refused address page, and Families the form cannot open. The
@@ -1751,12 +1751,13 @@ Ministry requests is the Ministry stream's
 [review worklist](../review-pipeline/spec.md#review-worklist): the shared
 component, its words and its selected-state icons, at the same address. It
 replaces the queue table, its Status and Outcome filters and its bulk
-outcomes; the request pages, Roster changes to enter, the remembered view,
+outcomes; the request pages, the remembered view,
 Export these requests and the packet stay. From the top, the page shows:
 
-1. The heading, the page help, the ParishSoft data date, the Roster changes
-   to enter link (Admin/Staff only), and the notice shown while other
-   campaign work locks edits.
+1. The heading, the page help, the ParishSoft data date and the notice
+   shown while other campaign work locks edits. (Roster changes to enter,
+   once linked here, is this page's To enter by hand Stage since R39;
+   [roster entry](../admin-portal/spec.md#roster-entry-on-ministry-requests).)
 2. **By Ministry**, a compact table described below. It stays above the
    worklist's filters, not between them and the table: its counts apply
    filters in place and the table's height changes with them, so anything
@@ -1899,7 +1900,8 @@ leave list.
 
 Neither list nor its export shows a resolved request's **Entered in
 ParishSoft** tick; it is read and set on
-[Roster changes to enter](../admin-portal/spec.md#roster-changes-to-enter).
+Ministry requests at its To enter by hand Stage
+([roster entry](../admin-portal/spec.md#roster-entry-on-ministry-requests)).
 Ministry leaders never see the tick anywhere
 ([follow-up workflows](../admin-portal/spec.md#follow-up-workflows)).
 The contact details are read through the installed selections (no schema

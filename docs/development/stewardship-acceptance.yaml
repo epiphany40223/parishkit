@@ -130,7 +130,7 @@ sections:
     "Data to fix refresh and empty states": [ADM-08]
     "Data to fix command and downloads": [ADM-08]
     "Follow-up workflows": [ADM-08]
-    "Roster changes to enter": [ADM-08, RPT-08]
+    "Roster entry on Ministry requests": [ADM-08, RPT-08]
     "System health": [ADM-13]
     "System health page": [ADM-13]
     "Health dashboard": [ADM-13]
