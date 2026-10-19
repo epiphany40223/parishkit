@@ -154,7 +154,7 @@ def _principal(request, store, *, read_only=False):
 def _linked_ministry(value, principal):
     """A Ministry number from a link (#533), checked against this person's scope.
 
-    Links from Home's My Ministries panel and the counts on Ministry
+    Links from a leader's My review work (#1690) and the counts on Ministry
     requests (#1133) open the queue for one Ministry by GET, so Back and
     reload work; only closed values may travel in a URL (search stays
     private POST state). A malformed number is a 400; a
@@ -451,7 +451,7 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None, packe
             elif request.GET:
                 # A query string carries either the token of a remembered
                 # view ("Return to Ministry follow-up", #534) or one
-                # Ministry: from Home's My Ministries panel (#533), or with
+                # Ministry: from a leader's My review work (#1690), or with
                 # a request type and status from a count on Ministry
                 # requests (#1133). Search and every other filter stay
                 # private POST state.

@@ -7,7 +7,7 @@ focusing a card moves nothing (the no-layout-shift rule).
 
 import pytest
 
-from .home_steps_components import CLOSED_PATH, LEADER_PATH, PATH
+from .home_steps_components import CLOSED_PATH, PATH
 from .test_family_response import expect
 from .waits import same_place
 
@@ -87,42 +87,33 @@ def test_next_steps_link_their_pages_and_never_shift(
 def test_closed_campaign_lists_the_campaign_end_work_with_counts(
     page, component_origin, axe_source, width
 ):
-    """At campaign end Staff get a card for each work list with its count,
-    linking its page; a Ministry leader gets Ministry requests with its open
-    count, and nothing moves on hover or focus (#1590, #1673)."""
+    """At campaign end Home has a card for each work list with its count,
+    linking its page, then Emailed reports, and nothing moves on hover or
+    focus (#1590, #1673)."""
     page.set_viewport_size({"width": width, "height": 900})
-    for path, expected, links in (
-        (
-            CLOSED_PATH,
-            [
-                "Census changes 4 to do",
-                "Roster changes to enter 5 not yet entered",
-                "Additional information 3 open",
-                "Ministry requests 2 open",
-            ],
-            {
-                "Census changes": "/admin/reports/census/",
-                "Roster changes to enter": ROSTER,
-                "Additional information": "/admin/reports/information/",
-                "Ministry requests": "/admin/reports/ministries/",
-            },
-        ),
-        (
-            LEADER_PATH,
-            ["Ministry requests 2 open"],
-            {"Ministry requests": "/admin/reports/ministries/"},
-        ),
-    ):
-        page.goto(component_origin + path)
-        assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
-        page.evaluate(axe_source)
-        assert page.evaluate(AXE) == []
-        panel = page.get_by_role("region", name="Next steps")
-        expect(panel.locator("[data-link-card]")).to_have_text(expected)
-        for name, href in links.items():
-            expect(panel.get_by_role("link", name=name)).to_have_attribute("href", href)
-        before = page.evaluate(BOXES)
-        for step in panel.get_by_role("link").all():
-            step.hover()
-            step.focus()
-            assert same_place(page.evaluate(BOXES), before)
+    page.goto(component_origin + CLOSED_PATH)
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
+    page.evaluate(axe_source)
+    assert page.evaluate(AXE) == []
+    panel = page.get_by_role("region", name="Next steps")
+    expect(panel.locator("[data-link-card]")).to_have_text(
+        [
+            "Census changes 4 to do",
+            "Roster changes to enter 5 not yet entered",
+            "Additional information 3 open",
+            "Ministry requests 2 open",
+            "Emailed reports",
+        ]
+    )
+    for name, href in {
+        "Census changes": "/admin/reports/census/",
+        "Roster changes to enter": ROSTER,
+        "Additional information": "/admin/reports/information/",
+        "Ministry requests": "/admin/reports/ministries/",
+    }.items():
+        expect(panel.get_by_role("link", name=name)).to_have_attribute("href", href)
+    before = page.evaluate(BOXES)
+    for step in panel.get_by_role("link").all():
+        step.hover()
+        step.focus()
+        assert same_place(page.evaluate(BOXES), before)

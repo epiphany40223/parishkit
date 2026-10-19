@@ -34,7 +34,7 @@ def observe(actor, store, *, home=False):
     dashboard only observes, and must not wait behind a source promotion or
     installer. ``now`` is read inside the snapshot, so the page's chrome can
     reuse it instead of another clock query. ``home`` adds what only the
-    Home page shows (a Ministry leader's My Ministries panel); the command
+    Home page shows (such as its Review work panel); the command
     line's status read leaves it out rather than read and drop it.
     """
     from parishkit.stewardship.campaigns.models import Campaign
@@ -107,9 +107,9 @@ def summary(actor, configuration, now, *, home=False):
             .first()
         )
         if allows(actor, Capability.CAMPAIGN_REPORT):
-            # Home's Today line (NAV-18): Families with a response saved in
-            # the past 24 hours, in the mode the system is in now (Testing
-            # responses while testing). A filter on this same statement, so
+            # Home's 24-hour Responses tile (#1673): Families with a response
+            # saved in the past 24 hours, in the mode the system is in now
+            # (Testing responses while testing). A filter on this statement, so
             # it adds no query; the submission index on (family, mode,
             # submitted_at) serves it. Home only: the command line's status
             # read leaves it out.
@@ -257,12 +257,6 @@ def summary(actor, configuration, now, *, home=False):
                 and not status.catching_up
             )
         )
-    if home and campaign is not None and leads_ministries(actor):
-        from parishkit.stewardship.reports.ministry_followup import my_ministries
-
-        # A Ministry leader's own starting point (#533): Administrators and
-        # Staff reach every Ministry from the Reports menu instead.
-        result["my_ministries"] = my_ministries(campaign.pk, actor)
     if home and campaign is not None and "administrator" in actor.roles:
         from .review_work import read_flags
 
@@ -330,11 +324,11 @@ def promoted_at():
 
 
 def leads_ministries(actor):
-    """Whether Home shows this person the My Ministries panel.
+    """Whether My review work shows this person one card per Ministry they lead.
 
     Only a Ministry leader whose follow-up access is scoped to particular
-    Ministries: someone with campaign-wide follow-up (Administrator, Staff)
-    already has every Ministry one click away.
+    Ministries (``review_work.read_counts``): someone with campaign-wide
+    follow-up (Administrator, Staff) gets the queue's one count instead.
     """
     return (
         "ministry_leader" in actor.roles

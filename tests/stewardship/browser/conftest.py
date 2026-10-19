@@ -149,7 +149,6 @@ from .live_status_components import POSTS as LIVE_STATUS_POSTS
 from .live_status_components import components as live_status_components
 from .log_components import components as log_components
 from .menu_components import components as menu_components
-from .my_ministries_components import components as my_ministries_components
 from .not_found_components import components as not_found_components
 from .past_campaign_components import POSTS as PAST_CAMPAIGN_POSTS
 from .past_campaign_components import components as past_campaign_components
@@ -2304,7 +2303,6 @@ def component_origin():
     responses.update(campaign_settings_components(context, admin))
     responses.update(campaign_create_components(context, admin))
     responses.update(menu_components(context, admin))
-    responses.update(my_ministries_components(context, admin))
     responses.update(review_work_components(context, admin))
     responses.update(home_steps_components(context, admin))
     responses.update(home_overview_components(context, admin))
