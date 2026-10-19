@@ -549,17 +549,18 @@ CAMPAIGNS = {
     },
 }
 ROLES = ("administrator", "staff", "ministry_leader")
-# Which entries each role sees, whatever the mode or campaign state.
+# Which entries each role sees, whatever the mode or campaign state: Review
+# work, then Reports and queries (R39 findings 1 and 4).
 REPORTS = [
+    "census_changes",
+    "ministry_report",
+    "ministry_roster",
+    "pledges_to_enter",
+    "information_queue",
+    "limitations_report",
     "response_dashboard",
     "campaign_comparison",
     "financial_report",
-    "pledges_to_enter",
-    "limitations_report",
-    "census_changes",
-    "information_queue",
-    "ministry_report",
-    "ministry_roster",
     "family_directory",
     "emailed_reports",
 ]
@@ -583,16 +584,17 @@ SPEC_ORDER = [
     "deliveries",
     "family_portal",
     "presence",
-    # Responses and reports
+    # Review work
+    "census_changes",
+    "ministry_report",
+    "ministry_roster",
+    "pledges_to_enter",
+    "information_queue",
+    "limitations_report",
+    # Reports and queries
     "response_dashboard",
     "campaign_comparison",
     "financial_report",
-    "pledges_to_enter",
-    "limitations_report",
-    "census_changes",
-    "information_queue",
-    "ministry_report",
-    "ministry_roster",
     "family_directory",
     "emailed_reports",
     # Parish data
@@ -927,11 +929,12 @@ def test_an_entry_hidden_by_role_is_never_explained(role):
 
 
 def test_menu_entries_and_groups_follow_the_spec():
-    """Seven groups in campaign order; every entry is a page in its group."""
+    """Eight groups in campaign order; every entry is a page in its group."""
     assert [str(section.label) for section in navigation.SECTIONS] == [
         "Campaign setup",
         "Mail and Family portal",
-        "Responses and reports",
+        "Review work",
+        "Reports and queries",
         "Parish data",
         "Users and access",
         "System",
