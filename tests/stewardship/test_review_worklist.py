@@ -399,10 +399,10 @@ def test_record_words_a_race_as_the_notice():
     decision = WorklistDecision(Action.ACCEPT, {"1": 1}, "", UUID(KEY))
     assert record(Service(), "staff", decision) == "Done."
     assert record(Service(StaleDecision("Phone for Pat")), "staff", decision) == (
-        f"Phone for Pat {worklist.STALE}"
+        "Not recorded: someone else changed Phone for Pat first."
     )
-    assert record(Service(StaleDecision()), "staff", decision).startswith(
-        "A chosen item was changed"
+    assert record(Service(StaleDecision()), "staff", decision) == (
+        "Not recorded: someone else changed a chosen item first."
     )
 
 
