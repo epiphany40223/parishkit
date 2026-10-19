@@ -50,7 +50,14 @@ MEMBER_KEYS = (
     "latest_response",
     "stage",
 )
-FAMILY_KEYS = ("family", "parishsoft_status", "family_duid", "latest_response", "stage")
+FAMILY_KEYS = (
+    "family",
+    "parishsoft_status",
+    "family_duid",
+    "limitation",
+    "latest_response",
+    "stage",
+)
 
 
 @dataclass(frozen=True)
@@ -88,20 +95,25 @@ def limitations_jsonl(result, zone, *, mutable=True):
 
     members, families = export_tables(result, zone)
     lines = []
+    # The Families table also lists each Family's Cannot contribute
+    # financially answer, when the report carries them (``contributions``,
+    # R39 finding 11): it is decided on Pledges, so its record names its
+    # Pledges item and offers no Limitations action.
     for keys, rows, cells in (
         (MEMBER_KEYS, result["members"], members),
-        (FAMILY_KEYS, result["families"], families),
+        (FAMILY_KEYS, result["families"] + result.get("contributions", []), families),
     ):
         for row, values in zip(rows, cells, strict=True):
+            elsewhere = row["kind"] == "cannot_give"
             record = dict(zip(keys, values, strict=True)) | {
                 "kind": row["kind"],
-                "item_id": answer_id(
-                    row["family_duid"], row["kind"], row["member_key"]
-                ),
+                "item_id": f"pledge-{row['pledge_item']}"
+                if elsewhere
+                else answer_id(row["family_duid"], row["kind"], row["member_key"]),
                 "version": row["version"],
-                "actions": row_actions(
-                    Stream.CANNOT_PARTICIPATE, row["placement"], mutable
-                ),
+                "actions": []
+                if elsewhere
+                else row_actions(Stream.CANNOT_PARTICIPATE, row["placement"], mutable),
             }
             lines.append(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
     return "".join(lines).encode("utf-8")

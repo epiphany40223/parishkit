@@ -73,6 +73,7 @@ def test_the_command_line_vocabularies_are_the_pages():
         "Family": "family",
         "ParishSoft status": "parishsoft_status",
         "Family DUID": "family_duid",
+        "Limitation": "limitation",
         "Latest response": "latest_response",
         "Stage": "stage",
     }
