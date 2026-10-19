@@ -7,18 +7,12 @@ from django.http import QueryDict
 
 from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.audit.schemas import ContextKind, sanitize
-from parishkit.stewardship.reports import ministry_followup
 from parishkit.stewardship.reports.ministries import MinistryQuery, can_report
 from parishkit.stewardship.reports.ministry_export_views import (
     TOO_MANY,
     TOO_MANY_FIX,
     TooManyMinistries,
     packet_selection,
-)
-from parishkit.stewardship.reports.ministry_followup import (
-    NOT_IN_SOURCE,
-    FollowupQuery,
-    request_totals,
 )
 
 from .test_ministry_table_columns import ministry_page as render_report
@@ -169,119 +163,19 @@ def test_packet_limit_is_refused_with_its_own_message():
     assert "leave every box unticked" in str(TOO_MANY_FIX)
 
 
-def selection(totals):
-    """A stand-in for the queue's selection: each read's total by filters.
-
-    ``totals`` maps (action, state) to the count the selection would give;
-    every read is recorded, so a test can see which counts were read.
-    """
-    reads = []
-
-    def select(campaign_id, query, principal, *, limit, **_):
-        """The selection's answer with no rows (``page_limit`` 0)."""
-        assert limit == 0
-        reads.append((query.action, query.state, query.outcome))
-        return {
-            "authorized": True,
-            "ministries": [],
-            "total": totals[(query.action, query.state)],
-        }
-
-    return select, reads
-
-
-STAFF = Principal(uuid4(), frozenset({"staff"}))
-
-
-def test_totals_count_the_view_and_its_progress_whatever_the_status(monkeypatch):
-    """The tiles count what the table selects; the progress chart counts
-    the same requests whatever their status (#1133)."""
-    select, reads = selection(
-        {("join", "unresolved"): 3, ("any", "any"): 10, ("any", "unresolved"): 4}
-    )
-    monkeypatch.setattr(ministry_followup, "_select", select)
-    # The default view: 4 unresolved requests, 3 of them joins.
-    totals = request_totals(None, FollowupQuery(), STAFF, 4)
-    assert totals == {
-        "joining": 3,
-        "leaving": 1,
-        "requests": 10,
-        "unresolved": 4,
-        "completed": 6,
-    }
-    # The view's own total answered the unresolved count: not read again.
-    assert reads == [("join", "unresolved", "any"), ("any", "any", "any")]
-
-
-def test_totals_read_nothing_the_view_already_answers(monkeypatch):
-    """A Join view of every status needs only the unresolved count."""
-    select, reads = selection({("join", "unresolved"): 2})
-    monkeypatch.setattr(ministry_followup, "_select", select)
-    query = FollowupQuery(action="join", state="any")
-    assert request_totals(None, query, STAFF, 5) == {
-        "joining": 5,
-        "leaving": 0,
-        "requests": 5,
-        "unresolved": 2,
-        "completed": 3,
-    }
-    assert reads == [("join", "unresolved", "any")]
-
-
-def test_totals_for_members_no_longer_in_parishsoft_have_no_progress(monkeypatch):
-    """Nothing can be recorded for those requests, so no chart (#1217)."""
-    select, reads = selection({("join", NOT_IN_SOURCE): 1})
-    monkeypatch.setattr(ministry_followup, "_select", select)
-    totals = request_totals(None, FollowupQuery(state=NOT_IN_SOURCE), STAFF, 2)
-    assert totals == {"joining": 1, "leaving": 1, "requests": None}
-    # An empty view reads nothing at all.
-    reads.clear()
-    assert request_totals(None, FollowupQuery(state=NOT_IN_SOURCE), STAFF, 0) == {
-        "joining": 0,
-        "leaving": 0,
-        "requests": None,
-    }
-    assert reads == []
-
-
-def test_totals_refuse_a_count_outside_the_readers_scope(monkeypatch):
-    """Each count passes the queue's cross-check (#389 L3)."""
-
-    def select(campaign_id, query, principal, *, limit, **_):
-        """A count naming a Ministry this leader does not lead."""
-        return {"authorized": True, "ministries": [{"duid": 77}], "total": 1}
-
-    monkeypatch.setattr(ministry_followup, "_select", select)
-    leader = Principal(uuid4(), frozenset({"ministry_leader"}), frozenset({9}))
-    with pytest.raises(PermissionError):
-        request_totals(None, FollowupQuery(), leader, 1)
-
-
-TOTALS = {"joining": 3, "leaving": 1, "requests": 6, "unresolved": 4, "completed": 2}
-
-
-def test_totals_tiles_and_chart_render_between_the_filters_and_the_table():
-    """The totals follow the filters in place (data-table-sync), under the
-    filter bar so a change in their height never moves Apply filters; the
-    chart draws its values, so it has no exact-values table (#720, #1133)."""
-    html = render_report([], totals=TOTALS)
-    start = html.index('<div id="ministry-totals" data-table-sync>')
-    region = html[start : html.index("</div>", html.index("</ul>", start))]
-    assert ">Totals</h2>" in region
-    assert 'class="stat-value">3</span>' in region  # Join requests.
-    assert 'class="stat-value">1</span>' in region  # Leave requests.
-    assert 'data-chart="ministry-followup-spec"' in html
-    assert "Exact values" not in html
-    assert html.index('id="table-filters"') < start < html.index('id="by-ministry"')
-    assert html.index('id="by-ministry"') < html.index("data-table-region")
-
-
-def test_totals_without_requests_keep_the_chart():
-    """With no request the tiles read zero and the chart still draws, so
-    its box never comes and goes under By Ministry (no layout shift, #736)."""
+def test_the_worklist_has_no_totals_or_chart_above_its_table():
+    """The Join and Leave requests tiles and the Follow-up progress chart are
+    gone (#1676, folded into #1684): a review worklist has nothing between
+    its filters and its table. By Ministry stays above the filters, so a
+    count applied in place never moves under the pointer."""
     html = render_report([])
-    assert 'id="ministry-totals"' in html
-    assert 'data-chart="ministry-followup-spec"' in html
+    assert 'id="ministry-totals"' not in html
+    assert "ministry-followup-spec" not in html and "Follow-up progress" not in html
+    assert "stat-tile" not in html
+    filters = html.index('id="table-filters"')
+    table = html.index("data-table-region")
+    assert html.index('id="by-ministry"') < filters < table
+    assert "<h2" not in html[filters:table]
 
 
 def counts(duid, name, joining=0, leaving=0, unresolved=0, links=None):
@@ -302,7 +196,7 @@ def test_by_ministry_counts_apply_their_filters_in_place():
     """Each linked count applies its Ministry and request to the table in
     place and sets the filter bar (#1133); a count without a link (zero, or
     a Ministry the reader may not follow up) is plain text."""
-    link = "/admin/reports/ministries/?ministry=9&amp;action=join&amp;state=any"
+    link = "/admin/reports/ministries/?ministry=9&amp;kind=join&amp;stage=all"
     rows = [
         counts(9, "Choir", 3, 0, 2, {"joining": link.replace("&amp;", "&")}),
         counts(4, "Bread", 1, 1, 1),

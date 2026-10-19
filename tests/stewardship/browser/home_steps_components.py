@@ -62,7 +62,7 @@ CLOSED = SimpleNamespace(
 )
 CLOSED_COUNTS = {
     "census_changes": 4,
-    "ministry_roster": 5,
+    "ministry_entry": 5,
     "information_queue": 3,
     "ministry_report": 2,
 }
@@ -84,9 +84,7 @@ def components(context, admin):
         ),
         items,
     )
-    for section in sections:
-        for entry in section["items"]:
-            entry["count"] = COUNTS.get(entry["name"]) if entry["url"] else None
+    admin_context.attach_counts(sections, COUNTS)
     chrome = admin | {
         "sections": sections,
         "breadcrumbs": [],
@@ -118,7 +116,7 @@ def closed_components(context, admin):
     """Home on a closed campaign for Staff and for a Ministry leader (#1590).
 
     The menu is each role's real one, with the counts the chrome would read,
-    Roster changes to enter's among them (#1660).
+    Ministry requests' To enter by hand count among them (R39 finding 2).
     """
     configuration = SimpleNamespace(mode="production")
     pages = {}
@@ -138,11 +136,7 @@ def closed_components(context, admin):
             ),
             items,
         )
-        for section in sections:
-            for entry in section["items"]:
-                entry["count"] = (
-                    CLOSED_COUNTS.get(entry["name"]) if entry["url"] else None
-                )
+        admin_context.attach_counts(sections, CLOSED_COUNTS)
         chrome = admin | {"admin": False, "sections": sections, "breadcrumbs": []}
         pages[path] = (
             "text/html",

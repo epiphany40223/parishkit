@@ -776,69 +776,6 @@ def financial_charts(summary, choices):
     )
 
 
-# The Additional information page's follow-up states (#720), in drawing
-# order: (bar label, key of the selection's ``counts``). Every request is in
-# exactly one, so the bars add up to the matching requests.
-INFORMATION_STATES = (
-    ("Completed", "completed"),
-    ("Needed, not completed", "needed_open"),
-    ("Not needed, not completed", "not_needed_open"),
-)
-
-
-def information_followup(counts, total):
-    """The Additional information page's "Follow-up status" chart (#720).
-
-    ``counts`` and ``total`` are the information selection's, over every
-    request the filters match rather than the table's page: each follow-up
-    state is a progress bar against ``total``. With no matching request
-    there is nothing to draw, so ``None`` is returned.
-    """
-    if not total:
-        return None
-    return count_bars(
-        "information-followup",
-        "Follow-up status",
-        [(label, counts[key]) for label, key in INFORMATION_STATES],
-        total=total,
-        compared="Share of matching requests",
-        noun="Requests",
-        progress=True,
-    )
-
-
-# Ministry requests' follow-up bars (#720), in drawing order: (bar label,
-# count in ``ministry_followup.request_totals``).
-FOLLOW_UP = (
-    ("Resolved or closed", "completed"),
-    ("Unresolved", "unresolved"),
-)
-
-
-def ministry_followup(totals):
-    """Ministry requests' "Follow-up progress" chart (#720, #1133).
-
-    ``totals`` are ``ministry_followup.request_totals`` of the applied queue
-    view, whatever its Status and Outcome: each follow-up state is a
-    progress bar against all those current requests, which the two states
-    always add up to.
-
-    The chart is always drawn, so the page keeps its height and By Ministry
-    below it never moves (no layout shift): with no request, and for the
-    Members no longer in ParishSoft view, which has no progress
-    (``requests`` None), its bars read zero out of zero.
-    """
-    return count_bars(
-        "ministry-followup",
-        "Follow-up progress",
-        [(label, totals.get(field) or 0) for label, field in FOLLOW_UP],
-        total=totals["requests"] or 0,
-        compared="Share of all requests",
-        noun="Requests",
-        progress=True,
-    )
-
-
 # The Response dashboard's daily chart (#720 slice 2c): each panel's plot
 # height in CSS pixels, and the fixed width of every panel's value-axis
 # column (tick labels and title), so the stacked plots line up on the shared
