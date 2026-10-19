@@ -86,7 +86,7 @@ patterns = [
         financial_export_views.create,
         "financial_export",
     ),
-    # Pledges to enter (#1686): the financial stream's review worklist, whose
+    # Pledges (#1686): the financial stream's review worklist, whose
     # decisions post to the page itself, and its CSV/XLSX/PDF download.
     _page("reports/financial/pledges/", pledge_review_views.page, "pledges_to_enter"),
     _page(

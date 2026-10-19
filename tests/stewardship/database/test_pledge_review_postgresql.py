@@ -1,4 +1,4 @@
-"""Pledges to enter under the real web role (#1686).
+"""Pledges under the real web role (#1686).
 
 Frozen migration 0135 (provisional number,
 ``schema/migrations/0135_pledge_review.sql``) adds the financial stream's
