@@ -717,12 +717,14 @@ Notes on the groups:
   changes), counted from the page's own rows with its own status rules; for
   Additional information, the current requests not yet marked "Follow-up
   completed" (its default view also lists completed ones); for Ministry
-  requests, the total of its queue's default Unresolved view, read through that
-  page's own selection with every filter it applies (only the leader's own
-  Ministries for a Ministry leader); where that page would say the follow-up
-  is unavailable, no number shows. The menu count stays Ministry requests'
-  own; the roster changes still to enter are counted only on Home's
-  [Next steps](#home-page). All the counts ride on one statement. Each is a plain number after the entry's
+  requests, its requests at To review and Conflict, which is its worklist's
+  default Stage To review (no Ministry request reaches Conflict today, see
+  [existing state to stage](../review-pipeline/spec.md#existing-state-to-stage)),
+  read through that page's own selection with every filter it applies (only
+  the leader's own Ministries for a Ministry leader); where that page would
+  say the follow-up is unavailable, no number shows. The menu count stays
+  Ministry requests' own; the roster changes still to enter are counted
+  only on Home's [Next steps](#home-page). All the counts ride on one statement. Each is a plain number after the entry's
   name that screen readers announce as "(N open)". No number shows at zero,
   nor on a greyed-out entry. The counts are read when a page loads, never
   updated in place, so a number never appears or disappears under the
