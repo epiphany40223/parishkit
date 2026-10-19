@@ -888,8 +888,18 @@ Status: built (ADM-12.21, NAV-18). In order, Home shows its heading, the
 System health problems, the campaign and ParishSoft status panels (with the
 off-site backup line and the next planned Family mailing), My Ministries,
 the security events, automation notices, Ministry catalog changes, Family
-participation, the unreachable-Family count, recent failed background tasks
-and, last, the **Next steps** panel led by the **Today** line.
+participation, the unreachable-Family count, recent failed background tasks,
+the **Review work** panel and, last, the **Next steps** panel led by the
+**Today** line.
+
+Home is the Administrator's. Staff and Ministry leaders who are not
+Administrators sign in to **My review work** instead
+([review pipeline, role views](../review-pipeline/spec.md#role-views),
+[#1690](https://github.com/epiphany40223/parishkit/issues/1690)), which
+replaces Home for them; Home's Review work panel shows an Administrator the
+same counts. So the Staff and Ministry leader columns of the table below,
+the My Ministries panel and its Today line are no longer shown to anyone;
+[#1726](https://github.com/epiphany40223/parishkit/issues/1726) removes them.
 
 Home is a starting point, not only a status page. Its heading is "Home"; the
 parish name and the current campaign's name and state are its data line. Below
