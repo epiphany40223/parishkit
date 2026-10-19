@@ -115,7 +115,7 @@ def test_the_worklist_lists_and_decides_requests_in_place(
         stale = decision(item, "handled") | {"version": "1"}
         response, body = search(browser, ROUTE, stale)
         assert response.status_code == 200
-        assert b"was changed by someone else first" in body
+        assert b": not recorded, changed by someone else." in body
         # Handled, in bulk from the selection bar.
         item.refresh_from_db()
         bulk = {

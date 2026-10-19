@@ -222,7 +222,7 @@ def test_native_page_and_downloads(response_service, google, settings):
         )
         stale = decision | {"request_key": str(uuid4())}
         response, body = search(browser, route, stale)
-        assert b"was changed by someone else first" in body
+        assert b": not recorded, changed by someone else." in body
         # Bulk: the Member's answer, ignored.
         bulk = {
             "bulk": "ignore",
