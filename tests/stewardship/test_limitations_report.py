@@ -512,7 +512,7 @@ def test_every_stage_counts_a_cannot_contribute_row_at_a_pledges_stage():
     assert choices["to_review"] == "To review (1)"
     (row,) = [r for r in worklist.rows if r["kind"] == "cannot_give"]
     assert row["icons"] == [] and row["kinds"] == ""
-    assert row["elsewhere"]["aria_label"] == "Open the answer of Example in Pledges"
+    assert row["elsewhere"]["aria_label"] == "Open in Pledges: the answer of Example"
 
 
 def test_cannot_contribute_needs_pledges_access_and_show_everything(monkeypatch):

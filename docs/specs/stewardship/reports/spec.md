@@ -2947,7 +2947,8 @@ Limitations item: it is decided once, on [Pledges](#pledges), so its Stage
 is its Pledges stage, its Last decision is Pledges' last decision, it has
 no box and no action icons, and its Actions cell is an "Open in Pledges"
 link that opens Pledges at that stage, named for screen readers by its row
-("Open the answer of <Family> in Pledges"). It is listed for viewers who may
+("Open in Pledges: the answer of <Family>", which starts with the visible
+text, so voice control finds it). It is listed for viewers who may
 open Pledges (Administrators and Staff) while the campaign has the
 financial module, only while Show is everything (the Show choices name the
 two Limitations answers only) and matching the search as Pledges' search
