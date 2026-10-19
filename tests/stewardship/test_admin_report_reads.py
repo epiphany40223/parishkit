@@ -19,6 +19,7 @@ from parishkit.stewardship import (
     admin_census,
     admin_cli,
     admin_data_to_fix,
+    admin_pledges,
     admin_report_reads,
     admin_roster,
     admin_source_form,
@@ -576,6 +577,26 @@ GOLDEN = {
             "statuses": CENSUS_STATUSES | {"superseded": 1, "cancelled": 0},
         },
     ),
+    # Pledges to enter (#1733): counts by stage only, zeros included.
+    "report pledges": (
+        lambda: admin_pledges.pledge_model(
+            CAMPAIGN,
+            "to_review",
+            [{"stage": "to_review"}, {"stage": "ignored"}, {"stage": "to_review"}],
+        ),
+        {
+            "campaign_id": str(CAMPAIGN),
+            "stage": "to_review",
+            "matching": 2,
+            "total": 3,
+            "stages": {
+                "to_review": 2,
+                "to_enter_by_hand": 0,
+                "entered_by_hand": 0,
+                "ignored": 1,
+            },
+        },
+    ),
     "report ministry (requests)": (
         ministry_list,
         {
@@ -654,6 +675,9 @@ def test_every_report_command_has_its_models_fields():
         # Census changes (#528), a campaign report menu entry, so ``report
         # list`` offers it (its read is in ``admin_census``).
         "report census": admin_census.CensusReport,
+        # Pledges to enter (#1733), a campaign report menu entry, so
+        # ``report list`` offers it (its read is in ``admin_pledges``).
+        "report pledges": admin_pledges.PledgeReport,
     }
     reports = {spec.name for spec in admin_cli.COMMANDS if spec.name[:7] == "report "}
     assert reports == set(models)
@@ -694,6 +718,9 @@ def test_the_report_commands_name_menu_entries():
         ["report", "census", "--search", "Private"],
         ["report", "census", "--campaign", str(CAMPAIGN)],
         ["report", "census", "--history", "yes"],
+        ["report", "pledges", "--stage", "conflict"],
+        ["report", "pledges", "--search", "Private"],
+        ["report", "pledges", "--campaign", str(CAMPAIGN)],
     ],
 )
 def test_options_outside_the_pages_vocabulary_are_usage_errors(argv):

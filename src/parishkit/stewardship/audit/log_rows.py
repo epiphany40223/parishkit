@@ -426,6 +426,7 @@ UNGROUPED_REASONS = {
         "admin_cmd_followup_roster_bulk",
         "admin_cmd_followup_roster_entered",
         "admin_cmd_followup_update",
+        "admin_cmd_pledges_decide",
         "census_change_updated",
         "census_handling_corrected",
         "chair_review_decided",

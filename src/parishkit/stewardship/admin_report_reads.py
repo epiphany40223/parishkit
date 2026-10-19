@@ -57,6 +57,7 @@ REPORT_COMMANDS = {
     "response_dashboard": ("report responses", "report participation"),
     "campaign_comparison": ("report comparison",),
     "financial_report": ("report financial",),
+    "pledges_to_enter": ("report pledges",),
     "limitations_report": ("report limitations",),
     "census_changes": ("report census",),
     "information_queue": ("report information",),

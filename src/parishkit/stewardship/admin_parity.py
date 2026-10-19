@@ -271,10 +271,12 @@ LEDGER = {
     "daily_digest_chart": permanent(IMAGES),
     "daily_digest_download": permanent(IMAGES),
     "financial_report": command("report financial"),
-    # Pledges to enter (#1686): its list, decisions and download get their
-    # commands in a later slice, through the same PledgeDecisions service.
-    "pledges_to_enter": pending("#1733", "report pledges", "pledges decide"),
-    "pledges_to_enter_export": pending("#1733", "export pledges"),
+    # Pledges to enter (#1686, #1733): counts only, as its rows name
+    # Families and their pledges; its decisions go through the page's own
+    # PledgeDecisions service, and its rows with their ids and versions are
+    # export pledges --format jsonl's.
+    "pledges_to_enter": command("report pledges", "pledges decide"),
+    "pledges_to_enter_export": command("export pledges"),
     "limitations_report": command("report limitations"),
     # Counts only (#463): its rows name Families and Members, so they are
     # export census's. A row's Entered in ParishSoft, Ignore and Reopen post
