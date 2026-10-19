@@ -11,8 +11,8 @@
 --   * An Updated in ParishSoft change ParishSoft no longer holds (back at
 --     the baseline, or at a third value) is a Conflict: a full refresh's
 --     source worker records a check saying so and moves the change to
---     conflict, at that value and the promoting snapshot, keeping its
---     decision.
+--     conflict, at that value and the promoting snapshot, its decision
+--     back to review.
 --   * A New Member Staff mark entered may name the ParishSoft Member ID
 --     of the Member they added; the refresh confirms the change once the
 --     snapshot lists that Member, active and living, in the Family.
@@ -40,8 +40,9 @@
 --     same body): the worker may move a published change to conflict, only
 --     through its reconciliation branch (fenced, pinned, changed source)
 --     with this promotion's 'conflict' check at the change's version whose
---     observed value is the change's new one, its decision kept; and the
---     queue step requires the Member's current standing.
+--     observed value is the change's new one, its decision back to
+--     unreviewed; and the queue step requires the Member's current
+--     standing.
 --   * stewardship_refresh_check_guard_v1 (0140's and 0141's bodies,
 --     joined: 0140 and 0141 each replace 0136's and neither depends on the
 --     other, so this one carries both): a census check may be of a Family's
@@ -418,7 +419,8 @@ BEGIN
             -- version, whose own guard checked ParishSoft's value against
             -- the snapshot and the change: the change takes that value and
             -- snapshot. The worker's reconciliation branch below then
-            -- requires the fenced, pinned source and keeps the decision.
+            -- requires the fenced, pinned source and returns the decision
+            -- to review.
             IF OLD.execution='published' AND NOT EXISTS (
                 SELECT 1 FROM public.stewardship_refresh_check k
                 WHERE k.proposal_id=OLD.id AND k.item_version=OLD.version
@@ -529,11 +531,17 @@ BEGIN
                 -- An approval resting on it goes back to To review while the
                 -- change stays open. A queued change keeps its approval (the
                 -- publish worker owns it then); its plan, merged against the
-                -- Family's baseline again, can only meet a conflict. Nothing
-                -- else here changes the decision. (The CASE is in
-                -- parentheses: an IF condition ends at its first THEN outside
-                -- them.)
-                IF NEW.decision IS DISTINCT FROM (CASE WHEN OLD.decision='approved'
+                -- Family's baseline again, can only meet a conflict. (The
+                -- CASE is in parentheses: an IF condition ends at its first
+                -- THEN outside them.)
+                -- An Updated in ParishSoft change a refresh found
+                -- ParishSoft no longer holds (#1749) goes back to To
+                -- review too: its approval is decided again, never carried
+                -- by a later refresh or the Family's same answer back
+                -- into force over the undo in ParishSoft. Nothing else
+                -- here changes the decision.
+                IF NEW.decision IS DISTINCT FROM (CASE WHEN OLD.execution='published'
+                       THEN 'unreviewed' WHEN OLD.decision='approved'
                        AND OLD.execution IN ('pending','failed')
                        AND NEW.execution IN ('pending','conflict')
                        AND EXISTS (SELECT 1 FROM public.stewardship_proposal_review base
@@ -1050,6 +1058,7 @@ BEGIN
             WHERE oid='public.stewardship_response_derived_guard_v1()'::regprocedure
               AND prosrc LIKE '%AND NOT (OLD.execution=''published'' AND NEW.execution=''conflict''%'
               AND prosrc LIKE '%An updated change becomes a Conflict only with its refresh check%'
+              AND prosrc LIKE '%(CASE WHEN OLD.execution=''published''%'
               AND prosrc LIKE '%AND public.stewardship_member_source_status_v1(%'
               AND prosrc LIKE '%AND NOT (OLD.execution=''resolved_external'' AND current_user=''pk_stewardship_web'')%'
               AND prosrc LIKE '%Proposal publication requires its confirmed plan and outcome%'

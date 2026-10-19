@@ -345,7 +345,7 @@ def test_a_new_members_entered_by_hand_asks_for_its_member_id(
     page.evaluate(MARK)
     has_text(
         row(page, 5).locator(".help"),
-        "Earlier: Accepted, not in force. ParishSoft no longer holds the update.",
+        "ParishSoft no longer holds the update.",
     )
     refusal = {
         "errors": [{"code": "invalid", "field_id": "value_member", "message": "x"}],

@@ -634,16 +634,18 @@ only when a value was recorded and ParishSoft holds another one.
   is a Conflict (rule 2's exception and rule 3): the write was undone, or
   ParishSoft changed after it. A full refresh records a check saying so
   (with ParishSoft's value) and, in the same promotion, moves the change to
-  Conflict at that value, as reconciliation moves an open change: the
-  decision is kept, visible but not in force, and an Administrator's
-  accepted ParishSoft value at the earlier data is not carried. The census
-  guard admits a change leaving Updated in ParishSoft only this way, from
-  the source worker at fenced, pinned data, with that check. A quick update
+  Conflict at that value, as reconciliation moves an open change, and back
+  to To review: its approval is decided again, as an approval resting on a
+  stale accepted ParishSoft value is, so that neither a later refresh nor
+  the Family's same answer can carry it back into force over the undo in
+  ParishSoft (its row's Last decision still shows it). The census guard
+  admits a change leaving Updated in ParishSoft only this way, from the
+  source worker at fenced, pinned data, with that check. A quick update
   records nothing for such a change, since its change list could lag the
-  write. The row says
-  why under its stage: "ParishSoft no longer holds the update." when
-  ParishSoft is back at the Baseline, else "ParishSoft changed after the
-  update." From then on it is an open Conflict, decided again as any other.
+  write. The row says "ParishSoft no longer holds the update." under its
+  stage until a review decides it again. A change a refresh already
+  confirmed is not checked again, so a write undone after that is not
+  caught.
 - **An entered New Member** is confirmed through a staff association.
   Marking a New Member row Entered by hand one at a time asks for the new
   Member's ParishSoft Member ID (optional: the DUID ParishSoft gave the

@@ -445,13 +445,12 @@ def test_a_current_member_has_no_badge():
 
 def test_a_refresh_conflict_and_a_member_id_say_so_under_the_stage():
     """#1749: an Updated in ParishSoft change a refresh put back in Conflict
-    says why, and a New Member's mark names the Member ID Staff gave; a New
-    Member's Entered by hand opens its own dialog asking for it."""
-    undone = shaped(
-        execution="conflict", decision="approved", refresh_conflict="undone"
-    )
+    says why (an ordinary Conflict does not), and a New Member's mark names
+    the Member ID Staff gave; a New Member's Entered by hand opens its own
+    dialog asking for it."""
+    undone = shaped(execution="conflict", decision="unreviewed", refresh_conflict=True)
     changed = shaped(
-        id="2", execution="conflict", decision="approved", refresh_conflict="changed"
+        id="2", execution="conflict", decision="approved", refresh_conflict=False
     )
     added = shaped(
         id="3",
@@ -486,7 +485,7 @@ def test_a_refresh_conflict_and_a_member_id_say_so_under_the_stage():
     assert rows["1"]["decision_label"].endswith(
         "ParishSoft no longer holds the update."
     )
-    assert rows["2"]["decision_label"].endswith("ParishSoft changed after the update.")
+    assert "no longer holds" not in rows["2"]["decision_label"]
     assert rows["3"]["decision_label"].endswith("ParishSoft Member ID 7.")
     assert rows["4"]["offers_entered"] and not rows["1"]["offers_entered"]
     assert 'id="census-entered-dialog-4"' in html

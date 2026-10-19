@@ -4934,7 +4934,8 @@ BEGIN
             -- version, whose own guard checked ParishSoft's value against
             -- the snapshot and the change: the change takes that value and
             -- snapshot. The worker's reconciliation branch below then
-            -- requires the fenced, pinned source and keeps the decision.
+            -- requires the fenced, pinned source and returns the decision
+            -- to review.
             IF OLD.execution='published' AND NOT EXISTS (
                 SELECT 1 FROM public.stewardship_refresh_check k
                 WHERE k.proposal_id=OLD.id AND k.item_version=OLD.version
@@ -5045,11 +5046,17 @@ BEGIN
                 -- An approval resting on it goes back to To review while the
                 -- change stays open. A queued change keeps its approval (the
                 -- publish worker owns it then); its plan, merged against the
-                -- Family's baseline again, can only meet a conflict. Nothing
-                -- else here changes the decision. (The CASE is in
-                -- parentheses: an IF condition ends at its first THEN outside
-                -- them.)
-                IF NEW.decision IS DISTINCT FROM (CASE WHEN OLD.decision='approved'
+                -- Family's baseline again, can only meet a conflict. (The
+                -- CASE is in parentheses: an IF condition ends at its first
+                -- THEN outside them.)
+                -- An Updated in ParishSoft change a refresh found
+                -- ParishSoft no longer holds (#1749) goes back to To
+                -- review too: its approval is decided again, never carried
+                -- by a later refresh or the Family's same answer back
+                -- into force over the undo in ParishSoft. Nothing else
+                -- here changes the decision.
+                IF NEW.decision IS DISTINCT FROM (CASE WHEN OLD.execution='published'
+                       THEN 'unreviewed' WHEN OLD.decision='approved'
                        AND OLD.execution IN ('pending','failed')
                        AND NEW.execution IN ('pending','conflict')
                        AND EXISTS (SELECT 1 FROM public.stewardship_proposal_review base

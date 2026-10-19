@@ -92,11 +92,11 @@ def components(context, admin):
             return shape(
                 row(index)
                 | {
-                    "decision": "approved",
+                    "decision": "unreviewed",
                     "execution": "conflict",
                     "handling": "api",
                     "current_value": "555-0100",
-                    "refresh_conflict": "undone",
+                    "refresh_conflict": True,
                 }
             )
         return shape(

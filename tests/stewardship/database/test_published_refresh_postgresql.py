@@ -88,8 +88,8 @@ def published(harness, staff, row):
 def test_an_updated_change_back_at_the_baseline_is_a_conflict(response_service):
     """Rule 2's exception: ParishSoft back at the Baseline (the write was
     undone) records a conflict check and moves the change to Conflict, at
-    that value and the promoting snapshot, keeping its Accepted; the row
-    says why. A quiet refresh then writes nothing."""
+    that value and the promoting snapshot, To review again; the row says
+    why. A quiet refresh then writes nothing."""
     harness, staff, rows = answered(response_service, first_name)
     change = published(harness, staff, rows["first_name"])
     baseline = change.baseline_value
@@ -102,14 +102,14 @@ def test_an_updated_change_back_at_the_baseline_is_a_conflict(response_service):
     current = SourceCurrent.objects.get(singleton=True).snapshot_id
     assert (moved.execution, moved.decision, moved.version) == (
         "conflict",
-        "approved",
+        "unreviewed",
         change.version + 1,
     )
     assert (moved.current_available, moved.current_value) == (True, baseline)
     assert moved.current_source_id == current
     row = census_row(harness, moved)
     assert row["stage"] == Stage.CONFLICT
-    assert row["refresh_conflict"] == "undone"
+    assert row["refresh_conflict"] is True
     (shown,) = worklist_rows([row])
     assert shown["stage_note"] == "ParishSoft no longer holds the update."
     refresh(harness)
@@ -119,7 +119,9 @@ def test_an_updated_change_back_at_the_baseline_is_a_conflict(response_service):
 
 def test_an_updated_change_at_a_third_value_is_a_conflict(response_service):
     """Rule 3: ParishSoft changed after the update; the row says so until a
-    review decides the Conflict again."""
+    review decides the Conflict again, and only a review puts it back in
+    force: ParishSoft moving on and back to the Baseline leaves it To
+    review, never Ready to update."""
     from .test_census_pipeline_review_postgresql import decide
 
     harness, staff, rows = answered(response_service, first_name)
@@ -127,12 +129,18 @@ def test_an_updated_change_at_a_third_value_is_a_conflict(response_service):
     refresh(harness, member={"firstName": "Someone"})
     moved = fresh(change)
     assert (moved.execution, moved.current_value) == ("conflict", "Someone")
-    assert census_row(harness, moved)["refresh_conflict"] == "changed"
+    assert census_row(harness, moved)["refresh_conflict"] is True
+    refresh(harness)
+    back = fresh(moved)
+    assert (back.execution, back.decision) == ("pending", "unreviewed")
+    assert census_row(harness, back)["stage"] == Stage.TO_REVIEW
+    refresh(harness, member={"firstName": "Someone"})
+    moved = fresh(back)
     # Accept decides it against ParishSoft's value: no longer a Conflict.
     decide(harness, staff, [moved], "accept")
     row = census_row(harness, fresh(moved))
     assert row["stage"] == Stage.READY_TO_UPDATE
-    assert row["refresh_conflict"] is None
+    assert row["refresh_conflict"] is False
 
 
 def test_an_updated_change_parishsoft_holds_is_confirmed(response_service):
@@ -537,8 +545,12 @@ def test_do_block_refuses_the_old_definitions(db):
             cursor.execute(_check())
 
 
-def quick(harness, **record):
-    """Promote a quick (delta) refresh with Member 3's record changed."""
+def quick(harness, *, family=None, added=False, worker=False, **record):
+    """Promote a quick (delta) refresh with Member 3's record changed, Family
+    1's by ``family``, and Member ``ADDED`` listed in it when ``added``;
+    on the source worker's own login when ``worker``."""
+    from contextlib import nullcontext
+
     from parishkit.stewardship.source.leases import acquire_source
     from parishkit.stewardship.source.snapshots import (
         begin_snapshot,
@@ -551,6 +563,9 @@ def quick(harness, **record):
 
     data = ministry_source()
     data.members[3].update(BASE | record)
+    data.families[1].update(family or {})
+    if added:
+        data.members[ADDED] = {**ministry_source().members[3], "memberDUID": ADDED}
     corpus = normalize_core(replace(data, organization_id=12345), as_of=TODAY)
     claim = acquire_source(**running_source_task(), phase="delta")
     snapshot = begin_snapshot(claim, organization_id=12345, admit=permit)
@@ -563,7 +578,13 @@ def quick(harness, **record):
         cursor={},
         admit=permit,
     )
-    return promote(snapshot, claim, harness.campaign, harness.rings)
+    login = (
+        task_login(ServiceRole.WORKER, exact=True, reconnect=True)
+        if worker
+        else nullcontext()
+    )
+    with login:
+        return promote(snapshot, claim, harness.campaign, harness.rings)
 
 
 def test_a_quick_update_never_reopens_an_updated_change(response_service):
@@ -577,6 +598,22 @@ def test_a_quick_update_never_reopens_an_updated_change(response_service):
     assert fresh(change).execution == "published"
     refresh(harness)
     assert checks(proposal=change) == ["conflict"]
+
+
+def test_the_worker_login_promotes_a_quick_update(response_service):
+    """A quick update's promotion reads a New Member's recorded ID and the
+    snapshot's primary address under the worker's own grants too."""
+
+    def edit(answers):
+        """A New Member and a home address."""
+        new_member(answers)
+        home(answers)
+
+    harness, staff, rows = answered(response_service, edit)
+    added = mark(harness, staff, rows["new_member"], str(ADDED))
+    house = entered(harness, staff, rows["home_address"])
+    quick(harness, family=PRIMARY, added=True, worker=True)
+    assert checks(proposal=added) == checks(proposal=house) == ["confirmed"]
 
 
 def worker_refresh(harness, *, member=None, family=None, added=False):

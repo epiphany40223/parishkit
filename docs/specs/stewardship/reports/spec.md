@@ -2246,8 +2246,8 @@ dialog. The row then says "ParishSoft Member ID N." under its
 stage. The bulk bar asks for none. What the refresh does with it is the
 review pipeline's
 [refresh checks](../review-pipeline/spec.md#refresh-checks); so is an
-Updated in ParishSoft row a later refresh puts back in Conflict, which says
-why under its stage.
+Updated in ParishSoft row a later refresh puts back in Conflict, To review
+again, which says "ParishSoft no longer holds the update." under its stage.
 
 ### Automatic census review
 

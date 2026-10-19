@@ -73,10 +73,7 @@ MEMBER_TEMPLATE = "stewardship/census-worklist-member.html"
 # The line under a row's stage (#1749): why a refresh put an Updated in
 # ParishSoft change back in Conflict, and the Member ID a New Member's
 # mark named.
-REFRESH_CONFLICT = {
-    "undone": "ParishSoft no longer holds the update.",
-    "changed": "ParishSoft changed after the update.",
-}
+REFRESH_CONFLICT = "ParishSoft no longer holds the update."
 MEMBER_ID = "ParishSoft Member ID {}."
 
 
@@ -142,7 +139,7 @@ def _stage_note(row):
     """The census line under a row's stage (``REFRESH_CONFLICT``,
     ``MEMBER_ID``), or empty."""
     if row.get("refresh_conflict"):
-        return REFRESH_CONFLICT[row["refresh_conflict"]]
+        return REFRESH_CONFLICT
     if row.get("resolution_member") and row.get("resolution_action") == "entered":
         return MEMBER_ID.format(duid(row["resolution_member"]))
     return ""

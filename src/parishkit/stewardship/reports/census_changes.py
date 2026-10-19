@@ -311,23 +311,18 @@ SELECT p.id::text, p.entity_kind, p.entity_key, p.field,
     s.family_version,
     -- The ParishSoft Member ID a New Member's latest mark named (#1749).
     latest.member_duid,
-    -- Why a refresh put an Updated in ParishSoft change back in Conflict
-    -- (#1749): its latest check says so and no review has decided it since;
-    -- "undone" while ParishSoft is back at the Baseline (its value now, as
-    -- reconciliation keeps it), else "changed".
-    CASE WHEN p.execution='conflict' THEN (
-        SELECT CASE WHEN p.baseline_available AND p.current_available
-                AND stewardship_response_comparison_v1(p.field,p.current_value)
-                    IS NOT DISTINCT FROM
-                    stewardship_response_comparison_v1(p.field,p.baseline_value)
-            THEN 'undone' ELSE 'changed' END
+    -- Whether a refresh put this Updated in ParishSoft change back in
+    -- Conflict (#1749): its latest check says so and no review has decided
+    -- it since.
+    p.execution='conflict' AND coalesce((
+        SELECT true
         FROM (SELECT k.outcome, k.item_version
             FROM stewardship_refresh_check k WHERE k.proposal_id=p.id
             ORDER BY k.created_at DESC, k.id DESC LIMIT 1) k
         WHERE k.outcome='conflict'
           AND NOT EXISTS (SELECT 1 FROM stewardship_proposal_review v
-              WHERE v.proposal_id=p.id AND v.expected_version>k.item_version))
-    END AS refresh_conflict
+              WHERE v.proposal_id=p.id AND v.expected_version>k.item_version)),
+        false) AS refresh_conflict
 FROM stewardship_campaign c
 LEFT JOIN stewardship_source_current sc ON sc.singleton
 JOIN stewardship_submission s ON s.campaign_id=c.id AND s.mode='live'

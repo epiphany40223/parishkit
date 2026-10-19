@@ -22,8 +22,8 @@ checks"):
   Family's home address and a New Member by the ParishSoft Member ID
   recorded at its mark (#1749);
 - an Updated in ParishSoft change ParishSoft no longer holds gets a
-  ``conflict`` check, and ``record_refresh_checks`` moves it to Conflict
-  in the same promotion (#1749).
+  ``conflict`` check on a full refresh, and ``record_refresh_checks``
+  moves it to Conflict, To review again, in the same promotion (#1749).
 
 The comparison is ``pipeline.refresh_outcome`` with each stream's canonical
 comparison: the census compare rules (``comparison.canonical_value``) and a
@@ -798,10 +798,12 @@ def _to_conflict(snapshot, check):
 
     As reconciliation moves an open change (#1749): ParishSoft's value
     from this snapshot, pinned for the change's response, at the next
-    version, with the decision kept (visible, not in force) and an
-    Administrator's accepted value at the earlier data no longer current,
-    since the change's data reference moves on. The census guard admits it
-    only with this check, recorded just before at the change's version.
+    version, and its decision back to To review, so neither a later
+    refresh nor the Family's same answer carries the approval back into
+    force over the undo in ParishSoft (an Administrator's accepted value at
+    the earlier data is no longer current either, since the change's data
+    reference moves on). The census guard admits it only with this check,
+    recorded just before at the change's version.
     """
     row = ProposedChange.objects.only("submission_id", "current_source_id").get(
         pk=check.proposal_id
@@ -819,6 +821,7 @@ def _to_conflict(snapshot, check):
         current_value=check.observed["value"],
         current_source_id=snapshot.pk,
         execution="conflict",
+        decision="unreviewed",
         version=F("version") + 1,
     )
     if moved != 1:
