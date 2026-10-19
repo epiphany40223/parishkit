@@ -229,11 +229,14 @@ def _ticked(campaign_id, principal):
     rows = [row for row in result["rows"] if eligible(row)]
     # A request a refresh check Confirmed (#1689) is in ParishSoft already:
     # it stays in the list, but nothing is left to enter.
+    versions = {str(row["id"]): row["version"] for row in rows}
     confirmed = {
         str(key)
-        for key in RefreshCheck.objects.filter(
+        for key, version in RefreshCheck.objects.filter(
             request_id__in=[row["id"] for row in rows], outcome="confirmed"
-        ).values_list("request_id", flat=True)
+        ).values_list("request_id", "item_version")
+        # A check at another version is about an earlier decision.
+        if versions.get(str(key)) == version
     }
     marks = roster_marks([row["id"] for row in rows])
     return [

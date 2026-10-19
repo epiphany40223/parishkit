@@ -403,7 +403,7 @@ FROZEN = {
         "70230abb1ba3f8b875786182f1a6e35cf7046ef220929059c27dff33b8eafc1b"
     ),
     "0136_refresh_checks.sql": (
-        "b954d2417f390ddea077e0bf5b047249a8e592403be54d710d8c49ce6a255e05"
+        "8b516b20ea34a8546225c1ecf9108f36a8e7d647c4544e9d62d40a258fbab810"
     ),
 }
 

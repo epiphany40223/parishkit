@@ -562,6 +562,12 @@ FORGERIES = {
         {},
     ),
     "ministry stale version": ("ministry", {"item_version": 99}, "decided request", {}),
+    "ministry confirmed on an ignored request": (
+        "ministry",
+        {"outcome": "confirmed", "ignored": True},
+        "decided request",
+        {"joins": (9,)},
+    ),
     "ministry resolved by the refresh": (
         "ministry",
         {"outcome": "confirmed", "leave": True},
@@ -595,7 +601,10 @@ def test_the_guard_refuses_each_forgery_inside_a_promotion(
         harness = setup(response_service)
         staff = actor(harness, {"staff"}, ())
         join, leave = requests()
-        ministry_decide(harness, staff, "accept", join)
+        if fields.pop("ignored", False):
+            ministry_decide(harness, staff, "ignore", join)
+        else:
+            ministry_decide(harness, staff, "accept", join)
         target = leave if fields.pop("leave", False) else join
         base = {"request_id": target.pk, "outcome": "unchanged"}
     member = options.pop("member", None)

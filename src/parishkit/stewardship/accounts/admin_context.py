@@ -485,7 +485,8 @@ LEFT JOIN LATERAL (
               AND r->>'outcome'=ANY(%(roster_outcomes)s)
               AND NOT (r->>'source_resolved')::boolean
               AND NOT EXISTS (SELECT 1 FROM stewardship_refresh_check k
-                  WHERE k.request_id=(r->>'id')::uuid AND k.outcome='confirmed')
+                  WHERE k.request_id=(r->>'id')::uuid AND k.outcome='confirmed'
+                    AND k.item_version=(r->>'version')::bigint)
               AND NOT coalesce((
                   SELECT e.entered FROM stewardship_ministry_roster_entry e
                   WHERE e.request_id=(r->>'id')::uuid

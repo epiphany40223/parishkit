@@ -73,7 +73,8 @@ BEGIN
     THEN RAISE EXCEPTION 'Refresh checks require the promoting source worker'
         USING ERRCODE='23514'; END IF;
     IF EXISTS (SELECT 1 FROM stewardship_refresh_check k
-        WHERE k.outcome='confirmed' AND (k.proposal_id=NEW.proposal_id OR k.request_id=NEW.request_id))
+        WHERE k.outcome='confirmed' AND k.item_version=NEW.item_version
+          AND (k.proposal_id=NEW.proposal_id OR k.request_id=NEW.request_id))
     THEN RAISE EXCEPTION 'A confirmed item is not checked again' USING ERRCODE='23514'; END IF;
     IF NEW.proposal_id IS NOT NULL THEN
         -- A live census change Entered by hand or Updated in ParishSoft, at
