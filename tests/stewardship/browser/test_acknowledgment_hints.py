@@ -2,10 +2,10 @@
 
 A form with a required acknowledgment box keeps its button unavailable, and
 a hint after the button (named by its aria-describedby) says to tick the box.
-Cancel go-live, Mail delivery, delivery refusal and Confirm Production use
-the complete gate instead: a reason or note of only spaces is still empty,
-as the server trims it, and the typed "Production" may have spaces around it
-as the server allows. Each hint sits after its button, so a line coming or
+Cancel go-live, Mail delivery and delivery refusal use the complete gate
+instead: a reason or note of only spaces is still empty, as the server
+trims it. (Confirm Production's typed word is gated inside its review
+dialog: test_go_live_confirm.py.) Each hint sits after its button, so a line coming or
 going never moves the control just used, or the button. Every state is
 worked out again on pageshow and for a form an in-place swap brings in.
 """
@@ -13,7 +13,6 @@ worked out again on pageshow and for a form an in-place swap brings in.
 import pytest
 
 from .test_campaign_setup_gates import ready, restore, spot, waits_with
-from .waits import hidden
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -166,25 +165,3 @@ def test_refusal_removal_needs_a_note_and_the_tick(page, component_origin):
     waits_with(clear, hint, "Tick the box to confirm that you verified this address.")
     page.get_by_role("checkbox").check()
     ready(clear, hint)
-
-
-def test_confirm_production_waits_for_the_typed_word(page, component_origin):
-    """Only "Production" (spaces around it allowed, as the server allows)
-    makes Confirm available; the hint says what to type."""
-    page.goto(component_origin + "/production-confirmation")
-    confirm = page.get_by_role("button", name="Confirm Production")
-    hint = page.locator("#production-complete-hint")
-    typed = page.locator("#production-confirmation")
-    text = "Type Production exactly as shown to confirm."
-    waits_with(confirm, hint, text)
-    follows(confirm, hint)
-    where = (spot(typed), spot(confirm))
-    for value in ("production", "Productio", "Production!"):
-        typed.fill(value)
-        waits_with(confirm, hint, text)
-    typed.fill(" Production ")
-    ready(confirm, hint)
-    assert (spot(typed), spot(confirm)) == where
-    typed.fill("")
-    waits_with(confirm, hint, text)
-    hidden(page.locator("[data-acknowledgment-hint]"))

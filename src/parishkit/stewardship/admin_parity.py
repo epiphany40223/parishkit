@@ -218,9 +218,8 @@ LEDGER = {
     "go_live_prepare": pending(
         "PR 12", "go-live cleanup-status", "go-live links-status"
     ),
-    "production_confirmation": pending(
-        "PR 12", "go-live confirm-preview", "go-live confirm"
-    ),
+    # The Confirm Production step (#1585 slice 4).
+    "go_live_confirm": pending("PR 12", "go-live confirm-preview", "go-live confirm"),
     # The page's "Retry failed mail preparation" control comes in PR 12.
     "production_progress": command("go-live progress", owed="PR 12"),
     "production_withdrawal": pending(

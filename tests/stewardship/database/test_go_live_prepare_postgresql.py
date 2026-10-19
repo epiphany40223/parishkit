@@ -191,9 +191,7 @@ def test_prepare_follows_refresh_links_and_stale_links_by_itself(prepare_page):
     assert run_link_task(harness, preparation.task_id)
     page, stage = shown(browser)
     assert stage.state == "ready" and boxes(stage) == ["done", "done", "done"]
-    confirmation = reverse(
-        "admin:production_confirmation", args=[request.pk, preparation.pk]
-    )
+    confirmation = reverse("admin:go_live_confirm")
     assert stage.confirm_url == confirmation
     assert b"Continue to Confirm Production" in page.content
     assert b"2 of 4 steps completed" in page.content

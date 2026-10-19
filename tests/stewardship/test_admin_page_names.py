@@ -57,7 +57,7 @@ TEMPLATES = {
     "go_live": "go-live-check.html",
     "go_live_families": "go-live-families.html",
     "go_live_prepare": "go-live-prepare.html",
-    "production_confirmation": "production-confirmation.html",
+    "go_live_confirm": "go-live-confirm.html",
     "production_progress": "production-progress.html",
     "production_withdrawal": "production-withdrawal.html",
     "delivery_control": "delivery-control.html",

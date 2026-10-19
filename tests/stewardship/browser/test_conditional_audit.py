@@ -171,29 +171,6 @@ def test_maintenance_message_gates_the_switch(page, component_origin):
     assert close.get_attribute("aria-describedby") == "maintenance-close-hint"
 
 
-@pytest.mark.parametrize(
-    ("path", "button", "reason"),
-    [
-        (
-            "/production-confirmation-unchecked",
-            "Confirm Production",
-            "Select Verify final readiness and mail impact first; you can confirm "
-            "once it passes.",
-        ),
-    ],
-)
-def test_go_live_steps_show_unavailable_with_why(
-    page, component_origin, path, button, reason
-):
-    """Before a passing check, the next step's button is in view, unavailable,
-    and named by the step still needed, rather than left out."""
-    page.goto(component_origin + path)
-    control = page.get_by_role("button", name=button, exact=True)
-    assert control.is_disabled()
-    described = control.get_attribute("aria-describedby")
-    assert page.locator(f"#{described}").inner_text() == reason
-
-
 def test_upload_choices_survive_the_table_redrawing(page, component_origin):
     """A chosen file and a typed name stay through an in-place sort and a
     deletion: only Upload's own line redraws with the table, and the gate
