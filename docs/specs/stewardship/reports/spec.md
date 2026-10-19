@@ -2080,7 +2080,7 @@ Administrators review every census change and record what was entered by
 hand; only an Administrator starts an update run
 ([role-specific actions](../review-pipeline/spec.md#role-specific-actions)).
 
-The page is **Census changes** under Responses and reports
+The page is **Census changes** under Review work
 ([#528](https://github.com/epiphany40223/parishkit/issues/528)): the
 census stream's [review worklist](../review-pipeline/spec.md#review-worklist)
 ([#1683](https://github.com/epiphany40223/parishkit/issues/1683)), listing
@@ -2378,7 +2378,7 @@ plan, confirmation, fenced writes, final refresh) and the
 that run it; this section says only what the Administrator sees and does.
 It is at `/admin/reports/census/publication/`, reached from a **Publish to
 ParishSoft** link above the Census changes table, and is not a menu entry:
-its breadcrumb is Home › Responses and reports › Census changes › Publish to
+its breadcrumb is Home › Review work › Census changes › Publish to
 ParishSoft.
 
 What can be written is narrow. ParishSoft's v2 API writes only contact
