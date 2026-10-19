@@ -12,7 +12,7 @@ needs its own forward migration, so, like the baseline, it has no reverse
 operation.
 
 It depends on the reports app's previous migration and on the migration that
-installs the previous frozen file (0122, in the audit app), so the files
+installs the previous frozen file (0124, in the accounts app), so the files
 apply in prefix order. That keeps it in the users swap's closure: its table
 is registered in ``runtime_grants.CLOSURE_TABLES``.
 """
@@ -44,9 +44,9 @@ class Migration(migrations.Migration):
         ("stewardship_reports", "0031_leader_request_contacts"),
         ("stewardship_campaigns", "0014_digest_skip_dates"),
         ("stewardship_responses", "0012_gender_by_hand"),
-        # The migration that installs the previous frozen file (0122, the
-        # automatic report views), so the files apply in prefix order.
-        ("stewardship_audit", "0006_automatic_report_views"),
+        # The migration that installs the previous frozen file (0124, the
+        # guard wording), so the files apply in prefix order.
+        ("stewardship_accounts", "0029_guard_wording"),
     ]
 
     operations = [
