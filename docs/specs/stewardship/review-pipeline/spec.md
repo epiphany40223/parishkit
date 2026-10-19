@@ -535,9 +535,10 @@ the review service refuses Back to review on it; its revision guard does not
 read the checks, and a request reopened anyway would be resolved as
 Confirmed by the next refresh, as an open request whose roster is current is
 today. Roster changes to enter no longer counts it as not yet entered.
-Decided pledges get pledge refresh checks of their own
+Pledges get pledge refresh checks of their own
 ([Financial stream](#financial-stream),
-[#1704](https://github.com/epiphany40223/parishkit/issues/1704)).
+[#1704](https://github.com/epiphany40223/parishkit/issues/1704),
+[#1747](https://github.com/epiphany40223/parishkit/issues/1747)).
 
 Nothing already stored is rewritten: a census change today's reconciliation
 resolved upstream before #1689 (an Ignored one ParishSoft matched, or an
@@ -714,14 +715,19 @@ form (a whole new response marked Entered by Staff), and Edit (amount and
 frequency, decision 4) is the review's own correction.
 
 The item is one per Family: its current pledge answer. Its stage is derived
-from its latest row, by one SQL selection the page, the counts and the
-row guard share:
+from its latest row and its latest refresh check (below), by one SQL
+selection the page, the counts and the row guard share:
 
 - no row, a latest row with no decision (Back to review), or a pledge answer
-  changed since the latest row's response: **To review**;
+  changed since the latest row's response: **To review**, or **Confirmed**
+  ("Already in ParishSoft", no reviewer) or **Conflict** when a refresh
+  found so;
 - Ignored: **Ignored**;
-- Accepted or Accepted (edited), not marked: **To enter by hand**;
-- marked Entered by hand: **Entered by hand**.
+- Accepted or Accepted (edited), not marked: **To enter by hand**, or
+  **Confirmed** or **Conflict** (keeping the decision visible but not in
+  force) when a refresh found so;
+- marked Entered by hand: **Entered by hand**, or **Confirmed** or
+  **Entered incorrectly** when a refresh found so.
 
 "Changed" follows [rule 2 of the setting-off
 rule](#resubmission-while-the-setting-is-off): a live response that answers
@@ -738,13 +744,9 @@ again while the financial section is switched off leaves the list until it
 answers the financial questions again, keeping its history. Rules 3 and 4
 need ParishSoft's upcoming-year pledge at the Family's submit, which the
 response does not record
-([#1747](https://github.com/epiphany40223/parishkit/issues/1747)).
+([#1753](https://github.com/epiphany40223/parishkit/issues/1753)).
 Pledges and funds are read-only in ParishSoft's API, so the stream never has
 Ready to update.
-
-Gaps after #1704: a To review pledge ParishSoft already holds and a pledge
-at a third value
-([#1747](https://github.com/epiphany40223/parishkit/issues/1747), below).
 
 **Pledge confirmation** (decision 5). ParishSoft's v2 `GET
 offering/pledge/list` returns each pledge with `familyID`, `fundID`,
@@ -764,40 +766,62 @@ maps a Family's ParishSoft pledge for the upcoming year to the pipeline item:
   campaign's configured window (the Family form's rule); without the proof
   no pledge is checked. No pledge reads as $0.00, the same as a zero
   pledge, so a Family pledging nothing is Confirmed by a ParishSoft holding
-  no pledge for it. A is $0.00: the upcoming year usually has no pledge when
-  the Family answers, and the response does not record the snapshot it was
-  answered against. C is the annual amount carried forward (the Edit's,
-  else the Family's). Money compares as exact two-decimal amounts. The
+  no pledge for it. A is $0.00 for the Family's answer: the upcoming year
+  usually has no pledge when the Family answers, and the response does not
+  record the snapshot it was answered against
+  ([#1753](https://github.com/epiphany40223/parishkit/issues/1753)). A
+  decision taken on a Conflict records that Conflict's R as the item's new
+  A (`stewardship_pledge_review.baseline_pledge`, frozen migration 0142,
+  provisional number, set by the guard), which Back to review and Entered
+  by hand carry while the Family's pledge is unchanged. C is the annual
+  amount carried forward (the Edit's, else the Family's). Money compares as
+  exact two-decimal amounts. The
   [refresh rules](#baseline-refresh-re-evaluation) then confirm the
-  pledge, flag Not seen in ParishSoft, or flag Entered incorrectly (a typo
-  at entry).
-- The items are the decided pledges whose decision is in force (To enter by
-  hand, Entered by hand, Ignored). Each gets a **pledge refresh check**,
-  written as a census change's [refresh check](#refresh-checks) is: an
-  immutable row per refresh and item in `stewardship_pledge_refresh_check`
-  (frozen migration 0139, provisional number), naming the decision row in
-  force, with the outcome, R and whether the refresh was full. A check
-  counts only while its decision row is the item's latest and in force, so
-  any later decision, or the Family changing its pledge, leaves it behind.
-  Its guard admits an insert only from the promoting source worker, for a
-  decided pledge in force, with R equal to the snapshot's own sum
-  (`stewardship_pledge_upcoming_v1`) and an outcome that agrees with it. A
-  Family no longer in the snapshot gets no check (rule 4).
+  pledge, flag Not seen in ParishSoft, flag Entered incorrectly (a typo at
+  entry) or find a Conflict.
+- The items are every pledge not yet Confirmed: a decided pledge whose
+  decision is in force (To enter by hand, Entered by hand, Ignored) and a
+  To review one. A decided pledge gets a **pledge refresh check**, written
+  as a census change's [refresh check](#refresh-checks) is: an immutable
+  row per refresh and item in `stewardship_pledge_refresh_check` (frozen
+  migration 0139, provisional number), naming the decision row in force,
+  with the outcome, R and whether the refresh was full. A check counts only
+  while its decision row is the item's latest and in force, so any later
+  decision, or the Family changing its pledge, leaves it behind. A To review
+  pledge has no decision row to name, so its check, in
+  `stewardship_pledge_open_check` (0142), names the Family's current
+  response and the item's version instead, and counts while no later live
+  response changes the pledge answer (an unchanged resubmission keeps it,
+  as rule 1 keeps a decision) and no decision is recorded. Both guards
+  admit an insert only from the promoting source worker, for a pledge in
+  that stage, with R equal to the snapshot's own sum
+  (`stewardship_pledge_upcoming_v1`) and an outcome that agrees with R, A
+  and C. A Family no longer in the snapshot gets no check (rule 4). A new
+  check is written only when the outcome changes, or when ParishSoft's
+  amount moves under a Conflict or an Entered incorrectly pledge, and (for a
+  marked pledge) once per full refresh until Not seen is reached.
 - R = C makes an accepted pledge **Confirmed**, keeping its Accepted or
   Accepted (edited), with nothing offered; on an Ignored pledge it only
-  notes "ParishSoft now matches the Family's answer". A marked pledge whose
-  R differs from C and from the amount recorded at the mark is **Entered
-  incorrectly**, shown with ParishSoft now beside the Reviewer's value and
-  no action until
+  notes "ParishSoft now matches the Family's answer". On a To review pledge
+  it is **Confirmed** with no reviewer, its row saying "Already in
+  ParishSoft", with nothing offered: like a decided pledge, it is Confirmed
+  on the amount alone (frequency below; share methods have no read). A
+  marked pledge whose R differs from C and from the amount
+  recorded at the mark is **Entered incorrectly**, shown with ParishSoft
+  now beside the Reviewer's value and no action until
   [#1737](https://github.com/epiphany40223/parishkit/issues/1737); one
   still at the mark after the configured number of full refreshes is
-  flagged **Not seen in ParishSoft**. A pledge at a third value that is
-  not marked would be a Conflict, which the stream cannot show yet: it
-  records nothing ([#1747](https://github.com/epiphany40223/parishkit/issues/1747)).
+  flagged **Not seen in ParishSoft**.
+- R differing from A and from C on a To review or To enter by hand pledge
+  is a **Conflict**: it returns to review with ParishSoft now beside the
+  Family's answer and any decision behind it shown as "Earlier: Accepted,
+  not in force.", offering Accept, Edit and Ignore. A later refresh that
+  finds R back at A returns it to its stage (To review, or To enter by
+  hand with its decision in force); one that finds R = C Confirms it.
 - **Entered by hand** records ParishSoft's upcoming-year amount from the
   current snapshot when its giving read is proven complete (0139 lets the
   pledge review guard admit it, and checks it against the snapshot);
-  otherwise the mark records none, and the refresh reads it as A, $0.00.
+  otherwise the mark records none, and the refresh reads it as A.
 - Frequency is compared only after a human-run, read-only smoke check on the
   Test Family records how ParishSoft stores a weekly, monthly, quarterly and
   annual pledge (`installmentAmount`, `numberOfMonths`,

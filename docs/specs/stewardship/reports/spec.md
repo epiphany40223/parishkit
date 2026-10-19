@@ -2778,31 +2778,37 @@ section is the page.
 - **Rows.** One row per Family whose current live response answers the
   financial questions: the rows of
   [Financial stewardship detail](#financial-stewardship-detail) with no filter.
-- **Filters**, always open: **Stage** first, To review by default, then To
-  enter by hand, Entered by hand, Entered incorrectly, Confirmed, Ignored, Not
-  seen in ParishSoft (only while some pledge has the flag, counted beside the
-  stage it is a flag of) and Every stage, each with its count; then the
-  Family name or Family DUID search of Financial stewardship detail. The
-  refresh places Confirmed and Entered incorrectly and sets the flag
+- **Filters**, always open: **Stage** first, To review by default, then
+  Conflict, To enter by hand, Entered by hand, Entered incorrectly, Confirmed,
+  Ignored, Not seen in ParishSoft (only while some pledge has the flag,
+  counted beside the stage it is a flag of) and Every stage, each with its
+  count; then the Family name or Family DUID search of Financial stewardship
+  detail. The refresh places Conflict, Confirmed and Entered incorrectly and
+  sets the flag
   ([pledge confirmation](../review-pipeline/spec.md#financial-stream),
-  [#1704](https://github.com/epiphany40223/parishkit/issues/1704)).
+  [#1704](https://github.com/epiphany40223/parishkit/issues/1704),
+  [#1747](https://github.com/epiphany40223/parishkit/issues/1747)).
 - **Columns**, in the shared order: Family (the Family-name link), Family DUID,
   Family's answer (the annual pledge, then its frequency, or "Cannot
   contribute", then the share methods chosen), Reviewer's value (an Edit's
   annual pledge and frequency), Stage, Submitted (the Family's latest
   response), Last decision and Actions. There is no Baseline column: A is
-  $0.00 for every pledge (#1704). **ParishSoft now**, after Reviewer's value,
-  is ParishSoft's upcoming-year amount the latest refresh found, shown on an
-  Entered incorrectly or Not seen in ParishSoft row, as on every worklist; a
-  page with no such row has no such column.
-- **Row and bulk actions** are the role table's for the stream: a To review row
-  offers Accept, Edit and Ignore; an Ignored row Back to review, with a required
+  $0.00 for a Family's answer (#1704, #1753). **ParishSoft now**, after
+  Reviewer's value, is ParishSoft's upcoming-year amount the latest refresh
+  found, shown on a Conflict, Entered incorrectly or Not seen in ParishSoft
+  row, as on every worklist; a page with no such row has no such column.
+- **Row and bulk actions** are the role table's for the stream: a To review or
+  Conflict row offers Accept, Edit and Ignore (a Conflict's earlier decision
+  reads "Earlier: Accepted, not in force." under its stage, and the decision
+  taken on it records ParishSoft's amount as the pledge's new baseline); an
+  Ignored row Back to review, with a required
   note; a To enter by hand row Entered by hand and Back to review; an Entered by
   hand row nothing (the mark is final), and neither does an Entered
   incorrectly row until its fixes land
   ([#1737](https://github.com/epiphany40223/parishkit/issues/1737)) or a
-  Confirmed one. An Ignored row ParishSoft now matches says "ParishSoft now
-  matches the Family's answer" under its stage. The bulk bar offers Accept, Ignore, Back
+  Confirmed one; a Confirmed row with no decision says "Already in
+  ParishSoft." under its stage. An Ignored row ParishSoft now matches says
+  "ParishSoft now matches the Family's answer" under its stage. The bulk bar offers Accept, Ignore, Back
   to review and Entered by hand, so the Administrator's flow ("a handful of
   manual edits ... and then bulk approve all the financial pledges") is a few
   Edits, then select all and Accept, then Stage To enter by hand, export, type
