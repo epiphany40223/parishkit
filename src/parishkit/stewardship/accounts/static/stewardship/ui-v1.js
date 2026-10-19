@@ -3456,6 +3456,11 @@
       else if (field.dataset.clientError === hint) delete field.dataset.clientError;
     });
   };
+  // Whether a field still holds the value it was drawn with (a select: its
+  // drawn choice), for data-require-edit below.
+  const openedValue = (field) => (field instanceof HTMLSelectElement
+    ? [...field.options].every((option) => option.selected === option.defaultSelected)
+    : field.value === field.defaultValue);
   const gateComplete = (form) => {
     if (!form || !form.hasAttribute("data-require-complete")) return;
     requiredWhen(form);
@@ -3469,9 +3474,18 @@
       && !node.value.trim();
     // A live check (the follow-up contact time) marks a field it found in
     // error with data-client-error, whose text is the hint.
-    const missing = [...form.elements].find((node) => node.willValidate
+    const invalid = [...form.elements].find((node) => node.willValidate
       && !node.closest("[hidden]")
       && (node.hasAttribute("data-client-error") || !node.validity.valid || blank(node)));
+    // An editor marked data-require-edit (the review worklist's Edit, R38
+    // finding 4) also holds Save until one of its fields differs from the
+    // value it opened with, saying so in its data-unchanged-hint: saving
+    // the value the item already carries forward records no edit, only a
+    // plain Accept, which reads as a lost edit.
+    const unchanged = invalid ? null : [...form.querySelectorAll("[data-require-edit]")]
+      .find((group) => !group.closest("[hidden]") && [...group.querySelectorAll("[name]")]
+        .filter((field) => field.willValidate).every(openedValue));
+    const missing = invalid || unchanged?.querySelector("[name]") || null;
     const hint = form.querySelector("[data-complete-hint]");
     // An empty required field may say what to type (data-empty-hint) where
     // its data-missing-hint describes the format (a placeholder name, #563).
@@ -3483,7 +3497,9 @@
       // or going never moves what follows it (no layout shift: the System
       // logs table under its filter bar, #953). Any other hint hides.
       hint.hidden = !missing && hint.dataset.completeHint !== "reserve";
-      hint.textContent = missing
+      hint.textContent = unchanged
+        ? (unchanged.dataset.unchangedHint || "Change the value to save it.")
+        : missing
         ? (missing.dataset.clientError
           // An unreadable time entry says why itself (#398).
           || (missing.matches("[data-time-entry]") && missing.validity.customError

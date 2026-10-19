@@ -3675,7 +3675,11 @@ inventory on #879 lists.
   decisions take an optional note and Reopen a required one. A note field
   shared by several actions is labelled by the action chosen: "Note
   (optional)", and "Note (required)" only while that action needs one,
-  changing in place as the dialog opens (the review worklist, R38). A row
+  changing in place as the dialog opens (the review worklist, R38). An
+  editor that records a corrected value (the review worklist's Edit) holds
+  its Save until the value differs from the one it opened with, saying so
+  in its reserved line, since saving the same value records no edit (R38).
+  A row
   shows only the actions that apply to it; a row with none shows nothing
   there.
 - **Selected state.** On a table whose row actions record a state (a

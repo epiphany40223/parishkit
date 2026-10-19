@@ -242,8 +242,17 @@ def test_edit_and_add_open_the_value_editor(page, component_origin):
     has_text(editor.locator("h2"), f"Edit {name(0)}")
     value = editor.get_by_label("Reviewer's value")
     assert value.input_value() == "555-0000"
+    # Save waits until the value changes, saying why (R38 finding 4): the
+    # same value would record only a plain Accept.
+    save = editor.get_by_role("button", name="Save")
+    assert save.is_disabled()
+    has_text(
+        editor.locator("[data-complete-hint]"),
+        "Change the value to save it; Accept keeps it as it is.",
+    )
     value.fill("555-0199")
-    editor.get_by_role("button", name="Save").click()
+    available(save)
+    save.click()
     has_text(page.locator("#worklist-notice"), ACCEPTED_NOTICE)
     assert "decide=edit" in sent[-1] and "value=555-0199" in sent[-1]
     # The edit is drawn on the row's Accept, which takes focus.
