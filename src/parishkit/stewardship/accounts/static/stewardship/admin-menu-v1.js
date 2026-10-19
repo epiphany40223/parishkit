@@ -179,7 +179,17 @@
   let hideTimer = null;
   const clipped = (name) =>
     name.scrollWidth > name.clientWidth + 1 || name.scrollHeight > name.clientHeight + 1;
-  const nameOf = (target) => (target && target.closest ? target.closest(SELECTOR) : null);
+  // A clipped name inside a link (a review worklist's shared name link,
+  // #1709, wraps its cell) is reached through that link: focus on the link
+  // shows the name's tip, and the name never joins the tab order itself.
+  const nameOf = (target) => {
+    if (!target || !target.closest) return null;
+    const name = target.closest(SELECTOR);
+    if (name) return name;
+    return target.matches("a") ? target.querySelector(SELECTOR) : null;
+  };
+  // The element that holds focus for a name: its link, or the name.
+  const holderOf = (name) => name.closest("a") || name;
   const onTip = (target) => Boolean(tip && target && tip.contains(target));
   const clearTimers = () => {
     clearTimeout(showTimer);
@@ -194,7 +204,7 @@
   // reaches the name or the tip first.
   const hideSoon = () => {
     clearTimeout(hideTimer);
-    if (shown && document.activeElement !== shown) hideTimer = setTimeout(hide, HIDE_GRACE);
+    if (shown && document.activeElement !== holderOf(shown)) hideTimer = setTimeout(hide, HIDE_GRACE);
   };
   // Put the shown tip under its name, or above it with no room below, kept
   // inside the viewport; rerun on scroll and resize, since a fixed tip
@@ -233,6 +243,7 @@
   // again leaves it, except the focused one, which focusout releases.
   const mark = (root) => {
     root.querySelectorAll(`${SELECTOR}:not(a)`).forEach((name) => {
+      if (name.closest("a")) return;
       if (clipped(name)) name.setAttribute("tabindex", "0");
       else if (name !== document.activeElement) name.removeAttribute("tabindex");
     });
@@ -268,7 +279,9 @@
     const name = nameOf(event.target);
     if (!name) return;
     if (name === shown) hide();
-    if (!name.matches("a") && !clipped(name)) name.removeAttribute("tabindex");
+    if (holderOf(name) === name && !name.matches("a") && !clipped(name)) {
+      name.removeAttribute("tabindex");
+    }
   });
   document.addEventListener("pointerdown", (event) => {
     if (onTip(event.target)) return;

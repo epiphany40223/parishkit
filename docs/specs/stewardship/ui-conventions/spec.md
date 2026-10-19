@@ -4135,7 +4135,8 @@ wraps instead to at most two lines (`cell-clamp`), so a name as long as any
 in use shows whole; only a name too long even for two lines ends in "…"
 ([#1136](https://github.com/epiphany40223/parishkit/issues/1136)). In the
 queue a name cut short shows whole in a tip on hover, keyboard focus and
-tap (a cut Ministry name joins the tab order for that), not in a bare
+tap (a cut name joins the tab order for that, unless it is a link's text,
+as on a worklist, where focus on the link shows the tip), not in a bare
 `title`, which keyboard and touch cannot reach; the whole name stays the
 cell's text for screen readers. Since
 [#1064](https://github.com/epiphany40223/parishkit/issues/1064) the queue's
