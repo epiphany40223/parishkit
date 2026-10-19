@@ -185,6 +185,7 @@ from .source_form_components import components as source_form_components
 from .stepper_components import POSTS as STEPPER_POSTS
 from .stepper_components import components as stepper_components
 from .system_health_components import components as system_health_components
+from .tabs_components import components as tabs_components
 from .timeline_components import components as timeline_components
 from .upload_defaults_components import components as upload_defaults_components
 from .upload_defaults_components import posts as upload_defaults_posts
@@ -2241,6 +2242,7 @@ def component_origin():
     responses.update(chart_components(context, admin))
     responses.update(dashboard_components(context, admin))
     responses.update(timeline_components(context, admin))
+    responses.update(tabs_components(context, admin))
     responses.update(find_family_components(context, admin))
     responses.update(user_components(context, admin))
     responses.update(security_components(context, admin))
