@@ -50,7 +50,7 @@ def test_staff_panels_link_each_stage_and_fit(
     expect(ministry.get_by_role("link", name="To review 8 requests")).to_be_visible()
     expect(
         ministry.get_by_role("link", name="To enter by hand 3 requests")
-    ).to_have_attribute("href", "/admin/reports/ministries/follow-up/roster/")
+    ).to_have_attribute("href", "/admin/reports/ministries/?stage=to_enter_by_hand")
     # A stream the menu greys out keeps its cards, greyed with the reason.
     financial = page.get_by_role("region", name="Financial")
     expect(financial.get_by_role("link")).to_have_count(0)
