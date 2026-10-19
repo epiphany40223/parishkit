@@ -273,6 +273,11 @@ DESCRIPTIONS = {
         "An automation session marked several Ministry requests Entered in "
         "ParishSoft, as Roster changes to enter's bulk mark does."
     ),
+    "admin_cmd_pledges_decide": _(
+        "An automation session accepted, edited, ignored or reopened pledges, "
+        "or marked them entered in ParishSoft, as the actions on Pledges to "
+        "enter do."
+    ),
     "admin_cmd_followup_information_update": _(
         "An automation session recorded follow-up on an Additional "
         "information request, as the request's Save does."
