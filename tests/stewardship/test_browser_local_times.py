@@ -255,10 +255,10 @@ def test_follow_up_page_labels_no_utc_entry():
     # names the browser's.
     assert "UTC" not in text
     # Every follow-up instant shown (the request's submitted time, history,
-    # contact, the queue's last contact, source as of) is converted in the
-    # browser. The queue has no Submitted column (#1064).
+    # contact, source as of) is converted in the browser; the worklist's own
+    # times (Submitted, Last contact, Last decision) are drawn the same way.
     shown = [line for line in text.splitlines() if "|date:'c'" in line]
-    assert len(shown) == 5
+    assert len(shown) == 4
     assert all("data-local-instant" in line for line in shown)
 
 

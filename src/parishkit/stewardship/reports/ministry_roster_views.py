@@ -195,6 +195,11 @@ def roster_rows(campaign_id, principal, show, ministry=""):
     names = _family_names({row["family_duid"] for row in rows})
     for row in rows:
         row["family_name"] = names.get(row["family_duid"], "")
+        # The Ministry to enter is the one carried forward: an Edit's, in
+        # place of the Family's (#1684).
+        if row.get("reviewed_ministry_duid"):
+            row["ministry_duid"] = row["reviewed_ministry_duid"]
+            row["ministry_name"] = row["reviewed_ministry_name"]
     shown = [
         row
         for row in rows

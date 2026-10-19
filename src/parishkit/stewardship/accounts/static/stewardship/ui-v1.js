@@ -1474,6 +1474,17 @@
       }
       if (node instanceof HTMLFormElement) {
         syncHidden(node, fresh);
+        // A menu whose choices carry counts (the review worklist's Stage,
+        // #1684) takes the fresh page's choice labels, so its counts follow
+        // a decision or an Apply; the reader's own choice is kept.
+        fresh.querySelectorAll("select[data-sync-options][id]").forEach((copy) => {
+          const menu = node.querySelector(`#${CSS.escape(copy.id)}`);
+          if (!menu) return;
+          [...copy.options].forEach((option, index) => {
+            const shown = menu.options[index];
+            if (shown?.value === option.value) shown.textContent = option.textContent;
+          });
+        });
         // The state a submit-on-change box's form now shows (see
         // reconcileBoxes); the box keeps the reader's own tick.
         fresh.querySelectorAll("[data-submit-on-change][data-applied][id]").forEach((copy) => {

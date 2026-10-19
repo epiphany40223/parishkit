@@ -30,7 +30,6 @@ FILTER_FORMS = {
     "financial-report.html",
     "logs.html",
     "ministries.html",
-    "ministry-followup.html",
     "ministry-roster.html",
     "timeline.html",
 }

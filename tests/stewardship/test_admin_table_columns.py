@@ -224,6 +224,9 @@ MEMBER_DUID_PAGES = {
     "census-worklist-add.html",
     "limitations-report.html",
     "ministry-followup.html",
+    # Ministry requests' review worklist (#1684): its help and Add's Member.
+    "ministry-requests.html",
+    "ministry-worklist-add.html",
     "ministry-roster.html",
     "source-form.html",
     "user-leader-import.html",

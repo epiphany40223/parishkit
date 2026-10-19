@@ -323,8 +323,13 @@ LEDGER = {
     # By Ministry counts. ``report ministry`` prints those counts, and
     # ``export ministry`` writes one Ministry's join or leave list, the file
     # the retired Members joining and leaving pages offered (#1157); the
-    # queue itself is ``followup list``'s (#463 PR 11a).
-    "ministry_report": command("report ministry", "export ministry", "followup list"),
+    # queue itself is ``followup list``'s (#463 PR 11a). Its review worklist
+    # (#1684) posts its bulk decisions to the page itself, where the
+    # retired bulk outcome address's ``followup bulk`` now belongs, until
+    # #1688 renames the commands.
+    "ministry_report": command(
+        "report ministry", "export ministry", "followup list", "followup bulk"
+    ),
     # A packet of the chosen Ministries' Members and contacts: an export.
     "ministry_packet": command("export ministry-packet"),
     # The Response dashboard shows the funnel and, since #1537, the
@@ -450,8 +455,6 @@ LEDGER = {
     # A Ministry request's page and its Save (#463 PR 11a).
     "ministry_followup_item": command("followup show"),
     "ministry_followup_update": command("followup show", "followup update"),
-    # Bulk outcomes on the queue (#1131): followup bulk (#463 PR 11a).
-    "ministry_followup_bulk": command("followup list", "followup bulk"),
     # Export these requests (#1157): the queue's filtered set with contacts,
     # through the page's own writer (#463 PR 11c).
     "ministry_followup_export": command("followup export"),
