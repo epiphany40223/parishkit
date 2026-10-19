@@ -704,7 +704,7 @@ Notes on the groups:
   [#1590](https://github.com/epiphany40223/parishkit/issues/1590)): for
   Census changes, the rows at its To review and Conflict stages, the same
   for Administrators and Staff (Administrator decision, 2026-10-18; Ready
-  to update is left to Publish to ParishSoft and the manual-entry report),
+  to update is left to Update ParishSoft and the manual-entry report),
   placed with the page's own stage rules; for
   Additional information, the current requests not yet marked "Follow-up
   completed" (its default view also lists completed ones); for Ministry
@@ -1081,7 +1081,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `financial_report` | Financial stewardship | Menu: Financial stewardship | Administrator, Staff | Financial stewardship detail; Financial report | `/admin/reports/financial/` | (same) |  |
 | `limitations_report` | Limitations | Menu: Limitations | Administrator, Staff | Talents and limitations | `/admin/reports/limitations/` | (same) | Renamed when talents were retired (#970); the old address is gone. Its CSV/XLSX/PDF download (`limitations/exports/`) is a non-page action. |
 | `census_changes` | Census changes | Menu: Census changes | Administrator, Staff | (new, #528) Pending census changes | `/admin/reports/census/` | (same) | Its CSV/XLSX/PDF download (`census/exports/`) is a non-page action; a row's Entered in ParishSoft, Ignore and Reopen post to the page itself. |
-| `census_publication` | Publish to ParishSoft | Census changes | Administrator | (new, [#528](https://github.com/epiphany40223/parishkit/issues/528)) | `/admin/reports/census/publication/` | (same) | Built in slices ([ADM-09](../../../plans/stewardship/admin-portal.md#adm-09-census-review-and-parishsoft-publication-ui)): the page, Check ParishSoft and the newest plan so far; Apply and Run again are not built yet. See [Publish to ParishSoft](../reports/spec.md#publish-to-parishsoft). Census changes links to it for Administrators, shown unavailable with its reason while publication is switched off. Check ParishSoft posts to the page itself; Apply posts to `publication/<plan>/confirmation/` and Run again to `publication/<plan>/retries/`. |
+| `update_parishsoft` | Update ParishSoft | Census changes | Administrator | Publish to ParishSoft | `/admin/reports/census/update-parishsoft/` | (same) | Built in slices ([ADM-09](../../../plans/stewardship/admin-portal.md#adm-09-census-review-and-parishsoft-publication-ui)); renamed, with its confirmation and run, by [#1688](https://github.com/epiphany40223/parishkit/issues/1688), and the old address is gone with no redirect. See [Update ParishSoft](../reports/spec.md#update-parishsoft). Census changes links to it for Administrators, shown unavailable with its reason while the update is switched off. Check ParishSoft posts to the page itself; Update's review and Apply post to `update-parishsoft/confirmation/` (`update_parishsoft_confirmation`) and Run again's to `update-parishsoft/retries/` (`update_parishsoft_retries`), each naming the plan and answering the review dialog. |
 | `information_queue` | Additional information | Menu: Additional information | Administrator, Staff | Additional information and follow-up | `/admin/reports/information/` | (same) |  |
 | `information_item` | Information request | Additional information | Administrator, Staff | Additional information and follow-up (one request); Information item | `/admin/reports/information/<item>/` | (same) | Return to the queue keeps its filters and page. |
 | `ministry_reports` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry reports | `/admin/ministry-reports/` | (retired; 404) | Replaced by Ministry requests, which shows the "no campaign" page when there is nothing for the viewer to report. |
@@ -6678,12 +6678,11 @@ Manual census items may be marked resolved externally or ignored by Admin or
 Staff, with notes, on the
 [Census changes](../reports/spec.md#pending-census-changes) worklist
 ([manual census resolution](../reports/spec.md#manual-census-resolution)).
-API-writable changes are view-only for Staff. An Administrator approves or
-ignores them on the same worklist
-([automatic census review](../reports/spec.md#automatic-census-review)), and
-publishes them from
-[Publish to ParishSoft](../reports/spec.md#publish-to-parishsoft), which
-follows the [data workflow](../data/spec.md#review-and-publication).
+Staff and Administrators accept or ignore API-writable changes on the same
+worklist ([automatic census review](../reports/spec.md#automatic-census-review)),
+and an Administrator writes the accepted ones to ParishSoft from
+[Update ParishSoft](../reports/spec.md#update-parishsoft), which follows
+the [data workflow](../data/spec.md#review-and-publication).
 
 The ParishSoft API cannot change Ministry rosters, so a join or leave is
 always entered in ParishSoft by hand
@@ -9233,22 +9232,24 @@ every `'<prefix>_'||` an installed audit-writing function builds to be a
   the operational failures and holds (`source_refresh_invalid`,
   `source_provider_failed`, `source_credential_failed`,
   `source_tenant_mismatch`, `source_destructive_change`,
-  `source_refresh_held`). With the
-  [Publish to ParishSoft](../reports/spec.md#publish-to-parishsoft) page
-  ([#528](https://github.com/epiphany40223/parishkit/issues/528), ADM-09;
-  not built yet) the publication types join it, leaving `UNGROUPED`'s
-  "no page shows it yet" reason: checks, plans, confirmations, attempts,
-  reruns and refusals (`census_publication_preflight_requested`,
+  `source_refresh_held`), and, since the
+  [Update ParishSoft](../reports/spec.md#update-parishsoft) page has its
+  confirmation and run
+  ([#1688](https://github.com/epiphany40223/parishkit/issues/1688)), the
+  update types: checks, plans, confirmations, attempts, reruns, the final
+  refresh and refusals (`census_publication_preflight_requested`,
   `census_publication_planned`, `census_publication_confirmed`,
   `census_publication_recorded`, `census_publication_rerun_requested`,
+  `census_publication_refresh_requested`,
   `census_publication_switched_off`, `census_publication_read_unconfirmed`,
-  `census_publication_refused`) and the command line's
-  `admin_cmd_census_publish_confirm` and `admin_cmd_census_publish_rerun`,
+  `census_publication_refused`), with the command line's
+  `admin_cmd_census_update_confirm` and `admin_cmd_census_update_rerun` once
+  they are built ([#1755](https://github.com/epiphany40223/parishkit/issues/1755)),
   which stay out of Staff follow-up with the other `admin_cmd_census_*`
-  types. The group's label then becomes **ParishSoft refreshes and
-  publishing**, its key staying `parishsoft`, because a publication is not
-  a refresh. The page's `census_publication_viewed` stays ungrouped with
-  the other page views.
+  types. Its label is **ParishSoft refreshes and updates**, its key staying
+  `parishsoft`, because an update is not a refresh. The page's
+  `census_publication_viewed` stays ungrouped with the other page views.
+
 - **Reports and downloads** (`downloads`, audit records only): reports and
   exports requested, made, cancelled or downloaded (`export_requested`,
   `export_cancelled`, `export_downloaded`, every `*_exported`,
