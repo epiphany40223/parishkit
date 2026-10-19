@@ -711,6 +711,8 @@ def test_edit_offers_another_ministry(page, component_origin):
 def test_add_asks_for_the_member_ministry_and_request(page, component_origin):
     """Staff's Add opens its dialog: the Member DUID, a campaign Ministry,
     Join or Leave and the optional ignored request it replaces."""
+    from playwright.sync_api import expect
+
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + STAGES)
     page.locator(".bulk-bar").get_by_role("button", name="Add").click()
@@ -722,5 +724,7 @@ def test_add_asks_for_the_member_ministry_and_request(page, component_origin):
     dialog.get_by_label("Ministry to add").select_option("12")
     dialog.get_by_label("Request to add").select_option("join")
     replaced = dialog.get_by_label("Added in place of (optional)")
-    assert "Ignored <Member>" in replaced.inner_text()
+    # The choices follow the Ministry and Request chosen; wait for them, as
+    # Firefox fills them a moment later.
+    expect(replaced).to_contain_text("Ignored <Member>")
     available(add)
