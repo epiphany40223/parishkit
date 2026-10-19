@@ -2727,11 +2727,15 @@
     });
     return new Set(keys.map((key) => key.replace(/#\d+$/, "")));
   };
+  // Campaign images' slot upload forms in the campaign wizard
+  // (data-wizard-upload) whose enabled file field holds a chosen image.
+  const chosenUploads = () => [...document.querySelectorAll("form[data-wizard-upload]")]
+    .filter((upload) => [...upload.querySelectorAll('input[type="file"]')]
+      .some((node) => !node.matches(":disabled") && node.files?.length > 0));
   // A Campaign setup step's Continue (#1404, campaign-step-actions.html)
   // records the step kept as is, so it waits while the page holds a change:
-  // a change-gated form that differs from its saved values, or an upload
-  // form (Campaign images) with a file chosen but not uploaded yet. The
-  // page's own Review stays the way on. Its hint after the row keeps its
+  // a change-gated form that differs from its saved values. The page's own
+  // Review stays the way on. Its hint after the row keeps its
   // line (data-idle hides it with visibility), and names the button only
   // while it is shown.
   // On a step that saves directly (Campaign settings, Share options, #1404
@@ -2741,13 +2745,16 @@
   // again. The one not offered is data-step-inactive (hidden with
   // visibility, so the cell keeps its width) and inert. Save and continue
   // is described by the form's complete hint, as the page's Save was.
+  // On Campaign images (data-direct-uploads, #1404 PR 4c) the change is a
+  // chosen image in any slot's upload form (chosenUploads, below).
   const gateStepContinue = () => {
     const form = document.querySelector("form[data-campaign-continue]");
     if (!form) return;
     const save = document.querySelector("[data-campaign-save]");
     const direct = save?.form;
     if (direct?.matches("[data-direct-save]")) {
-      const changed = direct.hasAttribute("data-holds-change");
+      const changed = direct.hasAttribute("data-direct-uploads")
+        ? chosenUploads().length > 0 : direct.hasAttribute("data-holds-change");
       form.toggleAttribute("data-step-inactive", changed);
       form.inert = changed;
       save.toggleAttribute("data-step-inactive", !changed);
@@ -2756,9 +2763,7 @@
       if (hint) save.setAttribute("aria-describedby", hint.id);
       return;
     }
-    const held = Boolean(document.querySelector("form[data-require-change][data-holds-change]"))
-      || [...document.querySelectorAll('form input[type="file"]')]
-        .some((node) => !node.matches(":disabled") && node.files?.length > 0);
+    const held = Boolean(document.querySelector("form[data-require-change][data-holds-change]"));
     const hint = document.getElementById("campaign-continue-hint");
     hint?.toggleAttribute("data-idle", !held);
     form.querySelectorAll("button[type=submit]").forEach((node) => {
@@ -5449,6 +5454,53 @@
   //   When the page cannot be read again (the sign-in ended), Save and
   //   continue is held (data-save-spent-gated) and the line says to reload.
   const SAVE_UNREACHABLE = "The server could not be reached, so nothing was saved. Try again in a moment.";
+  // Campaign images' Save and continue (#1404 PR 4c) first stages each
+  // chosen image at its slot's own upload address (data-wizard-upload),
+  // one at a time, as an upload outside the wizard does; the answer is
+  // that upload's review, of which only the staged bundle is read. Each
+  // staged bundle becomes the save form's bundle_<slot> field, so a retry
+  // after a refusal stages only what is not staged yet; changing a slot's
+  // file drops its field (below). A refused image (status 400 drawing the
+  // page) is marked at its field and said in its slot's line; any other
+  // refusal is said in the row's line. An answer that is neither (the
+  // sign-in page once the session ended) holds Save and continue until a
+  // reload (``hold``), as a save whose status is lost does. Returns whether
+  // every chosen image is staged; ``finish`` or ``hold`` ends the save with
+  // a line otherwise.
+  const stageUploads = async (form, finish, hold) => {
+    for (const upload of chosenUploads()) {
+      const name = `bundle_${upload.dataset.wizardUpload}`;
+      if (form.elements.namedItem(name)) continue;
+      let answer = null;
+      try {
+        answer = await readPage(formUrl(upload), {method: "POST", body: new FormData(upload)});
+      } catch { /* no answer: said below */ }
+      if (!answer) {
+        finish(SAVE_UNREACHABLE);
+        return false;
+      }
+      const parsed = new DOMParser().parseFromString(answer.text, "text/html");
+      const bundle = answer.response.ok
+        ? parsed.querySelector('input[type=hidden][name="bundle"]')?.value : "";
+      if (!bundle) {
+        if (answer.response.ok) {
+          hold(`The image could not be uploaded. ${SAVE_RELOAD}`);
+        } else if (answer.response.status === 400 && parsed.getElementById(upload.id)) {
+          finish("");
+          showFieldErrors(upload, parsed);
+        } else {
+          finish(refusalText(answer.response.status, answer.text), refusalLink(answer.text));
+        }
+        return false;
+      }
+      const field = document.createElement("input");
+      field.type = "hidden";
+      field.name = name;
+      field.value = bundle;
+      form.append(field);
+    }
+    return true;
+  };
   const SAVE_RELOAD = "Reload the page to make another change.";
   const SAVE_STATUS_LOST = "The change was saved, but its status can no longer be checked: your sign-in ended or your account no longer has access. " + SAVE_RELOAD;
   const saveStep = async (form, submitter) => {
@@ -5467,20 +5519,25 @@
       }
     };
     const opener = submitter || form;
-    const body = new URLSearchParams(new FormData(form, submitter || undefined));
     // Read before the save: the form's drawn (saved) state against the
     // posted one. Only Campaign settings carries the note.
     const financial = form.elements.namedItem("financial_enabled");
     const removes = financial instanceof HTMLInputElement && financial.defaultChecked
       && !financial.checked;
-    form.setAttribute("aria-busy", "true");
+    // Campaign images (data-direct-uploads) stages from the slots' own
+    // forms, so the whole slots region is held: a file changed, or an image
+    // removed, while an upload is in flight would otherwise save an image
+    // the page no longer shows, or post from a redrawn region.
+    const busy = form.hasAttribute("data-direct-uploads")
+      ? form.closest("[data-in-place-region]") || form : form;
+    busy.setAttribute("aria-busy", "true");
     opener.setAttribute("aria-disabled", "true");
     opener.classList.add("is-busy");
-    form.inert = true;
+    busy.inert = true;
     say("Saving…");
     const finish = (text, link) => {
-      form.inert = false;
-      form.removeAttribute("aria-busy");
+      busy.inert = false;
+      busy.removeAttribute("aria-busy");
       opener.removeAttribute("aria-disabled");
       opener.classList.remove("is-busy");
       reviewing.delete(form);
@@ -5512,6 +5569,9 @@
       form.elements.namedItem("request_key").value = key.value;
       finish(text, link);
     };
+    if (form.hasAttribute("data-direct-uploads") && !(await stageUploads(form, finish, hold))) return;
+    // Read once any images are staged, so the save names them.
+    const body = new URLSearchParams(new FormData(form, submitter || undefined));
     let answer = null;
     try {
       answer = await readPage(formUrl(form), {method: "POST", body});
@@ -5581,6 +5641,14 @@
     redrawFrom(fresh);
     if (!showOutcome("campaign-step-outcome", text)) announce(text);
   };
+  // A slot whose file changes after its image was staged stages it again.
+  document.addEventListener("change", (event) => {
+    const upload = event.target instanceof HTMLInputElement && event.target.type === "file"
+      && event.target.closest("form[data-wizard-upload]");
+    if (!upload) return;
+    document.querySelector(`form[data-direct-uploads] input[name="bundle_${upload.dataset.wizardUpload}"]`)
+      ?.remove();
+  });
   document.addEventListener("submit", (event) => {
     const form = event.target;
     if (event.defaultPrevented || !(form instanceof HTMLFormElement)

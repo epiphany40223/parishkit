@@ -31,6 +31,14 @@ The Financial page can still appear for a Family whose earlier financial
 answers await a decision after the module was turned off (family-v1.js's
 unresolved ``financial.removed`` conflict); that page is transitional, so
 its icon is not offered for it.
+
+Inside the campaign wizard (#1404 PR 4c) the slots draw no Upload and
+review: the action row's Save and continue first stages each chosen image
+at its slot's upload address (the same answer, of which the page reads only
+the staged bundle), then posts ``save`` here with the staged bundle of each
+chosen slot and the page's request key. ``_save`` checks them and records
+one change setting every chosen slot through ``campaign_wizard.save_step``,
+with no review dialog; Remove this image keeps its confirmation.
 """
 
 from uuid import UUID, uuid4
@@ -51,15 +59,17 @@ from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.field_rules import refuse_empty_file
 from parishkit.stewardship.web.refusals import (
     UserFacing,
+    UserFacingError,
     UserFacingStale,
     stale_page,
     unexpected_fields,
     with_default_code,
 )
 
-from . import admin_navigation
+from . import admin_navigation, campaign_wizard
 from .admin_editing import (
     confirm,
+    direct_key,
     editable_configuration,
     form_action,
     principal,
@@ -122,6 +132,16 @@ UNREVIEWABLE = {
         "choose Remove this image again if the slot still shows an image."
     ),
 }
+# Why a direct save's staged image can no longer be saved (#1404 PR 4c): it
+# is gone, expired, of another sign-in, or staged against older settings.
+# The images are chosen again after a reload, which stages them anew.
+UNSAVABLE = _(
+    "An uploaded image can no longer be saved: it expired after a day, was "
+    "made in another sign-in, or the settings changed since it was uploaded. "
+    "Reload the page, then choose the image again."
+)
+# The direct save's own fields; each chosen slot adds ``bundle_<slot>``.
+SAVE_FIELDS = frozenset({"action", "csrfmiddlewaretoken", "base_digest", "request_key"})
 # Why an upload that is not a usable image is refused, at its field, by the
 # kind of image the slot takes. Each names only what its slot needs, so it
 # fits the slot's reserved status line (#1410); the browser tests check the
@@ -373,6 +393,19 @@ def _salt(campaign_id, change):
     )
 
 
+def _staged_asset(request, service, slot, bundle_id):
+    """The one normalized image staged in ``bundle_id`` for ``slot``.
+
+    Only this sign-in's own ready upload of the slot's kind (a banner or an
+    icon) is admitted; its file must still be readable.
+    """
+    row, assets = staged_bundle(request, service, bundle_id)
+    if len(assets) != 1 or assets[0].label != _kind(slot):
+        raise LookupError("This upload is not an image for that slot.")
+    read_variant(media_root(), row.pk, file_receipt(assets[0]))
+    return assets[0]
+
+
 def _review(request, service, actor, configuration, campaign, change):
     """Review one staged image or one removal; nothing is requested yet.
 
@@ -384,11 +417,7 @@ def _review(request, service, actor, configuration, campaign, change):
         asset = None
         preview = review_removal(service, actor, configuration, campaign, slot)
     else:
-        row, assets = staged_bundle(request, service, bundle_id)
-        if len(assets) != 1 or assets[0].label != _kind(slot):
-            raise LookupError("This upload is not an image for that slot.")
-        asset = assets[0]
-        read_variant(media_root(), row.pk, file_receipt(asset))
+        asset = _staged_asset(request, service, slot, bundle_id)
         patch = _image_patch(campaign, slot, str(asset.pk))
         _check_candidate(service, configuration, patch, actor)
         preview = sign_preview(
@@ -435,15 +464,26 @@ def _scope(request, change):
     session's (or already published, for an exact retry); a removal needs
     only the editable configuration."""
     kind, slot, bundle_id = change
+    return _staged_scope(request, {slot: bundle_id} if kind == "image" else {})
+
+
+def _staged_scope(request, staged, gone=GONE_UPLOAD):
+    """The current scope of a change that uses the ``staged`` {slot: bundle}.
+
+    Under the work lock each staged image must still be this sign-in's own
+    upload (``applied_upload``), unless it is already published, for an
+    exact retry of the same change; an upload this sign-in no longer has
+    is refused with ``gone``, the page's own words.
+    """
 
     def scope(service):
         """Permit exact receipt retries after selection, not stale new edits."""
-        if kind == "image":
+        for slot, bundle_id in staged.items():
             asset = BrandingAsset.objects.filter(
                 bundle_id=bundle_id, label=_kind(slot)
             ).first()
             if asset is None or not _retained(asset):
-                applied_upload(request, service, bundle_id, refusal=GONE_UPLOAD)
+                applied_upload(request, service, bundle_id, refusal=gone)
         return editable_configuration(service), None
 
     return scope
@@ -468,6 +508,89 @@ def _reviewed(request, service, actor, configuration, campaign, change):
     )
 
 
+def _staged(parameters):
+    """The {slot: staged bundle} a direct save names (#1404 PR 4c).
+
+    The save posts only its own fields (``SAVE_FIELDS``) and one
+    ``bundle_<slot>`` per chosen slot, each once; it must name at least one.
+    """
+    allowed = SAVE_FIELDS | {f"bundle_{slot}" for slot in ARTWORK_SLOTS}
+    if set(parameters) - allowed or any(
+        len(values) != 1 for _, values in parameters.lists()
+    ):
+        raise unexpected_fields(parameters, allowed=allowed)
+    staged = {
+        slot: UUID(parameters[f"bundle_{slot}"])
+        for slot in ARTWORK_SLOTS
+        if f"bundle_{slot}" in parameters
+    }
+    if not staged:
+        raise ValueError("Choose an image to save.")
+    return staged
+
+
+def _save(request, service, actor, campaign_id):
+    """Campaign images' Save and continue in the campaign wizard (#1404 PR 4c).
+
+    The page has already staged each chosen image at its slot's upload
+    address; this records one change setting every slot it names to its
+    staged image. The change's request key comes from the page's key and the
+    staged bundle ids (``direct_key``), never the image bytes, so a repeat
+    of the same save answers with the first one's status
+    (``repeated_save``). Otherwise the page's version must be current, each
+    slot one the campaign shows, and each image this sign-in's own staged
+    upload of the slot's kind (else ``UNSAVABLE``); the candidate is
+    validated, signed with that key and confirmed at once by
+    ``campaign_wizard.save_step``, which refuses unless the wizard still
+    applies. Returns the change's status redirect.
+    """
+    staged = _staged(request.POST)
+    key = direct_key(request.POST)
+    if repeat := campaign_wizard.repeated_save(request, actor, key):
+        return repeat
+    configuration = editable_configuration(service)
+    campaign = _campaign(configuration, campaign_id)
+    if request.POST.get("base_digest") != configuration.active_configuration.digest:
+        raise stale_page()
+    for slot in staged:
+        if reason := unavailable(campaign, slot):
+            # The page greys such a slot's field and its staging refuses it,
+            # and modules changed meanwhile move the version (refused above),
+            # so only a request that skips the page lands here.
+            raise UserFacingError(reason, fix=_("Nothing was saved."))
+    artwork = dict(campaign.active_configuration.values.get("artwork", {}))
+    images = dict(artwork.get("images", {}))
+    try:
+        for slot, bundle_id in staged.items():
+            images[slot] = str(_staged_asset(request, service, slot, bundle_id).pk)
+        patch = artwork_patch(campaign, {**artwork, "images": images})
+        _check_candidate(service, configuration, patch, actor)
+    except (StaleRecordError, LookupError, ConfigError) as error:
+        if isinstance(error, UserFacing):
+            raise
+        raise UserFacingStale(UNSAVABLE) from None
+    salt = f"{SALT}{campaign.pk}save"
+    token = sign_preview(
+        actor=actor, configuration=configuration, patch=patch, salt=salt, key=key
+    )
+    try:
+        return campaign_wizard.save_step(
+            request,
+            service,
+            actor,
+            token=token,
+            salt=salt,
+            current_scope=_staged_scope(request, staged, UNSAVABLE),
+            campaign_id=campaign_id,
+        )
+    except StaleRecordError as error:
+        if isinstance(error, UserFacing):
+            raise
+        # An upload that expired, or went stale, between the checks above
+        # and the work lock: worded as those checks word it.
+        raise UserFacingStale(UNSAVABLE) from None
+
+
 @require_http_methods(["GET", "HEAD", "POST"])
 def artwork_settings(request, campaign_id):
     """List the slots; review a removal; apply a reviewed change.
@@ -476,12 +599,18 @@ def artwork_settings(request, campaign_id):
     with the slot and the page's version), answered with the dialog's
     fragment, or the dialog's Apply (``action=confirm`` with the preview and
     the slot and bundle it was signed for), answered with the change's
-    status. Refusals are raised for the dialog (see the module docstring).
+    status, as is the campaign wizard's direct save (``action=save``,
+    ``_save``). Refusals are raised for the dialog, or the wizard's status
+    line (see the module docstring).
     """
     try:
         service = runtime()
         actor = principal(request, service)
         filters(request.GET, allowed=set())
+        if request.method == "POST" and request.POST.get("action") == "save":
+            return _checked(
+                request, service, _save(request, service, actor, campaign_id)
+            )
         if request.method == "POST":
             action = form_action(
                 request.POST,
