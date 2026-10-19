@@ -210,19 +210,23 @@ LEDGER = {
     "hosted_file_upload": permanent(UPLOAD),
     "artwork_upload": permanent(UPLOAD),
     "branding_asset": permanent(IMAGES),
-    # Production transition and withdrawal.
-    # The verified preview with the DNS check and cleanup come in PR 12.
+    # Production transition and withdrawal: the four-step Go live page
+    # (#1585). Its actions are owed by PR 12 (#1809), named after the
+    # page's labels; ``go-live retry`` retries whichever failed task the
+    # current step offers a Retry for (a stop on Check, a box on Prepare,
+    # mail preparation on Production activation).
     "go_live": command("go-live readiness", owed="PR 12"),
     "go_live_families": pending("PR 12", "go-live families"),
-    # The Prepare step (#1585 slice 3) shows cleanup and link preparation.
     "go_live_prepare": pending(
-        "PR 12", "go-live cleanup-status", "go-live links-status"
+        "PR 12",
+        "go-live status",
+        "go-live retry",
+        "go-live refresh-again",
+        "go-live stop",
     ),
-    # The Confirm Production step (#1585 slice 4).
     "go_live_confirm": pending("PR 12", "go-live confirm-preview", "go-live confirm"),
-    # The page's mail preparation Retry and its Cancel go-live dialog
-    # (#1585 slice 5; go-live withdraw-preview, go-live withdraw) come in
-    # PR 12.
+    # Mail preparation's Retry and the Cancel go-live dialog (``go-live
+    # retry``, ``go-live cancel-preview``, ``go-live cancel``) come in PR 12.
     "production_progress": command("go-live progress", owed="PR 12"),
     # Family email history and Pause and resume mail.
     "family_email_progress": command("send progress"),
