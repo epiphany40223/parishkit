@@ -13,6 +13,7 @@ import pytest
 
 from parishkit.stewardship.reports import pdf_design, timeline_pdf
 from parishkit.stewardship.reports.timeline_documents import timeline_document
+from parishkit.stewardship.reports.timeline_reviews import WORDS as review_words
 from parishkit.stewardship.reports.timelines import (
     Email,
     Engagement,
@@ -216,6 +217,8 @@ def test_every_line_the_page_builds_has_a_known_marker():
         sign_ins=[START, (START + minute, True)],
         forms=[START],
         engagement=Engagement(START, "census", START + minute, START + minute),
+        # Every word a review line can carry (#1774).
+        reviews=[(START, word, "") for word in sorted(review_words)],
     )
     kinds = {str(line.what): timeline_pdf.kind_of(line.what) for line in lines}
     assert "other" not in kinds.values(), kinds

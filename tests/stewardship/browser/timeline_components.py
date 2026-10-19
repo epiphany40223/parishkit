@@ -6,7 +6,8 @@ Administrator's page, the fixtures serve the pages its When heading and its
 filter bar fetch at the exact addresses they carry (the filter bar's in the
 sorted-query form the fixture server also matches), so the script's fetch is
 an ordinary page request and the swapped-in region is the real template
-output, plus Staff's reduced view and pages whose Open form is unavailable.
+output, plus Staff's view (the full timeline with review lines, no export
+and no Mail message links, #1774) and pages whose Open form is unavailable.
 Every page is the Family hub (#1678) of a campaign with census, Financial and
 Ministry stewardship: the header strip, then the Timeline tab, the Family tab
 and one tab per Member (slice 2, from the census unit test's response, each
@@ -33,7 +34,7 @@ from parishkit.stewardship.reports.timeline_views import (
     page_context,
     timeline_url,
 )
-from parishkit.stewardship.reports.timelines import Timeline
+from parishkit.stewardship.reports.timelines import Timeline, events
 from parishkit.stewardship.web.dates import using
 
 from ..test_hub_census import ANSWERS, NAMES, ROWS
@@ -46,7 +47,18 @@ from ..test_hub_streams import (
     shaped_pledge,
 )
 from ..test_response_metrics import START
-from ..test_timelines import CAMPAIGN, FAMILY, IDENTITY, TIMELINE
+from ..test_timelines import (
+    CAMPAIGN,
+    ENGAGEMENT,
+    FAMILY,
+    FIRST,
+    IDENTITY,
+    INVITATION,
+    RECEIPT,
+    REMINDER,
+    SECOND,
+    TIMELINE,
+)
 from .automation_components import canonical
 
 ADMIN = timeline_url(FAMILY)
@@ -89,6 +101,29 @@ LATER = canonical(
     )
 )
 STAFF = "/timeline-staff"
+# Staff's page (#1774): the fixture's lines plus two review lines, one at
+# the second submission's instant (built after it) and one later.
+REVIEWED = Timeline(
+    TIMELINE.summary,
+    events(
+        [INVITATION, REMINDER, RECEIPT],
+        [FIRST, SECOND],
+        engagement=ENGAGEMENT,
+        reviews=[
+            (
+                SECOND.at,
+                "Accepted",
+                "Email address for Adams, Ann; by staff@example.org",
+            ),
+            (
+                SECOND.at + timedelta(hours=2),
+                "Handled",
+                "Additional information; by staff@example.org",
+            ),
+        ],
+    ),
+    ENGAGEMENT,
+)
 UNAVAILABLE = "/timeline-unavailable"
 # A Family ParishSoft no longer lists as active and registered, while other
 # campaign work holds exports: Open form and Queue timeline export are
@@ -165,13 +200,9 @@ def components(context, admin):
                 "values": {"size": "all", "sort": "-when"},
             },
         ),
-        # Staff's reduced view keeps only the portal lines (read_timeline).
-        STAFF: (
-            Timeline(
-                TIMELINE.summary, tuple(line for line in TIMELINE.events if line.portal)
-            ),
-            {},
-        ),
+        # Staff see the full timeline but may neither export it nor open
+        # Mail message pages (#1774).
+        STAFF: (REVIEWED, {"full": True, "export": None, "mail_links": False}),
         UNAVAILABLE: (
             TIMELINE,
             {"full": True, "testing_codes": True, "family_test_url": ADMIN},
@@ -195,6 +226,7 @@ def components(context, admin):
             options = {
                 "show_codes": True,
                 "export": EXPORT,
+                "mail_links": True,
                 "sections": HUB,
                 "census": CENSUS,
                 "ministry": True,

@@ -296,7 +296,8 @@ def test_an_old_sign_in_queues_the_timeline_export(request, auth_service, google
 
 
 def test_staff_get_no_timeline_export(request, auth_service, google):
-    """Staff see the summary only, so they get no form and the post is denied."""
+    """Staff see the full timeline (#1774) but may not export it yet (#1799):
+    they get no form and the post is denied."""
     harness, families = rehearsed_timeline(request)
     store = harness.service.store
     change(
