@@ -46,14 +46,15 @@ from .census_changes import LABELS, REOPENED, STAGES
 
 # The census stream's identity columns, in the shared column order (UX
 # conventions, "Table column order"), each sorted by ``census_change_views``'s
-# whitelisted sort tokens. The Stage is chosen with the Stage filter.
+# whitelisted sort tokens. The Stage is chosen with the Stage filter. How
+# it reaches ParishSoft is left out of the table, which it made too wide,
+# and kept in the downloads and as a filter (R38 finding 16).
 COLUMNS = (
     Column("family", "Family", sort="family"),
     Column("family_duid", "Family DUID", sort="duid", numeric=True),
     Column("who", "Who", sort="who"),
     Column("member_duid", "Member DUID", sort="member_duid", numeric=True),
     Column("what", "What changed", sort="what"),
-    Column("route", "How it reaches ParishSoft", sort="route"),
 )
 # PostgreSQL's SQLSTATE for a unique violation: a racing second decision of
 # the same version, which reads as the stale notice.
@@ -130,7 +131,6 @@ def worklist_rows(rows):
                 "family_duid": duid(row["family_duid"]),
                 "member_duid": _member_duid(row),
                 "what": row["label"],
-                "route": row["route_label"],
                 "reviewer_value": row["edited"],
                 "decided_by": decided_by or "",
                 "decided_at": decided_at,

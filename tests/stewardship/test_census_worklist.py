@@ -241,7 +241,6 @@ def test_the_page_draws_the_worklist_columns_and_the_download_below():
         "Who",
         "Member DUID",
         "What changed",
-        "How it reaches ParishSoft",
         "Baseline",
         "Family's answer",
         "Reviewer's value",

@@ -2119,7 +2119,9 @@ badge), Family DUID, then:
   without a DUID follow the Members on the first click.
 - **What changed**: the field's plain label (Mobile phone, Home address,
   No longer in this household, Deceased, New Member, and so on).
-- **How it reaches ParishSoft**: *Automatic* for a field the
+- **How it reaches ParishSoft**, in the downloads only (the table leaves
+  it out so it stays narrow, and the filter of that name still narrows
+  the rows; Administrator, 2026-10-19): *Automatic* for a field the
   [handling registry](../data/spec.md#proposed-changes) marks API-writable,
   *By hand* for every other row. A Family address, a death date, a gender,
   and any answer that removes a recorded value are *By hand*, because
