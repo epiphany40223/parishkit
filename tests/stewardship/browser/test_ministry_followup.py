@@ -614,7 +614,15 @@ def test_each_stage_shows_its_decision_on_the_icons(page, component_origin):
     assert "Stayed in the Ministry" in ignored.inner_text()
     edited = worklist_row(page, UUID(int=123))
     assert "Accepted (edited)" in edited.inner_text()
-    assert "Join Another Ministry" in edited.inner_text()
+    # The edited Ministry is in the Reviewer's value column itself (R38
+    # finding 11), not only somewhere in the row.
+    headings = [
+        node.inner_text().strip() for node in page.locator("#table thead th").all()
+    ]
+    cells = edited.locator(":scope > th, :scope > td")
+    assert cells.nth(headings.index("Reviewer's value")).inner_text().strip() == (
+        "Join Another Ministry"
+    )
     added = worklist_row(page, UUID(int=124))
     assert "Added by the parish" in added.inner_text()
     confirmed = worklist_row(page, UUID(int=125))
