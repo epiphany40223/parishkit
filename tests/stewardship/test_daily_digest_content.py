@@ -144,7 +144,7 @@ def test_daily_digest_keeps_exact_values_and_accessible_inline_chart():
         < html.rindex("Open the Response dashboard</a>")
     )
     assert html.count(f'bgcolor="{BLUE}"') == 2
-    assert "<strong>3 out of 1,234 (0.2%)</strong>" in html
+    assert "<strong>3&nbsp;out&nbsp;of&nbsp;1,234 (0.2%)</strong>" in html
     assert (
         'alt="Daily participation chart, October 31, 2026 to November 2, 2026.' in html
     )
@@ -301,6 +301,95 @@ def test_retained_reports_with_the_four_column_day_table_still_validate():
     start = html.rindex("<table", 0, html.index("Day by day</caption>"))
     html = html[:start] + old + html[end:]
     validate_digest_body(html, result.text, result.chart.data, result.images)
+
+
+def totals_table(html):
+    """Return the Campaign totals table of a compiled report body.
+
+    It ends where the next section's heading starts: each bar is a nested
+    table, so its own end tag would cut the table short.
+    """
+    start = html.index("<table", html.index("Campaign totals</h2>"))
+    return html[start : html.index("<h2", start)]
+
+
+def test_totals_give_each_figure_a_label_row_then_its_bar_and_value():
+    """Two rows per figure fit a phone with four-digit counts (#1564).
+
+    The label spans the table; the bar and the exact value share the next
+    row. The value breaks only before its parenthesis; the text part keeps
+    plain spaces.
+    """
+    value = document()
+    chart = value.participation
+    days = (
+        *chart.days[:-1],
+        replace(
+            chart.days[-1],
+            first_responses=1088,
+            cumulative_responses=1234,
+            cohort_denominator=2345,
+        ),
+    )
+    value = replace(value, participation=replace(chart, days=days))
+    result = render(value)
+    table = totals_table(result.html)
+
+    def label(text):
+        """A figure's label row."""
+        return f'<tr><td colspan="2" style="{STYLES["total-label"]}">{text}</td></tr>'
+
+    def figure(cells):
+        """The bar and value cells' opening tags."""
+        return (
+            f'<tr><td width="55%" style="{STYLES["total-bar"]}">{cells}</td>'
+            f'<td width="45%" align="right" style="{STYLES["total-value"]}">'
+        )
+
+    assert table.count("<tr><td colspan") == 3
+    responded = table.index(label("Families that have responded"))
+    first = table.index(label("First submissions that day"))
+    pledges = table.index(label("Cumulative annual pledges (USD)"))
+    assert responded < first < pledges
+    bar_cell = f'<tr><td width="55%" style="{STYLES["total-bar"]}"><table '
+    assert responded < table.index(bar_cell, responded) < first
+    assert "<strong>1,234&nbsp;out&nbsp;of&nbsp;2,345 (52.6%)</strong>" in table
+    assert "<strong>1,088</strong> (busiest&nbsp;day:&nbsp;1,088)" in table
+    # Pledges have no bar: an empty bar cell keeps the value on the right.
+    assert figure("") + "<strong>$3,234.56</strong></td></tr>" in table
+    assert "white-space" not in table.replace(STYLES["track"], "")
+    assert "Families that have responded: 1,234 out of 2,345 (52.6%)" in result.text
+    assert "First submissions that day: 1,088\n" in result.text
+    assert "&nbsp;" not in result.text
+
+
+def test_retained_reports_with_one_row_per_total_still_validate():
+    """A report compiled before the two-row totals (#1564) still delivers.
+
+    The funnel still compiles the old row styles today; this guards against
+    dropping them from the validator if the funnel ever changes.
+    """
+    result = render(document())
+    old = (
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        f'border="0" style="{STYLES["rows"]}"><tbody>'
+        f'<tr><td width="34%" style="{STYLES["label"]}">First submissions that '
+        f'day</td><td width="40%" style="{STYLES["bar"]}"></td>'
+        f'<td width="26%" align="right" style="{STYLES["value"]}"><strong>1'
+        "</strong> (busiest day: 1)</td></tr>"
+    )
+    html = result.html
+    start = html.index("<table", html.index("Campaign totals</h2>"))
+    end = html.index("<h2", start)
+    html = html[:start] + old + "</tbody></table>" + html[end:]
+    validate_digest_body(html, result.text, result.chart.data, result.images)
+
+
+@pytest.mark.parametrize("colspan", ["1", "4"])
+def test_a_total_label_spans_only_its_bar_and_value(colspan):
+    """A data cell's colspan stays inside the closed set (#1564)."""
+    assert layout_attribute("td", "colspan", "2") == "2"
+    assert layout_attribute("td", "colspan", colspan) is None
 
 
 @pytest.mark.parametrize(

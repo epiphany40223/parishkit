@@ -134,6 +134,11 @@ STAFF = Principal(UUID(int=97), frozenset({"staff"}))
 LEADS = Principal(UUID(int=98), frozenset({"ministry_leader"}), frozenset({9}))
 
 
+# The sample requests' Family record, whose hub a Member name opens.
+FAMILY = UUID(int=81)
+HUB = f"/admin/reports/families/{FAMILY}/"
+
+
 def _worklist(rows, *, query=None, principal=STAFF, mutable=True, marks=None):
     """The worklist page's context for detached selection ``rows`` (#1684).
 
@@ -177,7 +182,11 @@ def _worklist(rows, *, query=None, principal=STAFF, mutable=True, marks=None):
         action=reverse("admin:ministry_report"),
         decisions={},
         asked={},
+        # Every shown request's Family, for the Member name's hub link.
+        families={str(row["id"]): FAMILY for row in shaped},
     ) | {
+        # The page's viewer, whose role decides the Family hub link.
+        "request": SimpleNamespace(principal=principal),
         "query": query,
         "mutable": mutable,
         "can_tick": "staff" in principal.roles,

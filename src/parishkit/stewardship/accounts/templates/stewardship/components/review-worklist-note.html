@@ -7,9 +7,11 @@
   item requires it (review pipeline spec, "Reviewed stage"): ui-v1.js sets
   the nameless choice field from the opening control's
   data-confirm-choice, and the note is required while it says "reopen"
-  (data-required-when). Confirm then waits, saying why in the reserved
+  (data-required-when). Its label follows in place: "Note (optional)",
+  or "Note (required)" only while the chosen action needs it (ui-v1.js,
+  data-required-label). Confirm then waits, saying why in the reserved
   line below, which the dialog's accept_hint names. The note goes back to
   empty whenever the dialog opens (data-confirm-reset), so an earlier
   note is never recorded again unasked.
-{% endcomment %}<div class="dialog-fields" data-missing-hint="{% translate 'Say why this ignored item is reopened.' %}"><input type="hidden" id="{{ dialog_id }}-choice" value="" data-confirm-choice><label for="{{ dialog_id }}-note">{% translate "Note (required to reopen an ignored item)" %}</label><input id="{{ dialog_id }}-note" name="{{ note_name|default:'note' }}" maxlength="2000" value="" data-confirm-reset data-required-when="{{ dialog_id }}-choice=reopen"></div>
+{% endcomment %}<div class="dialog-fields" data-missing-hint="{% translate 'Say why this ignored item is reopened.' %}"><input type="hidden" id="{{ dialog_id }}-choice" value="" data-confirm-choice><label for="{{ dialog_id }}-note" data-optional-label="{% translate 'Note (optional)' %}" data-required-label="{% translate 'Note (required)' %}">{% translate "Note (optional)" %}</label><input id="{{ dialog_id }}-note" name="{{ note_name|default:'note' }}" maxlength="2000" value="" data-confirm-reset data-required-when="{{ dialog_id }}-choice=reopen"></div>
 <p class="help" id="{{ accept_hint }}" data-complete-hint="reserve"></p>

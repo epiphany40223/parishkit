@@ -39,6 +39,9 @@ class Migration(migrations.Migration):
         # the users swap, so its tables are in runtime_grants.CLOSURE_TABLES.
         ("stewardship_workflows", "0003_ministry_review_pipeline"),
         ("stewardship_responses", "0013_census_pipeline_review"),
+        # The pledge review's frozen file (0135) comes before this one
+        # (0136) wherever both branches meet.
+        ("stewardship_reports", "0032_pledge_review"),
     ]
 
     operations = [

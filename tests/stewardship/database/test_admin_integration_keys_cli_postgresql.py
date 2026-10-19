@@ -251,9 +251,14 @@ def test_a_failed_switch_is_shown_reviewed_and_finished(keys):
 
 def test_a_token_from_the_page_is_confirmed_by_the_command(keys):
     """Tokens are bound to the Administrator, not the channel."""
-    row = failed_switch(keys.working)
+    failed_switch(keys.working)
     _, secret, _ = paired(keys.service)
-    page = keys.working["browser"].get(f"/admin/system/key-changes/{row.pk}/selection/")
+    # The settings page's Finish switching review, in its dialog (#1568).
+    page = post(
+        keys.working["browser"],
+        "/admin/system/integrations/parishsoft/",
+        {"action": "finish"},
+    )
     # Read from standard input, as the guide recommends, so the token stays
     # out of the argument list.
     token = hidden(page, "preview")

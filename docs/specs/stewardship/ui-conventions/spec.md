@@ -56,6 +56,7 @@ when it lands.
   [review dialog](#review-dialog),
   [conditional fields](#conditional-fields),
   [binary choices](#binary-choices),
+  [Clear filters](#clear-filters),
   [Basic and Advanced modes](#basic-and-advanced-modes),
   [single-campaign interim](#single-campaign-interim),
   [addresses and legacy URLs](#addresses-and-legacy-urls),
@@ -63,7 +64,7 @@ when it lands.
   [unavailable menu pages](#unavailable-menu-pages),
   [navigation rules](#navigation-rules), [wizards](#wizards).
 - Admin page layout: [page help](#page-help),
-  [button labels](#button-labels),
+  [button labels](#button-labels), [button emphasis](#button-emphasis),
   [review pipeline terms](#review-pipeline-terms),
   [shared visual style](#shared-visual-style),
   [colour scheme](#colour-scheme),
@@ -1466,12 +1467,12 @@ the campaign wizard in #1404 PR 4).
   enctype is `multipart/form-data` (an upload editor's file), otherwise
   URL-encoded. A form's other submit button marked `data-review-skip`
   (Off-site backups' Test access) is no Review: it takes the form's other
-  way. A form marked `data-review-native="<field>"` submits natively,
-  without the dialog, while that field holds a value: an integration's
-  pasted new key, whose slow install is followed on the page (a recorded
-  exception, below). Until the answer arrives the form is inert and marked
-  busy, and Review changes says it is working, so nothing can be edited
-  while the review is being prepared.
+  way. A form marked `data-review-key="<field>"` holds a secret: while that
+  field holds a value (an integration's pasted new key), Review posts the
+  form without it, so the server reviews everything else and never receives
+  the key until Apply (a recorded exception, below). Until the answer
+  arrives the form is inert and marked busy, and Review changes says it is
+  working, so nothing can be edited while the review is being prepared.
 - **Field errors stay on the form.** A Review refused for the values in the
   form (a required field, a value out of range) does not open the dialog: the
   form shows its error summary and marks each field, as the
@@ -1620,11 +1621,23 @@ Recorded exceptions (Administrator decision, 2026-10-11):
 - **The setup wizard** keeps its stepwise Next and Back, with its own review
   step ([Bootstrap and first-Admin
   wizard](../admin-portal/spec.md#bootstrap-and-first-admin-wizard)).
-- **Integrations' slow key install** shows its status inside the
-  Integrations page while the key is installed, not in a dialog or on a
-  second page ([#456](https://github.com/epiphany40223/parishkit/issues/456)):
-  Save with a new key pasted submits natively (`data-review-native`).
-  Integrations' other changes use the dialog.
+- **Integrations' slow key install** shows its progress inside the
+  integration's page while the key is checked and installed, not in the
+  dialog or on a second page
+  ([#456](https://github.com/epiphany40223/parishkit/issues/456)). The key
+  change itself is reviewed in the dialog like any other change
+  ([#1568](https://github.com/epiphany40223/parishkit/issues/1568), narrowing
+  this exception): Save with a key pasted opens a confirmation that names
+  the key only by its last characters, which the browser reads from the
+  field (the server never draws any part of a key). Apply then posts the
+  page's own form, key included, without a page load, instead of a signed
+  preview, since sealing the key at Review would make Review a write; the
+  dialog closes as soon as the key is staged (a second or two), and the
+  page's status line follows the check and install in place, then redraws
+  the page in place when they finish. **Finish switching to the new key**
+  is a confirmation in the same dialog. A key's check takes about a minute,
+  which is why its progress stays on the page: the page can be left and
+  the check carries on.
 
 Going live uses the dialog for each of its consequential actions: **Start
 go-live** and **Confirm Production** (full reviews, Confirm Production with
@@ -1657,8 +1670,9 @@ same issue. The
 [integration settings pages](../admin-portal/spec.md#parish-and-integration-configuration)
 use the dialog too (#750): an ordinary settings edit is a compact review, a
 refresh schedule change keeps its full review, and setting up Off-site
-backups by its folder, removing Slack and turning off off-site copies are
-confirmations; the Backup encryption key change still uses its separate
+backups by its folder, removing Slack, turning off off-site copies, a key
+change and Finish switching to the new key are confirmations (#1568); the
+Backup encryption key change still uses its separate
 Review page. The in-place review panel of #532 is retired
 ([#1429](https://github.com/epiphany40223/parishkit/issues/1429),
 [in-place controls](#in-place-controls)); the other editors use separate
@@ -1797,6 +1811,101 @@ Testing rehearsal.
   and has no menu for that choice, and its view no longer hands the
   template the choice's options. Any other menu built from a loop is
   checked in review.
+
+### Clear filters
+
+**Rule.** Every Admin filter form (a page's `form#table-filters`, in a
+filter bar or a Filters panel) ends with two buttons side by side: **Apply
+filters**, then **Clear filters** directly after it (in a Filters panel
+both share Apply's grid cell, Clear wrapping under Apply where that cell is
+too narrow, so no row is added; in a filter bar whose filters leave too
+little room beside them, such as Sent mail's at 1280 px, Clear likewise
+wraps under Apply in the same item, Apply staying on the fields' row).
+The pair is never wider than its line, so on a phone Clear wraps under
+Apply rather than widening the page, and its two buttons have a narrower
+inline padding than other buttons, so that side by side they fit one
+Filters panel cell even with wider fonts. In Sent mail's and the
+Timeline's filter bars the pair takes the room beside the filters first,
+up to both buttons side by side, and the filters grow from what is left,
+never narrower than their own label line.
+Clear filters puts every filter back to the page's default in one step and
+shows the result in place. No filter form names its apply button otherwise
+(the Ministries list's Filter, Background work's Show tasks, Refused
+addresses' Show refusals, Roster changes' Apply and the Timeline's Show
+lines became Apply filters, #1651). **Why.** Clearing each field by hand,
+or editing the address, is slow and easy to get wrong; a reload or a link
+to the bare page would lose the reader's sort, rows per page and view
+choices (Administrator, pk-local review,
+[#1651](https://github.com/epiphany40223/parishkit/issues/1651)). **Shared
+code.** `components/filter-actions.html` (both buttons),
+`data-clear-filters` and `data-filter` in `ui-v1.js`, the unavailable tip
+in `admin-menu-v1.js`; `test_clear_filters.py` (the guard) and the browser
+tests of the pages it names. **Precedent.** #1651.
+
+- **Defaults are the server's.** Clear filters sends the filter form without
+  its filters, so the server answers with the page's own unfiltered view,
+  and the form then shows that answer's values: Census changes' Status goes
+  back to its open changes and System logs' Show boxes to their first-visit
+  ticks, not to blank fields. Every visible filter field is reset, including
+  one inside a closed disclosure (System logs' "Filter by identifier"), and
+  so is every hidden field that carries a filter, marked `data-filter`
+  (System logs' submitted-form mark, the family directory's kept Campaign
+  mail can reach, Sent mail's one-send view). A private filter, kept out
+  of addresses, is cleared from the form too, so no later request sends it.
+- **What it keeps.** The table's sort and rows per page, the browser's time
+  zone and any view choice the form carries as a hidden field (a
+  [segmented pair](#binary-choices)'s chosen view, such as Production or
+  Testing) are kept. The list starts again at its first page, as after
+  Apply.
+- **A data view is not a filter.** A choice that switches the data shown
+  between Production and Testing is a view, not a filter: Clear filters
+  keeps it. The family directory's Responses shown and Sent mail's
+  Production or Testing are segmented pairs, so their filter forms carry
+  the choice as a kept hidden field; such a choice drawn as a visible
+  control in a filter form is kept too, and is then marked `data-view`.
+  Roster changes' Show, also a segmented pair, is kept the same way.
+  (Coordinator default on
+  [#1651](https://github.com/epiphany40223/parishkit/issues/1651); the
+  Administrator can override it.)
+- **In place.** Clearing works as applying filters does
+  ([Admin tables](#admin-tables), #484): every table region, count, summary
+  and Filters panel count is refreshed without a reload or a scroll jump,
+  the address follows the answer as after Apply (a GET page's becomes the
+  cleared view's; a POST page keeps its own or shows the link the answer
+  draws), one request runs at a time, and a filter the server had refused
+  loses its mark. The Filters panel stays open. The live region
+  says "Filters cleared." and then the rows now shown.
+- **Focus.** Focus stays on Clear filters, which is then unavailable.
+  What is announced is the live region's "Filters cleared." and the rows
+  now shown; the unavailable reason's tip is not shown or announced at
+  that moment, but on the next hover, keyboard focus or tap.
+- **Unavailable.** Clear filters is unavailable while it has nothing to do:
+  every filter field shows the page's default and the list shown uses the
+  defaults too. It is then greyed (`aria-disabled`), stays in the tab order
+  and keeps its size and place ([no layout shift](#no-layout-shift)), and
+  its reason, "Every filter already shows its default.", is a tip shown on
+  hover, keyboard focus or tap and announced as its description, like
+  other unavailable in-page controls ([navigation rule
+  10](#navigation-rules)). It becomes available as soon as any filter
+  field changes. The page knows its defaults when it was opened with no
+  filter in its address, or after a Clear; a page opened already filtered
+  (a count link, a cross-link, a bookmark) keeps Clear filters available
+  until then. A POST report shown at its plain address is taken as its
+  default view, as a reload shows it.
+- **Never held by a filter's error.** A filter field the browser or server
+  refuses (a half-typed date, a malformed identifier) never holds Clear
+  filters: it is the quickest way out of that state.
+- **Not this pattern.** A box that applies itself when ticked, with no apply
+  button (Automation access's Include ended sessions), a segmented pair
+  (each segment applies at once), and Campaign comparison's Compare on day,
+  which has no unfiltered view.
+- **Guard.** A template test fails when an Admin template's filter form
+  does not draw its buttons through the shared component, draws another
+  submit button, or has a hidden field that is neither kept state (the
+  table's sort and size, the zone, a listed view choice) nor marked
+  `data-filter`, or a visible Production or Testing choice (`name="mode"`)
+  not marked `data-view`. It finds every filter form and field whatever
+  its attribute order, in every Admin template and subdirectory.
 
 ### Basic and Advanced modes
 
@@ -2150,7 +2259,8 @@ match.
    that is not done yet, with the full step list as
    [step bars](#step-bars) describes it.
 2. **One primary action per step**, at the bottom of the page in one action
-   row: **Back** (secondary, first) and one primary control (last). A step
+   row: **Back** (secondary, first) and one primary control (last), an
+   instance of [button emphasis](#button-emphasis). A step
    never offers only an unavailable Save. Going on is never only in the
    stepper's summary or its list.
 3. **Accept as is.** While the step's form holds no change, the primary
@@ -2315,8 +2425,8 @@ report whose filter form is longer than a row puts it in a "Filters" panel (the
 `filterpanel` template tag): a native disclosure that starts closed and renders
 open whenever the shown results use any filter other than the page's default,
 so an applied filter is never hidden. Open, a long form is a compact grid of
-its fields, each label tight above its box and Apply beside the last field
-when the row has room, in one column on a phone (#1411); the Family
+its fields, each label tight above its box and Apply and
+[Clear filters](#clear-filters) beside the last field when the row has room, in one column on a phone (#1411); the Family
 directory's short fields keep their filter bar. The Family directory and
 Census changes are the two exceptions to the closed start: the Family
 directory's Filters panel is open by default (an Administrator decision, #227),
@@ -2424,6 +2534,53 @@ whole label, such as the confirm dialog's `accept`. Labels built in Python
 or written by JavaScript are not covered. Progress text such as "Saving…"
 and truncated names are not labels, so they are unaffected.
 
+### Button emphasis
+
+**Rule.** A logical group of controls has at most one primary (green)
+button (Administrator, 2026-10-18,
+[#1713](https://github.com/epiphany40223/parishkit/issues/1713)):
+
+1. **One green button per group.** A group is one set of controls that act
+   together: a form, a filter bar, a dialog's action row, a bulk-action bar
+   or an export pane. Its green button is the group's main forward action,
+   such as Save, Apply filters, Send or Confirm. A page may have several
+   green buttons when they sit in different groups: the export pane's
+   buttons and the filter bar's Apply filters above the same table are two
+   groups.
+2. **Every other button in the group is white** (secondary): Cancel, Back,
+   Clear filters, Reset and the like. A group may have no green button at
+   all.
+3. **Destructive actions are red** (`button-danger`), as the
+   [row actions](#row-actions-and-confirmation) say.
+4. **Selected-state controls are separate.** Tabs,
+   [segmented pairs](#binary-choices) and selected-state action icons show
+   which choice is in force by fill. Exactly one segment is filled,
+   whatever primary button sits in the same page or group.
+
+The setup and campaign [wizards](#wizards)' one primary action per step is
+an instance of this rule. How a button is drawn primary or secondary is in
+[shared visual style](#shared-visual-style).
+
+**Why.** Green says "this is what you came to do here". Two green buttons
+side by side make the reader stop and work out which one moves the task
+forward; one green button per group answers that before they ask.
+
+**Guards.** A template test reads every portal template and counts, in each
+group, the shared `{% button %}` tags that draw primary: not the secondary
+or link variants, the danger class or an icon button. It reads each
+`{% if %}` branch on its own, so a button and its unavailable twin count
+once, and a button repeated by a loop inside a group counts twice; buttons
+that never show together are branches of one `{% if %}`. A group
+is a `<form>`, a `<dialog>`, an element with one of the group classes
+(`filter-bar`, `bulk-bar`, `export-panel`, `dialog-actions` and the other
+action rows the test names), an element marked `data-control-group`, or a
+row of sibling forms with nothing between them but template tags, which a
+reader sees as one row of buttons. A button with a `form` attribute belongs
+to that form's group. A list of reviewed exceptions may only shrink. The
+test does not follow `{% include %}`, so a browser test also opens
+representative pages and counts the visible green-filled buttons in each
+rendered group, including buttons a script builds.
+
 ### Review pipeline terms
 
 **Rule.** Every page, export, help text, notice, audit display and
@@ -2471,7 +2628,8 @@ The portal and the emails share one visual style
   shrink. A button is secondary only when it is drawn so (the secondary
   variant, or the `button-secondary` class on a button a script builds),
   never because of where it sits or what attributes it carries, and a test
-  holds the stylesheet's secondary rule to that class alone.
+  holds the stylesheet's secondary rule to that class alone. When to draw
+  each is in [button emphasis](#button-emphasis).
 - **Email buttons:** `email_button()` renders the same primary and
   secondary buttons for email: a one-cell table with inline styles from the
   tokens, `bgcolor`, and Outlook padding. The label is real text, so the
@@ -3444,7 +3602,27 @@ selection.
 A **worklist** (a table a reader works through, such as the review
 pipeline's [review worklist](../review-pipeline/spec.md#review-worklist)) has its filters
 always open, never behind a disclosure, above the table, and its export
-buttons below the table. A table's create action (the review worklist's
+buttons below the table. Its filters sit in rows that wrap, each field
+13rem wide (on a phone, the whole row), and its Apply filters and
+Clear filters follow the last field as every filter form's do
+([Clear filters](#clear-filters)), with no line between that field and
+them (R38). Its view is in its address, so a reload re-renders the same
+view: after every in-place answer the address bar shows the page's own
+address with the Stage, the closed filters and the table's sort, size and
+page (`a[data-page-address]`), and the page draws that view from it. A
+private value (a name search) never reaches the address, as on the
+[POST reports](#admin-tables), so a reload clears only it (R38). The
+answer to the reader's own last decision
+(a review worklist's notice) sits under the filters, just above the table,
+on one reserved line (two on a phone, where it can wrap) that is kept
+while empty, so a notice appearing never
+moves the table (no layout shift), and nothing else reserves room above the
+filters (R38). On a worklist, a Family's or Member's name opens the
+Family hub (the Family's Timeline page) for the viewers who may open it,
+through the shared Family-name link, and is plain text for the others,
+such as Ministry leaders; the cell naming the item (Ministry requests'
+Ministry) opens the item's own page, where it has one, for every viewer
+(an Administrator decision, R38). A table's create action (the review worklist's
 **Add**) sits in its selection bar, shown only to readers allowed to add
 there ([#1680](https://github.com/epiphany40223/parishkit/issues/1680)).
 
@@ -3484,7 +3662,11 @@ inventory on #879 lists.
 - **Actions column.** The last column holds each row's actions as small icon
   buttons (`table_actions`), all the same square size: Edit, a link to the
   item's own page, and Delete. Each has an accessible name and a matching
-  tooltip that name the row ("Edit Reminder 2", "Delete Reminder 2"), and the
+  tooltip that name the row ("Edit Reminder 2", "Delete Reminder 2"). An
+  icon's tooltip is one short phrase, never more than one sentence, with
+  no full stop, as these are; a selected icon's names its state and undo
+  in one phrase ("Accepted; choose Back to review to change it"), and a
+  guard checks every review worklist tooltip (R38). The
   icons are drawn inline, so they need no request and stay inside the
   content security policy. A destructive action with another name uses its
   own word and icon in Delete's place and works the same way; so far only
@@ -3496,8 +3678,16 @@ inventory on #879 lists.
   undo arrow). An action that carries a note opens the confirmation dialog
   instead, which holds the note, with an ordinary confirm button unless the
   action cannot be undone; so far only Census changes ([#879](https://github.com/epiphany40223/parishkit/issues/879)), whose
-  decisions take an optional note and Reopen a required one. A row shows
-  only the actions that apply to it; a row with none shows nothing there.
+  decisions take an optional note and Reopen a required one. A note field
+  shared by several actions is labelled by the action chosen: "Note
+  (optional)", and "Note (required)" only while that action needs one,
+  changing in place as the dialog opens (the review worklist, R38). An
+  editor that records a corrected value (the review worklist's Edit) holds
+  its Save until the value differs from the one it opened with, saying so
+  in its reserved line, since saving the same value records no edit (R38).
+  A row
+  shows only the actions that apply to it; a row with none shows nothing
+  there.
 - **Selected state.** On a table whose row actions record a state (a
   review decision, a mark), the icon of the state in force is drawn
   **selected**: filled with that state's status colour, with the glyph in
@@ -3507,7 +3697,8 @@ inventory on #879 lists.
   unselected (outline, `aria-pressed="false"`). Choosing the selected icon
   again is not an undo; the row's own undo action (the review pipeline's
   Back to review) is, so the selected icon is unavailable
-  (`aria-disabled="true"`) and its tooltip names the state and the undo.
+  (`aria-disabled="true"`) and its tooltip names the state and the undo
+  in one phrase.
   So the decision shows on the icons, not only in a
   status column ([review pipeline](../review-pipeline/spec.md#selected-state-icons),
   [#1680](https://github.com/epiphany40223/parishkit/issues/1680)). **Shared

@@ -545,7 +545,6 @@ def test_live_status_pages_update_themselves_and_dismiss_in_place():
     Retry) brings a fresh one live-status-v1.js watches. An integration's
     Dismiss acts in place (#519 PR 7a)."""
     for name, region in (
-        ("credential-status.html", "credential-progress"),
         ("family-email-progress.html", "send-progress"),
         ("campaign-mail-families.html", "family-tests"),
     ):
