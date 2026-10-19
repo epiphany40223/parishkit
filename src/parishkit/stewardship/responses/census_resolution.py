@@ -20,10 +20,10 @@ in one step); its Ignore and Back to review are reviews
 A change a refresh found Entered incorrectly (#1689) takes the same two
 actions as its fixes (#1737): ``entered`` again marks it Entered by hand
 once more, and ``reopened`` sends it Back to review (pending, no decision).
-On the worklist both are Staff's as well as an Administrator's (``pk-admin
-census resolve`` keeps Reopen the Administrator's, with a note), and SQL
-admits them only
-while its latest refresh check says Entered incorrectly
+On the worklist both are Staff's as well as an Administrator's
+(``pk-admin census resolve`` keeps Reopen the Administrator's, with a
+note). SQL admits them only while its latest refresh check says Entered
+incorrectly and no later response of the Family answered the field again
 (``schema/migrations/0140_entered_incorrectly_fixes.sql``, provisional).
 """
 

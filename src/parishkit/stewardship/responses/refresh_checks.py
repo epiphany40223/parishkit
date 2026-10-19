@@ -28,7 +28,7 @@ Ministry left the data gets no check (rule 4: it keeps its stage).
 
 from dataclasses import dataclass
 
-from django.db.models import F, Q
+from django.db.models import F, Max, Q
 
 from parishkit.stewardship.campaigns.work_locks import require_work_order
 from parishkit.stewardship.pipeline import (
@@ -196,11 +196,32 @@ def entered_incorrectly(proposal):
     resolution guard (migration 0140, provisional number) also requires. One
     query, for an entered change only.
     """
-    if proposal.execution != "resolved_external":
+    if proposal.execution != "resolved_external" or replaced(proposal):
         return False
     key = str(proposal.pk)
     state = check_states(proposals=[proposal.pk], versions={key: proposal.version})
     return key in state and state[key].outcome == "entered_incorrectly"
+
+
+def replaced(proposal):
+    """Whether a later response of the Family has a change for the same field.
+
+    A final change is never superseded (``proposals``): the Family's next
+    answer makes a change of its own, and the earlier one is history. Such a
+    change gets no refresh check and takes no fix (#1737), as the refresh
+    check and resolution guards (migration 0140, provisional) require.
+    ``proposal.submission`` must be loaded. One query.
+    """
+    submission = proposal.submission
+    return ProposedChange.objects.filter(
+        submission__family_id=submission.family_id,
+        submission__campaign_id=submission.campaign_id,
+        submission__mode=submission.mode,
+        submission__family_version__gt=submission.family_version,
+        entity_kind=proposal.entity_kind,
+        entity_key=proposal.entity_key,
+        field=proposal.field,
+    ).exists()
 
 
 def _remarked(rows):
@@ -255,6 +276,8 @@ def _owed(stored, state, *, full, marked, moved=False):
 def _census_checks(snapshot, corpus, campaign_id, full, start):
     """Yield the census checks this promotion owes, unsaved.
 
+    Not for a change a later response of the Family replaced (``replaced``).
+
     For every live census change Entered by hand or Updated in ParishSoft of
     a field the Member contact read carries, whose Member is still an
     active, living Member of its Family (a death date excepted, as in
@@ -270,8 +293,31 @@ def _census_checks(snapshot, corpus, campaign_id, full, start):
         execution__in=FINAL_EXECUTIONS,
         entity_kind="member",
         field__in=CHECKED_FIELDS,
-    ).annotate(family_duid=F("submission__family__family_duid"))
-    rows = list(rows)
+    ).annotate(
+        family_duid=F("submission__family__family_duid"),
+        family_id=F("submission__family_id"),
+        family_version=F("submission__family_version"),
+    )
+    # A change a later response of the Family replaced (its field answered
+    # again) is history and gets no check (``replaced``, #1737).
+    latest = dict(
+        (
+            ((family, key, field), version)
+            for family, key, field, version in ProposedChange.objects.filter(
+                submission__campaign_id=campaign_id,
+                submission__mode="live",
+                entity_kind="member",
+                field__in=CHECKED_FIELDS,
+            )
+            .values_list("submission__family_id", "entity_key", "field")
+            .annotate(latest=Max("submission__family_version"))
+        )
+    )
+    rows = [
+        row
+        for row in rows
+        if row.family_version >= latest[(row.family_id, row.entity_key, row.field)]
+    ]
     remarked = _remarked(rows)
     states = (
         check_states(

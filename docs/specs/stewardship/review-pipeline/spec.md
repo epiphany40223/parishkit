@@ -580,7 +580,10 @@ also works: the next refresh confirms it.
   ParishSoft's value changes, so the dialog promises no confirmation.
 
 Both are refused unless the change's latest refresh check, at its current
-version, says Entered incorrectly; the census guard admits a change leaving
+version, says Entered incorrectly. A final change the Family's later
+response replaced (the same field answered again, which makes a change of
+its own) is history: it gets no refresh check, is placed by its execution
+alone, and takes neither fix. The census guard admits a change leaving
 Entered by hand only this way, with its paired resolution row. Migration 0140
 (provisional number) adds these rules. It also checks every census refresh
 check of a change Entered by hand against the value recorded at its mark:

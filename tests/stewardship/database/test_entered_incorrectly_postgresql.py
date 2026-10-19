@@ -303,3 +303,93 @@ def test_the_notice_says_again_only_for_a_mark_made_again(response_service):
         "expected_version"
     )
     assert not _made_again(first) and _made_again(second)
+
+
+def answer_again(harness, **member):
+    """The Family answers again, with Member 3's census answers changed."""
+    from .test_ministry_responses_postgresql import respond, revisit
+    from .test_response_http_postgresql import answers_for
+    from .test_runtime_auth_grants_postgresql import web_login
+
+    with web_login():
+        form = revisit(harness)
+        answers = answers_for(form)
+        answers["members"]["3"].update(member)
+        respond(harness, form, answers)
+
+
+def test_a_replaced_change_takes_no_check_and_no_fix(response_service, monkeypatch):
+    """The Family answering the field again makes a change of its own; the
+    earlier entered one is history: it is placed by its execution alone,
+    takes neither fix (the service and SQL refuse), and gets no new check,
+    while the new change is confirmed by the refresh."""
+    from parishkit.stewardship.responses import refresh_checks
+
+    harness, staff, old = incorrect(response_service)
+    # ParishSoft holds "Rev." now, so the new answer is another value.
+    answer_again(harness, prefix="Sir")
+    new = ProposedChange.objects.get(field="prefix", execution="pending")
+    assert census_row(harness, old)["stage"] == Stage.ENTERED_BY_HAND
+    for action in ("entered_by_hand", "back_to_review"):
+        with pytest.raises(ValueError):
+            decide(harness, staff, [fresh(old)], action)
+    for action in ("entered", "reopened"):
+        with pytest.raises((IntegrityError, DatabaseError), match="lacks current"):
+            forge(fresh(old), staff, action)
+    with pytest.raises((IntegrityError, DatabaseError), match="new final Family"):
+        forge(fresh(old), staff, None, "execution='cancelled'")
+    decide(harness, staff, [new], "entered_by_hand")
+    refresh(harness, member={"salutation": "Sir"})
+    assert checks(proposal=old) == ["entered_incorrectly"]
+    assert checks(proposal=new) == ["confirmed"]
+    assert census_row(harness, old)["stage"] == Stage.ENTERED_BY_HAND
+    assert census_row(harness, new)["stage"] == Stage.CONFIRMED
+
+    # A check of the replaced change is refused inside a real promotion.
+    def forged(snapshot, corpus, campaign_id, full):
+        """One check of the replaced change."""
+        yield RefreshCheck(
+            snapshot_id=snapshot.pk,
+            full_refresh=full,
+            proposal_id=old.pk,
+            item_version=old.version,
+            outcome="unchanged",
+            observed={"available": True, "value": "Sir"},
+        )
+
+    monkeypatch.setattr(refresh_checks, "_checks", forged)
+    with pytest.raises(DatabaseError, match="replaced census change"):
+        refresh(harness, member={"salutation": "Sir"})
+
+
+def test_both_fixes_in_bulk_and_their_replay(response_service):
+    """One bulk Entered by hand marks every chosen change again, and the same
+    bulk key posted again records nothing more; a bulk Back to review
+    reopens each."""
+    harness, staff, rows = prepared(response_service)
+    decide(harness, staff, [rows["prefix"]], "entered_by_hand")
+    # Member 3 has a ParishSoft suffix before the Family answers one, so the
+    # mark records it (an unknown one would stand in, never incorrectly).
+    refresh(harness, member={"salutation": "Rev.", "suffix": "Sr."})
+    answer_again(harness, suffix="Jr.")
+    suffix = ProposedChange.objects.get(field="suffix")
+    decide(harness, staff, [suffix], "entered_by_hand")
+    refresh(harness, member={"salutation": "Rev.", "suffix": "III"})
+    chosen = [fresh(rows["prefix"]), fresh(suffix)]
+    for change in chosen:
+        assert census_row(harness, change)["stage"] == Stage.ENTERED_INCORRECTLY
+    key = uuid4()
+    first = decide(harness, staff, chosen, "entered_by_hand", bulk=True, key=key)
+    again = decide(harness, staff, chosen, "entered_by_hand", bulk=True, key=key)
+    assert [row.pk for row in again] == [row.pk for row in first]
+    for change in chosen:
+        assert fresh(change).version == change.version + 1
+        assert census_row(harness, change)["stage"] == Stage.ENTERED_BY_HAND
+    refresh(harness, member={"salutation": "Sir", "suffix": "IV"})
+    chosen = [fresh(change) for change in chosen]
+    decide(harness, staff, chosen, "back_to_review", bulk=True)
+    for change in chosen:
+        assert (fresh(change).decision, fresh(change).execution) == (
+            "unreviewed",
+            "pending",
+        )

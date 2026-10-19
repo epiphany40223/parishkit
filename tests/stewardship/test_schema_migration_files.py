@@ -406,7 +406,7 @@ FROZEN = {
         "8b516b20ea34a8546225c1ecf9108f36a8e7d647c4544e9d62d40a258fbab810"
     ),
     "0140_entered_incorrectly_fixes.sql": (
-        "6d360b7dcaa4f7aaa7a433825fbf55d878202f9558c8aaa2642e1789a0fbe6c1"
+        "c875cf6b93c7b473f2e78b3fc4775d8765e1e55cb56d3dd8c9c435c5c5a2a4f5"
     ),
 }
 

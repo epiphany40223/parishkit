@@ -21,8 +21,10 @@
 -- Replaced, each from its latest body, with these changes and only these:
 --   * stewardship_proposal_resolution_guard_v1 (0060's): both actions are
 --     admitted on a change Entered by hand only while its latest refresh
---     check at its current version says entered_incorrectly, for a current
---     Staff member or Administrator, with an optional note; every other
+--     check at its current version says entered_incorrectly and no later
+--     response of the Family has a change for the same field (one that
+--     did is history), for a current Staff member or Administrator, with
+--     an optional note; every other
 --     rule stays, an open change's included (Reopen of an Ignore stays the
 --     Administrator's, with a note).
 --   * stewardship_response_derived_guard_v1 (0118's; guards.sql has the
@@ -37,7 +39,8 @@
 --     that value (canonically compared), and entered_incorrectly only when a
 --     value was recorded. The value is the latest check's at the version
 --     before the current one when there is one (a mark made again there),
---     else the change's stored ParishSoft value.
+--     else the change's stored ParishSoft value. A change a later response
+--     of the Family replaced gets no check at all.
 -- 0060's deferred effect check already requires 'entered' to leave the
 -- change resolved_external and 'reopened' to leave it unreviewed, at the
 -- next version, with the census_change_updated audit event, so it is kept.
@@ -66,11 +69,21 @@ BEGIN
     -- refresh check, at its current version, found a third value in
     -- ParishSoft. Its two fixes are Entered by hand again ('entered') and
     -- Back to review ('reopened'), Staff's as well as an Administrator's.
+    -- Not for a change a later response of the Family replaced (the same
+    -- field answered again): it is history.
     incorrect:=coalesce(proposal.execution='resolved_external',false)
         AND coalesce((SELECT k.outcome='entered_incorrectly'
             FROM public.stewardship_refresh_check k
             WHERE k.proposal_id=proposal.id AND k.item_version=proposal.version
-            ORDER BY k.created_at DESC, k.id DESC LIMIT 1),false);
+            ORDER BY k.created_at DESC, k.id DESC LIMIT 1),false)
+        AND NOT EXISTS (SELECT 1 FROM public.stewardship_proposed_change later
+            JOIN public.stewardship_submission answered ON answered.id=later.submission_id
+            JOIN public.stewardship_submission earlier ON earlier.id=proposal.submission_id
+            WHERE answered.family_id=earlier.family_id
+              AND answered.campaign_id=earlier.campaign_id AND answered.mode=earlier.mode
+              AND answered.family_version>earlier.family_version
+              AND ROW(later.entity_kind,later.entity_key,later.field)
+                  =ROW(proposal.entity_kind,proposal.entity_key,proposal.field));
     IF proposal.id IS NULL OR campaign IS NULL
        OR NOT public.stewardship_export_authorized_v1(NEW.actor_id,
            NEW.action='reopened' AND NOT incorrect)
@@ -547,6 +560,18 @@ BEGIN
            OR (NEW.outcome='entered_incorrectly' AND change.execution<>'resolved_external')
         THEN RAISE EXCEPTION 'A census refresh check differs from its evidence'
             USING ERRCODE='23514'; END IF;
+        -- A change a later response of the Family replaced (the same field
+        -- answered again) is history and gets no check (#1737).
+        IF EXISTS (SELECT 1 FROM stewardship_proposed_change later
+            JOIN stewardship_submission answered ON answered.id=later.submission_id
+            JOIN stewardship_submission earlier ON earlier.id=change.submission_id
+            WHERE answered.family_id=earlier.family_id
+              AND answered.campaign_id=earlier.campaign_id AND answered.mode=earlier.mode
+              AND answered.family_version>earlier.family_version
+              AND ROW(later.entity_kind,later.entity_key,later.field)
+                  =ROW(change.entity_kind,change.entity_key,change.field))
+        THEN RAISE EXCEPTION 'A replaced census change is not checked'
+            USING ERRCODE='23514'; END IF;
         -- A change Entered by hand is judged against the value recorded at
         -- its mark (#1737): the change's stored ParishSoft value, which its
         -- first mark froze, unless the mark was made again over Entered
@@ -615,6 +640,7 @@ BEGIN
               AND prosrc LIKE '%NEW.action=''reopened'' AND NOT incorrect)%'
               AND prosrc LIKE '%OR (incorrect AND NEW.action NOT IN (''entered'',''reopened''))%'
               AND prosrc LIKE '%OR (NOT incorrect AND NOT open_state)%'
+              AND prosrc LIKE '%AND answered.family_version>earlier.family_version%'
               AND prosrc LIKE '%Census change resolution lacks current authority, version or state%'
               AND NOT prosecdef
               AND proconfig=ARRAY['search_path=pg_catalog, public, pg_temp'])
@@ -630,6 +656,7 @@ BEGIN
             WHERE oid='public.stewardship_response_derived_guard_v1()'::regprocedure
               AND prosrc LIKE '%AND NOT (OLD.execution=''resolved_external'' AND current_user=''pk_stewardship_web''))%'
               AND prosrc LIKE '%THEN ''pending'' ELSE OLD.execution END)%'
+              AND prosrc LIKE '%AND OLD.execution<>''resolved_external''%'
               AND prosrc LIKE '%AND (OLD.execution=''resolved_external'' OR (NOT EXISTS (%'
               AND prosrc LIKE '%''prefix'',''suffix'',''gender'',''marital_status'',''moved_household'',''deceased_status'',''death_date'')%'
               AND prosrc LIKE '%Proposal differs from its immutable response%'
@@ -652,6 +679,8 @@ BEGIN
             WHERE oid='public.stewardship_refresh_check_guard_v1()'::regprocedure
               AND prosrc LIKE '%k.item_version=change.version-1%'
               AND prosrc LIKE '%A census refresh check differs from the value recorded at its mark%'
+              AND prosrc LIKE '%(marked IS NULL AND NEW.outcome=''entered_incorrectly'')%'
+              AND prosrc LIKE '%A replaced census change is not checked%'
               AND prosrc LIKE '%TG_OP<>''INSERT''%'
               AND prosrc LIKE '%stewardship_response_source_owner_v1(NEW.snapshot_id)%'
               AND prosrc LIKE '%stewardship_response_field_source_v1(%'
