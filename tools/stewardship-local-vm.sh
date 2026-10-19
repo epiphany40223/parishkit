@@ -53,6 +53,8 @@
 #   finish-setup                        after the browser wizard: acknowledge its frozen
 #                                       attempt's credentials (runbook step 5)
 #   sign-in EMAIL                       print a local test sign-in link (OPS-10.08)
+#   fake-parishsoft WORDS...            change or show the fake ParishSoft's data, or
+#                                       run the Admin's full refresh of it (#1780)
 #   ca                                  print Caddy's local root certificate
 #
 # Safety rules (local-environment specification, "Operator script"): every
@@ -1837,6 +1839,102 @@ cmd_finish_setup() {
     echo "Setup complete in $(( $(date -u +%s) - began ))s."
 }
 
+reads_fake_parishsoft() {
+    # Succeeds only when every service document can be read and none names
+    # a ParishSoft base URL (#1399's default: the fake). After `deploy
+    # --parishsoft real` the worker reads the real API, which a fake edit
+    # cannot change and a refresh must never be aimed at from here. A
+    # document jq cannot read fails closed: callers run this under `||`,
+    # where errexit does not apply, so each failure returns explicitly.
+    local file value found=0
+    for file in "$services"/*.yaml; do
+        [ -f "$file" ] || continue
+        found=1
+        value=$(jq -r '.deployment.parishsoft_base_url // empty' "$file") || return 1
+        [ -z "$value" ] || return 1
+    done
+    [ "$found" = 1 ]
+}
+
+fake_parishsoft_pledge_defaults() {
+    # fake_parishsoft_pledge_defaults WORDS...: for a `pledge` edit without
+    # fund= or start=, print the current campaign's pledge fund and period
+    # start as those options (the seeder's read-only pledge-period step), so
+    # the pledge lands where the refresh reads giving. Prints nothing when
+    # both were given. It runs under `||` (errexit is off), so every
+    # failure is checked explicitly.
+    local word fund=0 start=0 value
+    for word in "$@"; do
+        case "$word" in fund=*) fund=1 ;; start=*) start=1 ;; esac
+    done
+    [ "$fund" = 0 ] || [ "$start" = 0 ] || return 0
+    [ "$(setup_completed)" = t ] || refuse "The setup wizard has not completed; give fund= and start= for the pledge."
+    seed_now=$(date -u +%FT%TZ) seed_scale=1
+    seed_step 600 pledge-period web web.yaml >&2 ||
+        refuse "Could not read the campaign's pledge fund and period (see above); give fund= and start=."
+    if [ "$fund" = 0 ]; then
+        value=$(jq -er .fund <<<"$seed_result" 2>/dev/null) ||
+            refuse "Could not read the campaign's pledge fund and period (see above); give fund= and start=."
+        printf 'fund=%s\n' "$value"
+    fi
+    if [ "$start" = 0 ]; then
+        value=$(jq -er .start <<<"$seed_result" 2>/dev/null) ||
+            refuse "Could not read the campaign's pledge fund and period (see above); give fund= and start=."
+        printf 'start=%s\n' "$value"
+    fi
+}
+
+cmd_fake_parishsoft() {
+    # fake-parishsoft WORDS... (#1780): change the fake ParishSoft's data,
+    # show it, or run the Admin's full refresh of it. Every form refuses
+    # unless this is a marked pk-local root whose deployment reads the fake
+    # and has the fake's configuration file; Production has neither.
+    local file="$root/run/local/fake-parishsoft.json" new line defaults
+    local -a words=("$@")
+    require_marker
+    load_env
+    [ -f "$file" ] || refuse "No fake ParishSoft configuration at $file; refusing."
+    reads_fake_parishsoft ||
+        refuse "This deployment reads the real ParishSoft (deploy --parishsoft real), or a service document is unreadable; fake-parishsoft refuses. Deploy with --parishsoft fake first."
+    case "${1-}" in
+        "" | -h | --help | help)
+            refuse "fake-parishsoft needs a command; see tools/stewardship-local.sh --help" ;;
+        refresh)
+            [ $# -eq 1 ] || refuse "fake-parishsoft refresh takes no arguments"
+            [ "$(setup_completed)" = t ] || refuse "The setup wizard has not completed; there is nothing to refresh yet."
+            select_compose
+            seed_now=$(date -u +%FT%TZ) seed_scale=1
+            seed_step 1500 refresh web web.yaml
+            echo "Full ParishSoft refresh finished: $seed_result" ;;
+        show)
+            "${isolated[@]}" -i "$IMAGE" fake-parishsoft-edit "$@" <"$file" ;;
+        *)
+            # Everything that can refuse runs before the file is written, so
+            # a refusal leaves the file and the running fake in step.
+            select_compose
+            if [ "$1" = pledge ]; then
+                # A command substitution, not a process substitution, so a
+                # refusal inside it ends this command too.
+                defaults=$(fake_parishsoft_pledge_defaults "$@") || exit 1
+                while IFS= read -r line; do
+                    [ -z "$line" ] || words+=("$line")
+                done <<<"$defaults"
+            fi
+            # The image checks the edit against the generated parish and
+            # prints the new document; nothing is written unless it is one.
+            new=$("${isolated[@]}" -i "$IMAGE" fake-parishsoft-edit "${words[@]}" <"$file")
+            jq -e 'type == "object" and has("seed")' >/dev/null <<<"$new" ||
+                refuse "The edit command did not answer with a configuration document; nothing was changed."
+            printf '%s\n' "$new" | private_file "$file"
+            # A container keeps a bind mount on the inode it started with,
+            # and private_file replaces the file, so the service is recreated.
+            step "Recreating the fake ParishSoft with the new data"
+            "${dc[@]}" up --detach --no-deps --force-recreate fake-parishsoft 2>&1 | quiet
+            wait_until 120 "the fake ParishSoft to turn healthy" all_healthy fake-parishsoft
+            echo "The fake ParishSoft now serves the edit; run 'fake-parishsoft refresh' (or Refresh from ParishSoft in the Admin portal) for the application to read it." ;;
+    esac
+}
+
 cmd_sign_in() {
     require_marker
     load_env
@@ -1952,7 +2050,7 @@ cmd_spike() {
 # Long-running commands keep their whole log on the VM under /var/log, as
 # the upgrade script does; the short ones print only their answer.
 case "$command" in
-    build|up|snapshot|snapshot-delete|snapshot-restore|reset|wipe|seed|seed-testing|wizard|finish-setup|start|down|deploy|rollback|rehearse|spike)
+    build|up|snapshot|snapshot-delete|snapshot-restore|reset|wipe|seed|seed-testing|wizard|finish-setup|start|down|deploy|rollback|rehearse|spike|fake-parishsoft)
         # STEWARDSHIP_LOG_DIR lets the tests run this half without /var/log.
         log=${STEWARDSHIP_LOG_DIR:-/var/log}/stewardship-local-$command-$(date -u +%Y%m%dT%H%M%SZ).log
         exec > >(tee -a "$log") 2>&1
@@ -1986,6 +2084,7 @@ case "$command" in
     wizard) cmd_wizard ;;
     finish-setup) cmd_finish_setup ;;
     sign-in) cmd_sign_in "${1:?sign-in needs EMAIL}" ;;
+    fake-parishsoft) cmd_fake_parishsoft "$@" ;;
     ca) cmd_ca ;;
     *) refuse "unknown VM command: $command" ;;
 esac
