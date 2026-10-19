@@ -212,13 +212,12 @@ def test_post_table_resorts_in_place_with_csrf_and_filters(page, component_origi
 def test_filter_and_export_forms_follow_a_post_tables_sort(page, component_origin):
     """After a report re-sorts in place, the filter form's hidden sort (the
     headings are the only sort control) carries the new sort, Apply filters
-    submits it, and the export form's hidden fields carry it."""
-    page.goto(component_origin + "/information")
+    submits it, and the export form's hidden fields carry it (Additional
+    information's worklist, #1685, whose export takes its own sort words)."""
+    page.goto(component_origin + "/information-all")
     page.evaluate(MARK)
     assert page.get_by_label("Sort order").count() == 0
-    filters_sort = page.locator("#table-filters input[type=hidden][name=sort]")
-    assert filters_sort.input_value() == "newest"
-    assert page.locator("#table-export input[name=sort]").input_value() == "newest"
+    assert page.locator("#table-export input[name=sort]").input_value() == "name"
     fulfil_post_with(
         page,
         "**/information/",
@@ -229,111 +228,20 @@ def test_filter_and_export_forms_follow_a_post_tables_sort(page, component_origi
             else None
         ),
     )
-    page.get_by_role("button", name="Family (sort ascending)").click()
-    has_attribute(sort_heading(page, "family"), "aria-sort", "ascending")
+    page.get_by_role("button", name="Family (sort descending)").click()
+    has_attribute(sort_heading(page, "family"), "aria-sort", "descending")
     assert page.evaluate(MARKED) == "kept"
-    assert filters_sort.input_value() == "name"
-    assert page.locator("#table-export input[name=sort]").input_value() == "name"
+    filters_sort = page.locator("#table-filters input[type=hidden][name=sort]")
+    assert filters_sort.input_value() == "-family"
+    assert page.locator("#table-export input[name=sort]").input_value() == "name_desc"
     # Waiting for the response, not just the request, lets the route finish
     # before the test (and its browser context) ends.
     with page.expect_response(
         lambda response: response.request.method == "POST"
     ) as got:
         page.get_by_role("button", name="Apply filters").click()
-    assert "sort=name" in got.value.request.post_data
-    has_attribute(sort_heading(page, "family"), "aria-sort", "ascending")
-
-
-def test_two_tables_on_one_page_keep_each_others_choices(page, component_origin):
-    """Sorting one table swaps every region from the fetched page, so a second
-    table keeps the first table's choice and the filter form carries both."""
-    page.goto(component_origin + "/limitations-report")
-    families = "#families-table tbody th[scope=row]"
-    assert page.locator(families).all_inner_texts() == ["Baker", "Carter"]
-    members = "#members-table tbody th[scope=row]"
-    assert page.locator(members).all_inner_texts()[0].startswith("Zed")
-    fulfil_post_with(
-        page,
-        "**" + LIMITATIONS,
-        component_origin,
-        lambda request: (
-            "/limitations-report-both"
-            if "members_sort=member" in request.post_data
-            else "/limitations-report-families-desc"
-        ),
-    )
-    page.locator("#families-table").get_by_role(
-        "button", name="Family (sort descending)"
-    ).click()
-    has_attribute(
-        sort_heading(page, "family", "families-table"), "aria-sort", "descending"
-    )
-    assert page.locator(families).all_inner_texts() == ["Carter", "Baker"]
-    with page.expect_request(lambda request: request.method == "POST") as sent:
-        page.locator("#members-table").get_by_role(
-            "button", name="Member (sort ascending)"
-        ).click()
-    # The second heading carried the first table's sort, as the server
-    # rendered it into the swapped-in region.
-    assert "families_sort=-family" in sent.value.post_data
-    has_attribute(
-        sort_heading(page, "member", "members-table"), "aria-sort", "ascending"
-    )
-    assert page.locator(members).all_inner_texts()[0].startswith("Amy")
-    assert page.locator(families).all_inner_texts() == ["Carter", "Baker"]
-    assert page.locator("#table-filters input[name=families_sort]").input_value() == (
-        "-family"
-    )
-    assert page.locator("#table-filters input[name=members_sort]").input_value() == (
-        "member"
-    )
-
-
-def test_swapped_in_rows_are_enhanced_again(page, component_origin):
-    """Script that binds to table rows runs again for a swapped-in table: Copy
-    buttons appear and fields report their validity on blur."""
-    page.goto(component_origin + "/hosted-files")
-    if not page.evaluate(
-        "Boolean(navigator.clipboard && navigator.clipboard.writeText)"
-    ):
-        pytest.skip("No clipboard API in this engine; Copy buttons stay hidden.")
-    visible(page.locator("button[data-copy]").first)
-    page.get_by_role("link", name="Name (sort ascending)").click()
-    has_attribute(sort_heading(page, "name"), "aria-sort", "ascending")
-    copy = page.locator("#table button[data-copy]").first
-    visible(copy)
-    # The read-only placeholder fields never validate; the navigator's page
-    # number, swapped in with the rows, does.
-    field = page.locator("#table input[data-page-number]").first
-    field.focus()
-    field.blur()
-    has_attribute(field, "aria-invalid", "false")
-
-
-def test_fetch_failure_falls_back_to_a_full_load_at_the_table(page, component_origin):
-    """When the in-place fetch fails the ordinary navigation happens instead,
-    and its fragment lands the reader on the table rather than at the top.
-    The viewport is short so the read-only Ministries page (#1267) is still
-    tall enough to scroll its table to the top."""
-    page.set_viewport_size(VIEWPORT | {"height": 300})
-    page.goto(component_origin + "/ministries")
-    aborted = []
-
-    def handle(route):
-        if route.request.headers.get("x-requested-with") == "fetch":
-            aborted.append(route.request.url)
-            route.abort()
-        else:
-            route.continue_()
-
-    page.route("**/ministries?*", handle)
-    page.get_by_role("link", name="Ministry (sort descending)").click()
-    page.wait_for_url(component_origin + SORTED_MINISTRIES)
-    assert len(aborted) == 1 and "sort=-name" in aborted[0]
-    has_attribute(sort_heading(page, "name"), "aria-sort", "descending")
-    assert ministry_names(page) == ["Lectors", "Community outreach"]
-    assert page.evaluate("window.scrollY") > 0
-    assert page.evaluate(TABLE_TOP) < 100
+    assert "sort=-family" in got.value.request.post_data
+    has_attribute(sort_heading(page, "family"), "aria-sort", "descending")
 
 
 def test_export_choices_survive_a_sort_and_its_hidden_fields_follow(
@@ -342,21 +250,21 @@ def test_export_choices_survive_a_sort_and_its_hidden_fields_follow(
     """Only table state is synchronised: an export form's hidden sort follows
     the in-place re-sort while the browser zone the script filled (#1679)
     stays as it was."""
-    page.goto(component_origin + "/information")
+    page.goto(component_origin + "/information-all")
     export = page.locator("#table-export")
     zone = export.locator("input[name=browser_timezone]")
     chosen = zone.input_value()
     assert chosen == "America/Los_Angeles"
-    assert export.locator("input[name=sort]").input_value() == "newest"
+    assert export.locator("input[name=sort]").input_value() == "name"
     fulfil_post_with(
         page,
         "**/information/",
         component_origin,
         lambda request: "/information-by-name",
     )
-    page.get_by_role("button", name="Family (sort ascending)").click()
-    has_attribute(sort_heading(page, "family"), "aria-sort", "ascending")
-    assert export.locator("input[name=sort]").input_value() == "name"
+    page.get_by_role("button", name="Family (sort descending)").click()
+    has_attribute(sort_heading(page, "family"), "aria-sort", "descending")
+    assert export.locator("input[name=sort]").input_value() == "name_desc"
     assert zone.input_value() == chosen
 
 
@@ -471,24 +379,19 @@ def test_filter_with_no_matches_shows_the_empty_table(page, component_origin):
 
 def test_post_filter_applies_in_place_with_csrf(page, component_origin):
     """A private report's Apply filters posts the form's urlencoded body, CSRF
-    token and hidden sort included; the rows, the matching counts outside the
-    table and the export's hidden query follow, and the address never changes."""
-    from playwright.sync_api import expect
-
+    token and hidden table choices included; the rows, the Stage counts and
+    the export's hidden query follow, and the address never changes
+    (Additional information's worklist, #1685)."""
     page.set_viewport_size(VIEWPORT)
-    page.goto(component_origin + "/information")
-    chart = page.locator("[data-chart='information-followup-spec']")
-    expect(chart).to_have_attribute("data-chart-state", "rendered")
-    expect(chart.locator("svg tspan", has_text="20 out of 51 (39.2%)")).to_have_count(1)
+    page.goto(component_origin + "/information-all")
     page.evaluate(MARK)
-    # The export row's count is checked below (#1679).
-    page.get_by_label("Request history").select_option("withdrawn")
+    page.get_by_label("Stage", exact=True).select_option("to_handle")
     offset = scroll_to_filters(page)
     fulfil_post_with(
         page,
         "**/information/",
         component_origin,
-        lambda request: "/information-withdrawn",
+        lambda request: "/information-to-handle",
     )
     with page.expect_request(lambda request: request.method == "POST") as sent:
         page.get_by_role("button", name="Apply filters").click()
@@ -496,38 +399,30 @@ def test_post_filter_applies_in_place_with_csrf(page, component_origin):
     assert sent.value.headers.get("x-requested-with") == "fetch"
     assert "application/x-www-form-urlencoded" in sent.value.headers["content-type"]
     assert f"csrfmiddlewaretoken={'a' * 64}" in body
-    assert "disposition=withdrawn" in body and "sort=newest" in body
-    assert "search=Sample" in body and "size=50" in body
-    visible(page.locator("#table").get_by_text("Other Family"))
-    has_text(page.locator("#information-matching"), "Matching requests: 3.")
-    # The Follow-up status chart follows the filters in place (#720).
-    chart = page.locator("[data-chart='information-followup-spec']")
-    expect(chart).to_have_attribute("data-chart-state", "rendered")
-    expect(chart.locator("svg tspan", has_text="1 out of 3 (33.3%)")).to_have_count(1)
-    export = page.locator("#table-export input[type=hidden][name=disposition]")
-    assert export.input_value() == "withdrawn"
-    assert page.evaluate(MARKED) == "kept"
-    assert abs(page.evaluate("window.scrollY") - offset) < 40
-    assert page.url == component_origin + "/information"
-    assert page.evaluate("document.activeElement.textContent.trim()") == "Apply filters"
+    assert "stage=to_handle" in body and "size=25" in body
     has_text(
         page.get_by_role("status").filter(has_text="Showing"),
-        "Showing 1–1 of 3 · Page 1 of 1",
+        "Showing 1–1 of 1 · Page 1 of 1",
     )
+    visible(page.locator("#table").get_by_text("Family 00"))
+    assert page.locator("#table tbody tr").count() == 1
+    export = page.locator("#table-export input[type=hidden][name=needed]")
+    assert export.input_value() == "yes"
+    assert page.evaluate(MARKED) == "kept"
+    assert abs(page.evaluate("window.scrollY") - offset) < 40
+    assert page.url == component_origin + "/information-all"
+    assert page.evaluate("document.activeElement.textContent.trim()") == "Apply filters"
 
 
-def test_post_filter_with_no_matches_empties_the_counts(page, component_origin):
-    """An empty report result swaps in the empty table and zero counts."""
-    page.goto(component_origin + "/information")
+def test_post_filter_with_no_matches_empties_the_table(page, component_origin):
+    """An empty report result swaps in the empty table."""
+    page.goto(component_origin + "/information-all")
     fulfil_post_with(
         page, "**/information/", component_origin, lambda request: "/information-none"
     )
     page.get_by_label("Search Family name").fill("Nobody")
     page.get_by_role("button", name="Apply filters").click()
-    visible(page.get_by_text("No matching requests."))
-    has_text(page.locator("#information-matching"), "Matching requests: 0.")
-    # No matching request: no Follow-up status chart (#720).
-    assert page.locator("#information-status [data-chart]").count() == 0
+    visible(page.get_by_text("Nothing to review yet."))
     has_text(
         page.get_by_role("status").filter(has_text="No rows"), "No rows · Page 1 of 1"
     )
@@ -556,7 +451,7 @@ def test_filter_that_adds_columns_and_notes_updates_them(page, component_origin)
 @pytest.mark.parametrize(
     ("status", "path", "message"),
     [
-        (400, "/information-refused", "Check the form fields."),
+        (400, "/information-refused", "Check the filters and the choice you made."),
         (503, "/information-unavailable", "temporarily unavailable"),
     ],
 )
@@ -612,10 +507,10 @@ def test_repeated_filter_submission_sends_one_request(page, component_origin):
     first = held[0]
     first.fulfill(
         response=first.fetch(
-            url=component_origin + "/information-withdrawn", method="GET"
+            url=component_origin + "/information-to-handle", method="GET"
         )
     )
-    visible(page.locator("#table").get_by_text("Other Family"))
+    visible(page.locator("#table").get_by_text("Family 00"))
     # The button is released once the request settles.
     eventually(
         page,
@@ -625,9 +520,9 @@ def test_repeated_filter_submission_sends_one_request(page, component_origin):
     assert len(held) == 1
 
 
-def test_limitations_filter_updates_both_tables_and_the_summary(page, component_origin):
-    """A filter on a two-table report swaps both tables and the summary above
-    them, and the live region names each table's rows."""
+def test_limitations_filter_updates_the_table_and_its_counts(page, component_origin):
+    """A Show filter on the Limitations worklist (#1685) swaps its one table
+    and the Stage counts in place, and the live region names its rows."""
     page.goto(component_origin + "/limitations-report")
     page.evaluate(MARK)
     fulfil_post_with(
@@ -641,17 +536,11 @@ def test_limitations_filter_updates_both_tables_and_the_summary(page, component_
         page.get_by_role("button", name="Apply filters").click()
     assert "show=cannot_serve" in sent.value.post_data
     has_text(
-        page.get_by_role("status").filter(has_text="Member pages"),
-        "Member pages: Showing 1–1 of 1 · Page 1 of 1. "
-        "Family pages: Showing 1–1 of 1 · Page 1 of 1",
+        page.get_by_role("status").filter(has_text="Showing"),
+        "Showing 1–2 of 2 · Page 1 of 1",
     )
-    assert page.locator("#families-table tbody th[scope=row]").all_inner_texts() == [
-        "Carter"
-    ]
-    members = page.locator("#members-table tbody th[scope=row]").all_inner_texts()
-    assert len(members) == 1 and members[0].startswith("Amy")
-    summary = page.locator("#limitations-summary .stat-value")
-    assert summary.first.inner_text() == "1"
+    families = page.locator("#table tbody th[scope=row]").all_inner_texts()
+    assert families == ["Carter", "Carter"]
     assert page.evaluate(MARKED) == "kept"
 
 

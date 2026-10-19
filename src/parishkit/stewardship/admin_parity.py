@@ -295,7 +295,15 @@ LEDGER = {
     "census_publication": pending(
         "#528 slice 4", "census publish-check", "census publish-plan"
     ),
-    "information_queue": command("report information"),
+    # Additional information's review worklist (#1685) posts its decisions
+    # to the page itself, where the retired request Save's
+    # ``followup information-update`` (#463 PR 11b) now belongs, until #1688
+    # renames the commands; ``followup information-show`` reads one request.
+    "information_queue": command(
+        "report information",
+        "followup information-show",
+        "followup information-update",
+    ),
     # One Family's submission and its follow-up history: ``followup
     # information-show`` (#463 PR 11b), which prints only the item's state
     # and history, as the Ministry follow-up items are read; its content is
@@ -429,10 +437,6 @@ LEDGER = {
     # Home's Acknowledge buttons; events list reads what they acknowledge.
     "security_event_acknowledge": command("events list", "events acknowledge"),
     "critical_events_acknowledge": command("events list", "events acknowledge"),
-    # An item's Save (#463 PR 11b).
-    "information_update": command(
-        "followup information-show", "followup information-update"
-    ),
     # A Ministry request's page and its Save (#463 PR 11a).
     "ministry_followup_item": command("followup show"),
     "ministry_followup_update": command("followup show", "followup update"),

@@ -835,6 +835,10 @@ DESCRIPTIONS = {
     "weekly_digest_viewed": _("Someone opened a weekly report."),
     "information_viewed": _("Someone opened the information changes report."),
     "information_updated": _("Someone updated follow-up on an information change."),
+    "limitation_reviewed": _(
+        "Someone recorded a review decision on a cannot-participate or "
+        "cannot-attend answer."
+    ),
     "ministry_followup_viewed": _(
         "Someone opened Ministry requests (formerly Ministry follow-up) or one "
         "of its follow-up requests."

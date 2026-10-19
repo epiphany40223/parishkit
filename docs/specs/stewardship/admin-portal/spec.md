@@ -711,14 +711,15 @@ Notes on the groups:
   enter roster changes from, is an entry of its own beside Ministry requests
   ([#1660](https://github.com/epiphany40223/parishkit/issues/1660)), for
   Administrators and Staff only. Census changes, Additional information,
-  Ministry requests and Roster changes to enter show their open counts
+  Ministry requests, Roster changes to enter and Limitations show their open
+  counts
   ([#585](https://github.com/epiphany40223/parishkit/issues/585),
   [#1590](https://github.com/epiphany40223/parishkit/issues/1590)): for
   Census changes, the rows of its default Work to do view (To do and
   Conflict, plus To review for an Administrator, who decides automatic
   changes), counted from the page's own rows with its own status rules; for
-  Additional information, the current requests not yet marked "Follow-up
-  completed" (its default view also lists completed ones); for Ministry
+  Additional information, the current requests at the worklist's default
+  To review stage; for Ministry
   requests, the total of its queue's default Unresolved view, read through that
   page's own selection with every filter it applies (only the leader's own
   Ministries for a Ministry leader); where that page would say the follow-up
@@ -727,7 +728,9 @@ Notes on the groups:
   with its eligibility (a person resolved the request as Joined or Left) and
   each row's current Entered in ParishSoft mark, only once the campaign is
   past go-live (active, closed or archived; a draft has no resolved request
-  to enter). All four ride on one statement. Each is a plain number after the entry's
+  to enter); for Limitations, the answers at the worklist's default To
+  review stage, read through that page's own selection with its default
+  filters (R39 finding 10). All five ride on one statement. Each is a plain number after the entry's
   name that screen readers announce as "(N open)". No number shows at zero,
   nor on a greyed-out entry. The counts are read when a page loads, never
   updated in place, so a number never appears or disappears under the
@@ -1166,7 +1169,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `census_changes` | Census changes | Menu: Census changes | Administrator, Staff | (new, #528) Pending census changes | `/admin/reports/census/` | (same) | Its CSV/XLSX/PDF download (`census/exports/`) is a non-page action; a row's Entered in ParishSoft, Ignore and Reopen post to the page itself. |
 | `census_publication` | Publish to ParishSoft | Census changes | Administrator | (new, [#528](https://github.com/epiphany40223/parishkit/issues/528)) | `/admin/reports/census/publication/` | (same) | Built in slices ([ADM-09](../../../plans/stewardship/admin-portal.md#adm-09-census-review-and-parishsoft-publication-ui)): the page, Check ParishSoft and the newest plan so far; Apply and Run again are not built yet. See [Publish to ParishSoft](../reports/spec.md#publish-to-parishsoft). Census changes links to it for Administrators, shown unavailable with its reason while publication is switched off. Check ParishSoft posts to the page itself; Apply posts to `publication/<plan>/confirmation/` and Run again to `publication/<plan>/retries/`. |
 | `information_queue` | Additional information | Menu: Additional information | Administrator, Staff | Additional information and follow-up | `/admin/reports/information/` | (same) |  |
-| `information_item` | Information request | Additional information | Administrator, Staff | Additional information and follow-up (one request); Information item | `/admin/reports/information/<item>/` | (same) | Return to the queue keeps its filters and page. |
+| `information_item` | Information request | Additional information | Administrator, Staff | Additional information and follow-up (one request); Information item | `/admin/reports/information/<item>/` | (same) | Its link back opens the worklist. |
 | `ministry_reports` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry reports | `/admin/ministry-reports/` | (retired; 404) | Replaced by Ministry requests, which shows the "no campaign" page when there is nothing for the viewer to report. |
 | `ministry_report` | Ministry requests | Menu: Ministry requests | Administrator, Staff, Ministry leader | Ministry report; Ministry follow-up | `/admin/reports/ministries/` | (same) | One page with the follow-up queue since [#1133](https://github.com/epiphany40223/parishkit/issues/1133): totals, By Ministry, the queue, Export these requests and the follow-up packet ([Ministry change summary](../reports/spec.md#ministry-change-summary)). No assignee column, filter or bulk assignment (#552). Its Export these requests download (`follow-up/exports/`, #1157) and bulk outcome (`follow-up/bulk/`, #1131) are non-page actions. |
 | `ministry_joiners` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry requests — Prospective joiners; Joining; Members joining | `/admin/reports/ministries/joining/` | (retired; 404) | Retired with no redirect ([#1157](https://github.com/epiphany40223/parishkit/issues/1157)): each request's contact details are on its Follow-up request page, and its export is Ministry requests' Export these requests. |
@@ -6419,16 +6422,15 @@ Notes on the sections:
 
 ## Follow-up workflows
 
-Additional-information items show Family, DUID, text, submission time, needed
-checkbox, followed-up checkbox/time, and Staff notes. Admin/Staff may search,
-filter, sort, edit workflow fields, and see history. Marking followed up sets
-the timestamp/actor; unchecking retains history and clears current state after
-confirmation. That confirmation appears only once a completed item's
-"Follow-up completed" is unticked, and Save stays unavailable, with a short
-hint, until it is ticked (default, pending Administrator confirmation, #519);
-the server still refuses an unconfirmed clear.
+Additional-information requests are reviewed on the
+[Additional information](../reports/spec.md#additional-information)
+worklist ([#1685](https://github.com/epiphany40223/parishkit/issues/1685)):
+To review, To handle, Handled or Ignored, decided one by one or in bulk,
+with no assignment. A request's own page shows its text, contact details and
+history; it has no follow-up form, so the Save and Save and next described
+below are the Ministry follow-up request's.
 
-Save follow-up on an information item and on a Ministry follow-up request acts
+Save follow-up on a Ministry follow-up request acts
 [in place](../ui-conventions/spec.md#in-place-controls) (#519): the request's panel, its form and its
 history are refreshed where the reader is, and "Follow-up saved." is
 announced.

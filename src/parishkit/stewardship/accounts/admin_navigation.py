@@ -741,7 +741,6 @@ NON_PAGES = frozenset(
         "past_campaign_archive",
         "financial_export",
         "information_export",
-        "information_update",
         "integration_status",
         "login",
         "logout",

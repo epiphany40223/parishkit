@@ -313,6 +313,9 @@ class AdditionalInformationItem(MutableRecord):
         ]
 
 
+INFORMATION_DECISIONS = ("accepted", "ignored", "none")
+
+
 class AdditionalInformationRevision(ImmutableRecord):
     """An authorized Staff edit with immutable notes and completion attribution.
 
@@ -332,6 +335,12 @@ class AdditionalInformationRevision(ImmutableRecord):
     notes = models.TextField(default="", blank=True)
     followed_up_at = UTCDateTimeField(null=True)
     followed_up_by_id = models.UUIDField(null=True)
+    # The review decision this revision records (#1685, schema migration
+    # 0134): ``accepted`` (to handle, or handled once followed up),
+    # ``ignored`` or ``none`` (to review). Every revision since 0134 states
+    # it; an older one has none, and is read by its follow-up flags
+    # (``pipeline.information_placement``).
+    review_decision = models.CharField(max_length=12, null=True)
 
     class Meta:
         db_table = "stewardship_information_revision"
@@ -358,6 +367,83 @@ class AdditionalInformationRevision(ImmutableRecord):
                     followed_up_by_id__isnull=True,
                 ),
                 name="information_revision_completion",
+            ),
+            # Accepted needs follow-up needed or completed; Ignored and To
+            # review (none) need neither.
+            models.CheckConstraint(
+                condition=models.Q(review_decision__isnull=True)
+                | models.Q(review_decision="accepted", follow_up_needed=True)
+                | models.Q(review_decision="accepted", followed_up=True)
+                | models.Q(
+                    review_decision__in=INFORMATION_DECISIONS[1:],
+                    follow_up_needed=False,
+                    followed_up=False,
+                ),
+                name="information_revision_decision",
+            ),
+        ]
+
+
+LIMITATION_KINDS = ("member", "proposed_member", "family")
+LIMITATION_DECISIONS = ("accepted", "ignored", "none", "handled")
+
+
+class LimitationReview(ImmutableRecord):
+    """One review decision on a cannot-participate or cannot-attend answer (#1685).
+
+    Nothing is stored when a Family submits: the answer is the Family's live
+    response, as the Limitations report reads it. Each Accept, Ignore,
+    Handled or Back to review (``none``) is one immutable row naming the
+    answer (``kind`` and, for a Member, ``member_key``: the key the
+    response's service answers use), the effective live response it was
+    decided on, and ``expected_version``, the number of decisions recorded
+    for the answer before it. A decision stays in force while every later
+    live response gives the same answer
+    (schema/migrations/0134_information_limitation_review.sql).
+    """
+
+    family = models.ForeignKey(
+        "stewardship_campaigns.FamilyCampaign",
+        on_delete=models.PROTECT,
+        related_name="+",
+    )
+    submission = models.ForeignKey(
+        Submission, on_delete=models.PROTECT, related_name="+"
+    )
+    kind = models.CharField(max_length=16)
+    member_key = models.CharField(max_length=64, blank=True, default="")
+    expected_version = models.PositiveBigIntegerField()
+    request_key = models.UUIDField()
+    decision = models.CharField(max_length=12)
+    note = models.TextField(default="", blank=True)
+
+    class Meta:
+        db_table = "stewardship_limitation_review"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("family", "kind", "member_key", "expected_version"),
+                name="limitation_review_version",
+            ),
+            models.UniqueConstraint(
+                fields=("actor_id", "request_key"), name="limitation_review_replay"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(actor_id__isnull=False),
+                name="limitation_review_identity",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(kind__in=LIMITATION_KINDS),
+                name="limitation_review_kind",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(decision__in=LIMITATION_DECISIONS),
+                name="limitation_review_decision",
+            ),
+            # A Family's own answer has no Member key; a Member's has one.
+            models.CheckConstraint(
+                condition=models.Q(kind="family", member_key="")
+                | (~models.Q(kind="family") & ~models.Q(member_key="")),
+                name="limitation_review_key",
             ),
         ]
 
