@@ -290,7 +290,15 @@ entry](../ui-conventions/spec.md#time-entry) field. A saved schedule's mail type
 change. The server reports a missing or inapplicable value on its own field (for
 example a weekday on an invitation, or a date outside the campaign with the
 campaign's dates); only rules between schedules, such as a second initial
-invitation or a reminder before it, are page-level errors. On the date-change
+invitation or a reminder before it, are page-level errors. The page checks
+an invitation's or reminder's send date and time against the campaign dates
+as they are typed, by the server's rule
+([send dates inside the campaign](../ui-conventions/spec.md#schedules)):
+one outside them is refused at the date in the same words, and the page's
+button waits until it is changed. On the date-change review it is judged
+against the campaign dates and time zone being proposed, so shortening the
+campaign refuses, at once, each saved schedule it would leave outside and
+opens that schedule's editor. On the date-change
 review, "Add another schedule" adds blank rows (with
 the same per-type fields) before saving, and a row added this way can be removed
 again, so several schedules save in one submission and are validated together.
