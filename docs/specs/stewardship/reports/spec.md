@@ -2125,7 +2125,9 @@ badge), Family DUID, then:
   without a DUID follow the Members on the first click.
 - **What changed**: the field's plain label (Mobile phone, Home address,
   No longer in this household, Deceased, New Member, and so on).
-- **How it reaches ParishSoft**: *Automatic* for a field the
+- **How it reaches ParishSoft**, in the downloads only (the table leaves
+  it out so it stays narrow, and the filter of that name still narrows
+  the rows; Administrator, 2026-10-19): *Automatic* for a field the
   [handling registry](../data/spec.md#proposed-changes) marks API-writable,
   *By hand* for every other row. A Family address, a death date, a gender,
   and any answer that removes a recorded value are *By hand*, because
@@ -2167,7 +2169,12 @@ search, how the change reaches ParishSoft (Automatic and by hand, Automatic
 only, By hand only), kind of change (contact details, moved, deceased, new
 Member) and submitted date. The page has no summary: the counts are the
 Stage filter's. Sorting, paging and filters act
-[in place](../ui-conventions/spec.md#in-place-controls).
+[in place](../ui-conventions/spec.md#in-place-controls), and the address
+bar then shows the view's own address with its Stage, closed filters and
+table choices, so a reload draws the same view; the name search stays in
+POST bodies, so a reload clears only it, and a link carrying a search is
+refused (R38). Submitted from and Through are days in the browser's time
+zone; no zone line sits under the filters (R38).
 
 The filtered list downloads, from the pane below the table, as CSV, XLSX or
 PDF, every format with the page's values

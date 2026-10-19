@@ -1202,8 +1202,8 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `source_form` | Families the form cannot open | System health | Administrator | (new, #774) | (none) | `/admin/system/source-form/` | New page ([System health page](#system-health-page)); no menu entry. Also linked from Data to fix in ParishSoft (#1011). |
 | `integrations` | Integrations | Menu: Integrations | Administrator | (same) | `/admin/system/integrations/` | (same) |  |
 | `integration_settings` | _integration name_ | Integrations | Administrator | _integration name_ (e.g. ParishSoft, Google Workspace mail, Slack notifications, Off-site backups, Backup encryption key); Integration; ParishSoft settings; Off-site backup settings (link text) | `/admin/system/integrations/<target>/` | (same) | Object-named (exception); hand-written Integrations link removed. A link that names the page uses its heading ("ParishSoft", "Off-site backups (Google Drive)"); an action link ("Set up off-site backups") stays an action (#520). |
-| `credential_status` | Key replacement status | _integration name_ | Administrator | (same); Key change details (link text) | `/admin/system/key-changes/<request>/` | (same) |  |
-| `select_credential` | Finish switching to the new key | _integration name_ | Administrator | (same) | `/admin/system/key-changes/<request>/selection/` | (same) |  |
+| `credential_status` | (retired) | (retired) | Administrator | Key replacement status; Key change details (link text) | `/admin/system/key-changes/<request>/` | (retired; 404) | #1568: the integration's settings page's status line is the key change's status; no redirect. |
+| `select_credential` | (retired) | (retired) | Administrator | Finish switching to the new key | `/admin/system/key-changes/<request>/selection/` | (retired; 404) | #1568: Finish switching is a confirmation in the settings page's review dialog; no redirect. |
 | `background` | Background work | Menu: Background work | Administrator | (same) | `/admin/system/background/` | (same) |  |
 | `background_task_page` | Background task | Background work | Administrator | Background task details | `/admin/system/background/<task>/` | (same) |  |
 | `logs` | System logs | Menu: System logs | Administrator | (same) | `/admin/system/logs/` | (same) |  |
@@ -1288,9 +1288,8 @@ from. A configuration change's status page sits under the settings page the
 change was confirmed on: confirming remembers that page in the signed-in
 session (never in the URL), and the status page shows its trail and a "Return
 to" link to it. Without that memory, as in another sign-in, the page stands
-under Home. A key's replacement status and its Finish switching page sit under
-the integration the key belongs to, never under each other, because only the
-Administrator who saved a key may read its status. Some pages are named in
+under Home. A key change's status and Finish switching are on the settings
+page of the integration the key belongs to (#1568). Some pages are named in
 trails but never linked, and "Return to" skips them: those that only answer a
 POST (the Import Ministry leaders review); one-time reviews that refuse once their change is
 confirmed (Copy campaign); and Finish
@@ -1310,7 +1309,7 @@ confirmation. The flows are: making a settings change (Make changes, Review,
 Apply) on every settings editor (Copy
 campaign, pages and emails, dates and mail schedules, share options,
 campaign images, Parish settings, Parish logos, each integration,
-Ministries and Finish switching), Campaign settings, New user and Edit user
+Ministries), Campaign settings, New user and Edit user
 (whose review and Apply are in the
 [review dialog](../ui-conventions/spec.md#review-dialog), so the page
 stays at Make changes) and every change's status
@@ -1868,14 +1867,58 @@ review, the changes in words and when the new schedule takes effect; and
 setting up Off-site backups by its folder ("Turn on off-site copies?"),
 Remove Slack ("Remove Slack?") and Turn off off-site copies are
 confirmations of one sentence. The dialog shows public settings only: never
-a key, a key's fingerprint or the key field's signed request. Save with a
-new key pasted is not reviewed: it submits as before, the key is checked
-with the provider and its install is followed on the page (the recorded
-exception). Once applied, the settings form is
-redrawn at the applied version, with the status line under it saying what
-was applied. The signed preview, the configuration request and its audit
-are unchanged, and `pk-admin integration preview` and `integration confirm`
-still share the page's review.
+a key, a key's fingerprint or the key field's signed request. Once applied,
+the settings form is redrawn at the applied version, with the status line
+under it saying what was applied. The signed preview, the configuration
+request and its audit are unchanged, and `pk-admin integration preview` and
+`integration confirm` still share the page's review.
+
+Save with a new key pasted (ParishSoft, Google Workspace mail and Slack) is
+a confirmation in the same dialog
+([#1568](https://github.com/epiphany40223/parishkit/issues/1568); the
+recorded exception of the
+[review dialog](../ui-conventions/spec.md#review-dialog) says why it
+differs). Its Review posts the form without the key, so the server checks
+everything a key save checks except the key itself (the fields, the key
+field's signed one-hour request, that the request is this Administrator's
+for this integration, the version, the organization lock and that the
+refresh schedule is not changed with it) and draws no part of the key.
+A Review that carries a key, as a field or as an uploaded file, is refused
+as unexpected input without echoing it; a Review while this integration's
+earlier key change is still being installed is refused in the dialog ("A
+new key is already being installed"), since its Apply could not be staged.
+A refusal at a field (the organization ID, a key with a schedule change,
+shown at the key field) keeps the dialog shut and the key in its field;
+another refusal (an out-of-date page, a request older than an hour or
+another Administrator's) is shown in the dialog. The dialog, "Replace the
+ParishSoft key?" (or the Google Workspace service-account key, or the Slack
+bot token), names the new key by its last four characters ("ending in
+1234"), which the browser reads from the field the Administrator pasted
+into; Google Workspace's key, a service-account key file, is named without
+them, since its last characters are the same in every file. It lists any
+other setting saved with it, old → new, and says what happens next: "The
+new key is checked with ParishSoft in the background. This usually takes a
+minute. If the check fails, the current key stays in use." Cancel changes
+nothing and keeps the key in its field. Apply posts the page's own form,
+key included, to the same key save as before, without a page load: the
+key is sealed for its installer and staged under the database's intake
+guard, and its selection is queued, exactly as before and as
+`pk-admin integration key replace` does. A refusal at a field then closes
+the dialog and marks the field; any other is shown in the dialog. Once the
+key is staged the dialog closes and the page is redrawn in place: the
+status line says the new key is being installed, and the editor says the
+page updates by itself. When the check finishes the status line and the
+editor are redrawn in place again (no reload, no jump, focus kept): Key
+updated, or the failure with its cause and "The previous key is still in
+use." The key is never in the dialog's markup, its hidden fields, any
+response, log line or audit row.
+
+On the ParishSoft page the fields are, in order: the expected ParishSoft
+organization ID, the new ParishSoft API key (with its unavailable notices),
+then the refresh schedule's editor, Save and its status line, and the
+refresh schedule's outlook directly after, so the schedule's entry and its
+display are never split by the key. Google Workspace mail and Slack keep the
+key after their own settings.
 
 Page text describes what the Admin sees happen, never the machinery: no
 configuration files, installers, fingerprints or preview lifetimes. Signed
@@ -1886,7 +1929,19 @@ Admin may dismiss it sooner for every Admin (the dismissal is an audit event);
 one that is installed but not selected (its automatic switch failed) is an
 error, not news: it says what is stopped (ParishSoft refreshes, email or Slack
 alerts) and offers **Finish switching to the new key**, and it keeps showing
-until it is resolved; the Admin home page shows it too. Mail meanwhile waits
+until it is resolved; the Admin home page shows it too. **Finish switching
+to the new key** opens a confirmation in the
+[review dialog](../ui-conventions/spec.md#review-dialog) on the settings
+page (#1568), "Finish switching to the new key?": it says the integration is
+stopped until the switch is finished, lists the settings saved with the new
+key that the switch also applies, old → new, and Apply posts its signed
+preview, which records the switch as a configuration change; the page is
+then redrawn in place. A switch that would change the loaded ParishSoft
+organization is refused in the dialog with that reason, and nothing
+changes. There is no separate Finish switching page and no Key replacement
+status page (their addresses are gone, with no redirect): the status line
+is the key change's status, and its history stays in the audit log and
+`pk-admin integration key status`. Mail meanwhile waits
 without spending attempts; see the
 [credential installer guide](../../../guides/stewardship-credential-installers.md#replacing-an-integration-key-from-the-web).
 While a ParishSoft, Google Workspace or Slack key change is still being
@@ -6533,9 +6588,12 @@ ParishSoft" (the default) or "No longer in ParishSoft" (#1217, below).
 
 **Columns**, in the shared
 [table column order](../ui-conventions/spec.md#table-column-order) and the
-worklist's own: Member (the row header, linking to the request page; it
-sorts), Member DUID ("New Member" for a Member added on the form), Ministry
-(the Family's Ministry, or the one the parish added; it sorts; a Ministry
+worklist's own: Member (the row header; it sorts; it opens the Family hub
+for Staff and Administrators and is plain text for a Ministry leader, per
+the [worklist link rule](../ui-conventions/spec.md#admin-tables), R38),
+Member DUID ("New Member" for a Member added on the form), Ministry
+(the Family's Ministry, or the one the parish added, linking to the request
+page for every reader; it sorts; a Ministry
 since removed from the campaign carries the "Removed" badge), Last contact,
 then the worklist's Family's answer ("Join", "Leave", or "Leave (cannot
 participate)"; blank for a request the parish added), Reviewer's value (the
@@ -6673,7 +6731,7 @@ form is never one. One SQL function decides this
   badge ("Not in ParishSoft", "Inactive in ParishSoft" or "Deceased in
   ParishSoft"), so it cannot be taken for a Ministry's activity mark. A
   Member the data no longer has in this Family has no name, so the badge
-  alone is the row's link, and its request page's heading names it by that
+  alone stands for the name, and its request page's heading names it by that
   status (#1216). Their rows offer no action and have no box to tick. A
   request page opened from it gives the specific reason (no longer in
   ParishSoft, now in another Family, inactive or deceased) and has no
