@@ -27,6 +27,7 @@ from django.urls import reverse
 from PIL import Image
 
 from parishkit.stewardship.accounts.policy_models import PortalUser
+from parishkit.stewardship.accounts.templatetags.stewardship import arrows_hidden
 from parishkit.stewardship.archive import imports
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
@@ -212,9 +213,11 @@ def test_the_section_is_retained_mailed_and_shown_unchanged(
         page = page.decode()
         assert "data-digest-comparison" in page
         assert first.checksum in page and replacement.checksum not in page
+        # Each saved line is drawn word for word, escaped and with its
+        # direction arrows hidden from screen readers (#1637).
         for tile in section["tiles"]:
             for line in tile["lines"]:
-                assert line.replace("'", "&#x27;") in page
+                assert arrows_hidden(line) in page
         assert 'id="comparison-families-spec"' in page
         assert f"/admin/reports/comparison/?day={section['day']}" in page
 

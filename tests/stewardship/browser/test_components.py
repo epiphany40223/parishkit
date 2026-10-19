@@ -221,8 +221,6 @@ def test_csp_blocks_an_unrelated_form_destination(page, component_origin):
         "/integration-preview",
         "/backup-key",
         "/backup-key-proof",
-        "/credential-status",
-        "/credential-selection",
         "/branding-settings",
         "/hosted-files",
         "/hosted-file-unavailable",
@@ -1234,17 +1232,6 @@ def test_go_live_steps_wrap_without_overflow(page, component_origin, axe_source,
         visible(item)
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert axe_violations(page, axe_source) == []
-
-
-@pytest.mark.parametrize("width", [390, 1280])
-def test_key_status_returns_to_its_integration(page, component_origin, width):
-    """A key's status names its integration in the trail and leads back (#196)."""
-    page.set_viewport_size({"width": width, "height": 900})
-    page.goto(component_origin + "/credential-status")
-    trail = page.get_by_role("navigation", name="Breadcrumb")
-    visible(trail.get_by_role("link", name="ParishSoft"))
-    visible(page.get_by_role("link", name="Return to ParishSoft"))
-    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
 
 
 @pytest.mark.parametrize("width", [390, 1280])

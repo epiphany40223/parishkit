@@ -803,7 +803,14 @@ and a role rule and cannot carry them, so the
 
 The Admin dashboard shows every unacknowledged notice, with the session label
 escaped as text, to every current Administrator until that Administrator
-acknowledges it; acknowledging affects only one's own view.
+acknowledges it; acknowledging affects only one's own view. Since
+[#1673](https://github.com/epiphany40223/parishkit/issues/1673) the list,
+with its Acknowledge and Acknowledge all controls, is on the Automation
+access page, where the sessions it names can be revoked; Home, the Admin
+dashboard, shows each Administrator only the count, "N automation notices to
+acknowledge", linking that list
+([Home page](../admin-portal/spec.md#home-page)). "The dashboard" in the
+fixed alert texts below means that line and the list it opens.
 
 **Email and Slack** use the existing operational alert path rather than a new
 mail purpose. That path is bound in SQL to operational incidents: the outbox
@@ -1294,9 +1301,14 @@ without the age clause, under the
 The command-session rule holds in every one of them, restore decisions and
 staged setup credentials included. The secret request guards keep their
 own tie to the automation session (see [secret replacement](#secret-replacement)).
-`stewardship_automation_fresh_principal_v1(principal, instant)` stays
-installed but unused, as do the recorded sign-in columns; dropping them is
-[#1550](https://github.com/epiphany40223/parishkit/issues/1550).
+Frozen migration 0123 (`stewardship_accounts.0028_sign_in_leftovers`,
+[#1550](https://github.com/epiphany40223/parishkit/issues/1550)) dropped
+`stewardship_automation_fresh_principal_v1(principal, instant)`, which no
+guard called after 0114, with its grants. It also made an Admin session's
+sign-in instant (`authenticated_at`) immutable: only the retired step-up
+sign-in moved it, and a new sign-in issues a new session. The recorded
+sign-in columns stay, as audit evidence that several guards still bind to
+the live session.
 
 ### Secret replacement
 
@@ -1398,8 +1410,9 @@ wrapper's secret input
   [Integrations and credentials](#integrations-and-credentials).
   `integration key status --watch` follows staged, testing, installing and
   acknowledged progress, and `integration key finish-switching-preview`
-  and `integration key finish-switching` are the page's **Finish switching
-  to the new key** (`select_credential`), the confirmation prompting.
+  and `integration key finish-switching` are the settings page's **Finish
+  switching to the new key** confirmation (its review dialog, #1568), the
+  confirmation prompting.
   A failed or expired change leaves the old key installed, as on the
   page. Dismissing a finished change's line is `integration dismiss`; the
   status and Finish switching commands are described in
@@ -1434,31 +1447,45 @@ as it runs the other
 `DESTRUCTIVE_CONFIRMATION` has no caller today; a later workflow that uses it
 decides in its own specification whether automation may.
 
-Two secret request guards check the sign-in instant recorded on the request,
-not a session row: `stewardship_sealed_intake_admission_v1` (on insert of a
-`stewardship_secret_request` by the web login) and `stewardship_secret_state_v2`
-(at the staged-to-testing step, run as the target's installer login
-`pk_stewardship_credential_<target>`). Every other condition stays, including
-the setup-install branch and the rule about empty required consumers.
-Before #1547 they refused an instant older than five minutes unless
-`stewardship_automation_fresh_principal_v1(requested_by, instant)` (a
-`SECURITY DEFINER` function the web and installer logins may execute) admitted
-a live full-scope automation session with that instant; migration 0114 removed
-the age check, so the recorded instant may be of any age. Instead both guards
-call `stewardship_automation_instant_ended_v1(requested_by, instant)` (new in
-0114, `SECURITY DEFINER`, granted to the same logins): an instant that a
-full-scope automation session of the requester holds needs one such session
-still live. So a request made through an automation session that was revoked
-or expired before the installer's test does not move to testing (it expires
-and is cleaned up), and that session can stage no other. A request's instant
-cannot tell a browser from an automation session, because an automation
-session records its approving browser sign-in: once every full-scope
-automation session a browser session approved has ended, that browser
-session's own requests are refused too, and the Administrator signs in again
-(a new instant) to replace a key. An instant that no full-scope automation
-session holds, an ordinary browser sign-in, always passes. Python's check
-(`sign_in_instant`) still requires the live full-scope session at submission,
-under the intake lock and again under the work lock.
+A request made through an automation session records that session in
+`stewardship_secret_request.automation_session_id` (frozen migration 0125,
+[#1763](https://github.com/epiphany40223/parishkit/issues/1763)); a browser
+request records none (NULL, as every request made before 0125 does). Python
+sets it only for an automation caller, from the admitted caller, never from
+the request's input. Two secret request guards check it:
+`stewardship_sealed_intake_admission_v1` (on insert of a
+`stewardship_secret_request`) and `stewardship_secret_state_v2` (at the
+staged-to-testing step, run as the target's installer login
+`pk_stewardship_credential_<target>`). For a request that names a session,
+both call `stewardship_automation_request_live_v1(session, requested_by,
+instant)` (`SECURITY DEFINER`, granted to the web and the parishsoft,
+google_workspace and slack installer logins, never to PUBLIC): the session
+must be live, of full scope, the requester's and hold the request's recorded
+sign-in instant. So a request made through an automation session that was
+revoked or expired before the installer's test does not move to testing (it
+expires and is cleaned up), and that session can stage no other. Only the web
+or the schema owner may insert a request that names a session, and only those
+three targets take one; any other login or target is refused. A request that
+names no session gets no automation check, so a browser session's key
+replacements never depend on the automation sessions it approved. The
+recorded sign-in instant may be of any age (#1547). Intake checks a named
+session whatever the required consumers; staged-to-testing still refuses
+empty required consumers, and every other condition stays. A setup install's
+request names no session, so 0114's skip of the automation check for a live
+setup install is gone with the check it skipped. The named session cannot
+change after intake. Python's check (`sign_in_instant`) still requires the
+live full-scope session at submission, under the intake lock and again under
+the work lock.
+
+Before #1547 the guards refused an instant older than five minutes unless
+`stewardship_automation_fresh_principal_v1(requested_by, instant)` admitted a
+live full-scope automation session with that instant. Migration 0114 removed
+the age check and called `stewardship_automation_instant_ended_v1(requested_by,
+instant)` instead, which refused an instant once every full-scope automation
+session holding it had ended. Because an automation session records its
+approving browser's sign-in instant, that also refused the browser session's
+own requests until the Administrator signed in again; 0125 replaced it with
+the named session and dropped it.
 
 The setup guards (`stewardship_setup_install_binding_v1`,
 `stewardship_setup_secret_guard_v1`) do not change.
@@ -1910,9 +1937,9 @@ checks that every other ledger route is named here.
 | `signed_in_sessions` (list and Sign out, new, #953) | Permanent: browser session chrome; the operator's offline recovery signs everyone out |
 | `maintenance` | Permanent: the status page the access gate shows |
 | `campaign_step_continue` ([#1404](https://github.com/epiphany40223/parishkit/issues/1404)) | Permanent: the browser [Campaign setup stepper](../admin-portal/spec.md#create-the-campaign)'s own progress (a step kept as is, then the next step page, or one Pages and emails item kept as is, then Pages and emails, #1404 PR 6b); the command line applies settings directly and has no stepper |
-| `held_emails` ([#757](https://github.com/epiphany40223/parishkit/issues/757)) | Permanent: held-email decisions stay in the browser. The exemption predates [#1547](https://github.com/epiphany40223/parishkit/issues/1547), when they needed a recent Google sign-in that the decision guard (migration 0017) checked; since migration 0114 the guard binds only a live session of the actor |
+| `held_emails` ([#757](https://github.com/epiphany40223/parishkit/issues/757)) | Permanent: held-email decisions belong to a restore review (the `maintenance` page, also web-only) and its follow-up after release, each with a preview, a required note and an exact-count check; a command for them would be a new feature ([#1762](https://github.com/epiphany40223/parishkit/issues/1762)) |
 | `automation_access`, `automation_approval`, `automation_sessions` (revoke) and `automation_notices` (acknowledgement) (new) | Permanent: these pages are the human side of the interface (PR 2); `sessions` takes the page's filter and sort for one's own sessions (#621) |
-| `response_dashboard` ([#517](https://github.com/epiphany40223/parishkit/issues/517)) | `report responses` with counts (PR 8c), and `report participation` for the statistics and daily table it absorbed from Participation ([#1537](https://github.com/epiphany40223/parishkit/issues/1537)) |
+| `response_dashboard` ([#517](https://github.com/epiphany40223/parishkit/issues/517)), `response_dashboard_status` (the figures status the open page polls, [#1586](https://github.com/epiphany40223/parishkit/issues/1586)) | `report responses` with counts (PR 8c), and `report participation` for the statistics and daily table it absorbed from Participation ([#1537](https://github.com/epiphany40223/parishkit/issues/1537)) |
 
 The inventory's `status presence` is folded into `status` as its
 `presence.count`, because a word cannot be both a command and an area in
@@ -2011,7 +2038,15 @@ document leaves alone keeps its wall-clock time in that zone. A saved schedule n
 document leaves out, `delete` removes it, an entry without `id` adds one,
 and saved schedules it does not name stay unchanged; a daily digest's
 `comparison` is the page's Include Compared with past campaigns checkbox,
-which `schedule show` lists too. A `repeat` entry
+which `schedule show` lists too. A saved digest's `skip` (one slot date,
+`YYYY-MM-DD`) is Edit's Delete with
+[This email only](../admin-portal/spec.md#delete-a-scheduled-email)
+([#1658](https://github.com/epiphany40223/parishkit/issues/1658)): it adds
+that send to the digest's `skip_dates`, which `schedule show` and each side
+of `schedule preview` list, with the page's refusals (a send already past
+or with Production work, one already skipped, or a date that is not a send
+of the digest). An entry with `skip` may not also give `date`, `time` or
+`weekday` (`invalid`), so the skip always names a send of the saved digest. A `repeat` entry
 ([#469](https://github.com/epiphany40223/parishkit/issues/469)) takes a
 repeat rule, a `time` and a `template_version` and adds one ordinary
 reminder per date the rule gives, expanded by the server's copy of the
@@ -2682,8 +2717,8 @@ Families table also shows each Family's status)
 ([#932](https://github.com/epiphany40223/parishkit/issues/932)). The rows
 hold no times, so `--timezone` is optional: it sets the file's capture and
 request times, which otherwise use the parish's time zone
-([time zone question](../ui-conventions/spec.md#downloaded-files),
-[#1127](https://github.com/epiphany40223/parishkit/issues/1127)). `--timezone`
+([Time zones rule](../ui-conventions/spec.md#downloaded-files),
+[#1679](https://github.com/epiphany40223/parishkit/issues/1679)). `--timezone`
 and `--format` need `--names` (`usage` otherwise); without `--request-key` the new key is written to standard error
 first. Unlike the plain review, it changes state: it admits as a form post
 (recording activity) and runs in the export commands' scope, and records the
@@ -2790,7 +2825,8 @@ takes them) and the page's `census_changes`. The filters are parsed once
 the reader is admitted, so a refused one is `invalid` after the session
 recheck. Its rows name Families and Members with their contact details, so
 it prints counts only: the rows the filters keep, by route and by kind,
-and the page's summary by status key. It records the page's
+and every change of the campaign by status key (the counts the Status
+filter's choices show). It records the page's
 `census_changes_viewed` with a `count` of 0, and `report list` offers it,
 as the menu does. The
 [operator guide](../../../guides/stewardship-admin-automation.md#reports)
@@ -3661,9 +3697,9 @@ lists them.
 | `integrations`, `integration_settings`, `integration_status` | `integration list`, `integration show TARGET` and `integration status TARGET [--watch S]` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), the pages' reads (any session; no event, as the pages' reads record none; see below); `integration preview TARGET` and `integration confirm TARGET` for the settings page's non-secret Save and its Remove ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below); `integration backup-probe [--folder LINK]` for the Off-site backups page's Test access ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below); `integration preview parishsoft` takes the [refresh schedule](../background-processing/spec.md#refresh-schedule) with the page's validation, and `integration schedule-preview` prints the page's [seven-day preview](../admin-portal/spec.md#seven-day-preview) and [cost and freshness summary](../admin-portal/spec.md#cost-and-freshness-summary), for a saved or a proposed schedule ([#632](https://github.com/epiphany40223/parishkit/issues/632)) |
 | `refresh_schedule_check` | `integration schedule-preview [--refresh-schedule DOCUMENT\|-]` ([#632](https://github.com/epiphany40223/parishkit/issues/632)): the ParishSoft page's no-save live check of the refresh schedule editor's rows, with the same validation, preview and cost summary (any session; no event, as the check records none; see below) |
 | `dismiss_credential_result` | `integration dismiss TARGET --request-id ID` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
-| `credential_status` | `integration key status TARGET [--request-id ID] [--watch S]` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
+| Key change status, the settings page's status line (`integration_status`; the separate `credential_status` page is retired, #1568) | `integration key status TARGET [--request-id ID] [--watch S]` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
 | Key replacement through `integration_settings` | `integration key replace TARGET` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see [secret replacement](#secret-replacement) and below) |
-| `select_credential` | `integration key finish-switching-preview TARGET` and `integration key finish-switching TARGET` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
+| Finish switching through `integration_settings` (its review dialog; the separate `select_credential` page is retired, #1568) | `integration key finish-switching-preview TARGET` and `integration key finish-switching TARGET` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
 | Backup encryption key change, through `integration_settings` with proof of possession | `integration backup-key challenge`, `integration backup-key preview` and `integration backup-key confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see [secret replacement](#secret-replacement) and below) |
 
 The refresh schedule is given to `integration preview parishsoft` as
@@ -3803,8 +3839,9 @@ required integration not set up is `not_available`. It prints `target`,
 `request_id` and `dismissed`.
 
 `integration key status TARGET [--request-id ID] [--watch S]`
-(`parishsoft`, `google_workspace` or `slack`) is the **Key replacement
-status** page: any session of an Administrator reads it, and it records
+(`parishsoft`, `google_workspace` or `slack`) is the key change's status,
+which the settings page's status line shows (until #1568 it was the **Key
+replacement status** page): any session of an Administrator reads it, and it records
 nothing, as the page's read records nothing. As on the page, only the
 session Administrator's own key changes are read (`secret_request_status`),
 by default the latest for `TARGET`; another Administrator's, another
@@ -3816,7 +3853,8 @@ following the key change its first read found. As on the page, a change is
 no longer pending once the key is installed and acknowledged, even while
 its automatic switch is still queued; `integration status TARGET` shows
 whether that switch finished. `integration key finish-switching-preview
-TARGET` is the review on **Finish switching to the new key**: it needs a
+TARGET` is the review that **Finish switching to the new key** opens in
+the settings page's review dialog: it needs a
 full-scope session, as the page records activity, passes the page's
 fresh gate with it (a preview records no notice), and is offered only
 while the settings page's key change line is `unselected`; otherwise it is
@@ -4128,18 +4166,22 @@ time:
    automation session only replaces the sign-in after it (migration 0114
    later dropped the sign-in-after-cleanup and five-minute clauses; the
    session-bound guards still call `stewardship_automation_fresh_v1` for a
-   command session, and the secret request guards call 0114's
+   command session, and the secret request guards called 0114's
    `stewardship_automation_instant_ended_v1` instead of the principal
-   helper). Admission
+   helper, until 0125 bound a request to its named automation session).
+   Admission
    (`admit_admin_action`) refuses an automation caller for
    `DESTRUCTIVE_CONFIRMATION`, which no workflow uses yet. As the
    [secret replacement](#secret-replacement) rules accept, the two secret
    request guards bind the principal and the recorded sign-in instant, not
    a session row: any live full-scope session of that Administrator with
-   that instant admits the request. The secret guards call the function
+   that instant admits the request (until frozen migration 0125, #1763,
+   bound a request to the automation session it names). The secret guards
+   call the function
    only for the logins granted it (the web or the schema owner at intake;
    the parishsoft, google_workspace and slack installers at testing), so
-   any other login keeps its plain refusal. `sign_in_instant` refuses an
+   any other login keeps its plain refusal (since 0125, any other login
+   that names a session is refused). `sign_in_instant` refuses an
    automation caller outside a transaction, since the row lock must last
    until the action commits. Telling an automation action apart in the
    audit trail (its `admin_cmd_*` event and the fresh-gated notice) comes

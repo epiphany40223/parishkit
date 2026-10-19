@@ -290,7 +290,15 @@ entry](../ui-conventions/spec.md#time-entry) field. A saved schedule's mail type
 change. The server reports a missing or inapplicable value on its own field (for
 example a weekday on an invitation, or a date outside the campaign with the
 campaign's dates); only rules between schedules, such as a second initial
-invitation or a reminder before it, are page-level errors. On the date-change
+invitation or a reminder before it, are page-level errors. The page checks
+an invitation's or reminder's send date and time against the campaign dates
+as they are typed, by the server's rule
+([send dates inside the campaign](../ui-conventions/spec.md#schedules)):
+one outside them is refused at the date in the same words, and the page's
+button waits until it is changed. On the date-change review it is judged
+against the campaign dates and time zone being proposed, so shortening the
+campaign refuses, at once, each saved schedule it would leave outside and
+opens that schedule's editor. On the date-change
 review, "Add another schedule" adds blank rows (with
 the same per-type fields) before saving, and a row added this way can be removed
 again, so several schedules save in one submission and are validated together.
@@ -515,10 +523,10 @@ campaign setup, mail and the Family portal, reports, parish data, users and
 system pages. Staff see permitted reports and workflows. Ministry leaders see
 assigned-Ministry reports and workflow queues.
 
-The home page is the Admin's starting point: it shows campaign state and
-dates, latest successful ParishSoft refresh, next scheduled mail,
-participation summary, unresolved work counts and recent failures appropriate
-to the role, and links the next steps for the campaign's state, as
+The home page is the Admin's starting point, an overview dashboard: it
+counts what needs attention, shows campaign state and dates, ParishSoft data
+age, next scheduled mail and the response figures appropriate to the role,
+and links the next steps for the campaign's state, as
 [Home page](#home-page) describes. All pages show consistent breadcrumbs,
 [help](../ui-conventions/spec.md#page-help), loading/empty/error states, and responsive layouts.
 
@@ -659,6 +667,7 @@ Home, then these groups, each listing the entries the viewer's role may open:
 | Responses and reports | Census changes | `/admin/reports/census/` | Administrator, Staff | The campaign does not include the census |
 | Responses and reports | Additional information | `/admin/reports/information/` | Administrator, Staff | No current campaign, or ParishSoft data has not been downloaded yet |
 | Responses and reports | Ministry requests | `/admin/reports/ministries/` | Administrator, Staff, Ministry leader | The campaign has no Ministry module |
+| Responses and reports | Roster changes to enter | `/admin/reports/ministries/follow-up/roster/` | Administrator, Staff | The campaign has no Ministry module |
 | Responses and reports | Active parishioner family directory | `/admin/reports/families/` | Administrator, Staff | No current campaign, or ParishSoft data has not been downloaded yet |
 | Responses and reports | Emailed reports | `/admin/reports/emailed/` | Administrator, Staff | Never |
 | Parish data | Parish settings | `/admin/parish/settings/` | Administrator | Never |
@@ -694,8 +703,12 @@ Notes on the groups:
   [active parishioner family directory](../reports/spec.md#active-parishioner-family-directory) (with Family
   campaign codes and its mailing columns). Reports always show the current
   campaign. Ministry leaders see only their own Ministries in the Ministry
-  entry. Census changes, Additional information and Ministry requests show
-  their open counts ([#585](https://github.com/epiphany40223/parishkit/issues/585),
+  entry. [Roster changes to enter](#roster-changes-to-enter), the list Staff
+  enter roster changes from, is an entry of its own beside Ministry requests
+  ([#1660](https://github.com/epiphany40223/parishkit/issues/1660)), for
+  Administrators and Staff only. Census changes, Additional information,
+  Ministry requests and Roster changes to enter show their open counts
+  ([#585](https://github.com/epiphany40223/parishkit/issues/585),
   [#1590](https://github.com/epiphany40223/parishkit/issues/1590)): for
   Census changes, the rows of its default Work to do view (To do and
   Conflict, plus To review for an Administrator, who decides automatic
@@ -705,10 +718,12 @@ Notes on the groups:
   requests, the total of its queue's default Unresolved view, read through that
   page's own selection with every filter it applies (only the leader's own
   Ministries for a Ministry leader); where that page would say the follow-up
-  is unavailable, no number shows. All three ride on one statement.
-  [Roster changes to enter](#roster-changes-to-enter) is not a menu entry
-  (Ministry requests links it), so its count shows only in Home's Next
-  steps. Each is a plain number after the entry's
+  is unavailable, no number shows; for Roster changes to enter, the rows of
+  its default Not yet entered view, read through that page's own selection
+  with its eligibility (a person resolved the request as Joined or Left) and
+  each row's current Entered in ParishSoft mark, only once the campaign is
+  past go-live (active, closed or archived; a draft has no resolved request
+  to enter). All four ride on one statement. Each is a plain number after the entry's
   name that screen readers announce as "(N open)". No number shows at zero,
   nor on a greyed-out entry. The counts are read when a page loads, never
   updated in place, so a number never appears or disappears under the
@@ -870,32 +885,91 @@ state, modules and mode the chrome already reads, and from whether
 ParishSoft data has been downloaded yet (#1242): one small query, run once
 per request and only when an entry's condition needs it, for a viewer whose
 menu has Ministries, Additional information or the directory. The other
-exception is the open counts on Additional information and
-Ministry requests ([Menu groups](#menu-groups)): one query reads both, only
-when the viewer's menu offers either entry as a link, once per request.
+exception is the open counts on Census changes, Additional information,
+Ministry requests and Roster changes to enter
+([Menu groups](#menu-groups)): one query reads them all, only when the
+viewer's menu offers one of those entries as a link, once per request.
 
 #### Home page
 
-Status: built (ADM-12.21, NAV-18). In order, Home shows its heading, the
-System health problems, the campaign and ParishSoft status panels (with the
-off-site backup line and the next planned Family mailing), My Ministries,
-the security events, automation notices, Ministry catalog changes, Family
-participation, the unreachable-Family count, recent failed background tasks
-and, last, the **Next steps** panel led by the **Today** line.
+Status: built (ADM-12.21, NAV-18); an overview dashboard since
+[#1673](https://github.com/epiphany40223/parishkit/issues/1673), following
+[overview pages](../ui-conventions/spec.md#overview-pages): Home summarizes
+and links, and the detail lives on the linked pages. In order, Home shows:
+
+1. Its heading.
+2. **Needs attention**: one compact row of short count lines, each linking
+   the page that lists the items, left out when there is nothing to count.
+   "N system problems" links [System health](#system-health) (for those who
+   may open it; the error look when any problem is an error, else the
+   warning look); "N background tasks failed in the past 24 hours" links
+   Background work filtered to failed tasks (Administrators); "N
+   automation notices to acknowledge" links the notices on
+   [Automation access](../admin-automation/spec.md) (each
+   Administrator's own); undecided held emails link
+   [Held emails](#restore-release); and, for viewers who cannot open System
+   health, "ParishSoft data may be out of date" while the latest full
+   refresh failed or is late (not merely held by a send). An integration
+   key switch that did not finish keeps its own error line with Finish
+   switching, because it stops that integration. Each line that reports a
+   problem (system problems, failed tasks, out-of-date data, an unfinished
+   key switch) shows its state word and icon; the notices and held-email
+   lines are plain notices. **Exception:** while the configured backup key
+   cannot be read, System health cannot be shown (it answers 503), so that
+   problem is not counted: Home keeps its own sentence line ("The backup
+   key could not be checked: …"), with no link, and the count line for any
+   other problems has no link either.
+3. The **security events** awaiting this Administrator's acknowledgement,
+   when there are any (rare; acknowledged in place, so they stay on Home).
+4. The **campaign panel**: the campaign's name as its heading, with links
+   to Dates and mail schedules and the
+   [Response dashboard](../reports/spec.md#response-dashboard) on the
+   heading's row (each as the viewer's menu offers it); one key/value
+   strip: status, dates, days left (or days until it opens), the next
+   planned Family mailing and "ParishSoft data as of"; and, for viewers who
+   may read campaign reports, the **Responses** stat tiles for one
+   population, all active Families (below). With no current campaign the
+   panel says so, or offers Create the campaign.
+5. **My Ministries**, for a Ministry leader (below).
+6. **Next steps**, drawn as
+   [link cards](../ui-conventions/spec.md#overview-pages).
+7. The **Ministry catalog changes** notice, when there is one: detail, so
+   it comes after the overview.
+
+What left Home in #1673, and where it stays: the problem sentences and the
+off-site backup line are on System health (its tiles and its Backups
+panel); the ParishSoft refresh block (connection, next refresh, Run a full
+refresh now) is on System health's ParishSoft refresh panel, the
+ParishSoft settings page and Refresh from ParishSoft; the automation
+notices list is on Automation access; the unreachable-Family count
+("Reaching every Family") is on
+[Data to fix in ParishSoft](#data-to-fix-in-parishsoft) and the Family
+directory's "Can't be reached" preset; the failed task list is on
+Background work; the responses of Families who can use the form now, as
+opposed to all Families, are on the Response dashboard; Refresh now is in
+the menu (Home keeps it, under "ParishSoft data as of", while there is no
+current campaign, which is how ParishSoft data is first loaded before
+Create the campaign).
 
 Home is a starting point, not only a status page. Its heading is "Home"; the
-parish name and the current campaign's name and state are its data line. Below
-the status panels described above, Home shows a short **Next steps** list of
-links chosen by the campaign's state and the viewer's role:
+parish name and the current campaign's name and state are its data line.
+Home shows a short **Next steps** grid of link cards chosen by the
+campaign's state and the viewer's role (the Response dashboard is linked
+from the campaign panel instead, so it is not repeated here):
 
 | State | Administrator | Staff | Ministry leader |
 | --- | --- | --- | --- |
-| Draft in Testing | Continue campaign setup (the Campaign setup stepper's first step not done yet, #1404), Campaign settings, Pages and emails, Dates and mail schedules, Preview and test email (for the initial invitation's current revision), Go-live readiness, Response dashboard | Response dashboard | Ministry requests |
-| Production being activated | Production activation, Sent mail (while the campaign is still a draft, Go-live readiness leads) | Response dashboard | Ministry requests |
-| Active | Response dashboard, Census changes, Roster changes to enter, Additional information and Ministry requests (each with its count), Family email progress, Sent mail problems (with count) | Response dashboard, Census changes, Roster changes to enter, Additional information, Ministry requests (each with its count) | Ministry requests (with open count) |
+| Draft in Testing | Continue campaign setup (the Campaign setup stepper's first step not done yet, #1404), Campaign settings, Pages and emails, Dates and mail schedules, Preview and test email (for the initial invitation's current revision), Go-live readiness | None | Ministry requests |
+| Production being activated | Production activation, Sent mail (while the campaign is still a draft, Go-live readiness leads) | None | Ministry requests |
+| Active | Census changes, Roster changes to enter, Additional information and Ministry requests (each with its count), Family email progress, Sent mail problems (with count) | Census changes, Roster changes to enter, Additional information, Ministry requests (each with its count) | Ministry requests (with open count) |
 | Mail paused | Pause and resume mail first, then the Active list | As Active | As Active |
-| Closed or archived | Response dashboard, Census changes, Roster changes to enter, Additional information, Ministry requests (each with its count), Emailed reports | Response dashboard, Census changes, Roster changes to enter, Additional information, Ministry requests (each with its count) | Ministry requests (with open count) |
+| Closed or archived | Census changes, Roster changes to enter, Additional information, Ministry requests (each with its count), Emailed reports | Census changes, Roster changes to enter, Additional information, Ministry requests (each with its count) | Ministry requests (with open count) |
 | No current campaign | Create the campaign when the deployment has never had one; otherwise says so, with no next steps | Says so; no next steps | Says so; no next steps |
+
+At 1366 × 768 with the menu open, an Administrator's Home on an active
+campaign with problems, failed tasks and automation notices shows the
+attention row, the campaign panel with its response tiles and every Next steps
+card without scrolling; at 390 px nothing scrolls sideways.
 
 On a deployment that has never had a campaign (just after setup), Home's next
 step for an Administrator is [Create the campaign](#create-the-campaign). With
@@ -940,68 +1014,79 @@ keep that Ministry. Search and every filter other than those
 The command line's status read does not
 compute the panel.
 
-The Family participation panel is a row of tiles
-([#720](https://github.com/epiphany40223/parishkit/issues/720)): the active
-Families; the responses from Families who can use the Family form now, as
-the count, "out of 400 (10%)" and a
-[share bar](../ui-conventions/spec.md#stat-tiles); and all Families with a
-response, not counting Testing. That last count can include Families no
-longer active, so it is not drawn as a share. While in Testing mode, a line
-under the tiles says Testing responses are not counted there.
+The Responses tiles are a row of
+[stat tiles](../ui-conventions/spec.md#stat-tiles)
+([#720](https://github.com/epiphany40223/parishkit/issues/720), #1673) for
+one population, the campaign's active Families: the active Families; the
+active Families with a response, as the count, "out of 1,031 (40%)" and a
+share bar; and the Families who responded in the past 24 hours (Testing
+responses while in Testing mode, as the tile's explanation then says).
+The second tile does not count Testing responses; while in Testing mode a
+line under the tiles says so. The Response dashboard keeps the choice
+between all Families and those who can use the Family form now; Home does
+not repeat it. The campaign panel's heading row links the Response
+dashboard, shown as the viewer's menu entry is.
 
-The Next steps panel comes last, after every problem and status panel, and
-opens with one **Today** line for each role
-([decision 29](#navigation-decisions); contents confirmed on #522):
-Administrators and Staff see how many Families responded in the past 24
-hours (Testing responses while in Testing), and a Ministry leader with My
-Ministries sees the open requests in those Ministries. The line does not
-repeat the next planned Family mailing (in the campaign panel), the open
-queue counts (on the Next steps links) or the problems (listed above).
+The Next steps panel comes after the campaign panel (and My Ministries). For a Ministry leader
+with My Ministries it opens with one **Today** line
+([decision 29](#navigation-decisions); contents confirmed on #522): the
+open requests in those Ministries. For Administrators and Staff the Today
+count (Families who responded in the past 24 hours) is the Responses
+tiles' third tile instead (#1673), so it is not repeated.
 
-Each next step is the viewer's own menu entry: a link with the page's name
-while the menu offers it, the page's name and the menu's reason as plain
-text while the menu greys it out, and left out when the viewer's role has
-no such entry. A count follows the link as text. "Production being
-activated" is a scheduled campaign, or Production preparation in progress;
-"Mail paused" is Production with live mail paused, in any state not closed.
-Sent mail problems are the emails that may not have arrived (the
-header's "Not sure it arrived — review needed" counts), and the step links Sent mail
-filtered to the operating mode's, counted as "N may not have arrived", or
-plain Sent mail while that mode has none. When the other mode has some, a
-second link follows, "N in Testing may not have arrived" (or in
-Production), filtered to that mode; each count is exactly the list its
-link opens ([#1576](https://github.com/epiphany40223/parishkit/issues/1576)).
+Each next step is a link card for the viewer's own menu entry: a card
+linking the page while the menu offers it, the page's name and the menu's
+reason as muted plain text while the menu greys it out, and left out when
+the viewer's role has no such entry. A card with a count shows it large
+at the card's end, with what it means beneath the page's name ("4", "to
+do"), and its start bar is the warning colour while the count is above
+zero and the accent at zero; a card without a count has the plain edge.
+"Production being activated" is a scheduled campaign, or Production
+preparation in progress; "Mail paused" is
+Production with live mail paused, in any state not closed. Sent mail
+problems are the emails that may not have arrived (the header's "Not sure
+it arrived — review needed" counts), and the card links Sent mail filtered
+to the operating mode's, counted as "N may not have arrived", or plain Sent
+mail while that mode has none. When the other mode has some, the card adds
+a second, small link at its end, "N in Testing" (or in Production; its name
+for screen readers is "N in Testing may not have arrived"), filtered to
+that mode, as the
+[link cards](../ui-conventions/spec.md#overview-pages) rule draws it, so
+the card keeps its two lines; each count is exactly the list its link opens
+([#1576](https://github.com/epiphany40223/parishkit/issues/1576)).
 
 At campaign end the Staff work through four lists, so an active, paused,
 closed or archived campaign offers Administrators and Staff each of them
 with its count ([#1590](https://github.com/epiphany40223/parishkit/issues/1590)),
-and each count is the number of rows its link opens by default: Census
-changes as "N to do" (the menu's count: its Work to do view); Roster changes
-to enter as "N not yet entered" (the page's default Not yet entered view,
-read through the page's own selection, eligibility and ticks); Additional
-information and Ministry requests as "N open" (the menu's counts). Roster
-changes to enter is offered, and greyed with the same reason, exactly as the
-viewer's Ministry requests entry is, and only to Administrators and Staff,
-who alone may open it; when its count cannot be read (the follow-up is
-turned off or unavailable) the link shows no number. A Ministry leader's
-Closed list keeps Ministry requests with its open count, as in Active.
-These steps send no email. Preview and
-test email opens the initial invitation's first email and follows Pages and
-emails' availability. With no current campaign there is no Next steps panel:
-the campaign panel offers Create the campaign or says why there is none.
-Building the list adds no query of its own except the Roster changes to
-enter count, which Home reads (its follow-up selection and ticks) only for
-Administrators and Staff on a campaign past go-live with the Ministry module;
-Home reads the Today count on its Family participation statement, and the
-invitation's email only for an Administrator in a Testing draft.
+and each count is the menu's, the number of rows its link opens by
+default: Census changes as "N to do" (its Work to do view); Roster changes
+to enter as "N not yet entered" (its Not yet entered view); Additional
+information and Ministry requests as "N open". Roster changes to enter is
+offered, and greyed with its reason, exactly as the viewer's menu entry is
+([#1660](https://github.com/epiphany40223/parishkit/issues/1660)), so only
+Administrators and Staff see it; when its count cannot be read (the
+follow-up is turned off or unavailable) the card shows no number. A
+Ministry leader's Closed list keeps Ministry requests with its open count,
+as in Active. These steps send no email. Preview and test email opens the
+initial invitation's first email and follows Pages and emails'
+availability. With no current campaign there is no Next steps panel: the
+campaign panel offers Create the campaign or says why there is none.
+
+Home adds no query for its overview: every Next steps count is the menu's;
+the 24-hour count and the active Families with a response ride on the
+Responses statement; the days left are computed from the campaign's dates
+and the snapshot's clock; the failed-task line is one count where the list
+was one query; and the automation notice line is one count where the panel
+was two. Home no longer reads the unreachable-Family count or the off-site
+copy outcome, which the command line's status read still reports. The
+invitation's email is read only for an Administrator in a Testing draft.
 
 Problems that need action (failed background tasks, unacknowledged security
 events, out-of-date ParishSoft data as
 [ParishSoft data age and connection](../operations/spec.md#parishsoft-data-age-and-connection)
-defines it, and the [System health](#system-health)
-problems such as an overdue backup or a halted mail sender) stay above Next
-steps and link the page that resolves them. A next step is a link only when
-the viewer's menu entry for it is available.
+defines it, and the [System health](#system-health) problems such as an
+overdue backup or a halted mail sender) are counted in the Needs attention
+row above everything else and link the page that resolves them.
 
 #### Page names and placement
 
@@ -1083,7 +1168,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `ministry_leavers` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry requests — Requested leavers; Leaving; Members leaving | `/admin/reports/ministries/leaving/` | (retired; 404) | Retired with no redirect (#1157), as Members joining. |
 | `ministry_followup` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry follow-up; Follow-up | `/admin/reports/ministries/follow-up/` | (retired; 404) | Retired with no redirect ([#1133](https://github.com/epiphany40223/parishkit/issues/1133)): the queue is now Ministry requests, at `/admin/reports/ministries/`. |
 | `ministry_followup_item` | Follow-up request | Ministry requests | Administrator, Staff, Ministry leader | Ministry follow-up (one request) | `/admin/reports/ministries/follow-up/<request>/` | (same) | Return to the queue keeps its filters and page. Status, notes and outcome only; no Assign to (#552). Shows the Member's contact details (#1157). A resolved join or leave's Entered in ParishSoft tick posts to `follow-up/<request>/roster/` (#528). |
-| `ministry_roster` | Roster changes to enter | Ministry requests | Administrator, Staff | (new, #528) | (none) | `/admin/reports/ministries/follow-up/roster/` | [Roster changes to enter](#roster-changes-to-enter); its CSV/XLSX/PDF download (`roster/exports/`) and its bulk Mark entered in ParishSoft (`roster/marks/`, #879) are non-page actions. |
+| `ministry_roster` | Roster changes to enter | Menu: Roster changes to enter | Administrator, Staff | (new, #528) | (none) | `/admin/reports/ministries/follow-up/roster/` | [Roster changes to enter](#roster-changes-to-enter); its CSV/XLSX/PDF download (`roster/exports/`) and its bulk Mark entered in ParishSoft (`roster/marks/`, #879) are non-page actions. |
 | `family_directory` | Active parishioner family directory | Menu: Active parishioner family directory | Administrator, Staff | (same) | `/admin/reports/families/` | (same) |  |
 | `timeline` | Timeline | Active parishioner family directory | Administrator, Staff | (new, #477; renamed from Family timeline, #1570) | `/admin/reports/families/<family>/` | (same) | One Family's [Timeline](../reports/spec.md#timeline); opened from every Family name the shared `family_link` helper draws (directory rows, Find a Family, NAV-19, and every other Admin table that names a Family; see the [Timeline](../reports/spec.md#timeline) for the list); `<family>` is the opaque campaign record id. Staff see the summary only. |
 | `emailed_reports` | Emailed reports | Menu: Emailed reports | Administrator, Staff | (new) | `/admin/reports/emailed/` | (same) | New page (decision 7, ADM-12.17): the current campaign's daily reports (and weekly reports for Administrators), newest first, each linking its page; Send a weekly report now is on it and returns to it, linking the report it produced. |
@@ -1119,8 +1204,8 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `source_form` | Families the form cannot open | System health | Administrator | (new, #774) | (none) | `/admin/system/source-form/` | New page ([System health page](#system-health-page)); no menu entry. Also linked from Data to fix in ParishSoft (#1011). |
 | `integrations` | Integrations | Menu: Integrations | Administrator | (same) | `/admin/system/integrations/` | (same) |  |
 | `integration_settings` | _integration name_ | Integrations | Administrator | _integration name_ (e.g. ParishSoft, Google Workspace mail, Slack notifications, Off-site backups, Backup encryption key); Integration; ParishSoft settings; Off-site backup settings (link text) | `/admin/system/integrations/<target>/` | (same) | Object-named (exception); hand-written Integrations link removed. A link that names the page uses its heading ("ParishSoft", "Off-site backups (Google Drive)"); an action link ("Set up off-site backups") stays an action (#520). |
-| `credential_status` | Key replacement status | _integration name_ | Administrator | (same); Key change details (link text) | `/admin/system/key-changes/<request>/` | (same) |  |
-| `select_credential` | Finish switching to the new key | _integration name_ | Administrator | (same) | `/admin/system/key-changes/<request>/selection/` | (same) |  |
+| `credential_status` | (retired) | (retired) | Administrator | Key replacement status; Key change details (link text) | `/admin/system/key-changes/<request>/` | (retired; 404) | #1568: the integration's settings page's status line is the key change's status; no redirect. |
+| `select_credential` | (retired) | (retired) | Administrator | Finish switching to the new key | `/admin/system/key-changes/<request>/selection/` | (retired; 404) | #1568: Finish switching is a confirmation in the settings page's review dialog; no redirect. |
 | `background` | Background work | Menu: Background work | Administrator | (same) | `/admin/system/background/` | (same) |  |
 | `background_task_page` | Background task | Background work | Administrator | Background task details | `/admin/system/background/<task>/` | (same) |  |
 | `logs` | System logs | Menu: System logs | Administrator | (same) | `/admin/system/logs/` | (same) |  |
@@ -1205,9 +1290,8 @@ from. A configuration change's status page sits under the settings page the
 change was confirmed on: confirming remembers that page in the signed-in
 session (never in the URL), and the status page shows its trail and a "Return
 to" link to it. Without that memory, as in another sign-in, the page stands
-under Home. A key's replacement status and its Finish switching page sit under
-the integration the key belongs to, never under each other, because only the
-Administrator who saved a key may read its status. Some pages are named in
+under Home. A key change's status and Finish switching are on the settings
+page of the integration the key belongs to (#1568). Some pages are named in
 trails but never linked, and "Return to" skips them: those that only answer a
 POST (the Import Ministry leaders review); one-time reviews that refuse once their change is
 confirmed (Copy campaign); and Finish
@@ -1227,7 +1311,7 @@ confirmation. The flows are: making a settings change (Make changes, Review,
 Apply) on every settings editor (Copy
 campaign, pages and emails, dates and mail schedules, share options,
 campaign images, Parish settings, Parish logos, each integration,
-Ministries and Finish switching), Campaign settings, New user and Edit user
+Ministries), Campaign settings, New user and Edit user
 (whose review and Apply are in the
 [review dialog](../ui-conventions/spec.md#review-dialog), so the page
 stays at Make changes) and every change's status
@@ -1508,8 +1592,12 @@ indicator polling above, and a page never reloads itself through a view that
 counts as activity, so an open page cannot keep an idle login alive. Nor does
 a status read record an audited view: a page whose own view is audited, such
 as background task details, reads a status-only fragment instead, so opening
-the page records one view however long it stays open. The page never replaces
-a control the Admin is using and never re-sends a form.
+the page records one view however long it stays open. The Response
+dashboard and Campaign comparison read such a fragment too, and record one
+more view each time they bring newer figures in, since that read shows figures
+([reports whose figures are being prepared](../ui-conventions/spec.md#pages-that-update-themselves)).
+The page never replaces a control the Admin is using and never re-sends a
+form.
 
 While a report export's, exact export's or background task's run is still
 queued (no worker has claimed it), its status says why it has not started and
@@ -1781,14 +1869,58 @@ review, the changes in words and when the new schedule takes effect; and
 setting up Off-site backups by its folder ("Turn on off-site copies?"),
 Remove Slack ("Remove Slack?") and Turn off off-site copies are
 confirmations of one sentence. The dialog shows public settings only: never
-a key, a key's fingerprint or the key field's signed request. Save with a
-new key pasted is not reviewed: it submits as before, the key is checked
-with the provider and its install is followed on the page (the recorded
-exception). Once applied, the settings form is
-redrawn at the applied version, with the status line under it saying what
-was applied. The signed preview, the configuration request and its audit
-are unchanged, and `pk-admin integration preview` and `integration confirm`
-still share the page's review.
+a key, a key's fingerprint or the key field's signed request. Once applied,
+the settings form is redrawn at the applied version, with the status line
+under it saying what was applied. The signed preview, the configuration
+request and its audit are unchanged, and `pk-admin integration preview` and
+`integration confirm` still share the page's review.
+
+Save with a new key pasted (ParishSoft, Google Workspace mail and Slack) is
+a confirmation in the same dialog
+([#1568](https://github.com/epiphany40223/parishkit/issues/1568); the
+recorded exception of the
+[review dialog](../ui-conventions/spec.md#review-dialog) says why it
+differs). Its Review posts the form without the key, so the server checks
+everything a key save checks except the key itself (the fields, the key
+field's signed one-hour request, that the request is this Administrator's
+for this integration, the version, the organization lock and that the
+refresh schedule is not changed with it) and draws no part of the key.
+A Review that carries a key, as a field or as an uploaded file, is refused
+as unexpected input without echoing it; a Review while this integration's
+earlier key change is still being installed is refused in the dialog ("A
+new key is already being installed"), since its Apply could not be staged.
+A refusal at a field (the organization ID, a key with a schedule change,
+shown at the key field) keeps the dialog shut and the key in its field;
+another refusal (an out-of-date page, a request older than an hour or
+another Administrator's) is shown in the dialog. The dialog, "Replace the
+ParishSoft key?" (or the Google Workspace service-account key, or the Slack
+bot token), names the new key by its last four characters ("ending in
+1234"), which the browser reads from the field the Administrator pasted
+into; Google Workspace's key, a service-account key file, is named without
+them, since its last characters are the same in every file. It lists any
+other setting saved with it, old → new, and says what happens next: "The
+new key is checked with ParishSoft in the background. This usually takes a
+minute. If the check fails, the current key stays in use." Cancel changes
+nothing and keeps the key in its field. Apply posts the page's own form,
+key included, to the same key save as before, without a page load: the
+key is sealed for its installer and staged under the database's intake
+guard, and its selection is queued, exactly as before and as
+`pk-admin integration key replace` does. A refusal at a field then closes
+the dialog and marks the field; any other is shown in the dialog. Once the
+key is staged the dialog closes and the page is redrawn in place: the
+status line says the new key is being installed, and the editor says the
+page updates by itself. When the check finishes the status line and the
+editor are redrawn in place again (no reload, no jump, focus kept): Key
+updated, or the failure with its cause and "The previous key is still in
+use." The key is never in the dialog's markup, its hidden fields, any
+response, log line or audit row.
+
+On the ParishSoft page the fields are, in order: the expected ParishSoft
+organization ID, the new ParishSoft API key (with its unavailable notices),
+then the refresh schedule's editor, Save and its status line, and the
+refresh schedule's outlook directly after, so the schedule's entry and its
+display are never split by the key. Google Workspace mail and Slack keep the
+key after their own settings.
 
 Page text describes what the Admin sees happen, never the machinery: no
 configuration files, installers, fingerprints or preview lifetimes. Signed
@@ -1799,7 +1931,19 @@ Admin may dismiss it sooner for every Admin (the dismissal is an audit event);
 one that is installed but not selected (its automatic switch failed) is an
 error, not news: it says what is stopped (ParishSoft refreshes, email or Slack
 alerts) and offers **Finish switching to the new key**, and it keeps showing
-until it is resolved; the Admin home page shows it too. Mail meanwhile waits
+until it is resolved; the Admin home page shows it too. **Finish switching
+to the new key** opens a confirmation in the
+[review dialog](../ui-conventions/spec.md#review-dialog) on the settings
+page (#1568), "Finish switching to the new key?": it says the integration is
+stopped until the switch is finished, lists the settings saved with the new
+key that the switch also applies, old → new, and Apply posts its signed
+preview, which records the switch as a configuration change; the page is
+then redrawn in place. A switch that would change the loaded ParishSoft
+organization is refused in the dialog with that reason, and nothing
+changes. There is no separate Finish switching page and no Key replacement
+status page (their addresses are gone, with no redirect): the status line
+is the key change's status, and its history stays in the audit log and
+`pk-admin integration key status`. Mail meanwhile waits
 without spending attempts; see the
 [credential installer guide](../../../guides/stewardship-credential-installers.md#replacing-an-integration-key-from-the-web).
 While a ParishSoft, Google Workspace or Slack key change is still being
@@ -3165,10 +3309,23 @@ directly; the wizard's list has its own Delete.
   prepared, and the series itself, as the command line's series delete does
   (`series_edits.plan`, scope `delete`); its reminders that sent stay as
   ordinary reminders. The review names the series' rule and says so.
-- **An Admin digest** is one repeating schedule with no single-day
-  exceptions, so Delete removes the whole digest: every send still to come
-  stops, and the review says so. Skipping one day of a digest is a later
-  change ([#1658](https://github.com/epiphany40223/parishkit/issues/1658)).
+- **An Admin digest** is one repeating schedule. Opened from the Edit
+  link of one of its sends on the [Campaign calendar](#campaign-calendar)
+  (`?send=` that send's slot, below), Delete has a **Delete** choice above
+  the button ([#1658](https://github.com/epiphany40223/parishkit/issues/1658)):
+  **This email only** (the default) and **The whole digest**. This email
+  only skips just that send: the digest keeps every other send, and the
+  review shows the digest's change and says which send it skips. The whole
+  digest removes it, as Delete does when Edit is opened from the list (with
+  no send named): every send still to come stops, and the review says so.
+  Only a send whose time is still ahead, that is a send of this digest, is
+  not skipped already and has no Production work yet (nothing prepared,
+  sending, sent or failed) is offered; for any other, Edit draws the
+  whole-digest Delete alone. A Testing rehearsal's work for the send does
+  not count: it is practice mail, so the real send can still be skipped.
+  The review names the skipped send by its send time, browser-local (a
+  Daily digest's send is the morning after the day it reports on). The page's status line after Apply says "Email skipped." or
+  "Scheduled email deleted.".
 - **Refusals.** Edit already refuses a schedule that has run or has work
   prepared (a GET or a POST, even from an old link), so an email that sent or
   is being sent cannot be deleted, and the deletion checks that again. A
@@ -3178,7 +3335,28 @@ directly; the wizard's list has its own Delete.
   which then offers no Apply and names Sent mail; a stale page or another
   Administrator's change is refused as any review is. Reminder planning,
   live-campaign rules and emailed Family codes and links are those of any
-  schedule change.
+  schedule change. Skipping a digest send whose time has passed, or that has
+  Production work (prepared, sending, sent or failed), is refused (403) with
+  nothing recorded, and so is one skipped again (409, a stale page); a send that is
+  not one of the digest's, or a skip of anything but a digest, is refused
+  as an unknown request (400). The reviewed send's time is signed into the
+  review, so Apply refuses under the work lock once it has passed, and the
+  review's work fingerprint refuses once any work for the digest has
+  changed since it was drawn.
+- **A skipped send** is stored on the digest as one of its `skip_dates`
+  (the slot dates it skips: a Weekly digest's send day, a Daily digest's
+  reported day, sent the next morning), so it is an ordinary schedule
+  change: a new revision of the digest, reviewed, applied and audited like
+  any other. Every later change to the digest keeps its past skip dates.
+  A change that moves the digest's sends (its weekday, or the campaign's
+  dates) drops each skip of a send still ahead that is no longer a send,
+  so changing the weekday back later does not skip that date again; the
+  change's review lists the dropped skips by their send times. Each side of
+  a digest's review lists the sends it skips the same way. How the
+  scheduler and database honour skip dates is in
+  [skipped digest sends](../background-processing/spec.md#schedule-replacement-and-removal).
+  A skipped send cannot be brought back in this release. Only digests take
+  skip dates, so Family mail is never skipped this way.
 
 #### Campaign calendar
 
@@ -3222,8 +3400,10 @@ the campaign closes).
   equivalent: when, the schedule ("Reminder 2"), the email it sends, its
   status and Edit. The status is the scheduled emails table's, from the same
   counts-only work summary; each day or week of a digest shows the digest's
-  "Repeats" until its time has passed, then "Past". Every send of a digest is
-  listed, however long the campaign. Above it, **Show** is a [binary
+  "Repeats" until its time has passed, then "Past", and a skipped one
+  ([#1658](https://github.com/epiphany40223/parishkit/issues/1658)) shows
+  "Skipped". Every send of a digest is listed, however long the campaign,
+  skipped ones included. Above it, **Show** is a [binary
   choice](../ui-conventions/spec.md#binary-choices) (`?show=`): **Upcoming
   emails** (the default) or **Include past emails**. A past email is one
   whose time has passed and is not still sending; the default leaves them
@@ -3250,7 +3430,11 @@ in the grid and through Edit in the table, with `?calendar=` and the month
 shown (`?calendar=2054-11`), so that page's Cancel, Apply and Delete return
 to that month of the calendar; a schedule that has run, or has work
 prepared, is listed muted and not linked, as on the list, and so is a digest's
-send whose time has passed (editing the digest changes only its later sends).
+send whose time has passed (editing the digest changes only its later sends)
+or that is skipped. A digest send still to come links to the digest's Edit
+page with that send's slot too (`?send=2054-11-03`), so Edit's Delete can
+offer [This email only](#delete-a-scheduled-email); a `send` that is not a
+date is refused as an unknown address.
 A muted send is told apart by its status, in words in the table and read to
 screen readers in the grid. A week view,
 Production activation and go-live milestones, ParishSoft refresh times and the
@@ -3311,7 +3495,8 @@ checks it exactly as that page does.
   stay on Edit, where every reminder keeps its own date.
 - **Not movable:** a send that has run, is being prepared or was missed, and
   every send of a Daily or Weekly Admin digest (a digest is one repeating
-  schedule with no single-day exceptions). These keep their look on the
+  schedule; one of its sends can only be skipped, through Edit's
+  [Delete](#delete-a-scheduled-email)). These keep their look on the
   calendar and offer neither Move… nor a drag.
 
 ### Ministry leader roles
@@ -6096,7 +6281,7 @@ rest of this section follows those decisions:
    addresses, Families no mail can reach, census and roster changes to
    enter.
 4. "No mail can reach" means no usable email **and** no usable mailing
-   address (Home's definition); postal-only Families are not counted.
+   address (the definition Home used before #1673); postal-only Families are not counted.
 5. A role sees only the sections whose detail page it can open, so Staff
    see sections 3 and 4; Staff get no counts for sections 1 and 2.
 6. The menu entry carries no count.
@@ -6148,8 +6333,8 @@ role may not see left out:
 | --- | --- | --- | --- | --- | --- |
 | 1 | Families the form cannot open | Families that cannot open the Family form because a Member's ParishSoft data has a value the form cannot accept | [Families the form cannot open](#system-health-page) | Administrator | `reports.source_form.blocked_families`, the System health sentence's own read, with its per-campaign and per-snapshot cache |
 | 2 | Refused email addresses | Unresolved refused addresses, and how many Families they belong to | [Refused addresses](#refused-addresses) | Administrator | `jobs.delivery_reads.unresolved_refusals()`, the set behind Sent mail's link-line count, counted in one query |
-| 3 | Families no mail can reach | Active parishioner Families with no deliverable email and no usable mailing address | The [active parishioner family directory](../reports/spec.md#active-parishioner-family-directory) with its "Can't be reached by email or mail" preset | Administrator, Staff | `accounts.admin_dashboard.unreachable_families`, Home's count, which is the directory's own "neither" selection |
-| 4 | Census and roster changes to enter | Census changes in the [Census changes](../reports/spec.md#pending-census-changes) default view for the viewer (To do and Conflict, plus To review for an Administrator); later, roster changes to enter | Census changes; later, *Roster changes to enter* (under Ministry requests) | Administrator, Staff | `reports.census_changes.census_changes` with the page's default query; later, the roster filter's own read |
+| 3 | Families no mail can reach | Active parishioner Families with no deliverable email and no usable mailing address | The [active parishioner family directory](../reports/spec.md#active-parishioner-family-directory) with its "Can't be reached by email or mail" preset | Administrator, Staff | `accounts.admin_dashboard.unreachable_families`, the count Home showed before #1673, which is the directory's own "neither" selection |
+| 4 | Census and roster changes to enter | Census changes in the [Census changes](../reports/spec.md#pending-census-changes) default view for the viewer (To do and Conflict, plus To review for an Administrator); later, roster changes to enter | Census changes; later, *Roster changes to enter* | Administrator, Staff | `reports.census_changes.census_changes` with the page's default query; later, the roster filter's own read |
 
 Notes on the sections:
 
@@ -6160,7 +6345,7 @@ Notes on the sections:
   worklist is the largest and least urgent: it is entered at any time and
   published after the campaign closes
   ([#528](https://github.com/epiphany40223/parishkit/issues/528)).
-- **Families no mail can reach** uses the Home definition, not "no
+- **Families no mail can reach** uses the directory's "neither" definition, not "no
   deliverable email": a Family with a usable mailing address still gets a
   postal invitation, and many Families have no email by choice, so their
   number is not a list of errors.
@@ -6169,7 +6354,7 @@ Notes on the sections:
   rosters. That step also lets the follow-up queue accept its *Roster
   changes to enter* view as a closed GET value (as it accepts `?ministry=`),
   so the link opens the filtered queue.
-- **No new SQL.** Every count calls the function its detail page or Home
+- **No new SQL.** Every count calls the function its detail page (or Home, before #1673)
   already uses, with that page's own filters, so a count always matches the
   list its link opens. The page adds no query to any other page and no
   count to the menu; the source-form read is the cached one System health
@@ -6311,9 +6496,8 @@ request page's view audit (`ministry_followup_viewed`) records the request's
 `ministry_duid`, as the retired Members joining and leaving lists' views
 recorded theirs; never names or contact values.
 
-Below the queue table, **Export these requests**, a closed export
-disclosure (its summary "Export these requests (CSV, XLSX or PDF)", per the
-[report filters and export rule](../ui-conventions/spec.md#page-help)),
+Below the queue table, **Export these requests**, the shared row of
+[export buttons](../ui-conventions/spec.md#downloaded-files),
 downloads the queue's applied view (its filters, search and sort; every
 page of it, not just the one shown) as CSV, XLSX or PDF (Administrator
 decision, 2026-10-12, option (a) on #1157), replacing the retired Members joining and leaving exports.
@@ -6324,9 +6508,9 @@ selection, which leaves such requests out once open
 the export refuses (400) any Status choice but the queue's own statuses, so
 the Staff-only choice of #1217 that lists only those requests is never
 exported.
-A line says how many requests the file holds; the count and the form's hidden
-filters follow an in-place Apply, sort or page change, and the reader's
-format and time zone stay as chosen. The rows are the queue selection's own,
+No line says how many requests the file holds
+([export actions](../ui-conventions/spec.md#downloaded-files)); the form's
+hidden filters follow an in-place Apply, sort or page change. The rows are the queue selection's own,
 so a Ministry leader gets only the Ministries they lead, exactly as on the
 queue. The file's columns are the queue's (Member, Member DUID, Ministry,
 Request, Status with Outcome split out, Last contact), then the request
@@ -6339,8 +6523,8 @@ page still shows when a request was submitted. Its Report information sheet
 and PDF card
 hold the parish, campaign, data date, request time, display time zone, age
 reference date, count, filters and the privacy line. It carries the
-retired export's sensitivity notice, and it asks for a time
-zone, since Last contact is an action time. The file is
+retired export's sensitivity notice, and its times are in the browser's
+zone ([time zones](../ui-conventions/spec.md#downloaded-files)). The file is
 rendered on request, as Roster changes to enter is, rather than queued as a
 stored export: a stored capture would need a schema change, because the
 export capture accepts only one Ministry's join or leave list or a packet.
@@ -6351,11 +6535,10 @@ interactive [read guard](../data/spec.md#campaign-read-guards), and the
 shared PDF writers take about 19 ms a request: timed on 1,000 synthetic
 Families with 3,002 requests, CSV took 1.2 s, XLSX 2.7 s and PDF 58 s (50 s
 as a table), so 1,000 requests is about 20 s, with room for the slower
-production server. While the queue's filters select more, the format menu
-offers PDF unavailable and the export line says "The PDF is limited to 1,000
-requests: choose CSV or XLSX, or narrow the filters."; the menu is redrawn
-with each applied view, in place, keeping the reader's choice where it is
-still offered. A PDF asked for anyway (a stale page) is refused with that
+production server. While the queue's filters select more, Export PDF is
+shown unavailable and a line below the buttons says "The PDF is limited to 1,000
+requests: choose CSV or XLSX, or narrow the filters."; the buttons are
+redrawn with each applied view, in place. A PDF asked for anyway (a stale page) is refused with that
 reason and a link back to the queue, before any contact detail is read.
 Each download is audited as `ministry_followup_exported` with its count, the
 sorted Ministry DUIDs in the file (`ministry_duids`, which the log's Ministry
@@ -6631,8 +6814,10 @@ ParishSoft, and this tick only records that a person did.
 ### Roster changes to enter
 
 **Roster changes to enter** (`/admin/reports/ministries/follow-up/roster/`,
-Administrators and Staff, linked from Ministry requests, which is its
-breadcrumb parent) is the list staff work from. It lists the resolved joins
+Administrators and Staff) is the list staff work from: a menu entry of its
+own with its count ([Menu groups](#menu-groups),
+[#1660](https://github.com/epiphany40223/parishkit/issues/1660)), also
+linked from Ministry requests. It lists the resolved joins
 and leaves with no resolution source that are not yet ticked, or, with
 **Show** set to All, including entered, every one of them, to find and
 clear a mistaken mark, and **Ministry** narrows it to one Ministry (a closed
@@ -6684,8 +6869,8 @@ Its CSV, XLSX and PDF downloads carry the page's columns, without the tick
 ([downloaded files](../ui-conventions/spec.md#downloaded-files)), for every
 row of the chosen Show and Ministry, in the browser's time zone (the PDF in the parish's
 compact date format). The view and each download are audited as counts.
-Home's [Next steps](#home-page) give its default Not yet entered view's
-count (#1590).
+Its menu entry and Home's [Next steps](#home-page) give its default Not
+yet entered view's count (#1590, #1660).
 
 The [Ministry change summary](../reports/spec.md#ministry-change-summary)
 does not show the tick: its stored export cannot carry it without replacing
@@ -6787,9 +6972,10 @@ actions have landed.
   names are Member values, and a head's name can be the very value the form
   refuses.
   The result is cached in memory per campaign, snapshot and campaign
-  configuration, so a refresh clears it. The sentence is read on page load
-  only, never by the 10-second status poll; if the check cannot run, it
-  says so instead. Opening the list records `source_form_viewed` with the
+  configuration, so a refresh clears it. The sentence is read when the
+  page opens and then about every 5 minutes, never by every 10-second
+  status poll (see [tiles read on page load](#overall-status-line)); if
+  the check cannot run, it says so instead. Opening the list records `source_form_viewed` with the
   number of Families listed. One function (`source_form_tile`) picks the
   tile's summary and its state from that read, the first that holds of:
   "Could not be checked" (Warning), "3 Families cannot open the form"
@@ -6802,9 +6988,9 @@ actions have landed.
 - **Pages and emails to re-save (#838).** Its own tile's details hold one
   sentence that says how many of the current campaign's saved pages and
   emails should be re-saved, linking **Pages and emails**, followed by the same linked list as
-  [Go-live readiness](#production-transition). It is read on page load only,
-  in its own read-only snapshot, never by the 10-second status poll, and is
-  not one of the problems; with no current campaign, or when the read cannot
+  [Go-live readiness](#production-transition). It is read when the page
+  opens and then about every 5 minutes, in its own read-only snapshot,
+  never by every 10-second status poll, and is not one of the problems; with no current campaign, or when the read cannot
   run, the sentence says so instead. The re-save findings stay outside the
   shared problem list, as a recorded exception: see
   [health problems on Home and in the banner](#health-problems-on-home-and-in-the-banner).
@@ -6816,9 +7002,14 @@ actions have landed.
   sentence is its problem item (an error notice for a blocked email),
   followed by the list; otherwise it is a plain line. **Pages and emails**
   is linked only while items are listed or the read could not run.
-- **The page-load tiles' help.** Why these two tiles do not follow the
-  poll (each check reads every Family, or every saved page and email, so
-  a reload checks again) is in a toggletip beside each sentence. What
+- **The page-load tiles' help.** Why these two tiles are checked about
+  every 5 minutes rather than every 10 seconds (each check reads every
+  Family, or every saved page and email) is in a toggletip beside each
+  sentence: "This is checked about every 5 minutes, not every 10 seconds
+  like the other tiles, because the check reads every Family or every
+  saved page and email." Nothing tells the reader to reload the page
+  ([pages that update themselves](../ui-conventions/spec.md#pages-that-update-themselves),
+  [#1790](https://github.com/epiphany40223/parishkit/issues/1790)). What
   keeps a Family from the form, and how it gets the form back, is in
   "About this page".
 - **Panels.** The [health panels](#health-panels) define what each tile's
@@ -6827,18 +7018,10 @@ actions have landed.
   backups, debug logging, Families the form cannot open, pages and emails
   to re-save, and version and services. During a send, mail is what the
   Administrator watches, so it comes first.
-- **Home.** For viewers who may open this page, Home's problems list (see
-  [Home page](#home-page)) adds one line for each System health problem,
-  linking its tile on this page. Other viewers see no such line. These
-  lines join the problems list that ADM-12's Home work (#568, NAV-18,
-  with its Today line) renders, so whichever of the two lands second adds
-  its lines to the other's list rather than making a second one. ADM-13
-  landed first, so its lines are Home's problems list, a panel at the top
-  of Home, each with the page's own sentence; NAV-18 added Next steps without merging
-  the lists (a later slice on #522). Until they are merged, a problem
-  Home already reports elsewhere (a failed or late ParishSoft refresh, a
-  failed off-site copy) is shown once, as the System health line, to those
-  who see the lines (dashboard slice 7). The
+- **Home.** For viewers who may open this page, Home counts its problems
+  in one short line, "N system problems", that links this page (see
+  [Home page](#home-page)); since #1673 Home no longer lists each problem's
+  sentence. Other viewers see no such line. The
   [debug logging banner](#navigation-and-home) and the critical-problems
   banner link this page too. How Home's lines and the critical-problems
   banner stay consistent with the tiles is in
@@ -7011,15 +7194,37 @@ convention's; this page adds only the words.
   form fits on one line at 320 pixels. A poll never changes its height, so
   it never moves the tiles below.
 - **Tiles read on page load.** Two tiles (Families the form cannot open and
-  Pages and emails to re-save) are read only when the page opens, never by
-  the poll. The page passes their states to the status fragment as
-  `?loaded=`, for example `?loaded=resave:error`. It is the only query key
-  the fragment accepts: any other key is still refused with 400, as every
-  key is today, and the page itself still accepts none. Within it, values
-  outside the closed set of these two tiles and their two non-Working
-  states are ignored. The fragment counts the named states into the line.
-  It changes nothing and records nothing, so a forged value can only
-  mislabel the requester's own page.
+  Pages and emails to re-save) are read when the page opens, and then
+  rechecked at a slow pace, never on every poll, because each check reads
+  every Family or every saved page and email
+  ([#1790](https://github.com/epiphany40223/parishkit/issues/1790)). The
+  page passes their states to the status fragment as `?loaded=`, for
+  example `?loaded=resave:error`, and an ordinary poll echoes them. The
+  first poll after 5 minutes have passed since the page opened or since
+  the last recheck that was answered adds `slow=1`, and that answer runs
+  both checks again, as opening the page does: it carries the two tiles'
+  summary rows and panel content as mirror copies (marked
+  `data-live-mirror-lasting`: kept outside the region, so they never count
+  as a change to it, and a copy held back while the reader points at or
+  uses the tile is applied by a later poll), and the fragment
+  address carrying the new states (`data-live-url`), which later polls
+  use. The pace is the region's `data-live-slow-every` (300000 ms). Polls
+  pause while the tab is hidden, so a hidden tab never rechecks; the
+  first poll once it is shown again rechecks if 5 minutes have passed.
+  A recheck that fails is tried again on the next poll; one whose answer
+  arrives while the region's swap is held still counts, and its copies
+  and address are kept. `loaded` and
+  `slow` are the only query keys the fragment accepts: any other key is
+  still refused with 400, as every key is today, and the page itself still
+  accepts none. Within `loaded`, values outside the closed set of these
+  two tiles and their two non-Working states are ignored; `slow` takes
+  only `1`. The fragment counts the named states into the line. It stays
+  passive however it is asked: it changes nothing, records no audited view
+  (only opening the page records `system_health_viewed`) and never extends
+  the sign-in, so a forged value can only mislabel the requester's own
+  page, and an automatic recheck never adds an audit row. Re-reading the
+  whole page on a timer, running both checks on every poll, and a shared
+  server-side cache were rejected (#1790).
 
 #### Health tiles
 
@@ -7193,7 +7398,10 @@ cannot disagree.
   three parts: the summary row's state, icon, word and summary; the
   problems' sentences; and the panel content. Each copy goes to its
   `[data-live-mirror-target]` in the tile, which sits outside the polled
-  region. The summary row's `aria-expanded`, the details' `hidden`
+  region. The two page-load tiles have no problems copy, and their
+  summary-row and panel copies come only with the slow recheck
+  ([tiles read on page load](#overall-status-line)). The summary row's
+  `aria-expanded`, the details' `hidden`
   attribute, and every action region, are not mirror targets, so an open tile, an open preview
   and a ticked box survive every poll. As today, a target that holds focus
   is skipped, and an unchanged copy is not applied. Action buttons follow
@@ -7320,7 +7528,11 @@ arrived; nothing is fetched to draw it.
 
 The same problem never appears twice in ways that disagree.
 
-- **Home's lines.** Home's System health lines (`home_problems`) are the
+- **Home's lines.** Since #1673, Home shows only the count of
+  `home_problems` in one line linking System health
+  ([Home page](#home-page)); what follows describes the per-problem line
+  format, which System health's own problem items and the history of #1214
+  still use. Home's System health lines (`home_problems`) were the
   registry's problems, with the page's sentence, plus the registry's icon
   and state word, and link the problem's tile anchor. Until NAV-18 merges
   Home's lists (see [System health page](#system-health-page)), a problem
@@ -8987,10 +9199,11 @@ page, and so does a date without a known zone, and every refusal no field
 can fix. The critical-event
 banner's link sends the browser's zone with a From day one day before its
 24-hour window, so the window is covered in every zone; when the browser
-reports no zone it sends no From day. Export
-requires choosing UTC or the browser's timezone (offered by the page), as every
-download whose rows hold exact action times asks
-([time zone question](../ui-conventions/spec.md#downloaded-files)); the
+reports no zone it sends no From day. Its export
+keeps the one time zone choice an Admin download has, "Times in" UTC or this
+browser's zone, preselected to the browser's (the zone the page shows),
+because the entries are compared with server and provider logs kept in UTC
+([time zones](../ui-conventions/spec.md#downloaded-files)); the
 file's timestamps carry their UTC offset. Logins/logouts, configuration, polls/tasks, each email and
 reason/recipient routing, report execution/export, errors, Family access,
 submission changes, workflow changes, publication, purge and

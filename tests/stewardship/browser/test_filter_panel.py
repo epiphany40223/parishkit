@@ -4,6 +4,8 @@ The long filter and export forms of the report pages start collapsed, so a
 report's first data is on a laptop's first screen (#227); an applied filter
 is never hidden, because the panel then renders open and its summary counts
 the filters in use. The Family directory's panel is open by default (#227).
+Census changes, a worklist, has an always-open Filters box instead (#1682,
+``test_census_layout``); its open box is measured here with the others.
 """
 
 import pytest
@@ -21,12 +23,10 @@ MARKED = "document.querySelector('h1').dataset.mark"
 # answering an applied filter (the fixtures' searches and choices), with the
 # number of filters each fixture applies.
 UNFILTERED = [
-    "/census-changes",
     "/information-unfiltered",
     "/financial-unfiltered",
 ]
 FILTERED = {
-    "/census-changes-automatic-filtered": 1,
     "/family-directory": 1,
     "/information": 2,
     "/financial-report": 3,
@@ -37,7 +37,8 @@ FILTERED = {
 def test_unfiltered_report_starts_with_filters_and_export_closed(
     page, component_origin, path
 ):
-    """With no filter applied the Filters and export panels are both closed."""
+    """With no filter applied the Filters panel is closed; the export row
+    (#1679) is shown."""
     from playwright.sync_api import expect
 
     page.goto(component_origin + path)
@@ -46,7 +47,9 @@ def test_unfiltered_report_starts_with_filters_and_export_closed(
     expect(panel).not_to_have_attribute("open", "")
     has_text(panel.locator("summary"), "Filters: none applied")
     expect(page.get_by_role("button", name="Apply filters")).to_be_hidden()
-    expect(page.locator("details.export-panel")).not_to_have_attribute("open", "")
+    # The export is a row of buttons, not a disclosure (#1679).
+    expect(page.locator("details.export-panel")).to_have_count(0)
+    visible(page.get_by_role("button", name="Export XLSX"))
     # The panel is a native disclosure: it opens with a click, below its own
     # summary line, which stays where it was on the page (a click first
     # scrolls a summary below the window into view, which is not a shift).
@@ -61,7 +64,8 @@ def test_unfiltered_report_starts_with_filters_and_export_closed(
 def test_family_directory_starts_with_filters_open_and_export_closed(
     page, component_origin
 ):
-    """The Family directory opens Filters by default (#227); export stays closed."""
+    """The Family directory opens Filters by default (#227); its export is
+    the row of buttons below the table (#1679)."""
     from playwright.sync_api import expect
 
     page.goto(component_origin + "/directory-unfiltered")
@@ -69,7 +73,8 @@ def test_family_directory_starts_with_filters_open_and_export_closed(
     expect(panel).to_have_attribute("open", "")
     has_text(panel.locator("summary"), "Filters: none applied")
     visible(page.get_by_role("button", name="Apply filters"))
-    expect(page.locator("details.export-panel")).not_to_have_attribute("open", "")
+    expect(page.locator("details.export-panel")).to_have_count(0)
+    visible(page.get_by_role("button", name="Export XLSX"))
 
 
 @pytest.mark.parametrize("path", sorted(FILTERED))
@@ -110,15 +115,14 @@ def test_in_place_apply_updates_the_count_and_keeps_the_panel(page, component_or
     assert page.evaluate(MARKED) == "kept"
 
 
-# The first data each report page shows (the Family directory opens Filters by
-# default, so it is not here): Additional information's matching count, and
-# the summary of Financial stewardship, Limitations and Census changes, which
-# sits above their filters.
+# The first data each report page shows (the Family directory and Census
+# changes show their filters open, so they are not here): Additional
+# information's matching count, and the summary of Financial stewardship and
+# Limitations, which sits above their filters.
 FIRST_DATA = {
-    "/census-changes": "#census-summary dl",
     "/information-unfiltered": "#information-matching",
     "/financial-unfiltered": ".stat-tiles",
-    "/limitations-report": "#limitations-summary dl",
+    "/limitations-report": "#limitations-summary .stat-tiles",
 }
 LAPTOP_VIEWPORT = {"width": 1366, "height": 650}
 # Fonts differ between platforms (Linux CI's are wider), so the check is
@@ -176,8 +180,9 @@ def test_limitations_show_choice_is_not_clipped(page, component_origin, width):
 
 
 # The filtered fixtures arrive with their panel open (an applied filter is
-# never hidden), so each report's open filter form can be measured directly.
-OPEN_PANELS = sorted(FILTERED)
+# never hidden), and Census changes' box is always open, so each report's
+# open filter form can be measured directly.
+OPEN_PANELS = sorted({*FILTERED, "/census-changes-automatic-filtered"})
 # The most each open panel may take on a laptop once its filters share the
 # rows of a grid (#1411). With one field per row, as before, Additional
 # information's took about 690 px and Financial stewardship's about 1,460;
@@ -203,23 +208,19 @@ def test_open_filters_are_a_compact_grid(page, component_origin, path):
     """On a laptop the filters share rows, so the open panel stays short.
 
     The panel's form is a grid of the fields (#1411): at least three fields
-    share its first row, and Apply sits beside the last field rather than on
-    a row of its own below them.
+    share its first row. Where Apply filters and Clear filters sit is
+    ``test_filter_actions_place``'s (#1776).
     """
     page.set_viewport_size(LAPTOP_VIEWPORT)
     page.goto(component_origin + path)
     page.evaluate("document.fonts.ready.then(() => true)")
-    panel = page.locator("details[data-filter-panel]")
+    panel = page.locator("[data-filter-panel]")
     height = panel.evaluate("node => node.getBoundingClientRect().height")
     assert height <= OPEN_PANEL_HEIGHT[path], height
     form = page.locator("#table-filters")
     cells = form.evaluate(CELLS)
     first_row = [left for left, bottom in cells if abs(bottom - cells[0][1]) <= 1]
     assert len(first_row) >= 3, cells
-    button = page.get_by_role("button", name="Apply filters").bounding_box()
-    last = form.locator(":scope > div").last.bounding_box()
-    assert button["x"] > last["x"], (button, last)
-    assert button["y"] < last["y"] + last["height"], (button, last)
 
 
 @pytest.mark.parametrize("path", OPEN_PANELS)

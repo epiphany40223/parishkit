@@ -393,6 +393,21 @@ FROZEN = {
     "0120_leader_emails.sql": (
         "982e9bc23b68c7a5e953122b8f6eda0310b66b5f62340d475314480166f0468a"
     ),
+    "0121_digest_skip_dates.sql": (
+        "cc88c09f4be01751997f1144be6ac2ade39bc3a760f90dc99baf09da17ced446"
+    ),
+    "0122_automatic_report_views.sql": (
+        "b686ede20806893936ee416bd3829cc65adfa6e6857f4b7ad02233177b4744ae"
+    ),
+    "0123_sign_in_leftovers.sql": (
+        "8894706e2b79c2e72ecfba500995bfc6c4c281363feb5b235a084678bac22d8c"
+    ),
+    "0124_guard_wording.sql": (
+        "cbe60936ca8d92a473280cbb173b2c0c379b295135eef83b114750c7b2ce035c"
+    ),
+    "0125_secret_request_session.sql": (
+        "aaa27b6bb22e3e3df0723f659195396fd944b2137cc10111a130f7cc5ee982fd"
+    ),
 }
 
 

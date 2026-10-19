@@ -690,6 +690,31 @@ transaction records old/new revisions, all affected counts, and the confirming
 Admin in audit history. Failure rolls back both the revision change and every
 cancellation.
 
+A Daily or Weekly Admin digest's revision may carry `skip_dates`
+([#1658](https://github.com/epiphany40223/parishkit/issues/1658), Edit's
+[This email only](../admin-portal/spec.md#delete-a-scheduled-email)): slot
+dates, as the slot keys name them, that it never sends. Skipping is a
+revision replacement like any other edit, so its old-revision work is
+cancelled and counted as above. Every evaluator skips those slots
+(`SchedulePlan.page` and `next_slot` advance their cursor past them, as past
+a wholly skipped civil day), so planning, catch-up, recovery and every
+forecast agree. The database enforces them in three places (frozen
+migration 0121): the canonical slot check
+(`stewardship_catchup_due_v1`) answers no slot for a skipped date, so no
+page or catch-up proof requires an occurrence for it; the occurrence guard
+(`stewardship_occurrence_guard_v1`) refuses to insert a digest occurrence for
+a skipped slot from any writer, in any mode; and the weekly page proof
+(`stewardship_weekly_digest_page_v1`) accepts a skipped week without an
+occurrence while still refusing any other week with no slot. A skipped slot
+has no fulfillment, so a later revision would otherwise re-arm it as missed:
+every later revision of the digest keeps its past skip dates, even one that
+is no longer a send. A revision that moves the digest's sends (a new weekday
+or campaign dates) drops each skip of a send still ahead that is no longer a
+send, so it cannot apply again if the digest later moves back; the review
+lists those. A skip is refused once the slot's time has passed or it has a
+Production occurrence; a Testing rehearsal's occurrence does not block it.
+Only digests take skip dates; Family mail never reads them.
+
 Missed occurrences catch up once when services recover. Before executing, the
 worker rechecks global system mode, campaign state, and recipient eligibility.
 Every missed occurrence retains its own durable outcome, but semantically
@@ -2423,10 +2448,13 @@ already says "Here is yesterday’s report" (#1532). An intro still holding
 an earlier default, current or retired ("Here is yesterday’s report.",
 whose saved text is kept until the Administrator resets it), is left out
 of the email when it is sent, so the sentence is not said twice; an edited
-intro is kept. **Campaign totals** follow, one line per
-figure: its label, a bar drawn with table cells (so it shows in every mail
-program, with images off too), and the exact value, for example "Families
-that have responded — 10 out of 93 (10.8%)". Families that have responded are
+intro is kept. **Campaign totals** follow, two rows per
+figure: its label on a row of its own, then a bar drawn with table cells (so
+it shows in every mail program, with images off too) and the exact value, for
+example "Families that have responded — 10 out of 93 (10.8%)". The value
+breaks only before its parenthesis, so with four-digit counts the totals
+still fit a 320px phone without scrolling sideways
+([#1564](https://github.com/epiphany40223/parishkit/issues/1564)). Families that have responded are
 drawn against the Families they are out of, and "First submissions that day"
 against the busiest campaign day so far, which is stated beside the number; a
 bar is never drawn full unless the share is complete. Pledges have no bar,

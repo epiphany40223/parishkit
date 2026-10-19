@@ -123,6 +123,7 @@ from .go_live_components import components as go_live_components
 from .go_live_components import posts as go_live_posts
 from .go_live_families_components import components as go_live_families_components
 from .held_emails_components import components as held_emails_components
+from .home_overview_components import components as home_overview_components
 from .home_steps_components import components as home_steps_components
 from .hosted_file_components import IMAGE_TOKEN
 from .hosted_file_components import POSTS as HOSTED_FILE_POSTS
@@ -797,20 +798,6 @@ def component_origin():
             },
         ),
         (
-            "/credential-selection",
-            "credential-selection",
-            {
-                "label": "ParishSoft",
-                "before": "a" * 64,
-                "receipt": {"pk": uuid4(), "resulting_fingerprint": "b" * 64},
-                "preview": "synthetic-selection-intent",
-                "selected": False,
-                "changes": [
-                    {"label": "Slack channel ID", "before": "C0123", "after": "C0456"}
-                ],
-            },
-        ),
-        (
             "/backup-key",
             "backup-key",
             {
@@ -830,26 +817,6 @@ def component_origin():
                 "challenge": "PKBKP1:" + "A" * 80,
                 "intent": "synthetic-intent",
                 "code_error": "That code does not match.",
-            },
-        ),
-        (
-            "/credential-status",
-            "credential-status",
-            {
-                "receipt": {"request_id": uuid4(), "state": "awaiting_ack"},
-                "pending": True,
-                # A key's status sits under its integration (#196).
-                "admin_chrome": admin
-                | {
-                    "breadcrumbs": [
-                        {"label": "Home", "url": "/home"},
-                        {"label": "System", "url": "/integrations"},
-                        {"label": "Integrations", "url": "/integrations"},
-                        {"label": "ParishSoft", "url": "/integration-settings"},
-                        {"label": "Key replacement status", "url": None},
-                    ],
-                    "back": {"label": "ParishSoft", "url": "/integration-settings"},
-                },
             },
         ),
         (
@@ -1585,6 +1552,20 @@ def component_origin():
                 "saved": True,
             },
         ),
+        # The Slack token's step, whose key rule the shared case table runs
+        # through every engine (#1577).
+        (
+            "/setup-credential-slack",
+            "setup-credential",
+            {
+                "draft": setup_draft,
+                "form": SetupCredentialForm("slack"),
+                "target": "slack",
+                "label": "Slack",
+                "step_label": "Slack bot token",
+                "saved": False,
+            },
+        ),
         # A current ParishSoft key may be kept; changing the organization
         # needs the key again (#563).
         (
@@ -2304,6 +2285,7 @@ def component_origin():
     responses.update(menu_components(context, admin))
     responses.update(my_ministries_components(context, admin))
     responses.update(home_steps_components(context, admin))
+    responses.update(home_overview_components(context, admin))
     responses.update(automation_components(context, admin))
     responses.update(signed_in_components(context, admin))
     responses.update(stepper_components(context, admin))
@@ -2368,7 +2350,6 @@ def component_origin():
         ("family-login-v1.js", "application/javascript"),
         ("digest-v1.js", "application/javascript"),
         ("report-v1.js", "application/javascript"),
-        ("information-export-v1.js", "application/javascript"),
         ("users-v2.js", "application/javascript"),
         ("phone-v1.js", "application/javascript"),
         ("live-status-v1.js", "application/javascript"),
@@ -2529,7 +2510,7 @@ def component_origin():
         Each HTTP/1.0 response closes its connection, so a page opens one
         connection per asset at once. With the default backlog of 5 the
         kernel reset the overflow now and then (net::ERR_CONNECTION_RESET), a
-        script such as information-export-v1.js never ran, and tests that
+        script such as a report's never ran, and tests that
         depend on it failed intermittently.
         """
 

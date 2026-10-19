@@ -3,7 +3,10 @@
 from io import BytesIO
 
 from django.urls import reverse
+from django.utils.translation import gettext as _
 from PIL import Image
+
+from parishkit.stewardship.web.stat_tiles import UNKNOWN, shown
 
 from .chart_specs import whole_dollars as tooltip_dollars
 from .charts import (
@@ -30,6 +33,7 @@ def snapshot_context(document, *, mode, chart_url, download_url, plot=PLOT_LAYOU
     return {
         "comparison": section,
         "comparison_line": data_line(section) if section else "",
+        "comparison_tiles": saved_tiles(section) if section else [],
         "comparison_url": comparison_path(section) if section else "",
         **participation_context(chart, plot=plot),
         "document": document,
@@ -42,6 +46,27 @@ def snapshot_context(document, *, mode, chart_url, download_url, plot=PLOT_LAYOU
         "chart_url": chart_url,
         "download_url": download_url,
     }
+
+
+def saved_tiles(section):
+    """The saved Compared with past campaigns figures as stat tiles (#1540).
+
+    The section stores each figure as the email showed it (label, value
+    text, comparison lines), so each tile takes that text word for word
+    (``shown``); nothing is formatted again. The section stores no reason
+    for a figure that read "—", so its toggletip says it was not available.
+    """
+    missing = _("This figure was not available on the report day.")
+    return [
+        shown(
+            f"figure-{index}",
+            figure["label"],
+            figure["value"],
+            unknown_reason=missing if figure["value"] == UNKNOWN else "",
+            details=figure["lines"],
+        )
+        for index, figure in enumerate(section["tiles"], start=1)
+    ]
 
 
 def comparison_path(section):

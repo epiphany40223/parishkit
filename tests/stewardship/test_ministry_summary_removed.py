@@ -26,7 +26,8 @@ def test_summary_has_no_export_and_no_technical_details():
     these requests (#1133), never the summary's removed counts export or
     its data-load number."""
     page = ministry_page([], summaries=[SUMMARY])
-    assert "Follow-up packet" in page and "Queue follow-up packet" in page
+    assert "Follow-up packet" in page
+    assert 'aria-label="Export the follow-up packet"' in page
     assert "Export these requests" in page
     for removed in (
         "Export complete results",

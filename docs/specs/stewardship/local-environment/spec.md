@@ -469,7 +469,8 @@ giving and household reads all run through their real code.
 - **Read-only.** The fake implements only the read endpoints below and has no
   control endpoint. Any other method or path gets 404 or 405, and LOCAL
   refuses ParishSoft publication before any request (see
-  [ParishSoft](#safety-guarantees)).
+  [ParishSoft](#safety-guarantees)). Its data changes only through its
+  configuration file's [operator edits](#fake-parishsoft-edits).
 
 ### Fake configuration
 
@@ -485,7 +486,10 @@ containing:
 - `release_at`: the instant from which the
   [late-added Family](#response-pattern) is served, or `null` (held back); and
 - `change_feed` (optional): `empty` (the default) or `synthetic`, the
-  [change feed's](#change-feed) behaviour.
+  [change feed's](#change-feed) behaviour; and
+- `edits` (optional): the operator's changes to the generated parish, in
+  order (see [fake ParishSoft edits](#fake-parishsoft-edits)); absent or
+  empty serves the parish as generated.
 
 The fake reads the file once at start, so restarts and deploys keep the same
 data. `up` writes `release_at: null`, so the setup wizard's initial load does
@@ -571,6 +575,79 @@ rules require (both present, ISO dates, not inverted) and filters by the
 request's window alone; the clock decides only whether the late Family's row
 exists (`synthetic`), never which rows a window selects. It enforces no
 server-side window limit, since the real API documents none.
+
+### Fake ParishSoft edits
+
+The review pipeline's ParishSoft refresh checks (Confirmed, Entered
+incorrectly, Not seen, Conflict) need ParishSoft's data to change between a
+Family's submission and a refresh, so pk-local lets the operator change the
+fake's data ([#1780](https://github.com/epiphany40223/parishkit/issues/1780)).
+An edit is recorded in the [fake configuration](#fake-configuration)'s
+`edits` list; the fake replays the list in order on the generated parish
+when it starts, then re-derives what the generator derives (each contact-list
+row from its Member and Family, each Family's member count, each Ministry and
+Member-workgroup roster row's Family and name, each Family-workgroup row's
+name and email), so every endpoint serves one consistent edited parish. A
+Family's own name, email and phone fields are not re-derived from its heads:
+in ParishSoft they are kept separately, and a Family edit sets them.
+Code: `stewardship/local/fake_edits.py`. The kinds:
+
+- **Member fields**: the census fields, by the provider's name or a short
+  name (`email`, `mobile`, `work`, `first`, `middle`, `last`, `nick`,
+  `maiden`, `suffix`, `salutation` or `prefix`, `gender`, `language`,
+  `birth`, `death`, `status`, `type`, `marital`), plus `homePhone`,
+  `maritalStatusID` and the two publish flags; `family=ID` moves the Member
+  to another Family. An empty value clears a text or date field; dates are
+  given as `YYYY-MM-DD` and served as ParishSoft's midnight timestamps;
+  flags take `true` or `false`. A death is `death=DATE status=Deceased`, as
+  ParishSoft records both.
+- **Family fields**: likewise (`email`, `phone`, `mailing`, `address1`,
+  `address2`, `city`, `state`, `postal`, `envelope`, `group`, and `no_mail`,
+  the `sendNoMail` flag the census email opt-out is confirmed against), plus
+  the names, `primaryPhone`, `primaryAddress3`, `primaryZipPlus`, the
+  participation status, `registeredOrganizationID` (another organization
+  makes the Family a non-parishioner) and the status and publish flags. A
+  group must be one of the parish's Family groups.
+- **Ministry roster**: add an active entry (role `Member` by default, or
+  `Chairperson` or `Staff`; start date the anchor date by default), refused
+  when the Member already has an active entry or an entry with the same role
+  and start (the loaders' identity for an entry); or remove every entry of
+  the Member on that Ministry.
+- **Pledge**: set a Family's pledge amount for one fund and period start,
+  keeping the pledge's identity when one exists; `none` removes it. The
+  operator script defaults both to the current campaign's own (its first
+  pledge fund and its financial period's start, read by the seeder's
+  read-only `pledge-period` step), which is where a refresh reads pledges;
+  without a campaign they must be given. The command's own fallback is the
+  fund Create the campaign offers first (the first active fund by name) and
+  1 January of the year after the anchor date.
+
+Only those fields are editable, and each value is checked for the type the
+source loaders accept, so an edit the command takes never makes a refresh
+fail. Edits never name the held-back late-added Family or its Members (nor
+move a Member into it): the fake hides that Family until `seed` releases it,
+and the loaders refuse rows that refer to it.
+
+`pk-stewardship fake-parishsoft-edit WORDS...` reads the configuration
+document on stdin and writes the new document on stdout. It replays every
+recorded edit and the new one on a freshly generated parish first, so an
+unknown Member, Family, Ministry, fund or field, or a malformed value, is
+refused (exit 2, a plain message naming the record or field) and never
+recorded; the fake therefore always starts on a document it wrote. `undo`
+drops the last edit and `clear` all of them; `show` prints the recorded
+edits, and `show member|family|ministry ID` the record as the fake now
+serves it (a Family with its Members and pledges, a Ministry with its
+roster). The command opens no connection and writes no file. Replay
+re-checks every stored edit and value the same way, so a hand-edited list the
+parish cannot take stops the fake at start, as any invalid configuration
+does.
+
+The [operator script](#operator-script)'s `fake-parishsoft` command runs it
+and, for an edit, rewrites the file and recreates only the `fake-parishsoft`
+service (a container keeps a bind mount on the inode it started with).
+Delta refreshes do not see an edit, since the [change feed](#change-feed)
+stays empty as Production's is; a full refresh does. Snapshots carry the
+file, so a `reset` or `switch` restores that snapshot's edits.
 
 ## Synthetic parish
 
@@ -1332,6 +1409,9 @@ section is the contract.
 | `down` | Stop the services; never removes data |
 | `start` | Start a stopped deployment's services in the recorded clock mode |
 | `sign-in --email E` | Print a [test sign-in](#local-test-sign-in) link |
+| `fake-parishsoft member ID FIELD=VALUE...` / `family ID FIELD=VALUE...` / `roster add\|remove MINISTRY MEMBER [role=R] [start=D]` / `pledge FAMILY AMOUNT\|none [fund=F] [start=D]` / `undo` / `clear` | Record one [fake ParishSoft edit](#fake-parishsoft-edits) and recreate the fake (below) |
+| `fake-parishsoft show [member\|family\|ministry ID]` | Print the recorded edits, or one record as the fake now serves it |
+| `fake-parishsoft refresh` | Run the Admin's full ParishSoft refresh of the fake and wait for it (below) |
 | `ca` | Copy Caddy's local root certificate to the laptop and print how to trust it |
 
 **`up`.** It installs a LOCAL deployment from the checkout by the
@@ -1464,6 +1544,30 @@ credential. Like every long VM-half command it logs to `/var/log`. Production
 keeps its runbook step; nothing here changes the production tooling, and the
 web service never acknowledges a credential itself, so LOCAL exercises the
 same split between the wizard and the operator.
+
+**`fake-parishsoft`.** It changes, shows or refreshes the fake ParishSoft's
+data ([fake ParishSoft edits](#fake-parishsoft-edits)). Every form refuses,
+before any Docker call, unless the root carries the marker, the fake's
+configuration file exists, and no service document names a
+`parishsoft_base_url` (after `deploy --parishsoft real` the deployment reads
+the real API, which an edit cannot change and a refresh from this command must
+never read); a service document that cannot be read counts as naming one. With
+no command, or a help word, it refuses. An edit or `undo`/`clear` first
+selects the Compose files, and for a `pledge` without `fund=` and `start=`
+reads the campaign's (above), refusing when that read fails; it then runs `fake-parishsoft-edit` in an
+isolated one-shot container of the deployment's image (no network, read-only,
+the document on stdin), writes the answer over the file (mode 0600, the
+application uid) only when the command succeeds and answers with a
+configuration document, and recreates the `fake-parishsoft` service alone;
+`show` writes nothing. `refresh` requires completed setup and
+runs the seeder's `refresh` step under `web` (`pk-stewardship local-seed
+--step refresh`): as the seeded Administrator it asks for the full refresh
+the Refresh from ParishSoft page asks for, waits for that task to succeed and
+for the work it causes to settle (a coalesced occurrence is not a failure, as
+in the seed's finish), and prints the task id. The step itself refuses unless
+the admitted deployment is LOCAL and reads the fake. Pressing Refresh from
+ParishSoft in the Admin portal after an edit is equivalent. Production has no
+fake service, no such file and no marker, so none of this can reach it.
 
 **Snapshots and fast reset.** Snapshots are uncompressed copies of the runtime
 root inside the VM, under `/opt/parishkit-snapshots/<name>` together with the
@@ -1751,6 +1855,11 @@ The local environment adds:
 - **fake ParishSoft contract tests**: a fixed seed produces a fixed digest, an
   in-process fake passes the strict `CoherentParishSoftClient` loaders, a wrong
   key gets 401, and the late-added Family appears only after `release_at`;
+- **fake ParishSoft edit tests**: no edits serve the generated parish
+  unchanged; each edit kind reaches every endpoint that carries the field;
+  every bad edit is refused before it is recorded; and a database test runs
+  the real worker's full refresh against the fake twice, before and after
+  edits, and finds the edits in the promoted corpus;
 - **generator tests**: the scaling table at 100 and 1,100 Families; the
   adult and child mix and `memberType` values; Ministry rosters with no child,
   about 40% of non-child Members on at least one Ministry (about 30% of those
@@ -1779,7 +1888,10 @@ The local environment adds:
   no fake-clock override), what a data switch keeps, the other-image path
   through the host half with the schema change and the running image and
   rendering, failed saves and switches, the sign-in lines, and
-  `seed --testing`'s checks and clock move.
+  `seed --testing`'s checks and clock move; and for `fake-parishsoft`: the
+  marker, fake-file and real-ParishSoft refusals before any Docker call, a
+  refused edit leaving the file and the running fake alone, and the refresh
+  step under `web`.
 
 No Docker end-to-end run of the local environment belongs in CI, and neither
 do the [seed tests](#seeder-tests). A developer runs them and verifies the full
@@ -1829,3 +1941,10 @@ which refines the PR sequence in #476.
   activity would be stamped today, so reports would show no history.
 - **Production use.** LOCAL is never a supported way to run a parish.
 - **CI end-to-end runs** of this environment are out of scope.
+- **A control endpoint on the fake** for [edits](#fake-parishsoft-edits).
+  Rejected: the fake stays read-only over HTTP, and `web` and `worker` reach
+  it over `backend`, so application code could change "ParishSoft". Also
+  rejected: editing the source snapshot tables in PostgreSQL (it bypasses the
+  loaders and the promotion the refresh checks run in), a second edits file
+  (the fake keeps exactly one mount), and re-reading the file per request
+  (recreating one service takes seconds, as the late Family's release does).

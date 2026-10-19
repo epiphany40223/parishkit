@@ -541,7 +541,6 @@ def test_live_status_pages_update_themselves_and_dismiss_in_place():
     Retry) brings a fresh one live-status-v1.js watches. An integration's
     Dismiss acts in place (#519 PR 7a)."""
     for name, region in (
-        ("credential-status.html", "credential-progress"),
         ("family-email-progress.html", "send-progress"),
         ("campaign-mail-families.html", "family-tests"),
     ):
@@ -691,7 +690,10 @@ def test_share_options_review_in_the_dialog():
     # A compact review (#1356): the button says Save, the dialog asks the
     # question and its lines describe it.
     assert 'translate "Change an option to save it." as option_hint' in text
-    assert "review-changes-button.html' with hint=option_hint label=save_label" in text
+    assert (
+        'review-changes-button.html\' with describedby="share-complete-hint" '
+        "hint=option_hint label=save_label"
+    ) in text
     assert 'translate "Save" as save_label' in text
     assert 'translate "Save the share options?" as review_title' in text
     assert 'describedby="share-review-summary" %}' in text
@@ -1060,9 +1062,42 @@ def test_no_manual_page_refresh_controls():
         text = path.read_text()
         assert "data-live-restart" not in text, path.name
         assert "data-live-refresh-label" not in text, path.name
-        # The periodic re-read's own link is never a visible control.
-        for tag in re.findall(r"<a\b[^>]*\bdata-reread-every\b[^>]*>", text):
+        # The periodic re-read's own link, and a figures status's follow-up
+        # link, are never visible controls.
+        for tag in re.findall(r"<a\b[^>]*\bdata-reread(?:-every)?\b[^>]*>", text):
             assert re.search(r"(?<![\w-])hidden(?![\w-])", tag), path.name
+
+
+# Text telling the reader to reload the page by hand to see background work
+# progress (#1586 slice 3): a page that waits on work follows it instead.
+REFRESH_THIS_PAGE = re.compile(r"refresh\s+this\s+page", re.IGNORECASE)
+# Python modules of the go-live pages the go-live redesign converts (#1585).
+GO_LIVE_MODULES = {"activation_progress.py"}
+
+
+def test_no_refresh_this_page_instructions():
+    """No page tells the reader to "refresh this page" to check on work in
+    progress (UX conventions, "Pages that update themselves", #1586): no
+    template, Python message or script says it, other than the go-live
+    pages slice 2 converts (#1585)."""
+    scripts = sorted((TEMPLATES.parents[1] / "static/stewardship").glob("*.js"))
+    modules = [
+        path
+        for path in sorted(PACKAGE.rglob("*.py"))
+        if not {"migrations", "tests"} & set(path.parts)
+        and path.name not in GO_LIVE_MODULES
+    ]
+    pages = [
+        path
+        for path in sorted(TEMPLATES.rglob("*.html"))
+        if path.name not in GO_LIVE_REFRESH
+    ]
+    found = {
+        path.name
+        for path in (*pages, *modules, *scripts)
+        if REFRESH_THIS_PAGE.search(path.read_text())
+    }
+    assert found == set()
 
 
 @pytest.mark.parametrize(

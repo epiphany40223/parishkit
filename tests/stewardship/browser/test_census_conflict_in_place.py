@@ -56,6 +56,10 @@ def test_use_the_familys_value_anyway_answers_in_place(page, component_origin):
     page.set_viewport_size({"width": 1280, "height": 500})
     first = page.locator("#table tbody tr").first
     expect(first).to_contain_text("Conflict")
+    # The Status filter's Conflict choice counts this change before it is
+    # resolved, and follows the in-place answer below (#1682).
+    conflict_choice = page.locator("#census-status option[value=conflict]")
+    assert conflict_choice.inner_text() != "Conflict (0)"
     name = "Use the Family's value anyway for Mobile phone for Member 00"
     use = first.get_by_role("button", name=name)
     assert (
@@ -77,15 +81,16 @@ def test_use_the_familys_value_anyway_answers_in_place(page, component_origin):
     dialog.get_by_label("Note (optional)").fill("Asked the Family")
     dialog.get_by_role("button", name="Record").click()
     has_text(page.locator("#census-notice"), CONFLICT_RESOLVED)
-    # Nothing jumps, in either engine: the Summary above keeps its Conflict
-    # line, now at 0 (#1472), so the page keeps its scroll position and the
-    # row just acted on stays where it was on the screen, with no help from
-    # Chromium's scroll anchoring (WebKit has none).
+    # Nothing jumps, in either engine: the page keeps its scroll position and
+    # the row just acted on stays where it was on the screen, with no help
+    # from Chromium's scroll anchoring (WebKit has none). The Status filter's
+    # Conflict choice keeps its place, its count now 0 (#1682).
     row = page.locator("#table tbody tr").first
     assert abs(page.evaluate("window.scrollY") - scrolled) <= 1
     assert abs(row.evaluate(TOP) - top) <= 1
-    summary = page.locator("#census-summary dl")
-    expect(summary).to_contain_text("Conflict0")
+    expect(page.locator("#census-status option[value=conflict]")).to_have_text(
+        "Conflict (0)"
+    )
     assert "resolve=use_family" in posts[0] and "note=Asked+the+Family" in posts[0]
     assert "value=" not in posts[0] and len(posts) == 1
     first = page.locator("#table tbody tr").first
