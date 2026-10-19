@@ -15,7 +15,10 @@ checks"):
   before an identical quick update skips promotion, #630);
 - ``check_states`` reads the latest check of each item for the pages, which
   derive the stage from it (``pipeline.census_placement`` and
-  ``ministry_placement``) and the Not seen in ParishSoft flag.
+  ``ministry_placement``) and the Not seen in ParishSoft flag;
+- decided pledges get checks of their own (``reports.pledge_refresh``,
+  #1704), written here with the others and judged by the same run lengths
+  (``summaries``) and repeat rule (``owed``).
 
 The comparison is ``pipeline.refresh_outcome`` with each stream's canonical
 comparison: the census compare rules (``comparison.canonical_value``) and a
@@ -100,12 +103,12 @@ class CheckState:
         )
 
 
-def _start():
+def start_row():
     """The Not seen start row, or None (deleting it turns the flag off)."""
     return RefreshCheckStart.objects.filter(singleton=True).first()
 
 
-def _summaries(checks, start, marks):
+def summaries(checks, start, marks):
     """Each item's ``CheckState`` from its checks, keyed by item id.
 
     ``checks`` are ``(item_id, created_at, outcome, full_refresh, observed)``
@@ -145,7 +148,7 @@ def check_states(*, proposals=(), requests=(), marks=None, versions=None):
     proposals, requests = list(proposals), list(requests)
     if not proposals and not requests:
         return {}
-    start = _start()
+    start = start_row()
     rows = (
         RefreshCheck.objects.filter(
             Q(proposal_id__in=proposals) | Q(request_id__in=requests)
@@ -170,7 +173,7 @@ def check_states(*, proposals=(), requests=(), marks=None, versions=None):
     ticked = {
         key: mark["at"] for key, mark in (marks or {}).items() if mark.get("entered")
     }
-    return _summaries(checks, start, ticked)
+    return summaries(checks, start, ticked)
 
 
 def _census_same(kind):
@@ -187,7 +190,7 @@ def _census_same(kind):
     return same
 
 
-def _owed(stored, state, *, full, marked, moved=False):
+def owed(stored, state, *, full, marked, moved=False):
     """Whether a check with outcome ``stored`` is owed for an item now.
 
     When the outcome changed (an item with no check reads as unchanged); for
@@ -293,7 +296,7 @@ def _census_checks(snapshot, corpus, campaign_id, full, start):
         moved = state.observed is None or not same(
             KnownValue(True, state.observed.get("value")), current
         )
-        if stored is None or not _owed(
+        if stored is None or not owed(
             stored, state, full=full, marked=entered, moved=moved
         ):
             continue
@@ -388,7 +391,7 @@ def _ministry_checks(snapshot, corpus, campaign_id, full, start):
             not_seen_after=threshold if threshold is not None else float("inf"),
         )
         stored = STORED[result]
-        if not _owed(stored, state, full=full, marked=ticked):
+        if not owed(stored, state, full=full, marked=ticked):
             continue
         yield RefreshCheck(
             snapshot_id=snapshot.pk,
@@ -400,10 +403,18 @@ def _ministry_checks(snapshot, corpus, campaign_id, full, start):
 
 
 def _checks(snapshot, corpus, campaign_id, full):
-    """Every check one promotion of ``corpus`` owes, census then Ministry."""
-    start = _start()
+    """Every check one promotion of ``corpus`` owes: census, Ministry, pledges.
+
+    The pledge checks (#1704) are the reports app's
+    (``reports.pledge_refresh``), imported here, as promotion imports this
+    module, so loading the source worker does not load the reports app.
+    """
+    from parishkit.stewardship.reports.pledge_refresh import pledge_checks
+
+    start = start_row()
     yield from _census_checks(snapshot, corpus, campaign_id, full, start)
     yield from _ministry_checks(snapshot, corpus, campaign_id, full, start)
+    yield from pledge_checks(snapshot, corpus, campaign_id, full, start)
 
 
 def record_refresh_checks(snapshot, corpus, *, campaign_id, full):
@@ -417,7 +428,10 @@ def record_refresh_checks(snapshot, corpus, *, campaign_id, full):
     """
     require_work_order()
     checks = list(_checks(snapshot, corpus, campaign_id, full))
-    RefreshCheck.objects.bulk_create(checks)
+    # One insert per kind of check: census and Ministry checks share a table,
+    # pledge checks (#1704) have their own.
+    for model in {type(check) for check in checks}:
+        model.objects.bulk_create([check for check in checks if type(check) is model])
     return len(checks)
 
 

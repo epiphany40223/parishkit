@@ -9,7 +9,9 @@ number), which the page, the counts and the row guard all read, so none of
 them can disagree about whether a Family's new answer reopened its pledge.
 
 - ``read_items`` reads that selection with each item's latest row;
-  ``placement`` maps an item onto the pipeline (``financial_placement``).
+  ``placement`` maps an item onto the pipeline (``financial_placement``),
+  with its latest refresh check (``pledge_refresh``, #1704), which may
+  make it Confirmed or Entered incorrectly.
 - ``edited_value`` checks an Edit's annual pledge and frequency as the
   Family form checks them.
 - ``PledgeDecisions`` is the stream's ``DecisionService``: Accept, Edit,
@@ -51,6 +53,7 @@ from parishkit.stewardship.web.review_worklist import WORDS, StaleDecision
 
 from .export_services import admit_campaign
 from .pledge_models import PledgeReview
+from .pledge_refresh import marked_pledge, pledge_check_states
 
 STATES = (
     "SELECT family_id, family_duid, submission_id, sequence, stage, review_id, "
@@ -117,13 +120,16 @@ def read_items(campaign_id, family_id=None):
     }
 
 
-def placement(item):
+def placement(item, check=None):
     """The item's stage and decision on the pipeline.
 
     The latest row's decision counts only while it is in force: a pledge
     the Family changed since is To review again. The shared selection
     derives the same stage in SQL; a disagreement is a defect, raised as a
-    ValueError rather than shown.
+    ValueError rather than shown. ``check`` is the item's latest refresh
+    check (a ``CheckState`` from ``pledge_refresh.pledge_check_states``),
+    which the SQL selection does not read: it moves a decided pledge on
+    to Confirmed or Entered incorrectly afterwards.
     """
     review = item.review if item.in_force else None
     found = financial_placement(
@@ -132,12 +138,33 @@ def placement(item):
     )
     if found.stage.value != item.stage:
         raise ValueError("The pledge review stage disagrees with its selection.")
-    return found
+    if check is None or review is None or review.decision is None:
+        return found
+    return financial_placement(
+        decision=review.decision, entered=review.entered, check=check.outcome
+    )
 
 
 def reader_roles(principal):
     """The pipeline roles a principal holds (an Administrator holds all three)."""
     return frozenset(principal.roles) & frozenset(ROLES)
+
+
+# Actions a stage offers that the stream withholds: Entered incorrectly's two
+# fixes (Entered by hand again, Back to review) come with #1737; until then a
+# refresh confirms the pledge once ParishSoft holds the reviewer's amount.
+WITHHELD = {
+    Stage.ENTERED_INCORRECTLY: frozenset(
+        {Action.BACK_TO_REVIEW, Action.ENTERED_BY_HAND}
+    )
+}
+
+
+def offered(stage, roles):
+    """The actions a pledge at ``stage`` offers readers with ``roles``."""
+    return allowed_actions(Stream.FINANCIAL, stage, roles) - WITHHELD.get(
+        stage, frozenset()
+    )
 
 
 class EditRefusal(ValueError):
@@ -266,6 +293,11 @@ class PledgeDecisions:
         if self._replayed(actor, keys):
             return self._notice(decision, list(ids), matched=False)
         items = read_items(self.campaign_id)
+        # A refresh may have Confirmed a pledge or found it Entered
+        # incorrectly (#1704); the page placed it the same way.
+        checks = pledge_check_states(
+            [items[item_id] for item_id in ids if item_id in items]
+        )
         roles = reader_roles(principal)
         matched = False
         for item_id, version in ids.items():
@@ -274,8 +306,8 @@ class PledgeDecisions:
                 # The Family answered again (another response is current) or
                 # someone decided first.
                 raise StaleDecision(self.namer(item_id))
-            stage = placement(item).stage
-            if decision.action not in allowed_actions(Stream.FINANCIAL, stage, roles):
+            stage = placement(item, checks.get(item_id)).stage
+            if decision.action not in offered(stage, roles):
                 raise ValueError("That decision is not offered for this pledge.")
             if (
                 decision.action is Action.BACK_TO_REVIEW
@@ -305,16 +337,21 @@ class PledgeDecisions:
         stored, decision = RECORDED[action]
         reviewed = (None, None)
         entered = False
+        marked = None
         if action is Action.EDIT:
             reviewed = value
         elif action is Action.ENTERED_BY_HAND:
-            # The mark keeps the decision in force and its values.
+            # The mark keeps the decision in force and its values, and
+            # records ParishSoft's upcoming-year amount when the current
+            # snapshot proves it (#1704), which the refresh then compares
+            # with; the guard checks it against the same snapshot.
             decision = item.review.decision
             reviewed = (
                 item.review.reviewed_annual_pledge,
                 item.review.reviewed_frequency,
             )
             entered = True
+            marked = marked_pledge(self.campaign_id, item.family_duid)
         review = PledgeReview.objects.create(
             actor_id=actor,
             family_id=item.family_id,
@@ -328,8 +365,8 @@ class PledgeDecisions:
             entered=entered,
             # The guard sets the answer from the response itself.
             answer={},
-            marked_pledge=None,
-            marked_pledge_known=False,
+            marked_pledge=marked,
+            marked_pledge_known=marked is not None,
             note=note,
         )
         # The audit names the row and the versions, never an amount or note.
