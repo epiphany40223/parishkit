@@ -198,7 +198,7 @@ def _stage(item, state):
     return Stage.ENTERED_BY_HAND
 
 
-def pledge_checks(snapshot, corpus, campaign_id, full, start):
+def pledge_checks(snapshot, corpus, campaign_id, full, start, *, evidence=None):
     """Yield the pledge checks this promotion owes, unsaved.
 
     For every decided pledge in force of a Family the snapshot still lists
@@ -207,12 +207,15 @@ def pledge_checks(snapshot, corpus, campaign_id, full, start):
     The rules are ``pipeline.refresh_outcome``'s with money compared
     exactly; a result the stream cannot store (a Conflict, #1747) records
     nothing, as do the repeats ``refresh_checks.owed`` leaves out.
+
+    ``evidence`` is the snapshot whose pledges and giving proof are read,
+    ``snapshot`` itself unless given: the quick update's check passes the
+    current snapshot, since its own staging snapshot holds no pledge rows
+    or cursor yet while its corpus equals the current one.
     """
+    evidence = snapshot.pk if evidence is None else evidence
     definition = _definition(campaign_id)
-    if (
-        definition is None
-        or giving_observation(_cursor(snapshot.pk), definition) is None
-    ):
+    if definition is None or giving_observation(_cursor(evidence), definition) is None:
         return
     items = [
         item
@@ -222,12 +225,15 @@ def pledge_checks(snapshot, corpus, campaign_id, full, start):
     if not items:
         return
     states = check_states({item.review_id: item.review_id for item in items})
-    amounts = _upcoming(snapshot.pk, campaign_id, {item.family_duid for item in items})
+    amounts = _upcoming(evidence, campaign_id, {item.family_duid for item in items})
     threshold = None if start is None else start.not_seen_after
     for item in items:
         state = states.get(item.review_id, CheckState(not_seen_after=threshold))
         refreshed = amounts.get(item.family_duid)
-        if state.outcome == "confirmed" or refreshed is None:
+        # No evidence (no R) or no C: nothing to compare. Every financial
+        # answer stores its annual pledge today; a missing one is skipped,
+        # never allowed to abort the promotion.
+        if state.outcome == "confirmed" or refreshed is None or item.carried is None:
             continue
         refreshed = Decimal(refreshed)
         result = refresh_outcome(

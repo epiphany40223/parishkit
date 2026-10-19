@@ -402,19 +402,23 @@ def _ministry_checks(snapshot, corpus, campaign_id, full, start):
         )
 
 
-def _checks(snapshot, corpus, campaign_id, full):
+def _checks(snapshot, corpus, campaign_id, full, *, evidence=None):
     """Every check one promotion of ``corpus`` owes: census, Ministry, pledges.
 
     The pledge checks (#1704) are the reports app's
     (``reports.pledge_refresh``), imported here, as promotion imports this
     module, so loading the source worker does not load the reports app.
+    They read the pledges of ``evidence`` (a snapshot id), ``snapshot``'s
+    own unless given; census and Ministry judge from ``corpus``.
     """
     from parishkit.stewardship.reports.pledge_refresh import pledge_checks
 
     start = start_row()
     yield from _census_checks(snapshot, corpus, campaign_id, full, start)
     yield from _ministry_checks(snapshot, corpus, campaign_id, full, start)
-    yield from pledge_checks(snapshot, corpus, campaign_id, full, start)
+    yield from pledge_checks(
+        snapshot, corpus, campaign_id, full, start, evidence=evidence
+    )
 
 
 def record_refresh_checks(snapshot, corpus, *, campaign_id, full):
@@ -439,5 +443,16 @@ def refresh_checks_current(snapshot, corpus, *, campaign_id):
     """Whether a quick update's promotion of ``corpus`` would record no check.
 
     A quick update is never full, so only a changed outcome would be owed.
+    ``corpus`` equals the current snapshot's, but the staging ``snapshot``
+    is not staged yet (no pledge rows, no cursor), so the pledge checks read
+    the current snapshot's pledges and giving proof, which a delta keeps.
     """
-    return next(_checks(snapshot, corpus, campaign_id, False), None) is None
+    from parishkit.stewardship.source.snapshot_models import SourceCurrent
+
+    current = (
+        SourceCurrent.objects.filter(singleton=True)
+        .values_list("snapshot_id", flat=True)
+        .first()
+    )
+    found = _checks(snapshot, corpus, campaign_id, False, evidence=current)
+    return next(found, None) is None

@@ -470,20 +470,34 @@ def test_the_quick_update_check_agrees_with_what_promotion_writes(response_servi
         refresh_checks_current,
     )
     from parishkit.stewardship.source.families import PreparedPromotion
+    from parishkit.stewardship.source.leases import release_source
 
-    harness, submission = accepted(response_service, marked=False)
-    snapshot, claim = giving(harness, ANSWER)
+    def promoted():
+        """Promote a refresh holding the Family's amount; its snapshot."""
+        snapshot, claim = giving(harness, ANSWER)
+        promote(snapshot, claim, harness.campaign, harness.rings)
+        snapshot.refresh_from_db()
+        return snapshot
 
-    def current(value):
-        """The check for ``value``'s own corpus."""
-        corpus = PreparedPromotion.of(value).corpus
-        with work_transaction():
-            return refresh_checks_current(
-                value, corpus, campaign_id=harness.campaign.pk
-            )
+    harness, submission = pledged(response_service)
+    held = promoted()
+    decide(harness, admin(), "accept", [submission])
 
-    assert not current(snapshot)
-    promote(snapshot, claim, harness.campaign, harness.rings)
-    snapshot.refresh_from_db()
+    def current():
+        """The check as a quick update makes it: a staging snapshot just
+        begun (no rows, no cursor yet), with the current snapshot's corpus."""
+        claim = acquire_source(**running_source_task(), phase="delta")
+        staging = begin_snapshot(claim, organization_id=12345, admit=permit)
+        corpus = PreparedPromotion.of(held).corpus
+        try:
+            with work_transaction():
+                return refresh_checks_current(
+                    staging, corpus, campaign_id=harness.campaign.pk
+                )
+        finally:
+            release_source(claim)
+
+    assert not current()
+    held = promoted()
     assert checks() == [("confirmed", Decimal(ANSWER))]
-    assert current(snapshot)
+    assert current()
