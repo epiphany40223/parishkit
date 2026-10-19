@@ -158,7 +158,6 @@ def components(context, admin):
                 "query": query,
                 "query_fields": query.form_values(),
                 "export_fields": query.export_values(paging.get("sort", "")),
-                "export_timezones": ["UTC", "America/Detroit"],
                 "notice": notice,
                 "mutable": mutable,
                 "request_key": UUID(int=83),

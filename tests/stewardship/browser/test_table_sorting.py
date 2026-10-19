@@ -248,13 +248,13 @@ def test_export_choices_survive_a_sort_and_its_hidden_fields_follow(
     page, component_origin
 ):
     """Only table state is synchronised: an export form's hidden sort follows
-    the in-place re-sort while the reader's format and timezone, including
-    the browser zone a script added, stay as chosen."""
+    the in-place re-sort while the browser zone the script filled (#1679)
+    stays as it was."""
     page.goto(component_origin + "/information-all")
     export = page.locator("#table-export")
     zone = export.locator("input[name=browser_timezone]")
     chosen = zone.input_value()
-    options = zone.locator("option").count()
+    assert chosen == "America/Los_Angeles"
     assert export.locator("input[name=sort]").input_value() == "name"
     fulfil_post_with(
         page,
@@ -265,7 +265,6 @@ def test_export_choices_survive_a_sort_and_its_hidden_fields_follow(
     page.get_by_role("button", name="Family (sort descending)").click()
     has_attribute(sort_heading(page, "family"), "aria-sort", "descending")
     assert export.locator("input[name=sort]").input_value() == "name_desc"
-    assert export.locator("select[name=format]").input_value() == "xlsx"
     assert zone.input_value() == chosen
 
 

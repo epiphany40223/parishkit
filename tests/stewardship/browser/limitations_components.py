@@ -116,7 +116,6 @@ def components(context, admin):
                     "campaign_id": CAMPAIGN,
                     "query": query,
                     "query_fields": query.form_values(),
-                    "export_timezones": ["UTC", "America/Detroit"],
                     "notice": notice,
                     "mutable": True,
                 },
