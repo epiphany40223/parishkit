@@ -810,8 +810,9 @@ CLOSURE_ALTERED = {
 # 0107 (#528, ADM-09.04) replaced the review guard 0096's file brings back
 # with the one that also admits an edited value, and 0108's file (run by
 # ``CLOSURE_ALTERED``) with the accepted base; 0128 (#1683) replaces it last,
-# for the review pipeline, and creates nothing, so its file runs again
-# whenever the guard lacks its phrase.
+# for the review pipeline, and 0130 (#1719) after it, for an edited
+# address; neither creates anything, so 0130's file (the latest body) runs
+# again whenever the guard lacks its phrase.
 # 0110 (#558) replaces the baseline financial selection that 0094's file,
 # run again above for the limitations report, puts back without the
 # browser-zone days, so its entry comes after 0094's.
@@ -860,8 +861,8 @@ CLOSURE_REPLACED = {
         (("stewardship_responses", "0007_publication_tasks"), "census_publication"),
     ),
     "public.stewardship_proposal_review_guard_v1()": (
-        ("stewardship_responses", "0014_census_pipeline_review"),
-        "OR (decided AND edited AND NEW.decision<>'approved')",
+        ("stewardship_responses", "0016_census_address_guard"),
+        "PERFORM public.stewardship_response_address_guard_v1(NEW.admin_value);",
     ),
     "public.stewardship_response_derived_guard_v1()": (
         ("stewardship_responses", "0010_upstream_at_check"),

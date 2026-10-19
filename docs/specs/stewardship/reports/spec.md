@@ -2388,7 +2388,13 @@ record for a phone, an address of its six parts with a street line for an
 address, text otherwise, at most 1,024 bytes), must not be blank and must
 differ from the Family's answer, as the census compares values; moved,
 deceased, the email opt-out and a New Member take no edit. Clearing needs an
-edit to be set. The value's full rules stay in the service.
+edit to be set. The value's full rules stay in the service, except for an
+address: forward migration 0130 (provisional number,
+[#1719](https://github.com/epiphany40223/parishkit/issues/1719)) holds an
+edited Family address to the same SQL address rules as the Family's own
+answer (a known country; for a US address a state or territory and a ZIP or
+ZIP+4; a city; each part's length; normalized single-line text), so no
+writer can store an address the Family form would refuse.
 
 ### Census Add
 

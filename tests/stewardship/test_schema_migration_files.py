@@ -420,6 +420,9 @@ FROZEN = {
     "0129_census_additions.sql": (
         "a63622c0286872d9fea2ed9fd2cbc8dc09ea338a4aea3089f3cd550762ea44c8"
     ),
+    "0130_census_address_guard.sql": (
+        "3c1ede0cb9790113bffc6d57d71da1aa6371defc3ff28b754bd8acf6d04a0f9e"
+    ),
 }
 
 
