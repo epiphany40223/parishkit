@@ -704,6 +704,42 @@ def test_a_saved_daily_digest_posted_unchanged_keeps_its_comparison():
     assert formset.patch() == []
 
 
+def test_a_digest_keeps_its_skipped_sends_on_every_later_change():
+    """An Edit of a digest carries its ``skip_dates`` forward (#1658).
+
+    A skipped past send has no fulfillment, so a revision without it would
+    plan that send again as missed. Posting the row back unchanged is no
+    change; changing its time keeps the skips on the new values.
+    """
+    owner = campaign()
+    templates = emails(owner)
+    initial = saved_row(owner, templates)
+    digest = saved_row(
+        owner, templates, kind="daily_digest", date=None, skip_dates=["2054-10-02"]
+    )
+
+    def bound(rows):
+        """The form set with these rows posted."""
+        return Schedules(
+            data_for(rows),
+            prefix="schedules",
+            previous=[initial, digest],
+            templates=list(templates.values()),
+            campaign_id=owner["id"],
+            campaign=owner["values"],
+        )
+
+    formset = bound([initial, digest])
+    assert formset.is_valid(), (formset.errors, formset.non_form_errors())
+    assert formset.patch() == []
+    later = digest | {"values": digest["values"] | {"time": "07:30:00"}}
+    formset = bound([initial, later])
+    assert formset.is_valid(), (formset.errors, formset.non_form_errors())
+    (changed,) = formset.patch()
+    assert changed["values"]["time"] == "07:30:00"
+    assert changed["values"]["skip_dates"] == ["2054-10-02"]
+
+
 # The date-change review's send times are the browser's (#558). The
 # fixture campaign is in New York, October 1-31, 2054.
 BROWSER_NOW = datetime(2054, 9, 1, 12, tzinfo=UTC)

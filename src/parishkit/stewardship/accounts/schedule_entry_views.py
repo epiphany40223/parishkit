@@ -84,7 +84,13 @@ from parishkit.stewardship.web.refusals import (
     with_default_code,
 )
 
-from . import admin_navigation, campaign_wizard, schedule_email, schedule_local
+from . import (
+    admin_navigation,
+    campaign_wizard,
+    digest_skips,
+    schedule_email,
+    schedule_local,
+)
 from .admin_editing import (
     confirm_intent,
     direct_key,
@@ -222,9 +228,20 @@ FROM_CALENDAR = "calendar"
 # A year and month as the calendar's addresses name one (``?month=``).
 YEAR_MONTH = re.compile(r"\d{4}-(0[1-9]|1[0-2])")
 # Edit's Delete (#1656): which reminders of a series' reminder it removes,
-# the fields its review posts, and the review's lines on a series or digest.
-DELETE_SCOPES = ("this", "series")
-DELETE_FIELDS = {"csrfmiddlewaretoken", "base_digest", "schedule_id", "action", "scope"}
+# or (#1658) "send", one send of a digest it skips; the fields its review
+# posts, and the review's lines on a series or digest.
+DELETE_SCOPES = ("this", "series", "send")
+DELETE_FIELDS = {
+    "csrfmiddlewaretoken",
+    "base_digest",
+    "schedule_id",
+    "action",
+    "scope",
+    "send",
+}
+# The address parameter naming the digest send Edit was opened for from the
+# Campaign calendar (#1658), which Delete's This email only skips.
+SEND = "send"
 SERIES_DELETED = _(
     "The whole series is deleted: %(rule)s. Its reminders that already sent "
     "stay as ordinary reminders."
@@ -465,6 +482,7 @@ def review(
     series=(),
     series_changes=(),
     key=None,
+    skips=None,
 ):
     """Bind a change document to the review's forms and build the review.
 
@@ -479,7 +497,8 @@ def review(
     entry may send one. ``series`` and ``series_changes`` are
     ``build_preview``'s reminder series to remember and series operations
     (#469). ``key`` signs the review with a direct save's request key
-    (#1404 PR 4b, ``admin_editing.direct_key``).
+    (#1404 PR 4b, ``admin_editing.direct_key``). ``skips`` names the one
+    digest send the change skips (#1658, ``build_preview``'s).
     """
     # The schedule commands' own binding, so the page and the command line
     # cannot read the same change differently.
@@ -519,6 +538,7 @@ def review(
         series=series,
         series_changes=series_changes,
         request_key=key,
+        skips=skips,
     )
     return context, window, schedules, identifiers
 
@@ -1147,9 +1167,11 @@ def _entry(request, campaign_id, schedule_id=None):
     the Campaign calendar's Add on a day (``?date=``, ``added_on``, #1521)
     has that send date filled in, and its Cancel and Apply return to the
     calendar on that day's month; Edit opened from the calendar
-    (``?calendar=<month>``, #1656) returns to that month (``return_url``).
-    The page posts to its own path, without the parameter. Edit also draws
-    Delete, whose review is ``_delete_review``'s.
+    (``?calendar=<month>``, #1656) returns to that month (``return_url``);
+    opened for one of a digest's sends (``?send=<slot>``, #1658), its Delete
+    offers This email only while that send may be skipped
+    (``digest_skips.skippable``). The page posts to its own path, without the
+    parameters. Edit also draws Delete, whose review is ``_delete_review``'s.
 
     Inside the campaign wizard the page posts ``save`` instead (#1404 PR 4b):
     the same review, signed with the save's request key and recorded at once
@@ -1160,10 +1182,14 @@ def _entry(request, campaign_id, schedule_id=None):
     service = runtime()
     actor = principal(request, service)
     parameters = filters(
-        request.GET, allowed={ADD_ON} if schedule_id is None else {FROM_CALENDAR}
+        request.GET,
+        allowed={ADD_ON} if schedule_id is None else {FROM_CALENDAR, SEND},
     )
     on = added_on(parameters)
     month = year_month(parameters, FROM_CALENDAR)
+    send = parameters.get(SEND)
+    if send is not None and digest_skips.slot_date(send) is None:
+        raise ValueError("Unknown filter input.")
     if request.FILES:
         raise unexpected_fields(request.FILES, allowed=())
     new = schedule_id is None
@@ -1258,6 +1284,13 @@ def _entry(request, campaign_id, schedule_id=None):
             "list_url": return_url(on, month),
             # Edit's Delete (#1656) posts its review here.
             "delete_url": reverse("admin:schedule_delete"),
+            # The digest send Edit was opened for from the calendar, when
+            # Delete may skip it alone (#1658); else None.
+            "skip_send": digest_skips.skippable(
+                schedule["id"], schedule["values"], values, send, now
+            )
+            if schedule is not None and send is not None
+            else None,
             # The review dialog's Apply confirms on the list, then returns.
             "apply_url": reverse("admin:schedule_settings"),
             "window_text": window_text(values),
@@ -1658,7 +1691,10 @@ def _delete_review(request, service, actor, campaign_id):
 
     The post names one schedule (``schedule_id``), ``action=preview`` and,
     for a series' reminder, ``scope`` ("this", the default, or "series",
-    ``_delete_entries``). The schedule must still be changeable
+    ``_delete_entries``). For a digest opened from one of its calendar sends
+    (#1658), ``scope`` "send" with that send's slot date (``send``) skips it
+    alone (``digest_skips``) and keeps the digest; any other scope deletes
+    the whole digest. The schedule must still be changeable
     (``_changeable``: not run and no work prepared), as on Edit. The change
     is reviewed exactly as every schedule change is (``review``), and the
     answer is the review dialog's fragment, whose Apply confirms on Dates and
@@ -1672,7 +1708,14 @@ def _delete_review(request, service, actor, campaign_id):
     ):
         raise unexpected_fields(posted, allowed=DELETE_FIELDS)
     scope = posted.get("scope", "this")
-    if posted["action"] != "preview" or scope not in DELETE_SCOPES:
+    # This email only (#1658) names its digest send; the field is posted
+    # with either choice, and only "send" reads it.
+    slot = digest_skips.slot_date(posted.get(SEND)) if scope == "send" else None
+    if (
+        posted["action"] != "preview"
+        or scope not in DELETE_SCOPES
+        or (scope == "send" and slot is None)
+    ):
         # No sources: an unknown action or scope value, not an unknown field.
         raise unexpected_fields()
     identifier = str(UUID(posted.get("schedule_id", "")))
@@ -1682,9 +1725,13 @@ def _delete_review(request, service, actor, campaign_id):
         read_only = _changeable(saved, campaign, {identifier})
         schedule = next(row for row in saved if row["id"] == identifier)
         record = _series_of(state[0], campaign, schedule)
-        entries, series_changes, notes = _delete_entries(
-            schedule, record, saved, read_only, scope
-        )
+        if slot is None:
+            entries, series_changes, notes = _delete_entries(
+                schedule, record, saved, read_only, scope
+            )
+        else:
+            # The digest itself stays; build_preview adds the skip.
+            entries, series_changes, notes = [], [], []
         reviewed, window, schedules, _forms = review(
             service,
             actor,
@@ -1694,13 +1741,26 @@ def _delete_review(request, service, actor, campaign_id):
             entries,
             base_digest=posted.get("base_digest"),
             series_changes=series_changes,
+            skips={identifier: slot} if slot else None,
         )
     if reviewed is None:
         raise _refusal(window, schedules)
+    skipped = None
+    if slot is not None:
+        send = digest_skips.send_of(
+            schedule["values"], campaign.active_configuration.values, slot
+        )
+        skipped = {"key": slot, "due_at": send.due_at.isoformat()}
     response = render(
         request,
         "stewardship/schedule-review.html",
-        reviewed | {"new": False, "deleting": scope, "series_notes": notes},
+        reviewed
+        | {
+            "new": False,
+            "deleting": scope,
+            "series_notes": notes,
+            "skipped_send": skipped,
+        },
     )
     _recheck(request, service)
     return response

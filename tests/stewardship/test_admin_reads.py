@@ -836,6 +836,7 @@ GOLDEN = {
                     "subject": "Campaign invitation",
                     "template_version": TEMPLATE,
                     "comparison": False,
+                    "skip_dates": [],
                     "resolved": [
                         {
                             "key": "once",
@@ -1212,6 +1213,7 @@ ALLOWED = {
         "subject",
         "template_version",
         "comparison",
+        "skip_dates",
         "resolved",
         "key",
         "due_at",

@@ -68,7 +68,7 @@ CREATE FUNCTION stewardship_weekly_digest_live_v1(
             p.campaign_configuration_id,p.mode,p.rehearsal_epoch_id))
 $$;
 
-CREATE FUNCTION stewardship_weekly_digest_page_v1(prior jsonb, proposed jsonb)
+CREATE FUNCTION public.stewardship_weekly_digest_page_v1(prior jsonb, proposed jsonb)
 RETURNS boolean LANGUAGE plpgsql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE p stewardship_campaign_configuration%ROWTYPE;
         v stewardship_schedule_revision%ROWTYPE; first_day date; last_day date; next_day date;
@@ -84,8 +84,11 @@ BEGIN
           OR last_day>p.end_date OR (last_day-first_day)%7<>0 THEN RETURN false; END IF;
         IF EXISTS(SELECT 1 FROM generate_series(first_day::timestamp,last_day::timestamp,interval '7 days') day
             CROSS JOIN LATERAL (SELECT stewardship_catchup_due_v1(v.record_id,day::date::text) AS due) expected
-            WHERE expected.due IS NULL OR expected.due>(proposed->>'cutoff')::timestamptz
-              OR (NOT stewardship_schedule_slot_excluded_v1(v.record_id,proposed->>'mode','admins',day::date::text)
+            -- A skipped week (#1658) has no slot and needs no occurrence.
+            WHERE (expected.due IS NULL AND NOT coalesce(v.values->'skip_dates' ? day::date::text,false))
+              OR expected.due>(proposed->>'cutoff')::timestamptz
+              OR (expected.due IS NOT NULL
+                AND NOT stewardship_schedule_slot_excluded_v1(v.record_id,proposed->>'mode','admins',day::date::text)
                 AND NOT EXISTS(SELECT 1 FROM stewardship_schedule_occurrence o
                     WHERE o.revision_id=v.id AND o.mode=proposed->>'mode' AND o.target='admins'
                       AND o.slot=day::date::text AND o.due_at=expected.due))) THEN RETURN false; END IF;

@@ -1044,6 +1044,12 @@ class ScheduleSet(AdminFormSet):
         # existed (#1018) is unchanged when its row is posted back as shown.
         if data.get("comparison"):
             values["comparison"] = True
+        # A digest keeps the sends it skips (#1658) on every later revision:
+        # a skipped past send has no fulfillment, so a revision without it
+        # would plan that send again as missed. Only a skip adds a date
+        # (digest_skips.apply); no form field changes them.
+        if previous and previous.get("skip_dates") and data["kind"] == previous["kind"]:
+            values["skip_dates"] = previous["skip_dates"]
         return values
 
     def patch(self):

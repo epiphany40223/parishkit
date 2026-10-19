@@ -2,10 +2,12 @@
 One schedule in a review (schedule_changes.describe): its subject and when
 it sends. Its send times are shown only as moments in the browser's time
 zone (#558, data-local-instant), never as the saved campaign-local date and
-time with the campaign's zone; a digest also says it recurs.
+time with the campaign's zone; a digest also says it recurs, and lists the
+sends it skips (#1658, describe's skipped_sends) by their send times.
 {% endcomment %}{% if value %}<p>{{ value.subject }}</p>{% if not value.date %}<p>{% if value.weekday_label %}{% translate "Sent every week." %}{% else %}{% translate "Sent every day." %}{% endif %}</p>{% endif %}
 {% if value.resolved_slots %}<p>{% translate "When it sends (shown in your computer's time zone):" %}</p><ul>{% for slot in value.resolved_slots %}<li>{% if slot.key != 'once' %}{{ slot.key }} — {% endif %}<time datetime="{{ slot.due_at }}" data-local-instant>{{ slot.due_at }}</time></li>{% endfor %}</ul>{% endif %}
 {% if value.kind == 'daily_digest' %}<p>{% translate "Each date is the campaign day the digest reports on; it is sent the next day." %}</p><p>{% if value.comparison %}{% translate "Includes Compared with past campaigns." %}{% else %}{% translate "Does not include Compared with past campaigns." %}{% endif %}</p>{% endif %}
+{% if value.skipped_sends %}<p>{% translate "Skipped sends (shown in your computer's time zone):" %}</p><ul>{% for send in value.skipped_sends %}<li><time datetime="{{ send.due_at }}" data-local-instant>{{ send.due_at }}</time></li>{% endfor %}</ul>{% endif %}
 {% if value.more_slots %}<p>{% translate "Only the first five dates are shown. Later dates follow the same pattern." %}</p>{% endif %}
 <p>{% translate "These are the times the email is due, not a list of who will receive it. When clocks change for daylight saving, a time that happens twice sends once, and a time that is skipped sends right after the change." %}</p>
 {% else %}<p>{% translate "None (not scheduled)" %}</p>{% endif %}
