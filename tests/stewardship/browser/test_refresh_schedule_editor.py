@@ -1187,9 +1187,9 @@ def test_a_pointer_over_the_sidebar_keeps_the_focused_field_in_place(
 )
 def test_pasting_a_key_posts_the_shown_schedule_unchanged(page, component_origin, path):
     """A new key pasted with the schedule untouched posts the schedule as the
-    page showed it, so the save never reads as a key plus a schedule change
-    (``key_with_schedule_change``, #1492). A locked organization ID is not
-    sent at all."""
+    page showed it, so the key's review never reads as a key plus a schedule
+    change (``key_with_schedule_change``, #1492). The review is posted
+    without the key (#1568). A locked organization ID is not sent at all."""
     from django.http import QueryDict
 
     from parishkit.stewardship.accounts.refresh_schedule_forms import ScheduleEditor
@@ -1201,7 +1201,8 @@ def test_pasting_a_key_posts_the_shown_schedule_unchanged(page, component_origin
     posts = []
 
     def submitted(route):
-        """Record the page's own Save post; let the page's draw through."""
+        """Record the page's own Save post (the key's Review); let the
+        page's draw through."""
         if route.request.method != "POST":
             route.continue_()
             return
@@ -1215,7 +1216,7 @@ def test_pasting_a_key_posts_the_shown_schedule_unchanged(page, component_origin
     page.get_by_role("button", name="Save", exact=True).click()
     recorded(page, posts, 1)
     data = QueryDict(posts[0])
-    assert data["candidate"] == "a-new-parishsoft-key"
+    assert data["key_review"] == "yes" and "candidate" not in data
     assert ("organization_id" in data) is not path.endswith("-loaded")
     editor = ScheduleEditor(data, stored=stored)
     assert editor.posted and not editor.changed, editor.document()

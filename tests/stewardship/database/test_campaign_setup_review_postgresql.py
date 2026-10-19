@@ -111,7 +111,8 @@ def test_home_and_sub_pages_lead_back_into_the_stepper(auth_service, google):
     # 2, Load ParishSoft data (#1404 PR 5).
     assert (
         f'<a href="{reverse("admin:source_refresh")}">'
-        "Continue campaign setup: Load ParishSoft data</a>"
+        '<span class="link-card-label">'
+        "Continue campaign setup: Load ParishSoft data</span></a>"
     ) in home
     # Dates and mail schedules with its schedule (the builder adds one): an
     # ordinary Continue (with none it says so, test_campaign_wizard).

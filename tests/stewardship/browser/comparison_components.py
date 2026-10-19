@@ -12,6 +12,7 @@ end labels would collide at phone width unless they are spaced apart; the
 oldest was imported with an older pledge band set.
 """
 
+from dataclasses import replace
 from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from uuid import uuid4
@@ -30,12 +31,22 @@ from parishkit.stewardship.reports.comparison import (
     Year,
 )
 from parishkit.stewardship.reports.comparison_views import page_context
+from parishkit.stewardship.reports.workspace_views import figures_status
+
+from .automation_components import canonical
 
 START = date(2054, 10, 4)
 # The page's real address, and the one Compare on day asks for day 5 (the
 # form's action and field).
 PAGE = "/admin/reports/comparison/"
 DAY_5 = PAGE + "?day=5"
+# The page while its figures are Updating, and its figures status read's
+# answer once newer ones are ready (#1586, test_report_figures.py); the page
+# re-reads its own address then, which a test answers with ``PAGE``.
+UPDATING = "/campaign-comparison-updating"
+NEWER = "/campaign-comparison-status-newer"
+# A refused day's page (a 400) whose figures are Updating (#1586).
+REFUSED_UPDATING = "/campaign-comparison-refused-updating"
 
 
 def _series(active, anchors, last):
@@ -254,18 +265,37 @@ def components(context, admin):
     """The page with imported years, on day 5, crowded, and with none."""
     principal = Principal(uuid4(), frozenset({"administrator"}), frozenset())
 
-    def page(found):
-        """Render the page for ``found``."""
+    def page(found, refused=False):
+        """Render the page for ``found``, refusing the day asked for when
+        ``refused``."""
+        shown = page_context(found, principal, refused=refused)
         return (
             "text/html",
             render_to_string(
                 "stewardship/campaign-comparison.html",
-                context | {"admin_chrome": admin} | page_context(found, principal),
+                context | {"admin_chrome": admin} | shown,
             ),
         )
 
+    current = comparison()
+    status = figures_status("comparison", "historical", None, False)
     return {
-        "/campaign-comparison": page(comparison()),
+        # The figures status every page here polls (#1586): still the
+        # newest, so a watched page stays as it is.
+        canonical(status["figures_status"]["url"]): (
+            "text/html",
+            render_to_string("stewardship/report-figures-status.html", status),
+        ),
+        NEWER: (
+            "text/html",
+            render_to_string(
+                "stewardship/report-figures-status.html",
+                figures_status("comparison", "historical", None, False, newer=True),
+            ),
+        ),
+        UPDATING: page(replace(current, status="updating")),
+        REFUSED_UPDATING: page(replace(current, status="updating"), refused=True),
+        "/campaign-comparison": page(current),
         PAGE: page(comparison()),
         DAY_5: page(comparison(day=5)),
         "/campaign-comparison-crowded": page(comparison(crowded=True)),

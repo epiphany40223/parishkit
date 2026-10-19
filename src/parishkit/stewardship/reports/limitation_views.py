@@ -255,10 +255,15 @@ def _respond(request, campaign_id, *, export, render):
                 extra["paging"] = paging_values(parameters)
             if export:
                 fmt = parameters.pop("format", [DEFAULT_EXPORT_FORMAT])
-                zone = parameters.pop("timezone", ["UTC"])
-                if len(fmt) != 1 or len(zone) != 1:
+                # The browser's zone, posted unasked, or an explicit
+                # timezone from an older tab (#1679).
+                chosen = parameters.pop("timezone", [None])
+                browser = parameters.pop("browser_timezone", [None])
+                if len(fmt) != 1 or len(chosen) != 1 or len(browser) != 1:
                     raise ValueError("Invalid Limitations export choice.")
-                extra = export_choice(fmt[0], zone[0])
+                extra = export_choice(
+                    fmt[0], dates.download_zone(chosen[0], browser[0])
+                )
             query = LimitationsQuery.parse(parameters)
         except ValueError:
             return _error(campaign_id, status=400)
@@ -401,7 +406,6 @@ def report(request, campaign_id):
                 "campaign_id": campaign_id,
                 "query": query,
                 "query_fields": query.form_values(),
-                "export_timezones": sorted(timezone_names()),
             },
             request=request,
         ).encode()

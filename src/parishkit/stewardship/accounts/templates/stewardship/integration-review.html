@@ -1,6 +1,7 @@
 {% load i18n %}{% comment %}
 The review dialog's answer for an integration's settings page (#750;
-integration_views._preview and _remove), drawn in the shared review dialog
+integration_views._preview, _remove and _key_review, and
+integration_selection_views.review_finish), drawn in the shared review dialog
 (UX conventions, "Review dialog") that integration-settings.html includes,
 never as a page of its own: ui-v1.js moves this fragment's content into the
 dialog's body. It shows public settings only, never a key, a key's
@@ -19,7 +20,29 @@ old value"):
   schedule's differences in words, never its stored settings.
 - "setup": Off-site backups set up by its folder, a confirmation.
 - "remove": Remove Slack or Turn off off-site copies, a confirmation.
-{% endcomment %}{% if kind == "schedule" %}{% blocktranslate asvar done %}{{ label }} settings changed.{% endblocktranslate %}<div data-review-answer data-review-done="{{ done }}">
+- "key": Save with a new key pasted (#1568), a confirmation. Its Review was
+  posted without the key, and it has no signed preview: it is marked
+  data-review-key, so Apply posts the page's own form, key included,
+  instead. data-review-key-tail is the sentence naming the key by its last
+  four characters, which the page script fills in from the field ({tail});
+  the server never draws any part of a key. Google Workspace's key is a
+  service-account key file, whose last characters are the same in every
+  file, so it is named without them.
+- "finish": Finish switching to the new key (#1568), a confirmation, with
+  the signed preview and the key change's id (request_id) that Apply posts.
+{% endcomment %}{% if kind == "key" %}{% if target == "parishsoft" %}{% translate "Replace the ParishSoft key?" as question %}{% translate "New ParishSoft key saved; it is being checked." as done %}{% translate "The new key is checked with ParishSoft in the background. This usually takes a minute. If the check fails, the current key stays in use." as next %}{% elif target == "google_workspace" %}{% translate "Replace the Google Workspace key?" as question %}{% translate "New Google Workspace key saved; it is being checked." as done %}{% translate "The new key is checked with Google in the background. This usually takes a minute. If the check fails, the current key stays in use." as next %}{% elif setup %}{% translate "Set up Slack?" as question %}{% translate "Slack bot token saved; it is being checked." as done %}{% translate "The bot token is checked with Slack in the background. This usually takes a minute. Slack is set up once the check passes; if it fails, nothing changes." as next %}{% else %}{% translate "Replace the Slack bot token?" as question %}{% translate "New Slack bot token saved; it is being checked." as done %}{% translate "The new bot token is checked with Slack in the background. This usually takes a minute. If the check fails, the current token stays in use." as next %}{% endif %}<div data-review-answer data-review-key data-review-done="{{ done }}" data-review-title="{{ question }}" data-review-describedby="integration-review-summary">
+<div id="integration-review-summary">{% if target == "google_workspace" %}<p>{% translate "The service-account key you pasted replaces the current one." %}</p>{% elif target == "slack" %}<p data-review-key-tail="{% translate 'The bot token you pasted, ending in {tail}, is used from now on.' %}">{% translate "The bot token you pasted is used from now on." %}</p>{% else %}<p data-review-key-tail="{% translate 'The key you pasted, ending in {tail}, replaces the current one.' %}">{% translate "The key you pasted replaces the current one." %}</p>{% endif %}
+{% if changes %}{% include 'stewardship/components/compact-review.html' with changes=changes summary_id="integration-review-lines" %}{% endif %}
+<p>{{ next }}</p></div>
+</div>
+{% elif kind == "finish" %}{% blocktranslate asvar done %}{{ label }} switched to its new key.{% endblocktranslate %}<div data-review-answer data-review-done="{{ done }}" data-review-title="{% translate 'Finish switching to the new key?' %}" data-review-describedby="integration-review-summary">
+<p id="integration-review-summary">{% blocktranslate %}{{ label }} is stopped until you finish switching: nothing is refreshed or sent. Applying makes the new key, which is installed and confirmed, the one {{ label }} uses. This does not test sending email or Slack alerts.{% endblocktranslate %}</p>
+{% if changes %}<h3 id="integration-review-saved">{% translate "Settings saved with the new key" %}</h3>
+{% include 'stewardship/components/compact-review.html' with changes=changes summary_id="integration-review-lines" %}{% endif %}
+<input type="hidden" name="preview" value="{{ preview }}" data-review-preview>
+<input type="hidden" name="request_id" value="{{ request_id }}">
+</div>
+{% elif kind == "schedule" %}{% blocktranslate asvar done %}{{ label }} settings changed.{% endblocktranslate %}<div data-review-answer data-review-done="{{ done }}">
 {% if changes %}{% include 'stewardship/components/compact-review.html' with changes=changes summary_id="integration-review-lines" %}{% endif %}
 <section aria-labelledby="schedule-changes-heading"><h3 id="schedule-changes-heading">{% translate "Refresh schedule changes" %}</h3>
 <ul>{% for item in schedule_changes %}<li>{{ item }}</li>{% endfor %}</ul>
