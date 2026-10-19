@@ -6964,9 +6964,10 @@ actions have landed.
   names are Member values, and a head's name can be the very value the form
   refuses.
   The result is cached in memory per campaign, snapshot and campaign
-  configuration, so a refresh clears it. The sentence is read on page load
-  only, never by the 10-second status poll; if the check cannot run, it
-  says so instead. Opening the list records `source_form_viewed` with the
+  configuration, so a refresh clears it. The sentence is read when the
+  page opens and then about every 5 minutes, never by every 10-second
+  status poll (see [tiles read on page load](#overall-status-line)); if
+  the check cannot run, it says so instead. Opening the list records `source_form_viewed` with the
   number of Families listed. One function (`source_form_tile`) picks the
   tile's summary and its state from that read, the first that holds of:
   "Could not be checked" (Warning), "3 Families cannot open the form"
@@ -6979,9 +6980,9 @@ actions have landed.
 - **Pages and emails to re-save (#838).** Its own tile's details hold one
   sentence that says how many of the current campaign's saved pages and
   emails should be re-saved, linking **Pages and emails**, followed by the same linked list as
-  [Go-live readiness](#production-transition). It is read on page load only,
-  in its own read-only snapshot, never by the 10-second status poll, and is
-  not one of the problems; with no current campaign, or when the read cannot
+  [Go-live readiness](#production-transition). It is read when the page
+  opens and then about every 5 minutes, in its own read-only snapshot,
+  never by every 10-second status poll, and is not one of the problems; with no current campaign, or when the read cannot
   run, the sentence says so instead. The re-save findings stay outside the
   shared problem list, as a recorded exception: see
   [health problems on Home and in the banner](#health-problems-on-home-and-in-the-banner).
@@ -6993,9 +6994,14 @@ actions have landed.
   sentence is its problem item (an error notice for a blocked email),
   followed by the list; otherwise it is a plain line. **Pages and emails**
   is linked only while items are listed or the read could not run.
-- **The page-load tiles' help.** Why these two tiles do not follow the
-  poll (each check reads every Family, or every saved page and email, so
-  a reload checks again) is in a toggletip beside each sentence. What
+- **The page-load tiles' help.** Why these two tiles are checked about
+  every 5 minutes rather than every 10 seconds (each check reads every
+  Family, or every saved page and email) is in a toggletip beside each
+  sentence: "This is checked about every 5 minutes, not every 10 seconds
+  like the other tiles, because the check reads every Family or every
+  saved page and email." Nothing tells the reader to reload the page
+  ([pages that update themselves](../ui-conventions/spec.md#pages-that-update-themselves),
+  [#1790](https://github.com/epiphany40223/parishkit/issues/1790)). What
   keeps a Family from the form, and how it gets the form back, is in
   "About this page".
 - **Panels.** The [health panels](#health-panels) define what each tile's
@@ -7180,15 +7186,37 @@ convention's; this page adds only the words.
   form fits on one line at 320 pixels. A poll never changes its height, so
   it never moves the tiles below.
 - **Tiles read on page load.** Two tiles (Families the form cannot open and
-  Pages and emails to re-save) are read only when the page opens, never by
-  the poll. The page passes their states to the status fragment as
-  `?loaded=`, for example `?loaded=resave:error`. It is the only query key
-  the fragment accepts: any other key is still refused with 400, as every
-  key is today, and the page itself still accepts none. Within it, values
-  outside the closed set of these two tiles and their two non-Working
-  states are ignored. The fragment counts the named states into the line.
-  It changes nothing and records nothing, so a forged value can only
-  mislabel the requester's own page.
+  Pages and emails to re-save) are read when the page opens, and then
+  rechecked at a slow pace, never on every poll, because each check reads
+  every Family or every saved page and email
+  ([#1790](https://github.com/epiphany40223/parishkit/issues/1790)). The
+  page passes their states to the status fragment as `?loaded=`, for
+  example `?loaded=resave:error`, and an ordinary poll echoes them. The
+  first poll after 5 minutes have passed since the page opened or since
+  the last recheck that was answered adds `slow=1`, and that answer runs
+  both checks again, as opening the page does: it carries the two tiles'
+  summary rows and panel content as mirror copies (marked
+  `data-live-mirror-lasting`: kept outside the region, so they never count
+  as a change to it, and a copy held back while the reader points at or
+  uses the tile is applied by a later poll), and the fragment
+  address carrying the new states (`data-live-url`), which later polls
+  use. The pace is the region's `data-live-slow-every` (300000 ms). Polls
+  pause while the tab is hidden, so a hidden tab never rechecks; the
+  first poll once it is shown again rechecks if 5 minutes have passed.
+  A recheck that fails is tried again on the next poll; one whose answer
+  arrives while the region's swap is held still counts, and its copies
+  and address are kept. `loaded` and
+  `slow` are the only query keys the fragment accepts: any other key is
+  still refused with 400, as every key is today, and the page itself still
+  accepts none. Within `loaded`, values outside the closed set of these
+  two tiles and their two non-Working states are ignored; `slow` takes
+  only `1`. The fragment counts the named states into the line. It stays
+  passive however it is asked: it changes nothing, records no audited view
+  (only opening the page records `system_health_viewed`) and never extends
+  the sign-in, so a forged value can only mislabel the requester's own
+  page, and an automatic recheck never adds an audit row. Re-reading the
+  whole page on a timer, running both checks on every poll, and a shared
+  server-side cache were rejected (#1790).
 
 #### Health tiles
 
@@ -7362,7 +7390,10 @@ cannot disagree.
   three parts: the summary row's state, icon, word and summary; the
   problems' sentences; and the panel content. Each copy goes to its
   `[data-live-mirror-target]` in the tile, which sits outside the polled
-  region. The summary row's `aria-expanded`, the details' `hidden`
+  region. The two page-load tiles have no problems copy, and their
+  summary-row and panel copies come only with the slow recheck
+  ([tiles read on page load](#overall-status-line)). The summary row's
+  `aria-expanded`, the details' `hidden`
   attribute, and every action region, are not mirror targets, so an open tile, an open preview
   and a ticked box survive every poll. As today, a target that holds focus
   is skipped, and an unchanged copy is not applied. Action buttons follow
