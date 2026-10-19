@@ -37,7 +37,8 @@
 {% include "stewardship/components/filter-actions.html" with apply_hint="financial-filter-hint" %}
 {# After Apply, so the date fieldsets, pledge range and selects pack the grid's rows with Apply beside the last select (#1411): a full-width note between the dates would end their row early and add rows. It names the zone for all four dates. #}{% translate "The dates are days in this computer's time zone:" as zone_note %}{% include "stewardship/components/zone-note.html" with note_text=zone_note note_id="financial-zone-help" %}
 <p class="help" id="financial-filter-hint" data-complete-hint="reserve"></p></form>{% endfilterpanel %}
-<p id="financial-matching" data-table-sync>{% translate "Matching Families:" %} {{ total|number }}.</p>
+{# The hidden data-page-address link is this view's address with only its closed choices, never the search, a date, the pledge range or the page (financial_views.page_address): ui-v1.js puts it in the address bar after each in-place answer, so a reload shows the same view (UX conventions, "Reload on a POST report", #1586). #}
+<p id="financial-matching" data-table-sync><a href="{{ page_address }}" data-page-address hidden></a>{% translate "Matching Families:" %} {{ total|number }}.</p>
 <div id="{{ table.anchor }}" data-table-region>
 {% translate "Financial result pages" as navigator_label %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Financial stewardship results' %}"><table class="data-table whole-words financial-table">

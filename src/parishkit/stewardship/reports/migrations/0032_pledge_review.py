@@ -12,7 +12,7 @@ needs its own forward migration, so, like the baseline, it has no reverse
 operation.
 
 It depends on the reports app's previous migration and on the migration that
-installs the previous frozen file (0124, in the accounts app), so the files
+installs the previous frozen file (0126, in the responses app), so the files
 apply in prefix order. That keeps it in the users swap's closure: its table
 is registered in ``runtime_grants.CLOSURE_TABLES``.
 """
@@ -46,7 +46,7 @@ class Migration(migrations.Migration):
         # The migration that installs the previous frozen file (0126, the
         # Additional information and Limitations review, #1685, on which
         # this PR stacks), so the files apply in prefix order; it depends on
-        # responses 0012 and on 0124's accounts 0029 in turn.
+        # responses 0012 and on 0125's accounts 0030 in turn.
         ("stewardship_responses", "0013_information_limitation_review"),
     ]
 

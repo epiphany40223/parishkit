@@ -443,8 +443,10 @@ def test_a_schedule_change_keeps_its_full_review_and_the_editor_works_after(
 def test_spaces_the_server_strips_are_no_key_on_the_page(page, component_origin):
     """A key field holding only what the server strips (U+0085, U+3000) is
     no key on the page either: Save opens the settings' review dialog, as the
-    server reviews it (#750); U+FEFF, which the server keeps, is a key, so
-    Save opens the key's confirmation, its Review posted without it (#1568)."""
+    server reviews it (#750); U+FEFF, which the server keeps, is a key, which
+    the key rule refuses, so Save waits (#1577); a key around such spaces is
+    a key, so Save opens the key's confirmation, its Review posted without
+    it (#1568)."""
     reviews = answer_reviews(page, component_origin, SLACK_REVIEW, address=SLACK)
     page.goto(component_origin + SLACK)
     page.get_by_label("Slack channel ID").fill(NEW_CHANNEL)
@@ -458,6 +460,8 @@ def test_spaces_the_server_strips_are_no_key_on_the_page(page, component_origin)
     page.unroute_all()
     keyed, _ = answer_key(page, component_origin, SLACK, SLACK_KEY_REVIEW, SLACK)
     token.fill("\ufeff")
+    assert page.get_by_role("button", name="Save", exact=True).is_disabled()
+    token.fill("\u3000xoxb-synthetic-token ")
     page.get_by_role("button", name="Save", exact=True).click()
     dialog_of(page, "Replace the Slack bot token?")
     (body, navigated) = keyed[0]

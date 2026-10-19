@@ -2841,6 +2841,19 @@ broken is refused at that field
 of order at its Through date or At most, with both ends marked. Its access
 audit ends denied.
 
+A reload keeps the view's closed choices
+([reload on a POST report](../ui-conventions/spec.md#pages-that-update-themselves),
+[#1586](https://github.com/epiphany40223/parishkit/issues/1586)): after each
+in-place answer it accepts, the address bar shows the page with Family status, Pledge
+amount, Frequency, Share method (a share option's identity, or none),
+the sort and the rows per page, each only when it differs from the default,
+and the page's GET draws that view. The search, the response dates and the
+pledge range stay in the POST body, so a reload clears them and shows the
+first page. A GET with any other parameter, a repeated one or a value
+the filter's form does not take is refused (400), as a POST's would be: a
+Share method is checked for an option identity's form, so one no longer
+offered matches no Family. A POST with a query string is refused too.
+
 This report stays the financial stream's statistics page. Reviewing each
 pledge and entering it in ParishSoft is on [Pledges](#pledges).
 
