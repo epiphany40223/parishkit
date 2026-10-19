@@ -3331,6 +3331,16 @@
     && control.type === "checkbox"
     ? (control.checked ? control.value : "") : control.value);
 
+  // A value made only of what Python's str.strip() removes (str.isspace:
+  // U+0085 and U+001C-U+001F are, U+FEFF is not; JavaScript's trim() and \s
+  // differ on all three). The server decides "a key was pasted" with
+  // str.strip() (integration_views), and the key field's own cleaning strips
+  // the same way, so the page and the server always take the same path for
+  // a pasted key (#750, #1568); the complete gate counts such a required
+  // field as empty, as the server's required check does (#1577).
+  // test_review_dialog checks this class against
+  // str.isspace for every code point.
+  const SERVER_SPACE = /^[\t-\r\x1c-\x20\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]*$/;
   // Complete-before-submit (#553): a form marked data-require-complete keeps
   // its submit buttons disabled until every control that is currently shown
   // and required is valid, and says why in its [data-complete-hint] element
@@ -3455,10 +3465,11 @@
     maxTicked(form);
     changeAlone(form);
     // A required text field holding only spaces is still empty: the server
-    // trims it (notes for the outcome Other, a Slack token being set up).
+    // strips it (notes for the outcome Other, a Slack token being set up),
+    // with Python's whitespace (SERVER_SPACE), which trim() does not match.
     const blank = (node) => node.required
       && node.matches("textarea, input[type=text], input[type=password]")
-      && !node.value.trim();
+      && SERVER_SPACE.test(node.value);
     // A live check (the follow-up contact time) marks a field it found in
     // error with data-client-error, whose text is the hint.
     const missing = [...form.elements].find((node) => node.willValidate
@@ -3477,9 +3488,10 @@
       hint.hidden = !missing && hint.dataset.completeHint !== "reserve";
       hint.textContent = missing
         ? (missing.dataset.clientError
-          // An unreadable time entry says why itself (#398).
-          || (missing.matches("[data-time-entry]") && missing.validity.customError
-            && missing.validationMessage)
+          // An unreadable time entry (#398) or DUID list (#1577) says why
+          // itself.
+          || (missing.matches("[data-time-entry], [data-duid-list]")
+            && missing.validity.customError && missing.validationMessage)
           || (empty && missing.dataset.emptyHint)
           || (missing.hasAttribute("data-max-ticked-over") && missing.validationMessage)
           || missing.closest("[data-missing-hint]")?.dataset.missingHint
@@ -3682,18 +3694,77 @@
   // own: data-pattern="[^@]*" must match the whole value, or the field is
   // invalid with its data-missing-hint, so the browser marks it on blur and
   // a data-require-complete form holds its button with that hint. Checked
-  // on input, at load, after a swap and on pageshow.
+  // on input, at load, after a swap and on pageshow. Compiled with the "v"
+  // flag, as the browser compiles an input's pattern, so a shared format
+  // rule (web/field_rules.py, such as Setup's one address per line, #1577)
+  // reads the same on a textarea as on a text box.
   let patternChecks = []; // {field, check} for each wired textarea
   const wirePattern = (root) => {
     within(root, "textarea[data-pattern]").forEach((field) => {
-      const rule = new RegExp(`^(?:${field.dataset.pattern})$`, "u");
+      const rule = new RegExp(`^(?:${field.dataset.pattern})$`, "v");
       const check = () => field.setCustomValidity(rule.test(field.value) ? ""
         : (field.closest("[data-missing-hint]")?.dataset.missingHint || "Check this field."));
-      // On the field itself, so the gate sees it for the same input.
-      field.addEventListener("input", check);
+      patternCheck.set(field, check);
       check();
       patternChecks.push({field, check});
     });
+  };
+  // A list of Family DUIDs (data-duid-list, Test with Families, #1577) is
+  // read as the server's parse_family_duids reads it, with the rules it
+  // sends in the attribute: the value split at any white space (Python's,
+  // "space"), each entry a whole DUID ("token": digits, or digits grouped by
+  // commas) of at most "longest" characters naming a number from 1 to
+  // 2^63 - 1, at most "limit" of them, no number twice ("1,234" and
+  // "01234" are one number). A list that breaks a rule is invalid with the
+  // server's own words for it ("exact" or "distinct"), so the field is
+  // marked as it is left and the form's gate holds Check with them. No
+  // pattern can say "no number twice"; the shared case table
+  // (fixtures/field_rule_cases.json) runs the same examples through both.
+  const duidProblem = (value, rules) => {
+    const entries = value.split(new RegExp(`[${rules.space}]+`, "v")).filter(Boolean);
+    const token = new RegExp(`^(?:${rules.token})$`, "v");
+    const numbers = [];
+    for (const entry of entries) {
+      if (entry.length > rules.longest || !token.test(entry)) return rules.exact;
+      const number = BigInt(entry.replaceAll(",", ""));
+      if (number < 1n || number >= 2n ** 63n) return rules.exact;
+      numbers.push(number);
+    }
+    return numbers.length > rules.limit || new Set(numbers).size !== numbers.length
+      ? rules.distinct : "";
+  };
+  const wireDuidList = (root) => {
+    within(root, "textarea[data-duid-list]").forEach((field) => {
+      let rules;
+      try { rules = JSON.parse(field.dataset.duidList); } catch (_) { return; }
+      const check = () => field.setCustomValidity(duidProblem(field.value, rules));
+      patternCheck.set(field, check);
+      check();
+      patternChecks.push({field, check});
+    });
+  };
+  // Run as the page's first input listener (the document's capture phase),
+  // so the field's own listeners (the field-error wiring, which clears a
+  // mark once the value is valid) and the form's gate all see this input's
+  // verdict, not the previous one's.
+  const patternCheck = new WeakMap(); // textarea -> its check
+  document.addEventListener("input", (event) => patternCheck.get(event.target)?.(), true);
+  // The end of a financial period that starts on ``value`` (YYYY-MM-DD):
+  // the day before its first anniversary, a Feb 29 anniversary falling on
+  // Feb 28 (campaigns.intervals.financial_period_end). Dates stay text and
+  // the arithmetic uses UTC, so no browser time zone can shift the day; null
+  // for a start that is not a whole date or whose end is past year 9999.
+  const periodEnd = (value) => {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (!match) return null;
+    const [year, month, day] = match.slice(1).map(Number);
+    const end = new Date(0);
+    end.setUTCFullYear(year + 1, month - 1, month === 2 && day === 29 ? 28 : day);
+    end.setUTCDate(end.getUTCDate() - 1);
+    if (!Number.isFinite(end.getTime()) || end.getUTCFullYear() > 9999) return null;
+    return [String(end.getUTCFullYear()).padStart(4, "0"),
+      String(end.getUTCMonth() + 1).padStart(2, "0"),
+      String(end.getUTCDate()).padStart(2, "0")].join("-");
   };
   // Date and amount order (#563). A Through or To date marked
   // data-not-before="<start input id>" takes the start's value as its min,
@@ -3712,14 +3783,23 @@
       const ordered = !start.value || !end.value || start.validity.patternMismatch
         || end.validity.patternMismatch || Number(end.value) >= Number(start.value);
       end.setCustomValidity(ordered ? "" : (end.dataset.missingHint || "Out of order."));
-    } else if (end.min !== start.value) {
-      // Written only when it changes (#1419). Rewriting min, even to the
-      // same value, makes Chromium rebuild the date's fields; the end's own
-      // input event fires once its first year digit makes a whole date, so
-      // a rewrite there dropped the year being typed and the next digit
-      // cleared the field.
-      if (start.value) end.min = start.value;
-      else end.removeAttribute("min");
+    } else {
+      // A financial period's end (data-one-year) must be exactly the day
+      // its start gives (#1577), as the server requires: that day is both
+      // its min and its max, so any other day is out of range. Otherwise
+      // the start is the min. Each is written only when it changes (#1419).
+      // Rewriting min, even to the same value, makes Chromium rebuild the
+      // date's fields; the end's own input event fires once its first year
+      // digit makes a whole date, so a rewrite there dropped the year being
+      // typed and the next digit cleared the field.
+      const exact = end.hasAttribute("data-one-year") ? periodEnd(start.value) : null;
+      const bound = (name, value) => {
+        if (end.getAttribute(name) === (value || null)) return;
+        if (value) end.setAttribute(name, value);
+        else end.removeAttribute(name);
+      };
+      bound("min", exact || start.value);
+      bound("max", exact);
     }
   };
   const wireNotBefore = (root) => within(root, "input[data-not-before]").forEach(checkNotBefore);
@@ -3977,7 +4057,12 @@
           : 0;
         let message = "";
         let rule = "";
-        if (file && file.size > Number(input.dataset.maxBytes)) {
+        if (file && file.size === 0 && input.dataset.emptyFileMessage) {
+          // A 0-byte file, which the server's file field refuses too, in
+          // its words (data-empty-file-message, #1577).
+          message = input.dataset.emptyFileMessage;
+          rule = "own";
+        } else if (file && file.size > Number(input.dataset.maxBytes)) {
           // A field marked before #1062 (Past campaigns' archive, #1018)
           // words its refusal in data-too-large instead.
           message = (input.dataset.maxBytesMessage || input.dataset.tooLarge
@@ -4050,6 +4135,7 @@
     wireLockedWhen(root);
     wireNotBefore(root);
     wirePattern(root);
+    wireDuidList(root);
     wireComplete(root);
     wireNotFuture(root);
     wireLiveCheck(root);
@@ -4143,24 +4229,10 @@
   wireCampaignModules(document);
 
   // A financial period is one year: entering its start fills an empty end
-  // with the day before the first anniversary (Feb 29 anniversaries fall on
-  // Feb 28, as the server's rule does). Dates stay YYYY-MM-DD text and the
-  // arithmetic uses UTC, so no browser time zone can shift the day. An end the
-  // person typed is never replaced; one filled here follows later start edits
-  // (typing a year passes through values like 0002-01-01). The server still
-  // checks every period.
-  const periodEnd = (value) => {
-    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-    if (!match) return null;
-    const [year, month, day] = match.slice(1).map(Number);
-    const end = new Date(0);
-    end.setUTCFullYear(year + 1, month - 1, month === 2 && day === 29 ? 28 : day);
-    end.setUTCDate(end.getUTCDate() - 1);
-    if (!Number.isFinite(end.getTime()) || end.getUTCFullYear() > 9999) return null;
-    return [String(end.getUTCFullYear()).padStart(4, "0"),
-      String(end.getUTCMonth() + 1).padStart(2, "0"),
-      String(end.getUTCDate()).padStart(2, "0")].join("-");
-  };
+  // with the day before the first anniversary (periodEnd, above). An end
+  // the person typed is never replaced; one filled here follows later start
+  // edits (typing a year passes through values like 0002-01-01). The server
+  // still checks every period.
   const wireFillsEnd = (root) => within(root, "input[data-fills-end]").forEach((start) => {
     const end = start.form?.elements[start.dataset.fillsEnd];
     if (!(end instanceof HTMLInputElement)) return;
@@ -4826,14 +4898,6 @@
   // key's slow check is then followed by the page's status line
   // (live-status-v1.js), not the dialog.
   //
-  // A value made only of what Python's str.strip() removes (str.isspace:
-  // U+0085 and U+001C-U+001F are, U+FEFF is not; JavaScript's trim() and \s
-  // differ on all three). The server decides "a key was pasted" with
-  // str.strip() (integration_views), and the key field's own cleaning strips
-  // the same way, so the page and the server always take the same path for
-  // a pasted key (#750, #1568). test_review_dialog checks this class against
-  // str.isspace for every code point.
-  const SERVER_SPACE = /^[\t-\r\x1c-\x20\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]*$/;
   // The secret field a data-review-key form holds a value in, or null.
   const keyField = (form) => {
     const field = form.dataset.reviewKey && form.elements.namedItem(form.dataset.reviewKey);

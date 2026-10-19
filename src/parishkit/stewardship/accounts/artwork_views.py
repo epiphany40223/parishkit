@@ -48,6 +48,7 @@ from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.admin_forms import AdminForm
 from parishkit.stewardship.web.content import MAX_IMAGE_BYTES, prepare_artwork
 from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.field_rules import refuse_empty_file
 from parishkit.stewardship.web.refusals import (
     UserFacing,
     UserFacingStale,
@@ -230,19 +231,22 @@ def _campaign(configuration, campaign_id):
 class ArtworkForm(AdminForm):
     """One bounded original image; the stored name and size are server-owned."""
 
-    image = forms.FileField(
-        label=_("Image"),
-        max_length=254,
-        # data-max-bytes (ui-v1.js, #563) refuses a file over the server's
-        # bound at the field as soon as it is chosen; the server still checks.
-        widget=forms.FileInput(
-            attrs={
-                "accept": "image/png,image/jpeg,image/webp",
-                "data-max-bytes": MAX_IMAGE_BYTES,
-                "data-max-bytes-message": _("Choose an image no larger than 5 MB."),
-            }
-        ),
-        help_text=_("PNG, JPEG or WebP, up to 5 MB."),
+    # data-max-bytes (ui-v1.js, #563) refuses a file over the server's
+    # bound at the field as soon as it is chosen, and a 0-byte one (#1577);
+    # the server still checks.
+    image = refuse_empty_file(
+        forms.FileField(
+            label=_("Image"),
+            max_length=254,
+            widget=forms.FileInput(
+                attrs={
+                    "accept": "image/png,image/jpeg,image/webp",
+                    "data-max-bytes": MAX_IMAGE_BYTES,
+                    "data-max-bytes-message": _("Choose an image no larger than 5 MB."),
+                }
+            ),
+            help_text=_("PNG, JPEG or WebP, up to 5 MB."),
+        )
     )
     base_digest = forms.RegexField(
         regex=r"^[0-9a-f]{64}$", max_length=64, widget=forms.HiddenInput

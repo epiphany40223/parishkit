@@ -1551,6 +1551,20 @@ def component_origin():
                 "saved": True,
             },
         ),
+        # The Slack token's step, whose key rule the shared case table runs
+        # through every engine (#1577).
+        (
+            "/setup-credential-slack",
+            "setup-credential",
+            {
+                "draft": setup_draft,
+                "form": SetupCredentialForm("slack"),
+                "target": "slack",
+                "label": "Slack",
+                "step_label": "Slack bot token",
+                "saved": False,
+            },
+        ),
         # A current ParishSoft key may be kept; changing the organization
         # needs the key again (#563).
         (
