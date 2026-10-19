@@ -2,10 +2,11 @@
 
 Home offers Administrators and Staff Census changes, Roster changes to enter,
 Additional information and Ministry requests, each with its menu count, and
-each count is the number of rows its link opens by default: Census changes'
-Work to do view, and Roster changes to enter's Not yet entered view (a menu
-entry of its own since #1660), both held equal to the pages' own row
-selection. A Ministry leader gets neither count, and both pages refuse them.
+each count held equal to its page's own row selection: Census changes' To
+review and Conflict rows, the same for every role (Administrator decision,
+2026-10-18), and Roster changes to enter's Not yet entered view (a menu
+entry of its own since #1660). A Ministry leader gets neither count, and
+both pages refuse them.
 """
 
 import re
@@ -68,7 +69,7 @@ def steps(body):
     ]
 
 
-def test_census_count_is_the_pages_default_rows_by_role(response_service):
+def test_census_count_is_the_same_for_both_roles(response_service):
     """Staff and an Administrator count the worklist's To review and Conflict
     stages (Administrator decision, 2026-10-18); a Ministry leader, whom the
     page refuses, gets no count even when asked."""

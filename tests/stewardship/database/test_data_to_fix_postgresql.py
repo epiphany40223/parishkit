@@ -44,9 +44,9 @@ ORDER = (
 def scenario(response_service):
     """A live campaign with one refused address and two census changes.
 
-    The response renames Member 3 (automatic: To review, which only an
-    Administrator's default view shows) and moves the Family (by hand: To
-    do, which everyone's default view shows).
+    The response renames Member 3 (Automatic) and moves the Family (By
+    hand), both To review, which every role counts (Administrator
+    decision, 2026-10-18: To review and Conflict).
     """
     harness = response_service
     start(harness)
@@ -104,7 +104,7 @@ def test_an_administrator_sees_every_section_counted(scenario, google):
     assert "<title>Data to fix in ParishSoft" in text
     assert "None: every Family that can use the portal can open the form." in text
     assert "1 refused email address is not cleared yet, from 1 Family." in text
-    # To review (the rename) and To do (the move): the Administrator's view.
+    # The rename and the move, both To review.
     assert "2 census changes that Families reported are still to be handled." in text
     assert 'href="/admin/system/source-form/"' in text
     assert 'href="/admin/mail/refusals/"' in text
@@ -118,14 +118,15 @@ def test_an_administrator_sees_every_section_counted(scenario, google):
 
 
 def test_staff_see_only_the_sections_they_can_open(scenario, google):
-    """Staff see Families no mail can reach and census changes (To do only),
-    never a source-form or refused-address count."""
+    """Staff see Families no mail can reach and census changes (To review
+    and Conflict, as an Administrator does), never a source-form or
+    refused-address count."""
     browser = sign_in_as(scenario, google, ("staff",))
     response, body = get(browser, PAGE)
     assert response.status_code == 200
     assert sections(body) == (b"unreachable_families", b"census_changes")
     text = body.decode()
-    assert "1 census change that Families reported is still to be handled." in text
+    assert "2 census changes that Families reported are still to be handled." in text
     assert "refused" not in text.lower() and "source-form" not in text
     # The menu shows the Parish data group with this one entry.
     assert f'href="{PAGE}"' in text
@@ -218,7 +219,7 @@ def test_the_command_shows_staff_their_sections_only(
         "unreachable_families",
         "census_changes",
     }
-    assert document["result"]["sections"]["census_changes"] == {"count": 1}
+    assert document["result"]["sections"]["census_changes"] == {"count": 2}
 
 
 def test_without_a_campaign_each_section_says_why(auth_service, google):

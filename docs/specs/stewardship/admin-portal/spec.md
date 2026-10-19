@@ -984,9 +984,9 @@ link opens ([#1576](https://github.com/epiphany40223/parishkit/issues/1576)).
 At campaign end the Staff work through four lists, so an active, paused,
 closed or archived campaign offers Administrators and Staff each of them
 with its count ([#1590](https://github.com/epiphany40223/parishkit/issues/1590)),
-and each count is the menu's, the number of rows its link opens by
-default: Census changes as "N to do" (its To review and Conflict rows, as
-the menu counts them); Roster changes
+and each count is the menu's: Census changes as "N to do" (its To review
+and Conflict rows; its link opens on To review), and for the others the
+number of rows its link opens by default; Roster changes
 to enter as "N not yet entered" (its Not yet entered view); Additional
 information and Ministry requests as "N open". Roster changes to enter is
 offered, and greyed with its reason, exactly as the viewer's menu entry is
