@@ -5,6 +5,9 @@
   parts (a pledge's amount and frequency, a Ministry picker) gives its own
   editor (worklist.editor_template), naming its fields value or
   value_<part> (web/review_worklist.read_decision), and ends it with
-  components/review-worklist-note.html, as this does.
-{% endcomment %}<div class="dialog-fields" data-missing-hint="{% translate 'Enter the value to carry forward.' %}"><label for="{{ dialog_id }}-value">{% translate "Reviewer's value" %}</label><input id="{{ dialog_id }}-value" name="value" maxlength="2000" value="{% if row.reviewer_value %}{{ row.reviewer_value }}{% else %}{{ row.family_answer }}{% endif %}" required></div>
+  components/review-worklist-note.html, as this does. Save waits until
+  the value differs from the one it opened with (data-require-edit,
+  ui-v1.js), since saving that value would record a plain Accept.
+  A stream's own editor marks its fields' wrapper the same way.
+{% endcomment %}<div class="dialog-fields" data-missing-hint="{% translate 'Enter the value to carry forward.' %}" data-require-edit data-unchanged-hint="{% translate 'Change the value to save it; Accept keeps it as it is.' %}"><label for="{{ dialog_id }}-value">{% translate "Reviewer's value" %}</label><input id="{{ dialog_id }}-value" name="value" maxlength="2000" value="{% if row.reviewer_value %}{{ row.reviewer_value }}{% else %}{{ row.family_answer }}{% endif %}" required></div>
 {% include "stewardship/components/review-worklist-note.html" with note_name="note" %}

@@ -123,7 +123,7 @@ FAMILY_NAME_PAGES = {
     "directory.html": "Active parishioner family directory",
     "find-family-results.html": "Find a Family results",
     "financial-report.html": "Financial stewardship",
-    "census-changes.html": "Census changes",
+    "components/review-worklist.html": "Census changes, Ministry requests",
     "update-parishsoft.html": "Update ParishSoft, newest check",
     "ministry-roster.html": "Roster changes to enter",
     "limitations-report.html": "Limitations, both tables",

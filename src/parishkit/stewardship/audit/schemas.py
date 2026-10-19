@@ -583,6 +583,10 @@ FIELDS = {
         # answers who exported what without its request row: closed words.
         "report",
         "format",
+        # A report view the open page made by itself to bring newer figures
+        # in (#1620): always true when present; a reader's own view has no
+        # such key. Mirrored in stewardship_safe_context_v1.
+        "automatic",
     },
 }
 
@@ -994,6 +998,7 @@ def sanitize(kind, values):
             "exact_code_used",
             "ministry_operational",
             "directory_response_columns",
+            "automatic",
         }:
             valid = type(value) is bool
             safe[key] = value

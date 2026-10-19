@@ -241,12 +241,17 @@ def _admit_mode(principal, query):
         raise PermissionError("Testing responses are shown to Administrators only.")
 
 
-def _audit(principal, campaign_id, outcome):
+def _audit(principal, campaign_id, outcome, *, automatic=False):
     """Record that the funnel was read: who, which campaign, how it ended.
 
     No reported value is copied into the audit; an append takes no row locks,
     so it runs outside the read guard, as the other report audits do.
+    ``automatic`` marks a view the open page made by itself to bring newer
+    figures in (#1620); a reader's own view records no such key.
     """
+    context = {"outcome": outcome}
+    if automatic:
+        context["automatic"] = True
     with transaction.atomic():
         system = SystemConfiguration.objects.select_related(
             "active_configuration__parish"
@@ -258,5 +263,5 @@ def _audit(principal, campaign_id, outcome):
             subject_id=campaign_id,
             parish_id=system.active_configuration.parish.pk,
             campaign_id=campaign_id,
-            context={"outcome": outcome},
+            context=context,
         )

@@ -815,19 +815,32 @@ def revoke(session_id, actor, *, reason):
         return end_session(session, reason=reason, actor_id=actor.identity)
 
 
-def open_notices(viewer, *, limit=10):
-    """The notices this Administrator has not acknowledged, newest first.
-
-    Two queries: the count and the newest ``limit``. Labels are returned as
-    stored; the template escapes them as text.
-    """
-    pending = AutomationNotice.objects.exclude(
+def _pending(viewer):
+    """The notices this Administrator has not acknowledged, as a query set."""
+    return AutomationNotice.objects.exclude(
         Exists(
             AutomationNoticeAcknowledgement.objects.filter(
                 notice=OuterRef("pk"), administrator_id=viewer.identity
             )
         )
     )
+
+
+def pending_count(viewer):
+    """How many notices this Administrator has not acknowledged (one query).
+
+    Home's count line (#1673); the list is on Automation access.
+    """
+    return _pending(viewer).count()
+
+
+def open_notices(viewer, *, limit=10):
+    """The notices this Administrator has not acknowledged, newest first.
+
+    Two queries: the count and the newest ``limit``. Labels are returned as
+    stored; the template escapes them as text.
+    """
+    pending = _pending(viewer)
     total = pending.count()
     if not total:
         return {"total": 0, "rows": []}

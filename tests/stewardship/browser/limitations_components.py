@@ -72,7 +72,6 @@ def components(context, admin):
                     "campaign_id": CAMPAIGN,
                     "query": chosen,
                     "query_fields": chosen.form_values(),
-                    "export_timezones": ["UTC", "America/Detroit"],
                 },
             ),
         )

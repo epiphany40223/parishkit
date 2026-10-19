@@ -91,9 +91,10 @@ LEDGER = {
     "session_renew": permanent(SESSION_CHROME),
     "maintenance": permanent("the status page the access gate shows"),
     "held_emails": permanent(
-        "held-email decisions stay in the browser: the exemption predates "
-        "#1547, and the decision guard (migrations 0017 and 0114) now binds "
-        "only a live session of the deciding Administrator"
+        "held-email decisions belong to a restore review (the maintenance "
+        "page, also web-only) and its follow-up after release, each with a "
+        "preview, a required note and an exact-count check; a command for "
+        "them would be a new feature"
     ),
     # The human side of the automation interface (the specification's action
     # inventory): approving, listing and revoking sessions, and acknowledging
@@ -261,6 +262,9 @@ LEDGER = {
     # The aggregate report reads (PR 8c): counts and summaries only; the
     # rows behind them are the Family-level exports (PR 8e and 8f).
     "reports": command("report list"),
+    # The figures status the Response dashboard and Campaign comparison poll
+    # (#1586): the dashboard's own report status.
+    "response_dashboard_status": command("report participation"),
     # The Campaign comparison page (#1018): its figures for a day.
     "campaign_comparison": command("report comparison"),
     # Its download form (#1018, slice 6): the same capture and export.
@@ -457,19 +461,19 @@ LEDGER = {
         "integration confirm",
         "integration backup-probe",
         "integration key replace",
+        # Finish switching to the new key, in the page's review dialog (#1568).
+        "integration key finish-switching-preview",
+        "integration key finish-switching",
         "integration backup-key challenge",
         "integration backup-key preview",
         "integration backup-key confirm",
     ),
-    "integration_status": command("integration status"),
+    # The settings page's status line, which is also a key change's status
+    # (#1568).
+    "integration_status": command("integration status", "integration key status"),
     # The ParishSoft page's live refresh schedule check (#632).
     "refresh_schedule_check": command("integration schedule-preview"),
-    "credential_status": command("integration key status"),
     "dismiss_credential_result": command("integration dismiss"),
-    "select_credential": command(
-        "integration key finish-switching-preview",
-        "integration key finish-switching",
-    ),
     # The first-Admin setup wizard.
     **{
         name: permanent(SETUP)
