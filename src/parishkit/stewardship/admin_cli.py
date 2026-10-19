@@ -7578,7 +7578,7 @@ def _followup_export_specs():
 # ---------------------------------------------- Pledges (#1733)
 #
 # ``report pledges``, ``export pledges`` and ``pledges decide`` (in
-# ``admin_pledges``): Pledges's counts, its download and its row
+# ``admin_pledges``): Pledges' counts, its download and its row
 # and bulk decisions, through the page's own read, writer and
 # ``PledgeDecisions`` service.
 
@@ -7741,7 +7741,7 @@ def _pledges_decide_options(parser):
 
 
 def _pledge_specs():
-    """Pledges's commands (#1733, ``admin_pledges``).
+    """Pledges' commands (#1733, ``admin_pledges``).
 
     ``report pledges`` is a read-only count; ``export pledges`` needs full
     scope, as every export and as the download's post records activity;
@@ -7754,7 +7754,7 @@ def _pledge_specs():
         # Counts only: each row names a Family and its pledge.
         CommandSpec(
             "report pledges",
-            "Count the pledges on Pledges, by stage.",
+            "Count the pledges on the Pledges page, by stage.",
             report_pledges,
             "read_only",
             False,
@@ -7781,7 +7781,7 @@ def _pledge_specs():
         # or the bulk bar's: the page's service, keyed.
         CommandSpec(
             "pledges decide",
-            "Record a decision on pledges, as Pledges's actions do.",
+            "Record a decision on pledges, as Pledges' actions do.",
             pledges_decide,
             "full",
             True,
