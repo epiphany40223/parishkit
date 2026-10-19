@@ -672,3 +672,80 @@ def test_do_block_refuses_the_maps_it_replaces(name):
     ):
         cursor.execute(_replaced(old, name))
         cursor.execute(check)
+
+
+def final_refreshes():
+    """Every source refresh command recorded so far."""
+    from parishkit.stewardship.source.refresh_models import SourceRefreshCommand
+
+    return SourceRefreshCommand.objects.select_related("request")
+
+
+def test_an_update_requests_one_final_refresh_as_its_administrator(world):
+    """A run that updated a Member asks for one full refresh once it has
+    released the lease (#1688): a manual refresh attributed to the
+    Administrator who confirmed the plan, under the run's correlation id,
+    audited as following an update; the page sees it unfinished. The run
+    reports its Members done as it goes."""
+    from parishkit.stewardship.reports.census_publication import refreshing
+
+    plan = world.planned(uuid4())
+    _, run = world.confirm(plan)
+    assert not final_refreshes().exists()
+    assert world.execute(run.run_id) and state(run) == "succeeded"
+    assert proposal(world.first) == "published"
+    (command,) = final_refreshes()
+    task = TaskRun.objects.get(pk=run.run_id)
+    assert command.pk == tasks.final_refresh_command(run.run_id)
+    assert (command.cause, command.kind, command.actor_id) == (
+        "manual",
+        "full",
+        world.admin,
+    )
+    assert command.correlation_id == task.correlation_id
+    assert TaskRun.objects.filter(
+        root_id=command.request.task_root_id, task_type="source_refresh"
+    ).exists()
+    assert audited("census_publication_refresh_requested") == [
+        (None, command.pk, "started")
+    ]
+    assert refreshing([run.run_id])
+    assert (task.progress_current, task.progress_total) == (1, 1)
+
+
+def test_a_run_that_wrote_nothing_requests_no_refresh(world):
+    """A run whose Member changed since the check writes nothing, so it
+    asks for no refresh and audits none."""
+    plan = world.planned(uuid4())
+    _, run = world.confirm(plan)
+    world.gateway.records[world.first.entity_key]["firstName"] = "Changed"
+    assert world.execute(run.run_id) and state(run) == "succeeded"
+    assert world.gateway.writes == []
+    assert not final_refreshes().exists()
+    assert audited("census_publication_refresh_requested") == []
+
+
+def test_a_refused_final_refresh_leaves_the_run_as_it_ended(world, monkeypatch):
+    """A refresh the request path refuses (here, no configured organization)
+    leaves the run's outcome as it is, logged at WARNING, with nothing
+    audited; the next scheduled refresh catches up."""
+    import logging
+
+    warned = []
+
+    def refused(**_):
+        raise PermissionError("Source refresh requires its configured organization.")
+
+    monkeypatch.setattr(tasks, "request_refresh", refused)
+    monkeypatch.setattr(
+        tasks,
+        "emit_failure",
+        lambda error, **options: warned.append((type(error), options["level"])),
+    )
+    plan = world.planned(uuid4())
+    _, run = world.confirm(plan)
+    assert world.execute(run.run_id) and state(run) == "succeeded"
+    assert proposal(world.first) == "published"
+    assert not final_refreshes().exists()
+    assert audited("census_publication_refresh_requested") == []
+    assert warned == [(PermissionError, logging.WARNING)]

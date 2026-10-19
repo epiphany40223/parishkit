@@ -10,7 +10,8 @@ planner), ``publication_plans`` (the plan record) and
   preflight steps 2-7). Its ``domain_request_id`` is the plan's request
   key, so a repeated request or a rerun returns the same plan.
 - ``census_publication`` runs ``publish_plan`` for one confirmed plan (its
-  ``domain_request_id``).
+  ``domain_request_id``) and then, once its plan has an updated Member,
+  requests the final full refresh (``_request_final_refresh``, #1688).
 
 Both run in the general worker on the source queue (the provider-bound
 ParishSoft consumer, which refresh shares; publication also shares its
@@ -18,7 +19,8 @@ ParishSoft consumer, which refresh shares; publication also shares its
 migration 0101's task-type maps). The web side is three calls, for the
 later Publish page:
 
-- ``request_preflight`` queues a preflight for an Administrator;
+- ``request_preflight`` queues a preflight for an Administrator (Check
+  ParishSoft on Update ParishSoft, #1688);
 - ``confirm_and_publish`` records the Administrator's confirmation and
   queues its run in one transaction, so a confirmation never exists
   without its run;
@@ -33,8 +35,9 @@ until it is confirmed (``publication_gateway``), so nothing here can reach
 ParishSoft yet.
 """
 
+import logging
 from functools import partial
-from uuid import UUID
+from uuid import UUID, uuid5
 
 from django.db import DatabaseError
 
@@ -47,15 +50,22 @@ from parishkit.stewardship.jobs.dispatch import Handler, RecoveryPlan
 from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun
 from parishkit.stewardship.jobs.queues import WorkQueue
 from parishkit.stewardship.jobs.storage import enqueue, retry_failed
-from parishkit.stewardship.observability import correlation
+from parishkit.stewardship.observability import correlation, emit_failure
 from parishkit.stewardship.reports.export_services import admit_campaign
+from parishkit.stewardship.source.refresh_models import SourceRefreshCommand
+from parishkit.stewardship.source.requests import request_refresh
 from parishkit.stewardship.source.snapshot_models import SourceCurrent
+from parishkit.stewardship.storage import StorageInvariantError
 
 from .accepted_base import with_accepted_base
 from .models import ProposedChange
 from .publication import PLANNABLE_EXECUTIONS, plan_entity
 from .publication_gateway import ContactGatewayError
-from .publication_models import PublicationConfirmation, PublicationPlan
+from .publication_models import (
+    PublicationConfirmation,
+    PublicationOutcome,
+    PublicationPlan,
+)
 from .publication_plans import confirm_plan, record_plan, unlisted_changes
 from .publication_worker import (
     REQUEST_SECONDS,
@@ -198,10 +208,11 @@ def _request_binding(execution):
 def approved_changes(campaign_id):
     """Every open, approved, Automatic Member change of the campaign.
 
-    The changes a preflight considers, from the campaign's live responses.
-    Preflight and the Publish to ParishSoft page's waiting count (#528)
-    both leave out those whose Member left the Family
-    (``publication_plans.unlisted_changes``, #1738).
+    The changes a preflight considers, from the campaign's live responses:
+    the review pipeline's Ready to update changes and the accepted ones in
+    Conflict, which hold their Member back. Preflight and the Update
+    ParishSoft page's waiting count (#528, #1688) both leave out those whose
+    Member left the Family (``publication_plans.unlisted_changes``, #1738).
     """
     return ProposedChange.objects.filter(
         submission__campaign_id=campaign_id,
@@ -395,7 +406,78 @@ def _execute_publication(execution, *, enabled, gateway):
         if refusal is not None:
             _refuse(execution, refusal)
             return
+        _request_final_refresh(execution, plan_id)
         execution.transition("complete")
+
+
+# Names each run's final refresh command (``final_refresh_command``).
+_FINAL_REFRESH = "census-update-final-refresh-v1"
+
+
+def final_refresh_command(run_id):
+    """The command id of the final refresh one update run requests.
+
+    Derived from the run's task id, so a run replayed after a crash
+    requests (and audits) its refresh once, a later run of the same plan
+    (a recovery retry or Run again) requests its own, and the page finds
+    a plan's refreshes from its runs without any state of its own.
+    """
+    return uuid5(run_id, _FINAL_REFRESH)
+
+
+def _request_final_refresh(execution, plan_id):
+    """Request one full refresh after a run whose plan updated a Member.
+
+    The reports spec's "Confirming and running" and the data workflow: once
+    the run has released the source lease, a plan with at least one
+    ``published`` Member asks for a full refresh through the shared request
+    path, as a manual refresh attributed to the Administrator who confirmed
+    the plan, under the run's correlation id, and records
+    ``census_publication_refresh_requested`` so System logs says it followed
+    an update. That refresh's checks then move each written change to
+    Confirmed (#1689). It counts the plan's Members, not only this run's, so
+    a retry that finishes a crashed run's plan still refreshes. It is best
+    effort: when the request is refused (no promoted data, other campaign
+    work holding refreshes, the configured organization missing) the run's
+    outcome stands, a WARNING is logged, and the next scheduled refresh
+    catches up.
+    """
+    command_id = final_refresh_command(execution.claim.run_id)
+    try:
+        with execution.effect():
+            if SourceRefreshCommand.objects.filter(pk=command_id).exists():
+                # A replay of a run that already asked: asked and audited once.
+                return
+            if not PublicationOutcome.objects.filter(
+                entity__plan_id=plan_id, result="published"
+            ).exists():
+                return
+            actor_id = PublicationConfirmation.objects.values_list(
+                "actor_id", flat=True
+            ).get(plan_id=plan_id)
+            receipt = request_refresh(
+                command_id=command_id,
+                cause="manual",
+                actor_id=actor_id,
+                correlation_id=execution.correlation_id,
+                # This effect has just admitted the run, whose confirmed plan
+                # is the authority, under the same work-order lock.
+                authorize=lambda scope: True,
+            )
+            record_action(
+                Action.CENSUS_PUBLICATION_REFRESH_REQUESTED,
+                actor_kind=ActorKind.SYSTEM,
+                subject_id=receipt.command_id,
+                current_parish=True,
+                context={"outcome": Outcome.STARTED},
+            )
+    except (PermissionError, ValueError, DatabaseError, StorageInvariantError) as error:
+        emit_failure(
+            error,
+            level=logging.WARNING,
+            task_id=execution.claim.run_id,
+            name_class=True,
+        )
 
 
 def parishsoft_gateway(credential_path):
@@ -482,7 +564,7 @@ def _uuids(*values):
 def _administrator(store, actor_id):
     """Refuse anyone but an Administrator who may publish."""
     if not allows(current_principal(store, actor_id), Capability.PUBLISH_CENSUS):
-        raise PermissionError("Publishing to ParishSoft is unavailable.")
+        raise PermissionError("Updating ParishSoft is unavailable.")
 
 
 def request_preflight(store, actor_id, *, request_key, correlation_id, enabled):
