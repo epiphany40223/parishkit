@@ -25,6 +25,7 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.admin_forms import AdminForm
 from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.field_rules import refuse_empty_file
 from parishkit.stewardship.web.hosted_file_types import FileRefused
 from parishkit.stewardship.web.refusals import (
     UserFacingStale,
@@ -136,23 +137,26 @@ def _upload_limits(form, files):
 class UploadForm(AdminForm):
     """The file and an optional placeholder name; everything else is derived."""
 
-    file = forms.FileField(
-        label=gettext_lazy("File"),
-        max_length=255,
-        widget=forms.ClearableFileInput(
-            attrs={
-                "accept": ACCEPT,
-                "data-slug-from": "",
-                "data-missing-hint": REFUSALS["empty"],
-                # After an in-place Upload (#519) the emptied form holds
-                # Upload until a file is chosen, so focus goes here, to the
-                # field the reader uses next.
-                "data-in-place-focus": "",
-            }
-        ),
-        help_text=gettext_lazy(
-            "PDF, Word, Excel, PowerPoint, PNG, JPEG or GIF, up to 10 MB."
-        ),
+    # A 0-byte file is refused as soon as it is chosen (#1577).
+    file = refuse_empty_file(
+        forms.FileField(
+            label=gettext_lazy("File"),
+            max_length=255,
+            widget=forms.ClearableFileInput(
+                attrs={
+                    "accept": ACCEPT,
+                    "data-slug-from": "",
+                    "data-missing-hint": REFUSALS["empty"],
+                    # After an in-place Upload (#519) the emptied form holds
+                    # Upload until a file is chosen, so focus goes here, to
+                    # the field the reader uses next.
+                    "data-in-place-focus": "",
+                }
+            ),
+            help_text=gettext_lazy(
+                "PDF, Word, Excel, PowerPoint, PNG, JPEG or GIF, up to 10 MB."
+            ),
+        )
     )
     slug = forms.CharField(
         label=gettext_lazy("Placeholder name"),
