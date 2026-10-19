@@ -21,6 +21,8 @@ from .review_worklist_components import (
     PATH,
     REOPENED,
     REOPENED_NOTICE,
+    STALE_NOTICE,
+    STALED,
 )
 from .test_bulk_bar import assert_accessible
 from .test_table_sorting import MARK, MARKED, fulfil_post_with
@@ -327,7 +329,7 @@ def test_apply_and_clear_sit_after_the_last_filter(page, component_origin, width
     assert page.evaluate("document.documentElement.scrollWidth") <= width
 
 
-@pytest.mark.parametrize("width", [390, 700, 1280])
+@pytest.mark.parametrize("width", [390, 700, 1024, 1280])
 def test_the_notice_line_sits_under_the_filters(page, component_origin, width):
     """The answer to the reader's own decision sits between the filters and
     the table on one reserved line, the same height empty or filled, so the
@@ -344,13 +346,15 @@ def test_the_notice_line_sits_under_the_filters(page, component_origin, width):
     }"""
     page.goto(component_origin + PATH)
     empty = page.evaluate(measure)
-    page.goto(component_origin + ACCEPTED)
-    has_text(page.locator("#worklist-notice"), ACCEPTED_NOTICE)
-    filled = page.evaluate(measure)
-    for shown in (empty, filled):
-        assert shown["formBottom"] <= shown["top"] < shown["table"]
-        assert shown["gap"] <= 40
-    assert filled["height"] == empty["height"] and filled["table"] == empty["table"]
+    for path, notice in ((ACCEPTED, ACCEPTED_NOTICE), (STALED, STALE_NOTICE)):
+        page.goto(component_origin + path)
+        has_text(page.locator("#worklist-notice"), notice)
+        filled = page.evaluate(measure)
+        for shown in (empty, filled):
+            assert shown["formBottom"] <= shown["top"] < shown["table"]
+            assert shown["gap"] <= 40
+        assert filled["height"] == empty["height"], notice
+        assert filled["table"] == empty["table"], notice
 
 
 def test_a_reload_keeps_the_applied_filters(page, component_origin):
