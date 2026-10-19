@@ -199,7 +199,11 @@ def worklist_rows(rows):
                 # A Cannot contribute financially row is decided on Pledges:
                 # no box and no icons, only a link there (R39 finding 11).
                 "elsewhere": (
-                    {"label": "Decided in Pledges", "url": row["pledges_url"]}
+                    {
+                        "label": "Open in Pledges",
+                        "aria_label": f"Open {answer_name(row)} in Pledges",
+                        "url": row["pledges_url"],
+                    }
                     if row["kind"] == "cannot_give"
                     else None
                 ),
@@ -226,11 +230,10 @@ def worklist_page(counts, query, table, action, *, mutable):
         action=action,
         columns=COLUMNS,
         stage=query.stage,
-        counts={
-            stage.value: counts[stage.value]
-            for stage in STAGES
-            if stage.value in counts
-        },
+        # Every count, so Every stage also counts a Cannot contribute row
+        # at a Pledges-only stage (To enter by hand, Entered by hand), which
+        # no Limitations Stage choice names (R39 finding 11).
+        counts=dict(counts),
         stages=STAGES,
         items="answers",
         caption="Limitations",
