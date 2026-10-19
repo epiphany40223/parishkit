@@ -436,7 +436,6 @@ def test_page_shows_member_duid_beside_who():
             "status_choices": [],
             "route_choices": [],
             "kind_choices": [],
-            "export_timezones": ["UTC"],
         },
     )
     headings = [
@@ -504,7 +503,6 @@ def test_values_tell_a_field_never_read_from_one_read_empty():
             "status_choices": [],
             "route_choices": [],
             "kind_choices": [],
-            "export_timezones": ["UTC"],
         },
     )
 
@@ -573,7 +571,6 @@ def empty_page(changes, query, *, administrator):
                 ),
                 "route_choices": [],
                 "kind_choices": [],
-                "export_timezones": ["UTC"],
             },
         )
     )
@@ -854,7 +851,6 @@ def test_page_offers_row_actions_last_and_only_where_allowed():
                 "status_choices": [],
                 "route_choices": [],
                 "kind_choices": [],
-                "export_timezones": ["UTC"],
                 "administrator": administrator,
                 "action": "/admin/reports/census/",
                 "mutable": mutable,
@@ -1032,7 +1028,6 @@ def test_page_offers_bulk_review_only_on_reviewable_rows():
                 "status_choices": [],
                 "route_choices": [],
                 "kind_choices": [],
-                "export_timezones": ["UTC"],
                 "administrator": True,
                 "action": "/admin/reports/census/",
                 "mutable": True,

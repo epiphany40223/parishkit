@@ -17,13 +17,6 @@
 <label for="roster-ministry">{% translate "Ministry" %}</label><select id="roster-ministry" name="ministry"><option value="">{% translate "All Ministries" %}</option>{% for item in ministries %}<option value="{{ item.duid }}"{% if ministry == item.duid|stringformat:'s' %} selected{% endif %}>{{ item.name }}</option>{% endfor %}</select>
 {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
 {% button type="submit" %}{% translate "Apply" %}{% endbutton %}</form>
-<section aria-labelledby="roster-export-heading">
-<h2 id="roster-export-heading">{% translate "Download" %}</h2>
-<form id="table-export" data-table-sync method="post" action="{% url 'admin:ministry_roster_export' %}">{% csrf_token %}<input type="hidden" name="show" value="{{ show }}"><input type="hidden" name="ministry" value="{{ ministry }}">
-<label for="roster-format">{% translate "Format" %}</label><select id="roster-format" name="format">{% export_format_options "csv" "xlsx" "pdf" %}</select>
-<label for="roster-timezone">{% translate "Timezone" %}</label><select id="roster-timezone" name="timezone" data-information-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
-{% button type="submit" %}{% translate "Download this list" %}{% endbutton %}</form></section>
-<script src="{% static 'stewardship/information-export-v1.js' %}" defer></script>
 {# Row actions follow the shared action-table pattern (UX conventions, "Row actions and confirmation", #879): each row's tick is an icon button in the Actions column (roster-tick-row.html), and rows not yet marked have a selection box for the bulk bar's Mark entered in ParishSoft, which asks in the shared confirmation dialog. The sort headings, navigators and row ticks are forms of their own, so the boxes and the bulk key belong to form#roster-bulk (below, outside the region) through their form attribute. The region's data-refresh-url is the list's own address, which the dialog redraws the table from once the marks are recorded, keeping Show, Ministry, sort and page. #}
 <div id="{{ table.anchor }}" data-table-region data-refresh-url="{{ refresh_url }}">
 {% translate "Roster change pages" as pages_label %}{% include "stewardship/table-navigator.html" with table=table label=pages_label %}
@@ -56,6 +49,9 @@
 </div>
 {% include "stewardship/table-navigator.html" with table=table label=pages_label %}
 </div>
+{% comment %}The export (#1679, ui-conventions "Downloaded files"): one row of small export buttons (export_actions), each posting its format, below the table, in the browser's time zone; its form's hidden filters follow each in-place Apply, sort or page (data-table-sync).{% endcomment %}<div class="export-pane">
+<form id="table-export" data-table-sync method="post" action="{% url 'admin:ministry_roster_export' %}">{% csrf_token %}<input type="hidden" name="show" value="{{ show }}"><input type="hidden" name="ministry" value="{{ ministry }}">
+{% export_actions "csv" "xlsx" "pdf" name="roster" label=_("Export this list") %}</form></div>
 {% if mutable %}<form id="roster-bulk" method="post" action="{% url 'admin:ministry_roster_bulk' %}">{% csrf_token %}<input type="hidden" name="zone" value="" data-browser-zone>
 {% translate "Mark {name} entered in ParishSoft?" as title_one %}{% translate "Mark {count} changes entered in ParishSoft?" as title_many %}{% translate "This records that each change is already entered in ParishSoft. It never changes ParishSoft, and a mark made by mistake can be cleared in its row." as body %}{% translate "Mark entered" as accept %}{% translate "Marked {name} entered in ParishSoft." as done_one %}{% translate "Marked {count} changes entered in ParishSoft." as done_many %}{% include "stewardship/components/confirm-dialog.html" with dialog_id="roster-bulk-dialog" form_id="roster-bulk" fallback="roster-table" title_one=title_one title_many=title_many body=body accept=accept done_one=done_one done_many=done_many plain_accept=True %}
 </form>{% endif %}

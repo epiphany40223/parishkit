@@ -127,16 +127,9 @@ FORM_ZONE_TEXT = {
     ("ScheduleForm", "time"): "Copy campaign page only",
 }
 # Visible "UTC" text allowed in Admin templates, matched exactly.
-UTC_TEXT = {
-    # An export's own time zone menu offers UTC (the reader picks the file's
-    # zone, ui-conventions "Downloaded files"); its help says UTC is the
-    # choice when the browser reports no zone.
-    "Your browser's time zone is selected when your browser allows it; "
-    "otherwise UTC is selected. You can change it before exporting.",
-    "The response columns hold times. Your browser's time zone is selected "
-    "when your browser allows it; otherwise UTC is selected. You can change "
-    "it before exporting.",
-}
+# None since no export asks for a time zone (#1679): System logs' "Times in"
+# menu offers UTC as an option of the shared export row, not as text.
+UTC_TEXT = set()
 
 # Script lines that say "UTC" but show nothing, by (script, code fragment).
 SCRIPT_UTC = {
@@ -462,13 +455,12 @@ def test_the_utc_scan_catches_utc_wording(markup):
     assert utc_text(markup)
 
 
-def test_the_utc_scan_passes_zone_values_and_export_help():
-    """An export's UTC choice, its help and template code are not wording."""
+def test_the_utc_scan_passes_zone_values_and_template_code():
+    """An export's UTC choice and template code are not wording."""
     markup = (
         '<option value="UTC">UTC</option>'
         "{% for zone in zones %}<option{% if zone == 'UTC' %} selected{% endif %}>"
         "{{ zone }}</option>{% endfor %}"
-        f'{{% translate "{sorted(UTC_TEXT)[1]}" as tip %}}'
         "{# times are UTC here #}"
     )
     assert utc_text(markup) == []

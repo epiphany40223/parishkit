@@ -28,7 +28,6 @@ from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
-from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 from parishkit.stewardship.time_entry import (
     TimeEntryError,
@@ -527,9 +526,8 @@ def _page_response(
                 # a leader leads only Ministries the campaign asks about (#922).
                 campaign_marks=allows(principal, Capability.MINISTRY_FOLLOWUP),
                 # Export these requests (#1157): the applied view's filters,
-                # search and sort, and the time zone choices.
+                # search and sort. The file is in the browser's zone (#1679).
                 export_fields=query.form_values(),
-                export_timezones=sorted(timezone_names()),
                 export_pdf_limit=EXPORT_PDF_LIMIT,
             )
             if packet is not None:
