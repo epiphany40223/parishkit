@@ -168,7 +168,9 @@ def test_native_page_and_downloads(response_service, google, settings):
         # record ids read once, however many rows it shows.
         duid = rows[0]["family_duid"]
         link = timeline_link(harness.campaign, duid, directory_name(duid))
-        assert len(rows) == body.count(f"<td>{link}</td>".encode()) == 2
+        # The worklist draws the Family as each row's header cell.
+        cell = f'<th scope="row">{link}</th>'.encode()
+        assert len(rows) == body.count(cell) == 2
         assert len(link_reads(queries)) == 1
         assert get(browser, route + "?search=x")[0].status_code == 400
         response, body = search(browser, route, {"stage": "conflict"})
@@ -311,7 +313,7 @@ def test_staff_may_open_the_page_and_ministry_leaders_may_not(
     if allowed:
         assert response.status_code == 200 and b"9 Census Way" in body
         # Staff may open the Timeline (its summary), so the name links.
-        assert b'<td><a href="/admin/reports/families/' in body
+        assert b'<th scope="row"><a href="/admin/reports/families/' in body
     else:
         assert response.status_code in {403, 404} and b"9 Census Way" not in body
         # A real CSRF POST to the live route: refused by access, not CSRF.
