@@ -235,7 +235,7 @@ Production in either direction.
   (`accounts/setup_credentials.py`, `integration_candidates.workspace_info`).
   Every Gmail call site (`family_delivery.SmtpSession`,
   `readiness_delivery.deliver_sample`, `provider_check_worker`, `smoke.py`, and
-  the operational, digest, weekly and security delivery modules) selects its
+  the operational, report email and security delivery modules) selects its
   transport from the installed document type and refuses a mismatch with the
   profile.
 - **Helper subprocesses.** Helpers start with `python -I` and an empty
@@ -411,7 +411,7 @@ deployment sends:
   the same [mount rules](../operations/spec.md#runtime-storage).
 - **What is captured.** Everything the deployment sends, including the
   seeder's past mail (see [mail history](#mail-history)): Family invitations, Reminders and receipts, readiness
-  samples, Admin digests and operational and security alerts. Messages go to
+  samples, report emails and operational and security alerts. Messages go to
   whatever address the application chooses, so
   [mode routing](../background-processing/spec.md#mode-routing) is visible
   unchanged. Synthetic recipients are all at `@example.test`.
@@ -963,7 +963,7 @@ form baselines, presence steps and submissions, and each Tuesday and Thursday
 Reminder. Phase 2 visits them in order of intended instant:
 
 - **Occurrence instants** (start boundary, Initial, each Reminder, and each
-  campaign-local midnight for daily facts and digests): wait until work has
+  campaign-local midnight for daily facts and report emails): wait until work has
   [settled](#settled), jump to the instant (always: an occurrence instant is
   never run early), wait for that instant's [evidence](#settled), and wait for
   the resulting work to settle. The scheduler plans and the worker and
@@ -1111,7 +1111,7 @@ one, 576 seconds of it settle waits; the invariant check 0.3 seconds; phase 4
 (the refresh and the late-added Family's invitation) 37 seconds. The whole
 seed, with its stop and restart cycles, took about 17 minutes and sent 329
 messages to Mailpit (the sample, 81 Initials, 77 and 75 Reminders, 11
-receipts, digests and operational mail). Phase 2 dominates: the message rate
+receipts, report emails and operational mail). Phase 2 dominates: the message rate
 of about 46 a minute under the global work-order lock, the settle waits
 around each jump and the sends after each occurrence. The earlier 5-minute
 target no longer applies: the seed runs in the background (see
@@ -1271,7 +1271,7 @@ assert that:
   deliberately corrupted row;
 - the historical-ordering cases hold: no Reminder is sent to a Family that
   submitted before it, and the early responder's invitation is skipped;
-- every message during and after seeding, including Family, digest, security
+- every message during and after seeding, including Family, report email, security
   and operational mail, was sent only through the mail-catcher transport;
 - go-live reached `scheduled` with no activation catch-up, and the campaign
   became `active` at its start boundary;
