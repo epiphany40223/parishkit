@@ -99,28 +99,25 @@ def test_staff_queue_detail_history_and_accessibility(
     page.goto(component_origin + "/information-gated")
     assert page.get_by_role("button", name="Save follow-up").is_disabled()
     page.goto(component_origin + "/information-queue-gated")
-    page.get_by_text("Export complete results").click()
-    assert page.get_by_role("button", name="Queue complete export").is_disabled()
+    assert page.get_by_role("button", name="Export XLSX").is_disabled()
 
 
 def export_post(page, component_origin):
     """The complete-result form posts its private filters in the body."""
     page.goto(component_origin + "/information")
-    # The export starts closed (#227).
-    page.get_by_text("Export complete results").click()
-    page.get_by_label("Export format", exact=True).select_option("xlsx")
-    page.get_by_label("Export timezone", exact=True).select_option("UTC")
+    # The export row (#1679) asks no zone: the browser's goes unasked.
+    assert page.get_by_label("Export timezone", exact=True).count() == 0
     page.get_by_label("Include complete Staff workflow history").check()
     page.route(
         "**" + reverse("admin:information_export"),
         lambda route: route.fulfill(body="Queued"),
     )
     with page.expect_request(lambda request: request.method == "POST") as sent:
-        page.get_by_role("button", name="Queue complete export").click()
+        page.get_by_role("button", name="Export XLSX").click()
     assert "search=Sample" in sent.value.post_data
     assert "format=xlsx" in sent.value.post_data
     assert "history=yes" in sent.value.post_data
-    assert "browser_timezone=UTC" in sent.value.post_data
+    assert "browser_timezone=America%2FLos_Angeles" in sent.value.post_data
     assert "Sample" not in sent.value.url and "?" not in sent.value.url
 
 

@@ -3,9 +3,9 @@
 In Chromium and WebKit, light and dark, on a laptop and a 390 px phone. The
 real page is served by ``census_components``. There is no summary above the
 table; the filters are an always-open box (no disclosure) whose Status
-choices carry the counts the summary showed; and the download is a pane
-below the table, always shown. An in-place Apply keeps the box and the page,
-and its count follows.
+choices carry the counts the summary showed; and the export is its row of
+export buttons (#1679) below the table, always shown. An in-place Apply
+keeps the box and the page, and its count follows.
 """
 
 import pytest
@@ -19,7 +19,7 @@ pytestmark = pytest.mark.parametrize(
 )
 
 # The page's top-to-bottom order: the filters' box, the table's box and the
-# download pane, by the top and bottom of each in page coordinates (the
+# export pane, by the top and bottom of each in page coordinates (the
 # last of each: the table's navigator below it).
 ORDER = """() => {
   const box = (selector) => {
@@ -31,10 +31,10 @@ ORDER = """() => {
     filters: box('[data-filter-panel]'),
     table: box('#table .table-scroll'),
     navigator: box('#table nav.table-nav'),
-    download: box('section.export-pane'),
+    download: box('.export-pane'),
   };
 }"""
-# The computed background of an element and of the page, so the boxes are
+# The computed background of an element and of the page, so the box is
 # drawn in the scheme's own paper colour rather than a fixed light one.
 BACKGROUNDS = """(selector) => [
   getComputedStyle(document.querySelector(selector)).backgroundColor,
@@ -55,7 +55,7 @@ def luminance(color):
 def test_filters_open_and_download_below_the_table(
     page, component_origin, scheme, width
 ):
-    """No summary; filters always open; the download pane below the table."""
+    """No summary; filters always open; the export buttons below the table."""
     from playwright.sync_api import expect
 
     page.emulate_media(color_scheme=scheme)
@@ -80,23 +80,25 @@ def test_filters_open_and_download_below_the_table(
         "Every status ("
     ), choices
     assert all(choice.endswith(")") for choice in choices), choices
-    # The download is always shown, below the table and its page navigator.
-    download = page.locator("section.export-pane")
+    # The export is always shown, below the table and its page navigator:
+    # its compact row of buttons (#1679), no disclosure and no heading.
+    download = page.locator(".export-pane")
     expect(page.locator("details.export-panel")).to_have_count(0)
-    has_text(download.get_by_role("heading", level=2), "Download (CSV, XLSX or PDF)")
-    visible(page.get_by_role("button", name="Download with these filters"))
+    expect(download.get_by_role("heading")).to_have_count(0)
+    row = download.get_by_role("group", name="Export these changes")
+    for name in ("Export CSV", "Export XLSX", "Export PDF"):
+        visible(row.get_by_role("button", name=name, exact=True))
     order = page.evaluate(ORDER)
     assert order["filters"][1] <= order["table"][0], order
     assert order["table"][1] <= order["navigator"][0] + 1, order
     assert order["navigator"][1] <= order["download"][0], order
-    # Both boxes take the scheme's own colours: darker than light paper in
-    # dark mode, light in light mode.
-    for selector in ("section[data-filter-panel]", "section.export-pane"):
-        box, _body = page.evaluate(BACKGROUNDS, selector)
-        if scheme == "dark":
-            assert luminance(box) < 100, (selector, box)
-        else:
-            assert luminance(box) > 200, (selector, box)
+    # The filters' box takes the scheme's own colours: darker than light
+    # paper in dark mode, light in light mode.
+    box, _body = page.evaluate(BACKGROUNDS, "section[data-filter-panel]")
+    if scheme == "dark":
+        assert luminance(box) < 100, box
+    else:
+        assert luminance(box) > 200, box
     # Nothing scrolls the page sideways at a phone's width.
     assert page.evaluate(
         "document.documentElement.scrollWidth <= document.documentElement.clientWidth"
@@ -130,6 +132,6 @@ def test_in_place_apply_keeps_the_open_box(page, component_origin):
     has_text(page.locator("#table-filters-applied"), "1 applied")
     expect(panel).to_have_attribute("data-kept", "yes")
     visible(page.get_by_role("button", name="Apply filters"))
-    # The download's hidden filters follow the applied view.
+    # The export's hidden filters follow the applied view.
     expect(page.locator("#table-export input[name=route]")).to_have_value("automatic")
     assert page.evaluate(MARKED) == "kept"

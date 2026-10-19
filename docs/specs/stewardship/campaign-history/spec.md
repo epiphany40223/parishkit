@@ -1087,10 +1087,9 @@ aggregates only, apply the [small-count
 protection](#pledge-distribution), carry none of the free-text notes, and
 record
 `campaign_comparison_exported` like other exports. No public or
-unauthenticated link exists. The files hold campaign days and dates, no
-exact action times, so the download form asks for no time zone: the
+unauthenticated link exists. The download asks for no time zone: the
 browser's sets the file's request time, else the parish's, under the
-[time zone question](../ui-conventions/spec.md#downloaded-files) rule
+[time zones](../ui-conventions/spec.md#downloaded-files) rule
 ([#1161](https://github.com/epiphany40223/parishkit/issues/1161)).
 
 ### Digest section

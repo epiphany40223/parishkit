@@ -68,6 +68,7 @@ when it lands.
   [shared visual style](#shared-visual-style),
   [colour scheme](#colour-scheme),
   [status indicators](#status-indicators), [stat tiles](#stat-tiles),
+  [overview pages](#overview-pages),
   [stage boxes](#stage-boxes), [time entry](#time-entry),
   [schedules](#schedules), [schedule previews](#schedule-previews).
 - Tables: [Admin tables](#admin-tables),
@@ -130,8 +131,9 @@ browser-zone field (`data-browser-zone`) that `ui-v1.js` fills; the
 The rule covers schedule send times, campaign and financial date-times and
 report day buckets too (Administrator decision, 2026-10-04,
 [#558](https://github.com/epiphany40223/parishkit/issues/558)). A pure date
-with no time stays a calendar date and is never shifted. A download asks for a
-time zone only when its rows hold exact action times
+with no time stays a calendar date and is never shifted. A download never
+asks for a time zone: its times are in the browser's zone, except on a page
+that lets the reader view its times in UTC
 ([downloaded files](#downloaded-files)). The rule governs how
 Admin pages show and take times; system definitions such as the campaign-local
 day and the active window keep their campaign-zone definitions. Shown
@@ -194,7 +196,9 @@ and page placeholders, and PDF exports all use it. Every date or time inside
 an Admin table cell (row headers included) uses its compact variant (short
 month names or two-digit years, no time-zone abbreviation), still in the
 browser's time zone, so rows stay short and columns narrow (Administrator,
-2026-10-11, #1093). The full form stays in headings, sentences, summaries and
+2026-10-11, #1093); so does every date or time in an
+[overview page's](#overview-pages) fact strip, for the same reason (#1673).
+The full form stays in headings, sentences, summaries and
 detail panels, and downloads keep their own formats (below). System logs rows
 add seconds and the time-zone abbreviation to the compact form, with no UTC
 offset, so entries can be compared exactly
@@ -479,9 +483,8 @@ never scrolls to show it (Administrator, pk-local review of
   `data-in-place-quiet`), and if it gets no answer the same address is
   loaded the ordinary way, without a jump to a panel. Because the chart,
   statistics and export panels are all regions, paging or sorting the daily
-  table refreshes all three from the same answer: an export format chosen
-  but not yet used and an open "Technical details" return to their
-  defaults, as an ordinary load would leave them. A
+  table refreshes all three from the same answer: an open "Technical
+  details" returns to its default, as an ordinary load would leave it. A
   disclosure marked `details[data-keep-open][id]` is the exception: one the
   reader opened stays open in the fresh copy of its region, so a refresh
   does not fold away what they were reading (the
@@ -2321,12 +2324,13 @@ Census changes keeps its filters always open (below), and the other reports
 keep theirs closed.
 A panel's summary says how many are applied
 ("Filters: 2 applied", or "none applied"), and that count follows an in-place
-Apply while the panel and its form keep their elements. A report's export form
-is likewise a closed disclosure (for example, "Export complete results (CSV,
-XLSX or PDF)"). The Family directory,
-Additional information, Financial stewardship, Limitations and
-Ministry requests follow this (#227). Census changes, a worklist, keeps its
-filters always open and its download below the table, always shown
+Apply while the panel and its form keep their elements. A report's export is
+not a disclosure: it is the compact row of
+[export buttons](#downloaded-files) below the page's table, always shown, which
+takes one line (#1679, replacing #227's closed export disclosure). The Family
+directory, Additional information, Financial stewardship, Limitations and
+Ministry requests follow the Filters panel rule (#227). Census changes, a
+worklist, keeps its filters always open
 ([its filters and downloads](../reports/spec.md#census-change-filters-and-downloads),
 [#1682](https://github.com/epiphany40223/parishkit/issues/1682)). Ministry requests keeps its
 compact filter bar rather than a Filters panel: its By Ministry counts apply
@@ -2347,8 +2351,8 @@ field, such as having no emails to schedule, always stays visible. The field
 remains described by its full help, so screen readers announce it without
 opening the tip. Checkbox help is a toggletip beside the box. A toggletip in a
 table heading is described by its bubble alone, and it closes when the table's
-box scrolls its button out of view. An export form carries no
-help about its format menu (see [Downloaded files](#downloaded-files)).
+box scrolls its button out of view. An export carries no
+help about how its formats write values (see [Downloaded files](#downloaded-files)).
 
 An "i" button always opens a floating toggletip, on Family and Admin pages
 alike and wherever the button sits: a label row, a filter bar, a table heading
@@ -2773,6 +2777,71 @@ two ways of reading to a screen reader. **Precedent.**
   emailed. A guard test fails when a template outside `components/` draws
   stat-tile markup by hand, with no exceptions. Email and PDF reports
   cannot load the stylesheet and keep their own layouts.
+
+### Overview pages
+
+**Rule.** An overview page (Home, and any later dashboard that sums up
+other pages) summarizes and links; the detail lives on the page it links.
+At a laptop window (1366 × 768, with the menu open) its main regions fit
+without scrolling.
+
+- **Problems are a count.** Problems another page lists are one short line
+  each on the overview: the count in plain words ("2 system problems") and
+  one link to the page that lists them, never the problems themselves. A
+  line that reports a problem is a [status indicator](#status-indicators)
+  (its word, icon and colour): the error look when any counted problem is
+  an error, else the warning look. A line that counts work waiting for
+  someone's decision rather than a problem (notices to acknowledge, held
+  emails) is a plain notice, with no state word or icon. The lines sit
+  together in one compact row under the page heading, wrapping on a phone,
+  and are left out when there is nothing to count. They are page-load
+  state, not an in-place change, so they reserve no space.
+  **Exception:** a problem that keeps the linked page from opening is not
+  counted; the overview keeps that problem's own sentence instead, with no
+  link, because a link to a page that cannot be shown leads nowhere.
+- **Facts are one strip.** Facts about one thing (a campaign's name,
+  state, dates, the next mailing) are a single key/value strip (`<dl>`),
+  not paragraphs, with each date and time in the compact
+  [date format](#date-format), as in a table cell. The panel's heading row
+  carries its "more detail" links: one to each page that breaks those
+  facts down (a campaign's dates page and its response dashboard, for
+  example), separated by " · ".
+- **Figures are stat tiles.** Headline figures use the
+  [stat tiles](#stat-tiles), one population per figure, with a link to the
+  page that breaks them down.
+- **Links to work are link cards.** A list of places to go next is a grid
+  of **link cards**: each card is one link whose text reads the page's
+  name, then its count in large tabular figures and what the count means
+  ("12", "not yet entered"), in that DOM order. A card is two short
+  lines, so a row of them stays compact in wide fonts: the page's name
+  above what the count means, with the count large at the card's end,
+  spanning both lines. The card's start bar reinforces the count and is
+  never its only signal: the warning colour (`--warning-border`) while the
+  count is above zero, the accent (`--accent`) at zero, and the plain edge
+  (`--border`) when the card has no count. A related count that another
+  list holds apart (another mode's, say) is a second, small link inside
+  the card, at its end after a divider, never another card: it shows its
+  count and a short note ("1 in Testing"), its name reads in full for
+  screen readers, the card keeps its two lines, and the start bar warns
+  while either count is above zero. A card the menu greys out is
+  plain text in the muted colour with the menu's reason, never a link.
+  Cards keep their size on hover and focus
+  ([no layout shift](#no-layout-shift)) and stack on a phone with no
+  sideways scroll.
+- **Acknowledgement queues move to their page.** A list someone works
+  through item by item (notices to acknowledge, for example) lives on the
+  page it belongs to; the overview shows its count line. **Exception:** a
+  rare item that must be seen at once and is acknowledged in place (Admin
+  Home's security events awaiting acknowledgement) stays on the overview
+  as its own panel.
+
+**Why.** The Administrator, 2026-10-18, on Home: "This should be more of an
+overview dashboard (with links to more detailed information) rather than
+detailed information itself." **Shared code.** `components/link-cards.html`
+and `.link-cards` in `ui-v1.css`; `.home-alerts` for the count lines.
+**Precedent.** Admin Home
+([#1673](https://github.com/epiphany40223/parishkit/issues/1673); see
+[Home page](../admin-portal/spec.md#home-page)).
 
 ### Stage boxes
 
@@ -3375,7 +3444,7 @@ selection.
 A **worklist** (a table a reader works through, such as the review
 pipeline's [review worklist](../review-pipeline/spec.md#review-worklist)) has its filters
 always open, never behind a disclosure, above the table, and its export
-pane below the table. A table's create action (the review worklist's
+buttons below the table. A table's create action (the review worklist's
 **Add**) sits in its selection bar, shown only to readers allowed to add
 there ([#1680](https://github.com/epiphany40223/parishkit/issues/1680)).
 
@@ -3874,8 +3943,7 @@ recorded technical or design reason says otherwise (Administrator decision,
 Response dashboard's export drops the participation chart's PNG
 ([#1537](https://github.com/epiphany40223/parishkit/issues/1537)): its page
 holds more than one chart, and the PNG is still accepted from the command
-line. An export form is its format menu and its
-button; it carries no explanation of how each format writes dates or money
+line. An export is its row of export buttons (below); it carries no explanation of how each format writes dates or money
 (Administrator decision, 2026-10-17,
 [#1538](https://github.com/epiphany40223/parishkit/issues/1538)). **Shared code.** `reports/pdf_design.py` and
 `reports/xlsx_design.py`; `web/design_tokens.py`. The format rules for each file type (CSV neutralizing,
@@ -3888,8 +3956,9 @@ Export forms and export status pages carry no sensitive-data banner
 (Administrator decision, 2026-10-17,
 [#1539](https://github.com/epiphany40223/parishkit/issues/1539)). A sentence
 that says what the file holds or leaves out (for example, that a Family
-link's private email-link part is not included) stays as plain help in the
-export form. The privacy line inside each downloaded file stays: it travels
+link's private email-link part is not included) stays as plain help with
+the export, in its row's toggletip
+([export actions](#downloaded-files)). The privacy line inside each downloaded file stays: it travels
 with the file to readers who never saw the page
 ([file design](../reports/spec.md#file-design)). **Why.** The banner was a
 reminder that gated nothing; the protections are role checks, `no-store`,
@@ -3949,52 +4018,94 @@ Recorded exceptions to the rule above:
 Not data exports, so outside the rule: the deployment configuration
 document, hosted files (served as uploaded) and chart images.
 
-**Time zone question.** A download asks for a time zone only when its rows
-hold exact times of actions: submissions, log entries, staff actions,
-deliveries. Any other download (campaign dates, contact dates, no times at
-all) asks nothing: its form sends the browser's zone in a hidden
-`data-browser-zone` field, which sets the file's frame times (Captured at,
-Requested at, Source as of), and the file names that zone. The one exception
-is the Response dashboard: its export form posts the page's own `query.timezone`, the
-zone the page was drawn in, which `report-v1.js` fills with the browser's
-(the [participation graph](../reports/spec.md#participation-graph)). The
-server falls back to the parish's time zone rather than refusing a missing or
-unknown zone there, since the reader was never asked. **Why.** A zone question beside a file with no times
-in it is a choice that changes nothing the reader cares about (Administrator
-feedback, 2026-10-12). Log and timeline exports keep the choice because they
-are shared and compared against records kept in other zones. **Shared
-code.** `web.dates.unasked_zone` and `web.dates.parish_zone`; the `test_export_time_zones.py` guard lists
-which forms ask. **Precedent.**
+**Export actions.** Every Admin export is one shared row of small
+secondary buttons, one per format the download offers, side by side: "Export
+XLSX", "Export CSV", "Export PDF" (and a page's own, such as "Export JSON
+Lines"). Each button posts its own format; there is no format menu and no
+separate Download, Queue or Generate button. The buttons are outlined, with
+a smaller font, padding and height than the portal's primary green buttons,
+so they read as secondary actions, and they wrap onto a second line on a
+phone rather than widening the page. A format the download cannot
+take right now (Ministry requests' PDF above its row limit) is shown
+unavailable, named by a line below the row that says why; while other campaign work
+holds exports, every button is unavailable with its reason (#563). The
+in-place progress, waiting note and refusal behaviour of the old Download
+buttons is unchanged: the clicked button shows it is busy, the row's other
+buttons wait with it, and the waiting note appears below the row. On a page
+with a table the row sits below the table, so the page's data starts higher.
+**No explanatory line.** Export buttons carry no explanatory line: no
+count ("Exports all 7 estimated matching Families, every page."), no scope
+("The file holds the list these choices show") and no list of the file's
+columns, above, beside or under the row, nor in a toggletip, because the
+buttons are self-explanatory (Administrator decision, 2026-10-18, pk-local
+R37 on [#1702](https://github.com/epiphany40223/parishkit/pull/1702)). Only
+a line saying why a button is unavailable, and a toggletip for what a reader
+could not guess (what the file leaves out, such as a Family link's private
+email-link part, or holds beyond the page) remain; the file's own Report
+information keeps its count and filters. `test_export_actions.py` fails when
+an export page draws a count, scope or column-list line.
+
+Not covered: a ready file's own Download button on its export status page,
+the campaign archive download, and hosted files, which are one file each,
+not a choice of formats. **Why.** Exports are common across the portal, and a
+format menu and a button (with a zone menu, and often inside a disclosure)
+took vertical and horizontal space beside every table for a one-click choice
+(Administrator request, 2026-10-18). **Shared code.** The `export_actions`
+template tag (`accounts/templatetags/stewardship.py`, drawing
+`components/export-actions.html` with the shared `{% button %}`), and the
+`.export-actions` rules in `ui-v1.css`;
+`tests/stewardship/test_export_actions.py` fails when an export form draws
+its own format menu or buttons. **Precedent.**
+[#1679](https://github.com/epiphany40223/parishkit/issues/1679).
+
+**Time zones.** A download never asks for a time zone. Every time in the file,
+in its rows and in its frame (Downloaded at, Captured at, Requested at,
+Source as of), is in the browser's zone, which the export row posts in a
+hidden `browser_timezone` field (`data-browser-zone`, filled by `ui-v1.js`),
+and the file names that zone. The Response dashboard's row posts the page's
+own `query.timezone`, the zone the page was drawn in, which `report-v1.js`
+fills with the browser's (the
+[participation graph](../reports/spec.md#participation-graph)). The reader
+was never asked, so the server falls back to the parish's time zone rather
+than refusing a missing or unknown zone. **Exception:** a download whose page
+lets the reader view its times in UTC keeps a time zone choice beside its
+buttons, preselected to the zone the page is showing (the browser's), with
+UTC the other choice. The only such page is System logs, whose export offers
+"Times in" UTC or this browser's zone
+([Admin portal](../admin-portal/spec.md#logs)). The servers keep accepting an
+explicit `timezone` field, which wins over the browser's zone where a download
+took one before, so a tab opened before this change still works. **Why.** The
+reader reads the page in their own zone, so a file in the same zone needs no
+question, and a menu of hundreds of zones beside every export was a choice
+that rarely changed anything (Administrator request, 2026-10-18, replacing the
+rule of #1127 that downloads with action times ask). System logs keeps its
+choice because it is compared against server and provider logs kept in UTC.
+**Shared code.** The `export_actions` tag (its `zone_choice` and `zone_value`
+arguments), `web.dates.unasked_zone`, `web.dates.download_zone` and
+`web.dates.parish_zone`; the `test_export_actions.py` guard lists the one page
+with a zone choice. **Precedent.**
+[#1679](https://github.com/epiphany40223/parishkit/issues/1679), replacing
 [#1127](https://github.com/epiphany40223/parishkit/issues/1127).
 
-Asking: System logs, Response lists, Financial stewardship, Limitations,
-Census changes, Additional information, Ministry requests' Export these
-requests (which replaced one Ministry's joining or leaving lists, #1157),
-Roster changes to enter, the Timeline, and the Active parishioner
-family directory code list only while its response columns are included
-(the field comes and
-goes with that applied choice, as the last field of its row, so nothing
-moves). Not asking: the Ministry follow-up packet, the participation exports,
-the Campaign comparison downloads
-([#1161](https://github.com/epiphany40223/parishkit/issues/1161)), the
-directory code list without response columns, the postal mail merge, and
-the Family test names file (`test families-preview --names`, which uses the
-parish's zone unless `--timezone` is given, as a host command has no
-browser).
+The command line keeps its own `--timezone` options: a host command has no
+browser, so it uses the parish's zone unless `--timezone` is given (the
+Family test names file, `test families-preview --names`, and the `pk-admin`
+export commands that take it).
 
-**Default format.** Every data export's format menu offers XLSX first and
-preselects it; the other formats it offers (CSV, PDF, and a page's own such as
-PNG or JSON Lines) follow, so CSV stays available wherever it was. A download
-or `pk-admin` command posted or run without a format produces XLSX too.
-Document downloads keep their own first choice: the Campaign comparison's PDF
-summary and the Ministry follow-up packet, which are read rather than sorted.
-**Why.** Most readers open the file in a spreadsheet, and one rule for every
-form means no page picks its own default (Administrator request, 2026-10-12).
-**Shared code.** `web.exports.DEFAULT_EXPORT_FORMAT`, the `export_format_options`
-template tag (which orders and selects the options, and with `disabled=` shows
-one offered format as unavailable, never selected), and
+**Default format.** Every data export's row puts Export XLSX first; the other
+formats it offers (CSV, PDF, and a page's own such as JSON Lines) follow, so
+CSV stays available wherever it was. A download or `pk-admin` command posted
+or run without a format produces XLSX too. Document downloads keep their own
+first choice: the Campaign comparison's PDF summary and the Ministry follow-up
+packet, which are read rather than sorted, put Export PDF first. **Why.** Most
+readers open the file in a spreadsheet, and one rule for every form means no
+page picks its own default (Administrator request, 2026-10-12). **Shared
+code.** `web.exports.DEFAULT_EXPORT_FORMAT`, the `export_actions` template tag
+(which orders the buttons, keeps a document's own order with `own_order`, and
+with `disabled=` shows one offered format as unavailable), and
 `admin_cli.DEFAULT_EXPORT_FORMAT` (spelled out, kept equal by a test);
-`tests/stewardship/test_export_default_format.py` guards every format menu.
+`tests/stewardship/test_export_default_format.py` and `test_export_actions.py`
+guard every export row.
 **Precedent.** [#1190](https://github.com/epiphany40223/parishkit/issues/1190).
 
 Current state: since the

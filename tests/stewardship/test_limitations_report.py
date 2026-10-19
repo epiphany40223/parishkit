@@ -245,7 +245,6 @@ def page(raw, paging=None):
             "campaign_id": "00000000-0000-4000-8000-000000000000",
             "query": query,
             "query_fields": query.form_values(),
-            "export_timezones": ["UTC"],
         },
     )
 
