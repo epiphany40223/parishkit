@@ -91,6 +91,42 @@ def us_regions():
     ) | {"AA", "AE", "AP"}
 
 
+# Plainer names than pycountry's "Virgin Islands, U.S." and "United States
+# Minor Outlying Islands" for the Family form's State drop-down.
+US_REGION_NAMES = {
+    "VI": "U.S. Virgin Islands",
+    "UM": "U.S. Minor Outlying Islands",
+}
+
+# USPS military routing regions; pycountry does not list them.
+MILITARY_REGIONS = (
+    ("AA", "Armed Forces Americas"),
+    ("AE", "Armed Forces Europe"),
+    ("AP", "Armed Forces Pacific"),
+)
+
+
+@cache
+def us_region_choices():
+    """Return the Family form's US State drop-down as (code, label) pairs.
+
+    The codes are exactly ``us_regions()``. Labels read "Kentucky (KY)"; the
+    pycountry subdivisions sort by name and the military regions follow them.
+    Presentation only: the form definition digest keeps hashing the codes.
+    """
+    source = {
+        subdivision.code.removeprefix("US-"): subdivision.name
+        for subdivision in pycountry.subdivisions.get(country_code="US")
+    }
+    named = sorted(
+        ((code, US_REGION_NAMES.get(code, name)) for code, name in source.items()),
+        key=lambda item: (item[1].casefold(), item[0]),
+    )
+    return tuple(
+        (code, f"{name} ({code})") for code, name in (*named, *MILITARY_REGIONS)
+    )
+
+
 def blank_address():
     """Provide a fresh empty browser representation, never a fabricated source."""
     return dict.fromkeys(ADDRESS_COMPONENTS, "")
