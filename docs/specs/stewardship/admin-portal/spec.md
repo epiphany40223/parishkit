@@ -6581,9 +6581,12 @@ ParishSoft" (the default) or "No longer in ParishSoft" (#1217, below).
 
 **Columns**, in the shared
 [table column order](../ui-conventions/spec.md#table-column-order) and the
-worklist's own: Member (the row header, linking to the request page; it
-sorts), Member DUID ("New Member" for a Member added on the form), Ministry
-(the Family's Ministry, or the one the parish added; it sorts; a Ministry
+worklist's own: Member (the row header; it sorts; it opens the Family hub
+for Staff and Administrators and is plain text for a Ministry leader, per
+the [worklist link rule](../ui-conventions/spec.md#admin-tables), R38),
+Member DUID ("New Member" for a Member added on the form), Ministry
+(the Family's Ministry, or the one the parish added, linking to the request
+page for every reader; it sorts; a Ministry
 since removed from the campaign carries the "Removed" badge), Last contact,
 then the worklist's Family's answer ("Join", "Leave", or "Leave (cannot
 participate)"; blank for a request the parish added), Reviewer's value (the
@@ -6721,7 +6724,7 @@ form is never one. One SQL function decides this
   badge ("Not in ParishSoft", "Inactive in ParishSoft" or "Deceased in
   ParishSoft"), so it cannot be taken for a Ministry's activity mark. A
   Member the data no longer has in this Family has no name, so the badge
-  alone is the row's link, and its request page's heading names it by that
+  alone stands for the name, and its request page's heading names it by that
   status (#1216). Their rows offer no action and have no box to tick. A
   request page opened from it gives the specific reason (no longer in
   ParishSoft, now in another Family, inactive or deceased) and has no

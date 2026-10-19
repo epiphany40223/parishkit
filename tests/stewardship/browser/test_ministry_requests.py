@@ -9,6 +9,7 @@ from django.urls import reverse
 from .followup_components import (
     COUNTED,
     GATED_REQUESTS,
+    HUB,
     LEADER,
     PACKET_LIMIT,
     PACKET_REFUSED,
@@ -345,3 +346,23 @@ def test_unrefused_packet_hint_row_is_the_hint_alone(page, component_origin):
     }""")
     assert row == pytest.approx(hint, abs=0.5) and hint > 0
     assert page.locator("#ministry-packet_error").is_hidden()
+
+
+@pytest.mark.parametrize(
+    ("path", "hub"), [(REQUESTS, True), (LEADER, False)], ids=["staff", "leader"]
+)
+def test_member_opens_the_hub_and_ministry_the_request(
+    page, component_origin, path, hub
+):
+    """A Member's name opens the Family hub for Staff and plain text for a
+    Ministry leader; the Ministry opens the request's page for both (R38
+    finding 13)."""
+    page.goto(component_origin + path)
+    first = page.locator("#table tbody tr").first
+    name = first.locator("th[scope=row]")
+    if hub:
+        assert name.locator("a").get_attribute("href") == HUB
+    else:
+        assert name.locator("a").count() == 0
+    ministry = first.locator("td a[href*='/follow-up/']")
+    assert ministry.count() == 1

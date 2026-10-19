@@ -431,6 +431,10 @@ def test_clipped_name_tip_never_swallows_the_next_tap(browser_engine, component_
         page = context.new_page()
         page.goto(component_origin + "/followup-all")
         name = page.locator(ROWS).nth(1).locator(".cell-clamp")
+        # The Ministry name now opens the request's page (R38 finding 13),
+        # and a tap on a link opens it as it shows the tip; the tip itself is
+        # what this checks, so its link is set aside.
+        name.evaluate("node => node.closest('a').removeAttribute('href')")
         name.tap()
         tip = page.locator(".admin-tip.is-shown")
         expect(tip).to_have_text(name.text_content())
