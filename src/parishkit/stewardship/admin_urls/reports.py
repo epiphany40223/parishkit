@@ -57,6 +57,14 @@ def _page(route, view, name, *extra):
 patterns = [
     path("reports/", workspace_views.index, name="reports"),
     _page("reports/responses/", workspace_views.dashboard, "response_dashboard"),
+    # The passive figures status the Response dashboard and Campaign
+    # comparison poll while they are open (#1586): whether newer figures are
+    # ready.
+    _page(
+        "reports/responses/status/",
+        workspace_views.dashboard_status,
+        "response_dashboard_status",
+    ),
     _page(
         "reports/responses/exports/",
         export_ui.create,

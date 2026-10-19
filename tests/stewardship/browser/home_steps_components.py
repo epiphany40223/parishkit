@@ -26,6 +26,7 @@ FAMILIES = {
     "active": 400,
     "participation": Percentage(40, 400),
     "responded": 160,
+    "active_responded": 150,
     "recent": 12,
 }
 CAMPAIGN = SimpleNamespace(
@@ -102,7 +103,7 @@ def components(context, admin):
                 "campaign": CAMPAIGN,
                 "refreshed_at": None,
                 "families": FAMILIES,
-                "family_tiles": family_tiles(FAMILIES),
+                "family_tiles": family_tiles(FAMILIES, recent=FAMILIES["recent"]),
             },
         },
     )
@@ -160,13 +161,13 @@ def closed_components(context, admin):
 
 
 # Home with System health problems and a critical-problems banner (#1214):
-# an error, two warnings (one Home also reports in its refresh block), and
-# a banner group whose problem is current.
+# an error and two warnings, counted in one line since #1673, and a banner
+# group whose problem is current.
 HEALTH_PATH = "/home-health"
 # Home with the shared kinds of #1214's slice 1: an unknown No-reminders
 # WorkGroup while Reminders are scheduled, a backup key that cannot be
 # checked, a requested backup never picked up, and (Production) off-site
-# copies not set up.
+# copies not set up; Home counts them in one line since #1673.
 SHARED_PATH = "/home-health-shared"
 
 
@@ -174,7 +175,6 @@ def health_components(context, admin, chrome, actor, configuration):
     """Home as an Administrator sees it while System health lists problems."""
     from datetime import timedelta
 
-    from parishkit.stewardship.accounts.backup_destination import OffsiteStatus
     from parishkit.stewardship.audit.critical_events import summary
     from parishkit.stewardship.source.refresh_status import FullRefreshStatus
     from parishkit.stewardship.system_health import Problem, Subject
@@ -209,10 +209,7 @@ def health_components(context, admin, chrome, actor, configuration):
                 "can_refresh": True,
                 "refresh_key": "component-key",
                 "health_problems": problems,
-                "health_listed": {"failed": True, "late": False, "offsite": True},
-                "offsite": OffsiteStatus(
-                    "failed", "Copying the newest backup failed.", now, None, None
-                ),
+                "health_severity": "error",
             },
         },
     )
@@ -222,7 +219,6 @@ def health_components(context, admin, chrome, actor, configuration):
             workgroup="Do not remind",
             detail="reminders_scheduled",
         ),
-        Problem("backup_key_unchecked"),
         Problem(
             "backup_request_failed",
             at=now - timedelta(hours=1),
@@ -241,12 +237,10 @@ def health_components(context, admin, chrome, actor, configuration):
                 "campaign": CAMPAIGN,
                 "refreshed_at": None,
                 "health_problems": shared,
-                "health_listed": {
-                    "failed": False,
-                    "late": False,
-                    "offsite": False,
-                    "offsite_unset": True,
-                },
+                "health_severity": "error",
+                # An unreadable backup key keeps System health from
+                # opening, so Home states it instead of counting it.
+                "health_lines": (Problem("backup_key_unchecked"),),
                 "offsite_unset": True,
             },
         },

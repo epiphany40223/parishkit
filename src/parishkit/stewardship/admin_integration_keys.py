@@ -1,12 +1,13 @@
 """A key change's status, Finish switching and key replacement (ADM-11 PR 10).
 
-``integration key status`` is the **Key replacement status** page
-(``admin:credential_status``) and ``integration key finish-switching-preview``
-and ``integration key finish-switching`` the **Finish switching to the new
-key** page's review and its confirm button (``admin:select_credential``),
-through the pages' own pieces (``secret_request_status`` and ``_selectable``;
-``_selection``, ``_changes``, the page's salt and ``confirm_intent``), so the
-pages and the command line cannot drift:
+``integration key status`` is a key change's status, which the settings
+page's status line shows, and ``integration key finish-switching-preview``
+and ``integration key finish-switching`` are the settings page's **Finish
+switching to the new key** review and its Apply, in the page's review dialog
+(#1568; until then, the separate Key replacement status and Finish switching
+pages), through the page's own pieces (``secret_request_status`` and
+``_selectable``; ``_selection``, ``_changes``, the page's salt and
+``confirm_intent``), so the page and the command line cannot drift:
 
 - ``integration key status TARGET [--request-id ID]`` admits passively, as
   the page does, and reads one of the session Administrator's own key
@@ -51,7 +52,8 @@ from .admin_reads import NotAvailable, ReadModel, _held, _recheck, config_reques
 # keeps them equal.
 KEY_TARGETS = ("parishsoft", "google_workspace", "slack")
 # The page's own refusal of a switch that would change the loaded ParishSoft
-# organization (``credential-selection.html``'s blocked notice).
+# organization (``integration_selection_views.ORGANIZATION_LOCKED``, which a
+# test keeps equal).
 ORGANIZATION_LOCKED = (
     "This key was saved with a different ParishSoft organization ID. The "
     "organization ID can't change after ParishSoft data has been loaded, so "
@@ -340,7 +342,7 @@ def confirm_finish(caller, service, target, *, token, context):
     ``admin_cmd_integration_key_finish_switching`` and the ``policy_change``
     notice in its own durable transaction. A changed loaded ParishSoft
     organization found under the lock is ``invalid`` at ``organization_id``
-    (the page answers its 503 refusal page instead). ``context["committed"]`` and
+    (the page refuses it in its dialog). ``context["committed"]`` and
     ``context["request_id"]`` follow ``parish confirm``'s rules, so a later
     error is ``outcome_unknown`` naming the request.
     """

@@ -22,7 +22,6 @@ from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
-from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 from parishkit.stewardship.time_entry import (
     TimeEntryError,
@@ -719,9 +718,8 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None, packe
                 bulk_actions=bulk_actions(),
                 bulk_kind_hints=BULK_KIND_HINTS,
                 # Export these requests (#1157): the applied queue view's
-                # filters, search and sort, and the time zone choices.
+                # filters, search and sort.
                 export_fields=query.form_values(),
-                export_timezones=sorted(timezone_names()),
                 export_pdf_limit=EXPORT_PDF_LIMIT,
             )
             if packet is not None:
