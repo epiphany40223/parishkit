@@ -20,7 +20,9 @@
 --   * stewardship_submission_pledge_guard_v1 (new trigger function): a
 --     recorded amount must be 0139's stewardship_pledge_upcoming_v1 for the
 --     response's own validation snapshot, campaign and Family, on a response
---     answering the financial questions. INSERT only: 0001's submission
+--     answering the financial questions. It pins the amount to the
+--     snapshot's sum; the giving read's proof is the application's check,
+--     as for the Entered by hand mark (0139). INSERT only: 0001's submission
 --     guard already refuses every UPDATE and admits only the rehearsal
 --     cleanup's DELETE. It runs with the submitting login's rights, which
 --     already read every input (web reads the pledge snapshot rows, the
@@ -34,9 +36,11 @@
 --     records on a decision, carries that A. A To review pledge no decision
 --     is in force for whose recorded A equals the Family's annual pledge is
 --     Confirmed at the submit (rules 3 and 4: nothing to enter), reported as
---     a confirmed check at that amount, unless an earlier version of the
---     Family's pledge was marked Entered by hand, which stays for the
---     refresh to judge. Every 0142 rule is otherwise unchanged.
+--     a confirmed check at that amount, unless any earlier version of the
+--     Family's pledge was ever marked Entered by hand, which stays for the
+--     refresh to judge. The financial stream places rules 3 and 4 so (the
+--     spec's "Financial stream"), not as the general rule does. Every 0142
+--     rule is otherwise unchanged.
 -- No grant changes: the column is part of the response row web already
 -- inserts and reads, and no new function is a definer. The file ends with a
 -- DO block that refuses to commit unless all of this is installed.
@@ -61,6 +65,9 @@ BEGIN
     RETURN NEW;
 END $$;
 
+-- Named to fire after 0001's stewardship_submission_guard (BEFORE triggers
+-- fire in name order), which has already required the validation snapshot
+-- to be the current one; keep the name sorting after it.
 CREATE TRIGGER stewardship_submission_pledge_guard
     BEFORE INSERT ON public.stewardship_submission
     FOR EACH ROW EXECUTE FUNCTION public.stewardship_submission_pledge_guard_v1();
@@ -115,6 +122,8 @@ LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
         SELECT c.outcome::text AS outcome,c.observed FROM stewardship_pledge_refresh_check c
         WHERE i.stage<>'to_review' AND i.in_force AND c.review_id=i.review_id
         ORDER BY c.created_at DESC,c.id DESC LIMIT 1) d ON true
+    -- 0142's open check read, unchanged: its inner ``s`` is the checked
+    -- response and shadows the outer current one inside this subquery.
     LEFT JOIN LATERAL (
         SELECT c.outcome::text AS outcome,c.observed FROM stewardship_pledge_open_check c
         JOIN stewardship_submission s ON s.id=c.submission_id

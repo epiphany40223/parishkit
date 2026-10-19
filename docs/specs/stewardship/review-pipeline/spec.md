@@ -320,6 +320,10 @@ not been shown:
    "Withdrawn by the Family after it was entered", shown on its stream's To
    enter by hand report, so Staff can decide whether to undo the entry.
 4. **New** (no earlier version): Submitted, To review.
+
+   The financial stream places rules 3 and 4 differently for a pledge
+   ParishSoft already holds
+   ([Financial stream](#financial-stream), #1753).
 5. **Not presented** (a section not enabled, a Member out of scope, a
    Ministry no longer offered): the item is left as it is. Leaving something
    out of the form is never a withdrawal, as today.
@@ -745,19 +749,21 @@ answers them, as on Financial stewardship detail: a Family that answers
 again while the financial section is switched off leaves the list until it
 answers the financial questions again, keeping its history. Each live
 response records ParishSoft's upcoming-year pledge at its submit (below),
-which rules 3 and 4 compare with
+which places rules 3 and 4 differently from the general rule
 ([#1753](https://github.com/epiphany40223/parishkit/issues/1753)): a new or
 changed pledge whose annual amount equals the amount ParishSoft held at
 that submit has nothing to enter, so it is **Confirmed** at once with no
 reviewer, the same as a refresh finding R = C (the
 [page's](../reports/spec.md#pledges-to-enter) "Already in ParishSoft", or
-its $0.00 words). For the pledge item, which is the Family's current answer
-and stays listed, this is rule 3's withdrawal and rule 4 for an answer
-ParishSoft already holds. An earlier version already marked Entered by hand
-is not undone: the new answer stays To review instead (its row says the
-Family changed its pledge), so Staff see it and can undo the entry, and the
-refresh judges it. Without a recorded amount the pledge is To review, as
-before. Pledges and funds are read-only in ParishSoft's API, so the stream
+its $0.00 words). That replaces rule 3's withdrawal, because the pledge item
+is the Family's current answer and stays listed, and rule 4's To review for
+a first answer ParishSoft already holds, so no reviewer accepts a pledge
+that would then be entered twice. If any earlier version of the Family's
+pledge was ever marked Entered by hand (even one later reopened), the new
+answer stays To review instead (its row says the Family changed its pledge),
+so Staff see it and can undo the entry, and the refresh judges it; rule 3's
+"Withdrawn by the Family after it was entered" note is not shown. Without a
+recorded amount the pledge is To review, as before. Pledges and funds are read-only in ParishSoft's API, so the stream
 never has Ready to update.
 
 **Pledge confirmation** (decision 5). ParishSoft's v2 `GET
@@ -784,8 +790,9 @@ maps a Family's ParishSoft pledge for the upcoming year to the pipeline item:
   frozen migration 0145, provisional number), read the same way from the
   current snapshot the submit validates against, and only when that
   snapshot's giving read is proven complete; otherwise it records none and
-  the submit goes on. A guard on the response checks a recorded amount
-  against that snapshot. An unchanged resubmission keeps A (rule 1), so A
+  the submit goes on. A guard on the response pins a recorded amount to
+  that snapshot's own sum; the proof itself is checked by the application,
+  as for the mark. An unchanged resubmission keeps A (rule 1), so A
   is the amount recorded at the response where the Family's current pledge
   answer began; a response that recorded none reads as $0.00, as every
   response did before

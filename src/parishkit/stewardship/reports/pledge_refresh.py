@@ -34,7 +34,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from uuid import UUID
 
-from django.db import connection
+from django.db import DatabaseError, connection, transaction
 
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.pipeline import RefreshOutcome, Stage, refresh_outcome
@@ -65,7 +65,8 @@ PLEDGE_STORED = {**STORED, RefreshOutcome.CONFLICT: "conflict"}
 CONFLICT = "conflict"
 # The largest amount a mark can record (``PledgeReview.marked_pledge``).
 MARK_LIMIT = Decimal("1e12")
-# The largest amount a response can record (``Submission.upcoming_pledge``).
+# The largest amount a response can record (``Submission.upcoming_pledge``,
+# numeric(24,2), as the selection's own cast): mirrors the column type.
 ANSWER_LIMIT = Decimal("1e22")
 UPCOMING = (
     "SELECT duid, stewardship_pledge_upcoming_v1(%s, %s, duid) "
@@ -362,7 +363,15 @@ def answered_pledge(snapshot_id, campaign_id, family_duid):
     The financial stream's A for the Family's answer (#1753): read at the
     submit from the response's validation snapshot (the current one, which
     the submission guard requires) by ``proven_pledge``; the response's own
-    guard (0145) checks it against the same snapshot. None, when the read is
-    unproven, records no amount and never stops the submit.
+    guard (0145) pins it to the same snapshot's sum. None, when the read is
+    unproven, records no amount. The read runs in a savepoint, so a source
+    row the selection cannot read (a database error) also records none
+    instead of aborting the Family's submit; the guard reads nothing then.
     """
-    return proven_pledge(snapshot_id, campaign_id, family_duid, limit=ANSWER_LIMIT)
+    try:
+        with transaction.atomic():
+            return proven_pledge(
+                snapshot_id, campaign_id, family_duid, limit=ANSWER_LIMIT
+            )
+    except DatabaseError:
+        return None

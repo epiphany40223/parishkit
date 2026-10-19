@@ -326,3 +326,21 @@ def test_the_migration_check_refuses_the_earlier_selection(response_service):
             transaction.set_rollback(True)
     with connection.cursor() as cursor:
         cursor.execute(block)
+
+
+def test_a_source_row_the_selection_cannot_read_records_none(
+    response_service, monkeypatch
+):
+    """A database error in the upcoming pledge read is kept in its savepoint:
+    the response records no amount and the Family's submit still commits."""
+    from parishkit.stewardship.reports import pledge_refresh
+
+    def broken(*args):
+        """Fail as a malformed source row would, inside the read."""
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1/0")
+
+    monkeypatch.setattr(pledge_refresh, "_upcoming", broken)
+    harness, submission = answered(response_service, "300.00")
+    assert submission.upcoming_pledge is None
+    assert stage_row(harness, submission)[0] == "to_review"
