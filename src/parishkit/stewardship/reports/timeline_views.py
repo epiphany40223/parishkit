@@ -99,7 +99,7 @@ STREAM_TABS = (
     ("financial", _("Financial"), "stewardship/hub-financial-panel.html"),
     (
         "other",
-        _("Cannot participate and Additional information"),
+        _("Additional"),
         "stewardship/hub-other-panel.html",
     ),
 )

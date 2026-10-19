@@ -264,7 +264,7 @@ def financial_tab(row, metadata):
     )
 
 
-# --- Cannot participate and Additional information tab ----------------------
+# --- Additional tab (cannot participate and Additional information) -------
 
 # The Family's effective live response (the one the Limitations and
 # Additional information pages read): its cannot-attend and per-Member
@@ -383,9 +383,7 @@ def other_tab(row, members, *, ministry, information):
                     label, row["text"], True, baseline_read=False, placement=placement
                 )
             )
-    subject = Subject(
-        "other", str(_("Cannot participate and Additional information")), tuple(rows)
-    )
+    subject = Subject("other", str(_("Additional")), tuple(rows))
     return HubOther(subject, row["item"], ministry, information)
 
 

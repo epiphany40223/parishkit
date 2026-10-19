@@ -6715,10 +6715,8 @@ says which slice delivers it:
 1. **Slice 1:** the header strip, the tab row and the Timeline tab.
 2. **Slice 2:** the Family tab and the Member tabs' census fields.
 3. **Slice 3:** the [Financial tab](#hub-financial-tab).
-4. **Slice 4:** the
-   [Cannot participate and Additional information tab](#hub-cannot-participate-and-additional-information-tab),
-   and the Member tabs'
-   [Ministry joins and leaves](#member-tabs-ministry-joins-and-leaves).
+4. **Slice 4:** the [Additional tab](#hub-additional-tab), and the Member
+   tabs' [Ministry joins and leaves](#member-tabs-ministry-joins-and-leaves).
 
 ### Hub header strip
 
@@ -6789,9 +6787,10 @@ information", with the tabs in this order:
    Members come from it ([Family and Member tabs](#family-and-member-tabs)).
 4. **Financial**: the Family's financial information. Shown when Financial
    stewardship is part of the campaign.
-5. **Cannot participate and Additional information**. Shown when Ministry
-   stewardship (where the cannot-participate answers are given) or
-   Additional information is part of the campaign.
+5. **Additional**: the cannot-participate answers and Additional
+   information. Shown when Ministry stewardship (where the
+   cannot-participate answers are given) or Additional information is part
+   of the campaign.
 
 A tab whose subject is not part of the campaign is left out, not greyed
 ([conditional fields](../ui-conventions/spec.md#conditional-fields)).
@@ -7003,9 +7002,10 @@ the configurations the Family's response was answered under (for the share
 methods' words), four statements in all. The page's one audited view covers
 them; nothing new is audited.
 
-### Hub Cannot participate and Additional information tab
+### Hub Additional tab
 
-**Slice 4.** The last tab shows the answers of the
+**Slice 4.** The last tab, named **Additional** for short (Administrator,
+2026-10-19), shows the answers of the
 [cannot participate](../review-pipeline/spec.md#cannot-participate-stream)
 and [Additional information](../review-pipeline/spec.md#additional-information-stream)
 streams from the Family's effective live response, the response the

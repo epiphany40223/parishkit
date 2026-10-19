@@ -11,7 +11,7 @@ Every page is the Family hub (#1678) of a campaign with census, Financial and
 Ministry stewardship: the header strip, then the Timeline tab, the Family tab
 and one tab per Member (slice 2, from the census unit test's response, each
 with its Ministry joins and leaves from slice 4), the Financial tab (slice
-3) and the Cannot participate and Additional information tab (slice 4), all
+3) and the Additional tab (slice 4), all
 from the ``hub_streams`` unit test's values. The fixtures also serve the hub
 at each content tab's own address, which a tab's first choice fetches.
 """

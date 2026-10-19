@@ -701,7 +701,7 @@ def test_hub_tabs_follow_the_campaign_modules():
         ("family", "Family", ""),
         ("member-1", "Adams, Ann", ""),
         ("member-2", "Adams, Bo", ""),
-        ("other", "Cannot participate and Additional information", ""),
+        ("other", "Additional", ""),
     ]
     assert tabs.selected == "timeline" and tabs.tabs[0].href == path + "?tab=timeline"
     assert hub_tabs(path, {"tab": "member-2"}, ("members",), census).selected == (
@@ -745,8 +745,8 @@ def test_the_page_is_a_hub_with_the_timeline_tab():
     assert 'aria-disabled="true"' not in page and "Coming soon" not in page
     for key in ("financial", "other"):
         assert f'id="family-tabs-panel-{key}"' in page, key
-    for label in ("Financial", "Cannot participate and Additional"):
-        assert f">{label}" in page, label
+    for label in ("Financial", "Additional"):
+        assert f">{label}</a>" in page, label
     # A campaign without any content tab: Timeline alone.
     page = render(TIMELINE)
     assert page.count('role="tab"') == 1

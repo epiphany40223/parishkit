@@ -1,8 +1,9 @@
 """The Family hub's Ministry, Financial and last tabs, from plain values (#1678).
 
 ``hub_streams`` shapes slices 3 and 4: a Member tab's Ministry joins and
-leaves, the Financial tab's pledge and the Cannot participate and
-Additional information tab; the page draws the chosen one. The database
+leaves, the Financial tab's pledge and the Additional tab (the cannot
+participate answers and Additional information); the page draws the chosen
+one. The database
 reads are covered by ``database/test_hub_streams_postgresql.py``.
 """
 

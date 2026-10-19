@@ -50,10 +50,8 @@ def test_the_last_tab_lists_items_and_hides_the_rest(page, component_origin):
     errors = watch(page)
     page.goto(component_origin + ADMIN)
     page.evaluate(MARK)
-    tab(page, "Cannot participate and Additional information").click()
-    panel = page.get_by_role(
-        "tabpanel", name="Cannot participate and Additional information"
-    )
+    tab(page, "Additional").click()
+    panel = page.get_by_role("tabpanel", name="Additional", exact=True)
     table = panel.get_by_role("table", name="Answers to handle")
     attend = table.get_by_role("row", name="Cannot attend Mass or prayer services")
     visible(attend.locator(".stage-chip", has_text="To review"))

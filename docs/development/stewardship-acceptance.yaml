@@ -138,7 +138,7 @@ sections:
     "Family and Member tabs": [ADM-03, RPT-03]
     "Member tabs' Ministry joins and leaves": [ADM-03, RPT-03]
     "Hub Financial tab": [ADM-03, RPT-03]
-    "Hub Cannot participate and Additional information tab": [ADM-03, RPT-03]
+    "Hub Additional tab": [ADM-03, RPT-03]
     "System health": [ADM-13]
     "System health page": [ADM-13]
     "Health dashboard": [ADM-13]
