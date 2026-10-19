@@ -706,7 +706,6 @@ def begin_submission(
     public_origin,
     metadata_only=False,
     configuration_id=None,
-    nested=False,
     provider_seconds=None,
 ):
     """Resolve private content only under final admission, then commit before IO.
@@ -715,174 +714,248 @@ def begin_submission(
     Rerendering is restricted to definitely unsent states; uncertain payloads
     remain immutable until explicit reconciliation.
 
-    ``nested`` lets the bulk send (#430, jobs/family_mail_bulk.py) run this
-    inside its own lock transaction, which commits several submissions at
-    once before any is sent; ``provider_seconds`` is then this message's
-    deadline, later for messages further back in the batch.
+    The whole submission, in its own lock transaction: the one-at-a-time
+    path's entry point. It is ``commit_submission`` (the commit half, which
+    the bulk send calls inside its own lock transaction) with the content
+    built under the lock.
     """
-    if connection.in_atomic_block and not nested:
+    if connection.in_atomic_block:
         raise StorageInvariantError("Family submission must commit independently.")
-    from .family_mail_dispatch_content import current_content
-
     with work_transaction():
-        task = lock_task_claim(claim)
-        message = bound_dispatch(_status(task))
-        if message.pk != identifier or message.state not in {"pending", "retry_wait"}:
-            raise PermissionError("Family delivery is not unsent.")
-        row = (
-            None
-            if message.purpose in UNSCHEDULED_PURPOSES
-            else ScheduleOccurrence.objects.select_related(
-                "definition", "revision"
-            ).get(pk=message.semantic_key)
+        return commit_submission(
+            identifier,
+            claim,
+            private=private,
+            public_origin=public_origin,
+            metadata_only=metadata_only,
+            configuration_id=configuration_id,
+            provider_seconds=provider_seconds,
         )
-        reason = disposition(message, check_recipient=True)
-        if reason == "delivery_paused":
-            scope = _scope(message.campaign_id, share=True)
-            if (
-                message.pause_hold_id is None
-                or message.pause_version != scope.campaign.pause_version
-            ):
-                hold_message(
-                    message_id=message.pk,
-                    expected_version=message.version,
-                    command_id=uuid4(),
-                    actor_id=claim.worker_id,
-                    correlation_id=claim.run_id,
-                    pause_version=scope.campaign.pause_version,
-                    admit=lambda action, identity, status: (
-                        lock_task_claim(claim) is not None
-                        and action == "hold"
-                        and status.message_id == message.pk
-                        and disposition(message) == "delivery_paused"
-                    ),
-                )
-            return None
-        if reason:
-            cancel_unsent(message.pk, claim, reason=reason)
-            if row is not None and row.state == "pending":
-                _occurrence_change(row, claim, state="skipped", reason=reason)
-            return None
-        # The no-send caller has not loaded Workspace credentials. A resumed
-        # scope must not promote that caller into a submitting provider attempt.
-        if metadata_only:
-            return None
+
+
+def commit_submission(
+    identifier,
+    claim,
+    *,
+    private,
+    public_origin,
+    metadata_only=False,
+    configuration_id=None,
+    provider_seconds=None,
+    prebuilt=None,
+    report=None,
+):
+    """``begin_submission``'s commit half, under the caller's work-order lock.
+
+    The bulk send (#430, jobs/family_mail_bulk.py) calls this inside its own
+    lock transaction, which commits several submissions at once before any
+    is sent; ``provider_seconds`` is then this message's deadline, later for
+    messages further back in the batch. Everything ``begin_submission``
+    checks and writes is done here, in the same order: the claim and binding
+    (``bound_dispatch`` refuses unless the caller holds the work-order
+    lock), ``disposition``, the pause hold or cancellation, planning, the
+    hold release and the guarded writes.
+
+    ``prebuilt`` is a send build of this message made outside the lock
+    (``family_mail_send_builds``, BG-12). Its fingerprint is compared under
+    the key-set lock just before the hold release (``prebuilt_matches``),
+    since the release moves the message's version. On a match, at the
+    content step its render and sealed substitutions are written, and only
+    the link token, which needs the claim, is resolved here; otherwise the
+    content is built here exactly as ``begin_submission`` builds it.
+    ``report(True)`` or
+    ``report(False)`` then says which, for the batch's timing line.
+    """
+    from .family_mail_dispatch_content import (
+        current_content,
+        prebuilt_content,
+        prebuilt_matches,
+    )
+
+    task = lock_task_claim(claim)
+    message = bound_dispatch(_status(task))
+    if message.pk != identifier or message.state not in {"pending", "retry_wait"}:
+        raise PermissionError("Family delivery is not unsent.")
+    row = (
+        None
+        if message.purpose in UNSCHEDULED_PURPOSES
+        else ScheduleOccurrence.objects.select_related("definition", "revision").get(
+            pk=message.semantic_key
+        )
+    )
+    reason = disposition(message, check_recipient=True)
+    if reason == "delivery_paused":
+        scope = _scope(message.campaign_id, share=True)
         if (
-            configuration_id is not None
-            and not SystemConfiguration.objects.filter(
-                active_configuration_id=configuration_id
-            ).exists()
+            message.pause_hold_id is None
+            or message.pause_version != scope.campaign.pause_version
         ):
-            raise FamilyDeliveryHeld("Family delivery configuration changed.")
-        # The submission writes only its message, occurrence and Task rows,
-        # never the runtime or credential rows, so admission shares them.
-        if row is None:
-            scope = _scope(message.campaign_id, share=True)
-        else:
-            decision = plan_family(
-                claim, family_id=message.family_id, worker_id=claim.worker_id
-            )
-            if decision.held:
-                raise FamilyDeliveryHeld("Family delivery recovery is held.")
-            if decision.selected != row.pk:
-                return None
-            scope, _ = _planning_scope(message.campaign_id, share=True)
-        if message.pause_hold_id is not None:
-            release_message_hold(
+            hold_message(
                 message_id=message.pk,
                 expected_version=message.version,
                 command_id=uuid4(),
                 actor_id=claim.worker_id,
                 correlation_id=claim.run_id,
+                pause_version=scope.campaign.pause_version,
                 admit=lambda action, identity, status: (
                     lock_task_claim(claim) is not None
-                    and action == "release_hold"
+                    and action == "hold"
                     and status.message_id == message.pk
-                    and disposition(message) is None
+                    and disposition(message) == "delivery_paused"
                 ),
             )
-            message.refresh_from_db()
-        if message.purpose == "weekly_digest":
-            from .weekly_dispatch import current_weekly_content
+        return None
+    if reason:
+        cancel_unsent(message.pk, claim, reason=reason)
+        if row is not None and row.state == "pending":
+            _occurrence_change(row, claim, state="skipped", reason=reason)
+        return None
+    # The no-send caller has not loaded Workspace credentials. A resumed
+    # scope must not promote that caller into a submitting provider attempt.
+    if metadata_only:
+        return None
+    if (
+        configuration_id is not None
+        and not SystemConfiguration.objects.filter(
+            active_configuration_id=configuration_id
+        ).exists()
+    ):
+        raise FamilyDeliveryHeld("Family delivery configuration changed.")
+    # The submission writes only its message, occurrence and Task rows,
+    # never the runtime or credential rows, so admission shares them.
+    if row is None:
+        scope = _scope(message.campaign_id, share=True)
+    else:
+        decision = plan_family(
+            claim, family_id=message.family_id, worker_id=claim.worker_id
+        )
+        if decision.held:
+            raise FamilyDeliveryHeld("Family delivery recovery is held.")
+        if decision.selected != row.pk:
+            return None
+        scope, _ = _planning_scope(message.campaign_id, share=True)
+    matched = False
+    if prebuilt is not None:
+        from .family_mail_send_builds import send_fingerprint
 
-            render, sealed, mail = current_weekly_content(message, scope)
-        elif message.purpose == "daily_digest":
-            from .digest_dispatch import current_digest_content
-
-            render, sealed, mail = current_digest_content(message, scope)
-        elif message.purpose == "receipt":
-            from .receipt_dispatch import current_receipt_content
-
-            render, sealed, mail = current_receipt_content(
-                message, scope, public_origin=public_origin
-            )
-        else:
-            # Scheduled mail renders the occurrence revision's template; a test
-            # renders the template record its Admin ticket named.
-            if row is None:
-                from .family_test_dispatch import family_test_template
-
-                template = family_test_template(message)
-            else:
-                template = UUID(row.revision.values["template_version"])
-            render, sealed, mail = current_content(
-                message,
-                template,
-                scope,
-                claim=claim,
-                private=private,
-                public_origin=public_origin,
-            )
-
-        def admit(action, identity, status, proposal=None):
-            lock_task_claim(claim)
-            return (
-                action in {"prepared", DeliveryAction.SUBMIT}
-                and status.message_id == message.pk
-                and disposition(message, check_recipient=True) is None
-            )
-
-        # Only the guarded writes below need it; see plan_submission_guards.
-        plan_submission_guards()
-        prepared = prepare_message(
+        # Compared here, before the hold release below moves the message's
+        # version (a fingerprint input that no content depends on), so a
+        # message held during a pause still uses its build. Only that
+        # release runs between this comparison and the content step.
+        matched = prebuilt_matches(
+            message,
+            prebuilt,
+            private=private,
+            current=lambda: send_fingerprint(message.pk),
+        )
+    if message.pause_hold_id is not None:
+        release_message_hold(
             message_id=message.pk,
             expected_version=message.version,
             command_id=uuid4(),
             actor_id=claim.worker_id,
             correlation_id=claim.run_id,
-            render=render,
-            sealed=sealed,
-            admit=admit,
-        )
-        if row is not None:
-            _occurrence_change(
-                row,
-                claim,
-                state="running",
-                task_id=claim.run_id,
-                worker_id=claim.worker_id,
-                fence=claim.fence,
-                attempts=row.attempts + 1,
-                heartbeat_at=database_now(),
-                lease_expires_at=task.lease_expires_at,
-                reason="provider_submission",
-            )
-        status = change_message(
-            message_id=message.pk,
-            action=DeliveryAction.SUBMIT,
-            command_id=uuid4(),
-            expected_version=prepared.version,
-            actor_id=claim.worker_id,
-            correlation_id=claim.run_id,
-            run_id=claim.run_id,
-            task_fence=claim.fence,
-            provider_seconds=PROVIDER_SECONDS
-            if provider_seconds is None
-            else provider_seconds,
-            admit=admit,
+            admit=lambda action, identity, status: (
+                lock_task_claim(claim) is not None
+                and action == "release_hold"
+                and status.message_id == message.pk
+                and disposition(message) is None
+            ),
         )
         message.refresh_from_db()
-        return mail, message.provider_deadline, render.configuration_id, status.attempt
+    if message.purpose == "weekly_digest":
+        from .weekly_dispatch import current_weekly_content
+
+        render, sealed, mail = current_weekly_content(message, scope)
+    elif message.purpose == "daily_digest":
+        from .digest_dispatch import current_digest_content
+
+        render, sealed, mail = current_digest_content(message, scope)
+    elif message.purpose == "receipt":
+        from .receipt_dispatch import current_receipt_content
+
+        render, sealed, mail = current_receipt_content(
+            message, scope, public_origin=public_origin
+        )
+    else:
+        # Scheduled mail renders the occurrence revision's template; a test
+        # renders the template record its Admin ticket named.
+        if row is None:
+            from .family_test_dispatch import family_test_template
+
+            template = family_test_template(message)
+        else:
+            template = UUID(row.revision.values["template_version"])
+        built = None
+        if matched:
+            built = prebuilt_content(
+                message,
+                prebuilt,
+                scope,
+                claim=claim,
+                private=private,
+                public_origin=public_origin,
+            )
+        if prebuilt is not None and report is not None:
+            report(built is not None)
+        render, sealed, mail = built or current_content(
+            message,
+            template,
+            scope,
+            claim=claim,
+            private=private,
+            public_origin=public_origin,
+        )
+
+    def admit(action, identity, status, proposal=None):
+        lock_task_claim(claim)
+        return (
+            action in {"prepared", DeliveryAction.SUBMIT}
+            and status.message_id == message.pk
+            and disposition(message, check_recipient=True) is None
+        )
+
+    # Only the guarded writes below need it; see plan_submission_guards.
+    plan_submission_guards()
+    prepared = prepare_message(
+        message_id=message.pk,
+        expected_version=message.version,
+        command_id=uuid4(),
+        actor_id=claim.worker_id,
+        correlation_id=claim.run_id,
+        render=render,
+        sealed=sealed,
+        admit=admit,
+    )
+    if row is not None:
+        _occurrence_change(
+            row,
+            claim,
+            state="running",
+            task_id=claim.run_id,
+            worker_id=claim.worker_id,
+            fence=claim.fence,
+            attempts=row.attempts + 1,
+            heartbeat_at=database_now(),
+            lease_expires_at=task.lease_expires_at,
+            reason="provider_submission",
+        )
+    status = change_message(
+        message_id=message.pk,
+        action=DeliveryAction.SUBMIT,
+        command_id=uuid4(),
+        expected_version=prepared.version,
+        actor_id=claim.worker_id,
+        correlation_id=claim.run_id,
+        run_id=claim.run_id,
+        task_fence=claim.fence,
+        provider_seconds=PROVIDER_SECONDS
+        if provider_seconds is None
+        else provider_seconds,
+        admit=admit,
+    )
+    message.refresh_from_db()
+    return mail, message.provider_deadline, render.configuration_id, status.attempt
 
 
 def finish_submission(identifier, claim, result, *, hold=False):

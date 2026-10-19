@@ -569,6 +569,11 @@ proceed alongside PR 1. PR 4 depends on PR 1, PR 2 and PR 3.
    `delivery_bulk`, the key-locked decryption variant, and
    `begin_submission` split into build and commit halves (the bulk path
    calls the commit half; the one-at-a-time path still calls it whole).
+   The build half is `family_mail_send_builds.build_submission`, and the
+   commit half is `commit_submission`. A send build covers every message
+   the batch could commit, so batches are unchanged apart from their hold
+   time. The link token is still resolved under the lock, since its definer
+   answers only for a live delivery claim (#389 L1).
    Tests: the prebuilt path taken and asserted; each fingerprint field
    (message and occurrence versions, both configuration rows, hosted files
    and branding assets, source generation, the link token row's or the
@@ -583,6 +588,12 @@ proceed alongside PR 1. PR 4 depends on PR 1, PR 2 and PR 3.
    above and record the first send's measurements. If the send still takes
    more than about 15 minutes, report it with the measurements so the
    Administrator can decide whether to revisit #554 after the campaign.
+   With both mail consumers running, also record each consumer's
+   `prebuilt`, `rebuilt` and `unbuilt` sends (the commit timing lines'
+   `consumer` label; the report lists them per consumer). Both consumers
+   build the same head of the queue, so one's builds can be taken first by
+   the other's batch (PR 3's concurrency review). If the cost is material,
+   stagger or partition the send lookahead.
 
 **Deferred alternative.** A streamed send (a per-send preparation run owned by
 a new task type, a send loop claiming one message at a time, a three-valued

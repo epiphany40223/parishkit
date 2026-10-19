@@ -191,6 +191,8 @@ def test_a_timing_line_round_trips_into_the_report(caplog):
     assert bulk[0]["tried"] == 3 and bulk[0]["item_ms"] == [200, 300]
     assert bulk[0]["work_ms"] == [150]
     assert bulk[0]["prebuilt"] == 0 and bulk[0]["rebuilt"] == 0
+    assert bulk[0]["unbuilt"] == 0
+    assert bulk[0]["consumer"] == family_mail_bulk.CONSUMER
     assert bulk[0]["timestamp"] == "t"
 
 
@@ -357,6 +359,34 @@ def test_holds_are_summarized_per_kind():
     assert prepare["prebuilt"] == 2 and prepare["rebuilt"] == 1
     assert summary["outcome"]["work_ms"] == {"n": 0}
     assert summary["outcome"]["build_ms"] == {"n": 0}
+    assert prepare["unbuilt"] == 0 and prepare["consumers"] == {}
+
+
+def test_send_builds_are_counted_per_consumer():
+    """Each mail consumer's prebuilt, rebuilt and unbuilt sends, apart (BG-12).
+
+    The rehearsal uses this to see how often two consumers build the same
+    head of the queue; the report prints one line per consumer.
+    """
+    bulk = [
+        {"kind": "commit", "items": 3, "prebuilt": 3, "consumer": "aaaa1111"},
+        {
+            "kind": "commit",
+            "items": 4,
+            "prebuilt": 1,
+            "rebuilt": 1,
+            "unbuilt": 2,
+            "consumer": "bbbb2222",
+        },
+        {"kind": "commit", "items": 2, "prebuilt": 2, "consumer": "aaaa1111"},
+        {"kind": "commit", "items": 1, "unbuilt": 1},
+    ]
+    commit = report.hold_summary(bulk)["commit"]
+    assert commit["unbuilt"] == 3
+    assert commit["consumers"] == {
+        "aaaa1111": {"items": 5, "prebuilt": 5, "rebuilt": 0, "unbuilt": 0},
+        "bbbb2222": {"items": 4, "prebuilt": 1, "rebuilt": 1, "unbuilt": 2},
+    }
 
 
 def outcome(message, settled, submitted, reason="smtp_accepted", **stats):

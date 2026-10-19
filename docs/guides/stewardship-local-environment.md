@@ -458,10 +458,14 @@ The report shows:
 - `work`, the render, decrypt or seal part of each item: the work BG-12
   moves outside the lock;
 - `build`, the time of each build made outside the lock before a
-  preparation batch (BG-12 PR 2), used or dropped;
-- `prebuilt` and `rebuilt` counts: Production preparation items written from
-  a build made outside the lock, and those rebuilt under it because an
-  input changed (sending items stay zero until BG-12's PR 3);
+  preparation batch (BG-12 PR 2) or a send batch (BG-12 PR 3), used or
+  dropped;
+- `prebuilt`, `rebuilt` and `unbuilt` counts: Production preparation items
+  and sent messages (Production and Testing) written from a build made
+  outside the lock, those rebuilt under it because an input changed, and
+  those that had no build; each lock transaction's line carries its
+  process's random `consumer` label, and the report lists the counts per
+  consumer;
 - lease renewal waits (from the start of each renewal, so they include
   opening its connection as well as waiting for the lock);
 - the lock samples: the share of seconds the lock was held or waited on, its
