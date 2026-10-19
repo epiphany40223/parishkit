@@ -15,8 +15,9 @@ ui-conventions "Button emphasis" is the rule.
 import pytest
 
 from ..test_button_emphasis_guard import GROUP_CLASSES
-from .automation_components import ACCESS, HOME
+from .automation_components import ACCESS
 from .census_components import PATH as CENSUS
+from .home_overview_components import PATH as HOME
 from .system_health_components import PAGE as SYSTEM_HEALTH
 
 pytestmark = pytest.mark.parametrize("browser_engine", ["chromium"], indirect=True)
