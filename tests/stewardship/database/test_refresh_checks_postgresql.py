@@ -17,9 +17,11 @@ from uuid import uuid4
 import pytest
 from django.db import DatabaseError, connection, transaction
 
+from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.pipeline import Decision, Stage
 from parishkit.stewardship.reports.census_changes import census_rows
+from parishkit.stewardship.reports.ministry_roster_views import roster_rows
 from parishkit.stewardship.reports.ministry_worklist import (
     WorklistQuery,
     chosen,
@@ -35,12 +37,13 @@ from ..policy_factory import address as rule
 from .campaign_builders import change
 from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
+from .test_campaign_end_counts_postgresql import roster_count
 from .test_census_pipeline_review_postgresql import decide as census_decide
 from .test_census_review_postgresql import fresh
 from .test_ministry_reports_postgresql import actor, setup
 from .test_ministry_responses_postgresql import ministry_source, respond, start
 from .test_ministry_review_postgresql import decide as ministry_decide
-from .test_ministry_review_postgresql import requests
+from .test_ministry_review_postgresql import requests, withdraw_leave
 from .test_policy_postgresql import user
 from .test_response_http_postgresql import answers_for, load_form
 from .test_runtime_auth_grants_postgresql import web_login
@@ -72,11 +75,12 @@ def started():
 BASE = {"salutation": "Mr."}
 
 
-def refresh(harness, *, member=None, joins=()):
+def refresh(harness, *, member=None, joins=(), leaves=()):
     """Promote a full refresh of the Ministry fixture with Member 3 changed.
 
     ``member`` updates Member 3's ParishSoft record (its prefix is ``BASE``'s
-    unless given); ``joins`` puts Member 3 in those Ministries' rosters.
+    unless given); ``joins`` puts Member 3 in those Ministries' rosters and
+    ``leaves`` takes Member 3 out of theirs.
     """
     data = ministry_source()
     data.members[3].update(BASE | (member or {}))
@@ -92,6 +96,9 @@ def refresh(harness, *, member=None, joins=()):
                 "endDate": None,
             }
         )
+    for ministry in leaves:
+        rows = data.ministry_type_memberships[ministry]["membership"]
+        rows[:] = [row for row in rows if row["memberId"] != 3]
     snapshot, claim = prepare(data)
     return promote(snapshot, claim, harness.campaign, harness.rings)
 
@@ -248,7 +255,23 @@ def test_an_accepted_request_is_confirmed_and_cannot_go_back(response_service):
     staff = actor(harness, {"staff"}, ())
     join, _ = requests()
     ministry_decide(harness, staff, "accept", join)
+    campaign = Campaign.objects.select_related("active_configuration").get(
+        pk=harness.campaign.pk
+    )
+
+    def to_enter():
+        """Roster changes to enter's Not yet entered rows and menu count."""
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            rows, _ = roster_rows(campaign.pk, staff, "todo")
+            every, _ = roster_rows(campaign.pk, staff, "all")
+        return len(rows), roster_count(staff, campaign), every
+
+    assert to_enter()[:2] == (1, 1)
     refresh(harness, joins=(9,))
+    # Already in ParishSoft: nothing left to enter, still listed under All.
+    todo, count, every = to_enter()
+    assert (todo, count) == (0, 0)
+    assert [row["confirmed"] for row in every] == [True]
     join.refresh_from_db()
     assert (join.state, join.resolution_source_id) == ("resolved", None)
     assert checks(request=join) == ["confirmed"]
@@ -359,3 +382,118 @@ def test_the_migration_records_the_start_with_its_audit(response_service):
     assert RefreshCheckStart.objects.get().not_seen_after == 2
     # The fixture's flush left no earlier event behind.
     assert AuditEvent.objects.filter(event_type="refresh_checks_started").count() == 1
+
+
+def test_an_edited_request_is_judged_by_the_ministry_carried_forward(
+    response_service,
+):
+    """Staff edit the join of Food pantry into Ministry 4: the roster of the
+    Family's Ministry no longer counts, the Edit's does."""
+    harness = setup(response_service)
+    staff = actor(harness, {"staff"}, ())
+    join = withdraw_leave(harness)
+    ministry_decide(harness, staff, "edit", join, fields={"value": ["4"]})
+    assert join.reviewed_ministry_duid == 4
+    refresh(harness, joins=(9,), leaves=(4,))
+    assert checks(request=join) == []
+    refresh(harness)
+    assert checks(request=join) == ["confirmed"]
+    row = view(harness, staff)[str(join.pk)]
+    assert row["placement"].stage is Stage.CONFIRMED
+    assert row["placement"].decision is Decision.ACCEPTED_EDITED
+
+
+@pytest.mark.parametrize("stream", ["census", "ministry"])
+def test_the_guard_refuses_a_forged_check_inside_a_promotion(
+    response_service, monkeypatch, stream
+):
+    """Inside a real promotion, a check whose outcome the snapshot does not
+    bear out is refused, and the whole refresh with it: nothing is written."""
+    from parishkit.stewardship.responses import refresh_checks
+
+    if stream == "census":
+        harness, staff, rows = prepared(response_service)
+        census_decide(harness, staff, [rows["prefix"]], "entered_by_hand")
+        target = fresh(rows["prefix"])
+        forged = {
+            "proposal_id": target.pk,
+            "observed": {"available": True, "value": "Mr."},
+        }
+    else:
+        harness = setup(response_service)
+        staff = actor(harness, {"staff"}, ())
+        target, _ = requests()
+        ministry_decide(harness, staff, "accept", target)
+        forged = {"request_id": target.pk}
+
+    def lying(snapshot, corpus, campaign_id, full):
+        """Claim a confirmation ParishSoft does not show."""
+        yield RefreshCheck(
+            snapshot_id=snapshot.pk,
+            full_refresh=full,
+            item_version=target.version,
+            outcome="confirmed",
+            **forged,
+        )
+
+    monkeypatch.setattr(refresh_checks, "_checks", lying)
+    with pytest.raises(DatabaseError, match="differs from its"):
+        refresh(harness)
+    assert not RefreshCheck.objects.exists()
+
+
+def test_the_worker_login_confirms_a_ministry_request(response_service):
+    """The Ministry path on the worker's own login: roster ticks and checks
+    are read and the confirmation inserted under its grants."""
+    harness = setup(response_service)
+    staff = actor(harness, {"staff"}, ())
+    join, _ = requests()
+    ministry_decide(harness, staff, "accept", join)
+    ministry_decide(harness, staff, "entered_by_hand", join)
+    data = ministry_source()
+    data.members[3].update(BASE)
+    data.ministry_type_memberships[9]["membership"].append(
+        {
+            "memberId": 3,
+            "ministryRoleId": 7,
+            "ministryRoleName": "Member",
+            "startDate": "2026-01-01",
+            "endDate": None,
+        }
+    )
+    snapshot, claim = prepare(data)
+    with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
+        promote(snapshot, claim, harness.campaign, harness.rings)
+    assert checks(request=join) == ["confirmed"]
+
+
+def test_the_quick_update_check_agrees_with_what_promotion_writes(
+    response_service,
+):
+    """``refresh_checks_current`` answers False exactly while a promotion of
+    the same corpus would write a check, and True once it has."""
+    from parishkit.stewardship.campaigns.work_locks import work_transaction
+    from parishkit.stewardship.responses.refresh_checks import (
+        refresh_checks_current,
+    )
+    from parishkit.stewardship.source.families import PreparedPromotion
+
+    harness, staff, rows = prepared(response_service)
+    census_decide(harness, staff, [rows["prefix"]], "entered_by_hand")
+    data = ministry_source()
+    data.members[3].update({"salutation": "Dr."})
+    snapshot, claim = prepare(data)
+
+    def current(value):
+        """The check for ``value``'s own corpus."""
+        corpus = PreparedPromotion.of(value).corpus
+        with work_transaction():
+            return refresh_checks_current(
+                value, corpus, campaign_id=harness.campaign.pk
+            )
+
+    assert not current(snapshot)
+    promote(snapshot, claim, harness.campaign, harness.rings)
+    snapshot.refresh_from_db()
+    assert checks(proposal=rows["prefix"]) == ["confirmed"]
+    assert current(snapshot)

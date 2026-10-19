@@ -58,6 +58,7 @@ from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
 from parishkit.stewardship.workflows.models import (
     MinistryRequest,
     MinistryWorkflowRevision,
+    RefreshCheck,
 )
 from parishkit.stewardship.workflows.roster import (
     MAX_BULK,
@@ -203,7 +204,7 @@ def roster_rows(campaign_id, principal, show, ministry=""):
     shown = [
         row
         for row in rows
-        if (show == "all" or not row["roster_entered"])
+        if (show == "all" or not (row["roster_entered"] or row["confirmed"]))
         and (not ministry or str(row["ministry_duid"]) == ministry)
     ]
     return shown, result
@@ -226,8 +227,18 @@ def _ticked(campaign_id, principal):
         every_member=True,
     )
     rows = [row for row in result["rows"] if eligible(row)]
+    # A request a refresh check Confirmed (#1689) is in ParishSoft already:
+    # it stays in the list, but nothing is left to enter.
+    confirmed = {
+        str(key)
+        for key in RefreshCheck.objects.filter(
+            request_id__in=[row["id"] for row in rows], outcome="confirmed"
+        ).values_list("request_id", flat=True)
+    }
     marks = roster_marks([row["id"] for row in rows])
-    return [mark(row, marks) for row in rows], result
+    return [
+        mark(row, marks) | {"confirmed": str(row["id"]) in confirmed} for row in rows
+    ], result
 
 
 def _family_names(duids):
@@ -299,7 +310,11 @@ def export_rows(rows, zone, *, time_text=iso_time):
             row["resolved_by"],
             # A Family answered again after this change was resolved.
             "Yes" if row.get("latest") is False else "",
-            "Yes" if row["roster_entered"] else "Not yet",
+            "Yes"
+            if row["roster_entered"]
+            else "Already in ParishSoft"
+            if row.get("confirmed")
+            else "Not yet",
             row["roster_by"] if row["roster_entered"] else "",
             instant(row["roster_at"]) if row["roster_entered"] else "",
         )

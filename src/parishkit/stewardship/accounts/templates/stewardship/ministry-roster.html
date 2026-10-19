@@ -48,7 +48,7 @@
 <td>{% if row.resolved_at %}<time datetime="{{ row.resolved_at|date:'c' }}" data-local-instant data-compact>{{ row.resolved_at|date:'c' }}</time>{% endif %}</td>
 <td>{{ row.resolved_by }}</td>
 <td>{% if row.latest is False %}{% translate "Yes" %}{% endif %}</td>
-<td>{% if row.roster_entered %}{% translate "Yes" %}{% else %}{% translate "Not yet" %}{% endif %}</td>
+<td>{% if row.roster_entered %}{% translate "Yes" %}{% elif row.confirmed %}{% translate "Already in ParishSoft" %}{% else %}{% translate "Not yet" %}{% endif %}</td>
 <td>{% if row.roster_entered %}{{ row.roster_by }}{% endif %}</td>
 <td>{% if row.roster_entered and row.roster_at %}<time datetime="{{ row.roster_at|date:'c' }}" data-local-instant data-compact>{{ row.roster_at|date:'c' }}</time>{% endif %}</td>
 {% include "stewardship/roster-tick-row.html" with row=row %}</tr>

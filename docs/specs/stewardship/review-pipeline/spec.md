@@ -522,20 +522,33 @@ decided (a Ministry request a person accepted or ignored) gets a **refresh
 check** instead: an immutable record, written in the promotion transaction,
 of the outcome (Confirmed, unchanged, Entered incorrectly, or ParishSoft now
 matching an Ignored request), what ParishSoft held, and whether the refresh
-was full. A new check is written only when the outcome changes, and an
-unchanged one only on a full refresh, until Not seen is reached. The stage
-is derived from the item's latest check, never stored on the item, and a
-Confirmed item is not checked again. A Ministry request Confirmed this way
-cannot go back to review (its revision guard refuses it), as one a refresh
-resolved cannot today.
+was full. A new check is written only when the outcome changes (or when an
+Entered incorrectly item's ParishSoft value changes again), and an unchanged
+one on a marked item only on a full refresh, until Not seen is reached. The
+stage is derived from the item's latest check, never stored on the item, and
+a Confirmed item is not checked again, so its ParishSoft value is the one
+that confirmed it. A Ministry request Confirmed this way offers no action, so
+the review service refuses Back to review on it; its revision guard does not
+read the checks, and a request reopened anyway would be resolved as
+Confirmed by the next refresh, as an open request whose roster is current is
+today. Roster changes to enter no longer counts it as not yet entered.
+
+Nothing already stored is rewritten: a census change today's reconciliation
+resolved upstream before #1689 (an Ignored one ParishSoft matched, or an
+Edited one that matched the Family's answer) stays Confirmed, and an Edited
+change already in Conflict at the reviewer's value stays there until
+ParishSoft's value changes again. An Ignored change sent back to review is
+To review again even when ParishSoft already holds the answer: it is
+re-evaluated when ParishSoft's value next changes.
 
 The value recorded at a census Entered by hand mark is the change's stored
 ParishSoft value, which the mark freezes (for a mark made before #1689 too;
 normally it equals A). Not seen in ParishSoft counts the unchanged full
 refresh checks written after the mark and after the start that migration
 0136 (provisional number) records once on a row of its own (with an
-audit event when the database already holds Family responses); the threshold (default two) is kept on that row, and deleting the
-row turns the flag off. While some item has the flag, the Stage filter
+audit event when the database already holds Family responses); the
+threshold (default two) is kept on that row, and deleting the row turns the
+flag off. While some item has the flag, the Stage filter
 has a Not seen in ParishSoft choice (Staff and Administrators), counted
 beside the stages it is a flag of.
 
@@ -1123,7 +1136,7 @@ that is done safely.
 | Census | `unreviewed` or `approved` + `conflict` | Conflict (an approval stays visible, not in force) |
 | Census | `approved` + `pending`, `api` / `manual` | Ready to update / To enter by hand; Accepted (edited) when an edited value is set |
 | Census | `approved` + `failed` | Ready to update, with the failure shown |
-| Census | `queued` / `published` | Updating / Updated in ParishSoft |
+| Census | `queued` / `published` | Updating / Updated in ParishSoft (Confirmed by its latest [refresh check](#refresh-checks)) |
 | Census | `resolved_external` / `resolved_upstream` | Entered by hand (Confirmed or Entered incorrectly by its latest [refresh check](#refresh-checks)) / Confirmed |
 | Census | `ignored` (any open execution) | Ignored |
 | Census | `superseded`, `cancelled` | history |

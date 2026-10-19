@@ -32,6 +32,10 @@ from parishkit.stewardship.responses.census_review import (
 )
 from parishkit.stewardship.responses.comparison import ADDRESS_COMPONENTS
 from parishkit.stewardship.responses.models import ProposedChange
+from parishkit.stewardship.responses.refresh_checks import (
+    FINAL_EXECUTIONS,
+    check_states,
+)
 from parishkit.stewardship.source.source_status import source_status_label
 from parishkit.stewardship.web.presentation import duid
 from parishkit.stewardship.web.review_worklist import (
@@ -283,15 +287,26 @@ class CensusDecisions:
             )
             if allows(principal, capability)
         )
+        # A final change is placed by its latest refresh check (#1689), as
+        # the page placed it.
+        checks = check_states(
+            proposals=[
+                pk
+                for pk, proposal in proposals.items()
+                if proposal.execution in FINAL_EXECUTIONS
+            ]
+        )
         for pk, proposal in proposals.items():
             if proposal.version != versions[pk]:
                 continue
+            check = checks.get(str(pk))
             stage = census_placement(
                 decision=proposal.decision,
                 execution=proposal.execution,
                 handling=proposal.handling,
                 entity_kind=proposal.entity_kind,
                 admin_value_set=proposal.admin_value_set,
+                check=check.outcome if check else None,
             ).stage
             offered = allowed_actions(
                 Stream.CENSUS,

@@ -446,9 +446,10 @@ ROSTER_STATES = frozenset({"active", "closed", "archived"})
 # (ministry_roster_views.roster_rows: resolved requests, every revision and
 # every Member, all rows) and counts, in SQL, the rows its default Not yet
 # entered view lists: the page's eligibility (workflows.roster.eligible: an
-# outcome in ROSTER_OUTCOMES that no ParishSoft resolution source settled)
-# and no current Entered in ParishSoft mark (the newest tick row, as
-# workflows.roster.roster_marks reads it). Counting here rather than through
+# outcome in ROSTER_OUTCOMES that no ParishSoft resolution source settled
+# and no refresh check Confirmed, #1689) and no current Entered in
+# ParishSoft mark (the newest tick row, as workflows.roster.roster_marks
+# reads it). Counting here rather than through
 # the page's Python keeps the menu at one statement; a database test holds
 # the count equal to the page's rows. Its Ministries get the same Python
 # cross-check as Ministry requests' count.
@@ -483,6 +484,8 @@ LEFT JOIN LATERAL (
             WHERE r->>'state'='resolved'
               AND r->>'outcome'=ANY(%(roster_outcomes)s)
               AND NOT (r->>'source_resolved')::boolean
+              AND NOT EXISTS (SELECT 1 FROM stewardship_refresh_check k
+                  WHERE k.request_id=(r->>'id')::uuid AND k.outcome='confirmed')
               AND NOT coalesce((
                   SELECT e.entered FROM stewardship_ministry_roster_entry e
                   WHERE e.request_id=(r->>'id')::uuid

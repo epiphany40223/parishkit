@@ -18,8 +18,9 @@
 --     census value ParishSoft held and whether the refresh was full. Its
 --     guard admits an INSERT only inside the promotion of the current
 --     snapshot (the same owner check as refresh reconciliation; only the
---     source worker's login is granted INSERT), for a live census change that is Entered by hand or
---     Updated in ParishSoft, or a live Ministry request a person resolved
+--     source worker's login is granted INSERT), for a live census change
+--     that is Entered by hand or Updated in ParishSoft, or a live Ministry
+--     request a person resolved
 --     or closed, at its current version, never after a confirmed check, and
 --     only with the evidence the snapshot itself holds: the census value
 --     must be the snapshot's (stewardship_response_field_source_v1) and
@@ -30,8 +31,9 @@
 --     retained with their items: no path deletes one.
 --   * stewardship_refresh_check_start (new, migration-owned): one row,
 --     written here once (with a count-only refresh_checks_started audit
---     event when the database already holds live responses), recording when Not seen in ParishSoft starts counting and
---     after how many full refreshes (default two). Its guard keeps the
+--     event when the database already holds live responses), recording
+--     when Not seen in ParishSoft starts counting and after how many full
+--     refreshes (default two). Its guard keeps the
 --     start immutable and stamps it on any later insert; deleting the row
 --     turns the flag off. No runtime login may write it.
 -- The file ends with a DO block that refuses to commit unless all of this
