@@ -45,7 +45,7 @@ class RosterExport(ReadModel):
 
 
 def export_roster(caller, service, *, show, ministry, fmt, zone_name, context):
-    """``export roster``: the Roster changes to enter download, as bytes.
+    """``export roster``: the roster list's download, as bytes.
 
     ``show`` is the page's Show choice (``todo`` or ``all``), ``ministry``
     its Ministry filter (a DUID, or None), ``fmt`` and ``zone_name`` the

@@ -449,7 +449,7 @@ def case_census_changes(monkeypatch):
 
 
 def case_ministry_roster(monkeypatch):
-    """Roster changes to enter (#528)."""
+    """The roster list's file (#528)."""
     zone = ZoneInfo("America/Chicago")
     rows = [roster_row()]
     headers = csv_headers(ministry_roster_views.roster_csv(rows, zone))

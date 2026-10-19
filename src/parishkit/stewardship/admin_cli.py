@@ -63,8 +63,8 @@ command that streams a file (``logs export``, ``export census``,
 to standard output, and its document to standard error. Other areas join the same
 subparser tree in later pull requests, each listed in the catalog with the
 pull request that added it. ``report roster`` (in ``admin_roster``) counts
-the Roster changes to enter list, whose download is ``export roster`` (in
-``admin_roster_export``), and ``report census`` (in
+the roster list (Ministry requests' To enter by hand rows), whose download
+is ``export roster`` (in ``admin_roster_export``), and ``report census`` (in
 ``admin_census``) the Census changes list (#463), whose download is
 ``export census`` (in ``admin_census_export``). ``export limitations``
 (in ``admin_limitations_export``) is the Limitations report's download.
@@ -2604,7 +2604,7 @@ def report_ministry(args, preamble, runtime, context):
 
 
 def report_roster(args, preamble, runtime, context):
-    """The Roster changes to enter list, as counts only (#463)."""
+    """The roster list (Ministry requests to enter by hand), as counts (#463)."""
     from .admin_roster import read_roster
 
     return read_roster(
@@ -2627,7 +2627,7 @@ def _census_filters(args):
 
 
 def export_roster(args, preamble, runtime, context):
-    """The Roster changes to enter download, streamed to standard output (#463)."""
+    """The roster list's download, streamed to standard output (#463)."""
     from .admin_roster_export import export_roster as export
 
     return export(
@@ -6486,7 +6486,7 @@ def _report_specs():
             options=(_report_ministry_options,),
             audit_event="ministry_report_viewed",
         ),
-        # Roster changes to enter (#528): counts only; its rows name
+        # The roster list (#528): counts only; its rows name
         # Members, so they stay on the page and its downloads.
         CommandSpec(
             "report roster",
@@ -6499,7 +6499,7 @@ def _report_specs():
             options=(_report_roster_options,),
             audit_event="roster_changes_viewed",
         ),
-        # The Roster changes to enter download (PR 8g): the page's file.
+        # The roster list's download (PR 8g).
         CommandSpec(
             "export roster",
             "Write the roster changes to enter, as a file, to standard output.",
@@ -7214,7 +7214,7 @@ def _share_specs():
 # ``followup roster-entered``, ``followup roster-bulk`` (in
 # ``admin_roster_tick``), ``followup information-show`` and ``followup
 # information-update`` (in ``admin_information``), #463: a resolved Ministry
-# request's Entered in ParishSoft tick, Roster changes to enter's bulk mark,
+# request's Entered in ParishSoft tick, Ministry requests' bulk Entered by hand,
 # and an Additional information item's page and Save.
 
 # The longest Staff notes an information item takes (5,000 characters), in
@@ -7271,7 +7271,7 @@ def followup_roster_entered(args, preamble, runtime, context):
 def followup_roster_bulk(args, preamble, runtime, context):
     """Mark several requests Entered in ParishSoft at once (#463, #879).
 
-    Roster changes to enter asks in its confirmation dialog, so this asks
+    Ministry requests' bulk Entered by hand asks in its dialog, so this asks
     first (or takes ``--yes``), after the list's own role check, which
     refuses a Ministry leader before anything is read or asked.
     """
@@ -7356,7 +7356,7 @@ def _roster_entered_options(parser):
 
 
 def _roster_bulk_options(parser):
-    """Options of ``followup roster-bulk``: Roster changes to enter's bulk bar."""
+    """Options of ``followup roster-bulk``: a bulk Entered by hand."""
     parser.add_argument(
         "--request",
         required=True,

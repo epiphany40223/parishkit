@@ -271,7 +271,7 @@ DESCRIPTIONS = {
     ),
     "admin_cmd_followup_roster_bulk": _(
         "An automation session marked several Ministry requests Entered in "
-        "ParishSoft, as Roster changes to enter's bulk mark does."
+        "ParishSoft, as Ministry requests' bulk Entered by hand does."
     ),
     "admin_cmd_followup_information_update": _(
         "An automation session recorded follow-up on an Additional "

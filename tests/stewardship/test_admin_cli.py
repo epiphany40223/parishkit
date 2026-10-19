@@ -671,7 +671,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert options["--show"]["choices"] == ["any", "cannot_serve", "cannot_attend"]
     assert "--search" not in options and "--campaign" not in options
     assert limitations["result_fields"] == census["result_fields"]
-    # The Roster changes to enter download (PR 8g): the same, with the
+    # The roster list's download (PR 8g): the same, with the
     # page's own event and report roster's Show and Ministry choices.
     roster = entries["export roster"]
     assert roster["scope"] == "full" and not roster["changes_state"]

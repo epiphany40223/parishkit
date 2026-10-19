@@ -329,7 +329,7 @@ def roster_pdf(rows, zone, *, parish, campaign, as_of):
 
     count = len(rows)
     frame = PdfFrame(
-        title="Roster changes to enter",
+        title="Ministry requests to enter by hand",
         eyebrow=f"{parish} · {campaign}",
         stamp=f"Downloaded {dates.display_text(as_of.astimezone(zone))} ({zone.key})",
         details=(f"{count:,} {'change' if count == 1 else 'changes'} in this file.",),

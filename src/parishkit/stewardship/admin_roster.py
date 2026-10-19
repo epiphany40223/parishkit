@@ -29,7 +29,7 @@ from .admin_reads import ReadModel, _recheck
 
 @dataclass(frozen=True)
 class RosterReport(ReadModel):
-    """The Roster changes to enter list of the current campaign, as counts.
+    """The roster list of the current campaign, as counts.
 
     ``show`` is the page's Show choice (``todo``: not yet entered, the
     default; ``all``: entered ones too) and ``ministry`` its Ministry filter
@@ -86,7 +86,7 @@ def roster_model(campaign_id, show, ministry, rows):
 
 
 def read_roster(caller, service, *, show, ministry):
-    """``report roster``: the Roster changes to enter list, counted.
+    """``report roster``: the roster list, counted.
 
     ``show`` is ``todo`` or ``all`` (the command line's choices); a
     ``ministry`` outside the page's DUID range (1 through 2**31 - 1) is the

@@ -363,7 +363,7 @@ class Action(StrEnum):
     # anyway (#1434, ADM-09.03).
     ADMIN_CMD_CENSUS_RESOLVE_CONFLICT = "admin_cmd_census_resolve_conflict"
     # followup roster-entered and followup roster-bulk: a resolved request's
-    # Entered in ParishSoft tick and Roster changes to enter's bulk mark;
+    # Entered in ParishSoft tick and a bulk Entered by hand;
     # followup information-update: an Additional information item's Save
     # (#463 PR 11b).
     ADMIN_CMD_FOLLOWUP_ROSTER_ENTERED = "admin_cmd_followup_roster_entered"

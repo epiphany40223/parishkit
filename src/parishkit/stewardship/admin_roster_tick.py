@@ -61,7 +61,7 @@ def admit_with(principal, caller, store, *, final=False):
 
 
 def _admit_roster(caller, store, *, final=False):
-    """Roster changes to enter's admission: Administrators and Staff only."""
+    """The roster tick's admission: Administrators and Staff only."""
     from .reports.ministry_roster_views import _principal
 
     return admit_with(_principal, caller, store, final=final)
