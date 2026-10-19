@@ -544,6 +544,12 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             "stewardship_ministry_roster_entry_guard",
             "stewardship_ministry_roster_entry_guard_v1",
         ),
+        # A cannot-participate or cannot-attend answer's review history
+        # (#1685): INSERT only, under its own name.
+        "stewardship_limitation_review": (
+            "stewardship_limitation_review_guard",
+            "stewardship_limitation_review_guard_v1",
+        ),
         # Publication plans and outcomes (#528, DAT-09.01): INSERT only,
         # each under its own name.
         **{
@@ -878,6 +884,7 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
                 "stewardship_proposal_review",
                 "stewardship_campaign_setup_review",
                 "stewardship_ministry_roster_entry",
+                "stewardship_limitation_review",
                 "stewardship_publication_plan",
                 "stewardship_publication_entity",
                 "stewardship_publication_field",

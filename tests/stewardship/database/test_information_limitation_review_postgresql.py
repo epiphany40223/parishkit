@@ -649,3 +649,41 @@ def test_an_answer_the_form_left_out_keeps_its_decision():
                 [json.dumps(answers), kind, key] * 2,
             )
             assert cursor.fetchone() == (stated, False), (answers, kind)
+
+
+def test_the_menu_counts_the_answers_to_review(response_service, google):
+    """The menu's Limitations count is the worklist's To review count (R39
+    finding 10): a decision moves an answer out of it, Back to review brings
+    it back, and a viewer the page refuses gets no number."""
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.accounts import admin_context
+    from parishkit.stewardship.accounts.policy import Principal
+
+    harness = response_service
+    start(harness)
+    harness = activate_response_service(harness)
+    first = submit_live(harness, cannot_serve=True)
+    actor = staff_actor()
+    staff = Principal(actor, frozenset({"staff"}), frozenset())
+    items = [
+        SimpleNamespace(name="limitations_report", url="/admin/reports/limitations/")
+    ]
+    family = FamilyCampaign.objects.get(pk=first.family_id)
+    member = answer_id(family.family_duid, "member", "3")
+
+    def count(principal=staff):
+        """The menu's count, read as the web role reads it."""
+        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+            return admin_context._open_counts(
+                SimpleNamespace(), principal, items, harness.campaign
+            ).get("limitations_report")
+
+    # The Member's answer and the Family's cannot-attend answer.
+    assert count() == 2
+    decide_answer(harness, actor, Action.ACCEPT, member, 0)
+    assert count() == 1
+    decide_answer(harness, actor, Action.BACK_TO_REVIEW, member, 1)
+    assert count() == 2
+    leader = Principal(actor, frozenset({"ministry_leader"}), frozenset({1}))
+    assert count(leader) is None

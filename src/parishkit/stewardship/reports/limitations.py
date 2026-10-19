@@ -47,9 +47,10 @@ ANSWERS = {
 }
 # Each download table has its page table's columns, names and order (#932,
 # #966): the Members table leads with the Member and Member DUID, as on the
-# page, and the Families table has no "Cannot attend Mass" column, as on the
-# page, whose table heading says what it lists (every listed Family cannot
-# attend). ParishSoft status follows the Family's name, as the page's badge
+# page, and the Families table names each Family's limitation in its
+# Limitation column, in the worklist's words (R39 finding 11), as the Members
+# table's Cannot participate column does. ParishSoft status follows the
+# Family's name, as the page's badge
 # sits beside it: "Not in ParishSoft" with the name blank when the data no
 # longer has the Family, otherwise blank (#1216).
 MEMBER_HEADINGS = (
@@ -62,7 +63,14 @@ MEMBER_HEADINGS = (
     "Latest response",
     "Stage",
 )
-FAMILY_HEADINGS = ("Family", STATUS_HEADING, "Family DUID", "Latest response", "Stage")
+FAMILY_HEADINGS = (
+    "Family",
+    STATUS_HEADING,
+    "Family DUID",
+    "Limitation",
+    "Latest response",
+    "Stage",
+)
 # Each table's page heading, which the PDF prints above that table.
 MEMBER_CAPTION = "Members who cannot participate in ministries"
 FAMILY_CAPTION = "Families that cannot attend Mass or prayer services"
@@ -75,6 +83,7 @@ PDF_WEIGHTS = {
     "Member": 9,
     "Member DUID": 5,
     "Cannot participate in ministries": 6,
+    "Limitation": 9,
     "Latest response": 8,
     "Stage": 6,
 }
@@ -212,6 +221,7 @@ def export_tables(result, zone, *, time_text=iso_time):
         (
             *_family(row),
             str(row["family_duid"]),
+            ANSWERS[row["kind"]],
             instant(row["submitted_at"]),
             row["placement"].stage.label,
         )

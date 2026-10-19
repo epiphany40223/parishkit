@@ -246,12 +246,12 @@ def test_native_page_and_downloads(response_service, google, settings):
         assert response["Cache-Control"] == "no-store"
         assert "stewardship-limitations-" in response["Content-Disposition"]
         assert b"Organ" not in body
-        # The Families table has the page's columns: no Cannot attend Mass,
-        # and each row's Stage last. ParishSoft status follows each Family
+        # The Families table names each row's limitation (R39 finding 11),
+        # with each row's Stage last. ParishSoft status follows each Family
         # name (#1216).
         assert (
-            b"\r\nFamily,ParishSoft status,Family DUID,Latest response,Stage\r\n"
-            in body
+            b"\r\nFamily,ParishSoft status,Family DUID,Limitation,"
+            b"Latest response,Stage\r\n" in body
         )
         assert body.startswith(
             b"Member,Member DUID,Family,ParishSoft status,Family DUID,"
