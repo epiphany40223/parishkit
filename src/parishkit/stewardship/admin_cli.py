@@ -86,7 +86,7 @@ read and record Additional information follow-up. ``followup export``
 (PR 11c, in ``admin_followup_export``) is the queue's Export these
 requests, streamed as ``export roster`` is. ``report pledges``, ``export
 pledges`` and ``pledges decide`` (#1733, in ``admin_pledges``) count,
-download and decide Pledges to enter through the page's own read, writer
+download and decide Pledges through the page's own read, writer
 and ``PledgeDecisions`` service.
 """
 
@@ -7575,10 +7575,10 @@ def _followup_export_specs():
 # ------------------------------------------- end of follow-up export block
 
 
-# ---------------------------------------------- Pledges to enter (#1733)
+# ---------------------------------------------- Pledges (#1733)
 #
 # ``report pledges``, ``export pledges`` and ``pledges decide`` (in
-# ``admin_pledges``): Pledges to enter's counts, its download and its row
+# ``admin_pledges``): Pledges's counts, its download and its row
 # and bulk decisions, through the page's own read, writer and
 # ``PledgeDecisions`` service.
 
@@ -7589,14 +7589,14 @@ PLEDGE_FREQUENCIES = ("weekly", "monthly", "quarterly", "annual")
 
 
 def report_pledges(args, preamble, runtime, context):
-    """Pledges to enter, as counts by stage only (#1733)."""
+    """Pledges, as counts by stage only (#1733)."""
     from .admin_pledges import read_pledges
 
     return read_pledges(context["caller"], runtime, stage=args.stage)
 
 
 def export_pledges(args, preamble, runtime, context):
-    """The Pledges to enter download, streamed to standard output (#1733)."""
+    """The Pledges download, streamed to standard output (#1733)."""
     from .admin_pledges import export_pledges as export
 
     return export(
@@ -7741,7 +7741,7 @@ def _pledges_decide_options(parser):
 
 
 def _pledge_specs():
-    """Pledges to enter's commands (#1733, ``admin_pledges``).
+    """Pledges's commands (#1733, ``admin_pledges``).
 
     ``report pledges`` is a read-only count; ``export pledges`` needs full
     scope, as every export and as the download's post records activity;
@@ -7754,7 +7754,7 @@ def _pledge_specs():
         # Counts only: each row names a Family and its pledge.
         CommandSpec(
             "report pledges",
-            "Count the pledges on Pledges to enter, by stage.",
+            "Count the pledges on Pledges, by stage.",
             report_pledges,
             "read_only",
             False,
@@ -7767,7 +7767,7 @@ def _pledge_specs():
         # version and actions for ``pledges decide``.
         CommandSpec(
             "export pledges",
-            "Write the Pledges to enter download to standard output.",
+            "Write the Pledges download to standard output.",
             export_pledges,
             "full",
             False,
@@ -7781,7 +7781,7 @@ def _pledge_specs():
         # or the bulk bar's: the page's service, keyed.
         CommandSpec(
             "pledges decide",
-            "Record a decision on pledges, as Pledges to enter's actions do.",
+            "Record a decision on pledges, as Pledges's actions do.",
             pledges_decide,
             "full",
             True,
@@ -7795,7 +7795,7 @@ def _pledge_specs():
     )
 
 
-# ------------------------------------------- end of Pledges to enter block
+# ------------------------------------------- end of Pledges block
 
 
 COMMANDS = (

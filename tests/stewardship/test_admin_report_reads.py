@@ -577,7 +577,7 @@ GOLDEN = {
             "statuses": CENSUS_STATUSES | {"superseded": 1, "cancelled": 0},
         },
     ),
-    # Pledges to enter (#1733): counts by stage only, zeros included.
+    # Pledges (#1733): counts by stage only, zeros included.
     "report pledges": (
         lambda: admin_pledges.pledge_model(
             CAMPAIGN,
@@ -675,7 +675,7 @@ def test_every_report_command_has_its_models_fields():
         # Census changes (#528), a campaign report menu entry, so ``report
         # list`` offers it (its read is in ``admin_census``).
         "report census": admin_census.CensusReport,
-        # Pledges to enter (#1733), a campaign report menu entry, so
+        # Pledges (#1733), a campaign report menu entry, so
         # ``report list`` offers it (its read is in ``admin_pledges``).
         "report pledges": admin_pledges.PledgeReport,
     }

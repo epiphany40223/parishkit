@@ -1,6 +1,6 @@
 """``report pledges``, ``export pledges`` and ``pledges decide`` (#1733).
 
-Pledges to enter (``admin:pledges_to_enter``,
+Pledges (``admin:pledges_to_enter``,
 ``reports.pledge_review_views``) is the financial stream's review worklist
 and its manual handling report (#1686). The commands use the page's own
 pieces, so the two cannot drift:
@@ -90,7 +90,7 @@ REPEATS = {
 
 @dataclass(frozen=True)
 class PledgeReport(ReadModel):
-    """Pledges to enter of the current campaign, as counts.
+    """Pledges of the current campaign, as counts.
 
     ``stage`` is the page's Stage choice (``all`` for Every stage) and
     ``matching`` the rows it keeps; ``stages`` counts every pledge by stage
@@ -176,7 +176,7 @@ def _stage(caller, service, actor, stage):
 
 
 def read_pledges(caller, service, *, stage):
-    """``report pledges``: the Pledges to enter list, counted.
+    """``report pledges``: the Pledges list, counted.
 
     Admission, the campaign check and the guarded read are the shared
     report read's (``_report``), so no current campaign, or one without
@@ -271,7 +271,7 @@ def choice(fmt, zone_name):
 
 
 def export_pledges(caller, service, *, stage, fmt, zone_name, context):
-    """``export pledges``: the Pledges to enter download, as bytes.
+    """``export pledges``: the Pledges download, as bytes.
 
     ``stage`` is the page's Stage choice, ``fmt`` and ``zone_name`` the
     file's format and the zone of its times. Admits passively with the

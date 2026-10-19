@@ -184,7 +184,7 @@ def test_every_export_command_has_a_golden_document():
         "export limitations",
         # The Roster changes to enter download (#463).
         "export roster",
-        # The Pledges to enter download (#1733).
+        # The Pledges download (#1733).
         "export pledges",
     }
     from parishkit.stewardship import (

@@ -210,7 +210,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "export comparison",
         # The campaign archive workbook (#1018 part (a)).
         "export archive",
-        # Pledges to enter's counts, download and decisions (#1733).
+        # Pledges's counts, download and decisions (#1733).
         "report pledges",
         "export pledges",
         "pledges decide",
@@ -990,7 +990,7 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_followup_roster_entered",
         "admin_cmd_followup_roster_bulk",
         "admin_cmd_followup_information_update",
-        # Pledges to enter's decisions (#1733).
+        # Pledges's decisions (#1733).
         "admin_cmd_pledges_decide",
     ]
     for event in events:
