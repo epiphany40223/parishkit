@@ -430,7 +430,8 @@ ROSTER_STATES = frozenset({"active", "closed", "archived"})
 # Additional information counts current requests not yet marked "Follow-up
 # completed" (its default view lists completed ones too). Ministry requests
 # (the follow-up queue, #1133) runs the page's own selection with its
-# default (Unresolved) filters and no rows, and takes its total, so the
+# default filters (Stage To review: the open states; the stream has no
+# Conflict stage yet) and no rows, and takes its total, so the
 # count applies every filter the page
 # does: the Ministry module, a promoted and uncompacted source, the
 # campaign's Ministries (plus removed ones with a current request), the
