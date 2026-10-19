@@ -35,6 +35,7 @@ from .test_admin_export_cli_postgresql import read_only_session
 from .test_admin_report_cli_postgresql import parity
 from .test_admin_task_retry_cli_postgresql import approved_by_browser, runner
 from .test_export_views_postgresql import post
+from .test_information_followup_postgresql import search
 from .test_ministry_followup_postgresql import edit, requests
 from .test_ministry_reports_postgresql import setup
 from .test_policy_postgresql import user
@@ -408,23 +409,26 @@ def test_the_save_is_the_page_s_once_per_key(live_response_service, google, cli)
     code, document = update(run, item, "--needed", "yes", version=1)
     assert code == 1 and document["error"]["code"] == "stale_version", document
 
-    # The page's Save and the command share the key.
+    # The worklist's Accept (#1685) and the command share the key: the
+    # same change under it replays the page's revision.
     item.refresh_from_db()
     shared = uuid4()
+    version = item.version
     form = {
-        "expected_version": str(item.version),
+        "decide": "accept",
+        "item": str(item.pk),
+        "version": str(version),
         "request_key": str(shared),
-        "notes": NOTE,
-        "follow_up_needed": "yes",
+        "note": NOTE,
     }
-    route = reverse("admin:information_update", args=[item.pk])
-    assert post(browser, route, form).status_code == 302
+    response, _ = search(browser, reverse("admin:information_queue"), form)
+    assert response.status_code == 200
     before = (count(UPDATED), count(UPDATE_EVENT))
     code, document = update(
         run,
         item,
         *("--needed", "yes", "--completed", "no", "--notes", NOTE),
-        version=int(form["expected_version"]),
+        version=version,
         key=shared,
     )
     assert code == 0 and not document["result"]["created"], document

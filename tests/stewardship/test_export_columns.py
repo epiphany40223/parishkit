@@ -466,7 +466,7 @@ def case_ministry_roster(monkeypatch):
 
 
 def case_pledges_to_enter(monkeypatch):
-    """Pledges to enter (#1686)."""
+    """Pledges (#1686)."""
     zone = ZoneInfo("America/Chicago")
     rows = [pledge_row()]
     headers = csv_headers(pledge_review_views.pledges_csv(rows, zone))

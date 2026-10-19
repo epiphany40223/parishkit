@@ -115,7 +115,7 @@ SERVER_INSTANTS = {
     # stale bulk row's day in the browser zone the dialog posts (the page's
     # duplicate-row labels are localized by date-format-v1.js, #558).
     "reports/ministry_roster_views.py": "export in the chosen zone",
-    # Pledges to enter's PDF (#1686), in the zone the download names.
+    # Pledges' PDF (#1686), in the zone the download names.
     "reports/pledge_review_views.py": "export in the chosen zone",
 }
 # Form fields whose label, help or errors name a fixed zone, by (form class,

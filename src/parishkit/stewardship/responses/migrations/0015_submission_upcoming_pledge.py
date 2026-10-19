@@ -32,7 +32,7 @@ FROZEN_SQL = (
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("stewardship_responses", "0013_census_pipeline_review"),
+        ("stewardship_responses", "0014_information_limitation_review"),
         ("stewardship_reports", "0034_pledge_conflicts"),
     ]
 
