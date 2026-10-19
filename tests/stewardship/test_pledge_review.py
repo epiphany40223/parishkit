@@ -50,8 +50,22 @@ def review(decision="accepted", *, entered=False, amount=None, frequency=None):
     return row
 
 
-def item(stage="to_review", latest=None, *, in_force=True, sequence=None):
-    """One pledge item; ``sequence`` defaults to 1 with a row, 0 without."""
+def item(
+    stage="to_review",
+    latest=None,
+    *,
+    in_force=True,
+    sequence=None,
+    check=None,
+    observed=None,
+    base=None,
+):
+    """One pledge item; ``sequence`` defaults to 1 with a row, 0 without.
+
+    ``stage`` is the shared selection's final stage and ``base`` the one
+    its decision rows give (``stage`` unless given); ``check`` and
+    ``observed`` are its latest counting refresh check's (#1704, #1747).
+    """
     return Item(
         family_id=uuid4(),
         family_duid=101,
@@ -60,6 +74,9 @@ def item(stage="to_review", latest=None, *, in_force=True, sequence=None):
         stage=stage,
         review=latest,
         in_force=in_force,
+        base_stage=base or stage,
+        check=check,
+        observed=None if observed is None else Decimal(observed),
     )
 
 
@@ -320,7 +337,7 @@ def test_the_search_never_travels_in_an_address():
     )
     assert (stage, extra["search"]) == ("all", "Smith")
     with pytest.raises(ValueError):
-        views._choices(QueryDict("stage=conflict"), export=False, private=True)
+        views._choices(QueryDict("stage=updating"), export=False, private=True)
 
 
 def test_the_files_name_every_column_once():

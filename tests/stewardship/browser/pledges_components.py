@@ -23,7 +23,9 @@ from ..test_pledge_review import item, pledge_row, review
 
 PATH = "/pledges"
 # Pledges a refresh checked (#1704): Entered incorrectly, Not seen in
-# ParishSoft, Confirmed and an Ignored one ParishSoft now matches.
+# ParishSoft, Confirmed and an Ignored one ParishSoft now matches; and
+# (#1747) a To review and an accepted pledge in Conflict and a To review one
+# already in ParishSoft.
 CHECKED = "/pledges-checked"
 EVERY = "/pledges-every"
 ACCEPTED = "/pledges-accepted"
@@ -33,19 +35,29 @@ EDITED_NOTICE = "Family 03 accepted (edited)."
 STAFF = frozenset({"staff"})
 
 
-def _row(index, stage="to_review", latest=None, check=None, **extra):
+def _row(index, stage="to_review", latest=None, check=None, *, base=None, **extra):
     """Family ``index``'s pledge at ``stage``, with a fixed response id.
 
-    ``check`` is its latest refresh check (a ``CheckState``), as
-    ``pledge_rows`` reads it (#1704).
+    ``check`` is its latest refresh check (a ``CheckState``): the item
+    carries its outcome and amount, as the shared selection reads them, and
+    the row its run, as ``pledge_rows`` reads it (#1704, #1747). ``base``
+    is the stage its decision rows alone give, ``stage`` unless given.
     """
     found = replace(
-        item(stage, latest), submission_id=UUID(int=index), family_duid=1000 + index
+        item(
+            stage,
+            latest,
+            check=check.outcome if check else None,
+            observed=check.observed if check else None,
+            base=base,
+        ),
+        submission_id=UUID(int=index),
+        family_duid=1000 + index,
     )
     row = pledge_row(found, family_name=f"Family {index:02d}", **extra)
     row["family_duid"] = 1000 + index
-    row["check"] = check
-    row["placement"] = placement(found, check)
+    row["check"] = check if found.base_stage != "to_review" else None
+    row["placement"] = placement(found)
     row["stage"] = row["placement"].stage.value
     row["not_seen"] = bool(
         check and check.not_seen(row["placement"].stage is Stage.ENTERED_BY_HAND)
@@ -62,10 +74,34 @@ def checked_rows():
 
     marked = review("accepted", entered=True)
     return [
-        _row(7, "entered_by_hand", marked, check("entered_incorrectly", "1100.00")),
+        _row(
+            7,
+            "entered_incorrectly",
+            marked,
+            check("entered_incorrectly", "1100.00"),
+            base="entered_by_hand",
+        ),
         _row(8, "entered_by_hand", marked, check("unchanged", "0.00", unseen=2)),
-        _row(9, "entered_by_hand", marked, check("confirmed", "1200.00")),
+        _row(
+            9,
+            "confirmed",
+            marked,
+            check("confirmed", "1200.00"),
+            base="entered_by_hand",
+        ),
         _row(6, "ignored", review("ignored"), check("ignored_now_matches", "1200.00")),
+        # #1747: a To review pledge ParishSoft holds at a third amount, an
+        # accepted one not yet marked at one, and a To review one ParishSoft
+        # already holds.
+        _row(10, "conflict", None, check("conflict", "900.00"), base="to_review"),
+        _row(
+            11,
+            "conflict",
+            review("accepted"),
+            check("conflict", "950.00"),
+            base="to_enter_by_hand",
+        ),
+        _row(12, "confirmed", None, check("confirmed", "1200.00"), base="to_review"),
     ]
 
 

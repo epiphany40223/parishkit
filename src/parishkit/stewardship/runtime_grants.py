@@ -458,10 +458,11 @@ PUBLICATION_AUDITED_FUNCTION = (
 # owner-run discard functions (reports.export_cleanup.produce_discards); a
 # batch of 0 only asks whether any is due.
 EXPORT_DISCARD_FUNCTION = "stewardship_export_discard_due_v1(integer)"
-# The decided pledges a refresh re-evaluates (0139, #1704), with each one's
-# carried-forward and marked amounts: the source worker's one read of them,
-# so it is granted no response answers or decision rows.
-PLEDGE_REFRESH_ITEMS_FUNCTION = "stewardship_pledge_refresh_items_v1(uuid, uuid)"
+# The pledges a refresh re-evaluates (0142, #1747, superseding 0139's v1 of
+# #1704), with each one's carried-forward, marked and baseline amounts and
+# latest check: the source worker's one read of them, so it is granted no
+# response answers or decision rows.
+PLEDGE_REFRESH_ITEMS_FUNCTION = "stewardship_pledge_refresh_items_v2(uuid, uuid, uuid)"
 # Publication plans and outcomes (#528, DAT-09.01, migration 0087): the
 # worker writes a preflight's plan and each write attempt's outcome; web
 # reads them all and writes only an Administrator's confirmation.
@@ -551,11 +552,8 @@ CLOSURE_FUNCTIONS = {
     ),
     # The Email Ministry leaders review (0120, #1592).
     LEADER_EMAILS_FUNCTION: ("stewardship_jobs", "0035_leader_emails"),
-    # The decided pledges a refresh re-evaluates (0139, provisional, #1704).
-    PLEDGE_REFRESH_ITEMS_FUNCTION: (
-        "stewardship_reports",
-        "0033_pledge_refresh_checks",
-    ),
+    # The pledges a refresh re-evaluates (0142, provisional, #1747).
+    PLEDGE_REFRESH_ITEMS_FUNCTION: ("stewardship_reports", "0034_pledge_conflicts"),
 }
 
 
@@ -665,6 +663,9 @@ CLOSURE_TABLES = {
         "stewardship_reports",
         "0033_pledge_refresh_checks",
     ),
+    # A To review pledge's refresh checks (0142, provisional number, #1747),
+    # which the worker records in promotion and web and the worker read.
+    "stewardship_pledge_open_check": ("stewardship_reports", "0034_pledge_conflicts"),
 }
 
 
@@ -967,6 +968,9 @@ def runtime_grants(role, *, target=None):
             # (PLEDGE_REFRESH_ITEMS_FUNCTION) and records a check whose
             # outcome changed. Its guard admits INSERT alone.
             tables["stewardship_pledge_refresh_check"] = {"SELECT", "INSERT"}
+            # A To review pledge's refresh checks (#1747), recorded the same
+            # way; the definer selection gives their state.
+            tables["stewardship_pledge_open_check"] = {"SELECT", "INSERT"}
             add_service_status_housekeeping_grants(tables, columns)
         else:
             add_service_status_writer_grants(tables, columns)

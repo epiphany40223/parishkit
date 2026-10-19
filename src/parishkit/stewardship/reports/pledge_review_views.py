@@ -102,11 +102,13 @@ FORMATS = {
     "pdf": "application/pdf",
 }
 # The Stage filter's choices, To review first and the default (review
-# pipeline spec, "Review worklist"). The refresh places Entered incorrectly
-# and Confirmed, and sets the Not seen in ParishSoft flag, a choice of its
-# own after the stages while some pledge has it (#1704).
+# pipeline spec, "Review worklist"). The refresh places Conflict (#1747),
+# Entered incorrectly and Confirmed, and sets the Not seen in ParishSoft
+# flag, a choice of its own after the stages while some pledge has it
+# (#1704).
 STAGES = (
     Stage.TO_REVIEW,
+    Stage.CONFLICT,
     Stage.TO_ENTER_BY_HAND,
     Stage.ENTERED_BY_HAND,
     Stage.ENTERED_INCORRECTLY,
@@ -192,6 +194,9 @@ ENTERING = frozenset(
 )
 NO_FREQUENCY = "No frequency"
 CHANGED = "The Family changed its pledge after the last decision."
+# A To review pledge a refresh found in ParishSoft (refresh rule 1, #1747):
+# Confirmed with no reviewer.
+ALREADY = "Already in ParishSoft."
 EDIT_REFUSED = "Correct the value, then save it again."
 # The worklist's default filters, as the Financial stewardship selection
 # takes them: every Family's current pledge.
@@ -241,8 +246,9 @@ def pledge_rows(campaign_id, principal, search=""):
     matches the Family name or DUID as that report's does) names, words and
     types each pledge; ``read_items`` gives its stage. Two reads for the
     whole campaign, plus one for the deciding users' emails and two for the
-    refresh checks (#1704). Returns the rows, each carrying ``item``,
-    ``check`` (its latest refresh check, or None), ``placement`` and
+    decided pledges' check runs (Not seen, #1704). Returns the rows, each
+    carrying ``item`` (with its latest counting check, #1747), ``check``
+    (a decided pledge's check run, or None), ``placement`` and
     ``not_seen``, and the selection's metadata.
     """
     query = FinancialQuery(search=search)
@@ -285,7 +291,7 @@ def pledge_rows(campaign_id, principal, search=""):
         review = item.review
         row["item"] = item
         row["check"] = checks.get(item.submission_id)
-        row["placement"] = placement(item, row["check"])
+        row["placement"] = placement(item)
         row["stage"] = row["placement"].stage.value
         # The Not seen in ParishSoft flag, on Entered by hand only (#1704).
         row["not_seen"] = bool(
@@ -374,9 +380,9 @@ def mark(row):
 
 
 def parishsoft_amount(row):
-    """ParishSoft's upcoming-year amount the latest refresh found, or ""."""
-    check = row.get("check")
-    return display(check.observed) if check and check.observed is not None else ""
+    """ParishSoft's upcoming-year amount the latest counting check found, or ""."""
+    observed = row["item"].observed
+    return display(observed) if observed is not None else ""
 
 
 def stage_text(row):
@@ -705,11 +711,15 @@ def _stage_line(row, decision):
     """The line under a row's Stage, as safe HTML (or "").
 
     The decision the stage word does not already say (Accepted (edited)),
-    who marked an entered pledge and when, and, for a pledge the Family
-    changed after its last decision, that the decision is no longer in
-    force.
+    that a Confirmed pledge with no decision was already in ParishSoft
+    (#1747), who marked an entered pledge and when, and, for a pledge the
+    Family changed after its last decision, that the decision is no longer
+    in force.
     """
     parts = [format_html("{}", decision)] if decision else []
+    found = row["placement"]
+    if found.stage is Stage.CONFIRMED and found.decision is None:
+        parts.append(format_html("{}", ALREADY))
     item = row["item"]
     if item.review and not item.in_force:
         parts.append(format_html("{}", CHANGED))
@@ -756,10 +766,9 @@ def decorate(rows):
                 "parishsoft_now": parishsoft_amount(row),
                 "not_seen": row.get("not_seen", False),
                 # Refresh rule 1 on an Ignored pledge: noted, never a stage.
-                "now_matches": bool(
-                    row.get("check")
-                    and row["placement"].stage is Stage.IGNORED
-                    and row.get("check").outcome == "ignored_now_matches"
+                "now_matches": (
+                    row["placement"].stage is Stage.IGNORED
+                    and item.check == "ignored_now_matches"
                 ),
                 "withheld": WITHHELD.get(row["placement"].stage, ()),
                 "submitted_at": row["submitted_at"],

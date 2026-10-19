@@ -1,4 +1,4 @@
-"""Pledge refresh checks' pure parts and their page and files (#1704).
+"""Pledge refresh checks' pure parts and their page and files (#1704, #1747).
 
 The checks themselves are written by real promotions in
 ``database/test_pledge_refresh_postgresql.py``; these tests cover how a
@@ -15,6 +15,7 @@ import pytest
 from parishkit.stewardship.pipeline import (
     Action,
     Decision,
+    Placement,
     Stage,
     Stream,
     financial_placement,
@@ -31,7 +32,7 @@ AT = datetime(2054, 10, 6, 15, 30, tzinfo=UTC)
 
 
 def check(outcome, observed="1200.00", unseen=0):
-    """A latest refresh check as ``pledge_check_states`` reads it."""
+    """A decided pledge's check run as ``pledge_check_states`` reads it."""
     return CheckState(outcome, Decimal(observed), unseen, 2)
 
 
@@ -57,40 +58,72 @@ def test_a_check_moves_a_decided_pledge_on(decision, entered, outcome, stage):
     )
 
 
-def test_a_check_needs_a_decision_and_a_known_outcome():
-    """An undecided pledge has no check; an unknown outcome is a defect."""
-    with pytest.raises(ValueError):
-        financial_placement(check="confirmed")
-    with pytest.raises(ValueError):
-        financial_placement(decision="accepted", check="conflict")
-
-
-def test_placement_reads_the_check_after_the_shared_selection():
-    """The SQL stage is checked first; the check then moves the pledge on,
-    and a pledge the Family changed since (not in force) ignores it."""
-    marked = item("entered_by_hand", review(entered=True))
-    assert placement(marked, check("confirmed")).stage is Stage.CONFIRMED
-    assert (
-        placement(marked, check("entered_incorrectly")).stage
-        is Stage.ENTERED_INCORRECTLY
+@pytest.mark.parametrize("decision", ["accepted", "accepted_edited"])
+def test_a_conflict_holds_an_accepted_unmarked_pledge_decision(decision):
+    """A third amount under an accepted pledge not yet marked is a Conflict
+    that keeps its decision visible but not in force (#1747)."""
+    assert financial_placement(decision=decision, check="conflict") == Placement(
+        Stage.CONFLICT, held_decision=Decision(decision)
     )
+
+
+@pytest.mark.parametrize(
+    "outcome,stage",
+    [
+        (None, Stage.TO_REVIEW),
+        ("unchanged", Stage.TO_REVIEW),
+        ("confirmed", Stage.CONFIRMED),
+        ("conflict", Stage.CONFLICT),
+    ],
+)
+def test_a_to_review_pledge_check_places_it_with_no_decision(outcome, stage):
+    """Confirmed with no reviewer ("Already in ParishSoft") or a Conflict
+    with nothing held (#1747)."""
+    assert financial_placement(check=outcome) == Placement(stage)
+
+
+def test_a_check_needs_a_known_outcome_for_its_stage():
+    """A To review pledge has no Entered incorrectly or Ignored note; an
+    unknown outcome is a defect."""
+    for outcome in ("entered_incorrectly", "ignored_now_matches", "lost"):
+        with pytest.raises(ValueError):
+            financial_placement(check=outcome)
+    with pytest.raises(ValueError):
+        financial_placement(decision="accepted", check="lost")
+
+
+def test_placement_agrees_with_the_shared_selection():
+    """The SQL selection's stage, check included, must equal the Python one;
+    a pledge the Family changed since (not in force) has no decided check."""
+    marked = item("confirmed", review(entered=True), check="confirmed")
+    assert placement(marked).stage is Stage.CONFIRMED
+    wrong = item("entered_by_hand", review(entered=True), check="entered_incorrectly")
+    with pytest.raises(ValueError):
+        placement(wrong)
     changed = item("to_review", review(entered=True), in_force=False)
-    assert placement(changed, check("confirmed")).stage is Stage.TO_REVIEW
+    assert placement(changed).stage is Stage.TO_REVIEW
     assert not checked(changed)
-    assert checked(marked) and not checked(item())
+    entered = item("entered_by_hand", review(entered=True))
+    assert checked(entered) and not checked(item())
 
 
-def test_entered_incorrectly_and_confirmed_offer_nothing():
-    """Entered incorrectly's fixes wait for #1737; Confirmed is closed."""
+def test_entered_incorrectly_and_confirmed_offer_nothing_a_conflict_is_decided():
+    """Entered incorrectly's fixes wait for #1737; Confirmed is closed; a
+    Conflict is decided again (#1747)."""
     roles = STAFF
     assert offered(Stage.ENTERED_INCORRECTLY, roles) == frozenset()
     assert offered(Stage.CONFIRMED, roles) == frozenset()
     assert Action.ENTERED_BY_HAND in offered(Stage.TO_ENTER_BY_HAND, roles)
+    assert offered(Stage.CONFLICT, roles) == {
+        Action.ACCEPT,
+        Action.EDIT,
+        Action.IGNORE,
+    }
 
 
-def shown(found, latest):
-    """One page row of ``found`` with ``latest`` as its refresh check."""
-    row = pledge_row(found, check=latest, placement=placement(found, latest))
+def shown(found, latest=None):
+    """One page row of ``found``, with ``latest`` as a decided pledge's check run."""
+    row = pledge_row(found, check=latest, placement=placement(found))
     row["stage"] = row["placement"].stage.value
     row["not_seen"] = bool(
         latest and latest.not_seen(row["placement"].stage is Stage.ENTERED_BY_HAND)
@@ -119,23 +152,102 @@ def drawn(rows, stage):
     )
 
 
+def offered_icons(row):
+    """The actions a drawn row offers (its unselected icons)."""
+    return [icon["action"] for icon in row["icons"] if not icon["selected"]]
+
+
 def test_entered_incorrectly_shows_parishsoft_now_and_no_action():
     """ParishSoft now sits beside the Reviewer's value; no icon is offered."""
-    found = item("entered_by_hand", review(entered=True))
+    found = item(
+        "entered_incorrectly",
+        review(entered=True),
+        check="entered_incorrectly",
+        observed="1100.00",
+        base="entered_by_hand",
+    )
     row = shown(found, check("entered_incorrectly", "1100.00"))
     worklist = drawn([row], Stage.ENTERED_INCORRECTLY.value)
     (drawn_row,) = worklist.rows
     assert drawn_row["stage_label"] == "Entered incorrectly"
     assert drawn_row["stage_look"] == "error"
     assert worklist.shows_now and drawn_row["parishsoft_now"] == "$1,100.00"
-    assert [icon["action"] for icon in drawn_row["icons"] if not icon["selected"]] == []
+    assert offered_icons(drawn_row) == []
+
+
+def test_a_to_review_conflict_is_decided_against_parishsoft_now():
+    """A To review pledge ParishSoft holds at a third amount is a Conflict:
+    ParishSoft now beside the Family's answer, Accept, Edit and Ignore."""
+    found = item("conflict", check="conflict", observed="900.00", base="to_review")
+    worklist = drawn([shown(found)], Stage.CONFLICT.value)
+    (drawn_row,) = worklist.rows
+    assert drawn_row["stage_label"] == "Conflict"
+    assert worklist.shows_now and drawn_row["parishsoft_now"] == "$900.00"
+    assert offered_icons(drawn_row) == ["accept", "edit", "ignore"]
+    assert "not in force" not in str(drawn_row["decision_label"])
+    (line,) = views.export_rows([shown(found)], ZoneInfo("UTC"))
+    values = dict(zip(views.HEADINGS, line, strict=True))
+    # Nothing is to be entered until the Conflict is decided.
+    assert values["Stage"] == "Conflict"
+    assert values["Annual pledge to enter"] == ""
+    assert values["ParishSoft annual pledge"] == "$900.00"
+
+
+def test_an_accepted_conflict_shows_its_earlier_decision_not_in_force():
+    """An accepted pledge not yet marked at a third amount keeps its Accept
+    visible, not in force, and offers the decision again."""
+    found = item(
+        "conflict",
+        review(),
+        check="conflict",
+        observed="900.00",
+        base="to_enter_by_hand",
+    )
+    (drawn_row,) = drawn([shown(found)], Stage.CONFLICT.value).rows
+    assert "Earlier: Accepted, not in force." in str(drawn_row["decision_label"])
+    assert offered_icons(drawn_row) == ["accept", "edit", "ignore"]
+
+
+def test_a_confirmed_to_review_pledge_was_already_in_parishsoft():
+    """Confirmed with no reviewer says so under its stage and offers nothing."""
+    found = item("confirmed", check="confirmed", observed="1200.00", base="to_review")
+    row = shown(found)
+    (drawn_row,) = drawn([row], Stage.CONFIRMED.value).rows
+    assert drawn_row["stage_label"] == "Confirmed"
+    assert offered_icons(drawn_row) == []
+    # The page's line under the stage (``page_context``).
+    assert str(views._stage_line(row, "")) == views.ALREADY
+    decided = shown(
+        item("confirmed", review(), check="confirmed", base="to_enter_by_hand")
+    )
+    assert views.ALREADY not in str(views._stage_line(decided, ""))
+
+
+def test_the_stage_choices_list_conflict_after_to_review():
+    """Conflict follows To review and comes before To enter by hand."""
+    assert views.STAGES[:3] == (
+        Stage.TO_REVIEW,
+        Stage.CONFLICT,
+        Stage.TO_ENTER_BY_HAND,
+    )
+    rows = [
+        shown(item("conflict", check="conflict", observed="9.00")),
+        shown(item()),
+    ]
+    choices = drawn(rows, Stage.TO_REVIEW.value).stage_choices
+    assert choices[:2] == [("to_review", "To review (1)"), ("conflict", "Conflict (1)")]
 
 
 def test_not_seen_is_a_choice_and_a_flag_in_the_files():
     """The flag is counted beside Entered by hand, chosen on its own, and
     the files word it after the stage."""
     flagged = shown(
-        item("entered_by_hand", review(entered=True)),
+        item(
+            "entered_by_hand",
+            review(entered=True),
+            check="unchanged",
+            observed="0.00",
+        ),
         check("unchanged", "0.00", unseen=2),
     )
     plain = shown(item("to_enter_by_hand", review()), None)
@@ -153,17 +265,22 @@ def test_not_seen_is_a_choice_and_a_flag_in_the_files():
 
 def test_an_ignored_pledge_parishsoft_now_matches_is_only_noted():
     """Refresh rule 1 on an Ignored pledge adds the note under its stage."""
-    row = shown(item("ignored", review("ignored")), check("ignored_now_matches"))
-    (drawn_row,) = drawn([row], Stage.IGNORED.value).rows
+    found = item("ignored", review("ignored"), check="ignored_now_matches")
+    (drawn_row,) = drawn([shown(found)], Stage.IGNORED.value).rows
     assert drawn_row["stage_label"] == "Ignored"
     assert NOW_MATCHES in drawn_row["decision_label"]
 
 
 def test_a_confirmed_pledge_names_its_amount_to_enter_and_its_mark():
     """The files still name the pledge entered and who marked it."""
-    found = item("entered_by_hand", review(entered=True))
-    row = shown(found, check("confirmed"))
-    (line,) = views.export_rows([row], ZoneInfo("UTC"))
+    found = item(
+        "confirmed",
+        review(entered=True),
+        check="confirmed",
+        observed="1200.00",
+        base="entered_by_hand",
+    )
+    (line,) = views.export_rows([shown(found)], ZoneInfo("UTC"))
     values = dict(zip(views.HEADINGS, line, strict=True))
     assert values["Stage"] == "Confirmed"
     assert values["Annual pledge to enter"] == "$1,200.00"

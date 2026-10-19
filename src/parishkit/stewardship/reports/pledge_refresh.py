@@ -1,27 +1,31 @@
-"""Pledge refresh checks: the refresh re-evaluation of decided pledges (#1704).
+"""Pledge refresh checks: the refresh re-evaluation of pledges (#1704, #1747).
 
-Every promoted refresh re-evaluates the financial stream's decided pledges
-against ParishSoft's pledge for the upcoming stewardship year (review
-pipeline spec, "Financial stream", Pledge confirmation), as
+Every promoted refresh re-evaluates the financial stream's pledges not yet
+Confirmed against ParishSoft's pledge for the upcoming stewardship year
+(review pipeline spec, "Financial stream", Pledge confirmation), as
 ``responses.refresh_checks`` does for census changes and Ministry requests.
 A pledge's stage is derived from its ``PledgeReview`` rows, so the refresh
-records what it found in a ``PledgeRefreshCheck`` (frozen migration 0139,
-provisional number), in the same promotion transaction:
+records what it found in a check row, in the same promotion transaction: a
+decided pledge's in a ``PledgeRefreshCheck`` naming its decision row (frozen
+migration 0139, provisional number), a To review pledge's in a
+``PledgeOpenCheck`` naming the Family's current response and the item's
+version (0142, provisional). The shared selection
+``stewardship_pledge_stages_v1`` places the pledge from its latest check.
 
 - ``pledge_checks`` yields the checks one promotion owes, which
   ``refresh_checks.record_refresh_checks`` writes with the others;
-- ``pledge_check_states`` reads each item's latest check for the page and
-  the decision service, which place the pledge from it
-  (``pipeline.financial_placement``);
+- ``pledge_check_states`` reads each decided item's check run for the
+  page's Not seen in ParishSoft flag;
 - ``marked_pledge`` is ParishSoft's amount an Entered by hand mark records.
 
 R is the Family's ParishSoft pledge for the campaign's upcoming financial
-period in the snapshot (``stewardship_pledge_upcoming_v1``, which the guard
-reads too, so both see the same evidence), read only with the snapshot's
+period in the snapshot (``stewardship_pledge_upcoming_v1``, which the guards
+read too, so both see the same evidence), read only with the snapshot's
 proven giving read (``giving_observation``, the Family form's rule). No
-pledge reads as $0.00. A is $0.00 (a response records no snapshot) and C
-the annual pledge carried forward. Frequency is not compared until its
-smoke check, and share methods have no read.
+pledge reads as $0.00. A is $0.00 for a Family's answer (a response records
+no snapshot, #1753), or the amount of the Conflict the decision in force was
+taken on; C is the annual pledge carried forward. Frequency is not compared
+until its smoke check, and share methods have no read.
 """
 
 from dataclasses import dataclass
@@ -31,7 +35,7 @@ from uuid import UUID
 from django.db import connection
 
 from parishkit.stewardship.campaigns.models import Campaign
-from parishkit.stewardship.pipeline import Stage, refresh_outcome
+from parishkit.stewardship.pipeline import RefreshOutcome, Stage, refresh_outcome
 from parishkit.stewardship.responses.financial_inputs import (
     InvalidFinancialSource,
     financial_definition,
@@ -48,43 +52,58 @@ from parishkit.stewardship.responses.refresh_checks import (
 from parishkit.stewardship.source.snapshot_models import SourceCurrent, SourceSnapshot
 
 from .money import MoneyAmount
-from .pledge_models import PledgeRefreshCheck
+from .pledge_models import PledgeOpenCheck, PledgeRefreshCheck
 
-ZERO = Decimal("0.00")
-# The stages a refresh re-evaluates: a decision in force. To review waits
-# for #1747 (it has no decision row to name, and a third value would be a
-# Conflict the stream cannot show).
+# The stages (0135's, from the decision rows alone) whose check names a
+# decision row; a To review pledge's check names its response (#1747).
 CHECKED_STAGES = frozenset({"to_enter_by_hand", "entered_by_hand", "ignored"})
+OPEN = "to_review"
+# What a refresh outcome stores: the shared names, and a Conflict (#1747).
+PLEDGE_STORED = {**STORED, RefreshOutcome.CONFLICT: "conflict"}
+CONFLICT = "conflict"
 # The largest amount a mark can record (``PledgeReview.marked_pledge``).
 MARK_LIMIT = Decimal("1e12")
 UPCOMING = (
     "SELECT duid, stewardship_pledge_upcoming_v1(%s, %s, duid) "
     "FROM unnest(%s::bigint[]) AS duid"
 )
-# The decided pledges in force, read through the source worker's definer
-# selection (0139), which the guard reads too: the worker reads no response
-# answers or decision rows itself.
+# The pledges a refresh re-evaluates, read through the source worker's
+# definer selection (0142), which the guards read too: the worker reads no
+# response answers or decision rows itself.
 ITEMS = (
-    "SELECT family_duid, review_id, sequence, decision, entered, carried, marked "
-    "FROM stewardship_pledge_refresh_items_v1(%s, NULL) ORDER BY family_duid"
+    "SELECT family_id, family_duid, submission_id, review_id, sequence, "
+    "base_stage, decision, entered, carried, marked, baseline, check_outcome, "
+    "observed FROM stewardship_pledge_refresh_items_v2(%s, NULL, NULL) "
+    "ORDER BY family_duid"
 )
 
 
 @dataclass(frozen=True, slots=True)
-class Decided:
-    """One decided pledge in force, as the definer selection returns it.
+class Pending:
+    """One pledge a refresh re-evaluates, as the definer selection returns it.
 
-    ``carried`` is C (the Edit's annual pledge, else the Family's) and
-    ``marked`` the amount recorded at the mark, $0.00 (A) without one.
+    ``base_stage`` is the stage its decision rows give (``to_review`` for a
+    pledge no decision is in force for, whose check names ``submission_id``
+    at ``sequence``; a decided one's names ``review_id``). ``carried`` is C
+    (the Edit's annual pledge, else the Family's), ``marked`` the amount
+    recorded at the mark ($0.00 without one) and ``baseline`` A.
+    ``check`` and ``observed`` are its latest counting check's outcome and
+    amount (None without one).
     """
 
+    family_id: UUID
     family_duid: int
-    review_id: UUID
+    submission_id: UUID
+    review_id: UUID | None
     sequence: int
-    decision: str
+    base_stage: str
+    decision: str | None
     entered: bool
-    carried: Decimal
+    carried: Decimal | None
     marked: Decimal
+    baseline: Decimal
+    check: str | None
+    observed: Decimal | None
 
 
 def display(amount):
@@ -93,13 +112,13 @@ def display(amount):
 
 
 def checked(item):
-    """Whether a refresh re-evaluates a ``pledge_review.Item``: a decision in force."""
+    """Whether a ``pledge_review.Item``'s checks name its decision row in force."""
     review = item.review
     return bool(
         item.in_force
         and review is not None
         and review.decision is not None
-        and item.stage in CHECKED_STAGES
+        and item.base_stage in CHECKED_STAGES
     )
 
 
@@ -136,7 +155,7 @@ def check_states(reviews):
 
 
 def pledge_check_states(items):
-    """The page's check states: each checked ``Item``'s, by its submission id."""
+    """Each decided ``Item``'s check run (Not seen), by its submission id."""
     return check_states(
         {item.review.pk: item.submission_id for item in items if checked(item)}
     )
@@ -180,33 +199,60 @@ def _cursor(snapshot_id):
     )
 
 
-def _decided(campaign_id):
-    """The campaign's decided pledges in force (``Decided``), one statement."""
+def _pending(campaign_id):
+    """The campaign's pledges a refresh re-evaluates (``Pending``), one statement."""
     with connection.cursor() as cursor:
         cursor.execute(ITEMS, [campaign_id])
-        return [Decided(*row) for row in cursor.fetchall()]
+        return [Pending(*row) for row in cursor.fetchall()]
 
 
-def _stage(item, state):
-    """The pipeline stage a refresh judges the pledge at."""
+def _stage(item, outcome):
+    """The pipeline stage a refresh judges the pledge at, given its latest check."""
+    if outcome == CONFLICT:
+        return Stage.CONFLICT
+    if item.base_stage == OPEN:
+        return Stage.TO_REVIEW
     if item.decision == "ignored":
         return Stage.IGNORED
     if not item.entered:
         return Stage.TO_ENTER_BY_HAND
-    if state.outcome == "entered_incorrectly":
+    if outcome == "entered_incorrectly":
         return Stage.ENTERED_INCORRECTLY
     return Stage.ENTERED_BY_HAND
+
+
+def _check(snapshot, full, item, outcome, refreshed):
+    """One unsaved check row: an open one for a To review pledge."""
+    if item.base_stage == OPEN:
+        return PledgeOpenCheck(
+            snapshot_id=snapshot.pk,
+            full_refresh=full,
+            family_id=item.family_id,
+            submission_id=item.submission_id,
+            item_version=item.sequence,
+            outcome=outcome,
+            observed=refreshed,
+        )
+    return PledgeRefreshCheck(
+        snapshot_id=snapshot.pk,
+        full_refresh=full,
+        review_id=item.review_id,
+        item_version=item.sequence,
+        outcome=outcome,
+        observed=refreshed,
+    )
 
 
 def pledge_checks(snapshot, corpus, campaign_id, full, start, *, evidence=None):
     """Yield the pledge checks this promotion owes, unsaved.
 
-    For every decided pledge in force of a Family the snapshot still lists
-    (rule 4: one it no longer lists gives no evidence), when the campaign
-    has a financial period and the snapshot's giving read is proven for it.
-    The rules are ``pipeline.refresh_outcome``'s with money compared
-    exactly; a result the stream cannot store (a Conflict, #1747) records
-    nothing, as do the repeats ``refresh_checks.owed`` leaves out.
+    For every pledge not yet Confirmed (To review, and decided in force) of
+    a Family the snapshot still lists (rule 4: one it no longer lists gives
+    no evidence), when the campaign has a financial period and the
+    snapshot's giving read is proven for it. The rules are
+    ``pipeline.refresh_outcome``'s with money compared exactly; the repeats
+    ``refresh_checks.owed`` leaves out record nothing, and a Conflict is
+    written again only when ParishSoft's amount moves (#1747).
 
     ``evidence`` is the snapshot whose pledges and giving proof are read,
     ``snapshot`` itself unless given: the quick update's check passes the
@@ -219,16 +265,24 @@ def pledge_checks(snapshot, corpus, campaign_id, full, start, *, evidence=None):
         return
     items = [
         item
-        for item in _decided(campaign_id)
+        for item in _pending(campaign_id)
         if str(item.family_duid) in corpus["family"]
     ]
     if not items:
         return
-    states = check_states({item.review_id: item.review_id for item in items})
+    # A decided pledge's check run counts its unchanged full refreshes (Not
+    # seen); a To review pledge's latest check comes with the selection.
+    states = check_states(
+        {item.review_id: item.review_id for item in items if item.base_stage != OPEN}
+    )
     amounts = _upcoming(evidence, campaign_id, {item.family_duid for item in items})
     threshold = None if start is None else start.not_seen_after
     for item in items:
-        state = states.get(item.review_id, CheckState(not_seen_after=threshold))
+        state = (
+            CheckState(item.check or UNCHANGED, item.observed)
+            if item.base_stage == OPEN
+            else states.get(item.review_id, CheckState(not_seen_after=threshold))
+        )
         refreshed = amounts.get(item.family_duid)
         # No evidence (no R) or no C: nothing to compare. Every financial
         # answer stores its annual pledge today; a missing one is skipped,
@@ -237,33 +291,31 @@ def pledge_checks(snapshot, corpus, campaign_id, full, start, *, evidence=None):
             continue
         refreshed = Decimal(refreshed)
         result = refresh_outcome(
-            _stage(item, state),
+            _stage(item, state.outcome),
             refreshed=refreshed,
-            answered_against=ZERO,
+            answered_against=Decimal(item.baseline),
             carried_forward=Decimal(item.carried),
             marked_against=Decimal(item.marked),
             full_refreshes_unchanged=state.unseen + full,
             not_seen_after=threshold if threshold is not None else float("inf"),
         )
-        stored = STORED.get(result)
+        stored = PLEDGE_STORED.get(result)
         if stored == UNCHANGED and state.outcome == "entered_incorrectly":
             # Rule 2: ParishSoft back at the amount recorded at the mark is
             # no new evidence; the pledge stays Entered incorrectly (#1737's
             # fixes, or ParishSoft holding the reviewer's amount, move it).
             continue
         moved = state.observed is None or Decimal(state.observed) != refreshed
-        if stored is None or not owed(
-            stored, state, full=full, marked=item.entered, moved=moved
-        ):
+        if stored is None:
             continue
-        yield PledgeRefreshCheck(
-            snapshot_id=snapshot.pk,
-            full_refresh=full,
-            review_id=item.review_id,
-            item_version=item.sequence,
-            outcome=stored,
-            observed=refreshed,
-        )
+        if stored == CONFLICT and state.outcome == CONFLICT:
+            # A Conflict is written again only when ParishSoft's amount
+            # moves, so ParishSoft now shows the amount to decide against.
+            if not moved:
+                continue
+        elif not owed(stored, state, full=full, marked=item.entered, moved=moved):
+            continue
+        yield _check(snapshot, full, item, stored, refreshed)
 
 
 def marked_pledge(campaign_id, family_duid):

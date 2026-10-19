@@ -201,10 +201,11 @@ def test_an_accepted_pledge_parishsoft_holds_is_confirmed_and_closed(
     response_service,
 ):
     """Rule 1 before the mark: To enter by hand is Confirmed, and nothing is
-    offered on it then; a third amount (a Conflict) records nothing."""
+    offered on it then; a third amount before it is a Conflict (#1747)."""
     harness, submission = accepted(response_service, marked=False)
     refresh(harness, "99.00")
-    assert checks() == []
+    assert checks() == [("conflict", Decimal("99.00"))]
+    assert row(harness, submission)["placement"].stage is Stage.CONFLICT
     refresh(harness, ANSWER)
     assert row(harness, submission)["placement"].stage is Stage.CONFIRMED
     with pytest.raises(ValueError):
@@ -252,7 +253,10 @@ def test_a_zero_pledge_is_confirmed_by_no_pledge(response_service):
 
 def test_a_changed_pledge_leaves_its_checks_behind(response_service):
     """The Family answering again with another pledge reopens it: the checks
-    under the earlier decision no longer count, and To review gets none."""
+    under the earlier decision no longer count, and the To review pledge is
+    checked on its own (#1747)."""
+    from parishkit.stewardship.reports.pledge_models import PledgeOpenCheck
+
     harness, submission = accepted(response_service, marked=False)
     refresh(harness, ANSWER)
     changed = again(harness, annual_pledge="99")
@@ -260,6 +264,8 @@ def test_a_changed_pledge_leaves_its_checks_behind(response_service):
     assert found["placement"].stage is Stage.TO_REVIEW and found["check"] is None
     refresh(harness, "99.00")
     assert len(checks()) == 1
+    assert PledgeOpenCheck.objects.get().outcome == "confirmed"
+    assert row(harness, changed)["placement"].stage is Stage.CONFIRMED
 
 
 def test_no_giving_proof_and_no_family_check_nothing(response_service):
@@ -442,7 +448,8 @@ def test_the_mark_guard_refuses_a_known_mark_without_an_amount(
 
 def test_the_migration_check_refuses_the_old_pledge_review_guard(response_service):
     """0139's DO block refuses to commit while 0135's guard, which admits no
-    mark amount, is installed."""
+    mark amount, is installed, and passes over 0139's own guards (0142,
+    #1747, replaces both since)."""
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[3] / "src/parishkit/stewardship/schema"
@@ -450,21 +457,35 @@ def test_the_migration_check_refuses_the_old_pledge_review_guard(response_servic
     new = (root / "migrations/0139_pledge_refresh_checks.sql").read_text(
         encoding="utf-8"
     )
-    start = old.index("CREATE FUNCTION public.stewardship_pledge_review_guard_v1()")
-    body = old[start : old.index("END $$;", start) + len("END $$;")]
+
+    def guard(text, name, created="CREATE FUNCTION"):
+        """One guard's body as ``text`` installs it, replacing the current one."""
+        start = text.index(f"{created} public.{name}()")
+        body = text[start : text.index("END $$;", start) + len("END $$;")]
+        return body.replace(created, "CREATE OR REPLACE FUNCTION")
+
     block = new[new.index("DO $check$") :]
     with transaction.atomic(), connection.cursor() as cursor:
-        cursor.execute(body.replace("CREATE FUNCTION", "CREATE OR REPLACE FUNCTION"))
+        cursor.execute(guard(new, "stewardship_pledge_refresh_check_guard_v1"))
+        cursor.execute(guard(old, "stewardship_pledge_review_guard_v1"))
         with pytest.raises(DatabaseError, match="mark's pledge"), transaction.atomic():
             cursor.execute(block)
-        transaction.set_rollback(True)
-    with connection.cursor() as cursor:
+        cursor.execute(
+            guard(
+                new, "stewardship_pledge_review_guard_v1", "CREATE OR REPLACE FUNCTION"
+            )
+        )
         cursor.execute(block)
+        transaction.set_rollback(True)
 
 
 def test_the_quick_update_check_agrees_with_what_promotion_writes(response_service):
     """``refresh_checks_current`` answers False exactly while a promotion of
-    the same snapshot would write a pledge check, and True once it has."""
+    the same snapshot would write a pledge check, and True once it has.
+
+    A To review pledge is checked too (#1747): the first refresh finds the
+    Family's amount at a third value (a Conflict), and the Family then
+    answers ParishSoft's amount, which the next promotion Confirms."""
     from parishkit.stewardship.campaigns.work_locks import work_transaction
     from parishkit.stewardship.responses.refresh_checks import (
         refresh_checks_current,
@@ -473,15 +494,18 @@ def test_the_quick_update_check_agrees_with_what_promotion_writes(response_servi
     from parishkit.stewardship.source.leases import release_source
 
     def promoted():
-        """Promote a refresh holding the Family's amount; its snapshot."""
-        snapshot, claim = giving(harness, ANSWER)
+        """Promote a refresh holding $99.00; its snapshot."""
+        snapshot, claim = giving(harness, "99.00")
         promote(snapshot, claim, harness.campaign, harness.rings)
         snapshot.refresh_from_db()
         return snapshot
 
+    from parishkit.stewardship.reports.pledge_models import PledgeOpenCheck
+
     harness, submission = pledged(response_service)
     held = promoted()
-    decide(harness, admin(), "accept", [submission])
+    assert PledgeOpenCheck.objects.get().outcome == "conflict"
+    again(harness, annual_pledge="99")
 
     def current():
         """The check as a quick update makes it: a staging snapshot just
@@ -499,5 +523,7 @@ def test_the_quick_update_check_agrees_with_what_promotion_writes(response_servi
 
     assert not current()
     held = promoted()
-    assert checks() == [("confirmed", Decimal(ANSWER))]
+    assert list(
+        PledgeOpenCheck.objects.order_by("created_at").values_list("outcome", flat=True)
+    ) == ["conflict", "confirmed"]
     assert current()
