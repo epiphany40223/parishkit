@@ -292,21 +292,6 @@ PAGES = {
     "source_form": Page("system", _("Families the form cannot open"), "system_health"),
     "integrations": Page("system", _("Integrations")),
     "integration_settings": Page("system", _("Integration"), "integrations"),
-    # A key's status and its Finish switching page sit under the integration
-    # the key belongs to; their views supply the target the routes lack. The
-    # status is readable only by the Administrator who saved the key, so
-    # Finish switching (open to every Administrator) never runs through it.
-    # Finish switching is a one-time review, so a switch's status page
-    # names it but returns to the integration.
-    "credential_status": Page(
-        "system", _("Key replacement status"), "integration_settings"
-    ),
-    "select_credential": Page(
-        "system",
-        _("Finish switching to the new key"),
-        "integration_settings",
-        linkable=False,
-    ),
     "background": Page("system", _("Background work")),
     "background_task_page": Page("system", _("Background task"), "background"),
     "logs": Page("system", _("System logs")),
@@ -705,6 +690,9 @@ NON_PAGES = frozenset(
         "branding_asset",
         # The Campaign comparison's download form (#1018), a POST.
         "campaign_comparison_export",
+        # The figures status the Response dashboard and Campaign comparison
+        # poll (#1586), a fragment.
+        "response_dashboard_status",
         # A Campaign setup step's Continue (#1404), a POST that redirects.
         "campaign_step_continue",
         "content_plain_text",

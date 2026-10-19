@@ -271,7 +271,6 @@ def test_census_changes_links_to_the_page(administrator, on, expected):
             "status_choices": [],
             "route_choices": [],
             "kind_choices": [],
-            "export_timezones": ["UTC"],
             "administrator": administrator,
             "publication_on": on,
         },

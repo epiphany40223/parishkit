@@ -192,10 +192,6 @@ SLASHLESS_EXPECTED = {
     "/admin/system/source-form": "/admin/system/source-form/",
     "/admin/system/integrations": "/admin/system/integrations/",
     "/admin/system/integrations/parishsoft": "/admin/system/integrations/parishsoft/",
-    f"/admin/system/key-changes/{T}": f"/admin/system/key-changes/{T}/",
-    f"/admin/system/key-changes/{T}/selection": (
-        f"/admin/system/key-changes/{T}/selection/"
-    ),
     "/admin/system/background": "/admin/system/background/",
     f"/admin/system/background/{T}": f"/admin/system/background/{T}/",
     "/admin/system/logs": "/admin/system/logs/",

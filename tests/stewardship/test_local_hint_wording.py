@@ -219,14 +219,6 @@ FORMER_STEP_UP_PAGES = {
             "status_url": "/admin/integrations/slack/status",
         },
     ),
-    "credential-selection": (
-        "stewardship/credential-selection.html",
-        {
-            "label": "Slack",
-            "receipt": Value(pk=UUID(int=6490), resulting_fingerprint="abc123"),
-            "preview": "p",
-        },
-    ),
     "family-portal-maintenance": (
         "stewardship/family-portal-maintenance.html",
         {"state": Value(closed=False), "message_limit": 500},
