@@ -5,7 +5,8 @@ the registry label, and every "Return to" link names its target the same way.
 The placement table in the admin-portal spec is the source of the names, so
 the registry is checked against it too. NAV-4 covered Campaign setup and Mail
 and Family portal, and NAV-5a Home, Parish data, Users and access, System and
-the setup wizard; NAV-5b adds Responses and reports.
+the setup wizard; NAV-5b adds Responses and reports (since R39, Review work
+and Reports and queries).
 """
 
 import ast
@@ -30,7 +31,7 @@ TEMPLATE_DIR = PACKAGE / "accounts/templates/stewardship"
 SPEC = ROOT / "docs/specs/stewardship/admin-portal/spec.md"
 
 # The menu groups whose page names are settled so far.
-GROUPS = {"campaign", "mail", "reports", "parish", "users", "system"}
+GROUPS = {"campaign", "mail", "review", "reports", "parish", "users", "system"}
 # Pages outside every menu group whose names are settled too.
 UNGROUPED = {"index", "configuration_request", "campaign_create"}
 
@@ -92,6 +93,7 @@ TEMPLATES = {
     "logs": "logs.html",
     "campaign_comparison": "campaign-comparison.html",
     "financial_report": "financial-report.html",
+    "pledges_to_enter": "pledges-to-enter.html",
     "limitations_report": "limitations-report.html",
     "census_changes": "census-changes.html",
     "census_publication": "census-publication.html",
@@ -102,9 +104,8 @@ TEMPLATES = {
     "weekly_digest_snapshot": "weekly-digest.html",
     "weekly_digest_item": "weekly-digest.html",
     # Ministry requests is the follow-up queue's page (#1133).
-    "ministry_report": "ministry-followup.html",
+    "ministry_report": "ministry-requests.html",
     "ministry_followup_item": "ministry-followup.html",
-    "ministry_roster": "ministry-roster.html",
     "family_directory": "directory.html",
     "emailed_reports": "emailed-reports.html",
     "timeline": "timeline.html",
@@ -285,8 +286,10 @@ def test_return_links_name_a_page(template):
     labels = {str(page.label) for page in navigation.PAGES.values()}
     source = _source(template)
     # The Census changes worklist's "Back to To review" is a review decision,
-    # not a link back to a page (see ALLOWED).
-    if template != "census-changes.html":
+    # not a link back to a page (see ALLOWED), as is the review pipeline's
+    # Back to review on Ministry requests (#1684), Additional information
+    # and Limitations (#1685).
+    if template not in {"census-changes.html", *REVIEW_PIPELINE_PAGES}:
         assert "Back to " not in source
     for target in re.findall(r'"Return to ([^"]+)"', source):
         assert target in labels or (template, target) in UNNAMED_RETURNS, (
@@ -478,6 +481,17 @@ RETIRED = (
 
 # Legitimate uses, as (path relative to the package, retired name), each
 # with the reason it is not a page name.
+# The review pipeline's worklist pages (#1684, #1685), whose help names the
+# decision Back to review.
+REVIEW_PIPELINE_PAGES = frozenset(
+    {
+        "ministry-requests.html",
+        "ministry-followup.html",
+        # Additional information and Limitations (#1685).
+        "information.html",
+        "limitations-report.html",
+    }
+)
 ALLOWED = {
     # "Back to edit" steps back inside the Family form, outside the Admin
     # portal and its page names.
@@ -485,6 +499,18 @@ ALLOWED = {
     # "Back to To review" is the Census changes review button that undoes an
     # Approve or Ignore (#528), not a link back to a page.
     ("accounts/templates/stewardship/census-changes.html", "Back to "),
+    # The review pipeline's decision Back to review (#1684), named in the
+    # help of Ministry requests and of its request pages.
+    *(
+        (f"accounts/templates/stewardship/{template}", "Back to ")
+        for template in sorted(REVIEW_PIPELINE_PAGES)
+    ),
+    # The review pipeline's decision Back to review (#1685), named in the
+    # help of Additional information and Limitations.
+    *(
+        (f"accounts/templates/stewardship/{template}", "Back to ")
+        for template in sorted(REVIEW_PIPELINE_PAGES)
+    ),
     # ``pk-admin census review`` (#528) words that button's decision
     # (``unreviewed``) in its help, not a link back to a page.
     ("admin_cli.py", "Back to "),

@@ -1,16 +1,15 @@
-"""Ministry requests (#1133): the follow-up queue with its totals and By
-Ministry counts, under the real web role and SQL scope.
+"""Ministry requests (#1133): the review worklist (#1684) with its Stage
+counts and By Ministry counts, under the real web role and SQL scope.
 
 Each By Ministry count links to the same page with its Ministry and the
-queue's own closed Request and Status values, so the view it opens lists
+worklist's own closed Request and Stage values, so the view it opens lists
 exactly the requests counted; only Ministries the reader may follow up get
 links, and a zero count is plain text. A leader of one Ministry gets one
-line, a leader of several and Staff and Administrators a table. The totals
-count what the table's filters select, within the reader's scope, and never
-a request for a Member no longer in ParishSoft.
+line, a leader of several and Staff and Administrators a table. The Stage
+choices count what the other filters select, within the reader's scope,
+and never a request for a Member no longer in ParishSoft.
 """
 
-import json
 import re
 from uuid import UUID, uuid4
 
@@ -18,7 +17,7 @@ import pytest
 
 from parishkit.stewardship.accounts.policy_models import PortalUser
 from parishkit.stewardship.deployment import ServiceRole
-from parishkit.stewardship.reports import ministry_followup
+from parishkit.stewardship.reports import ministry_followup, ministry_worklist
 from parishkit.stewardship.web.tables import PAGE_SIZES
 from parishkit.stewardship.workflows.models import MinistryRequest
 
@@ -40,8 +39,8 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 PAGE = "/admin/reports/ministries/"
 ITEMS = "/admin/reports/ministries/follow-up/"
-JOIN_9 = f"{PAGE}?ministry=9&action=join&state=any"
-LEAVE_4 = f"{PAGE}?ministry=4&action=leave&state=any"
+JOIN_9 = f"{PAGE}?ministry=9&kind=join&stage=all"
+LEAVE_4 = f"{PAGE}?ministry=4&kind=leave&stage=all"
 
 
 def page(browser, path):
@@ -75,12 +74,12 @@ def by_ministry(body):
     return section.split("</section>", 1)[0]
 
 
-def totals(body):
-    """The totals region's tile values and follow-up chart key (#720)."""
-    region = body.split('<div id="ministry-totals" data-table-sync>', 1)[1]
-    region = region.split('<section id="by-ministry"', 1)[0]
-    values = re.findall(r'<span class="stat-value">([^<]*)</span>', region)
-    return values, re.findall(r'data-chart="([a-z-]+)"', region)
+def stages(body):
+    """The Stage filter's choices with their counts (#1684); the page has no
+    totals or chart any more (#1676)."""
+    assert 'id="ministry-totals"' not in body and "data-chart=" not in body
+    control = body.split('id="requests-stage"', 1)[1].split("</select>", 1)[0]
+    return re.findall(r"<option [^>]*>([^<]*)</option>", control)
 
 
 def signed_in_as(harness, google, email, roles):
@@ -118,7 +117,7 @@ def test_a_leader_of_one_ministry_gets_one_line_whose_counts_filter_the_table(
         assert 'aria-label="1 unresolved request for Food pantry"' in section
         # Food pantry has no leave request: the zero is plain text, and
         # Ministry 4 is not this leader's.
-        assert "0 leave requests" in section and "action=leave" not in section
+        assert "0 leave requests" in section and "kind=leave" not in section
         assert "ministry=4" not in body
         # The default view lists the open join, and the leader's packet
         # offers Food pantry alone.
@@ -131,7 +130,7 @@ def test_a_leader_of_one_ministry_gets_one_line_whose_counts_filter_the_table(
         assert listed(queue) == {join.pk}
         assert selected(queue, "filter-ministry") == "9"
         assert selected(queue, "filter-action") == "join"
-        assert selected(queue, "filter-state") == "any"
+        assert selected(queue, "requests-stage") == "all"
         assert listed(page(browser, f"{PAGE}?ministry=9")) == {join.pk}
 
     # Resolved, the request still counts as joining but no longer unresolved.
@@ -142,10 +141,10 @@ def test_a_leader_of_one_ministry_gets_one_line_whose_counts_filter_the_table(
         assert listed(page(browser, JOIN_9)) == {join.pk}
         for refused, status in (
             (LEAVE_4, 403),
-            (f"{PAGE}?action=join", 400),
-            (f"{PAGE}?ministry=9&action=maybe", 400),
-            (f"{PAGE}?ministry=9&state=any&search=x", 400),
-            (f"{PAGE}?ministry=9&action=join&queue=abc", 400),
+            (f"{PAGE}?kind=join", 400),
+            (f"{PAGE}?ministry=9&kind=maybe", 400),
+            (f"{PAGE}?ministry=9&stage=all&search=x", 400),
+            (f"{PAGE}?ministry=9&kind=join&queue=abc", 400),
         ):
             assert get(browser, refused)[0].status_code == status, refused
     assert leave.pk not in listed(queue)
@@ -167,7 +166,7 @@ def test_a_leader_of_several_ministries_gets_a_table_of_them(response_service, g
         assert "Not in ParishSoft data" not in section
         assert listed(body) == {join.pk, leave.pk}
         assert listed(page(browser, LEAVE_4)) == {leave.pk}
-        assert totals(body) == (["1", "1"], ["ministry-followup-spec"])
+        assert stages(body)[:2] == ["To review (2)", "Accepted (0)"]
 
 
 @pytest.mark.parametrize("role", ["staff", "administrator"])
@@ -186,20 +185,18 @@ def test_staff_and_administrators_count_every_ministry(response_service, google,
         assert get(browser, ITEMS)[0].status_code == 404
 
 
-@pytest.mark.parametrize(
-    "roles, expected", [(None, ["1", "0"]), (("staff",), ["1", "1"])]
-)
+@pytest.mark.parametrize("roles, expected", [(None, "1"), (("staff",), "2")])
 def test_totals_add_up_only_the_readers_requests(
     response_service, google, roles, expected
 ):
-    """The totals and follow-up chart come from the queue's own scoped
-    selection (#720, #1133): a leader of Food pantry (9) counts its join
-    request alone, while Staff count Ministry 4's leave request too."""
+    """The Stage counts come from the follow-up selection's own scope
+    (#1133, #1684): a leader of Food pantry (9) counts its join request
+    alone, while Staff count Ministry 4's leave request too."""
     harness = setup(response_service)
     browser, _, _, _ = leader(harness, google, **({"roles": roles} if roles else {}))
     requests()  # A join for Ministry 9, a leave for Ministry 4.
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        assert totals(page(browser, PAGE)) == (expected, ["ministry-followup-spec"])
+        assert stages(page(browser, PAGE))[0] == f"To review ({expected})"
 
 
 def three_ministries(harness):
@@ -222,37 +219,36 @@ def three_ministries(harness):
 def test_totals_cover_every_page_and_follow_the_filters(
     response_service, google, monkeypatch
 ):
-    """With one request per page, the totals still count every request the
-    filters select (#720), and they follow the filters (#1133): Request
-    Leave counts Choir's leave alone, a search for "Hospitality" its join.
-    The follow-up chart counts the same requests whatever their status, so
-    a resolved request leaves Unresolved but stays in the chart."""
+    """With one request per page, the Stage counts still count every request
+    the other filters select, and they follow the filters (#1133, #1684):
+    Request Leave counts Choir's leave alone, a search for "Hospitality" its
+    join. A request accepted moves from To review to To enter by hand."""
     harness = three_ministries(response_service)
     # A one-row page, so three requests span three pages.
     monkeypatch.setattr(ministry_followup, "PAGE_SIZES", (1, *PAGE_SIZES))
+    monkeypatch.setattr(ministry_worklist, "PAGE_SIZES", (1, *PAGE_SIZES))
     browser, head = signed_in_as(harness, google, "staff@example.org", ["staff"])
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         for values, expected in (
-            ({"size": "1"}, ["2", "1"]),
-            ({"size": "1", "page": "2"}, ["2", "1"]),
-            ({"size": "1", "action": "leave"}, ["0", "1"]),
-            ({"size": "1", "search": "Hospitality"}, ["1", "0"]),
+            ({"size": "1"}, "3"),
+            ({"size": "1", "page": "2"}, "3"),
+            ({"size": "1", "kind": "leave"}, "1"),
+            ({"size": "1", "search": "Hospitality"}, "1"),
         ):
             response, body = search(browser, PAGE, values)
             assert response.status_code == 200, values
             body = body.decode()
             assert len(listed(body)) == 1, values
-            assert totals(body) == (expected, ["ministry-followup-spec"]), values
-    # Resolve the Hospitality join: the Unresolved view loses it, and the
-    # chart, which counts every status, still has it.
+            assert stages(body)[0] == f"To review ({expected})", values
+    # Accept the Hospitality join: To review loses it, To enter by hand
+    # has it.
     hospitality = MinistryRequest.objects.exclude(
         state__in=["superseded", "cancelled"]
     ).get(ministry_duid=11)
     edit(harness, head, hospitality, state="resolved", outcome="joined")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = search(browser, PAGE, {"size": "1"})
-        assert totals(body.decode()) == (["1", "1"], ["ministry-followup-spec"])
-        assert "1 out of 3" in body.decode()
+        assert stages(body.decode())[:2] == ["To review (2)", "To enter by hand (1)"]
 
 
 def test_members_no_longer_in_parishsoft_stay_out_of_the_totals(
@@ -260,35 +256,24 @@ def test_members_no_longer_in_parishsoft_stay_out_of_the_totals(
 ):
     """Requests for a Member ParishSoft no longer lists as current (#1217)
     count nowhere on the merged page (#1133): once Member 3 is inactive,
-    Staff's tiles, Follow-up progress chart and By Ministry counts all read
-    zero, though the chart is still drawn, and only the Members no longer
-    in ParishSoft view lists the requests."""
+    Staff's Stage counts and By Ministry counts all read zero, and only the
+    Members no longer in ParishSoft view lists the requests."""
     harness = setup(response_service)
     browser, _ = signed_in_as(harness, google, "staff@example.org", ["staff"])
     join, leave = requests()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         body = page(browser, PAGE)
-        assert totals(body) == (["1", "1"], ["ministry-followup-spec"])
+        assert stages(body)[0] == "To review (2)"
         assert href(JOIN_9) in by_ministry(body)
     member_gone(harness, "inactive")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         body = page(browser, PAGE)
-        assert totals(body) == (["0", "0"], ["ministry-followup-spec"])
-        spec = json.loads(
-            re.search(
-                r'<script id="ministry-followup-spec" type="application/json">'
-                r"(.*?)</script>",
-                body,
-                re.S,
-            )[1]
-        )
-        assert [row["count"] for row in spec["data"]["values"]] == [0, 0]
-        assert {row["total"] for row in spec["data"]["values"]} == {0}
+        assert stages(body)[-1] == "Every stage (0)"
         section = by_ministry(body)
         assert "<a " not in section
         # Staff's table: every count cell of both Ministries is zero.
         cells = re.findall(r'<td class="numeric">([^<]*)</td>', section)
         assert len(cells) == 6 and set(cells) == {"0"}
         assert listed(body) == set()
-        _, gone = search(browser, PAGE, {"state": "not_in_parishsoft"})
+        _, gone = search(browser, PAGE, {"members": "gone"})
         assert listed(gone.decode()) == {join.pk, leave.pk}
