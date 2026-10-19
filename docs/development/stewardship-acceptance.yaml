@@ -255,6 +255,7 @@ sections:
     "Census change filters and downloads": [RPT-08]
     "Manual census resolution": [RPT-08]
     "Automatic census review": [RPT-08, ADM-09]
+    "Census Add": [RPT-08, ADM-09]
     "Publish to ParishSoft": [RPT-08, ADM-09, BG-09]
     "Publishing switched off": [ADM-09, BG-09]
     "Checking ParishSoft": [ADM-09, DAT-09]

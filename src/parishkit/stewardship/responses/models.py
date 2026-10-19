@@ -570,6 +570,99 @@ class ProposalReview(ImmutableRecord):
         ]
 
 
+ADDITION_ENTITIES = ("family", "member")
+ADDITION_ACTIONS = ("entered", "withdrawn")
+
+
+class CensusAddition(ImmutableRecord):
+    """A census change the parish added that no Family answer asked for (#1710).
+
+    Staff and Administrators **Add** it on the Census changes review worklist
+    (review pipeline spec, "Reviewed stage"): one Member field or Family
+    address of a Family that responded, with the value to carry into
+    ParishSoft, shown as *Added by the parish*. It never touches the
+    Family's submitted answers or the proposals derived from them, so the
+    Family submit path and its guards are unchanged. It may name the
+    Family's ignored change it was added in place of (``in_place_of``),
+    and the database records ParishSoft's value of the field at that moment
+    (``baseline``).
+    Who, when and the note are the row's own; its one later step (Entered
+    by hand or withdrawn) is a ``CensusAdditionResolution``. SQL checks the
+    actor, the campaign, the Family, the field and the value's shape again
+    (schema/migrations/0129_census_additions.sql).
+    """
+
+    family = models.ForeignKey(
+        "stewardship_campaigns.FamilyCampaign", on_delete=models.PROTECT
+    )
+    entity_kind = models.CharField(max_length=20)
+    entity_key = models.CharField(max_length=36)
+    field = models.CharField(max_length=40)
+    value = models.JSONField()
+    in_place_of = models.ForeignKey(
+        ProposedChange,
+        on_delete=models.PROTECT,
+        null=True,
+        related_name="additions_in_place",
+    )
+    request_key = models.UUIDField()
+    note = models.TextField(default="", blank=True)
+    # ParishSoft's value of the field when the change was added, as the
+    # census source reads it ({"available": ..., "value": ...}), and the
+    # snapshot it came from: the baseline a refresh re-evaluates the
+    # addition against (review pipeline, "Baseline refresh re-evaluation",
+    # #1689). The guard sets both; NULL when the source has no such field.
+    baseline = models.JSONField(null=True, editable=False)
+    baseline_source_id = models.UUIDField(null=True, editable=False)
+
+    class Meta:
+        db_table = "stewardship_census_addition"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("actor_id", "request_key"), name="census_addition_replay"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(actor_id__isnull=False)
+                & models.Q(entity_kind__in=ADDITION_ENTITIES)
+                & ~models.Q(entity_key="")
+                & ~models.Q(field=""),
+                name="census_addition_identity",
+            ),
+        ]
+
+
+class CensusAdditionResolution(ImmutableRecord):
+    """The one later step of a parish-added census change (#1710).
+
+    ``entered`` records that a person typed it into ParishSoft (Entered by
+    hand); ``withdrawn`` is its Back to review, which withdraws an added
+    change (review pipeline spec, "Reviewed stage"). Either is final: one
+    row per addition, so a second step (another reader's, at the same
+    time) is refused by the unique addition.
+    """
+
+    addition = models.OneToOneField(
+        CensusAddition, on_delete=models.PROTECT, related_name="resolution"
+    )
+    action = models.CharField(max_length=12)
+    request_key = models.UUIDField()
+    note = models.TextField(default="", blank=True)
+
+    class Meta:
+        db_table = "stewardship_census_addition_resolution"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("actor_id", "request_key"),
+                name="census_addition_resolution_replay",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(actor_id__isnull=False)
+                & models.Q(action__in=ADDITION_ACTIONS),
+                name="census_addition_resolution_identity",
+            ),
+        ]
+
+
 class SubmissionReceiptOccurrence(ImmutableRecord):
     """One atomic receipt or proven no-recipient outcome per accepted submission.
 

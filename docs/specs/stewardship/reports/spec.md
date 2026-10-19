@@ -2390,6 +2390,76 @@ differ from the Family's answer, as the census compares values; moved,
 deceased, the email opt-out and a New Member take no edit. Clearing needs an
 edit to be set. The value's full rules stay in the service.
 
+### Census Add
+
+**Add**, in the selection bar, records a census change no Family answer
+asked for ([Reviewed stage](../review-pipeline/spec.md#reviewed-stage),
+[#1710](https://github.com/epiphany40223/parishkit/issues/1710)). Staff and
+Administrators see it; it is gone while other campaign work holds the
+campaign, as every action is. Its dialog asks, in order, what changed (a
+Member field Edit takes a value for, or the Family's home or mailing
+address), the Family DUID, the Member DUID for a Member field, and the new
+value in the editor Edit draws for that field; only the controls the chosen
+field needs are shown. It may name the Family's ignored change it is added
+in place of, and takes the optional note.
+
+The server checks it as the [Edit](#automatic-census-review) checks a value,
+by the handling registry's handling for the field (a Family address by the
+Family form's address rules), and also that the Family responded in this
+campaign, that the current ParishSoft data lists the Member as current in
+that Family, that the field has no open change already (an open addition,
+or the Family's own change not ignored, which is decided with its own icons:
+an Edit corrects the Family's value), and that a change it is added in place
+of is that Family's ignored one. A refusal is shown in the dialog at the
+field it concerns, with its own code (`add_field`, `add_family`,
+`add_no_response`, `add_member`, `add_not_in_parishsoft`, `add_value`,
+`add_exists`, `add_in_place_of`); nothing is recorded. The same request key
+again with the same Add records nothing more, and with any other Family,
+field, value or replaced change is refused.
+
+An added change is a row of the worklist like any other: Who, What changed,
+the Reviewer's value (the added value) and no Family's answer, Submitted
+when it was added, and Last decision its creator, time and note. Its stage
+is *To enter by hand*, with *Added by the parish* under it and its Accept
+drawn selected, and *How it reaches ParishSoft* is *By hand*: until the
+update run is rebuilt
+([#1688](https://github.com/epiphany40223/parishkit/issues/1688)) nothing
+writes an addition to ParishSoft, whatever the handling registry says of its
+field. It offers only **Entered by hand** (final, as for any change) and
+**Back to review**, which withdraws it: it moves to *History*, and the field
+may be added again. Both are in the bulk bar too, together with the
+Family's own changes, all or none; the bulk dialog says a ticked added
+change is withdrawn. Each ignored change it replaced shows "Added in its
+place:" with the field and value of every addition made for it under its
+stage, and the added change says it was added in place of an ignored change.
+
+The field never has two open changes by the worklist's own decisions: while
+an addition of the field is open, an ignored change of the same field
+offers no Back to review, and one posted anyway is refused (`reopen_added`;
+withdraw the addition first), as is `pk-admin census review` or `census
+resolve` reopening it; the check runs under the work order. A later Family response may still ask for the
+same field again; the open addition then says the Family has an open change
+of this field too, so Staff decide that one and withdraw the addition if it
+is no longer needed. Its Baseline is ParishSoft's value of the field when it
+was added (blank where it cannot be read, as for every Family address),
+which the database records with the snapshot it came from: the baseline the
+refresh rules re-evaluate an open addition against once
+[#1689](https://github.com/epiphany40223/parishkit/issues/1689) ships. Until
+then a refresh leaves additions as they are. The downloads
+and `pk-admin report census` include additions; the other `pk-admin census`
+commands act on the Family's changes only.
+
+An addition is not a proposed change: proposals belong to the Family submit
+path, whose guards stay as they are, and the Family form never shows an
+addition. Forward migration 0129 (provisional number) adds two
+migration-owned tables, each INSERT only: the addition (who, when, the note,
+the Family, the Member or Family, the field, the value and the change it
+replaced) and its one later step (Entered by hand or withdrawn, at most one
+per addition). Their guards check the actor and campaign again and,
+for an addition, the rules above, the value's shape as 0128 checks an
+edit's, and record the baseline themselves. Each row is paired with a
+`census_change_updated` audit event naming only its id and version.
+
 ### Publish to ParishSoft
 
 **Access:** Administrator only. Staff and Ministry leaders never see the
