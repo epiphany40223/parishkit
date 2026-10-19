@@ -58,10 +58,13 @@ def roster_count(principal, campaign):
 
 
 def steps(body):
-    """Home's Next steps, each step's text with tags stripped, in order."""
+    """Home's Next steps cards (#1673), each card's text with tags stripped
+    and spaces collapsed, in order."""
     return [
-        re.sub(r"<[^>]+>", "", item)
-        for item in re.findall(r"<li data-next-step>(.*?)</li>", body.decode(), re.S)
+        " ".join(re.sub(r"<[^>]+>", " ", item).split())
+        for item in re.findall(
+            r"<li [^>]*data-link-card>(.*?)</li>", body.decode(), re.S
+        )
     ]
 
 
@@ -97,7 +100,7 @@ def test_home_and_menu_show_the_census_count_for_an_administrator(
     expected = len(worklist(harness, ADMIN)["rows"])
     assert expected == 2
     assert _menu_count(body, "Census changes") == expected
-    assert f"Census changes — {expected} to do" in steps(body)
+    assert f"Census changes {expected} to do" in steps(body)
     assert 'href="/admin/reports/census/"' in body.decode()
 
 
@@ -235,18 +238,17 @@ def test_staff_home_lists_the_campaign_end_work_with_counts(response_service, go
         response, body = read(browser, "/admin/")
     assert response.status_code == 200
     listed = steps(body)
-    assert [step.split(" — ")[0] for step in listed] == [
-        "Response dashboard",
+    assert [re.sub(r" \d.*", "", step) for step in listed] == [
         "Census changes",
         "Roster changes to enter",
         "Additional information",
         "Ministry requests",
     ]
-    assert "Roster changes to enter — 1 not yet entered" in listed
+    assert "Roster changes to enter 1 not yet entered" in listed
     # The step's number is the menu entry's own (#1660).
     assert _menu_count(body, "Roster changes to enter") == 1
     # The harness's leave request is still open; its join was resolved.
-    assert "Ministry requests — 1 open" in listed
+    assert "Ministry requests 1 open" in listed
     assert _menu_count(body, "Ministry requests") == 1
     assert f'href="{ROSTER_URL}"' in body.decode()
 

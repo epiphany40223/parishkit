@@ -228,6 +228,18 @@ def test_native_page_and_downloads(response_service, google, settings):
         assert isinstance(values["Downloaded at"], datetime)
         assert values["Display time zone"] == "UTC"
         assert values["Changes in this file"] == str(len(table) - 1)
+        # The export row posts the browser's zone unasked (#1679); the file
+        # is in that zone and names it.
+        response, unasked = search(
+            browser,
+            export,
+            {"format": "xlsx", "browser_timezone": "America/Chicago", "status": "all"},
+        )
+        assert response.status_code == 200
+        named = load_workbook(io.BytesIO(unasked))["Report information"]
+        assert dict(named.iter_rows(values_only=True))["Display time zone"] == (
+            "America/Chicago"
+        )
         sheet = [
             ["" if value is None else value for value in values]
             for values in book["Census changes"].iter_rows(values_only=True)

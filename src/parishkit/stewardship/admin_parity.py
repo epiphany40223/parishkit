@@ -261,6 +261,9 @@ LEDGER = {
     # The aggregate report reads (PR 8c): counts and summaries only; the
     # rows behind them are the Family-level exports (PR 8e and 8f).
     "reports": command("report list"),
+    # The figures status the Response dashboard and Campaign comparison poll
+    # (#1586): the dashboard's own report status.
+    "response_dashboard_status": command("report participation"),
     # The Campaign comparison page (#1018): its figures for a day.
     "campaign_comparison": command("report comparison"),
     # Its download form (#1018, slice 6): the same capture and export.

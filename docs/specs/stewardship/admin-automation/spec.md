@@ -803,7 +803,14 @@ and a role rule and cannot carry them, so the
 
 The Admin dashboard shows every unacknowledged notice, with the session label
 escaped as text, to every current Administrator until that Administrator
-acknowledges it; acknowledging affects only one's own view.
+acknowledges it; acknowledging affects only one's own view. Since
+[#1673](https://github.com/epiphany40223/parishkit/issues/1673) the list,
+with its Acknowledge and Acknowledge all controls, is on the Automation
+access page, where the sessions it names can be revoked; Home, the Admin
+dashboard, shows each Administrator only the count, "N automation notices to
+acknowledge", linking that list
+([Home page](../admin-portal/spec.md#home-page)). "The dashboard" in the
+fixed alert texts below means that line and the list it opens.
 
 **Email and Slack** use the existing operational alert path rather than a new
 mail purpose. That path is bound in SQL to operational incidents: the outbox
@@ -1912,7 +1919,7 @@ checks that every other ledger route is named here.
 | `campaign_step_continue` ([#1404](https://github.com/epiphany40223/parishkit/issues/1404)) | Permanent: the browser [Campaign setup stepper](../admin-portal/spec.md#create-the-campaign)'s own progress (a step kept as is, then the next step page, or one Pages and emails item kept as is, then Pages and emails, #1404 PR 6b); the command line applies settings directly and has no stepper |
 | `held_emails` ([#757](https://github.com/epiphany40223/parishkit/issues/757)) | Permanent: held-email decisions stay in the browser. The exemption predates [#1547](https://github.com/epiphany40223/parishkit/issues/1547), when they needed a recent Google sign-in that the decision guard (migration 0017) checked; since migration 0114 the guard binds only a live session of the actor |
 | `automation_access`, `automation_approval`, `automation_sessions` (revoke) and `automation_notices` (acknowledgement) (new) | Permanent: these pages are the human side of the interface (PR 2); `sessions` takes the page's filter and sort for one's own sessions (#621) |
-| `response_dashboard` ([#517](https://github.com/epiphany40223/parishkit/issues/517)) | `report responses` with counts (PR 8c), and `report participation` for the statistics and daily table it absorbed from Participation ([#1537](https://github.com/epiphany40223/parishkit/issues/1537)) |
+| `response_dashboard` ([#517](https://github.com/epiphany40223/parishkit/issues/517)), `response_dashboard_status` (the figures status the open page polls, [#1586](https://github.com/epiphany40223/parishkit/issues/1586)) | `report responses` with counts (PR 8c), and `report participation` for the statistics and daily table it absorbed from Participation ([#1537](https://github.com/epiphany40223/parishkit/issues/1537)) |
 
 The inventory's `status presence` is folded into `status` as its
 `presence.count`, because a word cannot be both a command and an area in
@@ -2690,8 +2697,8 @@ Families table also shows each Family's status)
 ([#932](https://github.com/epiphany40223/parishkit/issues/932)). The rows
 hold no times, so `--timezone` is optional: it sets the file's capture and
 request times, which otherwise use the parish's time zone
-([time zone question](../ui-conventions/spec.md#downloaded-files),
-[#1127](https://github.com/epiphany40223/parishkit/issues/1127)). `--timezone`
+([Time zones rule](../ui-conventions/spec.md#downloaded-files),
+[#1679](https://github.com/epiphany40223/parishkit/issues/1679)). `--timezone`
 and `--format` need `--names` (`usage` otherwise); without `--request-key` the new key is written to standard error
 first. Unlike the plain review, it changes state: it admits as a form post
 (recording activity) and runs in the export commands' scope, and records the

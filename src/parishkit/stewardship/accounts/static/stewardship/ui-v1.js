@@ -2658,7 +2658,9 @@
       note = document.createElement("p");
       note.className = "help submit-wait";
       note.setAttribute("role", "status");
-      (submitter || form).insertAdjacentElement("afterend", note);
+      // An export's buttons share one row (export-actions.html, #1679), so
+      // the note goes below the row rather than between two buttons.
+      (submitter?.closest(".export-actions") || submitter || form).insertAdjacentElement("afterend", note);
       waitNotes.set(form, note);
     }
     note.textContent = text;
@@ -2924,23 +2926,47 @@
   // navigates: after three in a row, a line after the link says the page is
   // not current, and the next read that works removes it; a refusal (signed
   // out, access removed, or an answer from another page) stops the reads
-  // and says so.
+  // and says so. Every such read carries PASSIVE_READ, so a view whose own
+  // load renews the sign-in (the Response dashboard) reads passively instead.
+  //
+  // A report whose own view is audited (the Response dashboard, Campaign
+  // comparison) is not re-read on a timer: its figures status region
+  // (live-status-v1.js) polls a passive status read, and once newer figures
+  // are ready its hidden a[data-reread] follow-up link sends a
+  // parishkit:reread event.
+  // The page's own address is then re-read once in the same way (waiting
+  // while the reader is busy, stopping at a refusal); the fresh status
+  // region is watched anew. That read is audited, so a failed one is
+  // retried only a bounded number of times: twice more, REREAD_MIN_MS
+  // apart, and then, saying so, the status region is handed back to the
+  // passive status poll (parishkit:live-watch) at FOLLOW_BACKOFF_MS, so
+  // the page is read again only when the status still says newer figures
+  // are ready. The next read that works clears the count.
   const REREAD_MIN_MS = 5000;
   const REREAD_FAILURES = 3;
+  // The status poll's pace after the third failed follow-up read, then
+  // after each later one.
+  const FOLLOW_BACKOFF_MS = [30000, 60000];
   // Said when a read is refused, and when reads keep failing and will be
   // tried again; live-status-v1.js says the same (#1647).
   const UPDATES_REFUSED = "Couldn't check for updates. Reload the page or sign in again.";
   const UPDATES_RETRYING = "Couldn't check for updates — retrying.";
+  // Sent with every automatic re-read (accounts/sessions.py passive_read),
+  // and only with one: it also marks an audited report view as automatic
+  // (#1620), so a read the reader asked for never carries it.
+  const PASSIVE_READ = {"X-ParishKit-Read": "passive"};
   let rereadTimer = 0;
   let rereadFailures = 0;
   let rereadStopped = false;
   const rereadLink = () => document.querySelector("a[data-reread-every][data-in-place][href]");
-  const rereadProblem = (text) => {
-    // Say ``text`` on the line after the link (created on first use), or
-    // hide the line when ``text`` is empty.
-    const link = rereadLink();
+  const rereadProblem = (link, text) => {
+    // Say ``text`` on the line right after ``link`` (created on first
+    // use), or hide the line when ``text`` is empty. A figures status's
+    // follow-up link puts the line after its status region instead, so a
+    // status poll that redraws the region keeps the line (see handBack).
+    link = link?.closest("[data-live-status]") || link;
     if (!link) return;
-    let line = document.querySelector("[data-reread-problem]");
+    let line = link.parentElement?.querySelector(":scope > [data-reread-problem]") || null;
     if (!line && !text) return;
     if (!line) {
       line = document.createElement("p");
@@ -2962,9 +2988,13 @@
     || (node instanceof HTMLElement && node.isContentEditable);
   // Whether a control in an in-place region shows a change the page has not
   // applied: its value differs from the one the server drew (controlValue).
+  // A pane selector (Campaign comparison's pledge distribution year) is a
+  // presentation choice, applied at once and kept through a swap
+  // (swapRegion), so it never holds a read.
   const unapplied = () => [...document.querySelectorAll(REGIONS)].some((region) =>
     [...region.querySelectorAll("input, select, textarea")].some((node) =>
-      node.type !== "hidden" && controlValue(node, true) !== controlValue(node, false)));
+      node.type !== "hidden" && !node.matches("select[data-pane-select]")
+      && controlValue(node, true) !== controlValue(node, false)));
   const readerBusy = () => {
     // Whether a periodic re-read would get in the reader's way now: another
     // in-place request is in flight, the reader is mid-edit in a region the
@@ -2980,6 +3010,42 @@
       || (selection && !selection.isCollapsed)
       || document.querySelector("dialog[open]"));
   };
+  const quietRead = (link, done) => {
+    // Re-read the page's own address quietly and passively now, into the
+    // region ``link``'s fragment names, and tell ``done`` how it went:
+    // "ok", "failed", "refused", "busy" (the reader is busy: not read),
+    // "aborted" (the reader's own choice overtook it), "hidden" (the tab is
+    // hidden: not read) or "gone" (no such region).
+    const id = link?.getAttribute("href").split("#")[1];
+    const region = id && document.getElementById(id);
+    if (!isRegion(region)) return done("gone");
+    if (document.visibilityState !== "visible") return done("hidden");
+    if (readerBusy()) return done("busy");
+    const here = new URL(window.location.href);
+    here.hash = region.id;
+    // Whether this read reported back (ok or failed); an aborted read
+    // reports nothing.
+    let settled = false;
+    const background = {
+      ok: () => {
+        settled = true;
+        done("ok");
+      },
+      failed: (response) => {
+        settled = true;
+        // A refusal (an error status a retry cannot fix, or an answer that
+        // is another page, such as the sign-in page) stops the reads.
+        const elsewhere = response && response.redirected
+          && new URL(response.url).pathname !== window.location.pathname;
+        const refused = elsewhere || (response && [400, 401, 403, 404, 410].includes(response.status));
+        done(refused ? "refused" : "failed");
+      },
+    };
+    refreshTable(region, link, here.href, {method: "GET", headers: PASSIVE_READ}, () => {},
+      {owner: link, quiet: true, background}).finally(() => {
+      if (!settled) done("aborted");
+    });
+  };
   const scheduleReread = () => {
     // Arm the next re-read at the link's pace, unless the page has none,
     // reads were stopped by a refusal, or the tab is hidden.
@@ -2990,54 +3056,102 @@
     rereadTimer = window.setTimeout(rereadNow, Math.max(pace, REREAD_MIN_MS));
   };
   const rereadNow = () => {
-    // Re-read the page's own address quietly now, or wait for the next tick
-    // while the reader is busy.
+    // The periodic re-read: read now, or wait for the next tick while the
+    // reader is busy.
+    if (rereadStopped) return;
     const link = rereadLink();
-    const id = link?.getAttribute("href").split("#")[1];
-    const region = id && document.getElementById(id);
-    if (rereadStopped || !isRegion(region) || document.visibilityState !== "visible") return;
-    if (readerBusy()) {
-      scheduleReread();
-      return;
-    }
-    const here = new URL(window.location.href);
-    here.hash = region.id;
-    // Whether this read reported back (ok or failed); an aborted read
-    // (the reader's own choice overtook it) reports nothing.
-    let settled = false;
-    const background = {
-      ok: () => {
-        settled = true;
+    quietRead(link, (outcome) => {
+      if (outcome === "refused") {
+        rereadStopped = true;
+        rereadProblem(link, UPDATES_REFUSED);
+        return;
+      }
+      if (outcome === "ok") {
         rereadFailures = 0;
-        rereadProblem("");
-        scheduleReread();
-      },
-      failed: (response) => {
-        settled = true;
-        // A refusal (an error status a retry cannot fix, or an answer that
-        // is another page, such as the sign-in page) stops the reads.
-        const elsewhere = response && response.redirected
-          && new URL(response.url).pathname !== window.location.pathname;
-        if (elsewhere || (response && [400, 401, 403, 404, 410].includes(response.status))) {
-          rereadStopped = true;
-          rereadProblem(UPDATES_REFUSED);
-          return;
-        }
+        rereadProblem(link, "");
+      } else if (outcome === "failed") {
         rereadFailures += 1;
-        if (rereadFailures >= REREAD_FAILURES) rereadProblem(UPDATES_RETRYING);
-        scheduleReread();
-      },
-    };
-    refreshTable(region, link, here.href, {method: "GET"}, () => {},
-      {owner: link, quiet: true, background}).finally(() => {
-      if (!settled) scheduleReread();
+        if (rereadFailures >= REREAD_FAILURES) rereadProblem(link, UPDATES_RETRYING);
+      }
+      // A hidden tab catches up when shown (below); a page without the
+      // region has nothing to read.
+      if (outcome !== "hidden" && outcome !== "gone") scheduleReread();
     });
   };
-  document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible") rereadNow();
-    else window.clearTimeout(rereadTimer);
+  // The figures status's one re-read (see above): its link, until the read
+  // works, the link is replaced (another in-place answer redrew the region)
+  // or a read is refused.
+  let follow = null;
+  let followTimer = 0;
+  // Follow-up reads failed in a row, across follow-ups, until one works.
+  let followFailures = 0;
+  const handBack = (link) => {
+    // Too many follow-up reads failed: stop retrying the audited page and
+    // have live-status-v1.js watch ``link``'s status region again, as a
+    // pending one at the backoff pace. Its next answer that still says
+    // newer figures are ready settles the region and asks for one more
+    // follow-up (parishkit:reread); any other answer is adopted, and the
+    // region is watched at the server's pace from then on.
+    follow = null;
+    const status = link.closest("[data-live-status]");
+    if (!status) return;
+    const pace = FOLLOW_BACKOFF_MS[Math.min(followFailures - REREAD_FAILURES, FOLLOW_BACKOFF_MS.length - 1)];
+    status.setAttribute("data-live-pending", "");
+    status.setAttribute("data-live-interval", String(pace));
+    status.dispatchEvent(new CustomEvent("parishkit:live-watch", {bubbles: true}));
+  };
+  const followNow = () => {
+    // Re-read for the figures status now, or again in REREAD_MIN_MS.
+    window.clearTimeout(followTimer);
+    if (!follow?.isConnected) {
+      follow = null;
+      return;
+    }
+    const link = follow;
+    quietRead(link, (outcome) => {
+      if (link !== follow) return;
+      if (outcome === "ok" || outcome === "gone") {
+        if (outcome === "ok") followFailures = 0;
+        follow = null;
+        return;
+      }
+      if (outcome === "refused") {
+        follow = null;
+        rereadProblem(link, UPDATES_REFUSED);
+        return;
+      }
+      if (outcome === "failed") {
+        followFailures += 1;
+        if (followFailures >= REREAD_FAILURES) {
+          rereadProblem(link, UPDATES_RETRYING);
+          handBack(link);
+          return;
+        }
+      }
+      // A busy reader or an aborted read was never audited; wait and try
+      // again. A hidden tab catches up when shown (below).
+      if (outcome !== "hidden") followTimer = window.setTimeout(followNow, REREAD_MIN_MS);
+    });
+  };
+  document.addEventListener("parishkit:reread", (event) => {
+    if (!(event.target instanceof HTMLAnchorElement)) return;
+    follow = event.target;
+    followNow();
   });
-  window.addEventListener("pageshow", (event) => { if (event.persisted) rereadNow(); });
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") {
+      rereadNow();
+      if (follow) followNow();
+    } else {
+      window.clearTimeout(rereadTimer);
+      window.clearTimeout(followTimer);
+    }
+  });
+  window.addEventListener("pageshow", (event) => {
+    if (!event.persisted) return;
+    rereadNow();
+    if (follow) followNow();
+  });
   scheduleReread();
 
   // A control's value for the rules below (data-show-when and

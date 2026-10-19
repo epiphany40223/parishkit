@@ -173,7 +173,6 @@ def page(shown):
             "status_choices": [],
             "route_choices": [],
             "kind_choices": [],
-            "export_timezones": ["UTC"],
             "administrator": True,
             "action": "/admin/reports/census/",
             "mutable": True,
