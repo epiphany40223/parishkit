@@ -120,6 +120,7 @@ def test_check_gates_apply_in_order(monkeypatch):
     campaign work; with none of them Check ParishSoft is available."""
     running, held = [False], [False]
     monkeypatch.setattr(publication, "publication_running", lambda _: running[0])
+    monkeypatch.setattr(publication, "stopped_update", lambda _: False)
 
     def admit(campaign_id, *, mutating):
         """Refuse while other campaign work holds the campaign."""
@@ -424,7 +425,9 @@ def test_update_gates_apply_in_order(monkeypatch):
             True,
             publication.Offer("rerun", publication.HELD_CAMPAIGN, 1),
         ),
-        ("cancelled", 1, False, publication.Offer("rerun", None, 1)),
+        # A cancelled run is not retried (rerun_publication retries only a
+        # failed task).
+        ("cancelled", 1, False, publication.Offer(None)),
         # Nothing left: nothing to run again.
         ("failed", 0, False, publication.Offer(None)),
     ],
@@ -436,10 +439,28 @@ def test_a_confirmed_plan_offers_run_again_only_after_an_unfinished_run(
     run's task ended without completing and a Member is unfinished."""
     monkeypatch.setattr(publication, "unfinished", lambda ids: ["e"] * left)
     monkeypatch.setattr(publication, "_held", lambda _: held)
+    monkeypatch.setattr(publication, "production", lambda: True)
     plan = SimpleNamespace(pk="plan", campaign_id="c", testing=False)
     run = SimpleNamespace(state=state)
     counts = {"write_entities": 1, "write_fields": 1, "blocked_entities": 0}
     assert publication.offer(plan, counts, run=run) == expected
+    if expected.kind == "rerun":
+        # Testing mode greys Run again with its reason, first.
+        monkeypatch.setattr(publication, "production", lambda: False)
+        assert publication.offer(plan, counts, run=run).gate is publication.TESTING
+
+
+def test_check_waits_for_a_stopped_update(monkeypatch):
+    """While a confirmed plan has unfinished Members, Check ParishSoft is
+    unavailable, so a newer check never strands its Run again."""
+    monkeypatch.setattr(publication, "publication_running", lambda _: False)
+    monkeypatch.setattr(publication, "_held", lambda _: False)
+    stopped = [True]
+    monkeypatch.setattr(publication, "stopped_update", lambda _: stopped[0])
+    gate = publication.check_gate("c", enabled=True, waiting_changes=1)
+    assert gate is publication.STOPPED
+    stopped[0] = False
+    assert publication.check_gate("c", enabled=True, waiting_changes=1) is None
 
 
 def test_newest_plan_check_refuses_an_older_plan(monkeypatch):
@@ -456,17 +477,25 @@ def test_newest_plan_check_refuses_an_older_plan(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    ("sqlstate", "expected"),
+    ("sqlstate", "message", "expected"),
     [
-        ("23505", "publication_overlap"),
-        ("23514", "publication_plan_changed"),
-        (None, "publication_plan_changed"),
-        ("42501", None),
+        (
+            "23505",
+            "Another confirmed publication is still writing these changes",
+            "publication_overlap",
+        ),
+        # The plan's one confirmation, made first by someone else.
+        ("23505", "duplicate key value", "publication_plan_changed"),
+        ("23514", "changed since preflight", "publication_plan_changed"),
+        ("42501", "fresh Administrator authentication", "denied"),
+        # Not a refusal: an outage, raised as it is.
+        ("40001", "could not serialize", "outage"),
+        (None, "connection lost", "outage"),
     ],
 )
-def test_a_refused_confirmation_is_worded_by_its_sqlstate(sqlstate, expected):
+def test_a_refused_confirmation_is_worded_by_its_sqlstate(sqlstate, message, expected):
     """The confirmation guard's refusals become the page's codes; a sign-in
-    no longer live is a denial."""
+    no longer live is a denial, and any other error is not a refusal."""
     from django.db import DatabaseError
 
     class Driver(Exception):
@@ -474,11 +503,13 @@ def test_a_refused_confirmation_is_worded_by_its_sqlstate(sqlstate, expected):
 
     cause = Driver()
     cause.sqlstate = sqlstate
-    error = DatabaseError("refused")
+    error = DatabaseError(message)
     error.__cause__ = cause
     refusal = publication.confirm_refusal(error)
-    if expected is None:
+    if expected == "denied":
         assert type(refusal) is PermissionError
+    elif expected == "outage":
+        assert refusal is error
     else:
         assert refusal.reason == expected
 

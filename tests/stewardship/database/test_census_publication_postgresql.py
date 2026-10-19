@@ -420,6 +420,11 @@ def test_run_again_retries_a_run_that_did_not_finish(
     assert login.status_code == 302
     response, body = get(browser, ROUTE)
     assert b"Run again</button>" in body and b"<td>Not finished</td>" in body
+    # Check ParishSoft waits for Run again: a newer check would strand it.
+    assert b"An update stopped before it finished." in body
+    before = checks().count()
+    refused, _ = search(browser, ROUTE, {"request_key": str(uuid4())})
+    assert refused.status_code == 409 and checks().count() == before
     assert b'data-review-open="update-review"' not in body
     assert b"This update stopped before it finished." in body
     response, body, fields = review(browser, plan, RETRIES)

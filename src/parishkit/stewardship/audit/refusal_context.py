@@ -100,7 +100,8 @@ REASONS = frozenset(
         # Update's and Run again's own (#1688), shown in the review dialog:
         # Testing mode, a plan that writes nothing, is an hour old, changed
         # since the check or is not the newest, another plan still writing
-        # its changes, and a rerun with nothing unfinished. INFO, as above.
+        # its changes, a rerun with nothing unfinished, and a check while
+        # an update stopped before finishing. INFO, as above.
         "publication_testing",
         "publication_nothing_to_write",
         "publication_plan_expired",
@@ -108,6 +109,7 @@ REASONS = frozenset(
         "publication_plan_superseded",
         "publication_overlap",
         "publication_finished",
+        "publication_stopped",
         "unclassified",
         "usage",
         "configuration",

@@ -750,3 +750,24 @@ def test_a_refused_final_refresh_leaves_the_run_as_it_ended(world, monkeypatch):
     assert not final_refreshes().exists()
     assert audited("census_publication_refresh_requested") == []
     assert warned == [(PermissionError, logging.WARNING)]
+
+
+def test_a_run_refused_after_writing_still_refreshes(world, monkeypatch):
+    """A run refused partway after updating a Member (here, the switch
+    found off once the Member is written) still asks for the final
+    refresh, and its task is failed for Run again."""
+    real = tasks.publish_plan
+
+    def then_switched_off(*args, **options):
+        """Write as usual, then meet the switch off."""
+        real(*args, **options)
+        raise PublicationDisabled("ParishSoft publication is switched off.")
+
+    monkeypatch.setattr(tasks, "publish_plan", then_switched_off)
+    plan = world.planned(uuid4())
+    _, run = world.confirm(plan)
+    assert world.execute(run.run_id) and state(run) == "failed"
+    assert proposal(world.first) == "published"
+    (command,) = final_refreshes()
+    assert command.pk == tasks.final_refresh_command(run.run_id)
+    assert audited("census_publication_switched_off") == [(None, run.run_id, "failed")]

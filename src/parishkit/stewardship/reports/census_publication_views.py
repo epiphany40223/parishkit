@@ -66,6 +66,7 @@ from parishkit.stewardship.responses.publication_tasks import (
     request_preflight,
     rerun_publication,
 )
+from parishkit.stewardship.responses.publication_worker import PublicationDisabled
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.refusals import (
@@ -422,8 +423,15 @@ def _update_step(request, service, principal, campaign_id):
             request_key=key,
             **shown,
         )
+    except PublicationDisabled:
+        # Switched off between the page's check and the service's.
+        raise publication.OFF.refusal() from None
     except DatabaseError as error:
-        raise publication.confirm_refusal(error) from None
+        refusal = publication.confirm_refusal(error)
+        if refusal is error:
+            # Not a refusal: an outage, answered as one (503, logged).
+            raise
+        raise refusal from None
     except ValueError:
         # The key is bound to another intent: a stale dialog.
         raise publication.CHANGED.refusal() from None
@@ -433,9 +441,9 @@ def _update_step(request, service, principal, campaign_id):
 def _rerun_step(request, service, principal, campaign_id):
     """Run again's review (a confirmation) or Apply, for the newest plan.
 
-    Offered only once the plan's run task ended without completing and a
-    Member has no final outcome (``census_publication.offer``), never in
-    Testing mode. Apply calls ``rerun_publication`` with the review's key as
+    Offered only once the plan's run task failed and a Member has no final
+    outcome (``census_publication.offer``), never in Testing mode. Apply
+    calls ``rerun_publication`` with the review's key as
     its command id, so a repeated Apply returns the same retry.
     """
     action, plan_id = _step_fields(request, {"command_key"})
@@ -455,8 +463,6 @@ def _rerun_step(request, service, principal, campaign_id):
             raise publication.FINISHED.refusal()
         if offer.gate is not None:
             raise offer.gate.refusal()
-        if not publication.production():
-            raise publication.TESTING.refusal()
     if action == "preview":
         return {
             "rerun": {
@@ -466,14 +472,18 @@ def _rerun_step(request, service, principal, campaign_id):
                 "key": uuid4(),
             }
         }
-    rerun_publication(
-        service.store,
-        principal.identity,
-        plan.pk,
-        command_id=key,
-        correlation_id=current_correlation(),
-        enabled=publication.enabled(),
-    )
+    try:
+        rerun_publication(
+            service.store,
+            principal.identity,
+            plan.pk,
+            command_id=key,
+            correlation_id=current_correlation(),
+            enabled=publication.enabled(),
+        )
+    except PublicationDisabled:
+        # Switched off between the page's check and the service's.
+        raise publication.OFF.refusal() from None
     return {"rerun": {"started": True}}
 
 

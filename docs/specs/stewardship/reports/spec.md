@@ -2465,10 +2465,15 @@ An accepted change in *Conflict* is not Ready to update and is not counted,
 but the check still considers it, so its Member is held back (below).
 
 **Check ParishSoft** is available while at least one change the check would
-plan is Ready to update and no update run is queued or running; otherwise
-its reserved line says why ("No changes are Ready to update. Accept changes
-on Census changes first." or "An update is running. Wait for it to
-finish."). The running gate is the page's (and the command line's,
+plan is Ready to update, no update run is queued or running, and no update
+stopped before finishing its Members; otherwise its reserved line says why
+("No changes are Ready to update. Accept changes on Census changes first.",
+"An update is running. Wait for it to finish." or "An update stopped
+before it finished. Choose Run again under the newest check first."). A
+newer check would otherwise strand the stopped plan: its Run again would be
+refused as superseded, and the newer plan's confirmation refused while the
+stopped plan's writes may still be queued. These gates are the page's (and
+the command line's,
 [#1755](https://github.com/epiphany40223/parishkit/issues/1755)): the
 preflight service itself does not refuse a check during a run. It acts
 [in place](../ui-conventions/spec.md#in-place-controls), as Refresh now does
@@ -2587,9 +2592,11 @@ two "not written" outcomes from the Member's recorded attempts:
   this Member yet; Run again offers it.
 
 **Run again** appears in the Update button's place only when the run's task
-itself ended without completing (refused partway, stopped after its
-recovery limit, or crashed) and the plan still has a Member with no final
-outcome. It retries that plan's own run (`rerun_publication`), which reads
+failed (refused partway, or stopped after its recovery limit once crashed
+runs were retried) and the plan still has a Member with no final outcome;
+it is unavailable, with its reason, in Testing mode and while other
+campaign work holds the campaign. It retries that plan's own run
+(`rerun_publication`, which retries only a failed task), which reads
 each Member again before writing and never repeats a write that landed. It
 asks first in the shared review dialog as a confirmation ("Try the 2
 Members this run did not finish?"), without a new sign-in, since the plan
@@ -2597,7 +2604,8 @@ was confirmed already and the data workflow bounds its execution window.
 After a run that completed, the page offers Check ParishSoft instead. The
 plan's region never offers Update and Run again together.
 
-When a run that wrote at least one Member ends, the worker requests one full
+When a run that wrote at least one Member ends, completed or refused
+partway, the worker requests one full
 ParishSoft refresh, so ParishSoft now on Census changes catches up, and that
 refresh's [checks](../review-pipeline/spec.md#refresh-checks) move each
 written change from *Updated in ParishSoft* to *Confirmed*. While that
@@ -2636,6 +2644,11 @@ refusals](../operations/spec.md#admin-input-refusals)), never with a value.
 | `publication_plan_superseded` | A newer plan exists | A newer check exists. Review it first. |
 | `publication_overlap` | A change is still being written by another plan | Some of these changes are still being written. Wait for that update to finish. |
 | `publication_finished` | Run again with nothing unfinished | Every Member in this check is finished. |
+| `publication_stopped` | Check ParishSoft while an update stopped before finishing | An update stopped before it finished. Choose Run again under the newest check first. |
+
+A database error at Apply that is not one of the confirmation guard's
+refusals (a lost connection, a timeout) is not shown as "Something
+changed": it is answered as the outage it is, and logged.
 
 A check or run that fails in the background is not a refusal: the page shows
 the task's failure in its status region, as a refresh's does, and the

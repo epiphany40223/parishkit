@@ -189,6 +189,13 @@ OVERLAP = Gate(
     "publication_overlap",
     _("Some of these changes are still being written. Wait for that update to finish."),
 )
+STOPPED = Gate(
+    "publication_stopped",
+    _(
+        "An update stopped before it finished. Choose Run again under the "
+        "newest check first."
+    ),
+)
 FINISHED = Gate(
     "publication_finished",
     _("Every Member in this check is finished."),
@@ -232,12 +239,28 @@ def _held(campaign_id):
     return False
 
 
+def stopped_update(campaign_id):
+    """Whether a confirmed plan of the campaign still has unfinished Members.
+
+    Its run's task ended without finishing them (``offer``'s Run again), so
+    its writes may still be queued: a newer check could not be confirmed
+    over them (the confirmation guard refuses an overlap) and would make
+    the stopped plan's Run again refuse as superseded, leaving the page
+    stuck. So Check ParishSoft waits for Run again to finish them.
+    """
+    plans = PublicationPlan.objects.filter(
+        campaign_id=campaign_id, confirmation__isnull=False
+    ).values_list("pk", flat=True)
+    return bool(unfinished(list(plans)))
+
+
 def check_gate(campaign_id, *, enabled, waiting_changes):
     """Why Check ParishSoft is unavailable now, or None when it is available.
 
-    The switch first, then nothing to check, an update run unfinished, and
-    other campaign work holding the campaign (the preflight request refuses
-    that one itself too).
+    The switch first, then nothing to check, an update run unfinished, an
+    update that stopped before finishing (Run again first), and other
+    campaign work holding the campaign (the preflight request refuses that
+    one itself too).
     """
     if not enabled:
         return OFF
@@ -245,6 +268,8 @@ def check_gate(campaign_id, *, enabled, waiting_changes):
         return NOTHING_APPROVED
     if publication_running(campaign_id):
         return RUNNING
+    if stopped_update(campaign_id):
+        return STOPPED
     if _held(campaign_id):
         return HELD_CAMPAIGN
     return None
@@ -317,9 +342,11 @@ def offer(plan, counts, *, run):
     the plan writes nothing, the system is in Testing mode, a run is
     unfinished, other campaign work holds the campaign or the plan is an
     hour old. After it, the run's status shows instead; Run again is offered
-    only once the run's task ended without completing (failed or
-    cancelled) and a Member has no final outcome. The page never offers
-    both, so the region has one primary button.
+    only once the run's task failed (refused partway, or stopped after its
+    recovery limit; ``rerun_publication`` retries only a failed task) and a
+    Member has no final outcome, unavailable in Testing mode or while other
+    campaign work holds the campaign. The page never offers both, so the
+    region has one primary button.
     """
     if plan.testing:
         return Offer(None)
@@ -336,12 +363,16 @@ def offer(plan, counts, *, run):
             if applies():
                 return Offer("update", gate)
         return Offer("update")
-    if run is None or run.state in NONTERMINAL_STATES or run.state == "succeeded":
+    if run.state != "failed":
         return Offer(None)
     left = len(unfinished([plan.pk]))
     if not left:
         return Offer(None)
-    gate = HELD_CAMPAIGN if _held(plan.campaign_id) else None
+    gate = None
+    if not production():
+        gate = TESTING
+    elif _held(plan.campaign_id):
+        gate = HELD_CAMPAIGN
     return Offer("rerun", gate, left)
 
 
@@ -349,19 +380,24 @@ def confirm_refusal(error):
     """The page's refusal for a database error from confirming a plan.
 
     The confirmation's SQL guard (migration 0114) words each refusal: a
-    sign-in that is no longer live (SQLSTATE 42501, a denial), an
-    overlapping unfinished plan (23505), and otherwise a plan that is too
-    old or changed since the check (23514). The page has already refused an
-    old plan by its own clock, so any other refusal is a change.
+    sign-in that is no longer live (SQLSTATE 42501, a denial), another
+    confirmed plan still writing these changes (23505 with the guard's own
+    words), and a plan that is too old or changed since the check (23514).
+    Another 23505 is the plan's one confirmation, made first by another
+    Administrator: the plan changed. Anything else (a lost connection, a
+    timeout, a serialization failure) is not a refusal and is returned
+    unchanged, for the caller to raise as the outage it is.
     """
     state = getattr(getattr(error, "__cause__", None), "sqlstate", None)
     if state == "42501":
         # The guard found the sign-in no longer live: a denial, as the page's
         # own admission would give it.
         return PermissionError("Update ParishSoft needs a live sign-in.")
-    if state == "23505":
+    if state == "23505" and "still writing" in str(error):
         return OVERLAP.refusal()
-    return CHANGED.refusal()
+    if state in {"23505", "23514"}:
+        return CHANGED.refusal()
+    return error
 
 
 def _checked_by(plan):

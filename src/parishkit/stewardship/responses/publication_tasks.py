@@ -49,7 +49,7 @@ from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.jobs.dispatch import Handler, RecoveryPlan
 from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun
 from parishkit.stewardship.jobs.queues import WorkQueue
-from parishkit.stewardship.jobs.storage import enqueue, retry_failed
+from parishkit.stewardship.jobs.storage import _status, enqueue, retry_failed
 from parishkit.stewardship.observability import correlation, emit_failure
 from parishkit.stewardship.reports.export_services import admit_campaign
 from parishkit.stewardship.source.refresh_models import SourceRefreshCommand
@@ -394,6 +394,9 @@ def _execute_publication(execution, *, enabled, gateway):
         except (PublicationDisabled, PublicationRefused) as error:
             _refuse(execution, _refusal(error))
             return
+        # The Members already updated before this run (by a run that crashed
+        # after its writes, say), so the final refresh follows this run's own.
+        before = _updated(plan_id)
         source = gateway(execution)
         try:
             publish_plan(execution, plan_id, source, enabled=enabled)
@@ -403,11 +406,20 @@ def _execute_publication(execution, *, enabled, gateway):
             refusal = None
         finally:
             source.close()
+        # Also after a refusal partway: the Members written before it still
+        # need ParishSoft's copy refreshed.
+        _request_final_refresh(execution, plan_id, before)
         if refusal is not None:
             _refuse(execution, refusal)
             return
-        _request_final_refresh(execution, plan_id)
         execution.transition("complete")
+
+
+def _updated(plan_id):
+    """How many of the plan's Members have been updated (``published``)."""
+    return PublicationOutcome.objects.filter(
+        entity__plan_id=plan_id, result="published"
+    ).count()
 
 
 # Names each run's final refresh command (``final_refresh_command``).
@@ -417,16 +429,17 @@ _FINAL_REFRESH = "census-update-final-refresh-v1"
 def final_refresh_command(run_id):
     """The command id of the final refresh one update run requests.
 
-    Derived from the run's task id, so a run replayed after a crash
-    requests (and audits) its refresh once, a later run of the same plan
-    (a recovery retry or Run again) requests its own, and the page finds
-    a plan's refreshes from its runs without any state of its own.
+    Derived from the run's task id (each recovery retry or Run again is a
+    task row of its own), so one run row asks, and audits, once however
+    often it is executed, a later run of the same plan asks only if it
+    updates a Member itself, and the page finds a plan's refreshes from
+    its runs without any state of its own.
     """
     return uuid5(run_id, _FINAL_REFRESH)
 
 
-def _request_final_refresh(execution, plan_id):
-    """Request one full refresh after a run whose plan updated a Member.
+def _request_final_refresh(execution, plan_id, before):
+    """Request one full refresh after a run that updated a Member.
 
     The reports spec's "Confirming and running" and the data workflow: once
     the run has released the source lease, a plan with at least one
@@ -435,22 +448,30 @@ def _request_final_refresh(execution, plan_id):
     the plan, under the run's correlation id, and records
     ``census_publication_refresh_requested`` so System logs says it followed
     an update. That refresh's checks then move each written change to
-    Confirmed (#1689). It counts the plan's Members, not only this run's, so
-    a retry that finishes a crashed run's plan still refreshes. It is best
-    effort: when the request is refused (no promoted data, other campaign
-    work holding refreshes, the configured organization missing) the run's
-    outcome stands, a WARNING is logged, and the next scheduled refresh
-    catches up.
+    Confirmed (#1689). ``before`` is how many of the plan's Members were
+    updated when the run started (``_updated``): only a run that updated
+    one itself asks, including a retry that finds a crashed run's write
+    landed and records it. It is best effort: when the request is refused
+    (no promoted data, other campaign work holding refreshes, the
+    configured organization missing) the run's outcome stands, a WARNING
+    is logged, and the next scheduled refresh catches up; an unexpected
+    error (an invariant, a malformed binding) is logged at ERROR, the run's
+    outcome still standing.
     """
     command_id = final_refresh_command(execution.claim.run_id)
+    run_id = execution.claim.run_id
+
+    def authorize(scope):
+        """The run must still be admitted, as its effect just was."""
+        task = TaskRun.objects.get(pk=run_id)
+        return admit_publication("effect", _status(task))
+
     try:
         with execution.effect():
             if SourceRefreshCommand.objects.filter(pk=command_id).exists():
                 # A replay of a run that already asked: asked and audited once.
                 return
-            if not PublicationOutcome.objects.filter(
-                entity__plan_id=plan_id, result="published"
-            ).exists():
+            if _updated(plan_id) <= before:
                 return
             actor_id = PublicationConfirmation.objects.values_list(
                 "actor_id", flat=True
@@ -460,9 +481,9 @@ def _request_final_refresh(execution, plan_id):
                 cause="manual",
                 actor_id=actor_id,
                 correlation_id=execution.correlation_id,
-                # This effect has just admitted the run, whose confirmed plan
-                # is the authority, under the same work-order lock.
-                authorize=lambda scope: True,
+                # The run's confirmed plan is the authority: rechecked here
+                # under the work-order lock, as the source fallback does.
+                authorize=authorize,
             )
             record_action(
                 Action.CENSUS_PUBLICATION_REFRESH_REQUESTED,
@@ -471,13 +492,12 @@ def _request_final_refresh(execution, plan_id):
                 current_parish=True,
                 context={"outcome": Outcome.STARTED},
             )
-    except (PermissionError, ValueError, DatabaseError, StorageInvariantError) as error:
-        emit_failure(
-            error,
-            level=logging.WARNING,
-            task_id=execution.claim.run_id,
-            name_class=True,
-        )
+    except (PermissionError, DatabaseError) as error:
+        # An expected refusal (no promoted data, a held campaign, the
+        # organization missing) or the database unavailable for it.
+        emit_failure(error, level=logging.WARNING, task_id=run_id, name_class=True)
+    except (ValueError, StorageInvariantError) as error:
+        emit_failure(error, level=logging.ERROR, task_id=run_id, name_class=True)
 
 
 def parishsoft_gateway(credential_path):
