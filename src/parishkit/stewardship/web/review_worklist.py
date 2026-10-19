@@ -68,7 +68,9 @@ class Words:
 
     ``label`` names a row's icon ("Accept {name}") and ``button`` the bulk
     bar's; ``selected`` is the tooltip of the icon drawn selected (None
-    for an action that records no state, which is never drawn so).
+    for an action that records no state, which is never drawn so). Every
+    icon tooltip is one short phrase with no full stop (UX conventions,
+    "Row actions and confirmation"), as the portal's other icons are.
     ``done`` is what a dialog announces when the answer carries no notice.
     """
 
@@ -89,7 +91,7 @@ WORDS = {
         "Accept {name}?",
         "Accept {count} {items}?",
         "accepted.",
-        "Accepted.",
+        "Accepted",
     ),
     Action.EDIT: Words(
         "edit",
@@ -109,7 +111,7 @@ WORDS = {
         "Ignore {name}?",
         "Ignore {count} {items}?",
         "ignored.",
-        "Ignored.",
+        "Ignored",
     ),
     Action.BACK_TO_REVIEW: Words(
         "clear",
@@ -127,7 +129,7 @@ WORDS = {
         "Mark {name} entered by hand?",
         "Mark {count} {items} entered by hand?",
         "marked entered by hand.",
-        "Entered by hand.",
+        "Entered by hand",
     ),
     Action.HANDLED: Words(
         "entered_box",
@@ -136,7 +138,7 @@ WORDS = {
         "Mark {name} handled?",
         "Mark {count} {items} handled?",
         "marked handled.",
-        "Handled.",
+        "Handled",
     ),
 }
 
@@ -253,8 +255,9 @@ def _selected_title(action, placement, undo):
     """
     state = WORDS[action].selected
     if action is Action.ACCEPT and placement.decision is not None:
-        state = f"{placement.decision.label}."
-    return f"{state} To change it, choose Back to review." if undo else state
+        state = placement.decision.label
+    # One phrase, no full stop (UX conventions, R38 finding 5).
+    return f"{state}; choose Back to review to change it" if undo else state
 
 
 def row_icons(
@@ -363,13 +366,20 @@ class Column:
     """One of a stream's identity columns, in the shared column order.
 
     ``key`` names the row's value; ``sort`` the table's sortable column, if
-    any; the first column is the row's header cell.
+    any; the first column is the row's header cell. ``family`` marks a
+    Family's or Member's name that opens the Family hub for viewers who may
+    open it (the row's ``family_id``; a "family" column always does, with
+    the shared Family-name link), and ``link`` names the row's key holding
+    the item's own page, which its cell opens for every viewer (UX
+    conventions, "Admin tables", R38 finding 13).
     """
 
     key: str
     heading: str
     sort: str = ""
     numeric: bool = False
+    family: bool = False
+    link: str = ""
 
 
 HELD = "Earlier: {decision}, not in force."
@@ -445,7 +455,16 @@ def _decorate(stream, row, roles, prefix, columns):
     row["kinds"] = " ".join(kind for kind in kinds if Action(kind) in BULK)
     # A bulk Back to review asks for a note while a ticked row is Ignored.
     row["choice"] = REOPEN if reopen else ""
-    row["identity"] = [(row.get(column.key, ""), column) for column in columns]
+    # Each identity cell: its value, its column and the item page it opens
+    # (its column's ``link``), if any.
+    row["identity"] = [
+        (
+            row.get(column.key, ""),
+            column,
+            row.get(column.link, "") if column.link else "",
+        )
+        for column in columns
+    ]
     row["stage_label"] = placement.stage.label
     row["stage_look"] = STAGE_LOOK.get(placement.stage, "")
     row["decision_label"] = decision_label(placement)
@@ -500,6 +519,10 @@ class Worklist:
     editor_template: object = "stewardship/components/review-worklist-value.html"
     add_template: object = None
     export_template: object = None
+    # The view's own address (``page_address``), which ui-v1.js puts in the
+    # address bar after each in-place answer, so a reload shows the same
+    # view; empty for a stream that keeps none.
+    address: str = ""
 
     max_bulk = MAX_BULK
 
@@ -587,6 +610,7 @@ def build(
     caption="Review worklist",
     baseline=True,
     fields=None,
+    address="",
     **templates,
 ):
     """The ``worklist`` for one reader of one page of ``stream``'s rows.
@@ -602,7 +626,8 @@ def build(
     (ParishSoft now holds an Ignored item's Family answer) and ``withheld``
     (actions this item cannot take). ``roles`` is the reader's role set.
     ``stage`` is the Stage filter's value and ``fields`` the stream's other
-    filters, posted by every form. ``templates`` takes the stream's
+    filters, posted by every form. ``address`` is the view's own address
+    (``page_address``). ``templates`` takes the stream's
     ``filters_template``, ``editor_template``, ``add_template`` and
     ``export_template``.
     """
@@ -626,8 +651,24 @@ def build(
         baseline=baseline,
         shows_now=any(row["shows_now"] for row in decorated),
         bulk_too_many=len(decorated) > MAX_BULK,
+        address=address,
         **templates,
     )
+
+
+def page_address(action, pairs):
+    """A worklist view's own address, for the address bar (R38 finding 6).
+
+    ``pairs`` are the ``(name, value)`` choices a link may carry: the Stage,
+    the stream's closed filters and the table's sort, size and page, never
+    a private value such as a name search, which stays in POST bodies (UX
+    conventions, "Admin tables"). Empty values are left out, so the default
+    view is the page's plain address. After every in-place answer ui-v1.js
+    puts it in the address bar (``a[data-page-address]``), and the stream's
+    view draws the same view from it on a reload.
+    """
+    kept = [(name, value) for name, value in pairs if value not in ("", None)]
+    return f"{action}?{urlencode(kept)}" if kept else action
 
 
 # --- The decision POST ------------------------------------------------------

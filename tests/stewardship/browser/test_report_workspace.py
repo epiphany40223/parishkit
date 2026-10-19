@@ -32,11 +32,11 @@ def test_report_chart_scope_export_controls_and_accessibility(
     assert page.evaluate("document.activeElement.hasAttribute('data-chart-view')")
     assert page.locator("[data-table-region] tbody tr").count() == 3
     assert "$1,234.56" in page.locator("[data-table-region] table").inner_text()
-    # The small export panel (#1537): XLSX first and chosen, no PNG.
-    menu = page.get_by_label("Export format", exact=True)
-    assert menu.input_value() == "xlsx"
-    assert menu.locator("option").all_inner_texts() == ["XLSX", "CSV", "PDF"]
-    button = page.get_by_role("button", name="Generate export")
+    # The small export panel (#1537): the export row, XLSX first, no PNG
+    # (#1679).
+    row = page.locator("#participation-export .export-buttons button")
+    assert row.all_inner_texts() == ["Export XLSX", "Export CSV", "Export PDF"]
+    button = page.get_by_role("button", name="Export XLSX")
     button.focus()
     assert page.locator("input[name=request_key]").count() == 1
     assert page.locator("input[name=browser_timezone]").evaluate_all(
@@ -96,7 +96,7 @@ def test_report_and_export_pages_offer_their_actions(page, component_origin):
     choice = page.get_by_role("group", name="Chart population")
     visible(choice.get_by_role("link", name="Current population"))
     assert page.get_by_role("button", name="Apply report options").count() == 0
-    visible(page.get_by_role("button", name="Generate export"))
+    visible(page.get_by_role("button", name="Export XLSX"))
     # The latest-data export is the command line's only (#1537).
     assert (
         page.get_by_role("button", name="Queue export with the latest data").count()
