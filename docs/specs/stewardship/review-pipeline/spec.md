@@ -494,6 +494,8 @@ The rules, in order:
      change does today
      ([Automatic census review](../reports/spec.md#automatic-census-review)).
      The reviewer then decides against R, and R becomes the item's new A.
+     (An Updated in ParishSoft item instead goes back to To review:
+     [refresh checks](#refresh-checks).)
      An item already queued for update keeps its plan, and the plan meets
      the conflict at its own preflight check.
 4. **Entity gone.** The Member or Family left the baseline (inactive,

@@ -631,12 +631,14 @@ def worker_refresh(harness, *, member=None, family=None, added=False):
 
 
 def test_the_worker_login_moves_an_updated_change_to_conflict(response_service):
-    """The worker's own grants carry the conflict check and the move."""
+    """The worker's own grants carry the conflict check and the move, and
+    the census guard's worker branch admits it only To review again."""
     harness, staff, rows = answered(response_service, first_name)
     change = published(harness, staff, rows["first_name"])
     worker_refresh(harness)
     assert checks(proposal=change) == ["conflict"]
-    assert fresh(change).execution == "conflict"
+    moved = fresh(change)
+    assert (moved.execution, moved.decision) == ("conflict", "unreviewed")
 
 
 def test_the_worker_login_checks_new_members_and_home_addresses(response_service):
