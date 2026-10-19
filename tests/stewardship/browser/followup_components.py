@@ -134,6 +134,11 @@ STAFF = Principal(UUID(int=97), frozenset({"staff"}))
 LEADS = Principal(UUID(int=98), frozenset({"ministry_leader"}), frozenset({9}))
 
 
+# The sample requests' Family record, whose hub a Member name opens.
+FAMILY = UUID(int=81)
+HUB = f"/admin/reports/families/{FAMILY}/"
+
+
 def _worklist(rows, *, query=None, principal=STAFF, mutable=True, marks=None):
     """The worklist page's context for detached selection ``rows`` (#1684).
 
@@ -177,7 +182,11 @@ def _worklist(rows, *, query=None, principal=STAFF, mutable=True, marks=None):
         action=reverse("admin:ministry_report"),
         decisions={},
         asked={},
+        # Every shown request's Family, for the Member name's hub link.
+        families={str(row["id"]): FAMILY for row in shaped},
     ) | {
+        # The page's viewer, whose role decides the Family hub link.
+        "request": SimpleNamespace(principal=principal),
         "query": query,
         "mutable": mutable,
         "can_tick": "staff" in principal.roles,
@@ -272,8 +281,8 @@ def components(context, admin):
         channels=CHANNELS,
         future_message=REFUSALS["contact_future"][0],
         metadata=dict(name="Sample campaign", source_as_of=moment, timezone="UTC"),
-        # Export these requests (#1157): the zone choices.
-        export_timezones=["America/Detroit", "UTC"],
+        # Export these requests (#1157): the applied view and zone choices.
+        export_fields=query.form_values(),
         export_pdf_limit=1000,
         # Ministry requests' overview (#1133): By Ministry and the packet's
         # choices, every Ministry in scope.

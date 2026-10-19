@@ -250,10 +250,9 @@ def test_follow_up_page_labels_no_utc_entry():
     # both fields carry the gate marker for an unknown one.
     assert ZONE_NOTE in text
     assert text.count("data-browser-zone-field>") == 2
-    # The request page names no fixed zone (the shared note names the
-    # browser's); the worklist's Export these requests (#1157, #1684), on
-    # Ministry requests, offers UTC among its zone choices, as every export
-    # asking for a zone does.
+    # Neither the follow-up nor the queue's Export these requests names a
+    # fixed zone: the export asks for none (#1679), and the shared note
+    # names the browser's.
     assert "UTC" not in text
     # Every follow-up instant shown (the request's submitted time, history,
     # contact, source as of) is converted in the browser; the worklist's own
@@ -351,11 +350,12 @@ def test_browser_day_start_needs_a_known_zone(zone):
 def test_log_page_dates_are_browser_local():
     """The System logs filters name no fixed zone (#558): From and Through
     carry the browser zone field and its note, and the only "UTC" left is the
-    export's own time zone choice (the reader picks the file's zone)."""
+    export's own "Times in" choice, drawn by the shared export row (#1679),
+    which the page's comments explain."""
     text = (TEMPLATES / "logs.html").read_text()
-    assert [line for line in text.splitlines() if "UTC" in line] == [
-        line for line in text.splitlines() if '<option value="UTC">UTC</option>' in line
-    ]
+    code = re.sub(r"{% comment %}.*?{% endcomment %}", "", text, flags=re.S)
+    assert "UTC" not in code
+    assert "zone_choice=True" in code
     assert 'name="zone" value="{{ query.zone }}" data-browser-zone ' in text
     assert ZONE_NOTE in text
     assert text.count("data-browser-zone-field>") == 2

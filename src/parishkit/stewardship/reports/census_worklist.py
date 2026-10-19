@@ -45,20 +45,22 @@ from parishkit.stewardship.web.review_worklist import (
     Column,
     StaleDecision,
     build,
+    page_address,
 )
 
 from .census_changes import LABELS, REOPENED, STAGES
 
 # The census stream's identity columns, in the shared column order (UX
 # conventions, "Table column order"), each sorted by ``census_change_views``'s
-# whitelisted sort tokens. The Stage is chosen with the Stage filter.
+# whitelisted sort tokens. The Stage is chosen with the Stage filter. How
+# it reaches ParishSoft is left out of the table, which it made too wide,
+# and kept in the downloads and as a filter (R38 finding 16).
 COLUMNS = (
     Column("family", "Family", sort="family"),
     Column("family_duid", "Family DUID", sort="duid", numeric=True),
     Column("who", "Who", sort="who"),
     Column("member_duid", "Member DUID", sort="member_duid", numeric=True),
     Column("what", "What changed", sort="what"),
-    Column("route", "How it reaches ParishSoft", sort="route"),
 )
 # PostgreSQL's SQLSTATE for a unique violation: a racing second decision of
 # the same version, which reads as the stale notice.
@@ -151,7 +153,6 @@ def worklist_rows(rows):
                 "who": _who(row),
                 "member_duid": _member_duid(row),
                 "what": row["label"],
-                "route": row["route_label"],
                 "reviewer_value": row["edited"],
                 "decided_by": decided_by or "",
                 "decided_at": decided_at,
@@ -179,14 +180,43 @@ def history_choice(counts):
     return (Stage.HISTORY.value, f"History ({counts.get(Stage.HISTORY.value, 0):,})")
 
 
-def worklist_page(result, query, table, action, *, mutable):
+# The filters a link may carry (R38 finding 6), with the value each takes
+# when not chosen: never the name search, which stays in POST bodies.
+LINK_DEFAULTS = {
+    "stage": Stage.TO_REVIEW.value,
+    "route": "any",
+    "kind": "any",
+    "start": "",
+    "end": "",
+    "zone": "",
+}
+
+
+def link_pairs(query, paging=None):
+    """The view's choices a link may carry, as ``(name, value)`` pairs.
+
+    The Stage and the closed filters other than their defaults, the zone
+    only while a day needs it, then the table's ``paging`` (its page, size
+    and sort as the form sent them). ``page_address`` drops empty values.
+    """
+    days = bool(query.start or query.end)
+    pairs = [
+        (name, "" if value == LINK_DEFAULTS[name] else value)
+        for name, value in ((name, getattr(query, name)) for name in LINK_DEFAULTS)
+        if name != "zone" or days
+    ]
+    return pairs + sorted((paging or {}).items())
+
+
+def worklist_page(result, query, table, action, *, mutable, paging=None):
     """The page's ``worklist`` and its table, from ``census_changes``'s result.
 
     ``table`` is the shaped rows' page (``paginate``); its rows become the
     worklist's rows. ``mutable`` is false while other campaign work holds
     the campaign: the reader is then offered no action at all, as the
     services would refuse them. History (superseded and cancelled rows) is
-    a Stage choice of its own, which Every stage does not count.
+    a Stage choice of its own, which Every stage does not count. ``paging``
+    is the table's choices as sent, for the view's own address.
     """
     rows = worklist_rows(table.rows)
     table = replace(table, rows=rows, method="post", action=action)
@@ -211,6 +241,7 @@ def worklist_page(result, query, table, action, *, mutable):
         filters_template="stewardship/census-worklist-filters.html",
         editor_template="stewardship/census-worklist-value.html",
         export_template="stewardship/census-worklist-export.html",
+        address=page_address(action, link_pairs(query, paging)),
     )
     worklist.stage_choices.insert(-1, history_choice(counts))
     return worklist, table

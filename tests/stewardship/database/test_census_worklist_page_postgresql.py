@@ -185,3 +185,49 @@ def test_a_rebound_entered_by_hand_key_is_a_409(response_service, google):
     assert search(browser, ROUTE, form)[0].status_code == 200
     response, _ = search(browser, ROUTE, form | {"note": "Another"})
     assert response.status_code == 409
+
+
+def fetch(browser, path):
+    """A GET of ``path`` through the response-owned transport, as ``search``
+    posts: the response and its whole body."""
+    import socket
+
+    server, peer = socket.socketpair()
+    try:
+        response = browser.get(path, **{"gunicorn.socket": server})
+        body = (
+            b"".join(response.streaming_content)
+            if response.streaming
+            else response.content
+        )
+        response.close()
+        return response, body
+    finally:
+        server.close()
+        peer.close()
+
+
+def test_the_view_is_in_its_address_for_a_reload(response_service, google):
+    """An in-place Apply's answer names the view's own address with only
+    the choices a link may carry, never the name search; a GET of that
+    address draws the same view, and a GET carrying the search is refused
+    (R38 finding 6)."""
+    prepared(response_service)
+    browser = staff_browser(google)
+    response, body = search(
+        browser, ROUTE, {"stage": "all", "kind": "contact", "search": "Smith"}
+    )
+    assert response.status_code == 200
+    page = body.decode()
+    assert f'<a href="{ROUTE}?stage=all&amp;kind=contact" data-page-address' in page
+    response, body = fetch(browser, ROUTE + "?stage=all&kind=contact")
+    assert response.status_code == 200
+    page = body.decode()
+    assert '<option value="all" selected>' in page
+    assert f'<a href="{ROUTE}?stage=all&amp;kind=contact" data-page-address' in page
+    # The default view is the plain address.
+    response, body = fetch(browser, ROUTE)
+    assert response.status_code == 200
+    assert f'<a href="{ROUTE}" data-page-address' in body.decode()
+    response, _ = fetch(browser, ROUTE + "?search=Smith")
+    assert response.status_code == 400
