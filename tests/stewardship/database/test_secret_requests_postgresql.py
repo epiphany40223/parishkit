@@ -84,6 +84,37 @@ def test_invalid_server_lifetime_never_reserves_a_target(intent, lifetime):
     assert not SecretReplacementRequest.objects.exists()
 
 
+def test_a_named_automation_session_is_bound_and_checked(intent):
+    """The named session is a UUID, part of the retry identity, and checked.
+
+    A retry naming another session than the first intake is a conflict. A
+    request naming a session that is not a live full-scope automation
+    session is refused by the intake guard even without consumers (#1763).
+    """
+    from django.db import DatabaseError
+
+    from parishkit.stewardship.accounts.secret_requests import SecretRequestConflict
+
+    with pytest.raises(TypeError, match="UUIDs"):
+        stage_secret_request(**intent, automation_session_id=str(uuid4()))
+    # Only the key-replacement targets take a session's request.
+    with pytest.raises(ConfigError, match="from a session"):
+        stage_secret_request(
+            **(intent | {"target": "django_signing"}), automation_session_id=uuid4()
+        )
+    receipt = stage_secret_request(**intent)
+    assert SecretReplacementRequest.objects.get().automation_session_id is None
+    with pytest.raises(SecretRequestConflict):
+        stage_secret_request(**intent, automation_session_id=uuid4())
+    assert stage_secret_request(**intent) == receipt
+    other = intent | {"request_id": uuid4(), "staging_reference": uuid4()}
+    other["target"] = "slack"
+    # Its own transaction rolls back.
+    with pytest.raises(DatabaseError, match="requires a live automation session"):
+        stage_secret_request(**other, automation_session_id=uuid4())
+    assert SecretReplacementRequest.objects.count() == 1
+
+
 def clean(intent, callback):
     """Exercise the future target-store port with an explicit synthetic callback."""
     return clean_secret_request(

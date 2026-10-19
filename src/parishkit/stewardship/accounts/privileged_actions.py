@@ -126,21 +126,6 @@ def configuration_request(request, *, base_digest, patch, request_key, correlati
     )
 
 
-def _sign_in_ended(actor, instant):
-    """Whether every full-scope automation session at this sign-in has ended.
-
-    Runs the same function as the intake guard
-    (``stewardship_automation_instant_ended_v1``). It is false for a sign-in
-    no automation session holds, such as a browser that never approved one.
-    """
-    with connection.cursor() as cursor:
-        cursor.execute(
-            "SELECT public.stewardship_automation_instant_ended_v1(%s,%s)",
-            [actor, instant],
-        )
-        return cursor.fetchone()[0] is True
-
-
 def sealed_secret_request(
     request, *, configuration_digest=None, service=None, **intent
 ):
@@ -150,9 +135,18 @@ def sealed_secret_request(
     No plaintext parameter is accepted here. Explicit storage parameters reject
     unknown form fields, and the SQL trigger commits secret audit atomically.
     ``service`` is passed on to ``admit_admin_action`` (the web's runtime
-    when left out).
+    when left out). A command-line request records its automation session,
+    which the SQL guards require live (#1763); admission holds that
+    session's row ``FOR SHARE`` until the request commits. A browser request
+    records none, so its key replacement never depends on the automation
+    sessions its sign-in approved.
     """
-    if {"actor_id", "reauthenticated_at", "admit"} & intent.keys():
+    if {
+        "actor_id",
+        "reauthenticated_at",
+        "admit",
+        "automation_session_id",
+    } & intent.keys():
         raise ValueError("Authentication evidence cannot be supplied by the caller.")
     if not intent.get("sealed_candidate") or not intent.get("required_consumers"):
         raise ValueError(
@@ -166,13 +160,9 @@ def sealed_secret_request(
     ).first()
     if session is None:
         raise PermissionError("Access is unavailable.")
-    if _sign_in_ended(actor, session.authenticated_at):
-        # The SQL intake guard would refuse this with a database error the
-        # page shows as an outage. Say what helps instead; the guard stays
-        # the authority (#1547).
-        from .admin_editing import signed_out
-
-        raise signed_out()
+    automation_session_id = (
+        request.automation_session_id if is_automation(request) else None
+    )
 
     def admit():
         """Keep previewed public settings bound while locked intake commits."""
@@ -192,5 +182,6 @@ def sealed_secret_request(
         **intent,
         actor_id=actor,
         reauthenticated_at=session.authenticated_at,
+        automation_session_id=automation_session_id,
         admit=admit,
     )

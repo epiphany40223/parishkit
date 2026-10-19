@@ -313,9 +313,11 @@ def information_placement(
 
     ``followed_up`` is whether ``followed_up_at`` is set. ``follow_up_needed``
     defaults to false, so "Not needed" cannot be told from "never looked
-    at": ``staff_ignored`` is the decision #1685's one-time migration will
-    record for items a Staff edit set to not needed. Until then every
-    such item is To review, never silently Ignored.
+    at": ``staff_ignored`` is whether the latest Staff revision ignored the
+    item (``responses.information.staff_ignored``: its review decision, or,
+    for a revision saved before migration 0126, follow-up left not needed,
+    #1685). An item no Staff member has saved is To review, never silently
+    Ignored.
     """
     if (
         disposition not in INFORMATION_DISPOSITIONS
@@ -338,14 +340,56 @@ def information_placement(
 # --- Financial and cannot participate -------------------------------------
 
 
-def financial_placement():
-    """A current pledge answer: To review, since no decision is stored yet (#1686)."""
-    return Placement(Stage.TO_REVIEW)
+FINANCIAL_DECISIONS = frozenset({"accepted", "accepted_edited", "ignored"})
 
 
-def cannot_participate_placement():
-    """A current cannot-participate answer: To review until #1685 stores decisions."""
-    return Placement(Stage.TO_REVIEW)
+def financial_placement(*, decision=None, entered=False):
+    """A Family's current pledge answer's stage from its decision in force (#1686).
+
+    ``decision`` is the stored decision of the item's latest
+    ``stewardship_pledge_review`` row while it is in force (None with no
+    row, after Back to review, or once the Family changed its pledge since
+    the decision: ``reports.pledge_review`` reads that), and ``entered``
+    its Entered by hand mark. With no argument, as before any decision is
+    stored, every answer is To review.
+    """
+    if (decision is not None and decision not in FINANCIAL_DECISIONS) or type(
+        entered
+    ) is not bool:
+        raise ValueError("Unknown pledge review state.")
+    if entered and decision not in ("accepted", "accepted_edited"):
+        raise ValueError("Only an accepted pledge is entered by hand.")
+    if decision is None:
+        return Placement(Stage.TO_REVIEW)
+    if decision == "ignored":
+        return Placement(Stage.IGNORED, Decision.IGNORED)
+    accepted = Decision(decision)
+    stage = Stage.ENTERED_BY_HAND if entered else Stage.TO_ENTER_BY_HAND
+    return Placement(stage, accepted)
+
+
+LIMITATION_DECISIONS = frozenset({"accepted", "ignored", "none", "handled"})
+
+
+def cannot_participate_placement(*, decision=None, in_force=False):
+    """A current cannot-participate or cannot-attend answer's stage (#1685).
+
+    ``decision`` is the answer's latest review decision (None before any)
+    and ``in_force`` whether it still holds: every later live response gave
+    the same answer. None in force, or Back to review (``none``), is To
+    review; Accepted is To handle, Handled is Handled (accepted, then
+    marked), and Ignored is Ignored.
+    """
+    if (decision is not None and decision not in LIMITATION_DECISIONS) or type(
+        in_force
+    ) is not bool:
+        raise ValueError("Unknown cannot participate state.")
+    if not in_force or decision in (None, "none"):
+        return Placement(Stage.TO_REVIEW)
+    if decision == "ignored":
+        return Placement(Stage.IGNORED, Decision.IGNORED)
+    stage = Stage.HANDLED if decision == "handled" else Stage.TO_HANDLE
+    return Placement(stage, Decision.ACCEPTED)
 
 
 # --- Role-specific actions -------------------------------------------------
