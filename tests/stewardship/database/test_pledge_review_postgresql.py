@@ -512,9 +512,16 @@ def test_limitations_lists_cannot_contribute_at_its_pledges_stage(response_servi
         limitations_report,
     )
 
+    # Imported here: the refresh helpers' module imports this one.
+    from .test_pledge_refresh_postgresql import refresh
+
     harness = response_service
     financial_source(harness, options=map(asdict, OPTIONS))
     harness = activate_response_service(harness)
+    # ParishSoft holds a pledge, so Cannot contribute differs from it and
+    # stays To review (#1753 Confirms an answer ParishSoft already holds,
+    # as Cannot contribute against no pledge, $0.00, would be).
+    refresh(harness, "300.00")
     with web_login():
         submission = pledge(
             harness,
