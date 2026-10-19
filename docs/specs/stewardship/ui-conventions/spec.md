@@ -864,7 +864,11 @@ the [in-place controls](#in-place-controls); no other mechanism.
   instead of stopping, so a page left open never goes quiet while it still
   says "running". Reads pause while the tab is hidden, and the page catches
   up at once when it is shown again (`visibilitychange`) or comes back from
-  the back/forward cache (`pageshow`).
+  the back/forward cache (`pageshow`). A part of a status that is costly to
+  check is rechecked by the same passive status read at a slower pace
+  (`data-live-slow-every`), never by a timed re-read of an audited page:
+  System health's page-load tiles, about every 5 minutes
+  ([admin portal](../admin-portal/spec.md#overall-status-line), #1790).
 - **The reader keeps their place.** An update never moves focus or scroll
   and never replaces a control the reader is editing. For a page's
   periodic re-read, a control is being edited while it is inside a region
