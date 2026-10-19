@@ -261,6 +261,41 @@ def test_home_is_named_my_review_work_for_those_who_land_there():
     assert str(review_work.home_label(admin)) == "Home"
 
 
+def _sections(*keys):
+    """Menu sections as ``build`` returns them, each with one plain entry."""
+    return [
+        {"key": key, "label": key, "current": False, "items": [{"name": key}]}
+        for key in keys
+    ]
+
+
+def test_my_review_work_is_the_first_entry_of_review_work():
+    """R39 finding 4: the landing is Review work's first entry, current on
+    /admin/ (so its group stays open), not a Home entry above the groups."""
+    from parishkit.stewardship.accounts import admin_context
+
+    sections = _sections("mail", "review", "reports")
+    assert admin_context._home_in_review(sections, "My review work", True)
+    review = sections[1]
+    assert review["current"] is True
+    assert [item["name"] for item in review["items"]] == ["index", "review"]
+    first = review["items"][0]
+    assert (first["label"], first["url"], first["current"]) == (
+        "My review work",
+        "/admin/",
+        "page",
+    )
+    # Elsewhere the entry is a plain link and the group's own state stands.
+    sections = _sections("review")
+    assert admin_context._home_in_review(sections, "My review work", False)
+    assert sections[0]["current"] is False
+    assert sections[0]["items"][0]["current"] is None
+    # With no Review work group the top entry stays (nothing is placed).
+    sections = _sections("reports")
+    assert not admin_context._home_in_review(sections, "My review work", True)
+    assert sections == _sections("reports")
+
+
 def test_an_unreadable_count_shows_its_cards_without_numbers(monkeypatch):
     """A failed count is logged and every stream the role may open is shown
     with no number, rather than failing the page."""
