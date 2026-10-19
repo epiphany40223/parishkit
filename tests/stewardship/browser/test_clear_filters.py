@@ -211,7 +211,7 @@ def test_panel_holds_both_buttons_in_one_cell(page, component_origin):
     """In a Filters panel's grid, Clear filters sits beside Apply filters in
     one row, and its state never moves either button or the fields."""
     page.set_viewport_size({"width": 1280, "height": 800})
-    page.goto(component_origin + "/information-unfiltered")
+    page.goto(component_origin + "/financial-unfiltered")
     page.locator("details[data-filter-panel] summary").click()
     apply = page.get_by_role("button", name="Apply filters")
     clear = page.get_by_role("button", name="Clear filters")
@@ -225,9 +225,7 @@ def test_panel_holds_both_buttons_in_one_cell(page, component_origin):
         .map((node) => { const r = node.getBoundingClientRect();
             return [r.x, r.y + scrollY, r.width, r.height]; })"""
     before = page.evaluate(boxes)
-    page.get_by_label("Search Family name, DUID, submitted text or Staff notes").fill(
-        "Example"
-    )
+    page.get_by_label("Search Family name or Family DUID").fill("Example")
     available(page)
     assert same_place(page.evaluate(boxes), before)
 

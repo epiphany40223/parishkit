@@ -1,4 +1,4 @@
-"""Pledges to enter (#1686), served from its real page context.
+"""Pledges (#1686), served from its real page context.
 
 The page is ``pledges-to-enter.html`` drawn by the view's own
 ``page_context`` from sample rows at every stage a Staff reader meets, so

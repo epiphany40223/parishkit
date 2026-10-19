@@ -122,7 +122,7 @@ def checks():
 
 
 def row(harness, submission):
-    """The Pledges to enter row of ``submission``, read as web."""
+    """The Pledges row of ``submission``, read as web."""
     from parishkit.stewardship.accounts.policy import current_principal
 
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):

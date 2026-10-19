@@ -3,7 +3,8 @@
 The fixture server answers Save and next on one request with a real redirect
 to the next request's page (carrying the remembered queue view's token), and
 on the last request with a redirect to the remembered queue view
-(followup_components and information_components). The next request's panel
+(followup_components; Additional information has no Save and next since it
+became a review worklist, #1685). The next request's panel
 is swapped in where the reader is: no reload, focus on its heading, the save
 and the request now shown announced, and the address that request's own.
 """
@@ -13,7 +14,6 @@ import re
 import pytest
 
 from . import followup_components as followup
-from . import information_components as information
 from .test_in_place import MARK, MARKED, VIEWPORT, count_requests, scroll_below
 from .waits import greyed, has_text, visible
 
@@ -28,13 +28,6 @@ CASES = {
         "#followup-save-next",
         "Second <Member> — Example <Ministry>",
         "Return to Ministry requests",
-    ),
-    "information": (
-        information,
-        "#information-item",
-        "#information-save-next",
-        "Second Family — Family DUID",
-        "Return to Additional information",
     ),
 }
 

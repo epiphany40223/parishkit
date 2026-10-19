@@ -1,4 +1,4 @@
-"""The financial stream on the review pipeline: Pledges to enter (#1686).
+"""The financial stream on the review pipeline: Pledges (#1686).
 
 Each Family's current pledge answer is one item ([review pipeline spec,
 "Financial stream"](docs/specs/stewardship/review-pipeline/spec.md)). Its
