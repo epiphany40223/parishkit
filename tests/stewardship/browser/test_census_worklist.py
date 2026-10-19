@@ -244,3 +244,26 @@ def test_the_page_fits_and_has_no_wcag_violation(
     icon(page, 2, "Edit").click()
     visible(page.locator("#census-edit-dialog-2"))
     assert_accessible(page, axe_source)
+
+
+@pytest.mark.parametrize("width", [390, 1280])
+def test_apply_follows_the_last_filter_with_no_line_between(
+    page, component_origin, width
+):
+    """No zone line sits under Census changes' filters (R38 finding 8), and
+    Apply filters with Clear filters follow Through, beside it at 1280 px
+    (R38 finding 9); the page never scrolls sideways."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + PATH)
+    form = page.locator("#table-filters")
+    assert form.locator("[data-browser-zone-note]").count() == 0
+    through = form.locator("#census-end").locator("xpath=..").bounding_box()
+    actions = form.locator(".filter-actions").bounding_box()
+    if width == 1280:
+        assert actions["x"] >= through["x"] + through["width"]
+        assert abs(
+            (actions["y"] + actions["height"]) - (through["y"] + through["height"])
+        ) <= 2
+    else:
+        assert through["y"] + through["height"] <= actions["y"]
+    assert page.evaluate("document.documentElement.scrollWidth") <= width
