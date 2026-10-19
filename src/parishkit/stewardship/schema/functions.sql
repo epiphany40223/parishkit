@@ -5627,7 +5627,10 @@ BEGIN
             'sign_in_age_seconds',
             -- An export's report kind and file format (#1398), so the audit
             -- log answers who exported what without its request row.
-            'report','format']
+            'report','format',
+            -- A report view the open page made by itself to bring newer
+            -- figures in (#1620; audit.schemas): a boolean.
+            'automatic']
         WHEN 'boundary' THEN ARRAY['occurrence_id','kind','intended_unix_microseconds','actual_unix_microseconds','lag_microseconds','before_state','after_state']
         WHEN 'schedule' THEN ARRAY['definition_id','previous_revision_id','selected_revision_id','cancelled_messages','skipped_occurrences','failed_occurrences','delivered_slots']
         WHEN 'timeout' THEN ARRAY['task_id','task_type','attempt','limit_seconds','elapsed_seconds','what','helper','count','outcome']
@@ -5809,7 +5812,7 @@ BEGIN
             IF jsonb_typeof(value)<>'string' OR text_value!~'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN RETURN false; END IF;
         ELSIF key LIKE '%\_fingerprint' ESCAPE '\' THEN
             IF jsonb_typeof(value)<>'string' OR text_value!~'^[0-9a-f]{64}$' THEN RETURN false; END IF;
-        ELSIF key IN ('retryable','search_used','exact_code_used','ministry_operational','directory_response_columns') THEN
+        ELSIF key IN ('retryable','search_used','exact_code_used','ministry_operational','directory_response_columns','automatic') THEN
             IF jsonb_typeof(value)<>'boolean' THEN RETURN false; END IF;
         ELSIF key='directory_reason' THEN
             IF jsonb_typeof(value)<>'string' OR text_value NOT IN ('any','no_head','no_address','invalid_address','provider_refused','deliverable') THEN RETURN false; END IF;

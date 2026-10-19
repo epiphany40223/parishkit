@@ -418,6 +418,9 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # the weekly page proof (both the baseline's) in place. No closure file
 # installs any of them again, so their bodies survive the swap and nothing
 # is registered.
+# 0122 (#1620) creates nothing: it replaces the safe context in place again,
+# after 0109, with the automatic view key, so ``CLOSURE_REPLACED_ONLY`` now
+# names 0122's replacement, whose body keeps 0109's keys.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -900,11 +903,12 @@ CLOSURE_REPLACED_ONLY = {
         "'suffix','gender','marital_status'",
     ),
     # 0109 (#1398) widens 0106's safe context with the export report and
-    # format keys; the reruns above bring back 0106's, and 0109's discard
-    # table cannot be made twice, so its replacement statement runs alone.
+    # format keys, and 0122 (#1620) widens 0109's with the automatic view
+    # key; the reruns above bring back 0106's, so 0122's replacement, whose
+    # body holds both, runs alone (0109's discard table cannot be made twice).
     "stewardship_safe_context_v1": (
-        ("stewardship_reports", "0029_point_in_time_exports"),
-        "'report','format']",
+        ("stewardship_audit", "0006_automatic_report_views"),
+        "'automatic']",
     ),
     # 0109 also lets each capture trigger, the export history trigger and
     # the request guard admit the discard; the reruns of the files that made

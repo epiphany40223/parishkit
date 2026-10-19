@@ -816,11 +816,46 @@ the [in-place controls](#in-place-controls); no other mechanism.
   rule for pages that follow background work), or a quiet in-place re-read
   of the page's own address when that view is itself passive (Background
   work, Families on the form now). A read never extends the sign-in and
-  never records an audited view.
+  never records an audited view, except a report's re-read that brings
+  newer figures in, once per newer set of figures (below).
+- **Reports whose figures are being prepared.** The Response dashboard and
+  Campaign comparison audit every view, so they are never re-read on a timer.
+  Their **Updating** notice sits in a figures status region that reads a
+  passive, unaudited status (`response_dashboard_status`), which says only
+  whether newer figures than the page's are ready, never a figure. Once
+  they are, the page re-reads its own address once, quietly and in place
+  (a hidden `a[data-reread]` follow-up link, handed from
+  `live-status-v1.js` to `ui-v1.js`), as a periodic re-read does: it waits
+  while the reader is busy and stops at a refusal. That read shows
+  figures, so it records one audited view, as opening the page does, but
+  marked automatic (by Administrator decision on
+  [#1620](https://github.com/epiphany40223/parishkit/pull/1620)): its
+  audit context carries `automatic: true`, which System logs shows as
+  **How it was opened: Automatic refresh (the open page updated itself)**,
+  so an audit reader can tell it from a view the reader asked for, which
+  carries no such key. The re-read happens once per newer set of figures:
+  a page left open records one more view each time its figures change.
+  Like every automatic re-read it sends `X-ParishKit-Read: passive`, so it
+  never extends the sign-in; that header is also what marks the view
+  automatic. The header can only add the mark: the view is audited
+  whatever a request sends. The mark records what the page reported about
+  its own read, not proof of who started it.
+  Failed re-reads are retried a bounded number of times, and each attempt
+  records an audited view (its start and its failure): after a failure the
+  page tries again in 5 seconds; after three failures in a row it says it
+  is not current and goes back to the passive status, which is checked
+  after 30 seconds and then every 60 seconds, and the page re-reads again
+  only when that status still says newer figures are ready. The next read
+  that works clears the count. The notice says the new
+  figures appear by themselves; no page tells the reader to refresh it to
+  check progress.
 - **Pace.** While background work is pending a status region reads fast
   (2 s backing off to 10 s, or the fixed pace the page asks for). A page
   whose state changes without the reader's own action re-reads every 30
-  seconds (Background work, Families on the form now). A watch that passes
+  seconds (Background work, Families on the form now), and a report's
+  figures status checks every 30 seconds while its figures are current, so
+  figures a new response or ParishSoft load makes out of date are noticed.
+  A watch that passes
   its time limit (an hour, or the page's own) slows to every 30 seconds
   instead of stopping, so a page left open never goes quiet while it still
   says "running". Reads pause while the tab is hidden, and the page catches

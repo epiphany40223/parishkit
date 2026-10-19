@@ -3,6 +3,7 @@
 {% block head %}
 {% include 'stewardship/components/chart-scripts.html' %}
 <script src="{% static 'stewardship/report-v1.js' %}" defer></script>
+<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>
 {% endblock %}
 {% block content %}
 <h1>{% translate "Response dashboard" %}</h1>
@@ -39,13 +40,13 @@
 {% elif participation_unavailable %}
 {# The statistics or daily facts could not be read from their inputs: the Families by stage row above still shows (#1537), and no zero is assumed. #}
 {% if participation_cause == "statistics" %}<p id="production-unavailable">{% translate "Population statistics, daily participation and the export need ParishSoft data, and none is available yet; no zero values have been assumed. They appear after the first ParishSoft update completes." %}</p>
-{% else %}<p id="production-unavailable">{% translate "Population statistics, daily participation and the export are unavailable right now; no zero values have been assumed. Refresh this page in a few minutes." %}</p>{% endif %}
+{% else %}<p id="production-unavailable">{% translate "Population statistics, daily participation and the export are unavailable right now; no zero values have been assumed. Reload the page in a few minutes to try again." %}</p>{% endif %}
 {% else %}
 <section class="panel" id="participation-chart">
 <h2>{% translate "Daily participation" %} — {% if query.scope == 'historical' %}{% translate "Historical as of day" %}{% else %}{% translate "Current population" %}{% endif %}</h2>
 {# The Chart population changes only the daily chart, its table and the export, so it sits in this panel, under its heading (#1534). #}
 {% include "stewardship/components/segmented-choice.html" with choice_id="participation-scope" region_id="response-dashboard" label=_("Chart population") first_key="scope-historical" first_label=_("Historical as of day") first_href=scope_links.historical second_key="scope-current" second_label=_("Current population") second_href=scope_links.current chosen="scope-"|add:query.scope %}
-{% if selection.updating %}<p class="notice" role="status">{% translate "Updating — the latest complete chart is shown below when available. It may not yet include the newest ParishSoft data or responses counted above. Refresh this page to check progress." %}</p>{% endif %}
+{# The Updating notice, in the region that follows the newest figures by itself (#1586): its re-read redraws the whole dashboard region. #}{% include 'stewardship/report-figures-status.html' %}
 {% if chart %}
 {% if chart.days %}
 {# The daily chart drawn in the browser (#720): stacked panels on one date axis, each date's figures in its tooltip. The daily table below is its exact values, so the chart adds no Exact values table of its own and does not show its summary, which would repeat the table (it stays the view's description). The exports and the daily email keep the static drawing. #}
@@ -56,7 +57,7 @@
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 </div>
 {% else %}<p>{% translate "There are no campaign dates to display yet." %}</p>{% endif %}
-{% else %}<p>{% translate "Participation chart unavailable. No complete report is ready for this population yet; no zero values have been assumed. The chart is calculated in the background; refresh this page in a few minutes." %}</p>{% endif %}
+{% else %}<p>{% translate "Participation chart unavailable. No complete report is ready for this population yet; no zero values have been assumed. The chart is calculated in the background and appears here by itself once it is ready." %}</p>{% endif %}
 </section>
 {# A small export panel (#1537): one sentence, the format menu (XLSX first and chosen, #1190) and the button. Without a chart, or while other campaign work holds exports, the button is still drawn, unavailable and named by the sentence that says why (#563); the server refuses a forged request all the same. #}
 <section class="panel" id="participation-export" aria-labelledby="participation-export-heading"><h2 id="participation-export-heading">{% translate "Export" %}</h2>

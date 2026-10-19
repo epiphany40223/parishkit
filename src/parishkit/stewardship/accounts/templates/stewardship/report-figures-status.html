@@ -1,0 +1,17 @@
+{% load i18n %}{% comment %}
+  The figures status of the Response dashboard and Campaign comparison (#1586; UX
+  conventions, "Pages that update themselves"). Each page draws it inside
+  its figures' in-place region, and the passive status read
+  (workspace_views.dashboard_status, never audited) answers with it
+  alone. live-status-v1.js polls that read (data-live-url): backing off
+  from 2 to 10 seconds while the newest figures are being prepared (the
+  Updating notice shows), every 30 seconds otherwise, so figures that a new
+  response or ParishSoft load makes out of date are noticed too. Once the
+  read says newer figures than the page's are ready, the region settles
+  (no data-live-pending) and its hidden follow-up link (data-reread) has
+  ui-v1.js re-read the page's own address once, quietly and passively:
+  every in-place region is brought up to date, and this region, drawn
+  again, is watched anew. A page that is itself a refusal (follow False)
+  draws the notice settled, so it is never watched. Nothing here names a
+  figure.
+{% endcomment %}{% with status=figures_status %}<div class="figures-status" data-live-status="figures" data-live-url="{{ status.url }}" role="status"{% if status.follow and not status.newer %} data-live-pending{% if not status.updating %} data-live-interval="30000"{% endif %}{% endif %}>{% if status.updating %}{% if status.view == 'comparison' %}<p class="notice notice-info">{% translate "Updating — the latest complete figures are shown. They may not yet include the newest ParishSoft data or responses. The new figures appear here by themselves once they are ready." %}</p>{% else %}<p class="notice">{% translate "Updating — the latest complete chart is shown below when available. It may not yet include the newest ParishSoft data or responses counted above. The new chart appears here by itself once it is ready." %}</p>{% endif %}{% endif %}{% if status.newer %}<a hidden data-live-follow data-reread href="#{{ status.region }}">{% translate "Show the newest figures" %}</a>{% endif %}</div>{% endwith %}
