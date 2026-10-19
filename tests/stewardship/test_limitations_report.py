@@ -48,6 +48,7 @@ FAMILY_HEADINGS = [
     "Family",
     "ParishSoft status",
     "Family DUID",
+    "Limitation",
     "Latest response",
     "Stage",
 ]
@@ -146,7 +147,14 @@ def test_downloads_match_the_page_columns():
     rows.pop(2)
     assert rows[2] == [] and rows[3] == FAMILY_HEADINGS
     # The Family's answer was accepted, and its decision still holds.
-    assert rows[4] == ["Example", "", "10", WHEN, "To handle"]
+    assert rows[4] == [
+        "Example",
+        "",
+        "10",
+        "Cannot attend Mass or prayer services",
+        WHEN,
+        "To handle",
+    ]
     book = workbook(shaped)
     assert [cell.value for cell in book["Members"][1]] == MEMBER_HEADINGS
     assert [cell.value for cell in book["Families"][1]] == FAMILY_HEADINGS
@@ -188,8 +196,13 @@ def test_pdf_prints_both_tables_with_the_csv_columns_and_rows(monkeypatch):
     # The formula-like name prints as typed; the CSV guards it.
     # The Member DUID follows the Member, as on the page (#932).
     assert member_rows[0][:6] == ("=cmd", "3", "Example", "", "10", "Yes")
-    assert member_rows[0][6] == family_rows[0][3] == "Oct 5, 2026 9:00 AM"
-    assert family_rows[0][:3] == ("Example", "", "10")
+    assert member_rows[0][6] == family_rows[0][4] == "Oct 5, 2026 9:00 AM"
+    assert family_rows[0][:4] == (
+        "Example",
+        "",
+        "10",
+        "Cannot attend Mass or prayer services",
+    )
     assert frame.eyebrow == "Example Parish · Stewardship 2055"
     # The tables' frame adds two blank lines of room for their captions.
     assert frame.details == (
