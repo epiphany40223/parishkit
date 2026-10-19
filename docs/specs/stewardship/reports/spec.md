@@ -3006,9 +3006,9 @@ Limitation, Latest response and Stage for Families, whose rows include the
 Cannot contribute financially answers the table lists, each with its
 Pledges stage. Limitation names the Family's limitation in the page's
 words, "Cannot attend Mass or prayer services" or "Cannot contribute
-financially", so a reader of the Families sheet sees what each row is about as
-the Members sheet's Cannot participate in ministries column says it (R39
-finding 11). ParishSoft status splits out the page's
+financially", so a reader of the Families sheet sees what each row is about
+(R39 finding 11); the Members sheet says it with its Cannot participate in
+ministries column, which reads Yes on every row. ParishSoft status splits out the page's
 [badge](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
 for a Family the data no longer has, whose Family cell is then blank
 (#1216); the report reads no activity, so it marks no inactive Family. Every format carries these columns and rows
