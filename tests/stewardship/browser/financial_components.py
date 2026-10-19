@@ -184,7 +184,6 @@ def components(context, admin):
         # The export form: enabled, with its one-time key and timezone choices.
         mutable=True,
         request_key=UUID(int=100),
-        export_timezones=("America/New_York", "UTC"),
         # The filters' reserved message lines (#1332), as the view sizes them.
         filter_sizes=line_sizes(FIELD_MESSAGES, FIELD_LINES),
         summary=summary,

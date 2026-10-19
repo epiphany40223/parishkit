@@ -1023,7 +1023,8 @@ def test_insert_and_update_use_database_clock(portal_session, monkeypatch):
 def test_session_bindings_are_immutable_in_service_and_sql(portal_session, field):
     """The same attribution UUID cannot be rebound to a new login identity.
 
-    ``authenticated_at`` may only advance, never move backwards.
+    ``authenticated_at`` is a binding too: a new sign-in issues a new session
+    (#1547), so the instant never changes in place (#1550).
     """
     value = {
         "principal_id": uuid4(),
@@ -1039,53 +1040,49 @@ def test_session_bindings_are_immutable_in_service_and_sql(portal_session, field
             correlation_id=uuid4(),
             change=lambda record: setattr(record, field, value),
         )
-    message = "only advance" if field == "authenticated_at" else "immutable"
-    with pytest.raises(IntegrityError, match=message), transaction.atomic():
+    with pytest.raises(IntegrityError, match="immutable"), transaction.atomic():
         PortalSession.objects.filter(pk=portal_session.pk).update(
             **{field: value, "version": F("version") + 1}
         )
 
 
-def test_session_authentication_advances_only_to_a_past_instant(portal_session):
-    """The verified instant moves forward in place, never into the future."""
+def test_session_authentication_never_moves_forward_either(portal_session):
+    """The verified instant does not advance in place, even to a past instant.
+
+    The retired step-up sign-in (#1547) was the only thing that moved it, so
+    0123 made it immutable (#1550): the service check refuses a later instant
+    on a live row, and the SQL guard on a live or a revoked one.
+    """
     later = portal_session.authenticated_at + timedelta(minutes=10)
 
     def advance(record):
         """Advance both instants, as the chronology CHECK requires."""
         record.authenticated_at = record.last_activity_at = later
 
-    changed = mutate_record(
-        PortalSession,
-        portal_session.pk,
-        expected_version=1,
-        actor_id=None,
-        correlation_id=uuid4(),
-        change=advance,
-    )
-    assert changed.authenticated_at == later
-    future = datetime(2100, 1, 1, tzinfo=UTC)
-    with (
-        pytest.raises(IntegrityError, match="only advance"),
-        transaction.atomic(),
-    ):
-        PortalSession.objects.filter(pk=portal_session.pk).update(
-            authenticated_at=future,
-            last_activity_at=future,
-            version=F("version") + 1,
+    with pytest.raises(StorageInvariantError):
+        mutate_record(
+            PortalSession,
+            portal_session.pk,
+            expected_version=1,
+            actor_id=None,
+            correlation_id=uuid4(),
+            change=advance,
         )
-    revoked = later + timedelta(minutes=1)
+    with pytest.raises(IntegrityError, match="immutable"), transaction.atomic():
+        PortalSession.objects.filter(pk=portal_session.pk).update(
+            authenticated_at=later, last_activity_at=later, version=F("version") + 1
+        )
+    revoked = portal_session.authenticated_at + timedelta(minutes=1)
     PortalSession.objects.filter(pk=portal_session.pk).update(
         revoked_at=revoked, version=F("version") + 1
     )
-    with (
-        pytest.raises(IntegrityError, match="only advance"),
-        transaction.atomic(),
-    ):
+    with pytest.raises(IntegrityError, match="immutable"), transaction.atomic():
         PortalSession.objects.filter(pk=portal_session.pk).update(
             authenticated_at=revoked, version=F("version") + 1
         )
+    original = portal_session.authenticated_at
     portal_session.refresh_from_db()
-    assert portal_session.authenticated_at == later
+    assert portal_session.authenticated_at == original
 
 
 @pytest.mark.parametrize("fail", [False, True])

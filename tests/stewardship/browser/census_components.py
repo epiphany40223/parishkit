@@ -60,15 +60,21 @@ EDITED_NOTICE = "Home address for the Family in Family DUID 1002 accepted (edite
 # Add (#1710): the page after an Add, with the added row (id "add-a1").
 ADDED = "/census-changes-added"
 ADDED_NOTICE = "Nickname for Member DUID 103 in Family DUID 1003 added."
+# The page after an Edit of row 0's mobile phone (R38 finding 4).
+EDITED_PHONE = "/census-changes-edited-phone"
+EDITED_PHONE_NOTICE = (
+    "Mobile phone for Member DUID 100 in Family DUID 1000 accepted (edited)."
+)
 
 
 def components(context, admin):
     """The page at each table choice and after each decision the tests take."""
     when = datetime(2054, 10, 5, 12, tzinfo=UTC)
 
-    def shaped(index, accepted=(), entered=()):
+    def shaped(index, accepted=(), entered=(), edited=()):
         """One shaped row: To review unless ``accepted`` (approved, one
-        version on) or ``entered`` (Entered by hand) holds its index."""
+        version on) or ``entered`` (Entered by hand) holds its index;
+        ``edited`` rows carry a reviewer's value."""
         family = index == 2
         return shape(
             {
@@ -84,8 +90,8 @@ def components(context, admin):
                 ),
                 "current_available": not family,
                 "current_value": None if family else "555-0100",
-                "admin_value_set": False,
-                "admin_value": None,
+                "admin_value_set": index in edited,
+                "admin_value": phone_record("555-9999") if index in edited else None,
                 "handling": "api" if index == 0 else "manual",
                 "decision": "approved" if index in accepted else "unreviewed",
                 "execution": "resolved_external" if index in entered else "pending",
@@ -160,7 +166,6 @@ def components(context, admin):
                     "query_fields": query.form_values(),
                     "route_choices": ROUTE_LABELS.items(),
                     "kind_choices": KIND_LABELS.items(),
-                    "export_timezones": ["UTC", "America/Detroit"],
                     "notice": notice,
                     "mutable": True,
                     "administrator": False,
@@ -185,6 +190,7 @@ def components(context, admin):
         STALE: page(size, STALE_NOTICE),
         EDITED: page(size, EDITED_NOTICE, accepted={2}),
         ADDED: page(size, ADDED_NOTICE, added=True),
+        EDITED_PHONE: page(size, EDITED_PHONE_NOTICE, accepted={0}, edited={0}),
         # No changes at all, and none at the stage chosen.
         "/census-changes-none": page(size, rows=0),
         "/census-changes-none-stage": page(size, rows=0, stage="to_review"),

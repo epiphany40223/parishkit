@@ -27,6 +27,7 @@
   data-refresh-url. There is no bulk bar: revoking is one deliberate choice
   per session.
 {% endcomment %}
+{# This Administrator's automation notices (ADM-11), here beside the sessions they name since #1673; Home shows only their count and links here. #}{% if notices %}{% include "stewardship/automation-notices.html" %}{% endif %}
 <section class="panel" aria-labelledby="automation-live-heading">
   <h2 id="automation-live-heading" tabindex="-1">{% translate "Live sessions" %}</h2>
   <form method="get" action="#ended-table" id="automation-filter" data-in-place="automation-filter" data-in-place-message="{% translate 'Session lists updated.' %}" data-table-sync>

@@ -251,7 +251,6 @@ def test_the_page_draws_the_worklist_columns_and_the_download_below():
         "Who",
         "Member DUID",
         "What changed",
-        "How it reaches ParishSoft",
         "Baseline",
         "Family's answer",
         "Reviewer's value",
@@ -473,3 +472,21 @@ def test_downloads_list_an_addition_as_the_page_does():
     assert line[7:11] == ("", "555-0123", "By hand", "To enter by hand")
     assert line[12] == "staff@example.org" and line[14] == "Phoned in"
     assert result["rows"][0]["baseline"] == "555-0100"
+
+
+def test_link_pairs_carry_only_the_link_safe_choices():
+    """The view's own address keeps the Stage and closed filters other than
+    their defaults, the zone only with a day, and the table's choices; the
+    name search never (R38 finding 6)."""
+    from parishkit.stewardship.reports.census_changes import CensusQuery
+    from parishkit.stewardship.reports.census_worklist import link_pairs
+    from parishkit.stewardship.web.review_worklist import page_address
+
+    plain = CensusQuery(stage="to_review", search="Smith", zone="UTC")
+    assert page_address("/c", link_pairs(plain)) == "/c"
+    chosen = CensusQuery(
+        stage="all", route="automatic", start="2054-10-01", zone="UTC", search="Smith"
+    )
+    assert page_address("/c", link_pairs(chosen, {"sort": "-who"})) == (
+        "/c?stage=all&route=automatic&start=2054-10-01&zone=UTC&sort=-who"
+    )

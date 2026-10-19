@@ -116,8 +116,8 @@ def test_download_form_queues_each_format_from_a_protected_capture(
         with day_two(harness), task_login(ServiceRole.WEB, exact=True, reconnect=True):
             response, body = read(browser, reverse("admin:campaign_comparison"))
             assert response.status_code == 200
-            assert b"Queue download" in body and b'name="day" value="2"' in body
-            assert b"<fieldset disabled" not in body
+            assert b"Export PDF" in body and b'name="day" value="2"' in body
+            assert b'value="xlsx" disabled' not in body
             # No CSRF header, a GET, extra or repeated fields, a query, or a
             # day the campaign has no figures for are refused.
             assert browser.post(ROUTE, fields).status_code == 403
