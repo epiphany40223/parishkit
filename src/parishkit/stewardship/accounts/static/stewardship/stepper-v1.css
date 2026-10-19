@@ -108,7 +108,16 @@
 .campaign-step-primary [data-step-inactive] { visibility: hidden; }
 /* Its status line keeps one line's height while empty (no layout shift). */
 .campaign-step-status { min-block-size: 1.5em; margin-block: .25rem 0; }
+/* Production activation's row and the two lines above it (#1585 slice 5)
+   keep their space in every state, so Retry going away, or a state's
+   longer line, moves nothing under the pointer (no layout shift): the row
+   is one button tall even when empty, and each line keeps two rows (four
+   on a phone), the most any state's text needs. */
+.production-actions { min-block-size: var(--button-min-height); }
+.production-actions button { margin: 0; }
+.production-line { min-block-size: 2lh; }
 @media (max-width: 26rem) {
+  .production-line { min-block-size: 4lh; }
   .campaign-step-actions > [data-campaign-continue], .campaign-step-actions > [data-campaign-create], .campaign-step-actions > [data-campaign-primary],
   .campaign-step-actions > [data-go-live-primary], .campaign-step-actions > form button { flex: 1 1 100%; width: 100%; }
 }

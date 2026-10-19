@@ -19,6 +19,7 @@ from django.urls import reverse
 from parishkit.stewardship.accounts.authentication import runtime
 from parishkit.stewardship.accounts.confirmation_commands import confirm, verify_preview
 from parishkit.stewardship.accounts.confirmation_preview import collect_preview
+from parishkit.stewardship.accounts.confirmation_progress import PAGE_SALT
 from parishkit.stewardship.accounts.confirmation_readiness import collect_readiness
 from parishkit.stewardship.accounts.models import PortalUser
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
@@ -270,7 +271,7 @@ def test_confirmation_atomically_activates_and_replays(request, monkeypatch, act
             )
         with web_login():
             page = browser.get(progress_path)
-            assert b"Preparing initial campaign mail failed" in page.content
+            assert b"Initial campaign mail failed." in page.content
             retry = {"action": "retry", "control": page.context["control"]}
             assert retry["control"]
             # Signed without a time: every read of one failure draws the
@@ -279,6 +280,14 @@ def test_confirmation_atomically_activates_and_replays(request, monkeypatch, act
             runs = TaskRun.objects.filter(root_id=demand.task_root_id).count()
             forged = retry | {"control": retry["control"] + "x"}
             assert post(browser, progress_path, forged).status_code == 400
+            assert post(browser, progress_path, {"action": "retry"}).status_code == 400
+            # Another sign-in's control (signed for another Administrator).
+            other = signing.Signer(salt=PAGE_SALT).unsign_object(retry["control"])
+            other["actor"] = str(uuid4())
+            stolen = retry | {
+                "control": signing.Signer(salt=PAGE_SALT).sign_object(other)
+            }
+            assert post(browser, progress_path, stolen).status_code == 403
             # No page age reaches the Administrator: the owner's own
             # 5-minute control is minted at the click (#1585 slice 5).
             with previews_aged(monkeypatch):

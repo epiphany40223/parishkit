@@ -120,7 +120,7 @@ def progress(request, campaign_id):
         if action == "cancel":
             return _apply(request, service, campaign_id)
         confirmation_progress.retry_shown(
-            request, service, campaign_id, control=request.POST["control"]
+            request, service, campaign_id, control=request.POST.get("control", "")
         )
         return _checked(
             request,
@@ -129,9 +129,7 @@ def progress(request, campaign_id):
         )
     except ConfigurationBusy:
         return error_response(
-            StaleRecordError(
-                "Another configuration operation is finishing; retry withdrawal."
-            )
+            StaleRecordError("Another configuration operation is finishing; try again.")
         )
     except ObjectDoesNotExist:
         return error_response(LookupError("Production progress is unavailable."))
@@ -293,6 +291,16 @@ def _apply(request, service, campaign_id):
         # The campaign started, delivery was paused, or the work changed
         # under the campaign lock: say which (nothing was cancelled).
         return _unavailable(request, service, campaign_id, actor)
+    except PermissionError:
+        # Two Applies of one Review raced past the resend check above: the
+        # first cancelled, and the owner refuses the second's newer intent
+        # under the same request key. That is this Administrator's own
+        # cancellation, so open Check; anything else is refused as raised.
+        if ProductionWithdrawal.objects.filter(
+            request_key=key, actor_id=actor.identity
+        ).exists():
+            return _check(request, service)
+        raise
     return _check(request, service)
 
 
@@ -303,9 +311,10 @@ def _unavailable(request, service, campaign_id, actor):
     refusal: the answer opens Check, which the dialog follows. Otherwise
     the refusal says why: another Administrator cancelled it, live delivery
     is paused, or the campaign has started; a cancellation that is
-    available again (its owner found the work moved under its lock) is
-    "changed", to review again. Read through ``withdrawal_commands.page``,
-    which still finds the confirmation once the campaign is a draft again.
+    available again (its owner found the work moved under its lock), or a
+    campaign that is a draft again some other way, is "changed". Read
+    through ``withdrawal_commands.page``, which still finds the
+    confirmation once the campaign is a draft again.
     """
     now = withdrawal_commands.page(request, service, campaign_id)
     withdrawal = now["withdrawal"]
@@ -317,8 +326,13 @@ def _unavailable(request, service, campaign_id, actor):
         refused = "changed"
     elif now["campaign"].delivery_paused:
         refused = "paused"
-    else:
+    elif now["campaign"].state != "draft":
+        # Scheduled past its start, active or closed.
         refused = "started"
+    else:
+        # A draft again without a withdrawal of this confirmation: the
+        # campaign moved on some other way since the page was drawn.
+        refused = "changed"
     return _answer(request, service, {"refused": refused})
 
 

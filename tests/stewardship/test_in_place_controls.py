@@ -848,6 +848,9 @@ def test_go_live_pages_have_no_refresh_link():
     region = production.index('<div id="production-status" data-in-place-region')
     assert region < production.index('value="review_cancel"')
     assert 'id="production-withdrawal"' not in production
+    # The step bar is drawn above the region, so the region's update when
+    # preparation finishes never moves the page.
+    assert production.index("go-live-steps.html") < region
 
 
 def test_hosted_file_upload_is_in_place():

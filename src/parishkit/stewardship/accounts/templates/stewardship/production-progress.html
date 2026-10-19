@@ -11,14 +11,18 @@
   Go live (Done), Prepare initial emails and Sending, which is In progress
   with a Sent mail link once preparation is done, never Done, so the page
   never claims delivery. One detail line and one note line follow, drawn
-  in every state, so a change of state moves nothing (no layout shift);
+  in every state with reserved rows, and the action row keeps one button's
+  height even when empty, so a change of state moves nothing (no layout
+  shift, .production-line and .production-actions in stepper-v1.css);
   the preview compared with the preparation outcomes is in a disclosure.
   A scheduled campaign says when it starts and offers Cancel go-live,
   which opens the review dialog, while the start has not passed and live
   delivery is not paused.
 
-  The step bar, content and action row are one region (#production-status)
-  that updates itself (live-status-v1.js): closely while preparation runs,
+  The content and action row are one region (#production-status) that
+  updates itself (live-status-v1.js); the step bar sits above it, drawn
+  only when the page is opened, so a finished preparation never moves the
+  page while it is watched. The region updates closely while preparation runs,
   every 30 seconds while a Retry waits or the campaign is scheduled, and
   not at all once nothing can change by itself. There is no Refresh link
   (#1586); a reload draws the same state. ``state`` is
@@ -26,23 +30,23 @@
   scheduled, started or closed.
 {% endcomment %}
 {% block title %}{% translate "Production activation" %}{% endblock %}
-{% block head %}{% if wizard and not admin_chrome.campaign_wizard %}<link rel="stylesheet" href="{% static 'stewardship/stepper-v1.css' %}">{% endif %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
+{% block head %}{% if not admin_chrome.campaign_wizard %}<link rel="stylesheet" href="{% static 'stewardship/stepper-v1.css' %}">{% endif %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
 {% block content %}
 <h1>{% translate "Production activation" %}</h1>
 {% aboutpage "production-progress" %}<p>{% translate "This page follows the campaign after Production is confirmed. A campaign that went live at once prepares its initial campaign mail here; one confirmed before its start date follows the normal mail schedules from its start. This page updates by itself, so you can leave it and come back." %}</p>
 <p>{% translate "Confirmed preview is what the final go-live check counted. Prepared is what the background work has actually set up. Family counts are recorded as preparation runs. Admin report counts are the report emails the later report work creates, including ones that were cancelled, and stay partial until that work finishes. If preparation was restarted, its counts use the settings in effect for that run." %}</p>
 <p>{% translate "Cancel go-live is offered only while a scheduled campaign has not started and live mail delivery is not paused. It returns the campaign to a Testing draft; Testing data deleted earlier is not restored, and going live again starts from Check." %}</p>{% endaboutpage %}
 <p>{{ campaign.active_configuration.name }}</p>
-{% if state == 'preparing' or state == 'retrying' %}{% translate "Campaign active. Preparing initial campaign mail." as headline %}{% elif state == 'failed' %}{% translate "Campaign active. Preparing initial campaign mail failed after its automatic retries." as headline %}{% elif state == 'prepared' %}{% translate "Campaign active. Initial campaign mail is prepared." as headline %}{% elif state == 'scheduled' %}{% translate "Campaign scheduled." as headline %}{% elif state == 'closed' %}{% translate "Campaign closed." as headline %}{% else %}{% translate "Campaign active." as headline %}{% endif %}
+{% if state == 'preparing' or state == 'retrying' %}{% translate "Campaign active. Preparing initial campaign mail." as headline %}{% elif state == 'failed' %}{% translate "Campaign active. Initial campaign mail failed." as headline %}{% elif state == 'prepared' %}{% translate "Campaign active. Initial campaign mail is prepared." as headline %}{% elif state == 'scheduled' %}{% translate "Campaign scheduled." as headline %}{% elif state == 'closed' %}{% translate "Campaign closed." as headline %}{% else %}{% translate "Campaign active." as headline %}{% endif %}
 {% url 'admin:deliveries' as outgoing_url %}
+{% comment %}The step bar sits outside the self-updating region: drawn when the page is opened while initial mail is prepared, it stays until the next load, so the region's update when preparation finishes never moves the page.{% endcomment %}{% if wizard %}{% include 'stewardship/go-live-steps.html' %}{% endif %}
 <div id="production-status" data-in-place-region data-live-status="production-status"{% if live_pending %} data-live-pending{% endif %}{% if live_interval %} data-live-interval="{{ live_interval }}"{% endif %} data-live-give-up="{{ live_limit }}" data-live-announce="{{ headline }}" data-production-state="{{ state }}">
-{% if wizard %}{% include 'stewardship/go-live-steps.html' %}{% endif %}
 <section class="go-live-step" aria-labelledby="production-state">
 <h2 id="production-state">{{ headline }}</h2>
 <p>{% translate "Production confirmed" %}: <time data-local-instant datetime="{{ receipt.created_at|instant }}">{{ receipt.created_at|instant }}</time></p>
 {% if boxes %}{% translate "Parts of going live" as stages_label %}{% include 'stewardship/components/stage-boxes.html' with stages=boxes label=stages_label key_attribute="production-stage" %}
-<p class="go-live-detail" data-production-detail>{% blocktranslate trimmed with count=demand.items_completed|number %}Items processed: {{ count }}.{% endblocktranslate %} {% if state == 'preparing' %}{% translate "Scheduled mail waits until this preparation finishes." %}{% elif state == 'retrying' %}{% translate "Preparation ran into a problem, and the system is retrying it by itself." %}{% elif state == 'failed' %}{% translate "Its last attempt failed at" %} <time data-local-instant datetime="{{ task.updated_at|instant }}">{{ task.updated_at|instant }}</time>.{% else %}{% translate "Prepared does not mean delivered: follow delivery on" %} <a href="{{ outgoing_url }}">{% translate "Sent mail" %}</a>.{% endif %}</p>
-<p data-production-note>{% if state == 'failed' and control %}{% translate "Retry tries the same preparation again and does not repeat work already done. The campaign stays live, and scheduled mail stays on hold until preparation finishes." %}{% elif state == 'failed' %}{% translate "The system may still recover it on its own. The campaign stays live, and scheduled mail stays on hold until preparation finishes." %}{% elif state == 'prepared' %}{% translate "Delivery pauses and each Family's current eligibility still apply. Families can respond as usual." %}{% else %}{% translate "Nothing to do here; this page updates by itself. Families can respond in the meantime." %}{% endif %}</p>
+<p class="go-live-detail production-line" data-production-detail>{% blocktranslate trimmed with count=demand.items_completed|number %}Items processed: {{ count }}.{% endblocktranslate %} {% if state == 'preparing' %}{% translate "Scheduled mail waits until this preparation finishes." %}{% elif state == 'retrying' %}{% translate "Preparation ran into a problem, and the system is retrying it by itself." %}{% elif state == 'failed' %}{% translate "Preparation failed after its automatic retries, the last at" %} <time data-local-instant datetime="{{ task.updated_at|instant }}">{{ task.updated_at|instant }}</time>.{% else %}{% translate "Prepared does not mean delivered: follow delivery on" %} <a href="{{ outgoing_url }}">{% translate "Sent mail" %}</a>.{% endif %}</p>
+<p class="production-line" data-production-note>{% if state == 'failed' and control %}{% translate "Retry tries the same preparation again and repeats no work already done. The campaign stays live; scheduled mail waits for it." %}{% elif state == 'failed' %}{% translate "Retry isn't available for this failure; see Technical details. The campaign stays live; scheduled mail waits for it." %}{% elif state == 'prepared' %}{% translate "Delivery pauses and each Family's current eligibility still apply. Families can respond as usual." %}{% else %}{% translate "Nothing to do here; this page updates by itself. Families can respond in the meantime." %}{% endif %}</p>
 <details class="go-live-counts" data-keep-open><summary>{% translate "Preview compared with preparation outcomes" %}</summary>
 <p class="help">{% translate "Items processed counts work done so far, not messages sent, and the total can change while preparation runs. None of these counts shows that email was delivered." %}</p>
 {% if not complete %}<p>{% translate "Partial results: unfinished groups are not counted yet. Differences so far are not final reductions." %}</p>{% endif %}
@@ -58,7 +62,7 @@
 {% elif state == 'closed' %}<p>{% translate "The campaign has closed. Its mail and responses stay in their reports." %}</p>
 {% else %}<p>{% translate "This campaign was confirmed before its start date, so its mail follows the normal mail schedules. There is no initial mail to prepare here. For delivery, see" %} <a href="{{ outgoing_url }}">{% translate "Sent mail" %}</a>.</p>{% endif %}
 </section>
-<div class="campaign-step-actions go-live-actions" data-production-actions>
+<div class="campaign-step-actions go-live-actions production-actions" data-production-actions>
 {% if withdrawal_available %}<form method="post" action="{% url 'admin:production_progress' %}" data-review-open="production-cancel-review" data-review-redirects data-production-cancel>{% csrf_token %}<input type="hidden" name="action" value="review_cancel">{% button type="submit" variant="secondary" %}{% translate "Cancel go-live" %}{% endbutton %}</form>{% endif %}
 {% if control %}<form method="post" action="{% url 'admin:production_progress' %}#production-status" data-in-place="production-retry" data-in-place-message="{% translate 'Mail preparation retry started.' %}" data-production-primary>{% csrf_token %}<input type="hidden" name="action" value="retry"><input type="hidden" name="control" value="{{ control }}">{% button type="submit" %}{% translate "Retry" %}{% endbutton %}</form>{% endif %}
 </div>
