@@ -2725,7 +2725,7 @@ deleted when the export ends, so nothing regenerates it.
 | `campaign_comparison_export` | `export comparison [--day N] --format F [--timezone Z]` ([#1018](https://github.com/epiphany40223/parishkit/issues/1018) slice 6, [downloads](../campaign-history/spec.md#downloads-and-sharing)): the page's download form, through the same capture (`comparison_exports.read_capture`) and service (`create_comparison_export`), with the page's `campaign_comparison_exported` and `admin_cmd_export_comparison`; without `--timezone` the file's request time uses the parish's time zone ([#1161](https://github.com/epiphany40223/parishkit/issues/1161)) |
 | `daily_digest_chart`, `daily_digest_download` | Permanent: PNG images; the data is in the matching report or digest read |
 | `financial_report`, `limitations_report`, `information_queue` | `report financial`, `report limitations`, `report information`: summaries and counts (PR 8c; `report limitations` was `report talents` until #970); Family-level rows only as exports (PR 8e, PR 8h for limitations) |
-| `pledges_to_enter`, `pledges_to_enter_export` (new, [#1686](https://github.com/epiphany40223/parishkit/issues/1686)) | Pending [#1733](https://github.com/epiphany40223/parishkit/issues/1733): `report pledges`, `pledges decide` and `export pledges`, through the page's own `PledgeDecisions` service and `export_body`; until then the page is the only way to review pledges |
+| `pledges_to_enter`, `pledges_to_enter_export` ([#1686](https://github.com/epiphany40223/parishkit/issues/1686)) | `report pledges` (counts by stage), `pledges decide` and `export pledges` ([#1733](https://github.com/epiphany40223/parishkit/issues/1733)), through the page's own read, `PledgeDecisions` service and `export_body`; the rows with their ids and versions only as `export pledges --format jsonl`, as for `export census` |
 | `information_item` | One Family's submission and its follow-up history: `followup information-show ITEM_ID` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11b; see [users and follow-up](#users-and-follow-up)); it prints only the item's state and history, and the submission's content comes through `export information` (PR 8e) |
 | `ministry_report` | `report ministry`, and `report ministry --ministry DUID --requests join\|leave` for one Ministry's join or leave count (PR 8c); rows only as exports (PR 8e). The Members joining and leaving pages (`ministry_joiners`, `ministry_leavers`) were retired ([#1157](https://github.com/epiphany40223/parishkit/issues/1157)); the commands stay, and `export ministry`, which writes one Ministry's join or leave list, now covers this summary, whose counts it lists. Since [#1133](https://github.com/epiphany40223/parishkit/issues/1133) the page is one Ministry requests page with the follow-up queue: its By Ministry counts are `report ministry`'s summary, and its queue is `followup list` (PR 11a) |
 | `ministry_packet` | A packet of Members' contacts, so export only: `export ministry-packet` (PR 8e) |
@@ -2897,6 +2897,61 @@ ids, version and time and whether an edit is now set (`edited`);
 `census resolve-conflict` prints `census review`'s document. Neither prints
 the value, the note, the Family or the Member. Standard input carries only
 one of `--value -` and `--note -`.
+
+`report pledges [--stage to_review|to_enter_by_hand|entered_by_hand|ignored|all]`
+([#1733](https://github.com/epiphany40223/parishkit/issues/1733)) counts
+[Pledges to enter](../reports/spec.md#pledges-to-enter) as `report census`
+counts Census changes: the page's admission (`pledge_review_views._principal`:
+Administrators and Staff, never a Ministry leader), passive so any session
+scope reads, the shared report read, and the page's `pledge_rows` without a
+search. A campaign without Financial stewardship is `not_available`. Each row
+names a Family and its pledge, so it prints counts only: `matching` (the
+rows at `--stage`, To review by default, as on the page), `total`, and
+`stages`, every pledge by stage including zeros. It records the page's
+`pledges_to_enter_viewed` with a `count` of 0, and `report list` offers it,
+as the menu does. `export pledges` takes the same `--stage` with `--format
+csv|xlsx|pdf|jsonl` and `--timezone`, streamed as `export census` is: CSV,
+XLSX and PDF are the page's own file (`pledge_review_views.export_body`);
+`jsonl` is the command's own format, the files' columns under fixed keys plus
+`item_id`, `version` and `actions` (the decisions the reader may record on
+the row now, empty while other campaign work holds the campaign), the same
+recorded exception as `export census`'s. It records the page's
+`pledges_to_enter_exported` with the rows in the file, and no `admin_cmd_*`
+event.
+
+`pledges decide --action accept|edit|ignore|back_to_review|entered_by_hand
+--item ID:VERSION [--item ...] [--amount TEXT --frequency F] [--note TEXT|-]
+[--request-key KEY]`
+([#1733](https://github.com/epiphany40223/parishkit/issues/1733)) is a
+Pledges to enter row's action or its bulk bar: full scope, keyed and not
+fresh-gated. Entered by hand is final, so `entered_by_hand` [prompts by
+default](#mitigations) (or takes `--yes`); the others can be changed again
+and ask nothing, as on the page. It checks the page's admission first, so a
+Ministry leader is `denied` before any input or prompt, and refuses a choice
+the page could not post (more than 100 pledges, an Edit of more than one, a
+note over 2,000 characters, or an Edit value the Family form would refuse)
+before the prompt. In the page's command scope it checks the current
+campaign as the page does (one without Financial stewardship is
+`not_available`), finds every item as a Live response of it (any other is
+`not_available`), and builds the `WorklistDecision` the page would
+post (one item with the key itself, several as the bulk bar with each item's
+key derived from it) for the page's `pledge_review.PledgeDecisions`, so every
+rule is the page's, in Python and in the SQL guard of the
+[financial stream](../review-pipeline/spec.md): the role, the item's version,
+the actions its stage offers, a note to reopen an ignored pledge, and an
+Edit's amount and frequency checked as the Family form checks them. All or
+none: an item someone decided first, or that the Family answered again since,
+is `stale_version`; anything else refused is `invalid`, an Edit value at its
+option (`amount`, `frequency`) with the service's static reason, never the
+value. The service records `pledge_review_updated` for each row, with the
+session's user as the actor, and the command `admin_cmd_pledges_decide` once
+in the same transaction, only for a new key: a repeat with the same
+pledges, decision and Edit value returns the recorded rows (`created`
+false), and any other use of the key (other pledges, another decision or
+another value; matched against the key itself and each pledge's key
+derived from it) is `invalid`, so one key never records two decisions. It prints each recorded row's `id`,
+`item_id`, `sequence`, `action`, `decision`, `entered` and `created_at`,
+never the amount, the note or the Family.
 
 The digest commands (PR 8d) read a retained report an emailed digest
 links to from its stored snapshot, through its page's own functions
