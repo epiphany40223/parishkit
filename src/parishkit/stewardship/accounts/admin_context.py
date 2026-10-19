@@ -27,7 +27,7 @@ from parishkit.stewardship.observability import (
 from parishkit.stewardship.web.error_pages import ERROR_PAGE_ATTRIBUTE
 from parishkit.stewardship.web.refusals import mark_not_input, unavailable_response
 
-from . import admin_navigation, campaign_wizard, family_maintenance
+from . import admin_navigation, campaign_wizard, family_maintenance, review_work
 from .authentication import runtime
 from .limiting import LimiterUnavailable
 from .policy import Capability, Principal, allows
@@ -104,6 +104,15 @@ def portal_chrome(request):
     match = getattr(request, "resolver_match", None)
     placed = admin_navigation.placement(request)
     sections, breadcrumbs = admin_navigation.build(match, items, placed)
+    # Staff and Ministry leaders land on My review work, not Home (#1690):
+    # the menu's first link, the trail's root and a "Return to" Home name it
+    # so, as the page's heading does (ui-conventions "One name").
+    home_label = review_work.home_label(actor)
+    if breadcrumbs and breadcrumbs[0]["label"] == admin_navigation.PAGES["index"].label:
+        breadcrumbs[0]["label"] = home_label
+    back = admin_navigation.back(match, placed, items)
+    if back and back["label"] == admin_navigation.PAGES["index"].label:
+        back = back | {"label": home_label}
     open_counts = _open_counts(request, actor, items, campaign)
     for section in sections:
         for entry in section["items"]:
@@ -113,6 +122,7 @@ def portal_chrome(request):
             "admin": admin,
             "parish_name": parish.name if parish else None,
             "home_url": reverse("admin:index"),
+            "home_label": home_label,
             "home_current": bool(breadcrumbs) and len(breadcrumbs) == 1,
             "sections": sections,
             "breadcrumbs": breadcrumbs,
@@ -126,7 +136,7 @@ def portal_chrome(request):
             "campaign_wizard": _campaign_wizard(
                 request, match, campaign, configuration, admin=admin, go_live=go_live
             ),
-            "back": admin_navigation.back(match, placed, items),
+            "back": back,
             "testing": configuration.mode == "testing",
             "testing_recipient": configuration.testing_recipient if admin else None,
             "debug_in_production": _debug_in_production(configuration),

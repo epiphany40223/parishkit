@@ -711,6 +711,11 @@ changes what each role lands on:
     (the menu's), and every other count is one statement, run only for the
     streams the viewer's role may open; a leader's counts come from the
     follow-up selection, which derives the leader's scope in SQL.
+  - A count that cannot be read (a database error, a stored state the
+    mapping does not place, the Limitations inputs unavailable) is logged
+    and its cards show no number; the page never fails for it. The page's
+    name is My review work in its heading, the menu, the trail's root and
+    every "Return to" it, for those who land on it.
   - Until a stream moves to the worklist, its cards link to its current
     page unfiltered (no current page reads a stage from its address); each
     worklist slice makes its cards link `?stage=<value>`.

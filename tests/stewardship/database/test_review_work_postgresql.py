@@ -33,7 +33,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 
 def counts(harness, principal):
-    """``read_counts`` through the web login's real grants, with its query count."""
+    """``read_counts`` through the web login's real grants, with its read count."""
     from django.db import connection
 
     with (
@@ -41,7 +41,11 @@ def counts(harness, principal):
         transaction.atomic(),
         CaptureQueriesContext(connection) as queries,
     ):
-        return read_counts(principal, harness.campaign.pk), len(queries)
+        found = read_counts(principal, harness.campaign.pk)
+    # The statement runs in a savepoint (so a failed count rolls back alone),
+    # whose SAVEPOINT and RELEASE are not reads.
+    reads = [q for q in queries if "SAVEPOINT" not in q["sql"].upper()]
+    return found, len(reads)
 
 
 def submit(harness):
@@ -140,6 +144,8 @@ def test_staff_land_on_my_review_work_with_linked_counts(response_service, googl
         response, body = get(browser, "/admin/")
     assert response.status_code == 200
     assert b"<h1>My review work</h1>" in body
+    # One name: the menu's first link says what the heading says.
+    assert b'aria-current="page">My review work</a>' in body
     # Home's own panels are gone (decision 8: nothing else is above it).
     assert b"data-next-steps" not in body and b"Family participation" not in body
     ministry = panel(body, "ministry")
@@ -176,3 +182,11 @@ def test_an_administrator_keeps_home(response_service, google):
     assert response.status_code == 200
     assert b"<h1>Home</h1>" in body and b"<h1>My review work</h1>" not in body
     assert b"data-review-work" in body and b'data-review-stream="ministry"' in body
+    assert b'aria-current="page">Home</a>' in body
+    census = panel(body, "census")
+    assert (
+        b"/admin/reports/census/publication/",
+        b"Ready to update",
+        b"0",
+        b"changes",
+    ) in cards(census)

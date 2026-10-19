@@ -250,3 +250,40 @@ def test_an_administrator_also_gets_ready_to_update():
         3,
         "changes",
     )
+
+
+def test_home_is_named_my_review_work_for_those_who_land_there():
+    """One name: the page, the menu and the trail call it the same."""
+    staff = Principal(uuid4(), frozenset({"staff"}), frozenset())
+    admin = Principal(uuid4(), frozenset({"administrator"}), frozenset())
+    assert str(review_work.home_label(staff)) == "My review work"
+    assert str(review_work.home_label(admin)) == "Home"
+
+
+def test_an_unreadable_count_shows_its_cards_without_numbers(monkeypatch):
+    """A failed count is logged and every stream the role may open is shown
+    with no number, rather than failing the page."""
+    from django.db import DatabaseError
+
+    def fail(*_args):
+        """The counts statement failing."""
+        raise DatabaseError("boom")
+
+    monkeypatch.setattr(review_work, "_read", fail)
+    staff = Principal(uuid4(), frozenset({"staff"}), frozenset())
+    counts = review_work.read_counts(staff, uuid4())
+    assert counts == {
+        Stream.CENSUS: None,
+        Stream.ADDITIONAL_INFORMATION: None,
+        Stream.FINANCIAL: None,
+        Stream.CANNOT_PARTICIPATE: None,
+        Stream.MINISTRY: None,
+        "leader": None,
+    }
+    panels = review_work.panels(
+        chrome(counts={"ministry_report": 2}), {"campaign": object(), "counts": counts}
+    )
+    by_stream = {panel.stream: cards(panel) for panel in panels}
+    assert [card[3] for card in by_stream["census"]] == [None, None, None]
+    # The menu's own Ministry count still shows; the roster count does not.
+    assert [card[3] for card in by_stream["ministry"]] == [2, None]

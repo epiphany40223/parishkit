@@ -37,14 +37,17 @@ stream in ``STAGE_LINKED`` gets ``?stage=<value>`` on each card instead
 (the slices that move each page add it there).
 """
 
+import contextlib
 import json
+import logging
 from collections import Counter
 from dataclasses import dataclass
 
-from django.db import connection
+from django.db import DatabaseError, connection, transaction
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
+from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.pipeline import (
     Stage,
     Stream,
@@ -111,11 +114,11 @@ SELECT
         WHERE f.campaign_id=%(campaign)s)
     END,
     CASE WHEN %(limitations)s THEN (
-        SELECT jsonb_array_length(coalesce(v->'members', '[]'::jsonb))
-            + jsonb_array_length(coalesce(v->'families', '[]'::jsonb))
+        SELECT CASE WHEN v ? 'unavailable' THEN -1
+            ELSE jsonb_array_length(coalesce(v->'members', '[]'::jsonb))
+                + jsonb_array_length(coalesce(v->'families', '[]'::jsonb)) END
         FROM stewardship_limitations_report_v1(
-            %(campaign)s, '{"search": "", "show": "any"}'::jsonb) v
-        WHERE NOT v ? 'unavailable')
+            %(campaign)s, '{"search": "", "show": "any"}'::jsonb) v)
     END,
     CASE WHEN %(roster)s THEN (
         SELECT coalesce(jsonb_agg(jsonb_build_array(
@@ -134,9 +137,22 @@ SELECT
                 SELECT x.entered FROM stewardship_ministry_roster_entry x
                 WHERE x.request_id=(r->>'id')::uuid
                 ORDER BY x.sequence DESC LIMIT 1) e ON true
+            -- Only roster outcomes become a roster change; the others
+            -- (declined, no response, ...) are never entered by hand.
+            WHERE r->>'outcome' IN ('joined', 'leave_confirmed')
             GROUP BY 1, 2, 3, 4) g)
     END
 """
+# Each COUNTS flag and the stream it counts.
+FLAG_STREAMS = {
+    "census": Stream.CENSUS,
+    "information": Stream.ADDITIONAL_INFORMATION,
+    "financial": Stream.FINANCIAL,
+    "limitations": Stream.CANNOT_PARTICIPATE,
+    "roster": Stream.MINISTRY,
+}
+# The Limitations count when its report says its inputs are unavailable.
+UNAVAILABLE = -1
 
 
 def lands_here(principal):
@@ -149,13 +165,26 @@ def lands_here(principal):
     return "administrator" not in roles and bool(roles & {"staff", "ministry_leader"})
 
 
+def home_label(principal):
+    """The name of ``/admin/`` for this person: My review work or Home."""
+    return _("My review work") if lands_here(principal) else _("Home")
+
+
 def read_counts(principal, campaign_id):
     """Each stream's item count by stage value, for the streams this person reviews.
 
     Returns ``{stream value: {stage value: count}}``, plus ``"leader"``: a
     Ministry leader's per-Ministry To review counts (``my_ministries``), or
     None for everyone else. Ministry To review for Staff is not read here:
-    the menu already reads it (see the module docstring).
+    the menu already reads it (see the module docstring). A stream whose
+    count could not be read maps to None, and its cards show no number.
+
+    The counts only decorate the landing, so a failure must never take the
+    page (or Admin Home) down, as the menu's own counts never do: a database
+    error, or a stored state the pipeline does not place, is logged and
+    every stream the person may open is shown without numbers. Inside the
+    view's read transaction the statement gets a savepoint, so only the
+    count is rolled back.
     """
     from parishkit.stewardship.workflows.roster import can_tick
 
@@ -171,7 +200,22 @@ def read_counts(principal, campaign_id):
     }
     counts = {}
     if any(flags.values()):
-        counts = _read(flags, principal, campaign_id)
+        isolate = (
+            transaction.atomic if connection.in_atomic_block else contextlib.nullcontext
+        )
+        try:
+            with isolate():
+                counts = _read(flags, principal, campaign_id)
+        except (DatabaseError, ValueError) as error:
+            # A WARNING process-log line naming only the failure's kind,
+            # under the event the menu's counts use for the same case.
+            emit_failure(
+                error,
+                event=Event.REPORT_SHAPING_FAILED,
+                level=logging.WARNING,
+                name_class=True,
+            )
+            counts = {FLAG_STREAMS[flag]: None for flag, on in flags.items() if on}
     leader = None
     if leads_ministries(principal):
         from parishkit.stewardship.reports.ministry_followup import my_ministries
@@ -231,7 +275,9 @@ def _read(flags, principal, campaign_id):
         )
     if financial is not None:
         counts[Stream.FINANCIAL] = _tally([(financial_placement(), financial)])
-    if limitations is not None:
+    if limitations == UNAVAILABLE:
+        counts[Stream.CANNOT_PARTICIPATE] = None
+    elif limitations is not None:
         counts[Stream.CANNOT_PARTICIPATE] = _tally(
             [(cannot_participate_placement(), limitations)]
         )
@@ -422,12 +468,15 @@ def panels(chrome, review):
             stream_counts = {Stage.TO_REVIEW.value: menu_counts.get(view.entry)}
             if view.stream in counts:
                 roster = Stage.TO_ENTER_BY_HAND.value
-                stream_counts[roster] = counts[view.stream].get(roster, 0)
+                read = counts[view.stream]
+                stream_counts[roster] = None if read is None else read.get(roster, 0)
             cards = _stage_cards(view, item, stream_counts)
         elif view.stream in counts:
-            # A counted stream's stage with no items reads as zero.
+            # A counted stream's stage with no items reads as zero; one that
+            # could not be read (None) has no number.
+            read = counts[view.stream]
             stream_counts = {
-                stage.value: counts[view.stream].get(stage.value, 0)
+                stage.value: None if read is None else read.get(stage.value, 0)
                 for stage in view.stages
                 if stage not in hidden
             }
