@@ -722,7 +722,8 @@ selection the page, the counts and the row guard share:
   changed since the latest row's response: **To review**, or **Confirmed**
   ("Already in ParishSoft", no reviewer; the
   [page's](../reports/spec.md#pledges-to-enter) words at $0.00 differ) or
-  **Conflict** when a refresh found so;
+  **Conflict** when a refresh found so, or Confirmed at the Family's submit
+  (rules 3 and 4, below);
 - Ignored: **Ignored**;
 - Accepted or Accepted (edited), not marked: **To enter by hand**, or
   **Confirmed** or **Conflict** (keeping the decision visible but not in
@@ -742,12 +743,22 @@ changed with it). An unchanged resubmission keeps the decision at any stage
 (rule 5), but the item is listed only while the Family's current response
 answers them, as on Financial stewardship detail: a Family that answers
 again while the financial section is switched off leaves the list until it
-answers the financial questions again, keeping its history. Rules 3 and 4
-need ParishSoft's upcoming-year pledge at the Family's submit, which the
-response does not record
-([#1753](https://github.com/epiphany40223/parishkit/issues/1753)).
-Pledges and funds are read-only in ParishSoft's API, so the stream never has
-Ready to update.
+answers the financial questions again, keeping its history. Each live
+response records ParishSoft's upcoming-year pledge at its submit (below),
+which rules 3 and 4 compare with
+([#1753](https://github.com/epiphany40223/parishkit/issues/1753)): a new or
+changed pledge whose annual amount equals the amount ParishSoft held at
+that submit has nothing to enter, so it is **Confirmed** at once with no
+reviewer, the same as a refresh finding R = C (the
+[page's](../reports/spec.md#pledges-to-enter) "Already in ParishSoft", or
+its $0.00 words). For the pledge item, which is the Family's current answer
+and stays listed, this is rule 3's withdrawal and rule 4 for an answer
+ParishSoft already holds. An earlier version already marked Entered by hand
+is not undone: the new answer stays To review instead (its row says the
+Family changed its pledge), so Staff see it and can undo the entry, and the
+refresh judges it. Without a recorded amount the pledge is To review, as
+before. Pledges and funds are read-only in ParishSoft's API, so the stream
+never has Ready to update.
 
 **Pledge confirmation** (decision 5). ParishSoft's v2 `GET
 offering/pledge/list` returns each pledge with `familyID`, `fundID`,
@@ -767,14 +778,23 @@ maps a Family's ParishSoft pledge for the upcoming year to the pipeline item:
   campaign's configured window (the Family form's rule); without the proof
   no pledge is checked. No pledge reads as $0.00, the same as a zero
   pledge, so a Family pledging nothing is Confirmed by a ParishSoft holding
-  no pledge for it. A is $0.00 for the Family's answer: the upcoming year
-  usually has no pledge when the Family answers, and the response does not
-  record the snapshot it was answered against
+  no pledge for it. A for the Family's answer is ParishSoft's upcoming-year
+  pledge when the Family answered: the Family submit (and Open form)
+  records it on the response (`stewardship_submission.upcoming_pledge`,
+  frozen migration 0145, provisional number), read the same way from the
+  current snapshot the submit validates against, and only when that
+  snapshot's giving read is proven complete; otherwise it records none and
+  the submit goes on. A guard on the response checks a recorded amount
+  against that snapshot. An unchanged resubmission keeps A (rule 1), so A
+  is the amount recorded at the response where the Family's current pledge
+  answer began; a response that recorded none reads as $0.00, as every
+  response did before
   ([#1753](https://github.com/epiphany40223/parishkit/issues/1753)). A
   decision taken on a Conflict records that Conflict's R as the item's new
   A (`stewardship_pledge_review.baseline_pledge`, frozen migration 0142,
   provisional number, set by the guard), which Back to review and Entered
-  by hand carry while the Family's pledge is unchanged. C is the annual
+  by hand carry while the Family's pledge is unchanged; any other decision
+  records the item's A. C is the annual
   amount carried forward (the Edit's, else the Family's). Money compares as
   exact two-decimal amounts. The
   [refresh rules](#baseline-refresh-re-evaluation) then confirm the
