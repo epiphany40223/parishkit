@@ -70,7 +70,7 @@ def principal_function():
 def ended_function():
     """0114's ``CREATE FUNCTION`` of the ended-instant check, with its revoke.
 
-    0152 (#1763) has since dropped it; 0123's check requires it, so the
+    0125 (#1763) has since dropped it; 0123's check requires it, so the
     state before 0123 puts it back (rolled back with each test).
     """
     text = (MIGRATIONS / "0114_no_sign_in_age.sql").read_text(encoding="utf-8")

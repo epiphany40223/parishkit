@@ -312,11 +312,11 @@ DAILY_SENDS_FUNCTION = "stewardship_family_daily_sends_v1()"
 # 3:10 PM", #530): one instant, for the same reason.
 DAILY_RESUME_FUNCTION = "stewardship_family_daily_resume_v1()"
 # Whether the automation session a secret request names is live, of full
-# scope, the requester's and holds the request's sign-in instant (0152,
+# scope, the requester's and holds the request's sign-in instant (0125,
 # #1763): the web's intake guard and each key-replacement installer's
 # staged-to-testing guard call it, so ending an automation session still
 # stops its secret requests, and the installers read no automation table.
-# It replaced 0114's ended-instant check (#1547), which 0152 dropped with
+# It replaced 0114's ended-instant check (#1547), which 0125 dropped with
 # its grants, and which also refused a browser's own requests once every
 # automation session it approved had ended.
 AUTOMATION_REQUEST_FUNCTION = (
@@ -535,7 +535,7 @@ CLOSURE_FUNCTIONS = {
         "stewardship_reports",
         "0029_point_in_time_exports",
     ),
-    # The named automation session check of secret requests (0152, #1763).
+    # The named automation session check of secret requests (0125, #1763).
     AUTOMATION_REQUEST_FUNCTION: (
         "stewardship_accounts",
         "0030_secret_request_session",

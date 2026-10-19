@@ -1,7 +1,7 @@
 """Forward migration: a secret request names its automation session (#1763).
 
-Its SQL is the frozen file ``schema/migrations/0152_secret_request_session.sql``
-(prefix 0152, provisional until the repository-wide file sequence assigns
+Its SQL is the frozen file ``schema/migrations/0125_secret_request_session.sql``
+(prefix 0125, provisional until the repository-wide file sequence assigns
 it), read whole and never parsed. It adds the nullable
 ``stewardship_secret_request.automation_session_id`` (the automation session
 a command-line request was made through; NULL for a browser request and for
@@ -26,7 +26,7 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0152_secret_request_session.sql"
+    / "0125_secret_request_session.sql"
 )
 
 

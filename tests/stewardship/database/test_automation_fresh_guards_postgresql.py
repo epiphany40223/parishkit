@@ -13,7 +13,7 @@ Family test guard through the real chosen-Family test form; the secret
 request guards through the real sealed intake and the installer's
 staged-to-testing step, on disposable roles; there a request that names
 its automation session needs that session live
-(``stewardship_automation_request_live_v1``, 0152, #1763, which replaced
+(``stewardship_automation_request_live_v1``, 0125, #1763, which replaced
 0114's ended-instant check). 0013's own DO block is run
 against 0013's bodies, put back in a rolled-back transaction, and refuses
 each pre-0013 guard. ``sign_in_instant`` is covered directly. 0123 (#1550)

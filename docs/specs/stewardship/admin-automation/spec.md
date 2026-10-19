@@ -1448,9 +1448,9 @@ as it runs the other
 decides in its own specification whether automation may.
 
 A request made through an automation session records that session in
-`stewardship_secret_request.automation_session_id` (frozen migration 0152,
+`stewardship_secret_request.automation_session_id` (frozen migration 0125,
 [#1763](https://github.com/epiphany40223/parishkit/issues/1763)); a browser
-request records none (NULL, as every request made before 0152 does). Python
+request records none (NULL, as every request made before 0125 does). Python
 sets it only for an automation caller, from the admitted caller, never from
 the request's input. Two secret request guards check it:
 `stewardship_sealed_intake_admission_v1` (on insert of a
@@ -1484,7 +1484,7 @@ the age check and called `stewardship_automation_instant_ended_v1(requested_by,
 instant)` instead, which refused an instant once every full-scope automation
 session holding it had ended. Because an automation session records its
 approving browser's sign-in instant, that also refused the browser session's
-own requests until the Administrator signed in again; 0152 replaced it with
+own requests until the Administrator signed in again; 0125 replaced it with
 the named session and dropped it.
 
 The setup guards (`stewardship_setup_install_binding_v1`,
@@ -4168,19 +4168,19 @@ time:
    session-bound guards still call `stewardship_automation_fresh_v1` for a
    command session, and the secret request guards called 0114's
    `stewardship_automation_instant_ended_v1` instead of the principal
-   helper, until 0152 bound a request to its named automation session).
+   helper, until 0125 bound a request to its named automation session).
    Admission
    (`admit_admin_action`) refuses an automation caller for
    `DESTRUCTIVE_CONFIRMATION`, which no workflow uses yet. As the
    [secret replacement](#secret-replacement) rules accept, the two secret
    request guards bind the principal and the recorded sign-in instant, not
    a session row: any live full-scope session of that Administrator with
-   that instant admits the request (until frozen migration 0152, #1763,
+   that instant admits the request (until frozen migration 0125, #1763,
    bound a request to the automation session it names). The secret guards
    call the function
    only for the logins granted it (the web or the schema owner at intake;
    the parishsoft, google_workspace and slack installers at testing), so
-   any other login keeps its plain refusal (since 0152, any other login
+   any other login keeps its plain refusal (since 0125, any other login
    that names a session is refused). `sign_in_instant` refuses an
    automation caller outside a transaction, since the row lock must last
    until the action commits. Telling an automation action apart in the
