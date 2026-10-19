@@ -331,17 +331,17 @@ to `DATA`, for example), becomes
    [Pausing and resuming delivery](#pausing-and-resuming-delivery)). On
    the **Sent mail** page (`/admin/mail/sent/`), choose the **Failed** state
    and look at the messages last changed during the outage.
-   Open each one that should still go and choose **Retry failed delivery** on
-   its page (the button is offered only when delivery is not paused), or,
+   Open each one that should still go and answer **Send it again?** with
+   **Yes** on its page (unavailable while delivery is paused), or,
    when all of one type should go, use **Fix many emails at once** →
-   **Retry all failed emails** on the same page, which retries each the
-   same way after one preview
+   **Failed emails: send them all again?** on the same page, which retries
+   each the same way after one preview
    ([Sent mail bulk actions](../specs/stewardship/admin-portal/spec.md#fix-many-emails-at-once)).
-   Then
-   check the **Still sending (queued)** and **Still sending (waiting to
-   retry)** states for messages last changed during the outage whose page offers **Retry delivery not accepted
-   by the provider**, and choose it for each that should still go. If you did
-   not pause, settle any **Not sure it arrived** message as described below.
+   Then check the **Still sending (queued)** and **Still sending (waiting
+   to retry)** states for messages last changed during the outage whose
+   page offers **Try again now**, and choose it for each that should still
+   go. If you did not pause, settle any **Not sure it arrived** message as
+   described below.
    The [operator diagnostics ledger](stewardship-operator-diagnostics-reviews.md)
    records the last check of this step.
 
@@ -709,92 +709,58 @@ owns the policy for each kind:
 [invitations and reminders](../specs/stewardship/background-processing/spec.md#family-invitations-and-reminders),
 [receipts](../specs/stewardship/background-processing/spec.md#submission-confirmation)
 and [Admin reports](../specs/stewardship/background-processing/spec.md#administrator-digests).
-The guides linked in step 4 own each kind's resolution workflow.
+The guides linked in step 3 own each kind's resolution workflow.
 
-For each message, from its detail page (`/admin/mail/sent/<message id>/`)
-(when the provider's records show that many of them were not sent, step 5
-can be done for all of them at once with **Fix many emails at once** →
-**Record all "Not sure it arrived" emails as not sent** on Sent mail,
-after one preview and with one note; see
-[Sent mail bulk actions](../specs/stewardship/admin-portal/spec.md#fix-many-emails-at-once)):
+On **Sent mail**, choose the Delivery filter **Needs attention** (or **Not
+sure it arrived — review needed**) and open each message. Its page says at
+the top what happened and what to check, and asks one question
+([Mail message page](../specs/stewardship/admin-portal/spec.md#mail-message-page)):
 
-1. Look for it in the provider's own record: the delegated mailbox's sent
-   mail or the Workspace admin log, by time and recipient.
-2. Record what you found with **Save evidence note**.
-3. If the provider shows it was sent, choose **Confirm delivery using
-   external evidence**; the message is marked delivered and its occurrence
-   completes.
-4. If the provider shows it was not sent and it should still go, choose
-   **Authorize potentially duplicate resend**, acknowledging that the Family
-   may receive it twice; this creates a new attempt under the same
-   occurrence. The button appears
-   only when a resend is still permitted, and the conditions differ by kind:
-   for an invitation or reminder, the campaign is inside its dates, the
-   Family is still active, eligible and reachable and has not submitted, the
-   slot is not already fulfilled, and no refresh, activation catch-up or
-   restore hold stands in the way; for a submission receipt, no other message
-   for that Family is still submitting or unknown; for a daily or weekly Admin
-   report, report preparation is complete and the recipient is still an
-   Administrator. A pause does not prevent the resend, and resolving the
-   message lets the resume proceed: on an active campaign the resent message
-   is held with the rest of the paused mail, and the resume's recovery plan
-   decides it like any held message. A resent scheduled daily or weekly
-   report is cancelled and folded into the next combined report of its
-   kind, as for a failed report in step 5 (no content is lost; a resent
-   manually requested weekly report is sent); a resent reminder is
-   replaced by a later reminder due during the pause, and a resent
-   invitation or reminder is cancelled if the Family has since submitted,
-   become ineligible or lost every deliverable address; otherwise it is
-   sent (the
-   [gate round 5 ledger](stewardship-gate-round5-fixes-reviews.md) and the
-   [pre-launch gate](stewardship-prelaunch-gate.md) record the checks);
-   on a campaign closed while paused, a resent receipt or report
-   joins the held messages you release or cancel by type (above), and one
-   already released goes without waiting. When the button is absent, a
-   resend is not permitted now; use the next step instead. The rules are
-   recorded in the
-   [Family-mail resolution guide](stewardship-family-mail-resolution.md) for
-   invitations and reminders, the
-   [submission receipts guide](stewardship-submission-receipts.md) for
-   receipts, and the [daily](stewardship-daily-digests.md) and
-   [weekly](stewardship-weekly-digests.md) digest guides for Admin reports;
-   the [paused resend guide](stewardship-paused-resend.md) covers every kind
-   during a pause.
-5. If the provider shows it was not sent and no resend is wanted or permitted
-   (for example, the Family has since submitted or become ineligible, or the
-   report's recipient is no longer an Administrator), choose **Record that the
-   provider did not send it (no resend)**, with the provider evidence in the
-   note. The message is recorded as a failed delivery, exactly as if the
-   provider had refused it, but no recipient address is suppressed; an
-   invitation or reminder occurrence becomes failed, not fulfilled. A failed
-   report whose recipient is not currently an Administrator counts as settled,
-   like a report cancelled for a removed Administrator, so the report completes
-   once its other recipients have it, whether the recipient was removed before
-   or after; a failed report whose recipient is still an Administrator holds
-   the report open until you choose **Retry failed delivery**, when no pause
-   is involved. On an active campaign that is paused, that retry is not
-   offered, and resuming folds the report into the next combined report of
-   its kind, which carries its dates to the current Administrators; do not
-   wait for the button. On a campaign
-   closed while paused that retry is not available: if the recipient should no
-   longer be an Administrator, remove them through the ordinary configuration
-   change and the report settles, so the closed resolution can record its
-   skip. Do this before you resolve the held reports by type: once that
-   resolution has cancelled the report's other copies, a later removal can no
-   longer record the skip and the report stays open.
-   The message no longer counts as unknown, so a paused campaign can resume,
-   and a receipt waiting behind it is no longer blocked. This action is
-   available during a pause and on a campaign closed while paused. A later
-   **Retry failed delivery** stays subject to the ordinary retry conditions.
-   The [unsent resolution guide](stewardship-unsent-resolution.md) records the
-   design.
-6. If you cannot tell, leave it unresolved and note why; an unresolved
-   message blocks schedule edits for its occurrence and is listed until
-   resolved.
+1. Do the check the page names: look in the delegated mailbox's Sent
+   folder, or the Google Workspace email log search, for that email to the
+   addresses it names, sent around the time it names.
+2. Answer **What did you find?**, writing in the note what you saw:
+   - **It was sent** → **Mark as delivered**: the message is delivered and
+     its occurrence completes.
+   - **It was not sent**, then **Send it again?**
+     - **Yes** → tick that the recipient could get a second copy →
+       **Send it again**: a new attempt under the same occurrence. During a
+       pause it waits with the paused mail, and resolving it lets the
+       resume proceed.
+     - **No** → **Record as not sent**: recorded as a failed delivery, as if
+       the provider had refused it, with no address suppressed and no
+       resend; a paused campaign can then resume. You can still send it
+       again later from its page, under the ordinary rules.
+   - **I can't tell yet** → **Save note**: the message stays unresolved,
+     blocks schedule edits for its occurrence and stays listed until you
+     answer again.
+3. An answer the rules do not allow now is shown unavailable with its
+   reason (for example "The Family has already responded" or "Campaign
+   email is paused"); choose another answer. The per-kind rules for
+   sending again, and what a pause or a closed campaign does with the
+   resent copy, are in the
+   [background-processing specification](../specs/stewardship/background-processing/spec.md)
+   and the guides for
+   [invitations and reminders](stewardship-family-mail-resolution.md),
+   [receipts](stewardship-submission-receipts.md),
+   [daily](stewardship-daily-digests.md) and
+   [weekly](stewardship-weekly-digests.md) reports, the
+   [paused resend](stewardship-paused-resend.md) and
+   [recording as not sent](stewardship-unsent-resolution.md).
 
-Never resend outside the portal, never resolve without a note, and never use
-**Confirm delivery using external evidence** for a message the provider shows
-was *not* sent, even to unblock a resume: record it as not sent instead. The
+When the provider's records show that many of them were not sent, answer
+for all of them at once with **Fix many emails at once** → **Not sure they
+arrived: record them all as not sent?** on Sent mail, after one preview and
+with one note ([Sent mail bulk actions](../specs/stewardship/admin-portal/spec.md#fix-many-emails-at-once)).
+A failed report whose recipient is still an Administrator holds its report
+open until it is sent again; on a campaign closed while paused, remove a
+recipient who should no longer be an Administrator through the ordinary
+configuration change before you resolve the held reports by type, so the
+report can record its skip
+([unsent resolution guide](stewardship-unsent-resolution.md)).
+
+Never resend outside the portal, never resolve without a note, and never answer
+**It was sent** for a message the provider shows was *not* sent, even to unblock a resume: record it as not sent instead. The
 note and the resolution are the only record of why a Family got one message,
 two or none.
 

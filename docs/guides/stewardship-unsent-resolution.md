@@ -30,7 +30,9 @@ also blocked that Family's submission receipt.
 A new Admin resolution action, `confirm_unsent`, records with a required
 evidence note that the provider confirms the attempt was not sent, and does
 not resend. The delivery page offers it next to the acceptance for every
-unknown message, as **Record that the provider did not send it (no resend)**.
+unknown message, as **Record that the provider did not send it (no resend)**
+(since #1563, the answer "It was not sent", then No to "Send it again?":
+**Record as not sent**).
 
 - **Admission.** It is admitted only for `delivery_unknown`, for invitations,
   reminders, receipts and daily and weekly reports, under the same authority
@@ -71,7 +73,7 @@ unknown message, as **Record that the provider did not send it (no resend)**.
   Admin command or a roster change), the existing metadata finalizer
   completes the occurrence, as it does after an Admin acceptance. A failed
   report whose recipient is still an Administrator holds its cohort open
-  until **Retry failed delivery** sends it, when no pause is involved; on a
+  until **Retry failed delivery** (since #1563, **Send it again**) sends it, when no pause is involved; on a
   paused active campaign that retry is not offered, and resume's overdue
   report plan coalesces the occurrence into the next combined report of its
   kind, which carries its dates to the current Administrators.
