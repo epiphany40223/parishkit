@@ -405,8 +405,8 @@ FROZEN = {
     "0124_guard_wording.sql": (
         "cbe60936ca8d92a473280cbb173b2c0c379b295135eef83b114750c7b2ce035c"
     ),
-    "0131_census_pipeline_review.sql": (
-        "82f6ba01ad8054bbaa1a902d907f1e3f18e7ba22384b33a7a1ca0ec5aa4ab4ae"
+    "0128_census_pipeline_review.sql": (
+        "a586f0a0100242e02ee493f9baaf8fb8116efea5525dc6329cb35072239be7c1"
     ),
 }
 

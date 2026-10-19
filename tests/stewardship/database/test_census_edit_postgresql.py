@@ -313,7 +313,7 @@ def test_do_block_refuses_the_earlier_guard():
     class Rollback(Exception):
         """Ends a check that must leave the database as it found it."""
 
-    # 0131 (#1683) replaced the review guard since: each check runs on this
+    # 0128 (#1683) replaced the review guard since: each check runs on this
     # file's own body for it, rolled back, so it tests this file alone.
     with pytest.raises(Rollback), transaction.atomic(), connection.cursor() as cursor:
         cursor.execute(own)

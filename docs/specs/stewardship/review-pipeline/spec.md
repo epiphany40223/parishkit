@@ -587,7 +587,7 @@ them.
 review gaps: Census changes is the shared worklist, Staff and Administrators
 Accept, Edit (By hand fields and Family addresses included), Ignore and send
 back to review every change, Entered by hand on a To review By hand row
-accepts and marks it in one step, and forward migration 0131 (provisional
+accepts and marks it in one step, and forward migration 0128 (provisional
 number) widens the review guard for it
 ([Automatic census review](../reports/spec.md#automatic-census-review)).
 Census **Add** was cut from that slice (7th on the

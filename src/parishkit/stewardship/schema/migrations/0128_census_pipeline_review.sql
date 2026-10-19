@@ -1,4 +1,4 @@
--- Frozen forward migration file 0131 (the repository-wide file sequence;
+-- Frozen forward migration file 0128 (the repository-wide file sequence;
 -- provisional, the number is assigned centrally in merge order): census
 -- changes adopt the review pipeline (#1683). This file is installed by its
 -- Django migration in the responses app and must never change once
