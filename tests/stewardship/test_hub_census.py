@@ -11,7 +11,12 @@ from datetime import timedelta
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.pipeline import Placement, Stage
-from parishkit.stewardship.reports.hub_census import FieldRow, HubCensus, shape
+from parishkit.stewardship.reports.hub_census import (
+    FieldRow,
+    HubCensus,
+    shape,
+    unsubmitted,
+)
 from parishkit.stewardship.reports.timeline_views import page_context
 from parishkit.stewardship.responses.member_census import MEMBER_FIELDS
 from parishkit.stewardship.web.dates import using
@@ -291,10 +296,29 @@ def test_a_member_panel_draws_its_mark_and_reviewers_value():
 
 
 def test_before_any_response_the_family_tab_says_so():
-    """No census answers yet: the Family tab explains, no Member tab."""
+    """No census answers yet and no ParishSoft Member: no Member tab."""
     page = render("family", HubCensus())
     assert "has not submitted census answers yet" in page
     assert 'data-tab="member-1"' not in page
+
+
+def test_before_any_response_every_member_has_a_marked_tab():
+    """R39 finding 8: each current Member's tab shows, marked No submission
+    yet, named from ParishSoft, with its DUID and no census table."""
+    census = unsubmitted([("3", "Anne", "Adams"), ("5", None, None)])
+    assert [(item.key, item.label, item.duid) for item in census.members] == [
+        ("member-1", "Adams, Anne", 3),
+        ("member-2", "Name not recorded in ParishSoft", 5),
+    ]
+    page = render("family", census)
+    assert "has not submitted census answers yet" in page
+    assert ">Adams, Anne</a>" in page and 'data-tab="member-2"' in page
+    page = render("member-1", census)
+    panel = page.split('id="family-tabs-panel-member-1"')[1]
+    assert '<h2 id="hub-member-1-heading">Adams, Anne (DUID 3)</h2>' in panel
+    assert '<span class="status-badge">No submission yet</span>' in panel
+    assert "They appear here once it does." in panel
+    assert "No changes" not in panel and "<table" not in panel
 
 
 def test_a_change_with_no_stage_is_shown_without_one(caplog):

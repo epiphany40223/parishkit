@@ -53,6 +53,15 @@ MARKS = {
         _("Deceased"),
         _("The form did not ask about this Member's other details."),
     ),
+    # A Member of a Family that has not answered yet (R39 finding 8): the
+    # tab shows, named from ParishSoft, so the hub lists every Member.
+    "unsubmitted": (
+        _("No submission yet"),
+        _(
+            "The Family has not submitted answers for this Member yet. "
+            "They appear here once it does."
+        ),
+    ),
     # Drawn with the shared {% source_status "missing" %} mark.
     "missing": (
         _(NOT_IN_PARISHSOFT),
@@ -114,6 +123,22 @@ WHERE s.family_id=%(family)s AND s.campaign_id=%(campaign)s AND s.mode='live'
         AND p.field = ANY(%(terminal)s)))
 ORDER BY p.entity_kind, p.entity_key, p.field,
     s.id=%(submission)s DESC, s.family_version DESC
+"""
+# A Family's active, living Members in the current ParishSoft data, by
+# Member DUID, as the Family form lists them (``source_inputs``), for the
+# Member tabs of a Family with no census answers yet (R39 finding 8).
+# Takes %(family)s.
+ROSTER = """
+SELECT m.source_key, p.canonical::jsonb->>'firstName',
+    p.canonical::jsonb->>'lastName'
+FROM stewardship_source_current c
+JOIN stewardship_family_campaign f ON f.id=%(family)s
+JOIN stewardship_snapshot_member m ON m.snapshot_id=c.snapshot_id
+JOIN stewardship_source_member p ON p.id=m.payload_id
+    AND p.family_key=f.family_duid::text
+WHERE c.singleton AND p.canonical::jsonb->>'active'='true'
+    AND p.canonical::jsonb->>'deceased' IS DISTINCT FROM 'true'
+ORDER BY m.source_key::bigint
 """
 COLUMNS = (
     "entity_kind",
@@ -250,15 +275,18 @@ class HubCensus:
 def read_hub_census(campaign_id, family_id, *, census):
     """Read one Family's census tabs: one statement, two with ``census``.
 
-    The caller holds the page's read guard and has checked the reader. A
-    Family with no live response yet has no subjects.
+    The caller holds the page's read guard and has checked the reader. When
+    the response gives no Member tab (no live response yet, or none with
+    census answers), one more statement reads the Family's current
+    ParishSoft Members for No submission yet tabs (``unsubmitted``).
     """
     parameters = {"family": family_id, "campaign": campaign_id}
     with connection.cursor() as cursor:
         cursor.execute(SUBMISSION, parameters)
         found = cursor.fetchone()
         if found is None:
-            return HubCensus(census=census)
+            cursor.execute(ROSTER, parameters)
+            return unsubmitted(list(cursor), census=census)
         submission, answers, names = found
         rows = []
         if census:
@@ -271,7 +299,35 @@ def read_hub_census(campaign_id, family_id, *, census):
         # JSON values arrive as text (cast in PROPOSALS) and are decoded once.
         for name in JSON_COLUMNS:
             row[name] = None if row[name] is None else json.loads(row[name])
-    return shape(json.loads(answers), json.loads(names), rows, census=census)
+    result = shape(json.loads(answers), json.loads(names), rows, census=census)
+    if result.members:
+        return result
+    with connection.cursor() as cursor:
+        cursor.execute(ROSTER, parameters)
+        return unsubmitted(list(cursor), family=result.family, census=census)
+
+
+def unsubmitted(roster, *, family=None, census=True):
+    """The hub's tabs for a Family whose response gives no Member tab.
+
+    ``roster`` holds ``ROSTER``'s ``(DUID, first, last)`` rows. Each Member
+    gets a tab of its own, in DUID order and named from ParishSoft, marked
+    No submission yet and holding no fields; ``family`` is the Family tab's
+    subject, kept as the response gave it (None before any census answers).
+    """
+    return HubCensus(
+        family,
+        tuple(
+            Subject(
+                f"member-{place}",
+                member_label(None, [first, last]),
+                mark="unsubmitted",
+                entity=("member", key),
+            )
+            for place, (key, first, last) in enumerate(roster, 1)
+        ),
+        census,
+    )
 
 
 def member_label(answer, source):

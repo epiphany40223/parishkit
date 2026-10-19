@@ -28,11 +28,12 @@ from ..census_factory import address, member
 from ..policy_factory import address as rule_address
 from .auth_builders import signed_in
 from .campaign_builders import change
-from .response_builders import response_source
+from .response_builders import activate_response_service, response_source
 from .test_background_grants_postgresql import task_login
 from .test_census_resolution_postgresql import prepared, resolve
 from .test_census_review_postgresql import review
 from .test_member_requests_postgresql import revisit, send
+from .test_ministry_responses_postgresql import start
 from .test_report_workspace_postgresql import read as get
 from .test_response_http_postgresql import answers_for, load_form
 from .test_runtime_auth_grants_postgresql import web_login
@@ -105,11 +106,26 @@ def test_fields_and_stages_follow_the_change_rows_in_force(response_service):
     renamed = next(item for item in census.members if item.changed)
     assert renamed.changed[0].stage_label == "Ready to update"
     assert renamed.changed[0].placement.decision.label == "Accepted"
-    # Another Family, with no response, has no subjects; only the response
-    # is looked for.
+    # Another Family, with no response and no ParishSoft Member, has no
+    # subjects; the response and its current Members are looked for.
     other = FamilyCampaign.objects.exclude(pk=family_id).values_list("pk", flat=True)
     census, statements = hub(harness, other[0])
-    assert census.family is None and census.members == () and statements == 1
+    assert census.family is None and census.members == () and statements == 2
+
+
+def test_before_a_response_each_member_has_a_marked_tab(response_service):
+    """R39 finding 8: before the Family answers, each of its active, living
+    Members in the current ParishSoft data has a tab marked No submission
+    yet, named from ParishSoft, read as the restricted web login."""
+    start(response_service)
+    harness = activate_response_service(response_service)
+    family_id = FamilyCampaign.objects.get(family_duid=1).pk
+    census, statements = hub(harness, family_id)
+    assert census.family is None and statements == 2
+    assert [
+        (item.key, item.label, item.mark, item.duid, item.rows)
+        for item in census.members
+    ] == [("member-1", "Example, Member", "unsubmitted", 3, ())]
 
 
 def test_a_second_response_keeps_each_change_once(live_response_service):
