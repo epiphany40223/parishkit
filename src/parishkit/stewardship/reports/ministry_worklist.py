@@ -186,6 +186,20 @@ def is_leader(principal):
     return not allows(principal, Capability.MINISTRY_FOLLOWUP)
 
 
+def for_reader(query, principal):
+    """The view as the reader's Stage filter offers it.
+
+    A Ministry leader has no update phase: their Accepted holds To enter by
+    hand and Entered by hand, so a link to either (Home's card is Staff's,
+    but a link can be passed on) opens their Accepted rather than an empty
+    list under a Stage their filter does not have.
+    """
+    update_phase = {Stage.TO_ENTER_BY_HAND.value, Stage.ENTERED_BY_HAND.value}
+    if query.stage in update_phase and is_leader(principal):
+        return replace(query, stage=ACCEPTED)
+    return query
+
+
 def read_rows(campaign_id, query, principal, *, empty=False):
     """Every request the view's filters select, each with its stage.
 

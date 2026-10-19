@@ -289,6 +289,11 @@ def test_a_leader_never_sees_the_tick_nor_the_list(response_service, google):
         assert b'<span class="status-word">Accepted</span>' in body
 
     hidden(False)
+    # Home's To enter by hand link opens a leader's Accepted (their Stage
+    # filter has no update phase), not an empty list.
+    response, body = get(browser, queue + "?stage=to_enter_by_hand")
+    assert response.status_code == 200 and f"{join.pk}/".encode() in body
+    assert b'<option value="accepted" selected>' in body
     # A forged single-row Entered by hand is refused, and records nothing.
     assert search(browser, queue, mark_form(join))[0].status_code == 403
     assert not MinistryRosterEntry.objects.filter(request=join).exists()

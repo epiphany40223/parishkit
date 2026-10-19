@@ -94,7 +94,13 @@ from .ministry_followup import (
     followup_page,
     valid_ministry,
 )
-from .ministry_worklist import WorklistQuery, read_rows, row_name, worklist_context
+from .ministry_worklist import (
+    WorklistQuery,
+    for_reader,
+    read_rows,
+    row_name,
+    worklist_context,
+)
 from .read_admission import admit_report_read
 from .report_paging import (
     next_open,
@@ -366,7 +372,8 @@ def _queue_query(request, principal, parameters):
     a count on By Ministry (#1133), or a Stage alone, from Home's Ministry
     requests to enter by hand card (R39 finding 2). Search and every other
     filter stay private POST state (``parameters``, the POST body less any
-    decision's fields).
+    decision's fields). A Ministry leader's view of Staff's update phase
+    reads as their Accepted (``for_reader``).
     """
     if request.GET:
         if request.method != "GET":
@@ -380,13 +387,13 @@ def _queue_query(request, principal, parameters):
             query = WorklistQuery.parse(values)
             if query.ministry:
                 _linked_ministry(query.ministry, principal)
-            return query
+            return for_reader(query, principal)
         if values.keys() == {"queue"}:
             return _recalled(request, None, queue_token(values["queue"]))
         raise ValueError("Use a queue token or a Ministry.")
     if parameters is None:
         return WorklistQuery()
-    return WorklistQuery.parse(parameters)
+    return for_reader(WorklistQuery.parse(parameters), principal)
 
 
 def _page_response(
