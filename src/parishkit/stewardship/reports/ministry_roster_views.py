@@ -438,13 +438,13 @@ def export_body(campaign_id, rows, fmt, zone):
 
 
 def _choices(parameters, *, export):
-    """The request's closed choices: Show, and paging or format and timezone.
+    """The request's closed choices: Show, and paging or format and zone.
 
     A page's GET also accepts ``changed=1``, the tick view's one-time answer
     that someone else changed a mark first.
     """
     allowed = {"show", "ministry"} | (
-        {"format", "timezone", "csrfmiddlewaretoken"}
+        {"format", "timezone", "browser_timezone", "csrfmiddlewaretoken"}
         if export
         else table_parameters() | {"changed"}
     )
@@ -459,8 +459,11 @@ def _choices(parameters, *, export):
     ):
         raise ValueError("Invalid roster list choice.")
     if export:
+        # The browser's zone, posted unasked, or an explicit timezone from
+        # an older tab (#1679).
         chosen = export_choice(
-            values.get("format", DEFAULT_EXPORT_FORMAT), values.get("timezone", "UTC")
+            values.get("format", DEFAULT_EXPORT_FORMAT),
+            dates.download_zone(values.get("timezone"), values.get("browser_timezone")),
         )
         return show, chosen | {"ministry": ministry}
     # Refuse a bad sort, page or size now, as a 400, not while rendering.
@@ -633,7 +636,6 @@ def page(request, campaign_id):
                 "bulk_key": uuid4(),
                 "mutable": mutable,
                 "can_tick": True,
-                "export_timezones": sorted(timezone_names()),
             },
             request=request,
         ).encode()

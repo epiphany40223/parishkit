@@ -38,6 +38,7 @@ from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
 from parishkit.stewardship.web.review_worklist import Column, build
 from parishkit.stewardship.web.tables import PAGE_SIZES, report_table
+from parishkit.stewardship.workflows.models import MinistryRequest
 from parishkit.stewardship.workflows.review import (
     leads,
     ministry_placement_of,
@@ -74,10 +75,13 @@ STAGE_VALUES = frozenset({*(stage.value for stage in STAFF_STAGES), ACCEPTED, EV
 # still lists in their Family (the default), or only those it no longer does.
 MEMBERS = {"current": "In ParishSoft", "gone": "No longer in ParishSoft"}
 PREFIX = "requests"
+# The Member's name opens the Family hub for the viewers who may open it
+# (plain for a Ministry leader), and the Ministry opens the request's own
+# page for every viewer (an Administrator decision, R38 finding 13).
 COLUMNS = (
-    Column("member_cell", "Member", sort="member"),
+    Column("member_cell", "Member", sort="member", family=True),
     Column("duid_cell", "Member DUID", numeric=True),
-    Column("ministry_cell", "Ministry", sort="ministry"),
+    Column("ministry_cell", "Ministry", sort="ministry", link="item_url"),
     Column("contact_cell", "Last contact"),
 )
 FORMER = "Former portal user"
@@ -363,15 +367,33 @@ def reviewer_value(row):
     return f"{kind} {row['ministry_name']}" if row.get("parish_added") else ""
 
 
-def _member_cell(row, token):
-    """The Member cell: the request page's link, with the ParishSoft badge.
+def _item_url(row, token):
+    """The request's own page, keeping the view's queue token, if any."""
+    url = reverse("admin:ministry_followup_item", args=[row["id"]])
+    return f"{url}?queue={token}" if token else url
+
+
+def _family_ids(rows):
+    """Each shown request's Family record id, by request id: one read.
+
+    The selection gives no Family, and the Member's name opens the Family
+    hub (R38 finding 13), so the shown rows' Families are read here.
+    """
+    return {
+        str(key): family
+        for key, family in MinistryRequest.objects.filter(
+            pk__in=[row["id"] for row in rows]
+        ).values_list("pk", "submission__family_id")
+    }
+
+
+def _member_cell(row):
+    """The Member cell: the name with the ParishSoft badge.
 
     A Member the data no longer has in this Family has no name, so the badge
-    alone is the link (#1216).
+    stands alone (#1216). The worklist links it to the Family hub for the
+    viewers who may open it; the request's page is the Ministry cell's link.
     """
-    url = reverse("admin:ministry_followup_item", args=[row["id"]])
-    if token:
-        url = f"{url}?queue={token}"
     badge = (
         format_html(
             '<span class="status-badge" data-source-status="{}">{}</span>',
@@ -382,8 +404,7 @@ def _member_cell(row, token):
         else ""
     )
     link = format_html(
-        '<a href="{}" class="cell-ellipsis" data-clip-tip>{}</a>',
-        url,
+        '<span class="cell-ellipsis" data-clip-tip>{}</span>',
         row["member_name"] or badge,
     )
     if not row["source_mark"]:
@@ -464,15 +485,23 @@ def _ministry_choices(result, row=None):
     ]
 
 
-def decorate(rows, result, principal, *, token, every, decisions=None, asked=None):
+def decorate(
+    rows, result, principal, *, token, every, decisions=None, asked=None, families=None
+):
     """Give each shown row what the worklist component reads.
 
     ``every`` is all the view's rows (any page), so a request added in place
     of an ignored one is named without another read. ``decisions`` and
     ``asked`` are the rows' last decisions and Family asked again times,
-    read here unless given (a detached page).
+    read here unless given (a detached page), as are ``families``, the
+    shown requests' Family record ids (read only for a viewer who may open
+    the Family hub).
     """
     leader = is_leader(principal)
+    # Only a viewer who may open the Family hub needs the Families.
+    if families is None:
+        hub = allows(principal, Capability.CAMPAIGN_REPORT)
+        families = _family_ids(rows) if hub else {}
     decisions = _last_decisions(rows) if decisions is None else decisions
     asked = _asked_again(rows) if asked is None else asked
     replacements = {}
@@ -497,7 +526,9 @@ def decorate(rows, result, principal, *, token, every, decisions=None, asked=Non
                 # (#1217), so such a row is drawn with no actions at all.
                 "placement": row["placement"],
                 "leads": reader_leads and not row["source_mark"],
-                "member_cell": _member_cell(row, token),
+                "member_cell": _member_cell(row),
+                "family_id": families.get(key),
+                "item_url": _item_url(row, token),
                 "duid_cell": str(row["member_duid"])
                 if row["member_duid"]
                 else "New Member",
@@ -552,6 +583,7 @@ def worklist_context(
     action,
     decisions=None,
     asked=None,
+    families=None,
 ):
     """The worklist and its table for one page of the view.
 
@@ -578,6 +610,7 @@ def worklist_context(
         every=rows,
         decisions=decisions,
         asked=asked,
+        families=families,
     )
     table = report_table(
         decorated,

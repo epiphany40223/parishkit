@@ -11,7 +11,7 @@ scrolls sideways.
 
 import pytest
 
-from .automation_components import ACCESS, HOME
+from .automation_components import ACCESS, NOTICES_PAGE
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "webkit"], indirect=True
@@ -84,7 +84,7 @@ BROKEN_LABELS = """() => {
     "path",
     [
         ACCESS,
-        HOME,
+        NOTICES_PAGE,
         "/automation-approval-review",
         "/hosted-files",
         "/delivery-refusals",

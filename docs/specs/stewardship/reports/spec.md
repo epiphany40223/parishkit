@@ -50,12 +50,11 @@ details and partial responses.
 Exports represent the complete filtered result, not merely the current page,
 unless the user explicitly selects rows. Before generation, the UI shows scope,
 row count estimate and format, with no sensitive-data banner (the
-[downloaded files](../ui-conventions/spec.md#downloaded-files) rule). It asks
-for a time zone
-only when the file's rows hold exact times of actions; any other download uses
-the browser's zone unasked and names it in the file (the
-[time zone question](../ui-conventions/spec.md#downloaded-files),
-[#1127](https://github.com/epiphany40223/parishkit/issues/1127)). Each export
+[downloaded files](../ui-conventions/spec.md#downloaded-files) rule). It never
+asks for a time zone: the file uses the browser's zone and names it, except
+where the page lets the reader view times in UTC (the
+[time zones](../ui-conventions/spec.md#downloaded-files) rule,
+[#1679](https://github.com/epiphany40223/parishkit/issues/1679)). Each export
 is audited with report, filters, requester, campaign, source snapshot, and row
 count, but not a duplicate of every exported value.
 
@@ -399,11 +398,10 @@ carries that provenance as metadata instead: the PNG's `Description` text
 chunk and the PDF's Info `Subject`, both holding the same "Source as of … Requested
 … (time zone)" text, without the internal source generation or submission
 cutoff numbers ([#966](https://github.com/epiphany40223/parishkit/issues/966)).
-The XLSX export keeps it in its "Report information" sheet. Its rows hold
-campaign dates, not exact action times, so the page asks for no time zone:
-the "Source as of" and "Requested" times use the browser's zone, which the
-page supplies unasked and the file names
-([time zone question](../ui-conventions/spec.md#downloaded-files)).
+The XLSX export keeps it in its "Report information" sheet. The "Source as
+of" and "Requested" times use the zone the page was drawn in (the
+browser's), which the file names
+([time zones](../ui-conventions/spec.md#downloaded-files)).
 
 The participation CSV and XLSX exports carry one row per campaign date
 under the same columns, in this order: Campaign date, Population, First
@@ -521,9 +519,16 @@ it never labels stale facts current. By Administrator decision
 Response dashboard's chart block shows no "data as of", campaign time zone or
 technical-details header, and no instruction line above the chart; the
 chart's as-of values are in the chart file's metadata and in its exports, and
-the x-axis label names the campaign time zone. The user can refresh after the
-queued generation publishes. A pinned export or digest waits/retries for its
-exact generation and fails visibly rather than substituting a different cutoff.
+the x-axis label names the campaign time zone. While the page is open it
+follows the queued generation and shows it by itself once it is ready
+([pages that update themselves](../ui-conventions/spec.md#pages-that-update-themselves),
+[#1586](https://github.com/epiphany40223/parishkit/issues/1586)), so the user
+never refreshes the page to check. That read records the dashboard's views
+like any other (`response_dashboard_viewed` and `participation_viewed`),
+each marked `automatic: true` in its audit context so it reads as an
+automatic refresh, not as the reader opening the page. A pinned export or
+digest waits/retries for its exact generation and fails visibly rather than
+substituting a different cutoff.
 Recalculation from the pinned source/submission inputs must reproduce every
 stored fact, and a verification job detects drift.
 
@@ -797,14 +802,13 @@ heading, and the page sends `Cache-Control: no-store`. Top to bottom:
    funnel chart remains anywhere; the Administrator can ask for one back.
 4. **Daily participation**: the Chart population choice, the daily chart
    and its table ([participation graph](#participation-graph)).
-5. **Export**: one sentence, "Exports the daily participation data on this
-   page.", the Export format menu (XLSX, CSV and PDF, XLSX first and chosen,
-   [downloaded files](../ui-conventions/spec.md#downloaded-files)) and
-   **Generate export**, which exports every daily row of the chart shown
+5. **Export**: the export buttons **Export XLSX**, **Export CSV** and
+   **Export PDF**, with no sentence on what they export
+   ([export actions](../ui-conventions/spec.md#downloaded-files)), which
+   export every daily row of the chart shown
    ([file design](#file-design); the statistics and the funnel join the
-   file in [#1557](https://github.com/epiphany40223/parishkit/issues/1557),
-   which then makes the sentence "Exports all the data on this page."). While no complete chart has
-   been calculated, or other campaign work holds new exports, the button is
+   file in [#1557](https://github.com/epiphany40223/parishkit/issues/1557)). While no complete chart has
+   been calculated, or other campaign work holds new exports, the buttons are
    shown unavailable with the sentence that says why
    ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)). The
    latest-data export is requested with `pk-admin export exact create`; the
@@ -1114,13 +1118,14 @@ created, replaced or cancelled, so emailed codes and links keep working.
 
 #### Timeline export
 
-The Administrator's full view offers **Export this timeline** (CSV, XLSX or
-PDF, with the export time zone), the shared export lifecycle's
+The Administrator's full view offers **Export this timeline** (the shared
+[export buttons](../ui-conventions/spec.md#downloaded-files) for XLSX, CSV
+and PDF, in the browser's time zone), the shared export lifecycle's
 `family_timeline` kind (ADM-11 PR 8g, frozen migration 0063, unchanged by
 #1570). Its form posts to `reports/families/<family>/exports/`, which only
 an Administrator may use, as only an Administrator sees the full timeline;
 Staff get no form, and their post is denied. The form carries the format,
-the export time zone and a one-time request key, and nothing else; the
+the browser's time zone and a one-time request key, and nothing else; the
 export is always of Production records (the capture's `mode` is
 `production`), and old Testing exports keep their status pages, whose
 breadcrumb opens the timeline. The file holds every line of the timeline,
@@ -1413,12 +1418,11 @@ own failure kind (`directory_head_emails_unavailable`) in the logs; the
 export is retried like any failed render. Report details (parish, campaign, capture time, "Head emails as of"
 when it applies, Families in the file, filters applied and the privacy line "Sensitive: Family codes.
 Authorized recipients only.") are in the PDF header and footer and the XLSX
-"Report information" sheet, never in columns. The page's export panel names
-the file's columns for the current filters and mailing-columns choice. It asks
-for a time zone only for the Family-code list with response columns, whose
-dates are times of actions; the code list without them and the postal mail
-merge use the browser's zone unasked for their capture times
-([time zone question](../ui-conventions/spec.md#downloaded-files)). The
+"Report information" sheet, never in columns. The page names neither the
+file's count nor its columns beside the export buttons
+([export actions](../ui-conventions/spec.md#downloaded-files)). Every
+file's times use the browser's zone
+([time zones](../ui-conventions/spec.md#downloaded-files)). The
 export's capture keeps only the private contact columns its file
 renders (#388 L6): the address for the mailing-columns file, phones for the
 list filtered to Families no campaign mail can reach, and the envelope number
@@ -2088,10 +2092,9 @@ XLSX, and PDF output.
 Recorded workflow values are prefilled; empty cells remain printable for human
 completion. Every format carries the report's privacy line. The XLSX is one workbook with a sheet per Ministry. PDF starts each
 Ministry on a new page. CSV is one file with a blank row and repeated headings
-between Ministries. No ZIP/per-Ministry files are required. The packet holds
-contact dates but no exact action times, so its form asks for no time zone:
-its dates and capture times use the browser's zone, sent unasked
-([time zone question](../ui-conventions/spec.md#downloaded-files)).
+between Ministries. No ZIP/per-Ministry files are required. Its dates and
+capture times use the browser's zone
+([time zones](../ui-conventions/spec.md#downloaded-files)).
 
 ## Pending census changes
 
@@ -2211,8 +2214,7 @@ other filters (history only with *Include history*), for example "To do
 choices are redrawn with every in-place answer, so the counts follow each
 recorded action, and a count reaching 0 keeps its choice, so nothing on the
 page moves ([no layout shift](../ui-conventions/spec.md#no-layout-shift)).
-These are this page's departures from the closed Filters panel and export
-disclosure of the shared
+This is this page's departure from the closed Filters panel of the shared
 [page layout](../ui-conventions/spec.md#page-help) rule (an Administrator
 decision, 2026-10-18). Filters are status (with *Include history*), how the change
 reaches ParishSoft (with *Hide automatic changes* for staff working by
@@ -2873,7 +2875,8 @@ XLSX (one sheet each, then a "Report information" sheet stating what the
 PDF's page frame states: parish, campaign, download time and zone, both
 counts and the privacy line) or PDF (one table each under the page's table
 heading, the Families table starting on a new page, in the shared page frame
-with both counts), in a chosen display timezone. Each table has its page table's
+with both counts), with times in the browser's zone
+([time zones](../ui-conventions/spec.md#downloaded-files)). Each table has its page table's
 columns, names and order: Member, Member DUID, Family, ParishSoft status,
 Family DUID, Cannot participate in ministries and Latest response for
 Members, and Family, ParishSoft status, Family DUID and Latest response for

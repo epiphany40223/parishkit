@@ -299,7 +299,7 @@ def test_testing_view_shows_the_rehearsal_stages_only(
     assert page.locator(POPULATION).count() == 0
     visible(page.get_by_text("never counted in Production"))
     visible(page.locator("#production-only"))
-    for gone in ("#participation-chart", "#export-format"):
+    for gone in ("#participation-chart", "#participation-export form"):
         assert page.locator(gone).count() == 0
     assert page.get_by_role("group", name="Chart population").count() == 0
     assert_clean(page, errors)

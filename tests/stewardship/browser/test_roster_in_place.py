@@ -126,7 +126,7 @@ def test_show_links_follow_the_applied_ministry(page, component_origin):
     page.evaluate(MARK)
     page.get_by_label("Ministry", exact=True).select_option("9")
     with page.expect_request(lambda request: "ministry=9" in request.url) as sent:
-        page.get_by_role("button", name="Apply", exact=True).click()
+        page.get_by_role("button", name="Apply filters", exact=True).click()
     assert sent.value.url == component_origin + MINISTRY
     eventually(
         page,
