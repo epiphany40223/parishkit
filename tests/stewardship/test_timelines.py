@@ -23,7 +23,6 @@ from parishkit.stewardship.reports.response_metrics import ResponseScope
 from parishkit.stewardship.reports.timeline_views import (
     Identity,
     TimelineQuery,
-    _exports,
     _full,
     open_form,
     page_context,
@@ -445,18 +444,29 @@ def test_the_reduced_view_keeps_the_summary_only():
     assert "Last portal action is the newest action" in page
 
 
-def test_staff_see_the_full_timeline_without_mail_links_or_export():
+# The export form's values as ``export_context`` gives them, without the
+# database read that decides whether exports may be made now.
+EXPORT = {
+    "url": "/admin/reports/families/x/exports/",
+    "request_key": UUID(int=5),
+    "timezones": ["UTC"],
+    "mutable": True,
+}
+
+
+def test_staff_see_the_full_timeline_and_export_without_mail_links():
     """Staff's view (#1774): every line, the filters and the engagement
-    values, but email lines unlinked (Staff cannot open Mail message pages)
-    and no export form (the export stays Administrator-only, #1799)."""
-    page = render(TIMELINE, mail_links=False, export=None)
+    values, and the export form (#1799), but email lines unlinked (Staff
+    cannot open Mail message pages)."""
+    page = render(TIMELINE, mail_links=False, export=EXPORT)
     assert 'id="table-filters"' in page and "data-table-region" in page
     assert page.count("<tr>") == 1 + len(TIMELINE.events)
     assert '<th scope="row">Invitation</th>' in page
     assert "/admin/mail/sent/" not in page
     assert "Open an email to see its delivery history." not in page
     assert "Campaign email can reach this Family" in page
-    assert "Export this timeline" not in page
+    assert "Export this timeline" in page
+    assert 'action="/admin/reports/families/x/exports/"' in page
     assert '<option value="reviews">Reviews</option>' in page
     # The Administrator's page links each email and explains the link.
     page = render(TIMELINE)
@@ -465,15 +475,13 @@ def test_staff_see_the_full_timeline_without_mail_links_or_export():
 
 
 def test_full_view_and_export_follow_the_role():
-    """Administrators and Staff see the full timeline; only Administrators
-    export it; any other role would get the reduced view."""
+    """Administrators and Staff see the full timeline and export it (#1799);
+    any other role would get the reduced view and no export."""
     identity = UUID(int=1)
     administrator = Principal(identity, frozenset({"administrator", "staff"}))
     staff = Principal(identity, frozenset({"staff"}))
     leader = Principal(identity, frozenset({"ministry_leader"}), frozenset({9}))
-    assert (_full(administrator), _exports(administrator)) == (True, True)
-    assert (_full(staff), _exports(staff)) == (True, False)
-    assert (_full(leader), _exports(leader)) == (False, False)
+    assert (_full(administrator), _full(staff), _full(leader)) == (True, True, False)
 
 
 def test_review_lines_join_the_timeline_after_same_instant_steps():

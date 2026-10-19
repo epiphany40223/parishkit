@@ -6,8 +6,9 @@ Administrator's page, the fixtures serve the pages its When heading and its
 filter bar fetch at the exact addresses they carry (the filter bar's in the
 sorted-query form the fixture server also matches), so the script's fetch is
 an ordinary page request and the swapped-in region is the real template
-output, plus Staff's view (the full timeline with review lines, no export
-and no Mail message links, #1774) and pages whose Open form is unavailable.
+output, plus Staff's view (the full timeline with review lines and the
+export, but no Mail message links, #1774, #1799) and pages whose Open form
+is unavailable.
 Every page is the Family hub (#1678) of a campaign with census, Financial and
 Ministry stewardship: the header strip, then the Timeline tab, the Family tab
 and one tab per Member (slice 2, from the census unit test's response, each
@@ -200,9 +201,9 @@ def components(context, admin):
                 "values": {"size": "all", "sort": "-when"},
             },
         ),
-        # Staff see the full timeline but may neither export it nor open
-        # Mail message pages (#1774).
-        STAFF: (REVIEWED, {"full": True, "export": None, "mail_links": False}),
+        # Staff see the full timeline and export it (#1774, #1799) but may
+        # not open Mail message pages.
+        STAFF: (REVIEWED, {"full": True, "mail_links": False}),
         UNAVAILABLE: (
             TIMELINE,
             {"full": True, "testing_codes": True, "family_test_url": ADMIN},

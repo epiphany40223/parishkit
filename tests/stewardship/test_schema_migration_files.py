@@ -393,6 +393,9 @@ FROZEN = {
     "0120_leader_emails.sql": (
         "982e9bc23b68c7a5e953122b8f6eda0310b66b5f62340d475314480166f0468a"
     ),
+    "0160_staff_timeline_export.sql": (
+        "b2d2f28b0138eaf123df25320751aa9e948b491167b7b94ea89b3c48188b97c4"
+    ),
 }
 
 

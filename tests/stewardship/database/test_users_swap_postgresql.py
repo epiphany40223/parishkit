@@ -940,6 +940,18 @@ CLOSURE_REPLACED_ONLY = {
             "stewardship_setup_secret_guard_v1",
         )
     },
+    # 0160 (#1799) replaces 0109's timeline capture and request guard and
+    # 0084's request authorization, which the reruns above bring back
+    # (these keys' later values win, so 0109's capture and guard entries
+    # above become 0160's); its bodies keep 0109's and 0084's rules.
+    **{
+        name: (("stewardship_reports", "0032_staff_timeline_export"), phrase)
+        for name, phrase in (
+            ("stewardship_timeline_export_capture_v1", "(#1799)"),
+            ("stewardship_export_request_guard_v1", "since #1799"),
+            ("stewardship_export_request_authorized_v1", "and Staff (#1799)"),
+        )
+    },
 }
 
 
