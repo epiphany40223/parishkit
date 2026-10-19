@@ -209,7 +209,7 @@ INCORRECT_BODIES = {
     ),
     Action.BACK_TO_REVIEW: (
         "The item goes back to To review. If ParishSoft's value is right, edit "
-        "the item to that value: the next refresh confirms it."
+        "the item to that value."
     ),
 }
 REOPEN_BODY = "The ignored item goes back to To review. Say why it is reopened."

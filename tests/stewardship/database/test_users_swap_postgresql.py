@@ -941,7 +941,7 @@ CLOSURE_REPLACED_ONLY = {
     # incorrectly's two fixes.
     "stewardship_response_derived_guard_v1": (
         ("stewardship_responses", "0014_entered_incorrectly_fixes"),
-        "AND (OLD.execution='resolved_external' OR NOT EXISTS (",
+        "AND (OLD.execution='resolved_external' OR (NOT EXISTS (",
     ),
     # 0109 (#1398) widens 0106's safe context with the export report and
     # format keys; the reruns above bring back 0106's, and 0109's discard

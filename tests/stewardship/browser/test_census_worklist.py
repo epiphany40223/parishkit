@@ -303,8 +303,9 @@ def test_entered_by_hand_again_on_an_entered_incorrectly_row(page, component_ori
 
 def test_back_to_review_on_an_entered_incorrectly_row(page, component_origin):
     """Back to review on an Entered incorrectly row needs no note; its dialog
-    says to edit the item to ParishSoft's value, and the redrawn row is To
-    review, in place."""
+    says to edit the item to ParishSoft's value (no confirmation is promised:
+    a refresh before the Edit makes it a Conflict), and the redrawn row is
+    To review, in place."""
     page.goto(component_origin + INCORRECT)
     page.evaluate(MARK)
     sent = posts(page, component_origin, RETURNED)
@@ -314,7 +315,7 @@ def test_back_to_review_on_an_entered_incorrectly_row(page, component_origin):
     has_text(
         dialog.locator("[data-confirm-body]"),
         "The item goes back to To review. If ParishSoft's value is right, edit "
-        "the item to that value: the next refresh confirms it.",
+        "the item to that value.",
     )
     record = dialog.get_by_role("button", name="Record")
     available(record)

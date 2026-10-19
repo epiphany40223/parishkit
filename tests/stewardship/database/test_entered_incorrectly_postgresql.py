@@ -169,6 +169,7 @@ def forge(proposal, actor, action, assignments=None):
         # No update of an entered change without its resolution.
         (True, None, "execution='pending'", "new final Family response"),
         (True, None, "decision='ignored'", "new final Family response"),
+        (True, None, "execution='cancelled'", "new final Family response"),
         # A resolution's update must be exactly its result.
         (True, "reopened", "decision='unreviewed'", "new final Family response"),
         (
@@ -269,3 +270,36 @@ def test_the_check_guard_compares_with_the_value_at_the_mark(
     with pytest.raises(DatabaseError, match="value recorded at its mark"):
         refresh(harness, member={"salutation": value})
     assert RefreshCheck.objects.count() == before
+
+
+def test_a_refresh_before_the_edit_makes_it_a_conflict(response_service):
+    """Back to review, then a refresh before the Edit: ParishSoft differs from
+    the stored value and the reviewer's, so the change is a Conflict, and an
+    Edit to ParishSoft's value accepts it against that value (the dialog
+    promises no confirmation for this order)."""
+    harness, staff, proposal = incorrect(response_service)
+    decide(harness, staff, [proposal], "back_to_review")
+    refresh(harness, member={"salutation": "Rev."})
+    conflict = fresh(proposal)
+    assert (conflict.execution, conflict.current_value) == ("conflict", "Rev.")
+    assert census_row(harness, conflict)["stage"] == Stage.CONFLICT
+    decide(harness, staff, [conflict], "edit", value="Rev.")
+    edited = fresh(proposal)
+    assert (edited.decision, edited.execution, edited.admin_value) == (
+        "approved",
+        "pending",
+        "Rev.",
+    )
+
+
+def test_the_notice_says_again_only_for_a_mark_made_again(response_service):
+    """The worklist words a mark "again" from the recorded resolution, so a
+    replayed first mark is not called one."""
+    from parishkit.stewardship.reports.census_worklist import _made_again
+
+    harness, staff, proposal = incorrect(response_service)
+    decide(harness, staff, [proposal], "entered_by_hand")
+    first, second = ProposalResolution.objects.filter(proposal=proposal).order_by(
+        "expected_version"
+    )
+    assert not _made_again(first) and _made_again(second)

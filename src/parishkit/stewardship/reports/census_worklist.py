@@ -46,6 +46,7 @@ from parishkit.stewardship.web.review_worklist import (
     StaleDecision,
     build,
 )
+from parishkit.stewardship.workflows.models import RefreshCheck
 
 from .census_changes import LABELS, REOPENED, STAGES
 
@@ -236,6 +237,19 @@ def _value(fields, field):
     return fields["value"][0]
 
 
+def _made_again(resolution):
+    """Whether ``resolution`` marked a change Entered by hand again (#1737).
+
+    Refresh checks exist only at a final change's versions, so a mark made
+    at a version some check was made at was made over Entered incorrectly.
+    Read from the recorded row, so a replayed first mark (its change is
+    entered by now) is not worded "again".
+    """
+    return RefreshCheck.objects.filter(
+        proposal_id=resolution.proposal_id, item_version=resolution.expected_version
+    ).exists()
+
+
 class CensusDecisions:
     """The census stream's worklist decisions, one campaign's (``DecisionService``).
 
@@ -356,11 +370,9 @@ class CensusDecisions:
         if len(recorded) > 1:
             return f"{len(recorded):,} changes {words}"
         (proposal,) = proposals.values()
-        if proposal.execution == "resolved_external" and decision.action in (
-            INCORRECT_WORDS
-        ):
-            # One of Entered incorrectly's fixes (#1737), worded as its icon
-            # was: ``proposal`` is the change as it was before.
+        if decision.action in INCORRECT_WORDS and _made_again(recorded[0]):
+            # Entered incorrectly's mark made again (#1737), worded as its
+            # icon was, also when the answer is a replay.
             words = INCORRECT_WORDS[decision.action].done
         if decision.action is Action.EDIT and not recorded[0].admin_value_set:
             return f"{notice_name(proposal)} {EDIT_MATCHED}"

@@ -573,7 +573,11 @@ also works: the next refresh confirms it.
 - **Back to review** reopens the change (a resolution row too): it is To
   review again, open to today's reconciliation, with its edited value kept
   and no decision in force. The reviewer then Edits it to ParishSoft's value,
-  which the next refresh Confirms.
+  which the next refresh Confirms. A refresh before the Edit finds ParishSoft
+  differing from both the stored value and the reviewer's, so the change is
+  a Conflict; an Edit then accepts ParishSoft's value and the change waits
+  To enter by hand (or Ready), since reconciliation looks again only when
+  ParishSoft's value changes, so the dialog promises no confirmation.
 
 Both are refused unless the change's latest refresh check, at its current
 version, says Entered incorrectly; the census guard admits a change leaving

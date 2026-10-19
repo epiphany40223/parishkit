@@ -412,7 +412,9 @@ BEGIN
                    -- (an active accepted base) away from approved undoes that,
                    -- putting it back to conflict; every other review keeps the
                    -- execution.
-                   AND (OLD.execution='resolved_external' OR NOT EXISTS (
+                   -- An entered change takes neither a review nor a Family's
+                   -- replacement (#1737).
+                   AND (OLD.execution='resolved_external' OR (NOT EXISTS (
                     SELECT 1 FROM public.stewardship_proposal_review v
                     WHERE v.proposal_id=OLD.id AND v.expected_version=OLD.version
                       AND NEW.version=OLD.version+1
@@ -464,7 +466,7 @@ BEGIN
                          AND (NEW.execution <> 'superseded' OR EXISTS (
                              SELECT 1 FROM public.stewardship_proposed_change successor
                              WHERE successor.id=NEW.superseded_by_id AND successor.submission_id=later.id))
-                   )))
+                   ))))
                 THEN
                     RAISE EXCEPTION 'Proposal replacement requires a new final Family response' USING ERRCODE='23514';
                 END IF;
@@ -628,7 +630,7 @@ BEGIN
             WHERE oid='public.stewardship_response_derived_guard_v1()'::regprocedure
               AND prosrc LIKE '%AND NOT (OLD.execution=''resolved_external'' AND current_user=''pk_stewardship_web''))%'
               AND prosrc LIKE '%THEN ''pending'' ELSE OLD.execution END)%'
-              AND prosrc LIKE '%AND (OLD.execution=''resolved_external'' OR NOT EXISTS (%'
+              AND prosrc LIKE '%AND (OLD.execution=''resolved_external'' OR (NOT EXISTS (%'
               AND prosrc LIKE '%''prefix'',''suffix'',''gender'',''marital_status'',''moved_household'',''deceased_status'',''death_date'')%'
               AND prosrc LIKE '%Proposal differs from its immutable response%'
               AND prosrc LIKE '%THEN OLD.execution=''conflict'' AND NEW.execution=''pending''%'
