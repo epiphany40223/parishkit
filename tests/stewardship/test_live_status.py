@@ -250,50 +250,6 @@ def test_script_backs_off_pauses_and_stops_at_terminal_states():
     assert "freshMarkup === lastMarkup" in source
 
 
-def cleanup(state, *, cancelling=False):
-    """Render the Testing cleanup page for one durable request state."""
-    from parishkit.stewardship.campaigns.domain import Percentage
-
-    status = SimpleNamespace(
-        state=state, request_id=REQUEST, checkpoint_sequence=1, processed_count=1
-    )
-    live = state in {"cleanup_queued", "cleanup_running", "cleanup_retry_wait"} or (
-        cancelling and state != "cancelled"
-    )
-    row = task("running" if live else "succeeded")
-    row.updated_at = datetime(2026, 9, 28, 2, tzinfo=UTC)
-    return render_to_string(
-        "stewardship/go-live-cleanup.html",
-        {
-            "campaign": SimpleNamespace(
-                pk=REQUEST, active_configuration=SimpleNamespace(name="Campaign")
-            ),
-            "status": status,
-            "completion": Percentage(1, 2),
-            "task": row,
-            "cancelling": cancelling,
-            "controls": {},
-            "live_pending": live,
-        },
-    )
-
-
-@pytest.mark.parametrize(
-    ("state", "live", "text"),
-    [
-        ("cleanup_running", True, "Testing cleanup is running"),
-        ("cleanup_complete", False, "Cleanup is complete"),
-        ("cleanup_failed", False, "Cleanup failed"),
-        ("cancelled", False, "Cleanup was cancelled"),
-    ],
-)
-def test_testing_cleanup_follows_until_complete_or_failed(state, live, text):
-    """Cleanup progress stops polling when complete, failed or cancelled."""
-    html = cleanup(state)
-    assert pending(html, "cleanup") is live
-    assert text in html
-
-
 def test_running_indicator_hides_the_ticking_elapsed_time_from_screen_readers():
     """Only the stable running message is announced, not a per-second clock."""
     html = render_to_string(

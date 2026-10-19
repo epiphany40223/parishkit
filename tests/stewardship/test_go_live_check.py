@@ -46,20 +46,38 @@ def test_bar_before_start_names_why_later_steps_wait():
         )
 
 
-@pytest.mark.parametrize(
-    "state, route",
-    [("cleanup_running", "go_live_cleanup"), ("cleanup_complete", "go_live_links")],
-)
-def test_bar_once_started_opens_the_step_in_progress(state, route):
-    """Check is completed and Prepare opens today's page for the step."""
+@pytest.mark.parametrize("state", ["cleanup_running", "cleanup_complete"])
+def test_bar_once_started_opens_the_step_in_progress(state):
+    """Check is completed and Prepare opens the Prepare step (#1585 slice 3)."""
     row = SimpleNamespace(pk=UUID(int=7), state=state)
     stage = Progress("started", row)
-    assert stage.in_progress_url == reverse(f"admin:{route}", args=[row.pk])
-    bar = go_live_check.bar("started", stage.in_progress_url)
+    assert stage.in_progress_url == reverse("admin:go_live_prepare")
+    bar = go_live_check.bar("started")
     assert bar.completed == 1 and bar.steps[0].state == "done"
     assert bar.steps[1].url == stage.in_progress_url
+    assert str(bar.steps[1].status) == "In progress"
+    assert bar.steps[2].url is None and bar.steps[2].state == "blocked"
     assert str(bar.steps[3].status) == "Not available yet: Confirm Production first."
     assert Progress("idle").in_progress_url is None
+
+
+def test_bar_on_prepare_opens_confirm_production_once_the_links_are_ready():
+    """Prepare is the current step; ready links complete it and open Confirm."""
+    waiting = go_live_check.bar("started", current="prepare")
+    assert waiting.current.key == "prepare" and waiting.current.number == 2
+    assert str(waiting.next.label) == "Confirm Production"
+    assert waiting.completed == 1 and waiting.step("confirm").url is None
+    ready = go_live_check.bar(
+        "started", current="prepare", prepared=True, confirm_url="/confirm/"
+    )
+    assert ready.completed == 2 and ready.step("prepare").state == "done"
+    assert ready.step("confirm").url == "/confirm/"
+    # Not started: Prepare is current but unavailable, with Check's reason.
+    idle = go_live_check.bar("idle", current="prepare")
+    assert idle.current.state == "blocked" and idle.current.url is None
+    assert str(idle.current.status) == (
+        "Not available yet: Start go-live on the Check step first."
+    )
 
 
 def test_retry_control_is_the_same_on_every_read_of_one_failure():

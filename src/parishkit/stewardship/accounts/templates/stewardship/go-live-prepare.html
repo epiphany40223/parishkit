@@ -1,0 +1,58 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
+{% comment %}
+  The Go live page's Prepare step (admin-portal spec, "Go live page"; #1585
+  slice 3; go_live_prepare_views.prepare). One frame, as Check's: the
+  heading, the About panel, the Go live step bar, the step's content and
+  one action row (the secondary Stop go-live first, then exactly one
+  primary, or none while there is nothing to do), with the reserved status
+  line under it. No Back: Check cannot be redone without stopping.
+
+  The content is three stage boxes (components/stage-boxes.html): Delete
+  Testing data, Refresh ParishSoft data and Prepare Family links, then one
+  detail line for the current box and one line saying what to do. Every
+  state draws the same boxes and both lines, so a change of state moves
+  nothing (no layout shift).
+
+  The step bar, content and row are one region (#go-live-prepare) that
+  updates itself (live-status-v1.js): closely while the work moves by
+  itself, every 30 seconds while it waits for the Administrator, so a
+  change made in another tab shows here; there is no Refresh link (#1586).
+  Its data-live-announce sentence is read out only when it changes. Once
+  go-live is no longer in progress here (stopped, or confirmed elsewhere)
+  the region settles and its primary, marked data-live-follow, opens the
+  page that now applies. A reload draws the same state from the server.
+
+  ``stage`` is go_live_prepare's Prepare: running, failed, again, ready,
+  closed, stopped, not_started or confirmed.
+{% endcomment %}
+{% block title %}{% translate "Go live" %}{% endblock %}
+{% block head %}{% if not admin_chrome.campaign_wizard %}<link rel="stylesheet" href="{% static 'stewardship/stepper-v1.css' %}">{% endif %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
+{% block content %}
+<h1>{% translate "Go live" %}</h1>
+{% aboutpage "go-live-prepare" %}<p>{% translate "This step runs by itself: the system deletes the Testing data, refreshes the ParishSoft data and then prepares a new link for each Family. The boxes show each part in order: not started, in progress, done or failed. This page updates by itself, so you can leave it and come back." %}</p>
+<p>{% translate "The new Family links stay inactive, and nothing reaches Families, until you confirm Production on the next step. If ParishSoft data changes after the links are prepared, the system prepares them again." %}</p>
+<p>{% translate "Retry tries a failed part again and changes no data. Refresh and prepare again requests a new ParishSoft refresh and prepares new links on it; it does not delete Testing data again. Stop go-live returns the campaign to a Testing draft; Testing data already deleted is not restored." %}</p>{% endaboutpage %}
+{% if stage.state == 'running' %}{% translate "Preparing to go live." as headline %}{% elif stage.state == 'failed' %}{% translate "A step failed after its automatic retries." as headline %}{% elif stage.state == 'again' %}{% translate "Going live needs a new ParishSoft refresh." as headline %}{% elif stage.state == 'ready' %}{% translate "Ready to confirm." as headline %}{% elif stage.state == 'closed' %}{% translate "The campaign has ended, so it cannot go live." as headline %}{% elif stage.state == 'stopped' and stage.stopped_by_other %}{% translate "Another Administrator stopped go-live." as headline %}{% elif stage.state == 'stopped' %}{% translate "Go-live was stopped." as headline %}{% elif stage.state == 'confirmed' %}{% translate "Production is confirmed." as headline %}{% else %}{% translate "Not available yet: Start go-live on the Check step first." as headline %}{% endif %}
+<div id="go-live-prepare" data-in-place-region data-live-status="go-live-prepare"{% if live_pending %} data-live-pending{% endif %}{% if live_interval %} data-live-interval="{{ live_interval }}"{% endif %} data-live-give-up="{{ live_limit }}" data-live-announce="{{ headline }}" data-go-live-prepare="{{ stage.state }}">
+{% include 'stewardship/go-live-steps.html' %}
+<section class="go-live-step" aria-labelledby="go-live-state">
+<h2 id="go-live-state">{{ headline }}</h2>
+{% if stage.started %}{% translate "Parts of going live" as stages_label %}{% include 'stewardship/components/stage-boxes.html' with stages=stage.boxes label=stages_label key_attribute="go-live-stage" %}
+<p class="go-live-detail" data-go-live-detail>{% if stage.state == 'running' %}{% if stage.reason == 'cleanup' %}{% blocktranslate trimmed with done=stage.done|number total=stage.total|number %}{{ done }} of {{ total }} Testing records deleted{% endblocktranslate %}{% elif stage.reason == 'refresh' %}{% translate "Waiting for the ParishSoft refresh to finish" %}{% elif stage.reason == 'preparing' %}{% blocktranslate trimmed with done=stage.done|number total=stage.total|number %}Preparing links: {{ done }} of {{ total }} Families{% endblocktranslate %}{% elif stage.reason == 'repreparing' %}{% blocktranslate trimmed with number=stage.preparation total=4 %}ParishSoft data changed, so new links are being prepared ({{ number }} of {{ total }}){% endblocktranslate %}{% else %}{% translate "Waiting to prepare the Family links" %}{% endif %}{% elif stage.state == 'failed' %}{% if stage.reason == 'cleanup' %}{% translate "Deleting the Testing data failed after its automatic retries." %}{% elif stage.reason == 'retry_cleanup' %}{% translate "Discarding earlier Family links failed after its automatic retries." %}{% else %}{% translate "Preparing the Family links failed after its automatic retries." %}{% endif %}{% elif stage.state == 'again' %}{% if stage.reason == 'hold_ended' %}{% translate "ParishSoft refreshes resumed while this waited." %}{% elif stage.reason == 'exhausted' %}{% translate "ParishSoft data keeps changing." %}{% elif stage.reason == 'refresh_failed' %}{% translate "The ParishSoft refresh did not finish." %}{% else %}{% translate "This go-live has no ParishSoft refresh of its own yet." %}{% endif %}{% elif stage.state == 'ready' %}{% translate "The Family links are prepared on current ParishSoft data. They stay inactive until you confirm Production." %}{% else %}{% translate "The Family links are not used." %}{% endif %}</p>
+<p data-go-live-note>{% if stage.state == 'running' %}{% translate "Nothing to do here; this page updates by itself. You can leave and come back." %}{% elif stage.state == 'failed' %}{% translate "Retry tries the same task again and changes no data." %}{% elif stage.state == 'again' %}{% translate "Refresh and prepare again requests a new ParishSoft refresh and prepares new Family links on it." %}{% elif stage.state == 'ready' %}{% translate "Continue to Confirm Production. Nothing reaches Families until you confirm." %}{% else %}{% translate "Stop go-live, then review the campaign dates on Check." %}{% endif %}</p>
+{% elif stage.state == 'confirmed' %}<p>{% translate "Production activation shows how going live is proceeding." %}</p>
+{% else %}<p>{% translate "Check shows whether the campaign is ready to go live." %}</p>{% endif %}
+</section>
+<div class="campaign-step-actions go-live-actions" data-go-live-actions>
+{% if stage.started %}<form method="post" action="{% url 'admin:go_live_prepare' %}" data-review-open="go-live-stop-review" data-review-redirects data-go-live-stop>{% csrf_token %}<input type="hidden" name="action" value="review_stop">{% button type="submit" variant="secondary" %}{% translate "Stop go-live" %}{% endbutton %}</form>{% endif %}
+{% if stage.state == 'failed' %}<form method="post" action="{% url 'admin:go_live_prepare' %}#go-live-prepare" data-in-place="go-live-retry" data-in-place-message="{% translate 'Retry started.' %}" data-go-live-primary>{% csrf_token %}<input type="hidden" name="action" value="retry"><input type="hidden" name="control" value="{{ stage.controls.retry }}">{% button type="submit" %}{% translate "Retry" %}{% endbutton %}</form>
+{% elif stage.state == 'again' %}<form method="post" action="{% url 'admin:go_live_prepare' %}#go-live-prepare" data-in-place="go-live-again" data-in-place-message="{% translate 'A new ParishSoft refresh was requested.' %}" data-go-live-primary>{% csrf_token %}<input type="hidden" name="action" value="again"><input type="hidden" name="control" value="{{ stage.controls.again }}">{% button type="submit" %}{% translate "Refresh and prepare again" %}{% endbutton %}</form>
+{% elif stage.state == 'ready' %}{% button href=stage.confirm_url data-go-live-primary %}{% translate "Continue to Confirm Production" %}{% endbutton %}
+{% elif stage.state == 'confirmed' %}{% url 'admin:production_progress' as progress_url %}{% button href=progress_url data-go-live-primary data-live-follow %}{% translate "Open Production activation" %}{% endbutton %}
+{% elif not stage.started %}{% url 'admin:go_live' as check_url %}{% button href=check_url data-go-live-primary data-live-follow %}{% translate "Open Check" %}{% endbutton %}{% endif %}
+</div>
+</div>
+{% include 'stewardship/components/review-outcome.html' with outcome_id="go-live-prepare-outcome" %}
+<p class="setup-sr-only" data-live-announcer="go-live-prepare" role="status"></p>
+{% comment %}Stop go-live's dialog (UX conventions, "Review dialog", a confirmation), outside the region so an update never removes it while it is open. Its Apply posts the stop here, which answers with Check, where the page goes (data-review-redraw="leave").{% endcomment %}{% url 'admin:go_live_prepare' as prepare_url %}{% translate "Stop going live?" as stop_title %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="go-live-stop-review" title=stop_title apply_url=prepare_url apply_action="stop" describedby="go-live-stop-summary" outcome_id="go-live-prepare-outcome" fallback="go-live-prepare-outcome" redraw_leave=True %}
+{% endblock %}

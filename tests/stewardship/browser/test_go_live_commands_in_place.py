@@ -1,8 +1,8 @@
 """The go-live command buttons act in place (#519 PR 7c-3).
 
-Testing cleanup's Retry and Cancel, Prepare Family links' Prepare, Cancel,
-Retry and Retry disposal, and Production activation's
-Retry failed mail preparation each post to their own page. The pages are
+The Go live page's Prepare step's Retry and Refresh and prepare again
+(#1585 slice 3) and Production activation's Retry failed mail preparation
+each post to their own page. The pages are
 served at their real addresses (go_live_components). A route answers each
 POST with the page after the command, as the view's redirect back would show
 it; Retry failed mail preparation instead goes through the fixture server's
@@ -17,16 +17,9 @@ announcement and that exactly one POST was sent.
 
 import pytest
 
-from .go_live_components import (
-    CLEANUP,
-    LINKS,
-    LINKS_DISPOSAL,
-    LINKS_NEW,
-    PRODUCTION,
-    PRODUCTION_RETRIED,
-)
+from .go_live_components import PREPARE, PRODUCTION, PRODUCTION_RETRIED
 from .test_in_place import MARK, MARKED, count_requests
-from .waits import focused, greyed, hidden, painted, visible
+from .waits import focused, hidden, painted, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -132,88 +125,62 @@ def announced(page, text):
 
 
 @pytest.mark.parametrize(
-    "name, fixture, message, shown",
-    [
-        (
-            "Retry failed cleanup from its checkpoints",
-            "/go-live-cleanup-fresh",
-            "Cleanup retry started.",
-            "Cleanup is complete.",
-        ),
-        (
-            "Cancel cleanup without restoring deleted data",
-            "/go-live-cleanup-cancelled",
-            "Cleanup cancel requested.",
-            "Cleanup was cancelled",
-        ),
-    ],
-)
-def test_cleanup_commands_are_in_place(
-    page, component_origin, name, fixture, message, shown
-):
-    """Testing cleanup's Retry and Cancel post once and swap the progress in;
-    the button is gone then, so focus falls back to Refresh cleanup progress
-    just below rather than up to the panel's heading."""
-    offset, posts = command(page, component_origin, CLEANUP, name, fixture)
-    announced(page, message)
-    stayed(page, offset)
-    visible(page.get_by_text(shown, exact=False))
-    hidden(page.get_by_role("button", name=name))
-    focused(page.get_by_role("link", name="Refresh cleanup progress"))
-    assert len(posts) == 1 and "control=synthetic-" in posts[0]
-
-
-@pytest.mark.parametrize(
     "address, name, fixture, message, shown",
     [
         (
-            LINKS_NEW,
-            "Prepare inactive Family links",
-            "/go-live-links-started",
-            "Link preparation started.",
-            "Inactive links are prepared.",
+            "/go-live-prepare-failed",
+            "Retry",
+            "/go-live-prepare-refresh",
+            "Retry started.",
+            "Waiting for the ParishSoft refresh to finish",
         ),
         (
-            LINKS,
-            "Cancel and discard these inactive links",
-            "/go-live-links-cancelled",
-            "Discarding these links.",
-            "These links were cancelled",
-        ),
-        (
-            LINKS,
-            "Retry failed preparation",
-            "/go-live-links-fresh",
-            "Preparation retry started.",
-            "Inactive links are prepared.",
-        ),
-        (
-            LINKS_DISPOSAL,
-            "Retry failed disposal",
-            "/go-live-links-disposed",
-            "Disposal retry started.",
-            "Discarding these links:",
+            "/go-live-prepare-again",
+            "Refresh and prepare again",
+            "/go-live-prepare-refresh",
+            "A new ParishSoft refresh was requested.",
+            "Waiting for the ParishSoft refresh to finish",
         ),
     ],
 )
-def test_link_commands_are_in_place(
+def test_prepare_commands_are_in_place(
     page, component_origin, address, name, fixture, message, shown
 ):
-    """Prepare Family links' Prepare and each preparation's Cancel, Retry and
-    Retry disposal post once and swap the history in; the button is gone
-    then, so focus goes to the history's first heading, the preparation the
-    command started or acted on."""
-    offset, posts = command(page, component_origin, address, name, fixture)
+    """Prepare's Retry and Refresh and prepare again post once to the step's
+    address, follow its redirect back there and swap the step in (#1585
+    slice 3): no reload, not sent to the top, the button gone (nothing to do
+    while the work runs) and the message read out.
+
+    The step is served at its real address: its first read is the state
+    with the button (``address``), every later read the state after the
+    command (``fixture``), and the POST goes to the fixture server, which
+    redirects back as the view does.
+    """
+    reads = []
+
+    def states(route):
+        """The first read is the state before; later ones the state after."""
+        if route.request.method != "GET":
+            route.continue_()
+            return
+        reads.append(route.request.url)
+        source = address if len(reads) == 1 else fixture
+        route.fulfill(response=route.fetch(url=component_origin + source, method="GET"))
+
+    page.set_viewport_size(VIEWPORT)
+    page.route(lambda url: url.split("#")[0] == component_origin + PREPARE, states)
+    page.goto(component_origin + PREPARE)
+    page.evaluate(MARK)
+    posts = count_requests(page, "POST", PREPARE)
+    button = page.get_by_role("button", name=name, exact=True)
+    offset = wheel_to(page, button)
+    button.click()
     announced(page, message)
     stayed(page, offset)
     visible(page.get_by_text(shown, exact=False))
-    if name == "Prepare inactive Family links":
-        # Prepare stays shown, unavailable now that links are being prepared.
-        greyed(page.get_by_role("button", name=name))
-    else:
-        hidden(page.get_by_role("button", name=name))
-    focused(page.locator("[id^='preparation-']").first)
-    assert len(posts) == 1 and "control=synthetic-" in posts[0]
+    hidden(page.get_by_role("button", name=name, exact=True))
+    assert posts == [component_origin + PREPARE]
+    assert page.url.split("#")[0] == component_origin + PREPARE
 
 
 def test_production_retry_follows_its_redirect_in_place(page, component_origin):

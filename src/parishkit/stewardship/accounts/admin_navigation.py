@@ -63,6 +63,11 @@ class Page:
     ``entry`` names the menu entry a page outside the menu only redirects to
     (a report root): it is linked only while the viewer's menu offers that
     entry, because the page checks the same capability (#457 L3).
+
+    ``step_of`` names the menu entry of the guided page this page is one
+    step of (the Go live page's Prepare step, #1585): it has that page's
+    name, marks that entry current as the page itself, and its trail does
+    not repeat the name.
     """
 
     section: str | None
@@ -70,6 +75,7 @@ class Page:
     parent: str | None = None
     linkable: bool = True
     entry: str | None = None
+    step_of: str | None = None
 
 
 @dataclass(frozen=True)
@@ -172,11 +178,11 @@ PAGES = {
     "reminder_workgroup": Page("campaign", _(REMINDER_WORKGROUP_NAME)),
     "go_live": Page("campaign", _("Go live")),
     "go_live_families": Page("campaign", _("Testing submissions"), "go_live"),
-    "go_live_cleanup": Page("campaign", _("Testing cleanup"), "go_live"),
-    "go_live_links": Page("campaign", _("Prepare Family links"), "go_live_cleanup"),
-    "production_confirmation": Page(
-        "campaign", _("Confirm Production"), "go_live_links"
-    ),
+    # The Go live page's Prepare step (#1585): the same page as Check, so
+    # it has its name and marks its menu entry, and its trail is the
+    # group, then Go live, never one crumb per step.
+    "go_live_prepare": Page("campaign", _("Go live"), step_of="go_live"),
+    "production_confirmation": Page("campaign", _("Confirm Production"), "go_live"),
     # A menu entry of its own, available once Production is confirmed.
     "production_progress": Page("campaign", _("Production activation")),
     # Cancel go-live (formerly Withdraw from Production) is offered only on
@@ -1036,10 +1042,12 @@ def build(match, items, placed=None):
     the view's optional ``Placement``.
     """
     name, chain, arguments = _resolved(match, placed)
+    # A step of a guided page marks that page's entry (``Page.step_of``).
+    step_of = PAGES[name].step_of if name in PAGES else None
     current_item = next(
         (
             entry_name
-            for entry_name in reversed(chain)
+            for entry_name in reversed(chain + [step_of] if step_of else chain)
             if any(entry[1] == entry_name for entry in items)
         ),
         None,
@@ -1056,7 +1064,7 @@ def build(match, items, placed=None):
                 # "page" for the page itself; "true" when the entry is only
                 # the nearest listed ancestor of the page being viewed.
                 "current": (
-                    ("page" if item.name == name else "true")
+                    ("page" if item.name in {name, step_of} else "true")
                     if item.name == current_item
                     else None
                 ),

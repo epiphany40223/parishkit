@@ -102,8 +102,7 @@ def test_staff_and_ministry_leaders_cannot_read_readiness(campaign_test, google,
     with web_login():
         assert browser.get(path).status_code == 403
         assert browser.get(reverse("admin:go_live_families")).status_code == 403
-        links = reverse("admin:go_live_links", args=[uuid4()])
-        assert browser.get(links).status_code == 403
+        assert browser.get(reverse("admin:go_live_prepare")).status_code == 403
         assert Client().get(path).status_code in {302, 403}
 
 

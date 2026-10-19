@@ -29,16 +29,9 @@
 <p>{% translate "Who gets mail is checked again when it is actually prepared, so a later ParishSoft change can alter the counts shown here. Responses and emails from Testing mode do not count once the campaign is live." %}</p>{% endaboutpage %}
 {% if state == 'started' %}{% translate "Go-live has started." as headline %}{% elif state == 'stopping' %}{% if stage.stop_kind == 'cleanup' %}{% translate "Stopping go-live. Testing data deletion is stopping at the next safe point." as headline %}{% else %}{% translate "Stopping go-live. The prepared Family links are being discarded." as headline %}{% endif %}{% elif state == 'stop_failed' %}{% translate "Stopping go-live did not finish: discarding the prepared Family links failed after its automatic retries." as headline %}{% elif state == 'closed' %}{% translate "The campaign has closed and cannot go live with these dates." as headline %}{% elif state == 'not_ready' %}{% blocktranslate trimmed count counter=problems|length asvar headline %}{{ counter }} thing to fix before going live{% plural %}{{ counter }} things to fix before going live{% endblocktranslate %}{% elif state == 'unchecked' %}{% translate "Everything else is ready." as headline %}{% else %}{% translate "Everything is ready." as headline %}{% endif %}
 <div id="go-live-check" class="go-live-check" data-in-place-region data-live-status="go-live-check" data-live-pending{% if live_interval %} data-live-interval="{{ live_interval }}"{% endif %} data-live-give-up="{{ live_limit }}" data-live-announce="{{ headline }}">
-<nav class="setup-stepper" aria-labelledby="go-live-steps-heading">
-<h2 id="go-live-steps-heading" class="setup-sr-only">{% translate "Go live progress" %}</h2>
-<div class="setup-stepper-summary">
-<p class="setup-stepper-current">{% blocktranslate trimmed with total=wizard.total %}Step 1 of {{ total }}:{% endblocktranslate %} <strong>{{ wizard.current.label }}</strong></p>
-<p class="setup-stepper-count">{% blocktranslate trimmed with done=wizard.completed total=wizard.total %}{{ done }} of {{ total }} steps completed{% endblocktranslate %}</p>
-<p class="setup-stepper-moves"><span>{% blocktranslate trimmed with label=wizard.next.label %}Next: {{ label }}{% endblocktranslate %}</span></p>
-</div>
-{% translate "Go live steps" as track_label %}{% translate "All go live steps" as list_summary %}{% include 'stewardship/stepper-steps.html' with track_label=track_label list_id='go-live-step-list' list_summary=list_summary %}
-</nav>
+{% include 'stewardship/go-live-steps.html' %}
 <section class="go-live-step" aria-labelledby="go-live-state">
+{% if stage.stopped_by_other and state != 'started' %}<p data-go-live-stopped-by-other>{% translate "Another Administrator stopped go-live." %}</p>{% endif %}
 {% if stage.stopped_at and state != 'started' %}<p data-go-live-stopped>{% translate "Go-live stopped at" %} <time data-local-instant datetime="{{ stage.stopped_at|instant }}">{{ stage.stopped_at|instant }}</time>.</p>{% endif %}
 <h2 id="go-live-state">{{ headline }}</h2>
 {% if state == 'started' %}<p>{% translate "Started" %} <time data-local-instant datetime="{{ stage.request.created_at|instant }}">{{ stage.request.created_at|instant }}</time>{% if stage.started_by %} {% blocktranslate trimmed with who=stage.started_by %}by {{ who }}{% endblocktranslate %}{% endif %}. {% translate "Campaign settings are locked while going live." %}</p>

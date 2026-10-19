@@ -7,28 +7,21 @@ from uuid import UUID
 from django.template.loader import render_to_string
 from django.urls import reverse
 
-from parishkit.stewardship.accounts import go_live_check
+from parishkit.stewardship.accounts import go_live_check, stages
 from parishkit.stewardship.accounts.go_live_check import Progress
+from parishkit.stewardship.accounts.go_live_prepare import STAGES, Prepare
 from parishkit.stewardship.campaigns.domain import Percentage
-from parishkit.stewardship.web.contracts import PageWindow
-from parishkit.stewardship.web.tables import window_table
 
-# The real addresses of Go live's Check step, Testing cleanup, Prepare
-# Family links and Production activation, where their forms post and their
-# Refresh links lead (#519 PR 7b-2). A test answers each in-place read with
-# a later version of the page (the "-fresh" paths below), so the refreshed
-# region differs.
+# The real addresses of Go live's Check and Prepare steps and Production
+# activation, where their forms post and their Refresh links lead (#519 PR
+# 7b-2). A test answers each in-place read with a later version of the page
+# (the "-fresh" paths below), so the refreshed region differs.
 GO_LIVE = reverse("admin:go_live")
-CLEANUP = reverse("admin:go_live_cleanup", args=[UUID(int=59)])
-LINKS = reverse("admin:go_live_links", args=[UUID(int=59)])
+PREPARE = reverse("admin:go_live_prepare")
 PRODUCTION = reverse("admin:production_progress")
-# Prepare Family links pages whose commands act in place (#519 PR 7c-3): one
-# with nothing prepared yet, so Prepare is offered, and one whose discarded
-# links failed to be disposed of, so Retry failed disposal is. The listed
-# commands of LINKS above (Cancel, Retry) and of CLEANUP (Retry, Cancel) are
-# answered from the "-cancelled" and "-fresh" pages below.
-LINKS_NEW = reverse("admin:go_live_links", args=[UUID(int=61)])
-LINKS_DISPOSAL = reverse("admin:go_live_links", args=[UUID(int=62)])
+# Where Prepare's Continue leads once the links are ready (today's Confirm
+# Production page, until #1585 slice 4).
+CONFIRM = reverse("admin:production_confirmation", args=[UUID(int=59), UUID(int=60)])
 # Where the fixture server's redirect after Retry failed mail preparation
 # lands: a stand-in for the page once the retry has run, at the same path.
 PRODUCTION_RETRIED = PRODUCTION + "?retried=1"
@@ -101,42 +94,13 @@ def components(context, admin):
         "origin_verified": True,
         "confirmation_token": "synthetic-confirmation",
     }
-    progress = {
-        "campaign": campaign,
-        "status": Value(
-            state="cleanup_failed", checkpoint_sequence=5, request_id=UUID(int=59)
-        ),
-        "completion": Percentage(5000, 12000),
-        "task": Value(state="failed", updated_at=context["server_now"]),
-        "controls": {"cancel": "synthetic-cancel", "retry": "synthetic-retry"},
-    }
-    links = {
-        "campaign": campaign,
-        "transition": Value(pk=UUID(int=59)),
-        # The listed preparation can still be cancelled, so Prepare says so.
-        "unavailable": "prepared",
-        "records": [
-            {
-                "preparation": Value(
-                    pk=UUID(int=60),
-                    created_at=context["server_now"],
-                    eligible_count=5000,
-                ),
-                "task": Value(state="failed", updated_at=context["server_now"]),
-                "current": True,
-                "completion": Percentage(2500, 5000),
-                "controls": {"retry": "synthetic-retry", "cancel": "synthetic-cancel"},
-            }
-        ],
-    }
-    links["table"] = window_table(PageWindow(1, 25), links["records"], False)
     confirmation = ready | {
         "state": Value(
             target_state="active",
             observed_at=context["server_now"],
             impact_revision=1234,
         ),
-        "transition": links["transition"],
+        "transition": Value(pk=UUID(int=59)),
         "confirmation_token": "synthetic-confirmation",
     }
     production = {
@@ -148,7 +112,7 @@ def components(context, admin):
             items_completed=5678,
             failure_code="recovery_required",
         ),
-        "task": progress["task"],
+        "task": Value(state="failed", updated_at=context["server_now"]),
         "complete": False,
         "control": "synthetic-retry",
         "outcomes": [
@@ -160,30 +124,9 @@ def components(context, admin):
             }
         ],
     }
-    # Later versions of each page, for its Refresh to bring in place: the
-    # cleanup finished, the links prepared, the checks passed, and the
-    # Production mail prepared once go-live can no longer be cancelled.
+    # A later version of Production activation, for its Refresh to bring in
+    # place: the mail prepared once go-live can no longer be cancelled.
     finished = Value(state="succeeded", updated_at=context["server_now"])
-    cleaned = progress | {
-        "status": Value(
-            state="cleanup_complete", checkpoint_sequence=9, request_id=UUID(int=59)
-        ),
-        "completion": Percentage(12000, 12000),
-        "task": finished,
-        "controls": {},
-    }
-    prepared = links | {
-        "records": [
-            links["records"][0]
-            | {
-                "task": finished,
-                "generation": Value(state="ready"),
-                "completion": Percentage(5000, 5000),
-                "controls": {},
-            }
-        ],
-    }
-    prepared["table"] = window_table(PageWindow(1, 25), prepared["records"], False)
     produced = production | {
         "demand": Value(
             phase="done", groups_completed=2000, items_completed=9000, failure_code=""
@@ -193,53 +136,12 @@ def components(context, admin):
         "control": None,
         "withdrawal_available": False,
     }
-    # The pages each in-place command's answer brings (#519 PR 7c-3): the
-    # cleanup cancelled, the listed links cancelled and discarded, a first
-    # preparation started, and failed disposal retried and finished.
-    cancelled = progress | {
-        "status": Value(
-            state="cancelled", checkpoint_sequence=5, request_id=UUID(int=59)
-        ),
-        "controls": {},
-    }
-    discarded = links | {
-        "records": [
-            links["records"][0]
-            | {"current": False, "cleanup": Value(state="succeeded"), "controls": {}}
-        ],
-    }
-    discarded["table"] = window_table(PageWindow(1, 25), discarded["records"], False)
-    fresh_start = links | {
-        "transition": Value(pk=UUID(int=61)),
-        "prepare": "synthetic-prepare",
-        "unavailable": None,
-        "records": [],
-    }
-    fresh_start["table"] = window_table(PageWindow(1, 25), [], False)
-    started = prepared | {"transition": fresh_start["transition"]}
-    disposal = links | {
-        "transition": Value(pk=UUID(int=62)),
-        "records": [
-            links["records"][0]
-            | {
-                "current": False,
-                "cleanup": Value(state="failed"),
-                "controls": {"retry_cleanup": "synthetic-retry-cleanup"},
-            }
-        ],
-    }
-    disposal["table"] = window_table(PageWindow(1, 25), disposal["records"], False)
-    disposed = discarded | {"transition": disposal["transition"]}
     pages = {
         path: (
             "text/html",
             render_to_string(template, context | {"admin_chrome": admin} | values),
         )
         for path, template, values in (
-            (CLEANUP, "stewardship/go-live-cleanup.html", progress),
-            ("/go-live-cleanup-fresh", "stewardship/go-live-cleanup.html", cleaned),
-            (LINKS, "stewardship/go-live-links.html", links),
-            ("/go-live-links-fresh", "stewardship/go-live-links.html", prepared),
             (
                 PRODUCTION,
                 "stewardship/production-progress.html",
@@ -256,22 +158,10 @@ def components(context, admin):
                 confirmation | {"confirmation_token": None, "origin_verified": None},
             ),
             (
-                "/go-live-cleanup-cancelled",
-                "stewardship/go-live-cleanup.html",
-                cancelled,
-            ),
-            ("/go-live-links-cancelled", "stewardship/go-live-links.html", discarded),
-            (LINKS_NEW, "stewardship/go-live-links.html", fresh_start),
-            ("/go-live-links-started", "stewardship/go-live-links.html", started),
-            (LINKS_DISPOSAL, "stewardship/go-live-links.html", disposal),
-            ("/go-live-links-disposed", "stewardship/go-live-links.html", disposed),
-            (
                 PRODUCTION_RETRIED,
                 "stewardship/production-progress.html",
                 produced,
             ),
-            ("/go-live-cleanup", "stewardship/go-live-cleanup.html", progress),
-            ("/go-live-links", "stewardship/go-live-links.html", links),
             (
                 "/production-confirmation",
                 "stewardship/production-confirmation.html",
@@ -314,7 +204,7 @@ def components(context, admin):
             ),
         )
     }
-    return pages | check_pages(context, admin, ready)
+    return pages | check_pages(context, admin, ready) | prepare_pages(context, admin)
 
 
 def check(context, state, stage=None, **values):
@@ -328,7 +218,7 @@ def check(context, state, stage=None, **values):
     return values | {
         "stage": stage,
         "state": state,
-        "wizard": go_live_check.bar(state, stage.in_progress_url),
+        "wizard": go_live_check.bar(state),
         "live_interval": None if state in {"started", "stopping"} else 2000,
         "live_limit": 3 * 60 * 60 * 1000,
         "warnings": {"backup_at": context["server_now"], "debug": False},
@@ -495,20 +385,29 @@ def actions():
     Every Check form posts to GO_LIVE, as the real view's do: the check and
     the retry redirect back there (so the in-place answer is the check
     passed), Review answers the dialog's review, and Apply redirects to the
-    step in progress, the Testing cleanup page, which the dialog then opens.
+    step in progress, Prepare, which the dialog then opens. Every Prepare
+    form posts to PREPARE: Retry and Refresh and prepare again redirect back
+    there, Stop go-live's Review answers its dialog, and its Apply redirects
+    to Check.
     """
     return {
         GO_LIVE: {
             "verify": (303, GO_LIVE, ""),
             "retry_stop": (303, GO_LIVE, ""),
             "review": (200, None, "/go-live-review"),
-            "confirm": (303, CLEANUP, ""),
-        }
+            "confirm": (303, PREPARE, ""),
+        },
+        PREPARE: {
+            "retry": (303, PREPARE, ""),
+            "again": (303, PREPARE, ""),
+            "review_stop": (200, None, "/go-live-prepare-review"),
+            "stop": (303, GO_LIVE, ""),
+        },
     }
 
 
 def action_answer(path, body, responses):
-    """The answer to a POST of ``body`` to ``path``, or None when not Check's.
+    """The answer to a POST of ``body`` to ``path``, or None when not Go live's.
 
     A review answer names the fixture page whose markup it carries.
     """
@@ -526,3 +425,113 @@ def posts():
     which a route cannot fulfil on every engine, landing on a stand-in for the
     page once the retry has run."""
     return {PRODUCTION: (303, PRODUCTION_RETRIED, "")}
+
+
+def prepare_stage(state, reason=None, index=0, current="active", **values):
+    """A Prepare step state (go_live_prepare.Prepare) with its stage boxes.
+
+    The boxes before ``index`` are done and the one at ``index`` is
+    ``current``, as ``stages.rows`` marks them. Every state of a go-live in
+    progress offers Stop go-live.
+    """
+    controls = {"stop": "synthetic-stop"} | values.pop("controls", {})
+    started = state not in {"stopped", "not_started", "confirmed"}
+    return Prepare(
+        state,
+        Value(pk=UUID(int=59)),
+        reason=reason,
+        boxes=tuple(stages.rows(STAGES, index, current)) if started else (),
+        controls=controls if started else {},
+        **values,
+    )
+
+
+def prepare_pages(context, admin):
+    """The Prepare step in each of its states (#1585 slice 3), by fixture path.
+
+    PREPARE, the real address every Prepare form posts to, shows Testing
+    data being deleted, so a Retry answered in place (from
+    /go-live-prepare-failed) receives it and the page keeps following it.
+    """
+    campaign = Value(
+        pk=UUID(int=58),
+        state="draft",
+        active_configuration=Value(
+            name="Annual census",
+            starts_at=context["server_now"],
+            ends_at=context["deadline"],
+        ),
+    )
+    states = (
+        (PREPARE, prepare_stage("running", "cleanup", done=4210, total=9800)),
+        ("/go-live-prepare-refresh", prepare_stage("running", "refresh", 1)),
+        (
+            "/go-live-prepare-links",
+            prepare_stage("running", "preparing", 2, done=812, total=1031),
+        ),
+        (
+            "/go-live-prepare-again-links",
+            prepare_stage("running", "repreparing", 2, preparation=2),
+        ),
+        (
+            "/go-live-prepare-failed",
+            prepare_stage(
+                "failed", "cleanup", 0, "failed", controls={"retry": "synthetic-retry"}
+            ),
+        ),
+        (
+            "/go-live-prepare-again",
+            prepare_stage(
+                "again", "hold_ended", 2, controls={"again": "synthetic-again"}
+            ),
+        ),
+        (
+            "/go-live-prepare-ready",
+            prepare_stage("ready", None, 3, confirm_url=CONFIRM),
+        ),
+        ("/go-live-prepare-closed", prepare_stage("closed", None, 1)),
+        ("/go-live-prepare-stopped", prepare_stage("stopped", stopped_by_other=True)),
+    )
+    pages = {}
+    for path, stage in states:
+        values = {
+            "stage": stage,
+            "campaign": campaign,
+            "wizard": go_live_check.bar(
+                "started" if stage.started else "idle",
+                current="prepare",
+                prepared=stage.state == "ready",
+                confirm_url=stage.confirm_url,
+            ),
+            "live_pending": stage.started,
+            # Quick, so a test sees an in-place update without waiting long.
+            "live_interval": 2000,
+            "live_limit": 3 * 60 * 60 * 1000,
+        }
+        pages[path] = (
+            "text/html",
+            render_to_string(
+                "stewardship/go-live-prepare.html",
+                context | {"admin_chrome": admin} | values,
+            ),
+        )
+    review = prepare_stage("ready", None, 3, stop_kind="links")
+    pages["/go-live-prepare-review"] = (
+        "text/html",
+        render_to_string(
+            "stewardship/go-live-stop-review.html",
+            {"stage": review, "refused": None, "check_url": GO_LIVE},
+        ),
+    )
+    pages["/go-live-prepare-review-stopped"] = (
+        "text/html",
+        render_to_string(
+            "stewardship/go-live-stop-review.html",
+            {
+                "stage": prepare_stage("stopped", stopped_by_other=True),
+                "refused": "stopped",
+                "check_url": GO_LIVE,
+            },
+        ),
+    )
+    return pages

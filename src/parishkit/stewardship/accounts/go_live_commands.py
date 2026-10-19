@@ -14,6 +14,7 @@ from django.db import connection, connections
 
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.cleanup_requests import begin_cleanup
+from parishkit.stewardship.campaigns.go_live_sequencing import begin_attempt
 from parishkit.stewardship.campaigns.production_models import (
     ProductionTransitionRequest,
 )
@@ -97,8 +98,18 @@ def _load(request, preview_token):
     )
 
 
-def start_cleanup(request, service, campaign_id, *, preview_token, acknowledge):
+def start_cleanup(
+    request, service, campaign_id, *, preview_token, acknowledge, attempt=False
+):
     """Recheck one exact preview; retry returns its original durable receipt.
+
+    With ``attempt`` (the Go live page's Start go-live, #1585 slice 3), the
+    same transaction also begins go-live attempt 1, queuing its full
+    ParishSoft refresh, so the scheduler's go-live producer prepares the
+    Family links by itself once cleanup and that refresh are done
+    (background-processing spec, "Go-live sequencing"). A replay begins
+    nothing more. The local seeding tool starts cleanup without one: it
+    prepares the links itself, with the links owner, and confirms at once.
 
     The preview's five-minute lifetime (``_load``) bounds how old its DNS
     and origin proof may be when the preview comes straight from
@@ -180,7 +191,7 @@ def start_cleanup(request, service, campaign_id, *, preview_token, acknowledge):
                 and live.mode == "testing"
             )
 
-        return begin_cleanup(
+        status = begin_cleanup(
             campaign_id=campaign_id,
             request_key=UUID(binding["key"]),
             actor_id=actor.identity,
@@ -190,3 +201,27 @@ def start_cleanup(request, service, campaign_id, *, preview_token, acknowledge):
             reauthenticated_at=reauthenticated_at,
             admit=admit,
         )
+        if attempt:
+            _begin_first_attempt(request, service, actor, status.request_id)
+        return status
+
+
+def _begin_first_attempt(request, service, actor, request_id):
+    """Begin go-live attempt 1 of ``request_id`` as ``actor``, in the caller's lock.
+
+    Its refresh is an ordinary manual refresh (``begin_attempt``), admitted
+    only while the same Administrator is still signed in, rechecked under
+    the refresh's own lock.
+    """
+
+    def authorize(scope):
+        """The Administrator who applied Start, rechecked under the lock."""
+        return principal(request, service, read_only=True).identity == actor.identity
+
+    begin_attempt(
+        ProductionTransitionRequest.objects.get(pk=request_id),
+        number=1,
+        actor_id=actor.identity,
+        correlation_id=current_correlation(),
+        authorize=authorize,
+    )

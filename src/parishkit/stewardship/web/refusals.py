@@ -497,6 +497,10 @@ STEP_REASONS = {
     "stop_failed": "stale_page",
     "closed": "stale_page",
     "origin_unverified": "configuration",
+    # Its Stop go-live (#1585 slice 3): go-live was stopped, or Production
+    # confirmed, since the step was drawn.
+    "stopped": "stale_page",
+    "confirmed": "stale_page",
 }
 
 

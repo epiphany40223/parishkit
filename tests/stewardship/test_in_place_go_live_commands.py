@@ -44,45 +44,17 @@ def in_place_form(text, key):
             None,
         ),
         (
-            "go-live-cleanup.html",
-            "cleanup-retry",
-            "{% url 'admin:go_live_cleanup' status.request_id %}#cleanup-progress",
-            "Cleanup retry started.",
-            "refresh",
-        ),
-        (
-            "go-live-cleanup.html",
-            "cleanup-cancel",
-            "{% url 'admin:go_live_cleanup' status.request_id %}#cleanup-progress",
-            "Cleanup cancel requested.",
-            "refresh",
-        ),
-        (
-            "go-live-links.html",
-            "links-prepare",
-            "{% url 'admin:go_live_links' transition.pk %}#{{ table.anchor }}",
-            "Link preparation started.",
+            "go-live-prepare.html",
+            "go-live-retry",
+            "{% url 'admin:go_live_prepare' %}#go-live-prepare",
+            "Retry started.",
             None,
         ),
         (
-            "go-live-links.html",
-            "links-cancel-{{ record.preparation.pk }}",
-            "{% url 'admin:go_live_links' transition.pk %}#{{ table.anchor }}",
-            "Discarding these links.",
-            None,
-        ),
-        (
-            "go-live-links.html",
-            "links-retry-{{ record.preparation.pk }}",
-            "{% url 'admin:go_live_links' transition.pk %}#{{ table.anchor }}",
-            "Preparation retry started.",
-            None,
-        ),
-        (
-            "go-live-links.html",
-            "links-retry-cleanup-{{ record.preparation.pk }}",
-            "{% url 'admin:go_live_links' transition.pk %}#{{ table.anchor }}",
-            "Disposal retry started.",
+            "go-live-prepare.html",
+            "go-live-again",
+            "{% url 'admin:go_live_prepare' %}#go-live-prepare",
+            "A new ParishSoft refresh was requested.",
             None,
         ),
         (
@@ -113,11 +85,11 @@ def test_go_live_commands_post_in_place(name, key, action, message, fallback):
 
 def test_every_go_live_post_form_is_in_place_or_opens_the_dialog():
     """No same-page command on these pages reloads any more. Start go-live
-    opens its review dialog (#1585), whose Apply opens the step in progress."""
+    and Stop go-live open their review dialogs (#1585), whose Apply opens
+    the page that follows."""
     for name in (
         "go-live-check.html",
-        "go-live-cleanup.html",
-        "go-live-links.html",
+        "go-live-prepare.html",
         "production-progress.html",
     ):
         text = (TEMPLATES / name).read_text()

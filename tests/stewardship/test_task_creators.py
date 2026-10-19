@@ -77,9 +77,10 @@ SITES = {
         {"production_tokens", "production_token_cleanup"},
         WEB,
         # The Go live page's Check step retries a stopped go-live's failed
-        # disposal through it (Retry stopping go-live, #1585).
+        # disposal through it (Retry stopping go-live, #1585); its Prepare
+        # step retries and discards the links through it (#1585 slice 3).
         {
-            "accounts/activation_views.py",
+            "accounts/go_live_prepare_views.py",
             "accounts/go_live_views.py",
             "local/seed_web.py",
         },

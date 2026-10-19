@@ -23,9 +23,11 @@ from parishkit.stewardship.campaigns.credential_models import (
     FamilyCampaign,
     RehearsalCredential,
 )
+from parishkit.stewardship.campaigns.go_live_sequencing import attempts
 from parishkit.stewardship.campaigns.lifecycle import CampaignWorkKind
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.campaigns.production_models import (
+    ProductionCleanupCancellation,
     ProductionCleanupManifest,
     ProductionTransitionRequest,
 )
@@ -35,8 +37,8 @@ from parishkit.stewardship.readiness_delivery import DeliveryOutcome
 from parishkit.stewardship.source.setup_completion import complete_setup
 
 from .credential_builders import keys
-from .preview_builders import assert_out_of_date, previews_aged
-from .test_admin_navigation_postgresql import GO_LIVE, flow_steps
+from .preview_builders import previews_aged
+from .test_admin_navigation_postgresql import flow_steps
 from .test_bootstrap_postgresql import bootstrapped  # noqa: F401
 from .test_campaign_mail_postgresql import deliver
 from .test_configuration_service_postgresql import config_role  # noqa: F401
@@ -303,34 +305,35 @@ def test_http_acknowledgement_progress_and_cancel_are_private_and_passive(
         reopened = post(browser, path, {"action": "review"})
         assert reopened.status_code == 303 and reopened["Location"] == location
         assert ProductionTransitionRequest.objects.count() == 1
+        # Apply opened the Prepare step, and began attempt 1 in the same
+        # transaction, so the go-live producer has work (#1585 slice 3).
+        assert location == reverse("admin:go_live_prepare")
+        (transition,) = ProductionTransitionRequest.objects.all()
+        assert len(attempts(transition)) == 1
         activity = PortalSession.objects.get(
             pk=request.portal_session.pk
         ).last_activity_at
         progress = browser.get(location)
         assert progress.status_code == 200, progress.content
         assert progress["Cache-Control"] == "no-store"
-        assert b"<h1>Testing cleanup</h1>" in progress.content
-        assert flow_steps(progress.content) == (GO_LIVE, "Testing cleanup")
+        assert b"<h1>Go live</h1>" in progress.content
+        assert progress.context["stage"].state == "running"
+        assert b"Step 2 of 4:" in progress.content
+        assert flow_steps(progress.content) is None
         assert (
             PortalSession.objects.get(pk=request.portal_session.pk).last_activity_at
             == activity
         )
         assert Client().get(location).status_code in {302, 403}
-        controls = progress.context["controls"]
-        assert set(controls) == {"cancel"}
-        assert (
-            browser.post(location, {"control": controls["cancel"]}).status_code == 403
-        )
-        with previews_aged(monkeypatch):
-            assert_out_of_date(
-                post(browser, location, {"control": controls["cancel"]}), location
-            )
-        assert browser.get(location).context["status"].state != "cancelled"
-        assert (
-            post(browser, location, {"control": controls["cancel"]}).status_code == 302
-        )
-        finished = browser.get(location)
-        assert finished.context["status"].state == "cancelled"
+        controls = progress.context["stage"].controls
+        assert set(controls) == {"stop"}
+        stop = {"action": "stop", "control": controls["stop"]}
+        assert browser.post(location, stop).status_code == 403
+        assert browser.get(location).context["stage"].state == "running"
+        stopped = post(browser, location, stop)
+        assert stopped.status_code == 303 and stopped["Location"] == path
+        assert ProductionCleanupCancellation.objects.filter(request=transition).exists()
+        assert browser.get(location).context["stage"].state == "stopped"
 
 
 def test_apply_is_refused_when_the_web_address_or_readiness_fails_after_review(

@@ -62,12 +62,9 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 def prepare(ready_links):
     """Finish actual worker preparation for final-owner scenarios."""
-    browser, path, ring, login = ready_links
+    _, links, ring, login = ready_links
     with web_login():
-        page = browser.get(path)
-        assert (
-            post(browser, path, {"control": page.context["prepare"]}).status_code == 302
-        )
+        links.act(links.page()["prepare"])
     preparation = ProductionTokenPreparation.objects.select_related(
         "transition__campaign"
     ).get()
@@ -113,12 +110,9 @@ def test_current_post_cleanup_readiness_is_bounded_and_detects_impact_changes(
     ready_links,
 ):
     """Enumeration is a preview operation, not part of final readiness rechecks."""
-    browser, path, ring, login = ready_links
+    _, links, ring, login = ready_links
     with web_login():
-        page = browser.get(path)
-        assert (
-            post(browser, path, {"control": page.context["prepare"]}).status_code == 302
-        )
+        links.act(links.page()["prepare"])
     preparation = ProductionTokenPreparation.objects.select_related("transition").get()
     arguments = (
         login,
