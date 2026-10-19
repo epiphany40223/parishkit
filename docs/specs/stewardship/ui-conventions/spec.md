@@ -3667,8 +3667,10 @@ answer to the reader's own last decision
 (a review worklist's notice) sits under the filters, just above the table,
 on one reserved line (two on a phone, where it can wrap) that is kept
 while empty, so a notice appearing never
-moves the table (no layout shift), and nothing else reserves room above the
-filters (R38). On a worklist, a Family's or Member's name opens the
+moves the table (no layout shift); a notice longer than its lines (a long
+item name, or a computer's wider fonts) is cut short with an ellipsis, as
+the review dialog's status line is, and screen readers still hear it
+whole. Nothing else reserves room above the filters (R38). On a worklist, a Family's or Member's name opens the
 Family hub (the Family's Timeline page) for the viewers who may open it,
 through the shared Family-name link, and is plain text for the others,
 such as Ministry leaders; the cell naming the item (Ministry requests'
