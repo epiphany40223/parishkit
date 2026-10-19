@@ -1301,7 +1301,7 @@ without the age clause, under the
 The command-session rule holds in every one of them, restore decisions and
 staged setup credentials included. The secret request guards keep their
 own tie to the automation session (see [secret replacement](#secret-replacement)).
-Frozen migration 0147 (`stewardship_accounts.0028_sign_in_leftovers`,
+Frozen migration 0123 (`stewardship_accounts.0028_sign_in_leftovers`,
 [#1550](https://github.com/epiphany40223/parishkit/issues/1550)) dropped
 `stewardship_automation_fresh_principal_v1(principal, instant)`, which no
 guard called after 0114, with its grants. It also made an Admin session's

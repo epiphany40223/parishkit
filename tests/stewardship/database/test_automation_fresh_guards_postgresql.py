@@ -15,7 +15,7 @@ staged-to-testing step, on disposable roles; there an instant that a
 full-scope automation session holds still needs one such session live
 (``stewardship_automation_instant_ended_v1``, new in 0114). 0013's own DO block is run
 against 0013's bodies, put back in a rolled-back transaction, and refuses
-each pre-0013 guard. ``sign_in_instant`` is covered directly. 0147 (#1550)
+each pre-0013 guard. ``sign_in_instant`` is covered directly. 0123 (#1550)
 dropped 0013's ``stewardship_automation_fresh_principal_v1``, which no guard
 called after 0114, so only that DO-block test makes it again, rolled back.
 """
@@ -498,7 +498,7 @@ def test_sign_in_instant_admits_a_live_full_session_only(auth_service, google):
 def test_the_frozen_files_check_refuses_an_unchanged_guard(auth_service):
     """The DO block passes on 0013's bodies, raises on each pre-0013 one.
 
-    0114 (#1547) replaced every body 0013 installs and 0147 (#1550) dropped
+    0114 (#1547) replaced every body 0013 installs and 0123 (#1550) dropped
     the function it created, so each rolled-back transaction first puts
     0013's own function and bodies back.
     """

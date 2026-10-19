@@ -1,4 +1,4 @@
--- Frozen forward migration file 0147 (the repository-wide file sequence):
+-- Frozen forward migration file 0123 (the repository-wide file sequence):
 -- schema left unused once the Admin portal stopped asking for a recent
 -- sign-in (#1547, migration 0114) is removed (#1550). This file is installed
 -- by the Django migration that names it in FROZEN_SQL and must never change
@@ -38,7 +38,7 @@ SET LOCAL search_path = public;
 -- The guard's grants, rights and configuration before the replacement,
 -- compared in the DO block (a transaction-local setting: the migration login
 -- has no TEMP privilege).
-SELECT set_config('stewardship.migration_0147_attributes', (
+SELECT set_config('stewardship.migration_0123_attributes', (
     SELECT string_agg(coalesce(p.proacl::text,'default')||'|'||p.prosecdef::text||'|'||coalesce(array_to_string(p.proconfig,','),'')||'|'||p.prolang::text, ';')
     FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
     WHERE n.nspname='public' AND p.proname='stewardship_portal_session_mutable_v1'), true);
@@ -77,11 +77,11 @@ DO $check$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_automation_fresh_principal_v1') THEN
-        RAISE EXCEPTION 'Migration 0147: stewardship_automation_fresh_principal_v1 is still installed';
+        RAISE EXCEPTION 'Migration 0123: stewardship_automation_fresh_principal_v1 is still installed';
     END IF;
     IF EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.prosrc LIKE '%stewardship_automation_fresh_principal%') THEN
-        RAISE EXCEPTION 'Migration 0147: a function still calls stewardship_automation_fresh_principal_v1';
+        RAISE EXCEPTION 'Migration 0123: a function still calls stewardship_automation_fresh_principal_v1';
     END IF;
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_portal_session_mutable_v1'
@@ -92,14 +92,14 @@ BEGIN
           AND p.prosrc LIKE '%Session activity cannot be recorded in the future%'
           AND p.prosrc LIKE '%Every update must advance the record version%'
           AND p.prosrc NOT LIKE '%may only advance%')<>1 THEN
-        RAISE EXCEPTION 'Migration 0147: stewardship_portal_session_mutable_v1 is not installed as declared';
+        RAISE EXCEPTION 'Migration 0123: stewardship_portal_session_mutable_v1 is not installed as declared';
     END IF;
     -- Rights, search_path, language and grants are as before.
-    IF current_setting('stewardship.migration_0147_attributes', true) IS DISTINCT FROM (
+    IF current_setting('stewardship.migration_0123_attributes', true) IS DISTINCT FROM (
            SELECT string_agg(coalesce(p.proacl::text,'default')||'|'||p.prosecdef::text||'|'||coalesce(array_to_string(p.proconfig,','),'')||'|'||p.prolang::text, ';')
            FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
            WHERE n.nspname='public' AND p.proname='stewardship_portal_session_mutable_v1') THEN
-        RAISE EXCEPTION 'Migration 0147: the portal session guard changed its rights, configuration or grants';
+        RAISE EXCEPTION 'Migration 0123: the portal session guard changed its rights, configuration or grants';
     END IF;
     -- The guard still runs before every update of an Admin session.
     IF NOT EXISTS (SELECT 1 FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid
@@ -107,7 +107,7 @@ BEGIN
         WHERE n.nspname='public' AND p.proname='stewardship_portal_session_mutable_v1'
           AND t.tgrelid='public.stewardship_portal_session'::regclass
           AND t.tgenabled<>'D' AND NOT t.tgisinternal) THEN
-        RAISE EXCEPTION 'Migration 0147: the portal session guard no longer has its trigger';
+        RAISE EXCEPTION 'Migration 0123: the portal session guard no longer has its trigger';
     END IF;
     -- What 0114 kept in place of the dropped check is still there: the
     -- ended-automation check (definer rights, no PUBLIC EXECUTE) and the
@@ -117,7 +117,7 @@ BEGIN
           AND p.prosecdef AND NOT has_function_privilege('public', p.oid, 'EXECUTE'))
        OR NOT EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_automation_fresh_v1') THEN
-        RAISE EXCEPTION 'Migration 0147: an automation session check 0114 kept is missing';
+        RAISE EXCEPTION 'Migration 0123: an automation session check 0114 kept is missing';
     END IF;
 END
 $check$;

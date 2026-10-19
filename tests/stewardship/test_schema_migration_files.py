@@ -399,8 +399,8 @@ FROZEN = {
     "0122_automatic_report_views.sql": (
         "b686ede20806893936ee416bd3829cc65adfa6e6857f4b7ad02233177b4744ae"
     ),
-    "0147_sign_in_leftovers.sql": (
-        "5e69c62cd3056ca95c30c273d934cb098bbbf0ebcb674f5d9eb9ba96575beb0f"
+    "0123_sign_in_leftovers.sql": (
+        "8894706e2b79c2e72ecfba500995bfc6c4c281363feb5b235a084678bac22d8c"
     ),
 }
 

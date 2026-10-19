@@ -1,8 +1,8 @@
 """Forward migration: schema left unused by #1547's sign-in change goes (#1550).
 
-Its SQL is the frozen file ``schema/migrations/0147_sign_in_leftovers.sql``
-(prefix 0147, provisional until the repository-wide file sequence assigns
-it), read whole and never parsed. It drops
+Its SQL is the frozen file ``schema/migrations/0123_sign_in_leftovers.sql``
+(prefix 0123 in the repository-wide file sequence), read whole and never
+parsed. It drops
 ``stewardship_automation_fresh_principal_v1``, which no guard calls since
 0114, with its grants, and makes an Admin session's verified sign-in instant
 immutable, now that a new sign-in always issues a new session. It changes no
@@ -21,7 +21,7 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0147_sign_in_leftovers.sql"
+    / "0123_sign_in_leftovers.sql"
 )
 
 

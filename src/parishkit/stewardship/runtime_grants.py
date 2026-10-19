@@ -316,7 +316,7 @@ DAILY_RESUME_FUNCTION = "stewardship_family_daily_resume_v1()"
 # web's intake guard and each key-replacement installer's staged-to-testing
 # guard call it, so ending an automation session still stops its secret
 # requests, and the installers read no automation table. It replaced
-# ADM-11 PR 5's live-session check, which 0147 dropped (#1550).
+# ADM-11 PR 5's live-session check, which 0123 dropped (#1550).
 AUTOMATION_ENDED_FUNCTION = (
     "stewardship_automation_instant_ended_v1(uuid, timestamp with time zone)"
 )

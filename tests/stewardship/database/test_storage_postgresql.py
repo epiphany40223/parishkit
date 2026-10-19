@@ -1039,7 +1039,7 @@ def test_session_authentication_never_moves_forward_either(portal_session):
     """The verified instant does not advance in place, even to a past instant.
 
     The retired step-up sign-in (#1547) was the only thing that moved it, so
-    0147 made it immutable (#1550): the service check refuses a later instant
+    0123 made it immutable (#1550): the service check refuses a later instant
     on a live row, and the SQL guard on a live or a revoked one.
     """
     later = portal_session.authenticated_at + timedelta(minutes=10)

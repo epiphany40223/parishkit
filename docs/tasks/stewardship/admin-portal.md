@@ -335,7 +335,7 @@ requires a command session's live full-scope automation session
 request whose full-scope automation session ended
 (`stewardship_automation_instant_ended_v1`, migration 0114);
 `stewardship_automation_fresh_principal_v1`, unused after 0114, was
-dropped by frozen migration 0147
+dropped by frozen migration 0123
 ([#1550](https://github.com/epiphany40223/parishkit/issues/1550)), which also
 made an Admin session's sign-in instant immutable.
 

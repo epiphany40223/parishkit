@@ -421,7 +421,7 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # 0122 (#1620) creates nothing: it replaces the safe context in place again,
 # after 0109, with the automatic view key, so ``CLOSURE_REPLACED_ONLY`` now
 # names 0122's replacement, whose body keeps 0109's keys.
-# 0147 (#1550) creates nothing: it drops 0013's fresh-principal check (before
+# 0123 (#1550) creates nothing: it drops 0013's fresh-principal check (before
 # the closure, so no closure file makes it again; IF EXISTS lets the file run
 # again) and replaces the baseline's portal session guard in place, which no
 # closure file installs again, so nothing is registered.
