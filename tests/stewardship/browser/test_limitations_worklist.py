@@ -100,7 +100,7 @@ def test_cannot_contribute_is_listed_but_decided_on_pledges(page, component_orig
     row = page.locator("#table tbody tr").filter(has_text="Dalton")
     assert "Cannot contribute financially" in row.inner_text()
     assert "To review" in row.inner_text()
-    link = row.get_by_role("link", name="Decided in Pledges")
+    link = row.get_by_role("link", name="Open the answer of Dalton in Pledges")
     assert link.get_attribute("href") == PLEDGES_LINK
     assert row.locator("input[type=checkbox]").count() == 0
     assert row.locator("[data-row-action]").count() == 0

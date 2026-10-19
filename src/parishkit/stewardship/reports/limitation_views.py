@@ -74,6 +74,7 @@ from .limitations import (
     limitations_pdf,
     limitations_report,
     limitations_xlsx,
+    row_count,
 )
 from .limitations import at_stage as file_at_stage
 from .read_admission import admit_report_read
@@ -299,11 +300,7 @@ def _respond(request, campaign_id, *, export, render):
             result = limitations_report(campaign_id, query, principal)
             if current_snapshot() == before:
                 snapshot = before
-            count = (
-                len(result["members"])
-                + len(result["families"])
-                + len(result.get("contributions", []))
-            )
+            count = row_count(result)
             return iter((render(result, query, extra),))
 
         response = campaign_response(

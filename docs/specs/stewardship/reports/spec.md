@@ -2945,14 +2945,21 @@ on its $0 pledge) is listed here too, as a Family row whose answer reads
 2026-10-19), so every limitation a Family gave is on one page. It is not a
 Limitations item: it is decided once, on [Pledges](#pledges), so its Stage
 is its Pledges stage, its Last decision is Pledges' last decision, it has
-no box and no action icons, and its Actions cell is a "Decided in Pledges"
-link that opens Pledges at that stage. It is listed for viewers who may
+no box and no action icons, and its Actions cell is an "Open in Pledges"
+link that opens Pledges at that stage, named for screen readers by its row
+("Open the answer of <Family> in Pledges"). It is listed for viewers who may
 open Pledges (Administrators and Staff) while the campaign has the
 financial module, only while Show is everything (the Show choices name the
 two Limitations answers only) and matching the search as Pledges' search
 does. Its stage counts in the Stage choice whose value it shares (To
-review, Ignored); a pledge To enter by hand or Entered by hand is listed
-under every stage only.
+review, Ignored); a pledge To enter by hand or Entered by hand is listed,
+and counted, under Every stage only. A Pledges read that cannot be shaped
+leaves these rows out with a logged warning rather than failing the page,
+and `pk-admin report limitations`, which prints only the summary, does not
+read them. The PDF's frame counts each kind on its own (Members, Families
+that cannot attend Mass, Families that cannot contribute financially), and
+the XLSX's Report information counts the Families table's rows as Family
+rows, since one Family can be listed for both.
 Talents that older responses recorded are never shown: no talent column,
 count or filter appears on the page or in the downloads, and no Member is
 listed only for such talents.
@@ -3006,9 +3013,9 @@ Limitation, Latest response and Stage for Families, whose rows include the
 Cannot contribute financially answers the table lists, each with its
 Pledges stage. Limitation names the Family's limitation in the page's
 words, "Cannot attend Mass or prayer services" or "Cannot contribute
-financially", so a reader of the Families sheet sees what each row is about as
-the Members sheet's Cannot participate in ministries column says it (R39
-finding 11). ParishSoft status splits out the page's
+financially", so a reader of the Families sheet sees what each row is about
+(R39 finding 11); the Members sheet says it with its Cannot participate in
+ministries column, which reads Yes on every row. ParishSoft status splits out the page's
 [badge](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
 for a Family the data no longer has, whose Family cell is then blank
 (#1216); the report reads no activity, so it marks no inactive Family. Every format carries these columns and rows

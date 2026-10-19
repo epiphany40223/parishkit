@@ -235,7 +235,7 @@ def test_xlsx_report_information_states_what_the_pdf_frame_states():
         ("Downloaded at", datetime(2026, 10, 5, 9, 0)),
         ("Display time zone", "America/Chicago"),
         ("Members in this file", "1"),
-        ("Families in this file", "1"),
+        ("Family rows in this file", "1"),
         ("Privacy", PRIVACY),
     ]
     assert sheet["B4"].is_date
@@ -435,3 +435,105 @@ def test_pdf_with_no_families_still_prints_both_tables(monkeypatch):
     assert list(families.headings) == FAMILY_HEADINGS
     assert [caption for caption, _ in captions] == [MEMBER_CAPTION, FAMILY_CAPTION]
     assert frame.details[0].endswith("0 Families cannot attend Mass.")
+
+
+def with_contribution(stage="to_enter_by_hand"):
+    """The shaped report plus one Family that cannot contribute financially
+    (R39 finding 11), at Pledges ``stage``, as ``cannot_contribute`` reads it."""
+    from parishkit.stewardship.pipeline import Placement, Stage
+
+    shaped = shape_result(result())
+    shaped["contributions"] = [
+        {
+            "kind": "cannot_give",
+            "member_key": "",
+            "family_name": "Example",
+            "family_duid": 10,
+            "submitted_at": datetime.fromisoformat(WHEN),
+            "pledge_item": str(UUID(int=5)),
+            "version": 1,
+            "placement": Placement(Stage(stage)),
+            "in_force": True,
+            "decided_by": "",
+            "decided_at": None,
+            "note": "",
+            "pledges_url": f"/admin/reports/financial/pledges/?stage={stage}",
+        }
+    ]
+    return shaped
+
+
+def test_cannot_contribute_rows_follow_the_families_in_every_file():
+    """CSV and XLSX list the Cannot contribute row after the Families'
+    answers, with its Limitation and Pledges stage; the files count Family
+    rows, and the PDF frame counts each kind on its own."""
+    from parishkit.stewardship.reports.limitations import row_count, summary_line
+
+    shaped = with_contribution()
+    rows = list(csv.reader(io.StringIO(limitations_csv(shaped, UTC).decode())))
+    assert rows[3] == FAMILY_HEADINGS
+    assert [row[3] for row in rows[4:]] == [
+        "Cannot attend Mass or prayer services",
+        "Cannot contribute financially",
+    ]
+    assert rows[5][-1] == "To enter by hand"
+    book = workbook(shaped)
+    assert [cell.value for cell in book["Families"]["D"]][1:] == [
+        "Cannot attend Mass or prayer services",
+        "Cannot contribute financially",
+    ]
+    details = dict(book["Report information"].iter_rows(values_only=True))
+    assert details["Family rows in this file"] == "2"
+    assert row_count(shaped) == 3
+    assert summary_line(shaped) == (
+        "1 Member cannot participate in ministries; 1 Family cannot attend "
+        "Mass; 1 Family cannot contribute financially."
+    )
+
+
+def test_every_stage_counts_a_cannot_contribute_row_at_a_pledges_stage():
+    """A pledge To enter by hand matches no Limitations Stage choice, so
+    Every stage lists and counts it; the To review choice does not."""
+    from parishkit.stewardship.reports.limitation_worklist import (
+        WorklistQuery,
+        answer_rows,
+        at_stage,
+        worklist_page,
+    )
+    from parishkit.stewardship.web.tables import paginate
+
+    shaped = with_contribution()
+    shown, counts = at_stage(answer_rows(shaped), "all")
+    query = WorklistQuery(stage="all")
+    table = paginate(shown, {})
+    worklist, _ = worklist_page(counts, query, table, "/limitations/", mutable=True)
+    choices = dict(worklist.stage_choices)
+    assert choices["all"] == "Every stage (3)"
+    assert choices["to_review"] == "To review (1)"
+    (row,) = [r for r in worklist.rows if r["kind"] == "cannot_give"]
+    assert row["icons"] == [] and row["kinds"] == ""
+    assert row["elsewhere"]["aria_label"] == "Open the answer of Example in Pledges"
+
+
+def test_cannot_contribute_needs_pledges_access_and_show_everything(monkeypatch):
+    """No row for a viewer without Pledges' FINANCIAL_DETAIL or with Show
+    narrowed, and a Pledges read that cannot be shaped leaves the rows out
+    instead of failing the page."""
+    from uuid import uuid4
+
+    from parishkit.stewardship.accounts.policy import Principal
+    from parishkit.stewardship.reports import limitations, pledge_review_views
+
+    nobody = Principal(uuid4(), frozenset(), frozenset())
+    staff = Principal(uuid4(), frozenset({"staff"}), frozenset())
+    campaign = UUID(int=9)
+    assert limitations.cannot_contribute(campaign, LimitationsQuery(), nobody) == []
+    narrowed = LimitationsQuery(show="cannot_attend")
+    assert limitations.cannot_contribute(campaign, narrowed, staff) == []
+
+    def broken(*args):
+        """A Pledges read whose stage disagrees with its selection."""
+        raise ValueError("The pledge review stage disagrees with its selection.")
+
+    monkeypatch.setattr(pledge_review_views, "pledge_rows", broken)
+    assert limitations.cannot_contribute(campaign, LimitationsQuery(), staff) == []

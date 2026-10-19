@@ -547,7 +547,14 @@ def test_limitations_lists_cannot_contribute_at_its_pledges_stage(response_servi
     assert count == counts["to_review"] == len(shown)
     (drawn,) = [r for r in worklist_rows(shown) if r["kind"] == "cannot_give"]
     assert drawn["family_answer"] == "Cannot contribute financially"
-    assert drawn["elsewhere"]["label"] == "Decided in Pledges"
+    assert drawn["elsewhere"]["label"] == "Open in Pledges"
+    # A menu that does not offer Pledges (a viewer without FINANCIAL_DETAIL)
+    # leaves the Cannot contribute row out of the count (pledges false).
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        without = admin_context._open_counts(
+            SimpleNamespace(), staff, items[:1], harness.campaign
+        ).get("limitations_report")
+    assert (without or 0) == count - 1
     # Decided on Pledges, it follows its Pledges stage and leaves the count.
     decide(harness, admin(), "accept", [submission])
     result, after = read()

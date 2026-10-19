@@ -74,7 +74,11 @@ def export_limitations(caller, service, *, show, fmt, zone_name, context):
         export_choice,
         export_file_name,
     )
-    from .reports.limitations import LimitationsQuery, limitations_report
+    from .reports.limitations import (
+        LimitationsQuery,
+        limitations_report,
+        row_count,
+    )
     from .source.snapshot_names import current_snapshot
 
     principal = partial(_principal, export=True)
@@ -102,7 +106,7 @@ def export_limitations(caller, service, *, show, fmt, zone_name, context):
         before = current_snapshot()
         result = limitations_report(campaign_id, query, actor)
         snapshot = before if current_snapshot() == before else None
-        count = len(result["members"]) + len(result["families"])
+        count = row_count(result)
         body = export_body(campaign_id, result, choice["format"], choice["zone"])
         holder["body"] = body
         model = LimitationsExport(

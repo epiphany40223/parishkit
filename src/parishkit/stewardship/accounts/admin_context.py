@@ -471,6 +471,19 @@ ROSTER_STATES = frozenset({"active", "closed", "archived"})
 # 11), for a viewer Pledges admits, so the count adds those at To review,
 # read through Pledges' own stage selection
 # (stewardship_pledge_review_states_v1) and the response's cannot_give flag.
+# The statement's columns, by name and in order (each aliased in the SQL).
+# Read the row through these names, never by position: a caller that adds
+# columns (My review work's counts, #1727, cross-joined after these) takes
+# its own from len(MENU_COLUMNS) on.
+MENU_COLUMNS = (
+    "information",
+    "ministry",
+    "ministries",
+    "census_groups",
+    "roster",
+    "roster_ministries",
+    "limitations",
+)
 OPEN_COUNTS = """
 SELECT
     CASE WHEN %(information)s THEN (
@@ -482,12 +495,12 @@ SELECT
           AND coalesce((SELECT coalesce(r.review_decision,'ignored')='none'
               FROM stewardship_information_revision r WHERE r.item_id=i.id
               ORDER BY r.expected_version DESC LIMIT 1),true))
-    END,
-    f.total,
-    f.ministries,
-    CASE WHEN %(census)s THEN ({census}) END,
-    t.total,
-    t.ministries,
+    END AS information,
+    f.total AS ministry,
+    f.ministries AS ministries,
+    CASE WHEN %(census)s THEN ({census}) END AS census_groups,
+    t.total AS roster,
+    t.ministries AS roster_ministries,
     CASE WHEN %(limitations)s THEN (
         SELECT count(*) FROM stewardship_limitations_report_v2(
             %(campaign)s, %(limitation_filters)s::jsonb) v,
@@ -503,7 +516,7 @@ SELECT
               AND coalesce(ps.answers->'financial'->'cannot_give'='true'::jsonb,
                   false))
         ELSE 0 END
-    END
+    END AS limitations
 FROM (SELECT NULL) one
 LEFT JOIN LATERAL (
     SELECT CASE WHEN (v->>'authorized')::boolean THEN (v->>'total')::bigint END
@@ -630,15 +643,14 @@ def _read_open_counts(offered, actor, campaign):
                 "viewer": actor.identity,
             },
         )
-        (
-            information,
-            ministry,
-            ministries,
-            groups,
-            roster_count,
-            roster_ministries,
-            limitations,
-        ) = cursor.fetchone()
+        row = dict(zip(MENU_COLUMNS, cursor.fetchone(), strict=True))
+    information, ministry, ministries = (
+        row["information"],
+        row["ministry"],
+        row["ministries"],
+    )
+    groups, roster_count = row["census_groups"], row["roster"]
+    roster_ministries, limitations = row["roster_ministries"], row["limitations"]
     # A count naming a Ministry outside Python's view of the actor would be
     # refused by the page (in_scope), so it gets no count either.
     if ministry is not None and not in_scope(actor, True, ministries):

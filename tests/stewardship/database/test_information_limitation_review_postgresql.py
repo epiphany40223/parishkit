@@ -653,37 +653,61 @@ def test_an_answer_the_form_left_out_keeps_its_decision():
 
 def test_the_menu_counts_the_answers_to_review(response_service, google):
     """The menu's Limitations count is the worklist's To review count (R39
-    finding 10): a decision moves an answer out of it, Back to review brings
-    it back, and a viewer the page refuses gets no number."""
+    finding 10), for Staff and an Administrator alike: a decision moves an
+    answer out of it, Back to review brings it back, none left counts 0
+    (no number drawn), and a viewer the page refuses gets no count."""
     from types import SimpleNamespace
 
     from parishkit.stewardship.accounts import admin_context
     from parishkit.stewardship.accounts.policy import Principal
+    from parishkit.stewardship.reports.limitation_worklist import (
+        answer_rows,
+        at_stage,
+    )
 
     harness = response_service
     start(harness)
     harness = activate_response_service(harness)
     first = submit_live(harness, cannot_serve=True)
     actor = staff_actor()
-    staff = Principal(actor, frozenset({"staff"}), frozenset())
+    readers = [
+        Principal(actor, frozenset({role}), frozenset())
+        for role in ("staff", "administrator")
+    ]
     items = [
         SimpleNamespace(name="limitations_report", url="/admin/reports/limitations/")
     ]
     family = FamilyCampaign.objects.get(pk=first.family_id)
     member = answer_id(family.family_duid, "member", "3")
+    whole = answer_id(family.family_duid, "family")
 
-    def count(principal=staff):
-        """The menu's count, read as the web role reads it."""
+    def count(principal):
+        """The menu's count, read as the web role reads it (0 draws no number)."""
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             return admin_context._open_counts(
                 SimpleNamespace(), principal, items, harness.campaign
             ).get("limitations_report")
 
+    def to_review():
+        """The page's own To review count, from the page's own rows."""
+        _, counts = at_stage(answer_rows(limitation_rows(harness)), "to_review")
+        return counts.get("to_review", 0)
+
+    def check(expected):
+        """Every reader's menu count is the page's To review count."""
+        assert to_review() == expected
+        for principal in readers:
+            assert count(principal) == expected, principal.roles
+
     # The Member's answer and the Family's cannot-attend answer.
-    assert count() == 2
+    check(2)
     decide_answer(harness, actor, Action.ACCEPT, member, 0)
-    assert count() == 1
+    check(1)
     decide_answer(harness, actor, Action.BACK_TO_REVIEW, member, 1)
-    assert count() == 2
+    check(2)
+    # Nothing left to review: 0, which the menu draws as no number.
+    decide_answer(harness, actor, Action.ACCEPT, member, 2)
+    decide_answer(harness, actor, Action.IGNORE, whole, 0)
+    check(0)
     leader = Principal(actor, frozenset({"ministry_leader"}), frozenset({1}))
     assert count(leader) is None

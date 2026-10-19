@@ -11,6 +11,7 @@ talents older submissions recorded.
 import csv
 import io
 import json
+import logging
 from dataclasses import dataclass, replace
 from datetime import datetime
 
@@ -19,6 +20,7 @@ from django.utils.datastructures import MultiValueDict
 
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
+from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.pipeline import Stage, cannot_participate_placement
 from parishkit.stewardship.source.snapshot_names import name_rows
 from parishkit.stewardship.source.source_status import (
@@ -120,8 +122,14 @@ class LimitationsQuery:
         return {"search": self.search, "show": self.show}
 
 
-def limitations_report(campaign_id, query, principal):
-    """Read and word the complete report for Admin or Staff."""
+def limitations_report(campaign_id, query, principal, *, contributions=True):
+    """Read and word the complete report for Admin or Staff.
+
+    ``contributions`` adds the Families that cannot contribute financially
+    (``contributions``, R39 finding 11), as the page and its downloads list
+    them; a caller that prints only the summary (``report limitations``)
+    passes False and pays nothing for Pledges' read.
+    """
     if not allows(principal, Capability.CAMPAIGN_REPORT):
         raise PermissionError("The Limitations report is unavailable.")
     with connection.cursor() as cursor:
@@ -140,11 +148,25 @@ def limitations_report(campaign_id, query, principal):
     source = result["metadata"]["source_id"]
     name_rows(source, result["members"] + result["families"])
     result = shape_result(result)
-    result["contributions"] = contributions(campaign_id, query, principal)
+    result["contributions"] = (
+        cannot_contribute(campaign_id, query, principal) if contributions else []
+    )
     return result
 
 
-def contributions(campaign_id, query, principal):
+def row_count(result):
+    """How many rows a read holds: Members', Families' and Cannot contribute's.
+
+    The page's and ``export limitations``' audit count, so both count alike.
+    """
+    return (
+        len(result["members"])
+        + len(result["families"])
+        + len(result.get("contributions", []))
+    )
+
+
+def cannot_contribute(campaign_id, query, principal):
     """The Families that cannot contribute financially, as Limitations rows.
 
     R39 finding 11: a Family's Cannot contribute financially answer (the
@@ -156,6 +178,9 @@ def contributions(campaign_id, query, principal):
     the same search, only for a viewer Pledges admits, only while Show is
     everything (its choices name the two Limitations answers), and none
     while the campaign has no financial module or its read is unavailable.
+    A Pledges read that cannot be shaped (its stage disagreeing with its
+    selection) leaves the rows out with a logged warning, so a Pledges
+    problem never takes Limitations down.
     """
     from django.urls import reverse
 
@@ -166,6 +191,9 @@ def contributions(campaign_id, query, principal):
     try:
         rows, _metadata = pledge_rows(campaign_id, principal, query.search)
     except (PermissionError, ReadUnavailable):
+        return []
+    except ValueError as error:
+        emit_failure(error, event=Event.REPORT_SHAPING_FAILED, level=logging.WARNING)
         return []
     found = []
     for row in rows:
@@ -231,6 +259,31 @@ def at_stage(result, stage):
         "contributions": kept(result.get("contributions", [])),
         "summary": {"cannot_serve": len(members), "cannot_attend": len(families)},
     }
+
+
+def _counted(count, one, many):
+    """``count`` with its noun, singular or plural: "1 Family", "2 Families"."""
+    return f"{count:,} {one if count == 1 else many}"
+
+
+def summary_line(result):
+    """The PDF frame's counts, by kind of answer (R39 finding 11).
+
+    The Families table also holds the Cannot contribute financially rows,
+    so a Family can be listed twice; each kind is counted on its own.
+    """
+    attend = len(result["families"])
+    give = len(result.get("contributions", []))
+    line = (
+        f"{_counted(len(result['members']), 'Member', 'Members')} cannot "
+        f"participate in ministries; {_counted(attend, 'Family', 'Families')} "
+        "cannot attend Mass"
+    )
+    if give:
+        line += (
+            f"; {_counted(give, 'Family', 'Families')} cannot contribute financially"
+        )
+    return line + "."
 
 
 def iso_time(moment):
@@ -316,7 +369,7 @@ def report_information(members, families, zone, *, parish, campaign, as_of):
         ("Downloaded at", as_of.astimezone(zone)),
         ("Display time zone", zone.key),
         ("Members in this file", f"{len(members):,}"),
-        ("Families in this file", f"{len(families):,}"),
+        ("Family rows in this file", f"{len(families):,}"),
         ("Privacy", PRIVACY),
     )
 
@@ -392,12 +445,7 @@ def limitations_pdf(result, zone, *, parish, campaign, as_of):
         title=TITLE,
         eyebrow=f"{parish} · {campaign}",
         stamp=f"Downloaded {dates.display_text(as_of.astimezone(zone))} ({zone.key})",
-        details=(
-            f"{len(members):,} {'Member' if len(members) == 1 else 'Members'} "
-            "cannot participate in ministries; "
-            f"{len(families):,} {'Family' if len(families) == 1 else 'Families'} "
-            "cannot attend Mass.",
-        ),
+        details=(summary_line(result),),
         notice=PRIVACY,
     )
     # The tables lay out in a frame two blank detail lines taller, so the
