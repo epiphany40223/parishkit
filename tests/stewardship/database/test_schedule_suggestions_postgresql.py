@@ -123,7 +123,7 @@ def test_the_suggested_schedules_are_listed_and_added(auth_service, google):
     } == {
         "initial": ("2054-10-01", "09:00:00", None),
         "reminder": ("2054-10-24", "09:00:00", None),
-        "weekly_digest": (None, "08:00:00", 0),
+        "weekly_digest": (None, "06:00:00", 0),
     }
     assert {kind: values["template_version"] for kind, values in saved.items()} == {
         kind: row["id"] for kind, row in emails.items()

@@ -3,7 +3,7 @@
 ``schedule_suggestions`` works out the set from the campaign's values and
 saved emails alone: the Initial invitation on the start date at 9:00 AM, one
 Reminder seven days before the end date at 9:00 AM, and the Weekly Admin
-digest every Monday at 8:00 AM, each sending the first saved email of its
+digest every Monday at 6:00 AM, each sending the first saved email of its
 mail type, with the rules that leave one out.
 """
 
@@ -50,7 +50,7 @@ def test_the_full_set_sends_each_types_first_email():
         {
             "kind": "weekly_digest",
             "weekday": 0,
-            "time": "08:00",
+            "time": "06:00",
             "template_version": records[3]["id"],
         },
     ]

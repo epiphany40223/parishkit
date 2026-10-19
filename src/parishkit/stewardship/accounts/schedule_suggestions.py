@@ -4,7 +4,7 @@ While the campaign wizard applies and the campaign has no schedule saved,
 Dates and mail schedules proposes a starting set (admin-portal spec, "Create
 the campaign", the steps page by page): the Initial invitation on the start
 date at 9:00 AM, one Reminder seven days before the end date at 9:00 AM, and
-the Weekly Admin digest every Monday at 8:00 AM, all in the campaign's time
+the Weekly Admin digest every Monday at 6:00 AM, all in the campaign's time
 zone. The page lists them as the table lists saved schedules, marked "Not
 saved yet" (``rows``), and its **Add these schedules and continue** saves
 them directly (``schedule_entry_views.schedule_suggested``), which works the
@@ -23,10 +23,10 @@ from .schedule_table import schedule_rows
 
 # Family mail sends at 9:00 AM; the Weekly Admin digest, which has no
 # configured default of its own, on Monday (wall_clock.WEEKDAYS index 0) at
-# 8:00 AM, before the parish office's week starts (#1404 decision 10).
+# 6:00 AM, before the parish office's week starts (#1404 decision 10).
 SEND_TIME = "09:00"
 DIGEST_WEEKDAY = 0
-DIGEST_TIME = "08:00"
+DIGEST_TIME = "06:00"
 # The Reminder is sent this many days before the campaign's end date.
 REMINDER_LEAD = timedelta(days=7)
 

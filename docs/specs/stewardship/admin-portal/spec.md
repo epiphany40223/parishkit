@@ -3879,8 +3879,8 @@ live.
   draws saved schedules and marked "Not saved yet": the initial invitation on
   the campaign's start date at 9:00 AM in the campaign's time zone, one
   reminder seven days before its end date at 9:00 AM, and the Weekly Admin
-  digest every Monday at 8:00 AM (there is no configured default, so this is
-  the default; #1404, 2026-10-17; once
+  digest every Monday at 6:00 AM (there is no configured default, so this is
+  the default; #1404, 2026-10-17, changed from 8:00 AM 2026-10-19; once
   [report emails](../report-emails/spec.md) replace the digests, the
   Daily report and Weekly report are offered instead, as
   [starting points](../report-emails/spec.md#campaign-wizard-starting-points));
