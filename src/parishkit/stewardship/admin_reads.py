@@ -938,7 +938,7 @@ class GoLiveReadiness(ReadModel):
 
 
 def read_go_live_readiness(caller, service, campaign_id):
-    """``go-live readiness``: the Go-live readiness page's read, without its forms.
+    """``go-live readiness``: the Go live page's Check step read, without its forms.
 
     Through ``go_live_inputs.collect_inputs`` under the work lock, as the
     page. The page records no view event, so neither does this. The
