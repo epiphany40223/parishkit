@@ -260,15 +260,17 @@ def summary(actor, configuration, now, *, home=False):
     if home and campaign is not None and "administrator" in actor.roles:
         from .review_work import read_flags
 
-        # The review panels Staff and Ministry leaders land on (#1690), with
-        # Ready to update for an Administrator. Home only. Their counts are
-        # read at render time inside the menu's open-count statement
-        # (review_work.with_counts), so the panel adds no statement; a
-        # leader's per-Ministry counts are My Ministries' own value above.
+        # Home's Review work panel: the panels Staff and Ministry leaders see
+        # on My review work (#1690), plus Ready to update. Home is the
+        # Administrator's alone (#1726), so this is the only role that
+        # reaches it. The counts are read at render time inside the menu's
+        # open-count statement (review_work.with_counts), so the panel adds
+        # no statement. An Administrator gets the Staff Ministry cards, never
+        # a leader's per-Ministry ones, so there is no leader value.
         result["review"] = {
             "campaign": campaign,
             "flags": read_flags(actor),
-            "leader": result.get("my_ministries"),
+            "leader": None,
         }
     if "administrator" in actor.roles:
         from .security_events import open_events
