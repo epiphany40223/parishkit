@@ -160,7 +160,7 @@ def test_reopening_an_ignored_request_needs_a_note(page, component_origin):
     dialog = page.locator("#information-decide-dialog")
     record = dialog.get_by_role("button", name="Record")
     assert record.get_attribute("aria-disabled") == "true" or record.is_disabled()
-    dialog.get_by_label("Note (required to reopen an ignored item)").fill("Misread")
+    dialog.get_by_label("Note (required)").fill("Misread")
     available(record)
     record.click()
     has_text(page.locator("#information-notice"), REOPENED_NOTICE)
