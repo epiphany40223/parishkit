@@ -2366,7 +2366,6 @@ def component_origin():
         ("family-login-v1.js", "application/javascript"),
         ("digest-v1.js", "application/javascript"),
         ("report-v1.js", "application/javascript"),
-        ("information-export-v1.js", "application/javascript"),
         ("users-v2.js", "application/javascript"),
         ("phone-v1.js", "application/javascript"),
         ("live-status-v1.js", "application/javascript"),
@@ -2527,7 +2526,7 @@ def component_origin():
         Each HTTP/1.0 response closes its connection, so a page opens one
         connection per asset at once. With the default backlog of 5 the
         kernel reset the overflow now and then (net::ERR_CONNECTION_RESET), a
-        script such as information-export-v1.js never ran, and tests that
+        script such as a report's never ran, and tests that
         depend on it failed intermittently.
         """
 
