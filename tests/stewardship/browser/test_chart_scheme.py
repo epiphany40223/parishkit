@@ -30,14 +30,13 @@ pytestmark = pytest.mark.parametrize(
 
 # Every page with a chart: the response charts, the Response dashboard (its
 # daily chart, #1537), Financial stewardship
-# summary, Campaign comparison, Additional information, Ministry requests
-# and a saved daily digest.
+# summary, Campaign comparison, Ministry requests and a saved daily digest
+# (Additional information's chart went with its review worklist, #1685).
 PAGES = (
     "/charts",
     "/participation",
     "/financial-report",
     "/campaign-comparison",
-    "/information",
     "/followup-queue",
     "/daily-digest-comparison",
 )

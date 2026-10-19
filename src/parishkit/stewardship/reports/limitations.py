@@ -19,6 +19,7 @@ from django.utils.datastructures import MultiValueDict
 
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
+from parishkit.stewardship.pipeline import Stage, cannot_participate_placement
 from parishkit.stewardship.source.snapshot_names import name_rows
 from parishkit.stewardship.source.source_status import (
     STATUS_HEADING,
@@ -34,6 +35,16 @@ from .information_rendering import xlsx_cell
 
 # The Show menu's choices: everything, or one of the two limitations.
 SHOW_WORDS = frozenset({"any", "cannot_serve", "cannot_attend"})
+# The stream's stages, in the order the worklist's Stage filter lists them
+# (review pipeline spec, "Cannot participate stream", #1685). An answer the
+# Family no longer gives is gone from the report, so there is no History.
+STAGES = (Stage.TO_REVIEW, Stage.TO_HANDLE, Stage.IGNORED, Stage.HANDLED)
+# Each answer in words, by its kind: the worklist's Family's answer.
+ANSWERS = {
+    "member": "Cannot participate in any ministries",
+    "proposed_member": "Cannot participate in any ministries",
+    "family": "Cannot attend Mass or prayer services",
+}
 # Each download table has its page table's columns, names and order (#932,
 # #966): the Members table leads with the Member and Member DUID, as on the
 # page, and the Families table has no "Cannot attend Mass" column, as on the
@@ -49,8 +60,9 @@ MEMBER_HEADINGS = (
     "Family DUID",
     "Cannot participate in ministries",
     "Latest response",
+    "Stage",
 )
-FAMILY_HEADINGS = ("Family", STATUS_HEADING, "Family DUID", "Latest response")
+FAMILY_HEADINGS = ("Family", STATUS_HEADING, "Family DUID", "Latest response", "Stage")
 # Each table's page heading, which the PDF prints above that table.
 MEMBER_CAPTION = "Members who cannot participate in ministries"
 FAMILY_CAPTION = "Families that cannot attend Mass or prayer services"
@@ -64,6 +76,7 @@ PDF_WEIGHTS = {
     "Member DUID": 5,
     "Cannot participate in ministries": 6,
     "Latest response": 8,
+    "Stage": 6,
 }
 PRIVACY = "Sensitive parish report. Share only with authorized recipients."
 # The report's name in its files: the PDF title, XLSX headers and properties.
@@ -118,12 +131,41 @@ def limitations_report(campaign_id, query, principal):
 
 
 def shape_result(result):
-    """Parse each row's response and decision times for the page and the files."""
+    """Parse each row's times and place it in its pipeline stage (#1685).
+
+    The stage comes from the answer's latest review decision while it is in
+    force (``pipeline.cannot_participate_placement``); the page, its
+    downloads and ``pk-admin`` read the same placement.
+    """
     for row in result["members"] + result["families"]:
         row["submitted_at"] = datetime.fromisoformat(row["submitted_at"])
         if row.get("decided_at"):
             row["decided_at"] = datetime.fromisoformat(row["decided_at"])
+        row["placement"] = cannot_participate_placement(
+            decision=row.get("decision"), in_force=bool(row.get("in_force"))
+        )
     return result
+
+
+def at_stage(result, stage):
+    """The report with only the answers at ``stage`` (a stage value, or "all").
+
+    The worklist's download applies its Stage filter through here, so the
+    file lists what the table shows; the summary counts what is left.
+    """
+    if stage == "all":
+        return result
+
+    def kept(rows):
+        """The rows at the stage."""
+        return [row for row in rows if row["placement"].stage.value == stage]
+
+    members, families = kept(result["members"]), kept(result["families"])
+    return result | {
+        "members": members,
+        "families": families,
+        "summary": {"cannot_serve": len(members), "cannot_attend": len(families)},
+    }
 
 
 def iso_time(moment):
@@ -162,11 +204,17 @@ def export_tables(result, zone, *, time_text=iso_time):
             str(row["family_duid"]),
             "Yes",
             instant(row["submitted_at"]),
+            row["placement"].stage.label,
         )
         for row in result["members"]
     ]
     families = [
-        (*_family(row), str(row["family_duid"]), instant(row["submitted_at"]))
+        (
+            *_family(row),
+            str(row["family_duid"]),
+            instant(row["submitted_at"]),
+            row["placement"].stage.label,
+        )
         for row in result["families"]
     ]
     return members, families

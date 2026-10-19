@@ -22,13 +22,13 @@ MARKED = "document.querySelector('h1').dataset.mark"
 # Each report as first opened, with no filter applied, and the same report
 # answering an applied filter (the fixtures' searches and choices), with the
 # number of filters each fixture applies.
+# Additional information and Limitations are review worklists (#1685), whose
+# filters are always open, as Census changes' are.
 UNFILTERED = [
-    "/information-unfiltered",
     "/financial-unfiltered",
 ]
 FILTERED = {
     "/family-directory": 1,
-    "/information": 2,
     "/financial-report": 3,
 }
 
@@ -111,13 +111,11 @@ def test_in_place_apply_updates_the_count_and_keeps_the_panel(page, component_or
 
 
 # The first data each report page shows (the Family directory and Census
-# changes show their filters open, so they are not here): Additional
-# information's matching count, and the summary of Financial stewardship and
-# Limitations, which sits above their filters.
+# changes show their filters open, as the Additional information and
+# Limitations worklists do since #1685, so they are not here): the summary of
+# Financial stewardship, which sits above its filters.
 FIRST_DATA = {
-    "/information-unfiltered": "#information-matching",
     "/financial-unfiltered": ".stat-tiles",
-    "/limitations-report": "#limitations-summary .stat-tiles",
 }
 LAPTOP_VIEWPORT = {"width": 1366, "height": 650}
 # Fonts differ between platforms (Linux CI's are wider), so the check is
@@ -186,7 +184,6 @@ OPEN_PANELS = sorted({*FILTERED, "/census-changes-automatic-filtered"})
 # bar, so it is not here.
 OPEN_PANEL_HEIGHT = {
     "/census-changes-automatic-filtered": 340,
-    "/information": 420,
     "/financial-report": 700,
 }
 # The left and bottom edges of each field cell in the open panel's form,

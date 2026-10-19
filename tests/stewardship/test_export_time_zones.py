@@ -38,9 +38,9 @@ TEMPLATES = Path(accounts.__file__).parent / "templates" / "stewardship"
 ASKS = {
     ("logs.html", "admin:logs_export"): True,
     ("financial-report.html", "admin:financial_export"): True,
-    ("limitations-report.html", "admin:limitations_export"): True,
+    ("limitations-worklist-export.html", "admin:limitations_export"): True,
     ("census-changes.html", "admin:census_changes_export"): True,
-    ("information.html", "admin:information_export"): True,
+    ("information-worklist-export.html", "admin:information_export"): True,
     # Export these requests (#1157), which replaced one Ministry's joining
     # and leaving exports: Last contact is an action time.
     ("ministry-followup.html", "admin:ministry_followup_export"): True,

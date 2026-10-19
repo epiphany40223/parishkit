@@ -1,4 +1,7 @@
-"""Save and next and the remembered queue view on both follow-up queues (#534).
+"""Save and next and the remembered queue view on Ministry requests (#534).
+
+Additional information had them too until it became a review worklist
+(#1685), which decides requests on the list itself.
 
 Each queue page remembers its applied filters, sort and page in the signed-in
 session under an opaque token; item links, the item form and "Return to …"
@@ -15,7 +18,6 @@ import pytest
 from django.urls import reverse
 
 from parishkit.stewardship.deployment import ServiceRole
-from parishkit.stewardship.responses.models import AdditionalInformationItem
 
 from .auth_builders import signed_in
 from .test_background_grants_postgresql import task_login
@@ -25,7 +27,6 @@ from .test_ministry_exports_postgresql import leader
 from .test_ministry_followup_postgresql import edit, requests
 from .test_ministry_reports_postgresql import setup
 from .test_report_workspace_postgresql import read as get
-from .test_weekly_observation_postgresql import respond
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -220,81 +221,3 @@ def test_ministry_leader_next_stays_in_scope(response_service, google):
         response, body = get(browser, f"{items}{join.pk}/?queue={token}")
         assert response.status_code == 200 and following(body) == ""
         assert str(leave.pk).encode() not in body
-
-
-def test_information_save_and_next_follows_the_remembered_view(
-    live_response_service, google
-):
-    """Staff move through Additional information without losing the view."""
-    from .test_response_revisit_postgresql import revisit
-    from .test_response_submission_postgresql import submit
-
-    harness = live_response_service
-    respond(harness, "Original request")
-    harness, form, answers, _ = revisit(harness)
-    answers["additional_information"] = "Replacement request"
-    submit(harness, form, answers)
-    original = AdditionalInformationItem.objects.get(disposition="superseded")
-    replacement = AdditionalInformationItem.objects.get(
-        disposition="current_actionable"
-    )
-    browser, login = signed_in()
-    assert login.status_code == 302
-    route = reverse("admin:information_queue")
-    # Only the current request is in this view (both requests share one
-    # submission instant, so their order in a view holding both is not fixed).
-    view = {"search": "request", "sort": "oldest", "size": "25"}
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        response, body = search(browser, route, view)
-        assert response.status_code == 200
-        order, token = linked(body, route)
-        assert order == [str(replacement.pk)]
-        assert b"?search=" not in body
-        # The superseded item is not in the view, so its next item is the
-        # view's first open one.
-        response, body = get(browser, f"{route}{original.pk}/?queue={token}")
-        assert following(body) == str(replacement.pk)
-        values = {
-            "expected_version": str(original.version),
-            "notes": "Seen",
-            "queue": token,
-            "then": "next",
-            "next": str(replacement.pk),
-        }
-        update = f"{route}{original.pk}/record/"
-        stale = values | {"request_key": str(uuid4()), "expected_version": "9"}
-        assert post(browser, update, stale).status_code == 409
-        response = post(browser, update, values | {"request_key": str(uuid4())})
-        assert response.status_code == 302
-        assert response["Location"] == f"{route}{replacement.pk}/?queue={token}"
-        response, body = get(browser, f"{route}{replacement.pk}/?queue={token}")
-        assert following(body) == "" and b"returns to the list" in body
-        response = post(
-            browser,
-            f"{route}{replacement.pk}/record/",
-            {
-                "expected_version": str(replacement.version),
-                "request_key": str(uuid4()),
-                "notes": "Called",
-                "followed_up": "yes",
-                "queue": token,
-                "then": "next",
-                "next": "",
-            },
-        )
-        assert response["Location"] == f"{route}?queue={token}"
-        response, body = get(browser, f"{route}?queue={token}")
-        assert response.status_code == 200 and b'value="request"' in body
-        assert b'<option value="current_actionable" selected>' in body
-        assert linked(body, route) == (order, token)
-        # The completed replacement is no longer open, so nothing follows.
-        response, body = get(browser, f"{route}{original.pk}/?queue={token}")
-        assert following(body) == ""
-        # Without a remembered view the default queue decides.
-        response, body = get(browser, f"{route}{original.pk}/?queue={UNKNOWN}")
-        assert response.status_code == 200 and following(body) == ""
-        # A token the session doesn't hold is not echoed into the page.
-        assert UNKNOWN.encode() not in body
-        for suffix in ("?queue=Private", f"?queue={token}&page=2"):
-            assert get(browser, route + suffix)[0].status_code == 400
-        assert get(browser, f"{route}{original.pk}/?queue=x")[0].status_code == 400

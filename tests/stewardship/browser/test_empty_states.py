@@ -35,21 +35,21 @@ EMPTY_PAGES = {
     "/go-live-families-none": (
         "No Families have Testing responses left to delete, so cleanup has",
     ),
-    "/information-item-new": ("No Staff edits yet. " + HISTORY_SAVE,),
-    "/information-item-past-end": (
-        "No Staff edits on this page of the history. Use Newer history",
+    "/information-item-new": (
+        "No Staff decisions yet. Each decision made on the Additional",
     ),
+    "/information-item-past-end": (
+        "No Staff decisions on this page of the history. Use Newer history",
+    ),
+    "/information-none": ("Nothing to review yet. Items are listed here as",),
+    "/information-none-stage": ("Nothing is at this stage. Choose another Stage",),
     "/followup-item-new": ("No follow-up edits yet. " + HISTORY_SAVE,),
     "/followup-item-past-end": (
         "No follow-up edits on this page of the history. Use Newer history",
     ),
-    "/limitations-report-none": (
-        "No Member has said they cannot participate",
-        "No Family has said it cannot attend Mass",
-    ),
+    "/limitations-report-none": ("Nothing to review yet. Items are listed here as",),
     "/limitations-report-none-searched": (
-        "No Members match these filters. Clear the Search name",
-        "No Families match these filters. Clear the Search name",
+        "Nothing is at this stage. Choose another Stage",
     ),
     "/roster-none": ("No roster changes to enter. A change is listed here",),
     "/roster-none-ministry": (

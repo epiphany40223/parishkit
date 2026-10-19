@@ -12,10 +12,14 @@ cannot drift:
   read guard) and the page's ``information_page`` and
   ``information_history``, recording the page's ``information_viewed``
   (started, then succeeded or failed).
-- ``followup information-update`` is the item's Save through the page's own
-  service (``responses.information.update_information``), in the page's
-  command scope, recording the service's ``information_updated`` and the
-  command's ``admin_cmd_followup_information_update`` for a new revision.
+- ``followup information-update`` sets the item's follow-up flags and notes
+  through the shared service (``responses.information.update_information``),
+  in the page's command scope, recording the service's
+  ``information_updated`` and the command's
+  ``admin_cmd_followup_information_update`` for a new revision. The item page
+  had the same Save until the review worklist took its decisions (#1685);
+  the revision's review decision follows the flags
+  (``responses.information.flag_decision``).
 
 The item is a Family's own words, so the documents print ids, versions,
 states, flags, account ids and instants only: never the Family's name or

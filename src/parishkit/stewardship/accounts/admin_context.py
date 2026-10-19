@@ -428,8 +428,11 @@ ROSTER_STATES = frozenset({"active", "closed", "archived"})
 # default Work to do view lists (census_changes.open_count), so the status
 # rules live in one place. ``{census}`` is that query, filled in when the
 # statement runs, since the report module is imported lazily.
-# Additional information counts current requests not yet marked "Follow-up
-# completed" (its default view lists completed ones too). Ministry requests
+# Additional information counts the requests at its worklist's default To
+# review stage (#1685): current, follow-up neither needed nor completed, and
+# not ignored by the latest Staff revision (whose review decision says so,
+# or, saved before migration 0134, left follow-up not needed;
+# responses.information.staff_ignored). Ministry requests
 # (the follow-up queue, #1133) runs the page's own selection with its
 # default (Unresolved) filters and no rows, and takes its total, so the
 # count applies every filter the page
@@ -458,7 +461,11 @@ SELECT
         SELECT count(*) FROM stewardship_additional_information i
         JOIN stewardship_submission s ON s.id=i.submission_id
         WHERE s.campaign_id=%(campaign)s AND s.mode='live'
-          AND i.disposition='current_actionable' AND i.followed_up_at IS NULL)
+          AND i.disposition='current_actionable' AND i.followed_up_at IS NULL
+          AND NOT i.follow_up_needed
+          AND coalesce((SELECT coalesce(r.review_decision,'ignored')='none'
+              FROM stewardship_information_revision r WHERE r.item_id=i.id
+              ORDER BY r.expected_version DESC LIMIT 1),true))
     END,
     f.total,
     f.ministries,

@@ -1699,6 +1699,9 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
 .worklist-filters > :is(p, [data-complete-hint]) { grid-column: 1 / -1; margin: 0; }
 .worklist-filters > button { justify-self: start; margin: 0; }
 @media (min-width: 40rem) { .worklist-filters { grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); } }
+/* A worklist filter whose choices are long phrases (Limitations' Show,
+   #1685) takes two cells, so its chosen text reads whole. */
+@media (min-width: 40rem) { .worklist-filters > div.wide { grid-column: span 2; } }
 .button-danger { background: var(--error-border); border-color: var(--error-border); color: var(--paper); }
 .button-danger:not(:disabled):hover { background: var(--error-ink); border-color: var(--error-ink); }
 .confirm-dialog { margin: 12vh auto auto; width: min(34rem, calc(100vw - 2rem)); padding: 1.25rem 1.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--paper); color: var(--ink); box-shadow: var(--shadow); }

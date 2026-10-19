@@ -107,11 +107,9 @@ patterns = [
         information_views.detail,
         "information_item",
     ),
-    _page(
-        "reports/information/<uuid:item_id>/record/",
-        information_views.update,
-        "information_update",
-    ),
+    # A request's Save (information_update) was retired, with no redirect
+    # (#1685): decisions are made on the Additional information worklist,
+    # which posts them to its own address.
     # The Members joining and leaving lists (joining/, leaving/) and their
     # export form (exports/) were retired, with no redirect (#1157): a
     # request's contact details are on its follow-up page, and the export is

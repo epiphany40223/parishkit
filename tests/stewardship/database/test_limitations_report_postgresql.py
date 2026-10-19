@@ -17,7 +17,7 @@ from openpyxl import load_workbook
 
 from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.audit.models import AuditEvent
-from parishkit.stewardship.campaigns.models import Campaign
+from parishkit.stewardship.campaigns.models import Campaign, FamilyCampaign
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports.limitations import (
     LimitationsQuery,
@@ -151,7 +151,8 @@ def test_report_lists_limitations_and_filters(response_service):
 
 
 def test_native_page_and_downloads(response_service, google, settings):
-    """The page filters by CSRF POST; CSV, XLSX and PDF carry the same rows.
+    """The worklist filters and decides by CSRF POST; CSV, XLSX and PDF carry
+    the rows at its Stage (#1685).
 
     Read with the real restricted web and download logins
     (``restricted_download_pool``): the download pool's login reads no
@@ -162,7 +163,8 @@ def test_native_page_and_downloads(response_service, google, settings):
     harness = response_service
     start(harness)
     harness = activate_response_service(harness)
-    submit_live(harness, cannot_serve=True)
+    submission = submit_live(harness, cannot_serve=True)
+    duid = FamilyCampaign.objects.get(pk=submission.family_id).family_duid
     route = reverse("admin:limitations_report")
     assert route == "/admin/reports/limitations/"
     browser, login = signed_in()
@@ -171,57 +173,99 @@ def test_native_page_and_downloads(response_service, google, settings):
         with CaptureQueriesContext(connection) as queries:
             response, body = get(browser, route)
         assert response.status_code == 200 and response["Cache-Control"] == "no-store"
-        assert b"<h1>Limitations</h1>" in body and b"Organ" not in body
-        # The Member's Family name opens its Timeline (#1570): one record
-        # id read for both tables.
-        assert b'<td><a href="/admin/reports/families/' in body
+        page = body.decode()
+        assert "<h1>Limitations</h1>" in page and "Organ" not in page
+        assert "Painter" not in page
+        # One worklist table, To review first: the Member's answer and the
+        # Family's, with no Summary tiles, Baseline or Reviewer's value.
+        assert ">To review (2)</option>" in page and ">Every stage (2)</option>" in page
+        assert "stat-tile" not in page
+        head = page.split("<thead>")[1].split("</thead>")[0]
+        assert "Reviewer's value" not in head and "Baseline" not in head
+        assert "Member DUID" in head and "Family's answer" in head
+        assert "Cannot participate in any ministries" in page
+        assert "Cannot attend Mass or prayer services" in page
+        # Each Family name opens its Timeline (#1570): one record id read.
+        assert '<th scope="row"><a href="/admin/reports/families/' in page
         assert len(link_reads(queries)) == 1
-        assert b"Painter" not in body and b"Members who cannot participate" in body
         assert get(browser, route + "?search=x")[0].status_code == 400
         response, body = search(browser, route, {"show": "cannot_attend"})
-        assert response.status_code == 200 and b"No Members match these" in body
+        assert response.status_code == 200 and b">To review (1)</option>" in body
         assert search(browser, route, {"show": "bad"})[0].status_code == 400
         # The filter's old name and a talent's id are refused (#970).
         assert search(browser, route, {"talent": "any"})[0].status_code == 400
         assert search(browser, route, {"show": str(uuid4())})[0].status_code == 400
-        # Shared tables (#203): every column sorts on the server, both tables
-        # page independently, and the controls are POST forms, never links.
-        response, body = search(
-            browser,
-            route,
-            {"show": "any", "members_sort": "-latest", "families_size": "25"},
-        )
+        assert search(browser, route, {"stage": "history"})[0].status_code == 400
+        # The shared table (#203): every column sorts on the server, and the
+        # controls are POST forms, never links.
+        response, body = search(browser, route, {"sort": "-duid", "size": "25"})
         assert response.status_code == 200 and b"Page 1 of 1" in body
         assert b'aria-sort="descending"' in body and b'<a class="sort-link"' not in body
-        assert b'name="families_size" value="25"' in body
-        assert b'name="members_sort" value="latest"' in body
-        # The Members table's Family DUID has its own sortable column (#932).
-        response, body = search(browser, route, {"show": "any", "members_sort": "duid"})
-        assert response.status_code == 200 and b"Organ" not in body
-        assert b'name="members_sort" value="-duid"' in body
-        for invalid in (
-            {"members_sort": "submitted_at"},
-            {"families_sort": "-talents"},
-            {"members_sort": "talents"},
-            {"members_size": "7"},
-            {"families_page": "x"},
-        ):
+        for invalid in ({"sort": "talents"}, {"size": "7"}, {"page": "x"}):
             assert search(browser, route, invalid)[0].status_code == 400
+        # Accept the Family's answer: the notice names it by its DUID, and
+        # it moves to To handle.
+        decision = {
+            "decide": "accept",
+            "item": f"f{duid}",
+            "version": "0",
+            "request_key": str(uuid4()),
+            "note": "",
+        }
+        response, body = search(browser, route, decision)
+        assert response.status_code == 200
+        assert f"The answer of Family DUID {duid} accepted.".encode() in body
+        assert b">To handle (1)</option>" in body
+        assert (
+            search(browser, route, decision | {"decide": "ignore"})[0].status_code
+            == 409
+        )
+        stale = decision | {"request_key": str(uuid4())}
+        response, body = search(browser, route, stale)
+        assert b"was changed by someone else first" in body
+        # Bulk: the Member's answer, ignored.
+        bulk = {
+            "bulk": "ignore",
+            "bulk_key": str(uuid4()),
+            "bulk_note": "Seen",
+            "item": f"m{duid}-3:0",
+        }
+        response, body = search(browser, route, bulk)
+        assert (
+            f"The answer of Member DUID 3 in Family DUID {duid} ignored.".encode()
+            in (body)
+        )
         export = reverse("admin:limitations_export")
         response, body = search(
-            browser, export, {"format": "csv", "timezone": "UTC", "show": "any"}
+            browser,
+            export,
+            {"format": "csv", "timezone": "UTC", "show": "any", "stage": "all"},
         )
         assert response.status_code == 200
         assert response["Content-Type"] == "text/csv"
         assert response["Cache-Control"] == "no-store"
         assert "stewardship-limitations-" in response["Content-Disposition"]
         assert b"Organ" not in body
-        # The Families table has the page's columns: no Cannot attend Mass.
-        # ParishSoft status follows each Family name (#1216).
-        assert b"\r\nFamily,ParishSoft status,Family DUID,Latest response\r\n" in body
+        # The Families table has the page's columns: no Cannot attend Mass,
+        # and each row's Stage last. ParishSoft status follows each Family
+        # name (#1216).
+        assert (
+            b"\r\nFamily,ParishSoft status,Family DUID,Latest response,Stage\r\n"
+            in body
+        )
         assert body.startswith(
             b"Member,Member DUID,Family,ParishSoft status,Family DUID,"
-            b"Cannot participate in ministries,Latest response\r\n"
+            b"Cannot participate in ministries,Latest response,Stage\r\n"
+        )
+        assert b",Ignored\r\n" in body and b",To handle\r\n" in body
+        # The download applies the page's Stage.
+        response, body = search(
+            browser, export, {"format": "csv", "timezone": "UTC", "stage": "ignored"}
+        )
+        assert b",To handle\r\n" not in body and b",Ignored\r\n" in body
+        assert (
+            search(browser, export, {"format": "csv", "stage": "x"})[0].status_code
+            == 400
         )
         response, body = search(browser, export, {"format": "xlsx", "timezone": "UTC"})
         assert response.status_code == 200
@@ -242,6 +286,7 @@ def test_native_page_and_downloads(response_service, google, settings):
             "Family DUID",
             "Cannot participate in ministries",
             "Latest response",
+            "Stage",
         ]
         assert book["Members"]["B2"].value == "3"
         assert book["Members"]["F2"].value == "Yes"
@@ -252,9 +297,10 @@ def test_native_page_and_downloads(response_service, google, settings):
         assert response["Content-Disposition"].endswith(".pdf")
         assert body.startswith(b"%PDF-")
         assert search(browser, export, {"format": "png"})[0].status_code == 400
-        # The re-posted forms carry the Show choice.
-        response, body = search(browser, route, {"members_sort": "-latest"})
+        # The re-posted forms carry the Show and Stage choices.
+        response, body = search(browser, route, {"sort": "-submitted"})
         assert response.status_code == 200 and b'name="show" value="any"' in body
+        assert b'name="stage" value="to_review"' in body
         _, body = get(browser, reverse("admin:response_dashboard"))
         assert route.encode() in body
         # The dashboard's own choices name its address (#477, #1537).
@@ -294,36 +340,29 @@ def test_native_page_and_downloads(response_service, google, settings):
     assert "Organ" not in str(contexts)
 
 
-def test_both_tables_sort_every_column_in_memory():
-    """The complete in-memory report sorts before paging, per table."""
+def test_the_worklist_sorts_every_column_in_memory():
+    """The complete in-memory list sorts before paging, by every column."""
     from datetime import UTC, datetime
 
-    from parishkit.stewardship.reports.limitation_views import tables
+    from parishkit.stewardship.reports.limitation_worklist import SORTING
+    from parishkit.stewardship.web.tables import paginate
 
-    def row(name, duid, day, cannot=False):
-        """One member/family row as the selection shapes it."""
+    def row(name, duid, day, member=None):
+        """One answer row as the selection shapes it."""
         return {
             "member_name": name,
             "family_name": name,
             "family_duid": duid,
-            "cannot_serve": cannot,
+            "member_duid": member,
             "submitted_at": datetime(2026, 9, day, tzinfo=UTC),
         }
 
-    result = {
-        "members": [row("b", 2, 1), row("A", 1, 3, True)],
-        "families": [row("b", 2, 1), row("a", 1, 3)],
-    }
-    members, families = tables(
-        result,
-        LimitationsQuery(search="private"),
-        {"members_sort": "-cannot_serve", "families_sort": "-duid"},
-        "/r/",
-    )
-    assert [r["family_duid"] for r in members.rows] == [1, 2]
-    assert [r["family_duid"] for r in families.rows] == [2, 1]
-    assert members.method == families.method == "post" and members.action == "/r/"
-    assert ("search", "private") in members.carried
-    assert ("families_sort", "-duid") in members.carried
-    members, _ = tables(result, LimitationsQuery(), {"members_sort": "-latest"}, "/r/")
-    assert [r["family_duid"] for r in members.rows] == [1, 2]
+    rows = [row("b", 2, 1, 7), row("A", 1, 3), row("c", 3, 2, 5)]
+    for sort, order in (
+        ("family", [1, 2, 3]),
+        ("-duid", [3, 2, 1]),
+        ("member_duid", [3, 2, 1]),
+        ("-submitted", [1, 3, 2]),
+    ):
+        table = paginate(rows, {"sort": sort}, sorting=SORTING)
+        assert [found["family_duid"] for found in table.rows] == order, sort

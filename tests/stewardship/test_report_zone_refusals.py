@@ -48,9 +48,12 @@ def _information(zone):
 
 @pytest.mark.parametrize("zone", ["", "Etc/Unknown", None])
 def test_information_queue_refuses_dates_without_a_zone(monkeypatch, zone):
-    """The queue's filter POST answers 400 with the zone message."""
+    """The worklist's filter POST (#1685) answers 400 with the zone message."""
     _signed_in(monkeypatch, information_views)
-    request = RequestFactory().post("/", _information(zone))
+    values = {"stage": "all", "search": "", "start": "2026-11-01", "end": ""}
+    request = RequestFactory().post(
+        "/", values | ({} if zone is None else {"zone": zone})
+    )
     response = information_views.queue(request, uuid4())
     assert response.status_code == 400 and ZONE in response.content
 
