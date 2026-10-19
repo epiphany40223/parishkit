@@ -46,9 +46,8 @@ BULKED = "/census-changes-bulked"
 BULK_NOTICE = "2 changes accepted."
 STALE = "/census-changes-stale"
 STALE_NOTICE = (
-    "Mobile phone for Member DUID 100 in Family DUID 1000 was changed by "
-    "someone else first, so nothing was recorded. The list shows its current "
-    "state."
+    "Not recorded: someone else changed Mobile phone for Member DUID 100 in "
+    "Family DUID 1000 first."
 )
 EDITED = "/census-changes-edited"
 EDITED_NOTICE = "Home address for the Family in Family DUID 1002 accepted (edited)."
