@@ -2,8 +2,8 @@
 
 The baseline records ``reviewed_view`` and ``shown_items`` and the submit
 copies them, unchanged, to the immutable Submission. Nothing sets them yet,
-so every form is drawn with the setting off and the Family form is
-unchanged; these tests force a reviewed baseline to prove the copy.
+so no form is drawn as the reviewed form and the Family form is unchanged;
+these tests force a reviewed baseline to prove the copy.
 """
 
 import json
@@ -54,11 +54,11 @@ def check_block():
 
 @contextmanager
 def reviewed_baselines(monkeypatch, shown_items):
-    """Issue baselines as a form drawn with the setting on would record them.
+    """Issue baselines as a reviewed form would record them.
 
-    Nothing sets the columns until slice 2, so this adds them to the real
-    issue's one ``create`` call; everything else about the baseline is the
-    production path.
+    Nothing sets the columns until slice 6 turns the reviewed form on, so
+    this adds them to the real issue's one ``create`` call; everything else
+    about the baseline is the production path.
     """
     manager = FamilyFormBaseline.objects
     # A nested context undoes only this patch, not the test's other ones.
@@ -145,19 +145,21 @@ def test_check_refuses_each_wrong_installation(change, message):
 
 
 def test_check_refuses_an_existing_reviewed_row(response_service, monkeypatch):
-    """Additive: the file refuses to commit over a row not drawn with it off."""
+    """Additive: the file refuses to commit over an existing reviewed row."""
     with reviewed_baselines(monkeypatch, []):
         form_and_answers(response_service)
     with (
-        pytest.raises(DatabaseError, match="must read as drawn with the setting off"),
+        pytest.raises(
+            DatabaseError, match="must read as not drawn as the reviewed form"
+        ),
         transaction.atomic(),
         connection.cursor() as cursor,
     ):
         cursor.execute(check_block())
 
 
-def test_setting_off_form_and_response_record_nothing(response_service):
-    """Today every form is drawn with the setting off, and so is its response."""
+def test_todays_form_and_response_record_nothing(response_service):
+    """Today no form is drawn as the reviewed form, nor is its response."""
     form, answers = form_and_answers(response_service)
     assert (form.baseline.reviewed_view, form.baseline.shown_items) == (False, None)
     row = submit(response_service, form, answers).submission

@@ -7,19 +7,19 @@
 --
 -- It adds two columns to the form baseline and the same two to the
 -- immutable Submission:
---   reviewed_view  boolean, false by default: the form was drawn with
---                  "Families see reviewed changes" on;
---   shown_items    jsonb, NULL by default: with the setting on, one entry
+--   reviewed_view  boolean, false by default: the form was drawn as the
+--                  reviewed Family form;
+--   shown_items    jsonb, NULL by default: for a reviewed form, one entry
 --                  per census, Ministry or pledge item naming the immutable
 --                  value the form showed (the entries' shape is the next
 --                  slice's);
--- and on each table a check that pairs them: a form drawn with the setting
--- off records no shown items, one drawn with it on records a JSON array.
+-- and on each table a check that pairs them: a form not drawn as the
+-- reviewed form records no shown items, a reviewed form a JSON array.
 --
 -- Additive only. Every existing baseline and Submission keeps every value
--- it has and reads as drawn with the setting off (false, NULL), which the
--- checks admit; no row is rewritten (the false default is a stored
--- constant). Nothing issues a form with the setting on yet; the submit
+-- it has and reads as not drawn as the reviewed form (false, NULL), which
+-- the checks admit; no row is rewritten (the false default is a stored
+-- constant). Nothing issues a reviewed form yet; the submit
 -- copies both from the baseline it locks, unchanged, in its one existing
 -- transaction. The baseline guard already refuses an UPDATE of any
 -- column other than state, ended_at and version, so both are fixed once
@@ -36,7 +36,7 @@
 -- DEFINER to re-assert. No Family code, link or session is created,
 -- revoked or changed. The DO block at the end refuses to commit unless the
 -- columns and checks are installed as described and every existing row
--- reads as drawn with the setting off. No temporary objects: the migration
+-- reads as not drawn as the reviewed form. No temporary objects: the migration
 -- login has no TEMP privilege. Reversing needs its own forward migration.
 SET LOCAL check_function_bodies = false;
 SET LOCAL search_path = public;
@@ -92,12 +92,12 @@ BEGIN
             RAISE EXCEPTION '% is not installed on %', shapes[i], tables[i];
         END IF;
     END LOOP;
-    -- Additive: every existing row reads as drawn with the setting off.
+    -- Additive: every existing row reads as not drawn as the reviewed form.
     IF EXISTS (SELECT 1 FROM public.stewardship_family_form_baseline
                WHERE reviewed_view OR shown_items IS NOT NULL)
        OR EXISTS (SELECT 1 FROM public.stewardship_submission
                   WHERE reviewed_view OR shown_items IS NOT NULL) THEN
-        RAISE EXCEPTION 'existing forms and responses must read as drawn with the setting off';
+        RAISE EXCEPTION 'existing forms and responses must read as not drawn as the reviewed form';
     END IF;
 END
 $check$;

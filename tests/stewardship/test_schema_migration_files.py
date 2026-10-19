@@ -397,7 +397,7 @@ FROZEN = {
         "cc88c09f4be01751997f1144be6ac2ade39bc3a760f90dc99baf09da17ced446"
     ),
     "0153_reviewed_form_shown_items.sql": (
-        "1ab7d9bc36857618bd74381d4b5b881f0bf39faac74308f5b50fb8a56f7779ef"
+        "917cfd626a29459d8783a1564099b2eaa4933d834cc24da398a2e7868dd0f056"
     ),
 }
 

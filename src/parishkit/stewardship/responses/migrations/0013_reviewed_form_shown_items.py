@@ -6,7 +6,7 @@ read whole and never parsed. It adds ``reviewed_view`` (false by default)
 and ``shown_items`` (NULL by default) to ``stewardship_family_form_baseline``
 and ``stewardship_submission``, each with the check that pairs them, and
 ends with a DO block that refuses to commit unless they are installed as
-described and every existing row reads as drawn with the setting off.
+described and every existing row reads as not drawn as the reviewed form.
 
 It follows the users swap (through the previous frozen file's migration),
 so it is in the swap's closure: `migrate --users-upgrade-base` never
