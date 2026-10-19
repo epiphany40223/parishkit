@@ -2770,10 +2770,14 @@ JSON Lines is for scripts: one object per answer, Members' first, with the
 CSV's columns under the keys `member`, `member_duid`, `family`,
 `parishsoft_status`, `family_duid`, `cannot_participate`, `latest_response`
 and `stage` (a Family's answer has only `family`, `parishsoft_status`,
-`family_duid`, `latest_response` and `stage`), plus `kind` (`member`,
-`proposed_member` or `family`), `item_id` and `version`, which
+`family_duid`, `limitation`, `latest_response` and `stage`), plus `kind`
+(`member`, `proposed_member` or `family`), `item_id` and `version`, which
 `limitations decide` takes, and `actions`, the decisions you may record on
-it now (none while other campaign work holds the campaign).
+it now (none while other campaign work holds the campaign). Once the
+Limitations page lists the Families that cannot contribute financially
+(R39 finding 11, with #1734), each of those is a Family record of `kind`
+`cannot_give` whose `item_id` is `pledge-<id>` and whose `actions` are
+always empty: it is decided on Pledges, never with `limitations decide`.
 
 ```sh
 (umask 077; pk-admin export limitations --show cannot_serve > limitations.xlsx)
