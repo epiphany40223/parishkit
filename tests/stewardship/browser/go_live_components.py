@@ -506,7 +506,7 @@ def prepare_pages(context, admin):
             "stage": stage,
             "campaign": campaign,
             "wizard": go_live_check.bar(
-                "started" if stage.started else "idle",
+                go_live_check.bar_state(stage),
                 current="prepare",
                 prepared=stage.state == "ready",
             ),
@@ -645,6 +645,20 @@ def confirm_pages(context, admin):
             "/go-live-confirm-moved",
             confirm_shown(context, "moved", "running", "repreparing", preparation=2),
         ),
+        # Go-live is not in progress: stopped by another Administrator,
+        # never started, or Production already confirmed.
+        (
+            "/go-live-confirm-stopped",
+            confirm_shown(context, "stopped", "stopped", stopped_by_other=True),
+        ),
+        (
+            "/go-live-confirm-not-started",
+            confirm_shown(context, "not_started", "not_started"),
+        ),
+        (
+            "/go-live-confirm-confirmed",
+            confirm_shown(context, "confirmed", "confirmed"),
+        ),
     )
     pages = {}
     for path, shown in states:
@@ -661,6 +675,9 @@ def confirm_pages(context, admin):
         ("/go-live-confirm-review", {"review": "synthetic-review", "shown": ready}),
         ("/go-live-confirm-review-typed", {"refused": "typed"}),
         ("/go-live-confirm-review-changed", {"refused": "changed"}),
+        ("/go-live-confirm-review-due", {"refused": "due"}),
+        ("/go-live-confirm-review-closed", {"refused": "closed"}),
+        ("/go-live-confirm-review-origin", {"refused": "origin_unverified"}),
     ):
         answer = values | {
             "check_url": GO_LIVE,

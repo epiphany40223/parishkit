@@ -82,6 +82,23 @@ def test_bar_on_prepare_opens_confirm_production_once_the_links_are_ready():
     )
 
 
+@pytest.mark.parametrize("current", ["prepare", "confirm"])
+def test_bar_once_production_is_confirmed_completes_three_steps(current):
+    """Prepare and Confirm Production after the confirmation: Check, Prepare
+    and Confirm Production completed, Activation in progress and linked; no
+    step says to start go-live first."""
+    shown = SimpleNamespace(state="confirmed", started=False)
+    bar = go_live_check.bar(go_live_check.bar_state(shown), current=current)
+    assert bar.completed == 3 and bar.total == 4
+    assert [step.state for step in bar.steps] == ["done", "done", "done", "todo"]
+    assert bar.step("check").url is None
+    assert bar.step("activate").url == reverse("admin:production_progress")
+    assert str(bar.step("activate").status) == "In progress"
+    assert all("Start go-live" not in str(step.status) for step in bar.steps)
+    stopped = SimpleNamespace(state="stopped", started=False)
+    assert go_live_check.bar_state(stopped) == "idle"
+
+
 def test_retry_control_is_the_same_on_every_read_of_one_failure():
     """Unchanged between polls, so the live region is not replaced each time.
 

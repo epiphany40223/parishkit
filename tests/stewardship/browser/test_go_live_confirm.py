@@ -17,25 +17,70 @@ pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
 
-# Each state's page, its heading and its one primary (None: nothing to do).
+# Each state's page, its heading, its one primary (None: nothing to do) and
+# whether Stop go-live is offered (only while go-live is in progress here).
 STATES = (
-    (CONFIRM, "Ready to confirm Production.", "Confirm Production"),
+    (CONFIRM, "Ready to confirm Production.", "Confirm Production", True),
     (
         "/go-live-confirm-scheduled",
         "Ready to confirm Production.",
         "Confirm Production",
+        True,
     ),
-    ("/go-live-confirm-problems", "Something needs attention before going live.", None),
+    (
+        "/go-live-confirm-problems",
+        "Something needs attention before going live.",
+        None,
+        True,
+    ),
     (
         "/go-live-confirm-hold",
         "ParishSoft refreshes resumed while this waited.",
         "Refresh and prepare again",
+        True,
     ),
-    ("/go-live-confirm-closed", "The campaign has ended, so it cannot go live.", None),
+    (
+        "/go-live-confirm-closed",
+        "The campaign has ended, so it cannot go live.",
+        None,
+        True,
+    ),
     (
         "/go-live-confirm-moved",
         "ParishSoft data changed, so new links are being prepared.",
         "Open Prepare",
+        False,
+    ),
+    (
+        "/go-live-confirm-stopped",
+        "Another Administrator stopped go-live.",
+        "Open Check",
+        False,
+    ),
+    (
+        "/go-live-confirm-not-started",
+        "Not available yet: Start go-live on the Check step first.",
+        "Open Check",
+        False,
+    ),
+    (
+        "/go-live-confirm-confirmed",
+        "Production is confirmed.",
+        "Open Production activation",
+        False,
+    ),
+)
+# The dialog's refusals the fixture server draws: its path and the words.
+REFUSALS = (
+    ("/go-live-confirm-review-changed", "ParishSoft data changed since this preview"),
+    ("/go-live-confirm-review-due", "Emails fell due since this preview"),
+    (
+        "/go-live-confirm-review-closed",
+        "The campaign has ended, so it cannot go live.",
+    ),
+    (
+        "/go-live-confirm-review-origin",
+        "The public web address check failed or timed out",
     ),
 )
 
@@ -69,7 +114,7 @@ def test_each_state_has_one_frame_and_at_most_one_primary(
     page.set_viewport_size({"width": width, "height": 900})
     errors = []
     page.on("pageerror", lambda error: errors.append(str(error)))
-    for path, heading, primary in STATES:
+    for path, heading, primary, stop in STATES:
         page.goto(component_origin + path)
         visible(page.get_by_role("heading", name="Go live", exact=True))
         expect(page.locator("#go-live-state")).to_have_text(heading)
@@ -83,7 +128,7 @@ def test_each_state_has_one_frame_and_at_most_one_primary(
             assert row.count() == 1, path
             visible(row.get_by_text(primary, exact=True))
         stops = page.get_by_role("button", name="Stop go-live")
-        assert stops.count() == (0 if path.endswith("moved") else 1), path
+        assert stops.count() == (1 if stop else 0), path
         assert page.locator("[data-go-live-back]").count() == 0
         assert page.get_by_role("link", name="Refresh", exact=True).count() == 0
         assert page.evaluate(
@@ -91,6 +136,10 @@ def test_each_state_has_one_frame_and_at_most_one_primary(
         ), path
         assert axe_violations(page, axe_source) == [], path
     assert errors == []
+    # Production confirmed: Check, Prepare and Confirm Production are done.
+    page.goto(component_origin + "/go-live-confirm-confirmed")
+    expect(page.locator(".setup-stepper-count")).to_have_text("3 of 4 steps completed")
+    expect(page.locator("main")).not_to_contain_text("Start go-live on the Check")
     page.goto(component_origin + CONFIRM)
     expect(page.locator(".setup-stepper-count")).to_have_text("2 of 4 steps completed")
     expect(page.locator("main")).to_contain_text("Family emails due at once")
@@ -161,10 +210,9 @@ def test_cancel_and_a_reload_change_nothing(page, component_origin):
     assert posts and all("action=review" in body for body in posts)
 
 
-def test_a_refused_apply_names_the_change_inside_the_dialog(page, component_origin):
-    """ParishSoft data changed since the Review: Apply's refusal is shown in
-    the dialog, naming the change, Apply stays unavailable, Cancel closes."""
-    from playwright.sync_api import expect
+def refusing(page, component_origin, path):
+    """Answer the dialog's Apply with the refusal fragment at ``path`` (a 409,
+    as the view draws it); every other request goes through."""
 
     def refuse(route):
         """Answer Apply with the refusal the view draws; let the rest through."""
@@ -172,19 +220,61 @@ def test_a_refused_apply_names_the_change_inside_the_dialog(page, component_orig
         if route.request.method != "POST" or "action=confirm" not in body:
             route.continue_()
             return
-        answer = route.fetch(
-            url=component_origin + "/go-live-confirm-review-changed", method="GET"
-        )
+        answer = route.fetch(url=component_origin + path, method="GET")
         route.fulfill(status=409, body=answer.text(), content_type="text/html")
 
-    page.goto(component_origin + CONFIRM)
     page.route(component_origin + CONFIRM, refuse)
+
+
+def fits(page, dialog):
+    """Whether the page and the open dialog fit the width without scrolling."""
+    return page.evaluate(
+        "document.documentElement.scrollWidth <= window.innerWidth"
+    ) and dialog.evaluate("node => node.scrollWidth <= node.clientWidth")
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_the_dialog_fits_and_passes_the_scan(page, component_origin, axe_source, width):
+    """The open dialog, with its status hint and then with a refusal shown,
+    fits the width without scrolling sideways and passes the axe scan."""
+    from playwright.sync_api import expect
+
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + CONFIRM)
+    refusing(page, component_origin, "/go-live-confirm-review-changed")
+    page.get_by_role("button", name="Confirm Production").click()
+    dialog = page.get_by_role("dialog", name="Go live now?")
+    visible(dialog)
+    expect(dialog.locator("[data-confirm-status]")).to_have_text(
+        "Type Production exactly as shown to confirm."
+    )
+    assert fits(page, dialog)
+    assert axe_violations(page, axe_source) == []
+    dialog.get_by_label("Type Production to confirm").fill("Production")
+    dialog.get_by_role("button", name="Apply").click()
+    expect(dialog).to_contain_text("ParishSoft data changed since this preview")
+    assert fits(page, dialog)
+    assert axe_violations(page, axe_source) == []
+
+
+@pytest.mark.parametrize(("path", "words"), REFUSALS)
+def test_a_refused_apply_names_the_change_inside_the_dialog(
+    page, component_origin, path, words
+):
+    """Something changed since the Review (ParishSoft data, a send falling
+    due, the campaign's end, the public web address check run again): the
+    refusal is shown in the dialog in its own words, Apply stays
+    unavailable, and Cancel closes it on the same step."""
+    from playwright.sync_api import expect
+
+    page.goto(component_origin + CONFIRM)
+    refusing(page, component_origin, path)
     page.get_by_role("button", name="Confirm Production").click()
     dialog = page.get_by_role("dialog", name="Go live now?")
     dialog.get_by_label("Type Production to confirm").fill("Production")
     apply = dialog.get_by_role("button", name="Apply")
     apply.click()
-    expect(dialog).to_contain_text("ParishSoft data changed since this preview")
+    expect(dialog).to_contain_text(words)
     assert apply.is_disabled()
     # Typing again never makes the refused Apply available.
     dialog.get_by_label("Type Production to confirm").fill("Production ")

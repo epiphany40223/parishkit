@@ -26,6 +26,26 @@ from .sessions import sign_in_instant
 SALT = "stewardship-production-confirmation-v1"
 
 
+def preview_counts(preview):
+    """The counts a confirmation binds: the ones its preview showed.
+
+    The SQL confirmation token carries them, and ``ProductionConfirmation``
+    records them. The Confirm Production dialog's Review signs them too, so
+    Apply refuses when a send fell due since (#1585): the counts depend on
+    the preview's instant, which no inputs digest covers.
+    """
+    families, digests = preview.families.counts, preview.digests
+    return {
+        "active_families": families.active,
+        "eligible_families": families.email_eligible,
+        "no_email_families": families.no_eligible_email,
+        "family_messages": families.messages,
+        "daily_messages": digests.daily_messages,
+        "weekly_messages": digests.weekly_messages,
+        "coalesced_slots": families.coalesced_slots + digests.coalesced_slots,
+    }
+
+
 def verify_preview(
     request, service, campaign_id, transition_id, preparation_id, *, key=None
 ):
@@ -49,7 +69,6 @@ def verify_preview(
     )
     token = None
     if verified and not preview.problems:
-        families, digests = preview.families.counts, preview.digests
         token = signing.dumps(
             {
                 "actor": str(actor.identity),
@@ -63,16 +82,7 @@ def verify_preview(
                 "expires": preview.expires_at.isoformat(),
                 "observed": preview.readiness.observed_at.isoformat(),
                 "target": preview.readiness.target_state,
-                "counts": {
-                    "active_families": families.active,
-                    "eligible_families": families.email_eligible,
-                    "no_email_families": families.no_eligible_email,
-                    "family_messages": families.messages,
-                    "daily_messages": digests.daily_messages,
-                    "weekly_messages": digests.weekly_messages,
-                    "coalesced_slots": families.coalesced_slots
-                    + digests.coalesced_slots,
-                },
+                "counts": preview_counts(preview),
             },
             salt=SALT,
         )

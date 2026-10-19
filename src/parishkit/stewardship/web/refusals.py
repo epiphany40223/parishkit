@@ -508,6 +508,9 @@ STEP_REASONS = {
     "hold_ended": "stale_page",
     "moved": "stale_page",
     "problems": "stale_page",
+    # The same inputs, but emails fell due since the Review, so the counts
+    # it showed are no longer the ones Apply would confirm.
+    "due": "stale_page",
     "typed": "unexpected_fields",
 }
 
