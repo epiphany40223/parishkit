@@ -2262,9 +2262,9 @@ Each row names a Family and often a Member, with their contact details, so
 the rows stay on the page and its downloads. It records the page's
 "viewed" event with a count of 0.
 
-### Pledges to enter
+### Pledges
 
-`report pledges` counts **Pledges to enter**, the Families' pledges that
+`report pledges` counts **Pledges**, the Families' pledges that
 staff review and then enter in ParishSoft by hand. Like the page,
 Administrators and Staff may run it, from a session of any scope; a Ministry
 leader is refused (`denied`), and a campaign without Financial stewardship

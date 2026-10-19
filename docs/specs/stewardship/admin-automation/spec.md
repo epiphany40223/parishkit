@@ -2906,7 +2906,7 @@ one of `--value -` and `--note -`.
 
 `report pledges [--stage to_review|to_enter_by_hand|entered_by_hand|ignored|all]`
 ([#1733](https://github.com/epiphany40223/parishkit/issues/1733)) counts
-[Pledges to enter](../reports/spec.md#pledges-to-enter) as `report census`
+[Pledges](../reports/spec.md#pledges) as `report census`
 counts Census changes: the page's admission (`pledge_review_views._principal`:
 Administrators and Staff, never a Ministry leader), passive so any session
 scope reads, the shared report read, and the page's `pledge_rows` without a
@@ -2929,7 +2929,7 @@ event.
 --item ID:VERSION [--item ...] [--amount TEXT --frequency F] [--note TEXT|-]
 [--request-key KEY]`
 ([#1733](https://github.com/epiphany40223/parishkit/issues/1733)) is a
-Pledges to enter row's action or its bulk bar: full scope, keyed and not
+Pledges row's action or its bulk bar: full scope, keyed and not
 fresh-gated. Entered by hand is final, so `entered_by_hand` [prompts by
 default](#mitigations) (or takes `--yes`); the others can be changed again
 and ask nothing, as on the page. It checks the page's admission first, so a
