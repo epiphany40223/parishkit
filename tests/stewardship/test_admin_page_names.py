@@ -5,7 +5,8 @@ the registry label, and every "Return to" link names its target the same way.
 The placement table in the admin-portal spec is the source of the names, so
 the registry is checked against it too. NAV-4 covered Campaign setup and Mail
 and Family portal, and NAV-5a Home, Parish data, Users and access, System and
-the setup wizard; NAV-5b adds Responses and reports.
+the setup wizard; NAV-5b adds Responses and reports (since R39, Review work
+and Reports and queries).
 """
 
 import ast
@@ -30,7 +31,7 @@ TEMPLATE_DIR = PACKAGE / "accounts/templates/stewardship"
 SPEC = ROOT / "docs/specs/stewardship/admin-portal/spec.md"
 
 # The menu groups whose page names are settled so far.
-GROUPS = {"campaign", "mail", "reports", "parish", "users", "system"}
+GROUPS = {"campaign", "mail", "review", "reports", "parish", "users", "system"}
 # Pages outside every menu group whose names are settled too.
 UNGROUPED = {"index", "configuration_request", "campaign_create"}
 
