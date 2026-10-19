@@ -106,9 +106,9 @@ Family form showed it: one item per atomic change (one census field, one
 Ministry join or leave, one Family's pledge answer, one Member's
 cannot-participate answer, one Additional information text). Testing
 responses never enter the pipeline. A later response from the same Family
-follows the resubmission rule: [with the setting
-off](#resubmission-while-the-setting-is-off) in this campaign, and
-[with it on](#family-resubmission) once #1705 ships. Staff entering a
+follows the resubmission rule: [the rule before the reviewed
+form](#resubmission-before-the-reviewed-form) until #1705's last slice
+deploys, and [the reviewed rule](#family-resubmission) after it. Staff entering a
 Family's answers through Open form create Submitted items like the Family's
 own.
 
@@ -249,13 +249,12 @@ applies.
 Each Family has, per stream item, exactly **one** working change: the
 Family's latest answer together with its review decision. There is no
 second set of reviewer changes to reconcile against the Family's next
-submission. The Family form follows the per-campaign setting **Families see
-reviewed changes** ([the setting](#families-see-reviewed-changes-setting)).
-While it is off, as it is until #1705 ships, the form shows the
-Family its own last answers, as today, and resubmission follows
-[the rule for the setting off](#resubmission-while-the-setting-is-off).
-When it is on, the form shows the Family the baseline overlaid with the
-reviewed result:
+submission. Until the release with #1705's last slice deploys, the form
+shows the Family its own last answers, as today, and resubmission follows
+[the rule before the reviewed form](#resubmission-before-the-reviewed-form).
+From that release on, with no setting to switch
+([Families see reviewed changes](#families-see-reviewed-changes)), a live
+form shows the Family the baseline overlaid with the reviewed result:
 
 | Item's state | What the Family form shows for it (its **shown value**) |
 | --- | --- |
@@ -275,24 +274,23 @@ the reviewer, says why a value differs from what the Family typed, or
 mentions ParishSoft, as the
 [Effective-value merge](../data/spec.md#effective-value-merge) already
 requires. This changes that merge's first rule ("never an Admin review
-edit") while the setting is on: the census slice of #1705 updates the data
+edit") for the reviewed form: the census slice of #1705 updates the data
 spec's merge to start from the working change set. The financial stream
 shows the same way (an edited pledge shows the edited amount and
 frequency). The [reviewed Family form](#reviewed-family-form) is the design
 that #1705 builds.
 
-### Resubmission while the setting is off
+### Resubmission before the reviewed form
 
-This is the rule until #1705 ships and the setting is on. The form shows the
-Family its own last answers over the baseline, exactly as the
+This is the rule until the release with #1705's last slice deploys, and
+afterwards for a form drawn before that release and submitted after it
+([reviewed form concurrency](#reviewed-form-concurrency)). The form shows
+the Family its own last answers over the baseline, exactly as the
 [Effective-value merge](../data/spec.md#effective-value-merge) does today, so
 nothing a Family sees changes. When the Family submits again, each item is
 compared with **the Family's previous answer for that item** (the answer
 of the item's current version), never with a review result the Family has
-not been shown. Until #1705 the two are always the same; once a reviewed
-form has been used and the setting is switched off again, the comparison
-value is the item's last sent answer
-([after switching off](#family-resubmission)):
+not been shown:
 
 1. **Unchanged** (the new answer equals the previous answer in the stream's
    canonical comparison): the item keeps its stage, decision, reviewer's
@@ -369,8 +367,11 @@ cannot-attend item per Family, each compared with the previous answer.
 
 ### Family resubmission
 
-This is the rule once **Families see reviewed changes** is on (after
-[#1705](https://github.com/epiphany40223/parishkit/issues/1705)). When the
+This is the rule for a live form drawn as the
+[reviewed Family form](#reviewed-family-form), that is, from the release
+with [#1705](https://github.com/epiphany40223/parishkit/issues/1705)'s last
+slice on ([Families see reviewed changes](#families-see-reviewed-changes)).
+When the
 Family submits again, each item is compared with **what the form showed for
 it** (its shown value, the table above), not with the Family's earlier
 answer. The shown value is the one the form was drawn with, read back from
@@ -407,8 +408,8 @@ state at submit. The rules apply in order:
    current answer after Confirmed, so a Confirmed pledge is still in force
    and is judged by rules 1 to 3.
 5. **Not presented** (a section not enabled, a Member out of scope, a
-   Ministry no longer offered): the item is left as it is, as with the
-   setting off.
+   Ministry no longer offered): the item is left as it is, as before the
+   reviewed form.
 
 The financial stream keeps its own placement of rules 3 and 4 for a pledge
 ParishSoft already holds at the submit
@@ -426,49 +427,22 @@ dependency projection, so they never cause a stale-form refusal; a refresh,
 another session's submission or a form-definition change still does, as
 today.
 History keeps every version of every item, with who (the Family, or the
-Staff member using Open form) and when. The same holds with the setting
-off: a decision recorded while the Family had the form open is kept for an
-unchanged item by rule 1 above.
+Staff member using Open form) and when. The same holds under
+[the rule before the reviewed form](#resubmission-before-the-reviewed-form):
+a decision recorded while the Family had the form open is kept for an
+unchanged item by its rule 1.
 
-**After switching off.** A response from a reviewed form may have sent a
-reviewer's value (or the baseline, for an Ignored census field) back
-unchanged, so its answer for an item can differ from the item's own
-Family's answer. Once the setting is off, the setting-off form shows each
-item's **last sent answer** (the latest response's answer for it, which is
-the shown value that response sent), and
-[the setting-off rule](#resubmission-while-the-setting-is-off) compares the
-next answer with that, not with the item's own Family's answer. So a Family
-that leaves such an item as shown keeps its decision after a rollback: an
-Accepted (edited) item stays Accepted (edited), and an Ignored census field
-stays Ignored. Each stream's matching (the census effective-value index
-of #1683, the "Family asked again" match of #1684, the pledge stage
-selection) reads the last sent answer the same way. This is reachable only after #1705, and only
-when an Administrator switches the setting off again; the Family then sees
-only values it sent itself, never an edit it was not shown.
+### Families see reviewed changes
 
-### Families see reviewed changes setting
-
-The reviewed overlay ships behind a per-campaign setting, **Families see
-reviewed changes**, default off, which an Administrator switches on when
-[#1705](https://github.com/epiphany40223/parishkit/issues/1705) has shipped.
-It may be switched on mid-campaign ([decision 9](#decisions)); the setting
-is a rollout switch, not a campaign boundary.
-
-It is an audited switch, like
-[Family portal maintenance](../admin-portal/spec.md#family-portal-maintenance),
-not a campaign configuration value: an Administrator changes it on the
-Family portal availability page (or with `pk-admin`), each change is an
-audit event naming the campaign, the actor and on or off, and the
-campaign's newest such event is its state, so a campaign without one is
-off. A change locks the campaign row before reading the current state, so
-two Administrators switching at once cannot lose one change, and web
-processes reuse the state they read for up to 3 seconds, as the maintenance
-switch does; a stale read is harmless, because each form records the rule
-it was drawn with. Keeping it out of the campaign configuration means
-switching it makes no configuration version and changes no form-definition
-digest, so no open form is refused for it. Only live forms follow it: a Testing form always
-shows the Family its own Testing answers, since Testing responses never
-enter the pipeline.
+Families see the reviewed result as soon as the release with
+[#1705](https://github.com/epiphany40223/parishkit/issues/1705)'s last
+slice deploys, mid-campaign or not ([decision 9](#decisions)). There is no
+setting, switch or `pk-admin` command for it: the Administrator dropped
+the planned on/off setting on 2026-10-19, because Staff edit only to fix
+errors or to make updates the Family asked for, so a changed value will not
+confuse a Family. Only live forms show the reviewed result: a Testing form
+always shows the Family its own Testing answers, since Testing responses
+never enter the pipeline.
 
 No Family-facing explanation of reviewed values is needed, because the
 Administrator's stated intent (2026-10-18) limits what Staff change in a
@@ -488,22 +462,27 @@ never names the reviewer or gives a reason.
 
 - Codes and links are unaffected
   ([credentials and the submit path](#credentials-and-the-submit-path)).
-- Until the setting is on, the form keeps today's merge, and resubmission
-  follows [the rule for the setting off](#resubmission-while-the-setting-is-off).
+- Until that release, the form keeps today's merge, and resubmission
+  follows [the rule before the reviewed form](#resubmission-before-the-reviewed-form).
   Every other part of the pipeline (stages, decisions, worklists, My review
-  work, update and confirmation) does not depend on the setting.
-- Switching it either way, mid-campaign or while a form is open, follows
-  [concurrency and switching](#concurrency-and-switching).
+  work, update and confirmation) does not depend on #1705.
+- A form open across that deploy keeps working, because each form records
+  the items it showed
+  ([reviewed form concurrency](#reviewed-form-concurrency)).
+- Rollback is fail-forward, as for every release
+  ([Production upgrades](../operations/spec.md#production-upgrades)): a
+  problem with the reviewed form is fixed in a new release, never by
+  returning live forms to the earlier rule.
 - [#1705](https://github.com/epiphany40223/parishkit/issues/1705) comes after every Staff and Ministry leader slice. If it is ready
-  before the current campaign closes it may be switched on then; if not,
-  it waits, and nothing else depends on it.
+  before the current campaign closes it deploys then; if not, it waits,
+  and nothing else depends on it.
 
 ### Reviewed Family form
 
 This is the design of
 [#1705](https://github.com/epiphany40223/parishkit/issues/1705): what a
-Family sees when it signs in again with
-[the setting](#families-see-reviewed-changes-setting) on, how the form
+Family sees when it signs in again once it ships
+([Families see reviewed changes](#families-see-reviewed-changes)), how the form
 remembers what it showed, and how it ships. It builds on each stream's
 stored decisions as their slices define them (census
 [#1683](https://github.com/epiphany40223/parishkit/issues/1683), Ministry
@@ -516,7 +495,7 @@ Additional information and Limitations
 [#1753](https://github.com/epiphany40223/parishkit/issues/1753), and the
 refresh checks of
 [#1689](https://github.com/epiphany40223/parishkit/issues/1689)) and
-changes none of them while the setting is off.
+changes none of them before its last slice.
 
 **One working change per item.** Every stream already keeps at most one
 version of an item in force; the reviewed form makes that the only thing
@@ -592,8 +571,8 @@ stream, as the table above says. Notes on the table:
   item. A change the parish added stays parish work until Staff decide.
 - **A moved, deceased or death-date request already entered** (Entered by
   hand or Updated in ParishSoft, not yet Confirmed) is presented in its
-  state with the setting on, and an unchanged resubmission is rule 1. This
-  differs from the setting-off rule, where an entered terminal request is no
+  state on the reviewed form, and an unchanged resubmission is rule 1. This
+  differs from the rule before the reviewed form, where an entered terminal request is no
   longer presented and asking again makes a new request
   ([#1683](https://github.com/epiphany40223/parishkit/issues/1683)), because
   the reviewed form shows the Family the carried-forward state.
@@ -605,12 +584,14 @@ stream, as the table above says. Notes on the table:
 
 #### Shown items
 
-When the form is drawn with the setting on, the form's
+When a live form is drawn as the reviewed form, the form's
 [baseline reference](../data/spec.md#submission-concurrency)
 (`FamilyFormBaseline`) records, beside today's version references:
 
-- `reviewed_view`: true, drawn with the setting on (false for every form
-  drawn with it off, and for every baseline made before the column); and
+- `reviewed_view`: true, drawn as the reviewed form (false for a Testing
+  form, for every form drawn before the release with #1705's last slice,
+  and for every baseline made before the column), so the submit knows which
+  rule judges the form; and
 - `shown_items`: one entry per census, Ministry or pledge item in force for
   the Family, the pledge always included, Confirmed or not; a census or
   Ministry item that is Confirmed, withdrawn or replaced has none, since
@@ -632,14 +613,15 @@ that already moves the baseline's pins to it, so every stream can read
 what the response's form showed. The migration that adds the four columns
 is additive (nullable, or false by default) and changes no existing row.
 
-The submit then applies [the resubmission rule](#family-resubmission) for
-the form's own `reviewed_view`: a form drawn with the setting off is judged
-by [the setting-off rule](#resubmission-while-the-setting-is-off) whatever
-the setting is at submit, and one drawn with it on by the reviewed rule,
-even if the setting was switched off since. For each item:
+The submit then applies the resubmission rule for the form's own
+`reviewed_view`: a live form with it false (one drawn before the release
+with #1705's last slice) is judged by
+[the rule before the reviewed form](#resubmission-before-the-reviewed-form),
+and one with it true by [the reviewed rule](#family-resubmission). For
+each item under the reviewed rule:
 
 - census and Ministry make no new row for an unchanged item, as the
-  entered-census and "Family asked again" cases of the setting-off rule
+  entered-census and "Family asked again" cases of the earlier rule
   already do; each stream's database completeness check admits that
   absence only when the response's answer equals the shown value by the
   stream's canonical comparison;
@@ -650,10 +632,10 @@ even if the setting was switched off since. For each item:
   answer, as today; #1753's submit-time placement applies only to a pledge
   that is changed by this test;
 - cannot participate, cannot attend and Additional information show the
-  Family's own answer in every stage, so their setting-off comparison is
+  Family's own answer in every stage, so their earlier comparison is
   already the reviewed one and they change nothing.
 
-#### Concurrency and switching
+#### Reviewed form concurrency
 
 - **A decision while the form is open** is kept for an item the Family did
   not change (rule 1) and replaced for one it did (rule 2). The submit
@@ -667,18 +649,19 @@ even if the setting was switched off since. For each item:
   fresh baseline keeps the old one's `reviewed_view` and carries over the
   old shown item of every item whose relevant ParishSoft inputs did not
   change, so an untouched field keeps the value the Family saw, even if a
-  decision was recorded or the setting switched meanwhile (rule 1 then
-  keeps the newer decision). Only the affected fields take fresh shown
-  values, and they are listed in the review as today.
+  decision was recorded meanwhile (rule 1 then keeps the newer decision).
+  Only the affected fields take fresh shown values, and they are listed in
+  the review as today.
 - **Another session's submission** advances the Family's effective version
   and is refused for review, as today.
-- **Switching the setting while the form is open** is never a refusal: the
-  form is judged by the rule it was drawn with, recorded in its
-  `reviewed_view`, so a form open across a switch on is judged by the
-  setting-off rule, and one open across a switch off by the reviewed rule.
-  The switch changes no stored answer or decision. After a switch off, the
-  next form shows each item's last sent answer and compares with it
-  ([after switching off](#family-resubmission)).
+- **A form open across the deploy** of #1705's last slice is never refused
+  for it: its baseline reference keeps today's format with `reviewed_view`
+  false, so it is judged by
+  [the rule before the reviewed form](#resubmission-before-the-reviewed-form),
+  and the Family's next form is a reviewed form. A stale-form review after
+  the deploy fetches a fresh baseline that keeps the old one's
+  `reviewed_view`, as above. The deploy changes no stored answer or
+  decision.
 
 #### Privacy and wording
 
@@ -693,15 +676,16 @@ even if the setting was switched off since. For each item:
   Ministry lists, Review page, welcome notice, Thank You page and receipt
   are unchanged, because the Administrator's stated intent limits Staff
   changes to consistency fixes and corrections the Family asked for
-  ([the setting](#families-see-reviewed-changes-setting)). The receipt
-  still carries no answer values.
-- Staff-facing text: while the setting is on, each census, Ministry and
-  financial worklist's page help adds, in these words: "Families see
-  reviewed changes is on. A Family that signs in again sees the values you
-  accepted, edited or added, and ParishSoft's value for a change you
-  ignored. Edit a Family's answer only to make it consistent (for example
-  "St." for "Street") or to make a correction the Family asked for." The
-  Edit, Add and Ignore dialogs add one sentence: "The Family will see this
+  ([Families see reviewed changes](#families-see-reviewed-changes)). The
+  receipt still carries no answer values.
+- Staff-facing text, always present from the release with #1705's last
+  slice (it ships in the same slice that turns the reviewed form on, so it
+  is never shown while untrue): each census, Ministry and financial
+  worklist's page help adds, in these words: "A Family that signs in again
+  sees the values you accepted, edited or added, and ParishSoft's value for
+  a change you ignored. Edit a Family's answer only to make it consistent
+  (for example "St." for "Street") or to make a correction the Family asked
+  for." The Edit, Add and Ignore dialogs add one sentence: "The Family will see this
   value the next time it signs in." (Edit, Add; for a Ministry join Add:
   "The Family will see this Ministry selected the next time it signs in. If
   it unticks it, this row will say so."; for a Ministry leave Add: "The
@@ -726,23 +710,28 @@ form's existing keyboard, focus and accessible-name checks run on a reviewed for
 #### Credentials and the submit path
 
 - No Family code or link is created, revoked, rotated, reissued or
-  re-sent; the switch and the migration touch no credential or session.
+  re-sent; no slice and no migration touches a credential or session.
 - The submit stays one transaction under today's locks and lock order,
   with today's validation, refusals, receipt outbox and fact hint. The
   reviewed rule only changes which comparison value each stream's existing
   derivation uses, and reads only Family-scoped rows already locked by the
   work order; there is no provider call.
-- With the setting off, the Family form, its payload and the submit's
-  outcomes are unchanged: each slice proves it with a render and payload
-  comparison against the base and keeps the baseline reference format, so a
-  form open across the deploy submits without a stale-form refusal.
+- Before the last slice, the Family form, its payload and the submit's
+  outcomes are unchanged: each of slices 1 to 5 proves it with a render and
+  payload comparison against the base. Every slice, the last included,
+  keeps the baseline reference format, so a form open across any of their
+  deploys submits without a stale-form refusal.
 
 #### Reviewed form delivery
 
-Small pull requests after every Staff and leader slice, each behind the
-setting. The switch itself ships in the last one, so the setting cannot be
-turned on while any stream still draws the setting-off form; until then no
-form records `reviewed_view` true and nothing a Family sees changes.
+Small pull requests after every Staff and leader slice. Slices 1 to 5
+build the reviewed form without drawing it for a Family: each stream's
+reader and reviewed derivation is called only by tests until slice 6
+connects the live form and the submit to them. There is no setting
+([Families see reviewed changes](#families-see-reviewed-changes)), so
+nothing a Family sees changes, and no form records `reviewed_view` true,
+until the release with slice 6 deploys. Rollback is fail-forward: a
+problem found after that deploy is fixed in a new release.
 
 1. **Shown-items storage.** The additive migration for `reviewed_view` and
    `shown_items` on `FamilyFormBaseline` and `Submission`, with a
@@ -757,91 +746,87 @@ form records `reviewed_view` true and nothing a Family sees changes.
    recording of `shown_items` at baseline issue, driven by per-stream
    readers that slices 3 to 5 add. It needs the stages it names, so it
    follows #1683, #1684, #1685, #1686 (with #1704, #1747 and #1753), #1688
-   and #1689. Tests: the unit tables; a PostgreSQL test that a Testing or
-   setting-off form records nothing.
-3. **Census.** The census reader; the census form draws from the working
+   and #1689. Tests: the unit tables; a PostgreSQL test that a Testing form
+   records nothing.
+3. **Census.** The census reader; the census reviewed draw from the working
    change set (the
    [Effective-value merge](../data/spec.md#effective-value-merge) gains its
-   setting-on form); the census derivation compares with the shown value,
-   and with the last sent answer after a switch off; a forward migration
-   lets the completeness check admit an unchanged item's absence. Needs
-   slice 2. Tests (PostgreSQL), with the reviewed rule forced on in the
-   test since the switch is not built yet: every census stage times
-   unchanged, changed, set back to ParishSoft's value and new; Ignored left
-   as shown stays Ignored; an entered terminal request left as shown; a
-   decision recorded while the form is open kept for an untouched field; a
-   form drawn with each rule judged by it; a refresh while open keeping an
-   untouched field's shown value; on, unchanged resubmit of an edited
-   field, off, unchanged resubmit, still Accepted (edited); setting-off
-   payload byte-identical to the base; the form-load and submit query
-   counts.
-4. **Ministry.** The Ministry reader; choices drawn from the working change
-   set (edited and added requests included); the derivation compares with
-   the shown selection; completeness check as for census. Needs slice 2.
-   Tests as for census, plus an edited request left as shown, unselected,
-   and with its original Ministry selected (rule 2 on the same request);
-   an added join unticked ("Family unticked", decision kept); an added
-   leave switched to continue ("Family chose to continue", decision kept);
-   the off round trip for an edited request.
-5. **Financial.** The pledge reader; the pledge drawn from the working
-   change set; the pledge stage selection reads `shown_items` in every
-   stage; #1753's submit-time placement only for a changed pledge. Needs
-   slice 2. Tests: every pledge stage, Confirmed included, times unchanged,
-   changed and edited to zero; a Confirmed edited pledge resubmitted
-   unchanged stays Confirmed; the share methods kept; a refresh check after
-   an unchanged resubmission still counting; the off round trip.
-6. **Switch, Staff wording and browser coverage.** The audited per-campaign
-   switch on Family portal availability and its `pk-admin` command
-   (Administrator only, CSRF, campaign-row lock, audit event with no
-   values); the page help and dialog sentences above; browser tests in
-   Chromium, Firefox and WebKit of a reviewed form (shown values, markers,
-   Ministry lists, Review page, unchanged resubmission); the privacy test
-   of the payload keys and rendered words; a pk-local checklist for the
-   Administrator, who then decides when to switch the setting on. Needs
-   slices 3 to 5. Tests also cover roles, CSRF, the audit rows, the state
-   from the newest event, and that switching touches no credential.
+   reviewed form); the census reviewed derivation compares with the shown
+   value; a forward migration lets the completeness check admit an
+   unchanged item's absence. Needs slice 2. Tests (PostgreSQL), calling the
+   reviewed draw and derivation directly, since slice 6 connects them:
+   every census stage times unchanged, changed, set back to ParishSoft's
+   value and new; Ignored left as shown stays Ignored; an entered terminal
+   request left as shown; a decision recorded while the form is open kept
+   for an untouched field; a form with `reviewed_view` false judged by the
+   earlier rule and one with it true by the reviewed rule; a refresh while
+   open keeping an untouched field's shown value; the live Family payload
+   byte-identical to the base; the form-load and submit query counts.
+4. **Ministry.** The Ministry reader; reviewed choices drawn from the
+   working change set (edited and added requests included); the reviewed
+   derivation compares with the shown selection; completeness check as for
+   census. Needs slice 2. Tests as for census, plus an edited request left
+   as shown, unselected, and with its original Ministry selected (rule 2 on
+   the same request); an added join unticked ("Family unticked", decision
+   kept); an added leave switched to continue ("Family chose to continue",
+   decision kept).
+5. **Financial.** The pledge reader; the reviewed pledge drawn from the
+   working change set; the pledge stage selection reads `shown_items` in
+   every stage; #1753's submit-time placement only for a changed pledge.
+   Needs slice 2. Tests: every pledge stage, Confirmed included, times
+   unchanged, changed and edited to zero; a Confirmed edited pledge
+   resubmitted unchanged stays Confirmed; the share methods kept; a refresh
+   check after an unchanged resubmission still counting.
+6. **Turn on the reviewed form, Staff wording and browser coverage.** The
+   live Family form (and Open form) draws the reviewed form and records
+   `shown_items` with `reviewed_view` true, and the submit judges each form
+   by its `reviewed_view`; a Testing form is unchanged. The page help and
+   dialog sentences above, always present from this release. Browser tests
+   in Chromium, Firefox and WebKit of a reviewed form (shown values,
+   markers, Ministry lists, Review page, unchanged resubmission); the
+   privacy test of the payload keys and rendered words; a pk-local
+   checklist for the Administrator, who approves this release's deploy as
+   for any other. Needs slices 3 to 5. Tests also cover a form drawn before
+   the release (`reviewed_view` false) submitted after it, judged by the
+   earlier rule without a stale-form refusal; a Testing form showing its
+   own Testing answers; and that no credential is touched.
 
-#### Reviewed form open questions
+#### Reviewed form decisions
 
-Each has a default this design already follows; the Administrator may
-change any of them on
-[#1705](https://github.com/epiphany40223/parishkit/issues/1705).
+The Administrator settled these on
+[#1705](https://github.com/epiphany40223/parishkit/issues/1705) on
+2026-10-19. The numbers are those of the questions posted there.
 
 1. **Ignored with no showable baseline** (a pledge, cannot participate,
    cannot attend, Additional information, an address or email opt-out):
-   show the Family's own latest answer, unmarked. *Alternative:* show the
-   field empty, which would force a Family to retype a required pledge and
-   would read a cleared answer as a withdrawal.
-2. **Where the switch lives:** an audited switch on Family portal
-   availability plus `pk-admin`, outside the campaign configuration, so
-   switching never refuses an open form. *Alternative:* a Campaign settings
-   value, which is locked once the campaign is live and would make a
-   configuration version.
-3. **Testing mode:** only live forms follow the setting; a Testing form
-   shows its own Testing answers, since Testing responses never enter the
-   pipeline. The reviewed form is rehearsed in pk-local with fixture data
-   instead.
-4. **The change marker's label for a reviewer's value:** keep "Your updated
-   value". *Alternative:* a neutral "Updated value" on every marker, which
-   changes the form for every Family, setting on or off.
-5. **An ignored leave** (a leader recorded "Stayed in the Ministry"): show
-   "Continue in this ministry", the parish's decision, in line with the
-   Administrator's intent that Staff change only what the Family asked for.
-6. **Switching off after on:** an emergency rollback only; no stored answer
-   or decision changes, and the next form shows each item's last sent
-   answer and compares with it, so nothing a Family left as shown is
-   reopened ([after switching off](#family-resubmission)). *Alternative:*
-   show the item's own Family's answer again, which would reopen every
-   edited item the Family had sent back unchanged.
-7. **Staff wording** while the setting is on: the page help with the
-   Administrator's intent and one dialog sentence, as above.
-   *Alternative:* page help only.
-8. **A Ministry join or leave added by the parish:** show it as any join or
-   leave with the usual marker, and treat the Family undoing it as "Family
-   unticked" or "Family chose to continue" on the request, keeping its
-   decision, never a withdrawal. *Alternatives:* do not present Added
-   requests (the Family then never sees parish work it may have asked for by
-   phone), or let an untick withdraw it (parish work could disappear
+   **confirmed:** show the Family's own latest answer, unmarked.
+   *Rejected:* show the field empty, which would force a Family to retype a
+   required pledge and would read a cleared answer as a withdrawal.
+2. *Removed:* where an on/off switch would live. The Administrator dropped
+   the switch ([Families see reviewed changes](#families-see-reviewed-changes)).
+3. **Testing mode:** **confirmed:** only live forms show the reviewed
+   result; a Testing form shows its own Testing answers, since Testing
+   responses never enter the pipeline. The reviewed form is rehearsed in
+   pk-local with fixture data instead.
+4. **The change marker's label for a reviewer's value:** **confirmed:** keep
+   "Your updated value". *Rejected:* a neutral "Updated value" on every
+   marker, which changes the form for every Family.
+5. **An ignored leave** (a leader recorded "Stayed in the Ministry"):
+   **confirmed:** show "Continue in this ministry", the parish's decision,
+   in line with the Administrator's intent that Staff change only what the
+   Family asked for.
+6. *Removed:* switching the setting off after on. With no switch, rollback
+   is fail-forward.
+7. **Staff wording:** the page help with the Administrator's intent and one
+   dialog sentence, as above, always present from the release with the last
+   slice (the default stands; no answer was given). *Rejected:* page help
+   only.
+8. **A Ministry join or leave added by the parish:** **confirmed:** show it
+   as any join or leave with the usual marker, and treat the Family undoing
+   it as "Family unticked" or "Family chose to continue" on the request,
+   keeping its decision, never a withdrawal. *Rejected:* do not present
+   Added requests (the Family then never sees parish work it may have asked
+   for by phone), or let an untick withdraw it (parish work could disappear
    without a Staff decision).
 
 ## Baseline refresh re-evaluation
@@ -999,7 +984,7 @@ then reconciliation resolving a request whose roster state is current.
 The mapping onto stages is the
 [existing state to stage](#existing-state-to-stage) table. A decided request is
 not offered again in today's form; a Family that ticks it again is handled
-by [rule 1](#resubmission-while-the-setting-is-off).
+by [rule 1](#resubmission-before-the-reviewed-form).
 
 Bulk outcomes already exist (Mark as Joined or Declined, Left or Stayed, one
 kind at a time) and so does a bulk Entered in ParishSoft tick. Gaps: no
@@ -1361,10 +1346,13 @@ additions to 4–7, and answered 9 the same day:
    campaign, ahead of everything else. The Family view
    ([#1705](https://github.com/epiphany40223/parishkit/issues/1705)) has
    lower priority and comes after it; if it is ready before this campaign
-   closes it is switched on then, and if not, that is fine.** The
+   closes it is deployed then, and if not, that is fine.** The
    Administrator expects Staff to make only consistency fixes and the
    corrections a Family asked for, so Families will not be surprised by
-   what they see ([the setting](#families-see-reviewed-changes-setting)).
+   what they see. On 2026-10-19 the Administrator dropped the planned
+   on/off setting for it: Families see the reviewed result from the
+   release with its last slice
+   ([Families see reviewed changes](#families-see-reviewed-changes)).
 
 The review also settled the structure: [role-specific
 actions](#role-specific-actions) with Add, [one working change
@@ -1391,7 +1379,7 @@ land before the campaign closes):
 5. [#1683](https://github.com/epiphany40223/parishkit/issues/1683) Census
    changes moves to the worklist; review and update separated; Staff review
    of Automatic changes; Add; the census cases of the
-   [resubmission rule](#resubmission-while-the-setting-is-off).
+   [resubmission rule](#resubmission-before-the-reviewed-form).
 6. [#1684](https://github.com/epiphany40223/parishkit/issues/1684) Ministry
    requests moves to it, with Edit (Ministry), Staff Add and the "Family
    asked again" case.
@@ -1416,7 +1404,7 @@ land before the campaign closes):
     smoke test.
 13. [#1705](https://github.com/epiphany40223/parishkit/issues/1705)
     Families see reviewed changes: the working change set in
-    the Family form, the resubmission rule, the per-campaign setting, in
+    the Family form and the resubmission rule, with no on/off setting, in
     six pull requests ([reviewed form delivery](#reviewed-form-delivery)).
     Lowest priority.
 
@@ -1427,7 +1415,7 @@ pipeline in use before the current campaign closes, without harming the
 existing database or the running campaign. Every slice except
 [#1705](https://github.com/epiphany40223/parishkit/issues/1705) ships to the
 current campaign; #1705 comes last and ships when ready
-([the setting](#families-see-reviewed-changes-setting)). This section is how
+([Families see reviewed changes](#families-see-reviewed-changes)). This section is how
 that is done safely.
 
 ### Data integrity
@@ -1505,12 +1493,12 @@ no stored decision to carry, and bulk Accept handles them in a few clicks.
 
 - **Family codes and links** are untouched by every slice: no credential is
   migrated, revoked, rotated, reissued or re-sent.
-- **The Family form does not change** until #1705's setting is on. Each slice
+- **The Family form does not change** until #1705's last slice deploys. Each slice
   that touches the submit path proves it with a render comparison of the
   Family form against the base, and keeps the form's baseline reference
   format, so a Family whose form was open across a deploy submits without a
   stale-form refusal and is judged by [rule 1 to
-  5](#resubmission-while-the-setting-is-off).
+  5](#resubmission-before-the-reviewed-form).
 - **Existing pages keep working until their stream switches.** Each stream
   moves to the worklist in one release, replacing its page at the same
   address where it can; nothing redirects (no legacy URLs). Until then the
@@ -1561,8 +1549,8 @@ Publish page keep working meanwhile; and #1705, last of all.
 
 Risks:
 
-- **The Family submit path.** The [rule for the setting
-  off](#resubmission-while-the-setting-is-off) changes census, Ministry and
+- **The Family submit path.** The [rule before the reviewed
+  form](#resubmission-before-the-reviewed-form) changes census, Ministry and
   Additional information derivation inside the submit transaction mid-campaign.
   Each slice first adds tests pinning today's outcome for every stage, then
   changes only the three cases listed there, under the existing row-lock
