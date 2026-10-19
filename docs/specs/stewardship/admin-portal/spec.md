@@ -1150,8 +1150,8 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `go_live_links` | (retired) | (retired) | Administrator | Prepare Family links; Family links | `/admin/campaign/go-live/cleanup/<request>/links/` | (retired; 404) | Retired with no redirect (#1585 slice 3): the system prepares the links, and the Prepare step shows them. |
 | `go_live_confirm` | Go live | Go live (its Check step) | Administrator | Confirm Production; Final Production confirmation | `/admin/campaign/go-live/confirmation/` | (same) | The Go live page's Confirm Production step (#1585 slice 4); its trail is Campaign setup › Go live and it marks the Go live menu entry. |
 | `production_confirmation` | (retired) | (retired) | Administrator | Confirm Production | `/admin/campaign/go-live/cleanup/<request>/links/<preparation>/confirmation/` | (retired; 404) | Retired with no redirect (#1585 slice 4): the Confirm Production step replaced it. |
-| `production_progress` | Production activation | Menu: Production activation | Administrator | Production activation progress | `/admin/campaign/production/` | (same) | Links its cleanup request and Sent mail. |
-| `production_withdrawal` | Cancel go-live | Production activation | Administrator | Withdraw from Production; Return to Testing | `/admin/campaign/production/cancellation/` | (same) | Links Pause and resume mail and Sent mail where it names them. |
+| `production_progress` | Production activation | Menu: Production activation | Administrator | Production activation progress | `/admin/campaign/production/` | (same) | The Go live page's Activation step (#1585 slice 5); links Sent mail; its Retry posts in place and Cancel go-live opens the review dialog. |
+| `production_withdrawal` | (retired) | (retired) | Administrator | Cancel go-live; Withdraw from Production; Return to Testing | `/admin/campaign/production/cancellation/` | (retired; 404) | Retired with no redirect (#1585 slice 5): Cancel go-live is a review dialog on Production activation, which links Pause and resume mail and Sent mail where it names them. |
 | `delivery_control` | Pause and resume mail | Menu: Pause and resume mail | Administrator | Campaign delivery controls; Delivery controls | `/admin/mail/controls/` | (same) |  |
 | `family_email_progress` | Family email progress | Menu: Family email progress | Administrator | (same) | `/admin/mail/family-progress/` | (same) |  |
 | `family_email_sends` | Family email history | Menu: Family email history | Administrator | Family email sends | `/admin/mail/family-history/` | (same) |  |
@@ -1329,11 +1329,7 @@ Ministries), Campaign settings, New user and Edit user
 (whose review and Apply are in the
 [review dialog](../ui-conventions/spec.md#review-dialog), so the page
 stays at Make changes) and every change's status
-page; going live's page after Confirm Production (Production activation,
-numbered as the [Go live page](#go-live-page)'s four steps, Check, Prepare,
-Confirm Production and Activation, until #1585 slice 5 gives it its step
-bar; Check, Prepare and Confirm Production show only that bar, and Testing
-submissions none); sending to chosen Families (Choose Families, Review,
+page; sending to chosen Families (Choose Families, Review,
 Send and follow); and report exports (Choose report, Prepare file, Download).
 Campaign settings with nothing open to change (a closed campaign's) is not
 in a flow. Import Ministry
@@ -1523,14 +1519,14 @@ the fifteen-minute backup-key proof and campaign clone seed):
   confirmation token (or sooner, when the campaign's start or close, the
   ParishSoft data's expiry or the next newly due mail comes first), which
   the [Go live page](#go-live-page)'s Confirm Production dialog mints at
-  its Apply so the limit never reaches the Administrator, **Retry failed
-  mail preparation** on the activation
-  progress page, **Cancel go-live** (or sooner, at the campaign start), and
+  its Apply so the limit never reaches the Administrator, mail
+  preparation's **Retry** on Production activation, **Cancel go-live** (or sooner, at the campaign start), and
   pausing, resuming and resolving held messages on
-  [Pause and resume mail](#live-delivery-pause). The
-  [launch runbook](../../../guides/stewardship-launch-runbooks.md#production-activation)
-  tells the Administrator about these limits, and the
-  [Go live page](#go-live-page) replaces them for going live.
+  [Pause and resume mail](#live-delivery-pause). For going live, the
+  [Go live page](#go-live-page) mints the confirmation token, the mail
+  preparation retry's control and the cancellation's intent at the moment
+  of the action, from what is checked then, so none of these limits
+  reaches the Administrator.
 
 Confirming an expired or out-of-date preview is a correctable refusal ("This
 preview is out of date"), usually with a link back to the page that builds it, so one
@@ -4216,13 +4212,11 @@ gate.
 > [go-live sequencing](../background-processing/spec.md#go-live-sequencing)
 > runs, and the Testing cleanup and Family links pages retire; 4, the
 > Confirm Production step; 5, the Activation step and the Cancel go-live
-> dialog; 6, the runbooks. Slices 2 to 4 have landed. Until the others
-> land, Production activation and Cancel go-live are still today's
-> separate pages, with their 5-minute page limits, as the
+> dialog; 6, the runbooks. Slices 2 to 5 have landed. Until slice 6
+> lands, the
 > [launch runbook](../../../guides/stewardship-launch-runbooks.md#production-activation)
-> describes (its Testing cleanup, Family links and Confirm Production
-> passages change with slice 6). Confirm Production's Apply opens today's
-> Production activation page until slice 5.
+> still describes the retired pages (its Testing cleanup, Family links,
+> Confirm Production and Cancel go-live passages change with slice 6).
 > Slice 2 renamed the page from Go-live readiness to Go live in the
 > [page-name table](#page-names-and-placement) and in the code together;
 > the other rows change with the slices that retire their pages. The page
@@ -4230,8 +4224,7 @@ gate.
 > ([#1517](https://github.com/epiphany40223/parishkit/pull/1517)) and the
 > rule that pages update themselves
 > ([#1586](https://github.com/epiphany40223/parishkit/issues/1586)): the
-> Check step has no Refresh link, and each later step drops its page's
-> Refresh link as its slice lands.
+> steps have no Refresh link.
 
 Going live is one guided page, **Go live**, in four steps, each at its own
 address. It replaces the readiness, Testing cleanup, Family links, final
@@ -4491,27 +4484,56 @@ outcome.
      A resend of an Apply that already confirmed opens Activation (its
      request key makes the confirmation happen once).
 4. **Activation.** The [Production activation](#production-transition)
-   progress.
+   progress. It is its own menu page, so its heading stays **Production
+   activation**, as its menu entry and trail name it.
    - **Direct activation.** Stage boxes **Go live** (Done), **Prepare
      initial emails** (In progress, Done or Failed, with the items processed
-     as its detail) and **Sending**, which links to Sent mail once
-     preparation is done and never claims delivery. Failed: primary
-     **Retry** for mail preparation.
+     as its detail) and **Sending**, which is Not started until preparation
+     is done and then In progress with a link to Sent mail, so it never
+     claims delivery. Failed: primary **Retry** for mail preparation, which
+     tries the same preparation again and repeats no work already done;
+     while the system is still retrying by itself the box stays In progress
+     and the detail says so. The preview compared with the preparation
+     outcomes stays in a disclosure under the boxes.
    - **Scheduled.** "Scheduled to start Sat, Nov 7, 9:00 AM. Emails follow
      the mail schedules from then." Secondary: **Cancel go-live**, while the
-     start has not passed and live delivery is not paused.
-   - Once initial mail preparation finishes, or once the campaign is
-     scheduled, the page is the ordinary Production activation menu page,
-     with no step bar
+     start has not passed and live delivery is not paused; otherwise a line
+     says why it is not offered.
+   - A campaign confirmed before its start that has since started, and a
+     closed campaign, say so in one line, with no action.
+   - While a direct activation's initial mail preparation is unfinished,
+     the page draws the Go live step bar (Step 4 of 4: Activation, 3 of 4
+     steps completed). Once that preparation finishes, or when the campaign
+     is scheduled, it is the ordinary Production activation menu page, with
+     no step bar
      ([wizard rule 12](../ui-conventions/spec.md#wizards)).
-   - **Cancel go-live dialog** (a full review), in place of today's
-     separate page. The reason field (required,
-     [prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)),
-     the cancellation counts, and the caution "Testing data deleted earlier
-     is not restored; going live again starts from Check." Mail that blocks
-     the cancellation is a refusal inside the dialog, with links to Pause
-     and resume mail and Sent mail. Apply returns the campaign to a
-     Testing draft and opens Check with a status line.
+   - The page updates itself in place (no Refresh link): closely while
+     preparation runs, every 30 seconds while a Retry waits or the campaign
+     is scheduled (so its start, or a cancellation, shows), and not at all
+     once nothing can change by itself. A reload draws the same state.
+   - **Cancel go-live dialog** (a full review), in place of the separate
+     page. Its Review shows the cancellation counts (scheduled mail runs
+     recorded and to cancel, unsent messages to cancel, failed runs and
+     delivered messages kept in history), the caution "Testing data deleted
+     earlier is not restored; going live again starts from Check.", then the
+     reason field (required, at most 2,000 characters; Apply is unavailable
+     until it holds more than spaces,
+     [prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)).
+     Apply is the acknowledgement that the deleted Testing data cannot be
+     restored (as Start go-live's is); there is no separate tick box. Mail
+     that blocks the cancellation (being sent, of uncertain delivery, or
+     needing recovery) is a refusal inside the dialog, with links to Pause
+     and resume mail and Sent mail. As with Confirm Production, the Review
+     signs only what it showed, without a time; Apply checks the reason,
+     builds the cancellation again, refuses inside the dialog when its
+     counts changed ("Mail work changed since this preview…"), when the
+     campaign has started, when live delivery was paused or when go-live
+     was already cancelled, and only then mints the cancellation's own
+     signed intent and cancels, so its 5-minute limit never reaches the
+     Administrator. A resend of an Apply that already cancelled opens Check
+     (its request key makes the cancellation happen once). Apply returns the
+     campaign to a Testing draft and opens Check, whose status line says
+     "Go-live cancelled at 3:42 PM." until go-live starts again.
 
 After Production is confirmed, the Check address is an
 [unavailable menu page](../ui-conventions/spec.md#unavailable-menu-pages)
