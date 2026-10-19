@@ -334,8 +334,10 @@ requires a command session's live full-scope automation session
 (`stewardship_automation_fresh_v1`), and the secret request guards refuse a
 request whose full-scope automation session ended
 (`stewardship_automation_instant_ended_v1`, migration 0114);
-`stewardship_automation_fresh_principal_v1` stays in the schema, unused,
-until [#1550](https://github.com/epiphany40223/parishkit/issues/1550).
+`stewardship_automation_fresh_principal_v1`, unused after 0114, was
+dropped by frozen migration 0147
+([#1550](https://github.com/epiphany40223/parishkit/issues/1550)), which also
+made an Admin session's sign-in instant immutable.
 
 Evidence: In progress. ADM-11.01 merged in PR #511, which added the
 Admin automation interface specification and the Administrator's
