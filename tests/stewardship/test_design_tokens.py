@@ -385,7 +385,9 @@ INFO_NOTICES = {
     "campaign-mail-families.html": ('id="family-test-sent"',),
     "emailed-reports.html": ('id="weekly-requested"',),
     "hosted-files.html": ("Uploaded {{ name }}",),
-    "campaign-comparison.html": ("the latest complete figures are shown",),
+    # The comparison's Updating notice lives in the shared figures status
+    # (#1586); the Response dashboard's notice there stays a warning.
+    "report-figures-status.html": ("the latest complete figures are shown",),
     "weekly-digest.html": ("Manually requested report.", "Saved report:"),
 }
 TEMPLATES = STATIC.parent.parent / "templates/stewardship"

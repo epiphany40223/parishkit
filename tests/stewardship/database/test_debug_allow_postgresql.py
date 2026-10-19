@@ -255,7 +255,7 @@ def test_the_guard_admits_only_a_live_administrators_clear_in_testing(
             web_clear(switch, None, cleared_by="operator")
         with refused("only as an Administrator"):
             web_clear(switch, None)
-        with refused("requires fresh Administrator authentication"):
+        with refused("requires a live Administrator session"):
             web_clear(switch, uuid4())
         # Its column grant already refuses the rest of the row.
         with refused("permission denied"):
@@ -270,7 +270,7 @@ def test_the_guard_admits_only_a_live_administrators_clear_in_testing(
             authenticated_at=now() - timedelta(hours=3),
             last_activity_at=now() - timedelta(minutes=61),
         )
-    with web_clearing(), refused("requires fresh Administrator authentication"):
+    with web_clearing(), refused("requires a live Administrator session"):
         web_clear(switch, actor)
     # Active again, with that sign-in three hours old: any age is admitted.
     with unguarded():

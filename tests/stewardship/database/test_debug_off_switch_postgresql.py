@@ -154,7 +154,10 @@ def test_the_web_sets_one_switch_for_a_signed_in_administrator(auth_service, goo
             {"actor_id": uuid4()},
             {"session_id": uuid4()},
         ):
-            with pytest.raises(DatabaseError, match="fresh Administrator"):
+            with pytest.raises(
+                DatabaseError,
+                match="The debug-off switch requires a live Administrator session",
+            ):
                 web_set(**values)
         # A cleared switch does not block a new one.
         assert web_set().cleared_at is None

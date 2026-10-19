@@ -114,8 +114,12 @@
       if (shown === entry && (tapped || !hovered(entry))) hide();
     });
     entry.addEventListener("pointerdown", (event) => { lastPointer = event.pointerType; });
-    // Activating an unavailable entry does nothing but show its reason.
+    // Activating an unavailable entry does nothing but show its reason. A
+    // control that is only sometimes unavailable (Clear filters, #1651:
+    // ui-v1.js marks it aria-disabled and names its tip only while it has
+    // nothing to do) acts normally while it is available.
     entry.addEventListener("click", (event) => {
+      if (entry.getAttribute("aria-disabled") !== "true") return;
       event.preventDefault();
       show(entry, lastPointer === "touch");
     });

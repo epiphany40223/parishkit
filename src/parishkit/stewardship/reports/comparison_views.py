@@ -32,11 +32,13 @@ from uuid import uuid4
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, transaction
 from django.template.loader import render_to_string
+from django.utils.translation import gettext as _
 from django.views.decorators.http import require_GET
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+from parishkit.stewardship.accounts.sessions import passive_read
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.observability import Event, emit_failure
@@ -46,6 +48,7 @@ from parishkit.stewardship.web.refusals import with_default_code
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.security import private_response
+from parishkit.stewardship.web.stat_tiles import shown
 
 from .comparison import distribution_rows, table_rows, tiles
 from .comparison_charts import day_charts, distribution_chart, final_charts
@@ -54,6 +57,7 @@ from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES, _principal
 from .facts import FactUnavailable
 from .read_admission import admit_report_read
+from .workspace_views import figures_status
 
 # A day as the Compare on day field sends it: a whole number without a sign
 # or leading zero. Four digits are far more than any campaign has days.
@@ -87,13 +91,19 @@ def requested_day(query):
     return int(value), False
 
 
-def audit(principal, campaign_id, outcome, day=None):
-    """Record the view's outcome and comparison day, never a figure."""
+def audit(principal, campaign_id, outcome, day=None, *, automatic=False):
+    """Record the view's outcome and comparison day, never a figure.
+
+    ``automatic`` marks a view the open page made by itself to bring newer
+    figures in (#1620); a reader's own view records no such key.
+    """
     # An audit append takes no row locks, so it need not join the writers'
     # work order (as the Participation page's audit).
     context = {"outcome": outcome}
     if day is not None:
         context["count"] = day
+    if automatic:
+        context["automatic"] = True
     with transaction.atomic():
         system = SystemConfiguration.objects.select_related(
             "active_configuration__parish"
@@ -107,6 +117,32 @@ def audit(principal, campaign_id, outcome, day=None):
             subject_id=campaign_id,
             context=context,
         )
+
+
+def headline_tiles(figures):
+    """The page's headline figures as stat tiles (ui-conventions, #1540).
+
+    ``figures`` are ``comparison.tiles()``: display text the PDF summary and
+    the report emails share, so each tile takes its value as that text
+    (``shown``). The average pledge's median so far comes first, then the
+    last-year and average lines, each with its trend in words. A "—" value
+    keeps its reason for the toggletip.
+    """
+    return [
+        shown(
+            figure["key"],
+            figure["label"],
+            figure["value"],
+            unknown_reason=figure["reason"] or "",
+            details=(
+                _("Median so far: %(median)s") % {"median": figure["median"]}
+                if figure["median"]
+                else "",
+                *figure["lines"],
+            ),
+        )
+        for figure in figures
+    ]
 
 
 def page_context(comparison, principal, *, refused=False, mutable=True):
@@ -138,7 +174,7 @@ def page_context(comparison, principal, *, refused=False, mutable=True):
         else [],
         "day_charts": day_charts(comparison),
         "final_charts": final_charts(comparison),
-        "tiles": tiles(comparison),
+        "tiles": headline_tiles(tiles(comparison)),
         "rows": table_rows(comparison),
         "distributions": distributions(comparison, BAND_EDGES),
         # The data notes, the shared ones once and each year's own (#1161).
@@ -156,6 +192,15 @@ def page_context(comparison, principal, *, refused=False, mutable=True):
         # times, so it asks for no time zone (#1161).
         "mutable": mutable,
         "request_key": uuid4(),
+        # The Updating status, which follows the newest figures (#1586),
+        # except on a refused day: its own re-read would be refused again.
+        **figures_status(
+            "comparison",
+            "historical",
+            comparison.fact_set_id,
+            comparison.status != "current",
+            follow=not refused,
+        ),
     }
 
 
@@ -196,13 +241,18 @@ def report(request, campaign_id):
     finish, handed_off = None, False
     try:
         service = runtime()
-        principal = _principal(request, service.store)
+        # The page's own re-read when newer figures are ready (#1586) is
+        # passive: it never extends the sign-in, though it is audited, and
+        # marked automatic (#1620). The header can only add that mark: every
+        # view is audited whatever the request sends.
+        automatic = passive_read(request)
+        principal = _principal(request, service.store, read_only=automatic)
         admit_report_read(campaign_id)
         try:
             day, refused = requested_day(request.GET)
         except ValueError:
             return private_response("Invalid report options.\n", status=400)
-        audit(principal, campaign_id, Outcome.STARTED)
+        audit(principal, campaign_id, Outcome.STARTED, automatic=automatic)
         finalized, shown = False, {"day": None, "refused": refused}
 
         def finish(completed):
@@ -216,7 +266,9 @@ def report(request, campaign_id):
                 # The page was shown, but not for the day asked for.
                 outcome = Outcome.DENIED
             try:
-                audit(principal, campaign_id, outcome, shown["day"])
+                audit(
+                    principal, campaign_id, outcome, shown["day"], automatic=automatic
+                )
             except (DatabaseError, StorageInvariantError) as error:
                 emit_failure(error, event=Event.REPORT_AUDIT_FAILED)
 

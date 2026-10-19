@@ -17,10 +17,10 @@ from parishkit.stewardship.reports.census_change_views import (
     KIND_LABELS,
     ROUTE_LABELS,
     SORTING,
-    STATUS_LABELS,
     bulk_actions,
     row_controls,
     row_dialogs,
+    status_choices,
 )
 from parishkit.stewardship.reports.census_changes import CensusQuery, select, shape
 from parishkit.stewardship.responses.comparison import phone_record
@@ -248,10 +248,11 @@ def components(context, admin):
                     "campaign_id": CAMPAIGN,
                     "query": shown,
                     "query_fields": shown.form_values(),
-                    "status_choices": STATUS_LABELS.items(),
+                    "status_choices": status_choices(
+                        result["status_counts"], administrator=True
+                    ),
                     "route_choices": ROUTE_LABELS.items(),
                     "kind_choices": KIND_LABELS.items(),
-                    "export_timezones": ["UTC", "America/Detroit"],
                     "notice": notice,
                     "action": path,
                     "mutable": True,

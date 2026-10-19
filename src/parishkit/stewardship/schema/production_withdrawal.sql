@@ -118,7 +118,7 @@ BEGIN
               AND (NOT EXISTS (SELECT 1 FROM public.stewardship_automation_login command
                        WHERE command.portal_session_id=login.id)
                    OR public.stewardship_automation_fresh_v1(login.id,NEW.actor_id))) THEN
-        RAISE EXCEPTION 'Withdrawal requires fresh Admin authentication' USING ERRCODE='42501';
+        RAISE EXCEPTION 'Withdrawal requires a live Admin session' USING ERRCODE='42501';
     END IF;
     IF campaign.id IS NULL OR confirmation.target_state<>'scheduled'
        OR runtime.current_campaign_id IS DISTINCT FROM campaign.id

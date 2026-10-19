@@ -15,7 +15,13 @@ asked in plain words, and LOCAL's sign-in page takes its link's token.
 
 import pytest
 
-from .automation_components import ACCESS, APPROVAL, HOME, LOCAL_SIGN_IN, REVOKE
+from .automation_components import (
+    ACCESS,
+    APPROVAL,
+    LOCAL_SIGN_IN,
+    NOTICES_PAGE,
+    REVOKE,
+)
 from .waits import eventually, has_text, hidden, visible
 
 
@@ -345,7 +351,7 @@ def test_revoking_a_session_asks_then_acts_in_place(page, component_origin, quer
 def test_acknowledging_the_last_notice_acts_in_place(page, component_origin):
     """The region empties in place; nothing reloads."""
     page.set_viewport_size({"width": 1280, "height": 900})
-    page.goto(component_origin + HOME)
+    page.goto(component_origin + NOTICES_PAGE)
     page.evaluate(MARK)
     region = page.locator("#automation-notices")
     contains(region, "An automation session was approved")
@@ -362,7 +368,7 @@ def test_acknowledging_the_last_notice_acts_in_place(page, component_origin):
 def test_acknowledge_all_acts_in_place_and_notices_read_plainly(page, component_origin):
     """Every notice is a plain sentence; Acknowledge all clears them in place."""
     page.set_viewport_size({"width": 1280, "height": 900})
-    page.goto(component_origin + HOME + "?two=1")
+    page.goto(component_origin + NOTICES_PAGE + "?two=1")
     page.evaluate(MARK)
     region = page.locator("#automation-notices")
     contains(region, "A command was turned away")

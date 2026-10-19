@@ -152,16 +152,16 @@ def test_a_held_roster_tick_is_shown_unavailable_with_why(entered):
 
 
 def test_participation_exports_without_their_data_are_shown_unavailable():
-    """With no chart the Response dashboard's export button is drawn
+    """With no chart the Response dashboard's export buttons are drawn
     disabled, named by the sentence that says why, and also by the locked
     notice while other campaign work holds exports."""
     text = (TEMPLATES / "response-dashboard.html").read_text()
     reason = "participation-chart-export-unavailable"
     assert text.count(f'id="{reason}"') == 1
     assert (
-        '{% button type="submit" enabled=False aria-describedby=export_allowed'
+        '{% export_actions "csv" "xlsx" "pdf" name="participation" '
+        "zone_value=query.timezone enabled=False describedby=export_allowed"
         f'|yesno:"{reason},{reason} participation-export-locked" %}}'
-        '{% translate "Generate export" %}'
     ) in text
 
 

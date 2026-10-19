@@ -442,20 +442,27 @@ def test_compare_on_day_refuses_a_day_past_the_last_complete_one(
     assert not [url for url in sent if "day=" in url]
 
 
-def test_tiles_carry_their_full_wording(page, component_origin):
-    """Each tile's accessible text is the whole comparison, arrows and words."""
+@pytest.mark.parametrize("width", [1280, 320])
+def test_tiles_carry_their_full_wording(page, component_origin, width):
+    """Each tile reads its label, value and comparison lines, arrows and
+    words, in order, with nothing hidden but the arrows (the words say the
+    direction, #1637) and no mouse-only tooltip (#1540); at 320 pixels the
+    tiles stack and fit the window."""
+    page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + "/campaign-comparison")
+    expect(page.get_by_role("list", name="Headline figures")).to_be_visible()
     tiles = page.locator(".stat-tile")
     expect(tiles).to_have_count(5)
     families = tiles.first
-    expect(families).to_have_attribute(
-        "title",
-        "Families responded: 270 on day 12. Last year on day 12: 240; this year "
-        "is 12.5% more. 2025–2026 average: 230; this year is 17.4% more.",
+    expect(families).to_have_text(
+        "Families responded 270 Last year on day 12: 240 (↑ 12.5% more) "
+        "2025–2026 average: 230 (↑ 17.4% more)"
     )
-    expect(families.locator(".stat-detail").first).to_have_text(
-        "Last year on day 12: 240 (↑ 12.5% more)"
-    )
+    assert families.get_attribute("title") is None
+    hidden = page.locator(".stat-tile [aria-hidden=true]:not(.stat-bar)")
+    assert set(hidden.all_inner_texts()) <= {"↑", "↓", "→"}
+    assert hidden.count() > 0
+    assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
     # Money keeps its cents; the median sits beside the average.
     expect(tiles.nth(2).locator(".stat-value")).to_have_text("$345,000.50")
     expect(tiles.nth(3)).to_contain_text("Median so far: $1,000.00")
@@ -524,12 +531,11 @@ def test_download_follows_the_day_shown(page, component_origin):
     expect(form.get_by_label("Time zone", exact=True)).to_have_count(0)
     zone = form.locator("input[type=hidden][name=browser_timezone]")
     expect(zone).to_have_value("America/Los_Angeles")
-    assert page.get_by_label("Format", exact=True).locator(
-        "option"
-    ).all_text_contents() == [
-        "PDF summary",
-        "XLSX",
-        "CSV",
+    # The shared export row (#1679), the PDF summary first.
+    assert form.locator(".export-buttons button").all_text_contents() == [
+        "Export PDF",
+        "Export XLSX",
+        "Export CSV",
     ]
     page.get_by_label("Compare on day").fill("5")
     with page.expect_request(lambda request: request.url.endswith(DAY_5)):
@@ -539,9 +545,8 @@ def test_download_follows_the_day_shown(page, component_origin):
     expect(zone).to_have_value("America/Los_Angeles")
     route = reverse("admin:campaign_comparison_export")
     page.route("**" + route, lambda found: found.fulfill(body="Queued"))
-    page.get_by_label("Format", exact=True).select_option("xlsx")
     with page.expect_request(lambda request: request.method == "POST") as sent:
-        page.get_by_role("button", name="Queue download").click()
+        page.get_by_role("button", name="Export XLSX").click()
     body = sent.value.post_data
     assert sent.value.url.endswith(route)
     assert "day=5" in body and "format=xlsx" in body
