@@ -69,7 +69,7 @@ LATER = canonical(
 STAFF = "/timeline-staff"
 UNAVAILABLE = "/timeline-unavailable"
 # A Family ParishSoft no longer lists as active and registered, while other
-# campaign work holds exports: Open form and Queue timeline export are
+# campaign work holds exports: Open form and the export buttons are
 # unavailable, each named by its reason (#1331).
 LOCKED = "/timeline-locked"
 # The export form's values, as the view's ``export_context`` gives them.

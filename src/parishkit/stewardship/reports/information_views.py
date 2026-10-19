@@ -25,7 +25,6 @@ from parishkit.stewardship.responses.information import (
     update_information,
 )
 from parishkit.stewardship.responses.models import AdditionalInformationItem
-from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 from parishkit.stewardship.web.contracts import expected_version, filters
 from parishkit.stewardship.web.dates import UnknownZone
@@ -368,7 +367,6 @@ def _page_response(request, campaign_id, *, item_id=None, sent=None):
                 previous_history=history_page - 1 if history_page > 1 else None,
                 next_history=history_page + 1 if more_history else None,
                 request_key=uuid4(),
-                export_timezones=sorted(timezone_names()) if not item_id else (),
                 # Every matching request by follow-up state, counted by the
                 # same selection as the total, not just this page (#720).
                 followup_chart=None

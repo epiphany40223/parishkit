@@ -233,9 +233,9 @@ def test_a_banner_group_links_its_current_problems_tile(event, ended, tile):
         assert html.index(link) < html.index("View these events in System logs")
 
 
-def test_the_banners_tile_is_the_tile_homes_line_links():
-    """``banner_tile`` reads the registry's tile; Home's line reads
-    ``Problem.tile``. They agree because no mapped kind is split."""
+def test_the_banners_tile_is_the_only_tile_showing_its_problem():
+    """``banner_tile`` reads the registry's tile; the page shows the problem
+    on ``Problem.tiles``. They agree because no mapped kind is split."""
     from parishkit.stewardship.system_health import (
         BANNER_PROBLEMS,
         PROCESS_KINDS,
@@ -245,4 +245,4 @@ def test_the_banners_tile_is_the_tile_homes_line_links():
 
     for kind in BANNER_PROBLEMS.values():
         assert kind not in PROCESS_KINDS, kind
-        assert Problem(kind).tile == REGISTRY[kind][0], kind
+        assert Problem(kind).tiles == (REGISTRY[kind][0],), kind

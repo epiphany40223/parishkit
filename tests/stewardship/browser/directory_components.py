@@ -21,7 +21,6 @@ from parishkit.stewardship.reports.directories import (
     head_email_groups,
     response_columns,
 )
-from parishkit.stewardship.reports.directory_documents import export_headings
 from parishkit.stewardship.reports.directory_views import (
     FIELD_IDS,
     FIELD_LINES,
@@ -120,19 +119,16 @@ def components(context, admin):
         "total": 51,
         "mutable": True,
         "request_key": UUID(int=81),
-        "export_timezones": ("UTC", "America/Detroit"),
     }
     # The one directory page without and with its mailing columns.
     code_list = {
         "mailing": False,
         "query_fields": query.form_values() | {"mailing": "no"},
-        "export_headings": export_headings(postal=False, reach="any"),
         "table": _table(values["table_rows"], 51, "no"),
     }
     mailing = {
         "mailing": True,
         "query_fields": query.form_values() | {"mailing": "yes"},
-        "export_headings": export_headings(postal=True, reach="any"),
         "unreachable_total": 2,
         "column_count": 9,
         "unreachable_url": reverse("admin:family_directory") + "?reach=neither",
@@ -216,13 +212,8 @@ def components(context, admin):
         "date_columns": dates,
         "count_columns": counts,
         "column_count": 7 + len(dates) + len(counts) + 1,
-        "export_headings": export_headings(
-            postal=False, reach="any", dates=dates, counts=counts, checks=True
-        ),
         "table": _table([listed, gone, faded], 3, "no", responding),
         "total": 3,
-        # The code list with response columns asks for a zone (#1127).
-        "export_asks_zone": True,
     }
     pages = {
         "/directory-responses": values | code_list | responses,
@@ -321,12 +312,8 @@ def preset_pages(values, counted):
             + int(checks),
             "can_test": True,
             "testing_responses": testing,
-            "export_headings": export_headings(
-                postal=False, reach="any", dates=dates, counts=counts, checks=checks
-            ),
             "table": _table([row], 1, "no", query),
             "total": 1,
-            "export_asks_zone": query.responses == "yes",
             "page_address": page_address(
                 reverse("admin:family_directory"), query, postal=False
             ),
