@@ -68,7 +68,7 @@ from .census_changes import (
     census_pdf,
     census_xlsx,
 )
-from .census_worklist import CensusDecisions, worklist_page
+from .census_worklist import LINK_DEFAULTS, CensusDecisions, worklist_page
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .family_links import link_families
@@ -93,6 +93,11 @@ KIND_LABELS = dict(
         strict=True,
     )
 )
+
+
+# What a GET of the page may carry: the filters a link may (the view's own
+# address, census_worklist.link_pairs) and the table's choices.
+LINK_PARAMETERS = frozenset(LINK_DEFAULTS) | table_parameters()
 
 
 def _text(value):
@@ -248,9 +253,16 @@ def _respond(request, campaign_id, *, export, render):
         principal = _principal(request, service.store, export=export)
         admit_report_read(campaign_id)
         try:
-            if request.GET:
+            if request.GET and (export or request.method != "GET"):
                 raise ValueError("Census change filters require private POST state.")
-            parameters = request.POST.copy()
+            # A GET carries only the choices a link may (R38 finding 6): the
+            # view's own address, which the page puts in the address bar, so
+            # a reload draws the same view; the name search never does.
+            if set(request.GET) - LINK_PARAMETERS:
+                raise ValueError("Census change links carry no private filter.")
+            parameters = (
+                request.GET if request.method == "GET" else request.POST
+            ).copy()
             parameters.pop("csrfmiddlewaretoken", None)
             decision = None if export else read_decision(parameters)
             extra = _choices(parameters, export=export)
@@ -346,7 +358,8 @@ def _respond(request, campaign_id, *, export, render):
 
 @require_http_methods(["GET", "POST"])
 def report(request, campaign_id):
-    """The default GET shows the changes To review; filters use POST."""
+    """The default GET shows the changes To review; filters use POST, and a
+    GET may carry the view's own address (its link-safe choices, R38)."""
 
     def render(result, query, extra):
         """The census stream's review worklist: one table, redrawn in place."""
@@ -368,7 +381,9 @@ def report(request, campaign_id):
             admit_campaign(campaign_id, mutating=True)
         except PermissionError:
             mutable = False
-        worklist, table = worklist_page(result, query, table, action, mutable=mutable)
+        worklist, table = worklist_page(
+            result, query, table, action, mutable=mutable, paging=extra["paging"]
+        )
         return render_to_string(
             "stewardship/census-changes.html",
             {
