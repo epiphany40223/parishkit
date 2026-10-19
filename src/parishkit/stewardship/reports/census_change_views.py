@@ -120,8 +120,6 @@ SORTING = Sorting.by_column(
             row["member_duid"] or 0,
         ),
         "what": lambda row: _text(row["label"]),
-        # Automatic first, then By hand, whatever the labels say.
-        "route": lambda row: not row["automatic"],
         "status": lambda row: list(STATUSES).index(row["status"]),
         "submitted": lambda row: row["submitted_at"],
     },
