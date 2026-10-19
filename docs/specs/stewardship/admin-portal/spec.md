@@ -633,13 +633,13 @@ rule ([navigation rule 10](../ui-conventions/spec.md#navigation-rules),
 The menu is grouped by what an Administrator is doing during a campaign, in
 the order a campaign runs: set it up, send it, review the responses and read
 the reports, then the parish data, users and system pages that change rarely.
-The sidebar starts with Home, then these groups, each listing the entries the
-viewer's role may open:
+The sidebar starts with Home for Administrators (Staff and Ministry leaders
+have My review work first in Review work instead; see the notes below), then
+these groups, each listing the entries the viewer's role may open:
 
 | Group | Entry | URL | Roles | Unavailable when (the reason shown) |
 | --- | --- | --- | --- | --- |
 | (top) | Home | `/admin/` | Administrator | Never |
-| Review work | My review work | `/admin/` | Staff, Ministry leader (not Administrators) | Never |
 | Campaign setup | Campaign settings | `/admin/campaign/settings/` | Administrator | No current campaign |
 | Campaign setup | Pages and emails | `/admin/campaign/content/` | Administrator | No current campaign, or it is archived |
 | Campaign setup | Campaign images | `/admin/campaign/images/` | Administrator | No current campaign, or it is archived |
@@ -654,6 +654,7 @@ viewer's role may open:
 | Mail and Family portal | Sent mail | `/admin/mail/sent/` | Administrator | Never |
 | Mail and Family portal | Family portal availability | `/admin/mail/family-portal/` | Administrator | Never |
 | Mail and Family portal | Families on the form now | `/admin/mail/presence/` | Administrator | Never |
+| Review work | My review work | `/admin/` | Staff, Ministry leader (not Administrators) | Never |
 | Review work | Census changes | `/admin/reports/census/` | Administrator, Staff | The campaign does not include the census |
 | Review work | Ministry requests | `/admin/reports/ministries/` | Administrator, Staff, Ministry leader | The campaign has no Ministry module |
 | Review work | Roster changes to enter | `/admin/reports/ministries/follow-up/roster/` | Administrator, Staff | The campaign has no Ministry module |
@@ -1227,9 +1228,10 @@ Admin URLs follow the menu, so the address says where the reader is
   (Campaign setup), `mail` (Mail and Family portal), `reports` (Review work
   and Reports and queries, which share it: Review work was split from
   Reports and queries without moving its pages), `parish` (Parish data),
-  `users` (Users and access) and `system` (System). Home is `/admin/`, a change's status page is
-  `/admin/changes/<request>/`, and the sign-in, maintenance and setup wizard
-  pages keep their own prefixes outside the menu.
+  `users` (Users and access) and `system` (System). Home is `/admin/`, a
+  change's status page is `/admin/changes/<request>/`, and the sign-in,
+  maintenance and setup wizard pages keep their own prefixes outside the
+  menu.
 - **No campaign identifier:** every page is `/admin/<group>/<page>/`, for
   example `/admin/campaign/settings/`, `/admin/mail/family-history/` and
   `/admin/reports/responses/`, and campaign pages show the current

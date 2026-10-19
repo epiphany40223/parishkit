@@ -13,7 +13,7 @@ from uuid import UUID
 
 from django.template.loader import render_to_string
 
-from parishkit.stewardship.accounts import admin_context, admin_navigation
+from parishkit.stewardship.accounts import admin_context, admin_navigation, review_work
 from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.pipeline import Stream
 
@@ -78,8 +78,17 @@ def chrome(admin, actor, menu_counts):
     for section in sections:
         for entry in section["items"]:
             entry["count"] = menu_counts.get(entry["name"]) if entry["url"] else None
+    # Staff and leaders see My review work as Review work's first entry, as
+    # the context processor draws it (R39 finding 4).
+    lands = review_work.lands_here(actor)
+    home_in_review = lands and admin_context._home_in_review(
+        sections, review_work.home_label(actor), True
+    )
     return configuration, admin | {
         "admin": "administrator" in actor.roles,
+        "home_label": review_work.home_label(actor),
+        "home_current": True,
+        "home_in_review": home_in_review,
         "sections": sections,
         "entries": {item.name: item for item in items},
         "breadcrumbs": [],
