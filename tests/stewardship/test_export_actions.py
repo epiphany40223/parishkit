@@ -25,7 +25,7 @@ COMPONENT = "components/export-actions.html"
 # offers, in its tag's order (the tag puts XLSX first unless own_order).
 EXPORTS = {
     ("campaign-comparison.html", "admin:campaign_comparison_export"): "pdf xlsx csv",
-    ("census-changes.html", "admin:census_changes_export"): "csv xlsx pdf",
+    ("census-worklist-export.html", "admin:census_changes_export"): "csv xlsx pdf",
     ("directory.html", "admin:family_directory_export"): "csv xlsx pdf",
     ("timeline.html", "export.url"): "csv xlsx pdf",
     ("financial-report.html", "admin:financial_export"): "csv xlsx pdf",
