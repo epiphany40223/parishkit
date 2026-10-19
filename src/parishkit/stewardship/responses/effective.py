@@ -4,11 +4,43 @@ from dataclasses import dataclass
 
 from parishkit.stewardship.campaigns.work_locks import require_work_order
 
+from .census import FAMILY_FIELDS
+from .comparison import canonical_value
 from .inputs import FieldInput
+from .member_census import MEMBER_FIELDS
 from .merge import EffectiveValue, KnownValue, PriorChange, merge_value
 from .models import ProposedChange, Submission
 
 RESOLVED_EXECUTIONS = frozenset({"published", "resolved_upstream", "resolved_external"})
+# Changes a person entered by hand or publication wrote, which ParishSoft's
+# download may not show yet; a Family's unchanged answer keeps them (#1683).
+ENTERED_EXECUTIONS = frozenset({"published", "resolved_external"})
+# The ordinary census fields whose latest change lives on the last census
+# response, by (entity, field), with the kind their answers compare by.
+ORDINARY_KINDS = {
+    **{("family", field.name): field.kind for field in FAMILY_FIELDS},
+    **{("member", field.name): field.kind for field in MEMBER_FIELDS},
+}
+
+
+# An ordinary field a census response does not answer (a Member it no longer
+# presents), told apart from an answer of None (a removed value).
+_ABSENT = object()
+
+
+def same_answer(kind, answer, proposal):
+    """Whether ``answer`` is the proposal's own submitted answer, canonically."""
+    submitted = proposal.submitted_value
+    return canonical_value(kind, answer) == canonical_value(kind, submitted)
+
+
+def _answer(submission, entity, key, field):
+    """A census response's answer for one ordinary field; a sentinel when absent."""
+    if entity == "family":
+        found = submission.answers["family"]
+    else:
+        found = submission.answers["members"].get(key) or {}
+    return found.get(field, _ABSENT)
 
 
 @dataclass(frozen=True)
@@ -72,15 +104,55 @@ def proposal_index(submission):
         .distinct("entity_key", "field")
     )
     indexed = {(row.entity_kind, row.entity_key, row.field): row for row in preserved}
+    census = census_submission(submission)
+    indexed.update(_entered_still_answered(census))
     indexed.update(
         {
             (row.entity_kind, row.entity_key, row.field): row
-            for row in ProposedChange.objects.filter(
-                submission=census_submission(submission)
-            )
+            for row in ProposedChange.objects.filter(submission=census)
         }
     )
     return indexed
+
+
+def _entered_still_answered(census):
+    """Ordinary changes entered or published before ``census`` that it still answers.
+
+    A Family that answers again unchanged after a change was Entered by
+    hand or written to ParishSoft (but before the download shows it) keeps
+    that change: no new row is made (the review pipeline's resubmission
+    rule, #1683). The row stays on its earlier response, so the next
+    response must still find it, as long as each later census response
+    answered it the same way: the newest row for the key, from an earlier
+    response, when it is entered or published and ``census``'s answer is its
+    own. A different answer since then made a row of its own (newer), and
+    an answer set back to ParishSoft's value made none, which this check
+    tells apart. Terminal requests are found by ``proposal_index``'s own
+    preserved query; a New Member once entered is no longer presented.
+    """
+    if census is None:
+        return {}
+    newest = (
+        ProposedChange.objects.filter(
+            submission__family_id=census.family_id,
+            submission__campaign_id=census.campaign_id,
+            submission__mode=census.mode,
+            submission__rehearsal_epoch_id=census.rehearsal_epoch_id,
+            submission__family_version__lt=census.family_version,
+            entity_kind__in=["family", "member"],
+        )
+        .order_by("entity_kind", "entity_key", "field", "-submission__family_version")
+        .distinct("entity_kind", "entity_key", "field")
+    )
+    found = {}
+    for row in newest:
+        kind = ORDINARY_KINDS.get((row.entity_kind, row.field))
+        if kind is None or row.execution not in ENTERED_EXECUTIONS:
+            continue
+        answer = _answer(census, row.entity_kind, row.entity_key, row.field)
+        if answer is not _ABSENT and same_answer(kind, answer, row):
+            found[(row.entity_kind, row.entity_key, row.field)] = row
+    return found
 
 
 def effective_field(field: FieldInput, proposal=None):
