@@ -5,6 +5,7 @@ menu has its page, linked while the entry is and greyed with the menu's
 reason while it is not. Counts are placed by the shared pipeline mapping.
 """
 
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -287,3 +288,27 @@ def test_an_unreadable_count_shows_its_cards_without_numbers(monkeypatch):
     assert [card[3] for card in by_stream["census"]] == [None, None, None]
     # The menu's own Ministry count still shows; the roster count does not.
     assert [card[3] for card in by_stream["ministry"]] == [2, None]
+
+
+def test_home_takes_its_counts_from_the_menu_statement():
+    """Admin Home's panel reads no statement of its own: ``with_counts`` takes
+    what the menu's open counts left on the request, or none at all."""
+    flags = {"census": True, "information": False}
+    home = {"campaign": object(), "flags": flags, "leader": None}
+    request = SimpleNamespace(_stewardship_review_counts={Stream.CENSUS: {"x": 1}})
+    assert review_work.with_counts(request, home)["counts"] == {
+        Stream.CENSUS: {"x": 1},
+        "leader": None,
+    }
+    assert review_work.with_counts(SimpleNamespace(), home)["counts"] == {
+        Stream.CENSUS: None,
+        "leader": None,
+    }
+    # My review work's own value already has its counts.
+    landing = {"campaign": None, "counts": {}}
+    assert review_work.with_counts(request, landing) is landing
+    # The menu statement's parameters never collide with its own flags.
+    assert review_work.parameters(flags) == {
+        "review_census": True,
+        "review_information": False,
+    }

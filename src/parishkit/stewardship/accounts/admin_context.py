@@ -524,13 +524,22 @@ def _open_counts(request, actor, items, campaign):
     follow-up selection) is logged and the menu renders without numbers,
     and an open view transaction stays usable because the statement runs
     in its own savepoint there.
+
+    Admin Home's Review work counts (#1690) ride on the same statement: the
+    view names the parts it wants in ``request._stewardship_review_flags``
+    (``review_work.read_flags``), and their placed counts are left on
+    ``request._stewardship_review_counts`` for ``review_work.with_counts``,
+    or every flagged stream as not read when the statement fails.
     """
     cached = getattr(request, "_stewardship_open_counts", None)
     if cached is not None:
         return cached
     offered = {item.name for item in items if item.url and item.name in COUNTED}
+    review = getattr(request, "_stewardship_review_flags", None) or {}
+    if not any(review.values()):
+        review = None
     counts = {}
-    if offered:
+    if offered or review:
         # Inside a view's transaction the statement gets a savepoint, so a
         # failure rolls back only the count. Outside one (autocommit), the
         # statement is its own transaction and a failure leaves nothing
@@ -540,15 +549,24 @@ def _open_counts(request, actor, items, campaign):
         )
         try:
             with isolate():
-                counts = _read_open_counts(offered, actor, campaign)
+                counts, reviewed = _read_open_counts(offered, actor, campaign, review)
         except DatabaseError as error:
             _record_open_counts_failure(error)
+            reviewed = review and review_work.unread(review)
+        if review:
+            request._stewardship_review_counts = reviewed
     request._stewardship_open_counts = counts
     return counts
 
 
-def _read_open_counts(offered, actor, campaign):
-    """Run ``OPEN_COUNTS`` for the ``offered`` entries; see ``_open_counts``."""
+def _read_open_counts(offered, actor, campaign, review=None):
+    """Run ``OPEN_COUNTS`` for the ``offered`` entries; see ``_open_counts``.
+
+    With ``review`` (``review_work.read_flags``), Admin Home's
+    ``review_work.COUNTS`` runs in the same statement, cross-joined to the
+    menu's one row. Returns the menu's counts and the review counts (None
+    without ``review``).
+    """
     from parishkit.stewardship.reports.census_changes import OPEN_GROUPS, open_count
     from parishkit.stewardship.reports.ministry_followup import (
         FollowupQuery,
@@ -568,9 +586,14 @@ def _read_open_counts(offered, actor, campaign):
         and can_tick(actor)
         and campaign.state in ROSTER_STATES
     )
+    sql = OPEN_COUNTS.replace("{census}", OPEN_GROUPS)
+    if review:
+        # Both statements are one row; their shared parameters (campaign,
+        # viewer, roster_filters) carry the same values.
+        sql = f"SELECT * FROM ({sql}) menu CROSS JOIN ({review_work.COUNTS}) review"
     with connection.cursor() as cursor:
         cursor.execute(
-            OPEN_COUNTS.replace("{census}", OPEN_GROUPS),
+            sql,
             {
                 "census": census,
                 "information": "information_queue" in offered,
@@ -584,16 +607,19 @@ def _read_open_counts(offered, actor, campaign):
                 ),
                 "roster_outcomes": sorted(ROSTER_OUTCOMES),
                 "viewer": actor.identity,
-            },
+            }
+            | review_work.parameters(review or {}),
         )
-        (
-            information,
-            ministry,
-            ministries,
-            groups,
-            roster_count,
-            roster_ministries,
-        ) = cursor.fetchone()
+        row = cursor.fetchone()
+    (
+        information,
+        ministry,
+        ministries,
+        groups,
+        roster_count,
+        roster_ministries,
+    ) = row[:6]
+    reviewed = review_work.placed(review, row[6:]) if review else None
     # A count naming a Ministry outside Python's view of the actor would be
     # refused by the page (in_scope), so it gets no count either.
     if ministry is not None and not in_scope(actor, True, ministries):
@@ -612,7 +638,7 @@ def _read_open_counts(offered, actor, campaign):
     )
     # An entry not asked for, or a Ministry follow-up the page would show as
     # off or unavailable, reads NULL and gets no count.
-    return {
+    menu = {
         name: count
         for name, count in (
             ("census_changes", census_count),
@@ -622,6 +648,7 @@ def _read_open_counts(offered, actor, campaign):
         )
         if count is not None
     }
+    return menu, reviewed
 
 
 def _record_open_counts_failure(error):

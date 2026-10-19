@@ -592,6 +592,10 @@ def index(request):
         # after release; chrome must use that observation, not independently
         # choose a newer projection for the same response.
         request._stewardship_display_configuration = config
+        if not landing and data.get("review"):
+            # Home's Review work counts ride on the menu's open-count
+            # statement (review_work.with_counts), which reads this.
+            request._stewardship_review_flags = data["review"]["flags"]
         response = render(
             request,
             "stewardship/my-review-work.html" if landing else "stewardship/home.html",

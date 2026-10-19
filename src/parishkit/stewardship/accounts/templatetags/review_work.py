@@ -12,6 +12,9 @@ def review_panels(context, review):
     """Return ``review_work.panels`` for this render and ``review``; see that function.
 
     A tag rather than a view value because the panels follow the viewer's
-    menu, which the chrome's context processor builds at render time.
+    menu, which the chrome's context processor builds at render time, and
+    Admin Home's counts are read by that processor's open-count statement
+    (``review_work.with_counts``).
     """
-    return review_work.panels(context.get("admin_chrome") or {}, review or {})
+    review = review_work.with_counts(getattr(context, "request", None), review or {})
+    return review_work.panels(context.get("admin_chrome") or {}, review)

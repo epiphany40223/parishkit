@@ -29,7 +29,9 @@ landing and each stream's worklist agree on what "To review" means:
 The selection derives a leader's scope in SQL from the signed-in actor, so a
 leader is never shown another Ministry's count; the other streams are read
 only for roles that may open them. Every other count rides on one statement
-(``COUNTS``), run only when the viewer may see at least one of them.
+(``COUNTS``), run only when the viewer may see at least one of them; on
+Admin Home it runs inside the menu's own open-count statement
+(``with_counts``), so Home's panel adds no statement of its own.
 
 Until a stream moves to the shared review worklist, its cards link to that
 stream's current page, which does not read a stage from its address; a
@@ -66,7 +68,11 @@ from .policy import Capability, allows
 STAGE_LINKED = frozenset()
 
 # One statement for every count the viewer may see; each part runs only when
-# its flag is set (NULL otherwise), as the menu's own OPEN_COUNTS does.
+# its flag is set (NULL otherwise), as the menu's own OPEN_COUNTS does. Its
+# flags are named ``review_<flag>`` so that Admin Home can run it inside the
+# menu's statement (``admin_context._open_counts``), whose own flags share
+# the plain names; ``campaign``, ``viewer`` and ``roster_filters`` mean the
+# same in both.
 # Census: the census page's proposals (live responses, report-only rows
 # left to the financial and Ministry streams), grouped by the state
 # census_placement reads. Additional information: current items by the
@@ -80,7 +86,7 @@ STAGE_LINKED = frozenset()
 # ministry_placement reads and the latest Entered tick.
 COUNTS = """
 SELECT
-    CASE WHEN %(census)s THEN (
+    CASE WHEN %(review_census)s THEN (
         SELECT coalesce(jsonb_agg(jsonb_build_array(
             g.decision, g.execution, g.handling, g.entity_kind,
             g.admin_value_set, g.n)), '[]'::jsonb)
@@ -93,7 +99,7 @@ SELECT
                 AND p.handling<>'report-only'
             GROUP BY 1, 2, 3, 4, 5) g)
     END,
-    CASE WHEN %(information)s THEN (
+    CASE WHEN %(review_information)s THEN (
         SELECT coalesce(jsonb_agg(jsonb_build_array(
             g.follow_up_needed, g.followed_up, g.n)), '[]'::jsonb)
         FROM (
@@ -105,7 +111,7 @@ SELECT
                 AND i.disposition='current_actionable'
             GROUP BY 1, 2) g)
     END,
-    CASE WHEN %(financial)s THEN (
+    CASE WHEN %(review_financial)s THEN (
         SELECT count(*)
         FROM stewardship_family_campaign f
         JOIN stewardship_submission s ON s.id=f.effective_submission_id
@@ -113,14 +119,14 @@ SELECT
             AND s.answers ? 'financial'
         WHERE f.campaign_id=%(campaign)s)
     END,
-    CASE WHEN %(limitations)s THEN (
+    CASE WHEN %(review_limitations)s THEN (
         SELECT CASE WHEN v ? 'unavailable' THEN -1
             ELSE jsonb_array_length(coalesce(v->'members', '[]'::jsonb))
                 + jsonb_array_length(coalesce(v->'families', '[]'::jsonb)) END
         FROM stewardship_limitations_report_v1(
             %(campaign)s, '{"search": "", "show": "any"}'::jsonb) v)
     END,
-    CASE WHEN %(roster)s THEN (
+    CASE WHEN %(review_roster)s THEN (
         SELECT coalesce(jsonb_agg(jsonb_build_array(
             g.state, g.outcome, g.source_resolved, g.entered, g.n)), '[]'::jsonb)
         FROM (
@@ -186,18 +192,9 @@ def read_counts(principal, campaign_id):
     view's read transaction the statement gets a savepoint, so only the
     count is rolled back.
     """
-    from parishkit.stewardship.workflows.roster import can_tick
-
     from .admin_dashboard import leads_ministries
 
-    flags = {
-        "census": allows(principal, Capability.VIEW_CENSUS),
-        "information": allows(principal, Capability.ADDITIONAL_FOLLOWUP),
-        "financial": allows(principal, Capability.FINANCIAL_DETAIL),
-        "limitations": allows(principal, Capability.CAMPAIGN_REPORT),
-        # Roster work is Staff's: a leader never sees the update phase.
-        "roster": can_tick(principal),
-    }
+    flags = read_flags(principal)
     counts = {}
     if any(flags.values()):
         isolate = (
@@ -207,21 +204,53 @@ def read_counts(principal, campaign_id):
             with isolate():
                 counts = _read(flags, principal, campaign_id)
         except (DatabaseError, ValueError) as error:
-            # A WARNING process-log line naming only the failure's kind,
-            # under the event the menu's counts use for the same case.
-            emit_failure(
-                error,
-                event=Event.REPORT_SHAPING_FAILED,
-                level=logging.WARNING,
-                name_class=True,
-            )
-            counts = {FLAG_STREAMS[flag]: None for flag, on in flags.items() if on}
+            _record_failure(error)
+            counts = unread(flags)
     leader = None
     if leads_ministries(principal):
         from parishkit.stewardship.reports.ministry_followup import my_ministries
 
         leader = my_ministries(campaign_id, principal)
     return {**counts, "leader": leader}
+
+
+def read_flags(principal):
+    """Which ``COUNTS`` parts this person may see, by flag (``FLAG_STREAMS``)."""
+    from parishkit.stewardship.workflows.roster import can_tick
+
+    return {
+        "census": allows(principal, Capability.VIEW_CENSUS),
+        "information": allows(principal, Capability.ADDITIONAL_FOLLOWUP),
+        "financial": allows(principal, Capability.FINANCIAL_DETAIL),
+        "limitations": allows(principal, Capability.CAMPAIGN_REPORT),
+        # Roster work is Staff's: a leader never sees the update phase.
+        "roster": can_tick(principal),
+    }
+
+
+def unread(flags):
+    """Every stream ``flags`` would count, as not read (its cards show no number)."""
+    return {FLAG_STREAMS[flag]: None for flag, on in flags.items() if on}
+
+
+def _record_failure(error):
+    """Log a count that could not be read or placed, as the menu's counts do.
+
+    A WARNING process-log line naming only the failure's kind, under the
+    event the menu's counts use for the same case.
+    """
+    emit_failure(
+        error, event=Event.REPORT_SHAPING_FAILED, level=logging.WARNING, name_class=True
+    )
+
+
+def parameters(flags):
+    """``COUNTS``' own flag parameters (``review_<flag>``) for ``flags``.
+
+    ``campaign``, ``viewer`` and ``roster_filters`` are the caller's: the
+    menu's statement passes the same values under those names.
+    """
+    return {f"review_{flag}": on for flag, on in flags.items()}
 
 
 def _read(flags, principal, campaign_id):
@@ -234,7 +263,7 @@ def _read(flags, principal, campaign_id):
     with connection.cursor() as cursor:
         cursor.execute(
             COUNTS,
-            flags
+            parameters(flags)
             | {
                 "campaign": campaign_id,
                 "viewer": principal.identity,
@@ -243,9 +272,42 @@ def _read(flags, principal, campaign_id):
                 ),
             },
         )
-        census, information, financial, limitations, roster = (
-            _json(value) for value in cursor.fetchone()
-        )
+        return place(cursor.fetchone())
+
+
+def placed(flags, row):
+    """``place`` for the menu's statement: a state the pipeline does not place
+    is logged and every flagged stream is shown without numbers."""
+    try:
+        return place(row)
+    except ValueError as error:
+        _record_failure(error)
+        return unread(flags)
+
+
+def with_counts(request, review):
+    """Admin Home's ``review`` value with the counts the menu's statement read.
+
+    Home does not run ``COUNTS`` itself: the view asks for it with
+    ``request._stewardship_review_flags`` and the menu's open counts
+    (``admin_context._open_counts``) run it in their own statement, leaving
+    the placed counts on ``request._stewardship_review_counts``. A value
+    that already has its counts (My review work's ``observe``) is returned
+    as is; one whose counts were never read shows its cards without numbers.
+    """
+    if not review or "counts" in review:
+        return review
+    counts = getattr(request, "_stewardship_review_counts", None)
+    if counts is None:
+        counts = unread(review["flags"])
+    return review | {"counts": {**counts, "leader": review.get("leader")}}
+
+
+def place(row):
+    """``COUNTS``' row, each group placed in its stage; see ``read_counts``."""
+    census, information, financial, limitations, roster = (
+        _json(value) for value in row
+    )
     counts = {}
     if census is not None:
         counts[Stream.CENSUS] = _tally(
