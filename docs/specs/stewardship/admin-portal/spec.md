@@ -922,11 +922,12 @@ and links, and the detail lives on the linked pages. In order, Home shows:
    may read campaign reports, the **Responses** stat tiles for one
    population, all active Families (below). With no current campaign the
    panel says so, or offers Create the campaign.
-5. **My Ministries**, for a Ministry leader (below).
-6. The **Review work** panel (Administrators; see below).
-7. **Next steps**, drawn as
+5. The **Review work** panel: My review work's stream panels, with Ready
+   to update
+   ([review pipeline, role views](../review-pipeline/spec.md#role-views)).
+6. **Next steps**, drawn as
    [link cards](../ui-conventions/spec.md#overview-pages).
-8. The **Ministry catalog changes** notice, when there is one: detail, so
+7. The **Ministry catalog changes** notice, when there is one: detail, so
    it comes after the overview.
 
 What left Home in #1673, and where it stays: the problem sentences and the
@@ -948,25 +949,26 @@ Home is the Administrator's. Staff and Ministry leaders who are not
 Administrators sign in to **My review work** instead
 ([review pipeline, role views](../review-pipeline/spec.md#role-views),
 [#1690](https://github.com/epiphany40223/parishkit/issues/1690)), which
-replaces Home for them; Home's Review work panel shows an Administrator the
-same counts. So the Staff and Ministry leader columns of the table below,
-the My Ministries panel and its Today line are no longer shown to anyone;
-[#1726](https://github.com/epiphany40223/parishkit/issues/1726) removes them.
+replaces Home for them, a leader's open requests per Ministry included;
+Home's Review work panel shows an Administrator the same counts. Home's
+Staff and Ministry leader forms (their Next steps, and a leader's My
+Ministries panel and Today line) were removed in
+[#1726](https://github.com/epiphany40223/parishkit/issues/1726).
 
 Home is a starting point, not only a status page. Its heading is "Home"; the
 parish name and the current campaign's name and state are its data line.
 Home shows a short **Next steps** grid of link cards chosen by the
-campaign's state and the viewer's role (the Response dashboard is linked
-from the campaign panel instead, so it is not repeated here):
+campaign's state (the Response dashboard is linked from the campaign panel
+instead, so it is not repeated here):
 
-| State | Administrator | Staff | Ministry leader |
-| --- | --- | --- | --- |
-| Draft in Testing | Continue campaign setup (the Campaign setup stepper's first step not done yet, #1404), Campaign settings, Pages and emails, Dates and mail schedules, Preview and test email (for the initial invitation's current revision), Go-live readiness | None | Ministry requests |
-| Production being activated | Production activation, Sent mail (while the campaign is still a draft, Go-live readiness leads) | None | Ministry requests |
-| Active | Census changes, Roster changes to enter, Additional information and Ministry requests (each with its count), Family email progress, Sent mail problems (with count) | Census changes, Roster changes to enter, Additional information, Ministry requests (each with its count) | Ministry requests (with open count) |
-| Mail paused | Pause and resume mail first, then the Active list | As Active | As Active |
-| Closed or archived | Census changes, Roster changes to enter, Additional information, Ministry requests (each with its count), Emailed reports | Census changes, Roster changes to enter, Additional information, Ministry requests (each with its count) | Ministry requests (with open count) |
-| No current campaign | Create the campaign when the deployment has never had one; otherwise says so, with no next steps | Says so; no next steps | Says so; no next steps |
+| State | Next steps |
+| --- | --- |
+| Draft in Testing | Continue campaign setup (the Campaign setup stepper's first step not done yet, #1404), Campaign settings, Pages and emails, Dates and mail schedules, Preview and test email (for the initial invitation's current revision), Go-live readiness |
+| Production being activated | Production activation, Sent mail (while the campaign is still a draft, Go-live readiness leads) |
+| Active | Census changes, Roster changes to enter, Additional information and Ministry requests (each with its count), Family email progress, Sent mail problems (with count) |
+| Mail paused | Pause and resume mail first, then the Active list |
+| Closed or archived | Census changes, Roster changes to enter, Additional information, Ministry requests (each with its count), Emailed reports |
+| No current campaign | Create the campaign when the deployment has never had one; otherwise says so, with no next steps |
 
 At 1366 × 768 with the menu open, an Administrator's Home on an active
 campaign with problems, failed tasks and automation notices shows the
@@ -982,40 +984,6 @@ preparation), there is no way to create one until the single-campaign change
 Home explains in plain language that there is no current campaign and that
 the next one cannot be created here yet.
 
-For a Ministry leader whose follow-up access is limited to particular
-Ministries (not Administrators or Staff, who reach every Ministry from the
-menu), Home also shows a **My Ministries** panel (#533). It says what it
-counts: requests from Families to join or leave the leader's Ministries that
-are still open (New or In progress) in the current campaign. It lists each
-of the leader's Ministries in the campaign, and any Ministry since removed
-from the campaign that still has open requests, marked "no longer in this
-campaign" as the queue marks it. Each line gives the Ministry's open
-requests to join and to leave, or "No open requests", and, when there are
-some, an "Open requests" link to
-[Ministry requests](../reports/spec.md#ministry-change-summary)
-(`/admin/reports/ministries/?ministry=<DUID>`) with its queue filtered to
-that Ministry. The panel's last line, "Ministry requests · Follow-up packet
-for my Ministries", links the unfiltered page and the
-[follow-up packet](../reports/spec.md#multi-ministry-follow-up-packet) form
-at its foot ([#1133](https://github.com/epiphany40223/parishkit/issues/1133)). On
-a phone each Ministry is one short block (name, counts, link), never a
-squeezed table.
-
-The counts are exact: each is the queue's own selection, with the leader's
-scope and default filters, read for one Ministry and action without its
-rows, so the panel never counts a request the queue would not list for that
-leader. The link carries only the Ministry number (`?ministry=<DUID>`); the
-queue accepts that closed value by GET
-([follow-up workflows](#follow-up-workflows) lists what such a link may
-carry), checked against the person's current scope (a number outside it is
-refused), so Back and reload work.
-The queue then remembers that view like any other, so its request links,
-Save and next, and each request page's "Return to Ministry requests" link
-keep that Ministry. Search and every filter other than those
-[follow-up workflows](#follow-up-workflows) lists stay private POST state.
-The command line's status read does not
-compute the panel.
-
 The Responses tiles are a row of
 [stat tiles](../ui-conventions/spec.md#stat-tiles)
 ([#720](https://github.com/epiphany40223/parishkit/issues/720), #1673) for
@@ -1029,17 +997,14 @@ between all Families and those who can use the Family form now; Home does
 not repeat it. The campaign panel's heading row links the Response
 dashboard, shown as the viewer's menu entry is.
 
-The Next steps panel comes after the campaign panel (and My Ministries). For a Ministry leader
-with My Ministries it opens with one **Today** line
-([decision 29](#navigation-decisions); contents confirmed on #522): the
-open requests in those Ministries. For Administrators and Staff the Today
-count (Families who responded in the past 24 hours) is the Responses
-tiles' third tile instead (#1673), so it is not repeated.
+The Next steps panel comes after the campaign panel and Review work. Home
+has no Today line ([decision 29](#navigation-decisions)): the Families who
+responded in the past 24 hours are the Responses tiles' third tile (#1673).
 
 Each next step is a link card for the viewer's own menu entry: a card
 linking the page while the menu offers it, the page's name and the menu's
 reason as muted plain text while the menu greys it out, and left out when
-the viewer's role has no such entry. A card with a count shows it large
+the menu has no such entry. A card with a count shows it large
 at the card's end, with what it means beneath the page's name ("4", "to
 do"), and its start bar is the warning colour while the count is above
 zero and the accent at zero; a card without a count has the plain edge.
@@ -1058,18 +1023,16 @@ the card keeps its two lines; each count is exactly the list its link opens
 ([#1576](https://github.com/epiphany40223/parishkit/issues/1576)).
 
 At campaign end the Staff work through four lists, so an active, paused,
-closed or archived campaign offers Administrators and Staff each of them
-with its count ([#1590](https://github.com/epiphany40223/parishkit/issues/1590)),
-and each count is the menu's, the number of rows its link opens by
+closed or archived campaign offers each of them with its count
+([#1590](https://github.com/epiphany40223/parishkit/issues/1590)), and each
+count is the menu's, the number of rows its link opens by
 default: Census changes as "N to do" (its Work to do view); Roster changes
 to enter as "N not yet entered" (its Not yet entered view); Additional
 information and Ministry requests as "N open". Roster changes to enter is
 offered, and greyed with its reason, exactly as the viewer's menu entry is
-([#1660](https://github.com/epiphany40223/parishkit/issues/1660)), so only
-Administrators and Staff see it; when its count cannot be read (the
-follow-up is turned off or unavailable) the card shows no number. A
-Ministry leader's Closed list keeps Ministry requests with its open count,
-as in Active. These steps send no email. Preview and test email opens the
+([#1660](https://github.com/epiphany40223/parishkit/issues/1660)); when its
+count cannot be read (the follow-up is turned off or unavailable) the card
+shows no number. These steps send no email. Preview and test email opens the
 initial invitation's first email and follows Pages and emails'
 availability. With no current campaign there is no Next steps panel: the
 campaign panel offers Create the campaign or says why there is none.
@@ -1428,7 +1391,9 @@ follows them.
     access to earlier campaigns returns with #145. (Superseded by #864: an
     old address naming a campaign is 404.)
 29. **A Home Today line?** (Administrator.) Yes, one per role; its contents
-    are confirmed in NAV-18.
+    are confirmed in NAV-18. (Superseded: the 24-hour count became a
+    Responses tile in #1673, and the leader's line left with My Ministries
+    when My review work replaced Home for Staff and leaders, #1726.)
 30. **Where is the test email's origin kept?** (Coordinator.) In the
     signed-in session.
 
@@ -5664,8 +5629,9 @@ the record. The roles are levels, and each includes everything below it:
 
 1. **Ministry leader** signs in and sees only the Ministries they lead in
    ParishSoft ([#922](https://github.com/epiphany40223/parishkit/issues/922)).
-   A Ministry leader who leads none signs in and sees an empty My Ministries,
-   with a plain sentence saying why.
+   A Ministry leader who leads none signs in to
+   [My review work](../review-pipeline/spec.md#role-views), which says in a
+   plain sentence that nothing is waiting for them.
 2. **Staff** has everything a Ministry leader has, sees every Ministry, and
    has the Staff capabilities of the
    [overview](../spec.md#actors-and-authorization).
@@ -6044,8 +6010,9 @@ signs in with, the one the email was sent to, followed by the shared
 is not a Gmail address
 ([#1593](https://github.com/epiphany40223/parishkit/issues/1593)), with
 Google's help link. It lists each of the leader's Ministries with its open
-requests to join and to leave, or "No open requests", counted as Home's
-[My Ministries panel](#home-page) counts them, then links
+requests to join and to leave, or "No open requests", counted as the
+leader's [My review work](../review-pipeline/spec.md#role-views) counts
+them, then links
 [Ministry requests](../reports/spec.md#ministry-change-summary), and it
 ends with the guidance's line on whom to ask when sign-in still fails. It
 names no parishioner and carries no contact or request detail: email is not
@@ -6375,10 +6342,10 @@ session (never in the URL), as a change's origin is remembered (navigation
 rule 5). Links carry only an opaque token, and the session keeps the last 20
 views. The one exception is a link that opens the queue on
 [Ministry requests](../reports/spec.md#ministry-change-summary)
-(`/admin/reports/ministries/`) for one Ministry by GET: the "Open requests"
-link of Home's [My Ministries panel](#home-page) carries only the Ministry
-number (`?ministry=<DUID>`), and the By Ministry counts on the same page add
-the queue's own closed Request and Status values
+(`/admin/reports/ministries/`) for one Ministry by GET: the To review card
+of a leader's [My review work](../review-pipeline/spec.md#role-views)
+carries only the Ministry number (`?ministry=<DUID>`), and the By Ministry
+counts on the same page add the queue's own closed Request and Status values
 (`?ministry=<DUID>&action=join&state=any`,
 `?ministry=<DUID>&action=leave&state=any`, or the Ministry alone for
 Unresolved,
