@@ -337,6 +337,7 @@ ACTIVITY_TYPES = {
         "response_started_list_exported",
         "response_submitted_list_exported",
         "roster_changes_exported",
+        "pledges_to_enter_exported",
         "ministry_followup_exported",
         "talents_report_exported",
         "system_logs_exported",
@@ -405,6 +406,7 @@ UNGROUPED_REASONS = {
         "response_started_list_viewed",
         "response_submitted_list_viewed",
         "roster_changes_viewed",
+        "pledges_to_enter_viewed",
         "source_form_viewed",
         "system_health_viewed",
         "system_logs_viewed",
@@ -431,6 +433,7 @@ UNGROUPED_REASONS = {
         "ministry_request_updated",
         "ministry_followup_bulk_applied",
         "ministry_roster_entered",
+        "pledge_review_updated",
     ),
     "Staff opening a Family's form through Open form, and the Family sign-in "
     "it starts (#529); not a portal sign-in": (

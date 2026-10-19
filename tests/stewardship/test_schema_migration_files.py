@@ -399,6 +399,9 @@ FROZEN = {
     "0122_automatic_report_views.sql": (
         "b686ede20806893936ee416bd3829cc65adfa6e6857f4b7ad02233177b4744ae"
     ),
+    "0135_pledge_review.sql": (
+        "871cf263df58d7ee2d8772ed151a7adf7dd5b405dc202640790ce9f3cf1c81c0"
+    ),
 }
 
 

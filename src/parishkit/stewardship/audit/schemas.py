@@ -144,6 +144,12 @@ class Action(StrEnum):
     CENSUS_PUBLICATION_VIEWED = "census_publication_viewed"
     ROSTER_CHANGES_VIEWED = "roster_changes_viewed"
     ROSTER_CHANGES_EXPORTED = "roster_changes_exported"
+    # Pledges to enter (#1686): opening and downloading it (count: rows),
+    # and one decision on a Family's pledge, whose subject is its
+    # stewardship_pledge_review row; no event holds an amount.
+    PLEDGES_TO_ENTER_VIEWED = "pledges_to_enter_viewed"
+    PLEDGES_TO_ENTER_EXPORTED = "pledges_to_enter_exported"
+    PLEDGE_REVIEW_UPDATED = "pledge_review_updated"
     RESPONSE_DASHBOARD_VIEWED = "response_dashboard_viewed"
     # The lists of Families behind the response funnel (#477): one event type
     # per list, so the audit names the list without a new context field. The

@@ -66,6 +66,9 @@ def add_response_web_grants(tables, columns):
     tables["stewardship_ministry_revision"] = {"SELECT", "INSERT"}
     # The roster Entered in ParishSoft tick's history (#528, step 4).
     tables["stewardship_ministry_roster_entry"] = {"SELECT", "INSERT"}
+    # A pledge's review history (#1686): Staff and Administrators record
+    # each decision; its guard checks the actor, the item and its stage.
+    tables["stewardship_pledge_review"] = {"SELECT", "INSERT"}
     # Publication plans and outcomes (#528, DAT-09.01): web reads them all and
     # writes only an Administrator's confirmation; the worker writes the rest.
     for table in (
