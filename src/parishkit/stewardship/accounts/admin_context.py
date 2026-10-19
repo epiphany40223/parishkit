@@ -437,7 +437,7 @@ ROSTER_STATES = frozenset({"active", "closed", "archived"})
 # Additional information counts the requests at its worklist's default To
 # review stage (#1685): current, follow-up neither needed nor completed, and
 # not ignored by the latest Staff revision (whose review decision says so,
-# or, saved before migration 0134, left follow-up not needed;
+# or, saved before migration 0126, left follow-up not needed;
 # responses.information.staff_ignored). Ministry requests
 # (the follow-up queue, #1133) runs the page's own selection with its
 # default (Unresolved) filters and no rows, and takes its total, so the

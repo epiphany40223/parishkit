@@ -669,12 +669,12 @@ Stored state: `AdditionalInformationItem` disposition and the
 `follow_up_needed` / `followed_up_at` workflow with Staff notes
 ([Follow-up records](../data/spec.md#follow-up-records)), and each Staff
 revision's review decision (`accepted`, `ignored` or `none`, from schema
-migration 0134,
+migration 0126,
 [#1685](https://github.com/epiphany40223/parishkit/issues/1685)). Mapping:
 followed up → Handled; follow-up needed → To handle; current actionable and
 not needed → Ignored when the latest revision says so, else To review (the
 [existing state](#existing-state-to-stage) rule for revisions saved before
-0134); superseded / withdrawn → history. The
+0126); superseded / withdrawn → history. The
 [Additional information](../reports/spec.md#additional-information)
 worklist expresses the two booleans as one stage, with bulk Accept,
 Ignore, Back to review and Handled.

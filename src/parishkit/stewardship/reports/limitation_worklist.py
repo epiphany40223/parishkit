@@ -7,7 +7,7 @@ counts them by stage, turns one page of them into the review worklist's rows
 ``responses.limitation_review`` (``LimitationDecisions``, the stream's
 ``DecisionService``). The stages, words and role actions are
 ``parishkit.stewardship.pipeline``'s; the service and its SQL guard
-(migration 0134) refuse what a reader may not do.
+(migration 0126) refuse what a reader may not do.
 """
 
 from dataclasses import dataclass, replace
