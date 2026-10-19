@@ -32,7 +32,6 @@ HAND_WRITTEN = {
     # Open PRs #1468 (Additional information) and #1435 and #1441 (Automatic
     # census changes) are changing these pages; each moves afterwards.
     "information.html",
-    "census-worklist-filters.html",
     # The recorded exception (decision 18): the refresh schedule's times are
     # in its schedule zone, and its note adds the browser's zone in a span
     # that refresh-schedule-v1.js fills, not this note.
