@@ -296,7 +296,7 @@ def test_rename_waits_for_a_new_valid_name(page, component_origin):
         ("/timeline-locked", "Open form", "open-form-reason"),
         (
             "/timeline-locked",
-            "Queue timeline export",
+            "Export XLSX",
             "timeline-export-unavailable",
         ),
     ],

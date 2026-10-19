@@ -191,19 +191,22 @@ def _audit(action, principal, campaign_id, outcome, count=0):
 
 
 def _choices(parameters, *, export):
-    """Parse the posted form: paging (page) or format and timezone (download)."""
+    """Parse the posted form: paging (page) or format and zone (download).
+
+    The download's zone is the browser's, posted unasked, or an explicit
+    ``timezone`` from an older tab (``dates.download_zone``, #1679).
+    """
     extra = {}
     if export:
         fmt = parameters.pop("format", [DEFAULT_EXPORT_FORMAT])
-        zone = parameters.pop("timezone", ["UTC"])
-        if (
-            len(fmt) != 1
-            or fmt[0] not in FORMATS
-            or len(zone) != 1
-            or (zone[0] != "UTC" and zone[0] not in timezone_names())
-        ):
+        chosen = parameters.pop("timezone", [None])
+        browser = parameters.pop("browser_timezone", [None])
+        if len(fmt) != 1 or len(chosen) != 1 or len(browser) != 1:
             raise ValueError("Invalid census change export choice.")
-        extra = {"format": fmt[0], "zone": ZoneInfo(zone[0])}
+        zone = dates.download_zone(chosen[0], browser[0])
+        if fmt[0] not in FORMATS or (zone != "UTC" and zone not in timezone_names()):
+            raise ValueError("Invalid census change export choice.")
+        extra = {"format": fmt[0], "zone": ZoneInfo(zone)}
     else:
         extra["paging"] = paging_values(parameters)
     return extra
@@ -376,7 +379,6 @@ def report(request, campaign_id):
                 "query_fields": query.form_values(),
                 "route_choices": ROUTE_LABELS.items(),
                 "kind_choices": KIND_LABELS.items(),
-                "export_timezones": sorted(timezone_names()),
                 "notice": extra.get("notice"),
                 # The latest date an edited birth or death date may hold:
                 # the campaign's today, as the server checks it.

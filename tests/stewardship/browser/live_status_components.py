@@ -35,10 +35,10 @@ from .family_test_components import family_tests_page
 from .send_progress_components import _send
 
 REQUEST, RUNNING = UUID(int=700), UUID(int=703)
-CREDENTIAL = reverse("admin:credential_status", args=[REQUEST])
-# A key change still being installed when its page opens, so the page
-# watches it from the start.
-CREDENTIAL_RUNNING = reverse("admin:credential_status", args=[RUNNING])
+# A configuration change still being applied when its page opens, so the
+# page watches it from the start (#1568 moved these from the retired Key
+# replacement status page).
+CHANGE_RUNNING = reverse("admin:configuration_request", args=[RUNNING])
 PROGRESS = reverse("admin:family_email_progress")
 # The passive status the progress page polls while a send runs.
 PROGRESS_STATUS = "/live-progress-status"
@@ -126,19 +126,6 @@ def components(context, admin):
     """Each page as first shown, and the fresh versions the tests swap in."""
     now = context["server_now"]
     page = context | {"admin_chrome": admin}
-
-    def credential(state, pending, request=REQUEST):
-        """The key replacement status page of ``request`` in ``state``."""
-        return render_to_string(
-            "stewardship/credential-status.html",
-            page
-            | {
-                "receipt": {"request_id": request, "state": state},
-                "pending": pending,
-                "admin_chrome": admin
-                | {"back": {"label": "ParishSoft", "url": INTEGRATION}},
-            },
-        )
 
     def progress(template="family-email-progress", **counts):
         """Family email progress for a running send with these counts, which
@@ -256,13 +243,14 @@ def components(context, admin):
             },
         )
 
-    def change(state):
-        """Change status for a Parish settings change in ``state``."""
+    def change(state, request=None):
+        """Change status for a Parish settings change ``request`` in ``state``."""
+        request = request or UUID(int=722)
         return render_to_string(
             "stewardship/configuration-request.html",
             page
             | {
-                "receipt": {"state": state, "request_id": UUID(int=722)},
+                "receipt": {"state": state, "request_id": request},
                 "admin_chrome": admin
                 | {"back": {"label": "Parish settings", "url": "/parish-settings"}},
             },
@@ -367,12 +355,9 @@ def components(context, admin):
     )
     tested = [{"duid": 1234, "label": "Sent", "created_at": now - timedelta(minutes=1)}]
     pages = {
-        CREDENTIAL: credential("failed", False),
-        "/live-credential-pending": credential("awaiting_ack", True),
-        "/live-credential-applied": credential("applied", False),
-        CREDENTIAL_RUNNING: credential("awaiting_ack", True, RUNNING),
-        "/live-running-pending": credential("awaiting_ack", True, RUNNING),
-        "/live-running-applied": credential("applied", False, RUNNING),
+        CHANGE_RUNNING: change("staged", RUNNING),
+        "/live-running-pending": change("staged", RUNNING),
+        "/live-running-applied": change("applied", RUNNING),
         PROGRESS: progress(),
         "/live-progress-later": progress(sent=900, remaining=180),
         PROGRESS_STATUS: progress(

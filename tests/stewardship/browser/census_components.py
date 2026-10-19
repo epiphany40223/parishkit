@@ -123,7 +123,6 @@ def components(context, admin):
                     "query_fields": query.form_values(),
                     "route_choices": ROUTE_LABELS.items(),
                     "kind_choices": KIND_LABELS.items(),
-                    "export_timezones": ["UTC", "America/Detroit"],
                     "notice": notice,
                     "mutable": True,
                     "administrator": False,

@@ -5,11 +5,17 @@
   of rows, a POST table posting to worklist.action) and `notice` (the
   answer to the last decision, or none). Its parts, in order:
 
-  - the notice line, reserved while empty so a notice never moves the
-    table;
   - the filters, always open (UX conventions, "Admin tables": a worklist
     has no Filters disclosure), Stage first with its counts, then the
-    stream's own (worklist.filters_template);
+    stream's own (worklist.filters_template), then Apply filters and Clear
+    filters (components/filter-actions.html) right after the last field,
+    on its row when it has room;
+  - the notice line, the answer to the reader's own last decision, between
+    the filters and the table: one line, reserved while empty so a notice
+    never moves the table (UX conventions, "Admin tables", R38 finding 10).
+    It also holds the view's own address (worklist.address, hidden
+    a[data-page-address]), which ui-v1.js puts in the address bar after
+    every in-place answer, so a reload shows the same view (R38 finding 6);
   - the table region: the selection bar (the bulk buttons, which wait
     until every ticked row offers their action, data-confirm-kind; Add, for
     readers allowed to add there), the table in the shared column order and
@@ -25,14 +31,14 @@
   the page itself with the page's view, and the page is redrawn from the
   answer (answer_page), so nothing reloads; focus returns to the same
   action's icon in the redrawn row (data-row-action).
-{% endcomment %}{% with w=worklist %}<div id="{{ w.prefix }}-notice" class="action-status" tabindex="-1" data-table-sync>{% if notice %}<p data-confirm-announce>{{ notice }}</p>{% endif %}</div>
-<form id="table-filters" class="worklist-filters" data-table-sync method="post" action="{{ w.action }}" data-require-complete data-missing-hint="{% translate 'Correct the filters to apply them.' %}">{% csrf_token %}
+{% endcomment %}{% with w=worklist %}<form id="table-filters" class="worklist-filters" data-table-sync method="post" action="{{ w.action }}" data-require-complete data-missing-hint="{% translate 'Correct the filters to apply them.' %}">{% csrf_token %}
 {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
 <div><label for="{{ w.prefix }}-stage">{% translate "Stage" %}</label><select id="{{ w.prefix }}-stage" name="stage" data-sync-options>{% for value, label in w.stage_choices %}<option value="{{ value }}"{% if w.stage == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
 {% if w.filters_template %}{% include w.filters_template %}{% endif %}
-{% button type="submit" %}{% translate "Apply filters" %}{% endbutton %}
-<p class="help" data-complete-hint hidden></p>
+{% with apply_hint=w.prefix|add:"-filter-hint" %}{% include "stewardship/components/filter-actions.html" with apply_hint=apply_hint %}
+<p class="help" id="{{ apply_hint }}" data-complete-hint hidden></p>{% endwith %}
 </form>
+<div id="{{ w.prefix }}-notice" class="action-status worklist-notice" tabindex="-1" data-table-sync>{% if w.address %}<a href="{{ w.address }}" data-page-address hidden></a>{% endif %}{% if notice %}<p data-confirm-announce>{{ notice }}</p>{% endif %}</div>
 <div id="{{ table.anchor }}" data-table-region>
 {% include "stewardship/table-navigator.html" with table=table label=w.pages_label %}
 {% if w.selectable %}<div data-select-table data-missing-hint="{% blocktranslate with items=w.items %}Tick {{ items }} on this page to decide them together.{% endblocktranslate %}" data-kind-hint="{% blocktranslate with items=w.items %}Not every ticked row offers that action. Tick {{ items }} at the same stage, or use each row's own icons.{% endblocktranslate %}">{% endif %}
@@ -45,7 +51,7 @@
 <caption>{{ w.caption }}</caption><thead><tr>{% if w.selectable %}<th scope="col" class="select-col"><input type="checkbox" data-select-all aria-label="{% blocktranslate with items=w.items %}Select every row on this page that can be decided{% endblocktranslate %}"></th>{% endif %}{% for column in w.columns %}{% if column.sort %}{% if column.numeric %}{% sort_heading table column.sort column.heading "numeric" %}{% else %}{% sort_heading table column.sort column.heading %}{% endif %}{% else %}<th scope="col"{% if column.numeric %} class="numeric"{% endif %}>{{ column.heading }}</th>{% endif %}{% endfor %}{% if w.baseline %}<th scope="col">{% translate "Baseline" %}</th>{% endif %}<th scope="col">{% translate "Family's answer" %}</th><th scope="col">{% translate "Reviewer's value" %}</th>{% if w.shows_now %}<th scope="col">{% translate "ParishSoft now" %}</th>{% endif %}<th scope="col">{% translate "Stage" %}</th><th scope="col">{% translate "Submitted" %}</th><th scope="col">{% translate "Last decision" %}</th><th scope="col">{% translate "Actions" %}</th></tr></thead><tbody>
 {% for row in table.rows %}<tr id="{{ w.prefix }}-row-{{ row.id }}">
 {% if w.selectable %}<td class="select-col">{% if row.kinds %}<input type="checkbox" name="item" value="{{ row.id }}:{{ row.version }}" form="{{ w.prefix }}-bulk" data-select-row data-confirm-kind="{{ row.kinds }}"{% if row.choice %} data-confirm-choice="{{ row.choice }}"{% endif %} data-confirm-name="{{ row.name }}" aria-label="{% blocktranslate with name=row.name %}Select {{ name }}{% endblocktranslate %}">{% endif %}</td>{% endif %}
-{# A stream's Family column is the shared Family-name link (#1570) when the view gave the row its Family record id (link_families): the name opens the Family's Timeline. #}{% for value, column in row.identity %}{% if forloop.first %}<th scope="row"{% if column.numeric %} class="numeric"{% endif %}>{% if column.key == "family" and row.family_id %}{% family_link row.family_id row.family_name %}{% else %}{{ value }}{% endif %}</th>{% else %}<td{% if column.numeric %} class="numeric"{% endif %}>{{ value }}</td>{% endif %}{% endfor %}
+{# The identity cells' links (UX conventions, "Admin tables", R38 finding 13): a Family's or Member's name (a Family column, or a column marked family) opens the Family hub through the shared Family-name link (#1570), for the viewers who may open it, and is plain text for the others (a Ministry leader); the item's cell (a column with link, its row's href) opens the item's own page for every viewer. #}{% for value, column, href in row.identity %}{% if forloop.first %}<th scope="row"{% else %}<td{% endif %}{% if column.numeric %} class="numeric"{% endif %}>{% if column.key == "family" and row.family_id %}{% family_link row.family_id row.family_name %}{% elif column.family and row.family_id %}{% family_timeline_url row.family_id as hub %}{% if hub %}<a href="{{ hub }}">{{ value }}</a>{% else %}{{ value }}{% endif %}{% elif href %}<a href="{{ href }}">{{ value }}</a>{% else %}{{ value }}{% endif %}{% if forloop.first %}</th>{% else %}</td>{% endif %}{% endfor %}
 {% if w.baseline %}<td>{{ row.baseline }}</td>{% endif %}
 <td>{{ row.family_answer }}</td>
 <td>{{ row.reviewer_value }}</td>

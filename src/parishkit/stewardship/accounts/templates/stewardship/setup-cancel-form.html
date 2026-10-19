@@ -7,5 +7,5 @@
 <p>{% translate "This will permanently end your initial setup attempt. Your original Administrator access will be preserved. This cannot undo a completed setup." %}</p>
 <form method="post" action="{% url 'admin:setup_cancel' %}"><input type="hidden" name="csrfmiddlewaretoken" value="{% if not mirrored %}{{ csrf_token }}{% endif %}">
 <input type="hidden" name="attempt" value="{{ attempt.attempt_id }}">
-{% button type="submit" %}{% translate "Cancel initial setup" %}{% endbutton %}
+{% comment %}Red: cancelling permanently ends the attempt (UX conventions, Button emphasis, #1713).{% endcomment %}{% button type="submit" class="button-danger" %}{% translate "Cancel initial setup" %}{% endbutton %}
 </form>

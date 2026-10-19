@@ -32,7 +32,6 @@ from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
-from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.filter_errors import (
     FilterError,
@@ -60,7 +59,7 @@ from .directories import (
     staff_entered,
     testing_codes_context,
 )
-from .directory_documents import export_headings, head_names
+from .directory_documents import head_names
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .read_admission import admit_report_read
@@ -136,17 +135,6 @@ def mailing_option(parameters):
     if len(values) != 1 or values[0] not in {"yes", "no"}:
         raise ValueError("Invalid mailing-columns choice.")
     return values[0] == "yes"
-
-
-def export_asks_zone(query, postal):
-    """Whether the export form asks for a time zone (#1127).
-
-    Only the code list with response columns has exact times in its rows
-    (invitation delivered, link followed, form opened, submitted). The code
-    list without them and the postal mail merge have none, so their form
-    sends the browser's zone unasked for the file's frame times.
-    """
-    return query.responses == "yes" and not postal
 
 
 def _audit(principal, campaign_id, *, postal, outcome, count, total, query):
@@ -403,13 +391,6 @@ def directory(request, campaign_id):
                     "staff_entered": staff_entered(
                         campaign_id, [row["family_id"] for row in report["rows"]]
                     ),
-                    "export_headings": export_headings(
-                        postal=postal,
-                        reach=query.reach,
-                        dates=dates,
-                        counts=counts,
-                        checks=query.check != "any",
-                    ),
                     # In Testing the link keeps the mode it was drawn in.
                     "unreachable_url": reverse("admin:family_directory")
                     + "?reach=neither"
@@ -417,8 +398,6 @@ def directory(request, campaign_id):
                     "rehearsal": report.get("rehearsal"),
                     "mutable": mutable,
                     "request_key": uuid4(),
-                    "export_timezones": sorted(timezone_names()),
-                    "export_asks_zone": export_asks_zone(query, postal),
                 }
             )
             if refusal is not None:
