@@ -325,13 +325,20 @@ class Column:
     """One of a stream's identity columns, in the shared column order.
 
     ``key`` names the row's value; ``sort`` the table's sortable column, if
-    any; the first column is the row's header cell.
+    any; the first column is the row's header cell. ``family`` marks a
+    Family's or Member's name that opens the Family hub for viewers who may
+    open it (the row's ``family_id``; a "family" column always does, with
+    the shared Family-name link), and ``link`` names the row's key holding
+    the item's own page, which its cell opens for every viewer (UX
+    conventions, "Admin tables", R38 finding 13).
     """
 
     key: str
     heading: str
     sort: str = ""
     numeric: bool = False
+    family: bool = False
+    link: str = ""
 
 
 def _decorate(stream, row, roles, prefix, columns):
@@ -380,7 +387,16 @@ def _decorate(stream, row, roles, prefix, columns):
     row["kinds"] = " ".join(kind for kind in kinds if Action(kind) in BULK)
     # A bulk Back to review asks for a note while a ticked row is Ignored.
     row["choice"] = REOPEN if reopen else ""
-    row["identity"] = [(row.get(column.key, ""), column) for column in columns]
+    # Each identity cell: its value, its column and the item page it opens
+    # (its column's ``link``), if any.
+    row["identity"] = [
+        (
+            row.get(column.key, ""),
+            column,
+            row.get(column.link, "") if column.link else "",
+        )
+        for column in columns
+    ]
     row["stage_label"] = placement.stage.label
     row["stage_look"] = STAGE_LOOK.get(placement.stage, "")
     decision = placement.decision.label if placement.decision else ""

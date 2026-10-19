@@ -16,6 +16,7 @@ from .review_worklist_components import (
     BULKED,
     FILTERED,
     FILTERED_ADDRESS,
+    HUB,
     LEADER,
     PATH,
     REOPENED,
@@ -368,3 +369,21 @@ def test_a_reload_keeps_the_applied_filters(page, component_origin):
     assert [node.get_attribute("id") for node in page.locator(ROWS).all()] == [
         "worklist-row-4"
     ]
+
+
+@pytest.mark.parametrize(
+    ("path", "hub"), [(PATH, True), (LEADER, False)], ids=["staff", "leader"]
+)
+def test_names_open_the_hub_and_items_their_page(page, component_origin, path, hub):
+    """A Member's name opens the Family hub for Staff and Administrators
+    and is plain text for a Ministry leader, who may not open it; the
+    item's cell opens its own page for every viewer (R38 finding 13)."""
+    page.goto(component_origin + path)
+    first = row(page, 0)
+    name = first.locator("th[scope=row]")
+    if hub:
+        assert name.locator("a").get_attribute("href") == HUB
+    else:
+        assert name.locator("a").count() == 0 and name.inner_text() == "Member 00"
+    item = first.locator("td a")
+    assert item.count() == 1 and item.get_attribute("href") == "/review-item/0"

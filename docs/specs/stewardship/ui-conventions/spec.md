@@ -3616,7 +3616,12 @@ answer to the reader's own last decision
 (a review worklist's notice) sits under the filters, just above the table,
 on one reserved line that is kept while empty, so a notice appearing never
 moves the table (no layout shift), and nothing else reserves room above the
-filters (R38). A table's create action (the review worklist's
+filters (R38). On a worklist, a Family's or Member's name opens the
+Family hub (the Family's Timeline page) for the viewers who may open it,
+through the shared Family-name link, and is plain text for the others,
+such as Ministry leaders; the cell naming the item (Ministry requests'
+Ministry) opens the item's own page, where it has one, for every viewer
+(an Administrator decision, R38). A table's create action (the review worklist's
 **Add**) sits in its selection bar, shown only to readers allowed to add
 there ([#1680](https://github.com/epiphany40223/parishkit/issues/1680)).
 

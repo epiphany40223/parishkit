@@ -448,3 +448,34 @@ def test_page_address_carries_only_the_choices_given():
     assert worklist.page_address("/w", [("stage", "ignored"), ("kind", "a b")]) == (
         "/w?stage=ignored&kind=a+b"
     )
+
+
+def test_identity_cells_carry_their_item_page():
+    """A column with ``link`` gives its cell the row's item page; others
+    none (R38 finding 13)."""
+    columns = (Column("who", "Who", family=True), Column("what", "What", link="url"))
+    row = {
+        "id": "1",
+        "version": 1,
+        "name": "x",
+        "placement": Placement(Stage.TO_REVIEW),
+        "who": "Pat",
+        "what": "Phone",
+        "url": "/item/1",
+    }
+    worklist = build(
+        "census",
+        [row],
+        STAFF,
+        prefix="w",
+        action="/w",
+        columns=columns,
+        stage="all",
+        counts={},
+        stages=[],
+    )
+    (decorated,) = worklist.rows
+    assert [(value, href) for value, _column, href in decorated["identity"]] == [
+        ("Pat", ""),
+        ("Phone", "/item/1"),
+    ]

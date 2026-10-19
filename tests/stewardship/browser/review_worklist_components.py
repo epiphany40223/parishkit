@@ -11,9 +11,12 @@ view will answer with its page redrawn.
 
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
+from uuid import UUID
 
 from django.template import engines
 
+from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.pipeline import Decision, Placement, Stage
 from parishkit.stewardship.web.review_worklist import Column, build, page_address
 from parishkit.stewardship.web.tables import paginate
@@ -53,7 +56,17 @@ ADD = engines["django"].from_string(
     " required></div>"
     '{% include "stewardship/components/review-worklist-note.html" %}'
 )
-COLUMNS = (Column("who", "Who"), Column("what", "What changed"))
+# Who is a Member's name, opening the Family hub for viewers who may open
+# it; What changed opens the item's own page for every viewer (R38 finding
+# 13).
+COLUMNS = (
+    Column("who", "Who", family=True),
+    Column("what", "What changed", link="what_url"),
+)
+FAMILY = UUID(int=81)
+HUB = f"/admin/reports/families/{FAMILY}/"
+ITEM = "/review-item/{index}"
+
 WHEN = datetime(2054, 10, 5, 12, tzinfo=UTC)
 
 # (stage, decision, by_hand, not_seen, held decision) of each Staff row: every
@@ -81,7 +94,9 @@ def _row(index, stage, decision=None, by_hand=False, not_seen=False, held=None):
         "by_hand": by_hand,
         "not_seen": not_seen,
         "who": f"Member {index:02d}",
+        "family_id": FAMILY,
         "what": "Mobile phone",
+        "what_url": ITEM.format(index=index),
         "baseline": "555-0100",
         "family_answer": f"555-{index:04d}",
         "reviewer_value": "555-0199" if edited else "",
@@ -133,6 +148,12 @@ def _page(
         HOST.render(
             context
             | {"admin_chrome": admin, "worklist": worklist, "table": table}
+            # The page's viewer, whose role decides the Family hub link.
+            | {
+                "request": SimpleNamespace(
+                    principal=Principal(UUID(int=1), frozenset(roles))
+                )
+            }
             | {"notice": notice}
         ),
     )
