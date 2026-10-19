@@ -1,7 +1,7 @@
 """Forward migration: the financial stream's review history (#1686).
 
-Its SQL is the frozen file ``schema/migrations/0135_pledge_review.sql``
-(prefix 0135 in the repository-wide file sequence, provisional until the
+Its SQL is the frozen file ``schema/migrations/0127_pledge_review.sql``
+(prefix 0127 in the repository-wide file sequence, provisional until the
 coordinator assigns it at merge), read whole and never parsed. It creates
 ``stewardship_pledge_review`` (one immutable row per Accept, Edit, Ignore,
 Back to review and Entered by hand on a Family's pledge), the pledge answer
@@ -32,7 +32,7 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0135_pledge_review.sql"
+    / "0127_pledge_review.sql"
 )
 ACTIONS = ("accept", "edit", "ignore", "back_to_review", "entered_by_hand")
 DECISIONS = ("accepted", "accepted_edited", "ignored")
@@ -43,7 +43,7 @@ class Migration(migrations.Migration):
     dependencies = [
         ("stewardship_reports", "0031_leader_request_contacts"),
         ("stewardship_campaigns", "0014_digest_skip_dates"),
-        # The migration that installs the previous frozen file (0134, the
+        # The migration that installs the previous frozen file (0126, the
         # Additional information and Limitations review, #1685, on which
         # this PR stacks), so the files apply in prefix order; it depends on
         # responses 0012 and on 0124's accounts 0029 in turn.

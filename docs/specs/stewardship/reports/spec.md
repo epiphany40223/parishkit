@@ -1228,7 +1228,7 @@ To handle is "needed, not completed" and Handled is "completed". Each
 decision is one immutable Staff revision with its decision, note, actor and
 time, paired with the `information_updated` audit event, which names only
 the versions. A request whose latest revision was saved before schema
-migration 0134 with follow-up not needed reads as Ignored, since a Staff
+migration 0126 with follow-up not needed reads as Ignored, since a Staff
 member chose that; a request no Staff member has saved is To review.
 
 Each request's own page shows the submitted text in full, its disposition and
@@ -1236,7 +1236,7 @@ replacement link, whether a weekly digest already reported it, its Stage,
 the Family's **Contact details**
 ([#1595](https://github.com/epiphany40223/parishkit/issues/1595)) and the
 request's history, each entry worded by its decision (Accepted, Ignored,
-Back to review, Handled; an entry saved before migration 0134 by its
+Back to review, Handled; an entry saved before migration 0126 by its
 follow-up choices). Decisions are made on the worklist, not on this page;
 its link back opens the worklist. The Contact details are so Staff
 can reply without looking the Family up in ParishSoft: the Family record's
@@ -2902,7 +2902,7 @@ section is the page.
   enter" columns are filled only for To enter by hand and Entered by hand
   rows; at the other stages nothing is to be entered.
 - **Audit.** Each decision is one immutable history row (frozen migration
-  0135, provisional number) with a `pledge_review_updated` event that names
+  0127, provisional number) with a `pledge_review_updated` event that names
   only versions; viewing and downloading the page are audited as a count only
   (`pledges_to_enter_viewed`, `pledges_to_enter_exported`).
 
@@ -2981,7 +2981,7 @@ allow. Handled is final. There is no Add.
 No item is stored when a Family submits: each row is a current live answer,
 as the report has always read it, so the Family's form and its submission do
 not change. Each decision is one immutable row
-(`stewardship_limitation_review`, schema migration 0134) naming the Family,
+(`stewardship_limitation_review`, schema migration 0126) naming the Family,
 the Member (or the Family itself, for cannot attend), the live response it
 was decided on, the decision, the note, who and when, paired with a
 `limitation_reviewed` audit event that names only versions. A decision stays
@@ -2996,7 +2996,7 @@ gives the answer, and its decision is still in force when it does again.
 Every decision is checked against the row's version, the number of
 decisions recorded for that answer, as the page showed it; a row someone
 else changed first is left as it is and the notice says so. The report reads
-through `stewardship_limitations_report_v2` (migration 0134), which returns
+through `stewardship_limitations_report_v2` (migration 0126), which returns
 what `stewardship_limitations_report_v1` (migration 0056) returns plus each
 row's answer key, Family record and latest decision, and whether that
 decision is still in force; it takes the same `search` and `show` values.

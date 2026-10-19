@@ -1201,7 +1201,7 @@ The next digest includes a compact correction section for items sent in a prior
 digest and since superseded/withdrawn, preventing stale emailed work from
 remaining silently actionable. History views expose every disposition.
 Each Staff revision also records its review decision (`accepted`, `ignored`
-or `none`; empty on revisions saved before schema migration 0134), from which
+or `none`; empty on revisions saved before schema migration 0126), from which
 the [review pipeline](../review-pipeline/spec.md#additional-information-stream)
 derives the item's stage.
 
