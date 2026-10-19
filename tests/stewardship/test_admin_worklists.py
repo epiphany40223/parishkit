@@ -247,3 +247,42 @@ def test_an_information_export_stage_is_the_export_pane_s_filters():
     for name in ("disposition", "needed", "completed"):
         with pytest.raises(ValueError):
             admin_family_exports.stage_filters([f"{name}=any"], "to_review")
+
+
+def test_a_cannot_contribute_record_names_its_pledge_and_offers_nothing(monkeypatch):
+    """A Family's Cannot contribute financially row (``contributions``, which
+    #1734's report adds, R39 finding 11) follows the Families' answers, with
+    its Pledges item id, its version and no action: it is decided on
+    Pledges. ``export_tables`` is pinned to its #1734 shape, the Families
+    cells followed by the contributions' cells."""
+    from parishkit.stewardship.reports import limitations
+
+    pledge = str(uuid4())
+    result = {
+        "members": [],
+        "families": [answer("family", "", Placement(Stage.TO_REVIEW))],
+        "contributions": [
+            answer("cannot_give", "", Placement(Stage.TO_ENTER_BY_HAND), version=2)
+            | {"pledge_item": pledge}
+        ],
+    }
+    row = ("Example, Pat", "", "41", "x", "2054-10-03T10:05:00-04:00", "To review")
+    monkeypatch.setattr(
+        limitations, "export_tables", lambda result, zone: ([], [row] * 2)
+    )
+    found = [
+        json.loads(line)
+        for line in admin_limitations_export.limitations_jsonl(result, ZONE)
+        .decode()
+        .splitlines()
+    ]
+    assert [record["kind"] for record in found] == ["family", "cannot_give"]
+    assert found[1]["item_id"] == f"pledge-{pledge}"
+    assert (found[1]["version"], found[1]["actions"]) == (2, [])
+    assert set(found[1]) == {
+        *admin_limitations_export.FAMILY_KEYS,
+        "kind",
+        "item_id",
+        "version",
+        "actions",
+    }
