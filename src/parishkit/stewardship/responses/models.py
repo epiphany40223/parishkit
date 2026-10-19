@@ -336,8 +336,8 @@ class AdditionalInformationRevision(ImmutableRecord):
     followed_up_at = UTCDateTimeField(null=True)
     followed_up_by_id = models.UUIDField(null=True)
     # The review decision this revision records (#1685, schema migration
-    # 0134): ``accepted`` (to handle, or handled once followed up),
-    # ``ignored`` or ``none`` (to review). Every revision since 0134 states
+    # 0126): ``accepted`` (to handle, or handled once followed up),
+    # ``ignored`` or ``none`` (to review). Every revision since 0126 states
     # it; an older one has none, and is read by its follow-up flags
     # (``pipeline.information_placement``).
     review_decision = models.CharField(max_length=12, null=True)
@@ -399,7 +399,7 @@ class LimitationReview(ImmutableRecord):
     decided on, and ``expected_version``, the number of decisions recorded
     for the answer before it. A decision stays in force while every later
     live response gives the same answer
-    (schema/migrations/0134_information_limitation_review.sql).
+    (schema/migrations/0126_information_limitation_review.sql).
     """
 
     family = models.ForeignKey(

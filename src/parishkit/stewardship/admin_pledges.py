@@ -21,7 +21,7 @@ pieces, so the two cannot drift:
 - ``pledges decide`` is a row's action or the bulk bar: a
   ``WorklistDecision`` recorded by the page's own decision service
   (``pledge_review.PledgeDecisions``), so the role, version, stage, Edit
-  checks and the SQL guard of frozen migration 0135 are the page's. It runs
+  checks and the SQL guard of frozen migration 0127 are the page's. It runs
   in the page's command scope and records the service's
   ``pledge_review_updated`` and the command's ``admin_cmd_pledges_decide``
   in the same transaction, once per request key.

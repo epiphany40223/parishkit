@@ -5,7 +5,7 @@ after it is the real command line on the restricted web login. The commands
 read Pledges through the page's own admission, ``pledge_rows``
 and writer under the campaign read guard, and decide through the page's
 ``PledgeDecisions`` in the page's command scope, so the SQL guard of frozen
-migration 0135 checks every row. Each records the page's events; ``pledges
+migration 0127 checks every row. Each records the page's events; ``pledges
 decide`` also records ``admin_cmd_pledges_decide``, once per request key.
 """
 

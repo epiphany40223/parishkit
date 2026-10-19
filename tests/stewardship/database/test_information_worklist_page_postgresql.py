@@ -210,10 +210,10 @@ def test_the_menu_counts_the_requests_to_review(live_response_service, google):
         assert count() == expected, action
 
 
-def test_a_request_saved_before_0134_as_not_needed_is_ignored_everywhere(
+def test_a_request_saved_before_0126_as_not_needed_is_ignored_everywhere(
     live_response_service, google
 ):
-    """A revision from before migration 0134 left follow-up not needed: the
+    """A revision from before migration 0126 left follow-up not needed: the
     worklist lists the request as Ignored and the menu does not count it."""
     from types import SimpleNamespace
 
@@ -229,7 +229,7 @@ def test_a_request_saved_before_0134_as_not_needed_is_ignored_everywhere(
     )
     browser, _ = signed_in()
     actor = PortalUser.objects.get(email="admin@example.org").pk
-    # Written with the triggers off, as only a database from before 0134
+    # Written with the triggers off, as only a database from before 0126
     # holds such a revision.
     with transaction.atomic(), connection.cursor() as cursor:
         cursor.execute("SET LOCAL session_replication_role = replica")

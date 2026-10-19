@@ -620,7 +620,7 @@ CLOSURE_TABLES = {
     # which web records and reads.
     "stewardship_proposal_review": ("stewardship_responses", "0006_proposal_review"),
     # Review decisions on cannot-participate and cannot-attend answers
-    # (0134, #1685), which web records and reads.
+    # (0126, #1685), which web records and reads.
     "stewardship_limitation_review": (
         "stewardship_responses",
         "0013_information_limitation_review",
@@ -641,7 +641,7 @@ CLOSURE_TABLES = {
         ),
         ("stewardship_jobs", "0035_leader_emails"),
     ),
-    # A pledge's review history (0135, provisional number, #1686), which
+    # A pledge's review history (0127, provisional number, #1686), which
     # web records and reads.
     "stewardship_pledge_review": ("stewardship_reports", "0032_pledge_review"),
 }

@@ -315,7 +315,7 @@ def information_placement(
     defaults to false, so "Not needed" cannot be told from "never looked
     at": ``staff_ignored`` is whether the latest Staff revision ignored the
     item (``responses.information.staff_ignored``: its review decision, or,
-    for a revision saved before migration 0134, follow-up left not needed,
+    for a revision saved before migration 0126, follow-up left not needed,
     #1685). An item no Staff member has saved is To review, never silently
     Ignored.
     """
