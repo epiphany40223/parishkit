@@ -1113,8 +1113,12 @@ refusal pages use this gate, as does the typed "Production" confirmation
 (which, like the server, ignores spaces around the word). That field sits
 inside the Confirm Production review dialog, whose answer marks it
 `data-review-require`: Apply waits for it, and the dialog's reserved status
-line under the buttons says what is missing and describes Apply meanwhile. The Admin portal
-requires JavaScript ([#565](https://github.com/epiphany40223/parishkit/issues/565));
+line under the buttons says what is missing and describes Apply meanwhile.
+A dialog's own `fields_template` with `data-require-complete` is not used
+for it, because that gates a fields form drawn with the dialog, while this
+field arrives inside the review answer that Review fetches. The Admin
+portal requires JavaScript
+([#565](https://github.com/epiphany40223/parishkit/issues/565));
 server validation is unchanged and still refuses an incomplete submission.
 Likewise, a settings form's Review changes button is unavailable
 until the form differs from the saved settings, with the short hint "Change
@@ -1486,8 +1490,8 @@ line), whose hidden fields Apply posts, the signed preview marked
 `data-review-preview`. A field in the answer marked `data-review-require`
 (the Confirm Production dialog's typed word) names Apply's form in its
 `form` attribute, so Apply posts it, and holds Apply until it is valid
-([prerequisite gates](#prerequisite-gates)). A field-value refusal answers the form again (status
-400); any other refusal is the closed JSON refusal, or a fragment marked
+([prerequisite gates](#prerequisite-gates)). A field-value refusal answers
+the form again (status 400); any other refusal is the closed JSON refusal, or a fragment marked
 `data-review-refusal` that the dialog shows as drawn. A page whose own
 address records a view when read (System health) marks its dialog
 `data-review-redraw="body"`: Apply's answer then holds the regions the
