@@ -357,6 +357,18 @@ def issue_admin(request, user_id, *, store, authenticated_at):
     return principal
 
 
+# The header a page's automatic re-read of its own address sends (ui-v1.js,
+# UX conventions "Pages that update themselves", #1586): the reader did not
+# act, so a view whose ordinary load renews the sign-in reads passively
+# instead. A client can only lower its own request's effect with it.
+PASSIVE_READ_HEADER = "X-ParishKit-Read"
+
+
+def passive_read(request):
+    """Whether ``request`` is a page's automatic re-read of itself (#1586)."""
+    return request.headers.get(PASSIVE_READ_HEADER) == "passive"
+
+
 def authenticated_admin(
     caller, *, store, activity=False, read_only=False, stale_authority=False
 ):

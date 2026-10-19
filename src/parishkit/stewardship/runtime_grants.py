@@ -311,17 +311,12 @@ DAILY_SENDS_FUNCTION = "stewardship_family_daily_sends_v1()"
 # When that count falls below the Family limit ("Sending resumes at about
 # 3:10 PM", #530): one instant, for the same reason.
 DAILY_RESUME_FUNCTION = "stewardship_family_daily_resume_v1()"
-# Whether a sign-in instant recorded on a secret request is a live full-scope
-# automation session's (ADM-11 PR 5): the web's intake guard and each
-# credential installer's staged-to-testing guard call it, and the installers
-# read no automation table.
-AUTOMATION_FRESH_FUNCTION = (
-    "stewardship_automation_fresh_principal_v1(uuid, timestamp with time zone)"
-)
-# Whether that instant is a full-scope automation session's and every such
-# session has ended (0114, #1547): the same guards call it now that a
-# request's sign-in may be of any age, so ending an automation session still
-# stops its secret requests. Granted to the same logins.
+# Whether a sign-in instant recorded on a secret request is a full-scope
+# automation session's and every such session has ended (0114, #1547): the
+# web's intake guard and each key-replacement installer's staged-to-testing
+# guard call it, so ending an automation session still stops its secret
+# requests, and the installers read no automation table. It replaced
+# ADM-11 PR 5's live-session check, which 0123 dropped (#1550).
 AUTOMATION_ENDED_FUNCTION = (
     "stewardship_automation_instant_ended_v1(uuid, timestamp with time zone)"
 )
@@ -749,7 +744,8 @@ def runtime_functions(role, *, target=None):
     export's read-guard stops, prunes old task events and refreshes a staged
     source snapshot's planner statistics (#895).
     Web and the parishsoft, google_workspace and slack credential installers
-    check a secret request's automation sign-in instant (ADM-11 PR 5). Web,
+    check whether a secret request's automation sessions have all ended
+    (``stewardship_automation_instant_ended_v1``, #1547). Web,
     the general worker and the download login read a user's role-derived
     Ministry scope (#922); the general worker and the configuration
     installer record the Ministry leader pairs a promotion or an activation
@@ -785,7 +781,7 @@ def runtime_functions(role, *, target=None):
     if role is ServiceRole.CREDENTIAL_INSTALLER:
         functions = {DEBUG_OFF_FUNCTION}
         if target in AUTOMATION_SECRET_TARGETS:
-            functions |= {AUTOMATION_FRESH_FUNCTION, AUTOMATION_ENDED_FUNCTION}
+            functions.add(AUTOMATION_ENDED_FUNCTION)
         return frozenset(functions)
     return frozenset(
         {
@@ -793,7 +789,6 @@ def runtime_functions(role, *, target=None):
                 FAMILY_LOGIN_FUNCTION,
                 DAILY_SENDS_FUNCTION,
                 DAILY_RESUME_FUNCTION,
-                AUTOMATION_FRESH_FUNCTION,
                 AUTOMATION_ENDED_FUNCTION,
                 LEADER_SCOPE_FUNCTION,
                 PORTAL_IDENTITIES_FUNCTION,

@@ -17,9 +17,10 @@ document and writers as the retired lists' exports, so its Report
 information sheet, PDF report card and privacy line are theirs.
 
 Like those exports it is not privileged (only the directory, postal,
-financial and timeline files are, #547), and it asks for a time zone because
-it holds exact times (Last contact). Each download is audited
-with its count, the sorted Ministry DUIDs in the file and whether the
+financial and timeline files are, #547). It holds exact times (Last
+contact), so it asks for no time zone: it writes them in the browser's zone
+and states that zone in the file (#1679). Each download is audited with its
+count, the sorted Ministry DUIDs in the file and whether the
 contacts were operational or publish-restricted; never names, contact
 values, filters or search text.
 """
@@ -97,8 +98,9 @@ HEADINGS = (
 NO_CONTACT = "None recorded"
 UNAVAILABLE = "Unavailable"
 PRIVACY = "Sensitive parish information. Share only with authorized recipients."
-# The fix for a PDF above EXPORT_PDF_LIMIT requests; the queue's export line
-# says the same while its filters select more (ministry-followup.html).
+# The fix for a PDF above EXPORT_PDF_LIMIT requests; the line below the
+# queue's export row says the same while its filters select more
+# (ministry-followup.html).
 PDF_TOO_LARGE_FIX = _("Choose CSV or XLSX, or narrow the filters.")
 
 
@@ -276,7 +278,9 @@ def _choices(parameters):
 
     The form posts the applied queue view's filters, search and sort (the
     page and page size only window the screen, so they are ignored), the
-    format and the time zone; anything else, or a repeated value, is a 400.
+    format and the browser's zone, posted unasked (an explicit ``timezone``
+    from an older tab or ``pk-admin`` wins, #1679); anything else, or a
+    repeated value, is a 400.
     So is any Status choice but the queue's own statuses: a Member no longer
     in ParishSoft never goes into the file (Administrator, 2026-10-13), even
     from the Staff-only Status choice that lists them (#1217).
@@ -287,11 +291,15 @@ def _choices(parameters):
             "csrfmiddlewaretoken",
             "format",
             "timezone",
+            "browser_timezone",
             *FollowupQuery.__dataclass_fields__,
         },
     )
     values.pop("csrfmiddlewaretoken", None)
-    fmt, zone = values.pop("format", ""), values.pop("timezone", "")
+    fmt = values.pop("format", "")
+    zone = dates.download_zone(
+        values.pop("timezone", None), values.pop("browser_timezone", None)
+    )
     if fmt not in FORMATS or (zone != "UTC" and zone not in timezone_names()):
         raise ValueError("Invalid follow-up export choice.")
     query = FollowupQuery.parse(values)

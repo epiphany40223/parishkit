@@ -10,5 +10,4 @@
 <p><a href="{% url 'admin:response_dashboard' %}">{% translate "Response dashboard" %}</a></p>
 {% if not mutable %}<p class="notice">{% translate "Other campaign work (a restore review, or a cleanup, purge or go-live step) is under way, so answers cannot be decided until it finishes or is cancelled. You can still read and download the list." %}</p>{% endif %}
 {% include "stewardship/components/review-worklist.html" %}
-<script src="{% static 'stewardship/information-export-v1.js' %}" defer></script>
 {% endblock %}

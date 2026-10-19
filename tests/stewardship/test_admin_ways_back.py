@@ -93,14 +93,13 @@ PARENT, ELSEWHERE = "parent", "elsewhere"
 VARIABLE_TARGETS = {
     ("campaign-mail.html", "return_link.label"): ELSEWHERE,
     ("configuration-request.html", "admin_chrome.back.label"): PARENT,
-    ("credential-status.html", "admin_chrome.back.label"): PARENT,
     ("integration-preview.html", "label"): ELSEWHERE,
     ("report-export.html", "report_name"): PARENT,
 }
 # Parent-crumb links drawn from the trail itself (``admin_chrome.back``), at
 # the end of a change's flow, so they cannot drift from it. Whether they stay
 # is #1346.
-TRAIL_DRAWN = {"configuration-request.html", "credential-status.html"}
+TRAIL_DRAWN = {"configuration-request.html"}
 # A variable "Return to" link (its href and the variable it names its target
 # with), and the condition that draws it only when it is not the crumb's.
 VARIABLE_LINK = re.compile(
