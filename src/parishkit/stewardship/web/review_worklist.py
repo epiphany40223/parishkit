@@ -221,7 +221,7 @@ def _selected_title(action, placement, undo):
     return f"{state} To change it, choose Back to review." if undo else state
 
 
-def row_icons(stream, placement, roles, *, name, leads=False, by_hand=False):
+def row_icons(stream, placement, roles, *, name, leads=False, by_hand=False, only=None):
     """One row's action icons for one reader, in ``ROW_ORDER``.
 
     Each is offered (an icon that opens its dialog, ``aria-pressed`` false
@@ -229,11 +229,15 @@ def row_icons(stream, placement, roles, *, name, leads=False, by_hand=False):
     in force: filled, ``aria-pressed`` true and unavailable, since choosing
     it again is no undo; Back to review is). An action the reader's role
     does not allow is left out, selected or not (UX conventions, "By role").
+    ``only`` limits the icons to those actions: a manual handling report
+    draws its mark alone (spec, "Manual handling reports").
     """
     offered = allowed_actions(
         stream, placement.stage, roles, leads=leads, by_hand=by_hand
     )
     allowed = role_actions(stream, roles, leads=leads)
+    if only is not None:
+        offered, allowed = offered & only, allowed & only
     selected = selected_actions(placement) & allowed
     undo = Action.BACK_TO_REVIEW in offered
     icons = []
@@ -265,18 +269,19 @@ def row_icons(stream, placement, roles, *, name, leads=False, by_hand=False):
     return icons
 
 
-def bulk_buttons(stream, roles, *, items="items"):
+def bulk_buttons(stream, roles, *, items="items", only=None):
     """The bulk bar's buttons this reader may use on ``stream``.
 
     Each is available only while every ticked row offers its action
     (ui-v1.js wireSelection: its value is the kind each row's box lists).
     A Ministry leader's actions count here as on a Ministry they lead; a
     row on another Ministry offers them nothing, so its box lists no kind.
+    ``only`` limits the buttons to those actions, as ``row_icons``.
     """
     allowed = role_actions(stream, roles, leads=True)
     buttons = []
     for action in BULK:
-        if action not in allowed:
+        if action not in allowed or (only is not None and action not in only):
             continue
         words = WORDS[action]
         buttons.append(
@@ -331,7 +336,7 @@ class Column:
     numeric: bool = False
 
 
-def _decorate(stream, row, roles, prefix, columns):
+def _decorate(stream, row, roles, prefix, columns, only=None):
     """Give one row what its cells, box and icons need.
 
     Each offered icon opens the page's one decision dialog (Edit: the
@@ -349,6 +354,7 @@ def _decorate(stream, row, roles, prefix, columns):
         name=name,
         leads=row.get("leads", False),
         by_hand=row.get("by_hand", False),
+        only=only,
     )
     key = uuid4()
     reopen = placement.stage is Stage.IGNORED
@@ -427,12 +433,18 @@ class Worklist:
     baseline: bool = True
     shows_now: bool = False
     bulk_too_many: bool = False
+    # Whether the decision and bulk dialogs take a note: a manual handling
+    # report whose mark records none posts an empty one instead.
+    notes: bool = True
     bulk_key: UUID = field(default_factory=uuid4)
     add_key: UUID = field(default_factory=uuid4)
     filters_template: object = None
     editor_template: object = "stewardship/components/review-worklist-value.html"
     add_template: object = None
     export_template: object = None
+    # A stream's own empty-table message, for its filters (UX conventions,
+    # "Empty tables and lists"); without one the component's own is used.
+    empty_template: object = None
 
     max_bulk = MAX_BULK
 
@@ -440,6 +452,13 @@ class Worklist:
     def pages_label(self):
         """The table navigator's name."""
         return f"{self.caption} pages"
+
+    @property
+    def note_template(self):
+        """The decision and bulk dialogs' fields: the note, or an empty one."""
+        if self.notes:
+            return "stewardship/components/review-worklist-note.html"
+        return "stewardship/components/review-worklist-no-note.html"
 
     @property
     def notice_id(self):
@@ -520,6 +539,8 @@ def build(
     caption="Review worklist",
     baseline=True,
     fields=None,
+    only=None,
+    notes=True,
     **templates,
 ):
     """The ``worklist`` for one reader of one page of ``stream``'s rows.
@@ -534,13 +555,17 @@ def build(
     ``by_hand`` (a By hand census change) and ``not_seen`` (the Not seen in
     ParishSoft flag). ``roles`` is the reader's role set. ``stage`` is the
     Stage filter's value and ``fields`` the stream's other filters, posted
-    by every form. ``templates``
+    by every form. ``only`` (a set of actions) limits every row's icons
+    and the bulk bar to those actions, and ``notes`` False drops the note
+    from their dialogs: a manual handling report offers its mark alone
+    (spec, "Manual handling reports"). ``templates``
     takes the stream's ``filters_template``, ``editor_template``,
-    ``add_template`` and ``export_template``.
+    ``add_template``, ``export_template`` and ``empty_template``.
     """
     stream = Stream(stream)
     columns = tuple(columns)
-    decorated = [_decorate(stream, row, roles, prefix, columns) for row in rows]
+    only = None if only is None else frozenset(only)
+    decorated = [_decorate(stream, row, roles, prefix, columns, only) for row in rows]
     add = may_add(stream, roles) and templates.get("add_template") is not None
     return Worklist(
         stream=stream,
@@ -550,7 +575,7 @@ def build(
         columns=columns,
         stage=stage,
         stage_choices=stage_choices(counts, stages),
-        bulk=bulk_buttons(stream, roles, items=items),
+        bulk=bulk_buttons(stream, roles, items=items, only=only),
         add=add,
         items=items,
         caption=caption,
@@ -558,6 +583,7 @@ def build(
         baseline=baseline,
         shows_now=any(row["shows_now"] for row in decorated),
         bulk_too_many=len(decorated) > MAX_BULK,
+        notes=notes,
         **templates,
     )
 

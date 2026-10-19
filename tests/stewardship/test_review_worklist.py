@@ -285,6 +285,91 @@ def test_the_template_draws_selected_icons_and_the_filters_open():
     assert 'name="stage"' in html and "Every stage (1)" in html
 
 
+def test_a_manual_report_offers_its_mark_alone():
+    """``only`` keeps each row's icons, selected ones included, and the bulk
+    bar to those actions (spec, "Manual handling reports"); ``notes`` False
+    swaps the dialogs' note for an empty one."""
+    shown = [
+        dict(rows()[0], id="0", placement=Placement(Stage.TO_REVIEW), by_hand=True),
+        dict(
+            rows()[2],
+            id="2",
+            placement=Placement(Stage.ENTERED_BY_HAND, Decision.ACCEPTED),
+        ),
+    ]
+    built = made(shown=shown, only={Action.ENTERED_BY_HAND}, notes=False)
+    to_review, entered = built.rows
+    assert [icon["action"] for icon in to_review["icons"]] == ["entered_by_hand"]
+    assert to_review["kinds"] == "entered_by_hand"
+    # The decision in force (Accept) is not drawn; the mark is, selected.
+    assert [(i["action"], i["selected"]) for i in entered["icons"]] == [
+        ("entered_by_hand", True)
+    ]
+    assert [button["value"] for button in built.bulk] == ["entered_by_hand"]
+    assert built.note_template.endswith("review-worklist-no-note.html")
+    assert made().note_template.endswith("review-worklist-note.html")
+
+
+def test_a_stream_family_column_links_anywhere_and_its_empty_message_shows():
+    """A Family column links its Timeline wherever it sits, not only first,
+    and a stream's own empty message replaces the component's."""
+    from django.template import engines
+    from django.template.loader import render_to_string
+
+    shown = [
+        dict(
+            rows()[0],
+            family="Sample, Pat and Lee",
+            family_name="Sample, Pat and Lee",
+            family_id=UUID(int=5),
+        )
+    ]
+    columns = [Column("who", "Who"), Column("family", "Family")]
+    table = paginate(shown, {"size": "25"}, carry=[("stage", "all")])
+    built = build(
+        "census",
+        table.rows,
+        STAFF,
+        prefix="census",
+        action="/review",
+        columns=columns,
+        stage="all",
+        counts={},
+        stages=[],
+    )
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.accounts.policy import Principal
+
+    staff = SimpleNamespace(principal=Principal(UUID(int=1), frozenset({"staff"})))
+    html = render_to_string(
+        "stewardship/components/review-worklist.html",
+        {"worklist": built, "table": table, "csrf_token": "x", "request": staff},
+    )
+    assert ">Sample, Pat and Lee</a></td>" in html
+    empty = engines["django"].from_string("Nothing for {{ w.prefix }}. Try All.")
+    table = paginate([], {"size": "25"}, carry=[("stage", "all")])
+    built = build(
+        "census",
+        [],
+        STAFF,
+        prefix="census",
+        action="/review",
+        columns=columns,
+        stage="all",
+        counts={},
+        stages=[],
+        empty_template=empty,
+    )
+    html = render_to_string(
+        "stewardship/components/review-worklist.html",
+        {"worklist": built, "table": table, "csrf_token": "x"},
+    )
+    assert (
+        "Nothing for census. Try All." in html and "Nothing to review yet" not in html
+    )
+
+
 def test_read_decision_reads_a_row_add_and_bulk_post():
     """Each control's fields come out as one decision; the page's own
     fields stay for the view."""

@@ -1,0 +1,9 @@
+{% comment %}
+  A review worklist dialog's fields when its decision takes no note
+  (worklist.notes False, #1687): a manual handling report whose mark
+  records none, such as Roster changes to enter's Entered by hand. The
+  note is posted empty, as web/review_worklist.read_decision expects one;
+  `note_name` is as in review-worklist-note.html. The dialog's reason line
+  is kept for its Confirm's aria-describedby, hidden, as nothing here can
+  be incomplete.
+{% endcomment %}<input type="hidden" name="{{ note_name|default:'note' }}" value=""><p class="help" id="{{ accept_hint }}" data-complete-hint hidden></p>
