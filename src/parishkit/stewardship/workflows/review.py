@@ -145,6 +145,32 @@ def _locked_placement(target):
     )
 
 
+def _stale(target):
+    """A StaleRecordError naming ``target``, so a bulk notice names its row."""
+    error = StaleRecordError("The Ministry request changed.")
+    error.request_id = target.pk
+    return error
+
+
+def _later_revision(target):
+    """Whether a later live response of the Family replaced ``target``.
+
+    The worklist's order (``ministry_followup.sql``, ``revision``): the
+    latest revision of a Member's request for a Ministry is the one from the
+    Family's highest ``family_version`` (unique per Family and mode).
+    """
+    submission = target.submission
+    return MinistryRequest.objects.filter(
+        submission__family_id=submission.family_id,
+        submission__campaign_id=submission.campaign_id,
+        submission__mode="live",
+        submission__family_version__gt=submission.family_version,
+        entity_kind=target.entity_kind,
+        entity_key=target.entity_key,
+        ministry_duid=target.ministry_duid,
+    ).exists()
+
+
 def _ids(versions):
     """The posted item ids as request UUIDs (a malformed one is a 400)."""
     return {UUID(identity): version for identity, version in versions.items()}
@@ -330,8 +356,15 @@ class MinistryDecisions:
             if any(getattr(previous, name) != intent[name] for name in REPLAYED):
                 raise ValueError("This request key is already bound.")
             return 0
-        if target.version != version or action not in offered:
-            raise StaleRecordError("The Ministry request changed.")
+        # A later response replaced this revision (the worklist's latest
+        # False): only its roster tick is still offered, so any other
+        # decision on it is a forged or outdated post.
+        if (
+            target.version != version
+            or action not in offered
+            or _later_revision(target)
+        ):
+            raise _stale(target)
         if (
             action is Action.BACK_TO_REVIEW
             and current.stage is Stage.IGNORED
@@ -406,7 +439,7 @@ class MinistryDecisions:
                 raise ValueError("This request key is already bound.")
             return 0
         if target.version != version or Action.ENTERED_BY_HAND not in offered:
-            raise StaleRecordError("The Ministry request changed.")
+            raise _stale(target)
         latest = MinistryRosterEntry.objects.filter(request_id=target.pk).aggregate(
             sequence=Max("sequence")
         )["sequence"]
