@@ -1,4 +1,4 @@
--- Frozen forward migration file 0132 (the repository-wide file sequence;
+-- Frozen forward migration file 0131 (the repository-wide file sequence;
 -- provisional, the number is assigned centrally in merge order): Ministry
 -- requests adopt the review pipeline (#1684). This file is installed by its
 -- Django migration in the workflows app and must never change once
@@ -63,7 +63,7 @@ SET LOCAL search_path = public;
 -- how many definitions there are), compared in the DO block. A
 -- transaction-local setting holds them, not a temporary table: the
 -- migration login has no TEMP privilege.
-SELECT set_config('stewardship.migration_0132_acl', (
+SELECT set_config('stewardship.migration_0131_acl', (
     SELECT count(*)||':'||coalesce(string_agg(p.proname||'='||coalesce(p.proacl::text,'default')
             ||'/'||coalesce((SELECT array_agg(c ORDER BY c) FROM unnest(p.proconfig) c)::text,''),';'
         ORDER BY p.proname),'')
@@ -663,7 +663,7 @@ BEGIN
         WHERE conrelid='public.stewardship_ministry_revision'::regclass
           AND conname='ministry_revision_outcome'
           AND pg_get_constraintdef(oid) LIKE '%''cancelled''%') THEN
-        RAISE EXCEPTION 'Migration 0132 (Ministry review pipeline) did not add the request and revision fields';
+        RAISE EXCEPTION 'Migration 0131 (Ministry review pipeline) did not add the request and revision fields';
     END IF;
     -- Each replaced function, once, invoker, with its new text.
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
@@ -681,7 +681,7 @@ BEGIN
             OR (p.proname='stewardship_ministry_followup_v1' AND p.provolatile='s'
                 AND p.prosrc LIKE '%AS reviewed_ministry_name%'
                 AND p.prosrc LIKE '%r.parish_added,r.added_in_place_of_id%')))<>5 THEN
-        RAISE EXCEPTION 'Migration 0132 (Ministry review pipeline) did not replace the guards and selection';
+        RAISE EXCEPTION 'Migration 0131 (Ministry review pipeline) did not replace the guards and selection';
     END IF;
     -- The guards still run as the triggers they were.
     IF (SELECT count(*) FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid
@@ -695,7 +695,7 @@ BEGIN
                 'stewardship_ministry_revision_guard_v1'),
             ('public.stewardship_ministry_revision'::regclass,'stewardship_ministry_revision_effect',
                 'stewardship_ministry_revision_effect_v1')))<>4 THEN
-        RAISE EXCEPTION 'Migration 0132 (Ministry review pipeline) lost a Ministry trigger';
+        RAISE EXCEPTION 'Migration 0131 (Ministry review pipeline) lost a Ministry trigger';
     END IF;
     -- CREATE OR REPLACE keeps the grants and names the same settings; check
     -- that nothing changed them.
@@ -706,8 +706,8 @@ BEGIN
         WHERE n.nspname='public' AND p.proname IN ('stewardship_ministry_request_guard_v1',
             'stewardship_ministry_submission_effects_v1','stewardship_ministry_revision_guard_v1',
             'stewardship_ministry_revision_effect_v1','stewardship_ministry_followup_v1'))
-        IS DISTINCT FROM current_setting('stewardship.migration_0132_acl') THEN
-        RAISE EXCEPTION 'Migration 0132 changed the Ministry functions'' grants or settings';
+        IS DISTINCT FROM current_setting('stewardship.migration_0131_acl') THEN
+        RAISE EXCEPTION 'Migration 0131 changed the Ministry functions'' grants or settings';
     END IF;
 END
 $check$;
