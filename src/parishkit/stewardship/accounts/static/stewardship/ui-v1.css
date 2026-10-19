@@ -712,10 +712,15 @@ button.is-busy[aria-disabled=true], .button.is-busy[aria-disabled=true], input[t
    and wraps under it only when the cell is too narrow. While it has nothing
    to do it is greyed but focusable (aria-disabled, data-clear-unavailable,
    ui-v1.js), and its reason is a floating tip like an unavailable control's,
-   so its state never moves anything (no layout shift). */
-.filter-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .5rem; vertical-align: bottom; }
-.filter-bar > .filter-actions, details.filter-panel > form > .filter-actions { flex: 0 0 auto; min-width: 0; margin: 0; }
-.filter-actions button { margin: 0; white-space: nowrap; }
+   so its state never moves anything (no layout shift). The pair may shrink
+   to its line, never wider than it, so on a phone, or with a wider font
+   (Linux's DejaVu Sans), Clear wraps under Apply instead of pushing the
+   page sideways. Both buttons have a smaller inline padding than other
+   buttons (.75rem, not 1.25rem), so side by side they fit one 14rem-and-up
+   Filters panel cell (about 288 px at 1280 px) with those fonts too. */
+.filter-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .5rem; vertical-align: bottom; max-width: 100%; }
+.filter-bar > .filter-actions, details.filter-panel > form > .filter-actions { flex: 0 1 auto; min-width: 0; margin: 0; }
+.filter-actions button { margin: 0; white-space: nowrap; padding-inline: .75rem; }
 .filter-clear { position: relative; display: inline-block; }
 button[data-clear-unavailable][aria-disabled=true], button[data-clear-unavailable][aria-disabled=true]:not(:disabled):hover { cursor: not-allowed; opacity: .55; background: var(--paper); color: var(--accent); box-shadow: none; }
 button.is-busy::after, .button.is-busy::after { content: ""; display: inline-block; width: .85em; height: .85em; margin-inline-start: .5em; vertical-align: -.1em; border: 2px solid currentColor; border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
@@ -1153,8 +1158,12 @@ details.filter-panel[data-filter-panel] > form:not(.filter-bar) > fieldset > div
 .filter-bar > div.fit { flex: 0 1 auto; }
 /* Sent mail's five filters share one row beside the Admin menu at desktop
    width (#1562): each grows from a short basis instead of starting at
-   its widest choice. */
-.filter-bar.mail-filters > div { flex: 1 1 7.5rem; min-width: 6.5rem; }
+   its widest choice. The bar takes the page's width, not the 60rem form
+   cap, with a slightly smaller gap, so that on a 1366 px laptop Apply
+   filters and Clear filters (#1651) fit beside the five filters even with
+   Linux's wider fonts, and the first rows still start on the screen. */
+.filter-bar.mail-filters { max-width: none; column-gap: .75rem; }
+.filter-bar.mail-filters > div { flex: 1 1 6.5rem; min-width: 6.5rem; }
 /* From and Through are wide enough for the empty "mm/dd/yyyy" placeholder
    beside the calendar button, with Linux's wider fonts too. They drop the
    desktop short-field rule's end margin: the bar's gap spaces them, and
@@ -1174,8 +1183,12 @@ details.filter-panel[data-filter-panel] > form:not(.filter-bar) > fieldset > div
    for both side by side, so Clear wraps under Apply in the same cell and
    Apply stays on the fields' row (no row is added for it). The top margin
    is the labels' height (1.75rem and their .25rem gap, below), so Apply
-   lines up with the fields' controls, not their labels. */
-.filter-bar.mail-filters > div.filter-actions { flex: 1 1 min-content; min-width: 0; margin-top: 2rem; }
+   lines up with the fields' controls, not their labels. The pair takes
+   the row's room first, up to both buttons side by side (max-content);
+   the fields grow only from what is left. The Timeline's bar does the
+   same, so its Kind, days and both buttons keep one row at 1280 px. */
+.filter-bar.mail-filters > div.filter-actions { flex: 1000 1 min-content; min-width: 0; max-width: max-content; margin-top: 2rem; }
+.filter-bar.timeline-filters > div.filter-actions { flex: 1000 1 min-content; max-width: max-content; }
 .filter-bar.mail-filters > div > :is(label, .label-row) { display: flex; align-items: center; min-height: 1.75rem; margin: 0 0 .25rem; }
 /* Sent mail's Production / Testing choice sits at the end of the heading's
    line on a wider screen, out of the flow, so it takes no line of its own
