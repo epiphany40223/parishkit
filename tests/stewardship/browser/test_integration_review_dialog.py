@@ -4,8 +4,11 @@ Save without a new key opens the shared review dialog, a compact review
 asking "Save the … settings?"; Apply closes it, redraws the editor's region
 in place at the applied version and says what was applied in the status
 line under the form, with no reload and no layout shift. Save with a new key
-pasted submits natively instead (the slow key install is followed on the
-page, the recorded exception), so no key ever reaches the dialog. Remove
+pasted is a confirmation too (#1568): its Review is posted without the key,
+the dialog names the key by its last four characters only, and Apply posts
+the page's own form once, without a page load; the key's install is then
+followed on the page and redrawn in place when it finishes. Finish
+switching to the new key is a confirmation in the same dialog. Remove
 Slack is a confirmation. A field's error stays on the form. ParishSoft's
 refresh schedule change keeps its full review, and the redrawn schedule
 editor works again. Pages and answers are
@@ -18,13 +21,23 @@ import pytest
 
 from .integration_dialog_components import (
     NEW_CHANNEL,
+    PARISHSOFT_KEY,
+    PARISHSOFT_KEY_REVIEW,
     SCHEDULE,
     SCHEDULE_REVIEW,
     SLACK,
+    SLACK_FINISH,
+    SLACK_KEY_REVIEW,
+    SLACK_KEYED,
+    SLACK_PENDING,
     SLACK_REFUSED,
     SLACK_REMOVE,
     SLACK_REMOVING,
     SLACK_REVIEW,
+    SLACK_STATUS,
+    SLACK_STATUS_DONE,
+    SLACK_STATUS_PENDING,
+    SLACK_UNSELECTED,
 )
 from .refresh_schedule_components import BASIC, CHECK, check_answer
 from .review_helpers import answer_reviews
@@ -50,6 +63,10 @@ PLACE = """(id) => {
     return [box.left + window.scrollX, box.top + window.scrollY];
 }"""
 SECRET = "xoxb-SYNTHETIC-SECRET-TOKEN"
+# What the review dialog's body holds (emptied whenever the dialog closes).
+REVIEW_BODY = (
+    "document.querySelector('#integration-review [data-review-body]').textContent"
+)
 
 
 def watch(page):
@@ -146,37 +163,178 @@ def test_save_is_a_compact_review_applied_in_place(page, component_origin):
     assert not failures
 
 
-def test_a_pasted_key_submits_natively_and_never_reaches_the_dialog(
-    page, component_origin
-):
-    """Save with a new key pasted is the slow key install, the recorded
-    exception: the form submits natively (a page load, as before), no
-    review is requested, and the dialog never opens or holds the key."""
-    page.goto(component_origin + SLACK)
-    fetched = []
-    page.on(
-        "request",
-        lambda request: (
-            fetched.append(request)
-            if request.method == "POST" and request.headers.get("x-requested-with")
-            else None
-        ),
+def answer_key(page, origin, address, review, applied, reread=None):
+    """Answer ``address``'s key Review (posted without the key) with
+    ``review``, its Apply (the form with the key) with ``applied`` and, when
+    given, an in-place re-read of the page (a fetch) with ``reread``; let
+    everything else through. Returns the (reviews, applies) bodies, each
+    with whether it was a page load."""
+    reviews, applies = [], []
+
+    def handle(route):
+        """Serve the matching fixture for the key's Review or Apply."""
+        request = route.request
+        body = request.post_data or ""
+        if reread and request.method == "GET" and request.resource_type != "document":
+            route.fulfill(response=route.fetch(url=origin + reread, method="GET"))
+            return
+        if request.method != "POST" or "action=preview" not in body:
+            route.fallback()
+            return
+        sent = reviews if "key_review=yes" in body else applies
+        sent.append((body, request.is_navigation_request()))
+        fixture = review if sent is reviews else applied
+        route.fulfill(response=route.fetch(url=origin + fixture, method="GET"))
+
+    page.route(lambda url: url.split("#")[0] == origin + address, handle)
+    return reviews, applies
+
+
+def answer_in_turn(page, origin, address, *fixtures):
+    """Answer each fetch of ``address`` with the next of ``fixtures`` (the
+    last from then on), never the page's own load. Returns the reads."""
+    reads = []
+
+    def handle(route):
+        """Serve the next fixture to a fetch; let a page load through."""
+        if route.request.resource_type == "document":
+            route.fallback()
+            return
+        reads.append(route.request.url)
+        fixture = fixtures[min(len(reads), len(fixtures)) - 1]
+        route.fulfill(response=route.fetch(url=origin + fixture, method="GET"))
+
+    page.route(lambda url: url.split("#")[0] == origin + address, handle)
+    return reads
+
+
+def test_a_pasted_key_is_confirmed_and_installed_in_place(page, component_origin):
+    """Save with a key pasted opens the key's confirmation on its title,
+    naming the key by its last four characters only; the Review never
+    carries the key, and Cancel keeps it in its field. Apply posts the page's
+    own form once, key included, without a page load; the dialog closes,
+    its body emptied (after Cancel too, so the last four do not linger),
+    the status line says the key is being installed, and once the check
+    finishes the status line and editor are redrawn in place (no reload, no
+    scroll), Key updated, with the key gone from the page (#1568)."""
+    reviews, applies = answer_key(
+        page, component_origin, SLACK, SLACK_KEY_REVIEW, SLACK_PENDING, SLACK_KEYED
     )
-    page.evaluate(MARK)
-    page.get_by_label("Slack bot token").fill(SECRET)
-    dialog = page.locator("dialog#integration-review")
-    with (
-        page.expect_request(lambda request: request.method == "POST") as sent,
-        page.expect_navigation(),
-    ):
-        page.get_by_role("button", name="Save", exact=True).click()
-    # A page load (the form's own submission), not the review's fetch.
-    assert sent.value.is_navigation_request()
-    assert f"candidate={SECRET}" in sent.value.post_data
-    assert fetched == []
-    assert page.evaluate("document.querySelector('[data-mark]')") is None
+    polls = answer_in_turn(
+        page, component_origin, SLACK_STATUS, SLACK_STATUS_PENDING, SLACK_STATUS_DONE
+    )
+    page.set_viewport_size({"width": 1280, "height": 1600})
+    page.goto(component_origin + SLACK)
+    failures = watch(page)
+    token = page.locator("#id_candidate")
+    token.fill(SECRET)
+    save = page.get_by_role("button", name="Save", exact=True)
+    save.click()
+    dialog = dialog_of(page, "Replace the Slack bot token?")
+    assert page.evaluate(FOCUSED) == "integration-review-title"
+    has_attribute(dialog, "aria-describedby", "integration-review-summary")
+    assert "ending in OKEN" in dialog.inner_text()
+    html = dialog.evaluate("node => node.outerHTML")
+    assert SECRET not in html and "SYNTHETIC" not in html
+    assert len(reviews) == 1 and not reviews[0][1]
+    assert "candidate" not in reviews[0][0] and "SYNTHETIC" not in reviews[0][0]
+    dialog.get_by_role("button", name="Cancel").click()
+    hidden(dialog)
+    # The dialog's close listener empties the body a task after close().
+    eventually(page, REVIEW_BODY, "")
+    assert token.input_value() == SECRET and applies == []
+    save.click()
+    dialog = dialog_of(page, "Replace the Slack bot token?")
+    reviewed = page.evaluate("window.scrollY")
+    dialog.get_by_role("button", name="Apply").click()
+    hidden(dialog)
+    visible(page.get_by_text("Installing the new key"))
+    assert len(applies) == 1
+    body, navigated = applies[0]
+    assert not navigated and f"candidate={SECRET}" in body
+    visible(page.get_by_text("Key updated."))
+    eventually(page, REVIEW_BODY, "")
+    assert page.locator("input[name=candidate]").count() == 1
+    assert page.locator("input[name=candidate]").input_value() == ""
     assert SECRET not in page.content()
-    assert dialog.count() == 0 or not dialog.is_visible()
+    assert len(polls) >= 2
+    assert page.evaluate("window.scrollY") == reviewed
+    assert page.url == component_origin + SLACK
+    assert page.evaluate(MARKED) == "kept"
+    assert len(applies) == 1
+    assert not failures
+
+
+def test_parishsofts_key_sits_before_its_schedule(page, component_origin):
+    """ParishSoft draws the organization ID, the new key, then the refresh
+    schedule editor, Save, and the schedule's outlook below the form, so the
+    key never splits the schedule's entry from its display; its key's
+    confirmation names the key by its last four characters and lists the
+    other setting saved with it (#1568)."""
+    reviews, _ = answer_key(
+        page, component_origin, PARISHSOFT_KEY, PARISHSOFT_KEY_REVIEW, PARISHSOFT_KEY
+    )
+    page.goto(component_origin + PARISHSOFT_KEY)
+    failures = watch(page)
+    # Top to bottom on the page, as drawn.
+    tops = [
+        page.locator(selector).first.evaluate(
+            "node => node.getBoundingClientRect().top + window.scrollY"
+        )
+        for selector in (
+            "#id_organization_id",
+            "input[name=candidate]",
+            "[data-schedule-part=status]",
+            "#refresh-schedule-outlook",
+        )
+    ]
+    assert tops == sorted(tops) and len(set(tops)) == len(tops), tops
+    page.locator("input[name=candidate]").fill("synthetic-parishsoft-key-9876")
+    page.get_by_role("button", name="Save", exact=True).click()
+    dialog = dialog_of(page, "Replace the ParishSoft key?")
+    text = dialog.inner_text()
+    assert "ending in 9876" in text and "synthetic-parishsoft" not in text
+    assert "Expected ParishSoft organization ID:" in text
+    assert "checked with ParishSoft in the background" in text
+    assert len(reviews) == 1 and "candidate" not in reviews[0][0]
+    assert not failures
+
+
+def test_finish_switching_is_confirmed_in_the_dialog(page, component_origin):
+    """Finish switching to the new key opens its confirmation on the
+    settings page (#1568); Apply posts its signed preview and key change,
+    follows the change, then redraws the status line and editor in place:
+    the error line and its button are gone, and the status line says the
+    switch was applied."""
+    finishes = answer(page, component_origin, SLACK_UNSELECTED, "finish", SLACK_FINISH)
+    page.set_viewport_size({"width": 1280, "height": 1600})
+    page.goto(component_origin + SLACK_UNSELECTED)
+    failures = watch(page)
+    page.get_by_role("button", name="Finish switching to the new key").click()
+    dialog = dialog_of(page, "Finish switching to the new key?")
+    assert page.evaluate(FOCUSED) == "integration-review-title"
+    assert "is stopped until you finish switching" in dialog.inner_text()
+    carried = dialog.locator("form[data-review-apply] input[data-review-carried]")
+    assert carried.evaluate_all("nodes => nodes.map((node) => node.name)") == [
+        "preview",
+        "request_id",
+    ]
+    assert len(finishes) == 1
+    dialog.get_by_role("button", name="Apply").click()
+    hidden(dialog)
+    eventually(
+        page, "document.getElementById('integration-outcome').textContent !== ''"
+    )
+    assert (
+        page.locator("#integration-outcome")
+        .inner_text()
+        .startswith("Slack notifications switched to its new key. Applied at")
+    )
+    finish = page.get_by_role("button", name="Finish switching to the new key")
+    assert finish.count() == 0
+    has_attribute(page.locator(DIGEST), "value", "b" * 64)
+    assert page.evaluate(MARKED) == "kept"
+    assert not failures
 
 
 def test_remove_slack_is_a_confirmation_redrawn_in_place(page, component_origin):
@@ -284,8 +442,11 @@ def test_a_schedule_change_keeps_its_full_review_and_the_editor_works_after(
 
 def test_spaces_the_server_strips_are_no_key_on_the_page(page, component_origin):
     """A key field holding only what the server strips (U+0085, U+3000) is
-    no key on the page either: Save opens the review dialog, as the server
-    reviews it (#750); U+FEFF, which the server keeps, is a key."""
+    no key on the page either: Save opens the settings' review dialog, as the
+    server reviews it (#750); U+FEFF, which the server keeps, is a key, which
+    the key rule refuses, so Save waits (#1577); a key around such spaces is
+    a key, so Save opens the key's confirmation, its Review posted without
+    it (#1568)."""
     reviews = answer_reviews(page, component_origin, SLACK_REVIEW, address=SLACK)
     page.goto(component_origin + SLACK)
     page.get_by_label("Slack channel ID").fill(NEW_CHANNEL)
@@ -296,11 +457,12 @@ def test_spaces_the_server_strips_are_no_key_on_the_page(page, component_origin)
     assert len(reviews) == 1
     dialog.get_by_role("button", name="Cancel").click()
     hidden(dialog)
+    page.unroute_all()
+    keyed, _ = answer_key(page, component_origin, SLACK, SLACK_KEY_REVIEW, SLACK)
     token.fill("\ufeff")
-    with (
-        page.expect_request(lambda request: request.method == "POST") as sent,
-        page.expect_navigation(),
-    ):
-        page.get_by_role("button", name="Save", exact=True).click()
-    # The form's own submission (a page load), not the review's fetch.
-    assert sent.value.is_navigation_request()
+    assert page.get_by_role("button", name="Save", exact=True).is_disabled()
+    token.fill("\u3000xoxb-synthetic-token ")
+    page.get_by_role("button", name="Save", exact=True).click()
+    dialog_of(page, "Replace the Slack bot token?")
+    (body, navigated) = keyed[0]
+    assert not navigated and "key_review=yes" in body and "candidate" not in body

@@ -115,6 +115,7 @@ def side(time, due_at):
         "template_version": TEMPLATE,
         "subject": "Campaign invitation",
         "comparison": False,
+        "skip_dates": [],
         "timezone": ZONE,
         "resolved": [{"key": "once", "due_at": due_at}],
         "more": False,
@@ -184,6 +185,7 @@ SIDE = {
     "template_version",
     "subject",
     "comparison",
+    "skip_dates",
     "timezone",
     "resolved",
     "key",
@@ -305,6 +307,15 @@ def test_a_request_watch_stops_once_the_request_is_settled():
         f'{{"schedules": [{{"id": "{SCHEDULE}", "delete": true, "time": "x"}}]}}',
         '{"schedules": [' + ",".join(["{}"] * 102) + "]}",
         " " * (admin_changes.CHANGES_LIMIT + 1),
+        # A digest skips one send of a saved schedule, by its date (#1658).
+        '{"schedules": [{"skip": "2054-10-02", "kind": "daily_digest"}]}',
+        f'{{"schedules": [{{"id": "{SCHEDULE}", "skip": "20541002"}}]}}',
+        f'{{"schedules": [{{"id": "{SCHEDULE}", "skip": ["2054-10-02"]}}]}}',
+        f'{{"schedules": [{{"id": "{SCHEDULE}", "skip": "2054-02-30"}}]}}',
+        f'{{"schedules": [{{"id": "{SCHEDULE}", "skip": "2054-10-02", '
+        '"delete": true}]}',
+        f'{{"schedules": [{{"id": "{SCHEDULE}", "skip": "2054-10-02"}}, '
+        '{"id": "00000000-0000-4000-8000-0000000000ff", "skip": "2054-10-03"}]}',
     ],
 )
 def test_malformed_change_documents_are_invalid(text):
@@ -819,3 +830,28 @@ def test_an_unknown_outcome_names_the_request_to_read(monkeypatch):
     document = json.loads(out.getvalue())
     assert code == 6 and document["error"]["code"] == "outcome_unknown"
     assert document["error"]["request_id"] == str(REQUEST)
+
+
+@pytest.mark.parametrize(
+    "moved", [{"weekday": 3}, {"time": "01:30:00"}, {"date": "2054-10-02"}]
+)
+def test_a_digest_skip_with_a_moved_send_is_refused(moved):
+    """``skip`` names a saved send, so it cannot move the digest too (#1658)."""
+    entry = {"id": SCHEDULE, "skip": "2054-10-02", **moved}
+    with pytest.raises(admin_changes.InvalidChange) as raised:
+        admin_changes.parse_changes(json.dumps({"schedules": [entry]}))
+    assert raised.value.fields == [
+        {
+            "field": f"schedules.{SCHEDULE}.skip",
+            "code": "invalid",
+            "message": admin_changes.SKIP_MOVED,
+        }
+    ]
+
+
+def test_a_digest_skip_is_kept_on_its_saved_entry():
+    """``skip`` stays on the saved digest's entry, for the review (#1658)."""
+    parsed = admin_changes.parse_changes(
+        f'{{"schedules": [{{"id": "{SCHEDULE}", "skip": "2054-10-02"}}]}}'
+    )
+    assert parsed["schedules"] == [{"id": SCHEDULE, "skip": "2054-10-02"}]

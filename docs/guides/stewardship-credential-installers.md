@@ -184,9 +184,11 @@ commands do not enable live campaign mail delivery.
 
 An Administrator replaces the ParishSoft API key, the Google Workspace
 service-account key or the Slack bot token on that integration's settings page,
-in the same form as its settings. No server step is needed:
+in the same form as its settings. No server step is needed. **Save** first
+opens a confirmation that names the new key only by its last characters and
+lists any other setting saved with it; **Apply** then sends the key:
 
-1. Saving seals the key for the target's installer immediately; it is never
+1. Applying seals the key for the target's installer immediately; it is never
    shown again.
 2. The same web request records the configuration request that will select the
    new fingerprint, together with any changed settings the key was checked
@@ -209,23 +211,24 @@ in the same form as its settings. No server step is needed:
 
 The settings page shows one plain-language line about the latest change:
 checking, switching, updated, or not accepted (the previous key is still in
-use). Request states and fingerprints are on the linked details page and in
-the audit log.
+use), and it updates by itself while the key is checked. Request states and
+fingerprints are in the audit log and `pk-admin integration key status`.
 
 Once the installer renames the new key into place, every consumer compares
 the file with the selected fingerprint, so the integration stops until the
 selection applies. If the selection fails for good (for example `stale_base`,
 when another settings change on the same base was applied first), the page
 shows an error saying what is stopped, with a **Finish switching to the new
-key** button. That page repeats the key's original selection on the current
-settings, and any Administrator may confirm it. Only the key-scope
+key** button. Its confirmation, in a dialog on the same page, repeats the
+key's original selection on the current settings, and any Administrator may
+apply it. Only the key-scope
 settings saved with the key (what the provider checked it against, such as the
 organization ID or the Slack channel) are carried over, merged onto the current
 settings, so a newer change to anything else, such as the refresh schedule,
-is kept. The page lists every setting the switch would change. When the save
+is kept. The confirmation lists every setting the switch would change. When the save
 added the integration, the whole new record is added again. A switch that would
-change the ParishSoft organization ID after the first data load is refused on
-that page, and the configuration installer refuses such a change from any path
+change the ParishSoft organization ID after the first data load is refused in
+that dialog, and the configuration installer refuses such a change from any path
 (`invalid_candidate`). Meanwhile
 Family and operational mail treat the mismatch as a hold, not a failure:
 while the latest Workspace key change is in progress, or installed with the

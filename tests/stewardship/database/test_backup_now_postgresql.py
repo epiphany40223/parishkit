@@ -220,7 +220,7 @@ def test_a_simultaneous_double_click_returns_the_first_request(auth_service, goo
     ("message", "refused"),
     [
         (
-            "A backup request requires fresh Administrator authentication",
+            "A backup request requires a live Administrator session",
             "signed_out",
         ),
         ("permission denied for table stewardship_backup_request", "denied"),

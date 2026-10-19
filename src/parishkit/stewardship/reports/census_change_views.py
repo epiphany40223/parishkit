@@ -80,6 +80,7 @@ from .census_changes import (
     census_csv,
     census_pdf,
     census_xlsx,
+    status_choice_counts,
 )
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
@@ -97,6 +98,14 @@ STATUS_LABELS = {
     **{key: STATUSES[key] for key in STATUS_CHOICES if key in STATUSES},
     "all": "Every status",
 }
+
+
+def status_choices(counts, *, administrator):
+    """The Status filter's (key, label, count) choices, in order (#1682)."""
+    listed = status_choice_counts(counts, administrator=administrator)
+    return [(key, label, listed[key]) for key, label in STATUS_LABELS.items()]
+
+
 ROUTE_LABELS = dict(
     zip(
         ROUTES,
@@ -209,19 +218,22 @@ def _audit(action, principal, campaign_id, outcome, count=0):
 
 
 def _choices(parameters, *, export):
-    """Parse the posted form: paging (page) or format and timezone (download)."""
+    """Parse the posted form: paging (page) or format and zone (download).
+
+    The download's zone is the browser's, posted unasked, or an explicit
+    ``timezone`` from an older tab (``dates.download_zone``, #1679).
+    """
     extra = {}
     if export:
         fmt = parameters.pop("format", [DEFAULT_EXPORT_FORMAT])
-        zone = parameters.pop("timezone", ["UTC"])
-        if (
-            len(fmt) != 1
-            or fmt[0] not in FORMATS
-            or len(zone) != 1
-            or (zone[0] != "UTC" and zone[0] not in timezone_names())
-        ):
+        chosen = parameters.pop("timezone", [None])
+        browser = parameters.pop("browser_timezone", [None])
+        if len(fmt) != 1 or len(chosen) != 1 or len(browser) != 1:
             raise ValueError("Invalid census change export choice.")
-        extra = {"format": fmt[0], "zone": ZoneInfo(zone[0])}
+        zone = dates.download_zone(chosen[0], browser[0])
+        if fmt[0] not in FORMATS or (zone != "UTC" and zone not in timezone_names()):
+            raise ValueError("Invalid census change export choice.")
+        extra = {"format": fmt[0], "zone": ZoneInfo(zone)}
     else:
         extra["paging"] = paging_values(parameters)
     return extra
@@ -850,10 +862,13 @@ def report(request, campaign_id):
                 "campaign_id": campaign_id,
                 "query": query,
                 "query_fields": query.form_values(),
-                "status_choices": STATUS_LABELS.items(),
+                # Each Status choice with how many changes it lists (#1682),
+                # the counts the retired summary above the table showed.
+                "status_choices": status_choices(
+                    result["status_counts"], administrator=result["administrator"]
+                ),
                 "route_choices": ROUTE_LABELS.items(),
                 "kind_choices": KIND_LABELS.items(),
-                "export_timezones": sorted(timezone_names()),
                 "notice": extra.get("notice"),
                 "action": action,
                 # The latest date an edited birth or death date may hold:

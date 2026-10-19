@@ -11,11 +11,12 @@ import pytest
 from openpyxl import load_workbook
 
 from parishkit.stewardship.reports import pdf_design
-from parishkit.stewardship.reports.census_change_views import SORTING
+from parishkit.stewardship.reports.census_change_views import SORTING, status_choices
 from parishkit.stewardship.reports.census_changes import (
     HEADINGS,
     PDF_WEIGHTS,
     PRIVACY,
+    STATUSES,
     CensusQuery,
     census_csv,
     census_pdf,
@@ -207,35 +208,51 @@ def test_filters_narrow_the_rows():
     found = CensusQuery(status="all", search="7001")
     assert len(ids(select(rows(), found, administrator=True))) == 5
     assert ids(select(rows(), CensusQuery(search="nobody"), administrator=True)) == []
-    # The summary counts history only when it is shown.
-    summary = dict(select(rows(), every, administrator=True)["summary"])
-    assert summary["To do"] == 2 and "Superseded" not in summary
-    summary = dict(select(rows(), history, administrator=True)["summary"])
-    assert summary["Superseded"] == 1
+    # Every change is counted by status, history only when it is shown.
+    counts = select(rows(), every, administrator=True)["status_counts"]
+    assert counts["to_do"] == 2 and counts["superseded"] == 0
+    counts = select(rows(), history, administrator=True)["status_counts"]
+    assert counts["superseded"] == 1
 
 
-def test_summary_keeps_open_work_lines_at_zero():
-    """To review, To do and Conflict stay in the Summary at 0, so resolving
-    the last of one removes no line above the table (#1472); any other
-    status is listed only once it has a change."""
-    result = select(
-        [shape(row(execution="published", decision="approved"))],
-        CensusQuery(),
-        administrator=True,
+def test_status_choices_count_what_each_lists():
+    """Each Status choice carries how many changes it lists (#1682).
+
+    A status counts its own changes, whatever the other filters; Work to do
+    counts To do and Conflict, and To review only for an Administrator; Every
+    status counts them all; a status with no change keeps its choice at 0.
+    """
+    counts = {key: 0 for key in STATUSES} | {
+        "to_review": 2,
+        "to_do": 3,
+        "conflict": 1,
+        "published": 4,
+    }
+    admin = dict(
+        (key, count)
+        for key, _label, count in status_choices(counts, administrator=True)
     )
-    assert result["summary"] == [
-        ("To review", 0),
-        ("To do", 0),
-        ("Conflict", 0),
-        ("Published", 1),
+    assert admin == {
+        "open": 6,
+        "to_review": 2,
+        "to_do": 3,
+        "conflict": 1,
+        "being_published": 0,
+        "published": 4,
+        "already": 0,
+        "entered": 0,
+        "ignored": 0,
+        "all": 10,
+    }
+    staff = dict(
+        (key, count)
+        for key, _label, count in status_choices(counts, administrator=False)
+    )
+    assert staff["open"] == 4 and staff["all"] == 10
+    labels = [
+        label for _key, label, _count in status_choices(counts, administrator=True)
     ]
-    assert [
-        label for label, _ in select([], CensusQuery(), administrator=False)["summary"]
-    ] == [
-        "To review",
-        "To do",
-        "Conflict",
-    ]
+    assert labels[0] == "Work to do" and labels[-1] == "Every status"
 
 
 def test_dates_are_days_in_the_browser_zone():
@@ -415,11 +432,10 @@ def test_page_shows_member_duid_beside_who():
             "table": table,
             "query": CensusQuery(),
             "query_fields": {},
-            "summary": [],
+            "status_counts": {},
             "status_choices": [],
             "route_choices": [],
             "kind_choices": [],
-            "export_timezones": ["UTC"],
         },
     )
     headings = [
@@ -483,11 +499,10 @@ def test_values_tell_a_field_never_read_from_one_read_empty():
             "table": paginate(shaped, {}, sorting=SORTING),
             "query": CensusQuery(),
             "query_fields": {},
-            "summary": [],
+            "status_counts": {},
             "status_choices": [],
             "route_choices": [],
             "kind_choices": [],
-            "export_timezones": ["UTC"],
         },
     )
 
@@ -530,10 +545,10 @@ NO_MATCH = "No census changes match these filters."
 
 
 def empty_page(changes, query, *, administrator):
-    """The page's table cell and Summary when ``query`` keeps none of ``changes``.
+    """The page's table cell and Status choices when ``query`` keeps none.
 
-    ``changes`` go through the view's own ``select``, so the Summary counts
-    every status while the table shows only what the filters keep.
+    ``changes`` go through the view's own ``select``, so the Status choices
+    count every status while the table shows only what the filters keep.
     """
     from django.template.loader import render_to_string
 
@@ -551,10 +566,11 @@ def empty_page(changes, query, *, administrator):
                 "table": paginate(result["rows"], {}, sorting=SORTING),
                 "query": query,
                 "query_fields": {},
-                "status_choices": [],
+                "status_choices": status_choices(
+                    result["status_counts"], administrator=administrator
+                ),
                 "route_choices": [],
                 "kind_choices": [],
-                "export_timezones": ["UTC"],
             },
         )
     )
@@ -564,22 +580,23 @@ def empty_page(changes, query, *, administrator):
     ("changes", "administrator", "counted"),
     [
         # To review is an Administrator's work: Staff's Work to do leaves it
-        # out, while their Summary still counts it.
+        # out, while their Status choices still count it.
         ([row(id="1"), row(id="2")], False, "To review"),
         # Being published needs no one's work: no one's Work to do lists it.
         ([row(decision="approved", execution="queued")], True, "Being published"),
     ],
 )
-def test_empty_work_to_do_names_the_list_not_the_summary(
+def test_empty_work_to_do_names_the_list_not_the_counts(
     changes, administrator, counted
 ):
     """An empty Work to do never claims there is nothing at all (#227).
 
-    The Summary above counts rows that Work to do leaves out, so the
+    The Status choices count rows that Work to do leaves out, so the
     message speaks of work for the viewer and points to Every status.
     """
     html = empty_page(changes, CensusQuery(), administrator=administrator)
-    assert f"<dt>{counted}</dt>" in html
+    assert f">{counted} ({len(changes)})</option>" in html
+    assert ">Work to do (0)</option>" in html
     assert WORK_TO_DO_EMPTY in html
     assert "set Status to “Every status”" in html
     assert NONE_YET not in html and NO_MATCH not in html
@@ -830,11 +847,10 @@ def test_page_offers_row_actions_last_and_only_where_allowed():
                 "table": paginate(shown, {}, sorting=SORTING),
                 "query": CensusQuery(),
                 "query_fields": {"status": "open"},
-                "summary": [],
+                "status_counts": {},
                 "status_choices": [],
                 "route_choices": [],
                 "kind_choices": [],
-                "export_timezones": ["UTC"],
                 "administrator": administrator,
                 "action": "/admin/reports/census/",
                 "mutable": mutable,
@@ -1008,11 +1024,10 @@ def test_page_offers_bulk_review_only_on_reviewable_rows():
                 "table": paginate(shown, {}, sorting=SORTING),
                 "query": CensusQuery(),
                 "query_fields": {"status": "open"},
-                "summary": [],
+                "status_counts": {},
                 "status_choices": [],
                 "route_choices": [],
                 "kind_choices": [],
-                "export_timezones": ["UTC"],
                 "administrator": True,
                 "action": "/admin/reports/census/",
                 "mutable": True,

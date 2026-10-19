@@ -161,7 +161,6 @@ def components(context, admin):
             {"completed": 20, "needed_open": 21, "not_needed_open": 10}, 51
         ),
         mutable=True,
-        export_timezones=("UTC", "America/Detroit"),
         request_key=UUID(int=83),
         # The dates' reserved message line (#1332), as the view sizes it.
         filter_sizes=line_sizes(FIELD_MESSAGES, FIELD_LINES),

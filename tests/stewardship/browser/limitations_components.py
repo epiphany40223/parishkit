@@ -12,7 +12,7 @@ from uuid import UUID
 from django.template.loader import render_to_string
 from django.urls import reverse
 
-from parishkit.stewardship.reports.limitation_views import tables
+from parishkit.stewardship.reports.limitation_views import summary_tiles, tables
 from parishkit.stewardship.reports.limitations import LimitationsQuery
 
 CAMPAIGN = UUID(int=90)
@@ -68,10 +68,10 @@ def components(context, admin):
                 | {
                     "members_table": members,
                     "families_table": families,
+                    "summary_tiles": summary_tiles(data["summary"]),
                     "campaign_id": CAMPAIGN,
                     "query": chosen,
                     "query_fields": chosen.form_values(),
-                    "export_timezones": ["UTC", "America/Detroit"],
                 },
             ),
         )

@@ -61,10 +61,12 @@ def test_digest_reports_previous_day_end_not_send_time(
     total = f"{day.cohort_denominator:,}"
     assert f"Families that have responded: 0 out of {total}" in content.text
     assert "First submissions that day: 0" in content.text
-    # One line per total (#720): the label, its bar, then the exact value.
+    # Two rows per total (#1564): the label, then its bar and exact value,
+    # which breaks only before its parenthesis.
     assert ">Families that have responded</td>" in content.html
-    assert f"<strong>0 out of {total} (0%)</strong>" in content.html
-    for body in (content.text, content.html):
+    unbroken = f"0&nbsp;out&nbsp;of&nbsp;{total}"
+    assert f"<strong>{unbroken} (0%)</strong>" in content.html
+    for body in (content.text, content.html.replace("&nbsp;", " ")):
         assert as_of in body
         assert f"1 out of {total}" not in body
         assert "Oct 8, 2054" not in body and "October 8, 2054" not in body

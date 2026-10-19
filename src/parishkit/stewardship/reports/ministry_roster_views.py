@@ -210,7 +210,8 @@ def _ticked(campaign_id, principal):
     Every request is read (``history="all"``) and eligibility keeps the
     resolved roster outcomes with no resolution source (``roster_rows``
     says why); each row then carries its current tick (``mark``). Shared by
-    the page and Home's count (``to_enter``), so the two select alike.
+    the page and the menu's count (admin_context.OPEN_COUNTS repeats this
+    selection and eligibility in SQL), so the two select alike.
     """
     result = followup_page(
         campaign_id,
@@ -222,21 +223,6 @@ def _ticked(campaign_id, principal):
     rows = [row for row in result["rows"] if eligible(row)]
     marks = roster_marks([row["id"] for row in rows])
     return [mark(row, marks) for row in rows], result
-
-
-def to_enter(campaign_id, principal):
-    """How many rows the list's default view (Not yet entered) shows (#1590).
-
-    Home's Next steps count with it: the page's own selection, eligibility
-    and ticks, without the names, resolvers and Family numbers only the
-    rows need. Admin and Staff only, as the page (``can_tick``); anyone else
-    is refused here too, so a count never reaches a Ministry leader. The
-    caller handles the page's refusals and read failures.
-    """
-    if not can_tick(principal):
-        raise PermissionError("Roster changes are unavailable.")
-    rows, _ = _ticked(campaign_id, principal)
-    return sum(not row["roster_entered"] for row in rows)
 
 
 def _family_names(duids):
@@ -447,13 +433,13 @@ def export_body(campaign_id, rows, fmt, zone):
 
 
 def _choices(parameters, *, export):
-    """The request's closed choices: Show, and paging or format and timezone.
+    """The request's closed choices: Show, and paging or format and zone.
 
     A page's GET also accepts ``changed=1``, the tick view's one-time answer
     that someone else changed a mark first.
     """
     allowed = {"show", "ministry"} | (
-        {"format", "timezone", "csrfmiddlewaretoken"}
+        {"format", "timezone", "browser_timezone", "csrfmiddlewaretoken"}
         if export
         else table_parameters() | {"changed"}
     )
@@ -468,8 +454,11 @@ def _choices(parameters, *, export):
     ):
         raise ValueError("Invalid roster list choice.")
     if export:
+        # The browser's zone, posted unasked, or an explicit timezone from
+        # an older tab (#1679).
         chosen = export_choice(
-            values.get("format", DEFAULT_EXPORT_FORMAT), values.get("timezone", "UTC")
+            values.get("format", DEFAULT_EXPORT_FORMAT),
+            dates.download_zone(values.get("timezone"), values.get("browser_timezone")),
         )
         return show, chosen | {"ministry": ministry}
     # Refuse a bad sort, page or size now, as a 400, not while rendering.
@@ -642,7 +631,6 @@ def page(request, campaign_id):
                 "bulk_key": uuid4(),
                 "mutable": mutable,
                 "can_tick": True,
-                "export_timezones": sorted(timezone_names()),
             },
             request=request,
         ).encode()

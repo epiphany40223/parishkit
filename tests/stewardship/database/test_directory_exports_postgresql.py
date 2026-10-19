@@ -230,7 +230,7 @@ def test_native_directory_exports_render_and_download(
         )
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             response, body = read(browser, route)
-            assert response.status_code == 200 and b"Queue complete export" in body
+            assert response.status_code == 200 and b"Export XLSX" in body
             assert (
                 browser.post(
                     reverse("admin:family_directory_export"), fields
@@ -424,7 +424,8 @@ def test_directory_export_staff_gates_and_service_boundaries(
         with pytest.raises(PermissionError):
             create_directory_export(store, actor, **(values | {"request_key": uuid4()}))
         response, body = read(browser, route + "?mailing=yes")
-        assert response.status_code == 200 and b"<fieldset disabled>" in body
+        assert response.status_code == 200
+        assert b'value="xlsx" disabled data-server-disabled' in body
         assert b"Other campaign work" in body
         assert (
             read(browser, reverse("admin:report_export", args=[request.pk]))[
@@ -535,15 +536,13 @@ def test_postal_mail_merge_leaves_out_families_without_a_mailing_address(
         for text in (
             b"Addressee",
             b"Mailing address",
-            b"Every listed Family is in the mail-merge file: the active "
-            b"Families with no deliverable head email and a usable mailing "
-            b"address.",
             b"<td>Member Example</td>",
             b'name="mailing" value="yes" checked',
             b'<input type="hidden" name="mailing" value="yes">',
-            b"ParishSoft DUID, Family, Addressee, Family heads,",
         ):
             assert text in body
+        # No column-list line above the export buttons (R37).
+        assert b"The file has these columns" not in body
         response = post(browser, reverse("admin:family_directory_export"), fields)
         assert response.status_code == 302
     request = ExportRequest.objects.get(request_key=fields["request_key"])

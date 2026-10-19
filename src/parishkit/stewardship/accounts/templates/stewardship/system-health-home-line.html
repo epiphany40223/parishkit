@@ -1,13 +1,10 @@
 {% load i18n stewardship %}{% comment %}
-  One System health problem as a line on Home (admin-portal spec, "Health
-  problems on Home and in the banner", #1214). ``problem`` is a
-  system_health.Problem. The line shows the registry's icon and state word
-  (a status indicator, ui-conventions "Status indicators"), the page's own
-  sentence (system-health-problem.html), and one link to the problem's
-  tile. When the sentence already links that tile ("See Mail sender", "See
-  the counts", "See Version"; Problem.links_tile), the line adds no second
-  link. While the configured backup key cannot be read, System health
-  cannot be shown, so that line links no tile (Problem.tile_link). An
-  error has the error notice's look, a warning the warning one's, as the
-  tiles' problem items do.
-{% endcomment %}<li class="notice{% if problem.severity == 'error' %} notice-error{% endif %}" data-problem="{{ problem.kind }}" data-severity="{{ problem.severity }}"><span class="status-{{ problem.severity }}">{% include "stewardship/components/level-icon.html" with level=problem.severity %} <span class="status-word">{{ problem.word }}</span></span> {% include "stewardship/system-health-problem.html" %}{% if problem.tile_link %} <a href="{% url 'admin:system_health' %}#health-{{ problem.tile }}">{% blocktranslate with name=problem.tile_name %}See {{ name }} in System health{% endblocktranslate %}</a>{% endif %}</li>
+  One System health problem as its own line on Home, for a problem that
+  keeps the System health page from opening (system_health.BLOCKS_PAGE:
+  the configured backup key cannot be read), so Home cannot count it with
+  a link to that page (admin-portal spec, "Home page", #1673). ``problem``
+  is a system_health.Problem. The line shows the registry's icon and state
+  word (a status indicator, ui-conventions "Status indicators") and the
+  page's own sentence (system-health-problem.html), with no link. An error
+  has the error notice's look, a warning the warning one's.
+{% endcomment %}<li class="notice{% if problem.severity == 'error' %} notice-error{% endif %}" data-problem="{{ problem.kind }}" data-severity="{{ problem.severity }}">{% include "stewardship/components/status-lead.html" with level=problem.severity %} {% include "stewardship/system-health-problem.html" %}</li>
