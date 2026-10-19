@@ -201,7 +201,7 @@ def worklist_rows(rows):
                 "elsewhere": (
                     {
                         "label": "Open in Pledges",
-                        "aria_label": f"Open {answer_name(row)} in Pledges",
+                        "aria_label": f"Open in Pledges: {answer_name(row)}",
                         "url": row["pledges_url"],
                     }
                     if row["kind"] == "cannot_give"
