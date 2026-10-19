@@ -158,7 +158,7 @@ def test_staff_land_on_my_review_work_with_linked_counts(response_service, googl
     assert cards(ministry) == [
         (b"/admin/reports/ministries/", b"To review", b"2", b"requests"),
         (
-            b"/admin/reports/ministries/follow-up/roster/",
+            b"/admin/reports/ministries/?stage=to_enter_by_hand",
             b"To enter by hand",
             b"0",
             b"requests",

@@ -278,8 +278,9 @@ BEGIN
        OR NEW.predecessor_id IS NOT NULL THEN
         RETURN NEW;
     END IF;
-    -- Framework migration/permission metadata and the guarded initial download
-    -- policy are seeded by migrations, not evidence of an existing campaign.
+    -- Framework migration/permission metadata, the guarded initial download
+    -- policy and the refresh checks' start (#1689) are seeded by migrations,
+    -- not evidence of an existing campaign.
     -- All current and future application tables must otherwise be empty.
     FOR relation IN
         SELECT n.nspname, c.relname, c.relrowsecurity FROM pg_class c
@@ -288,7 +289,7 @@ BEGIN
           AND c.relkind IN ('r','p','f')
           AND NOT (n.nspname='public' AND c.relname IN (
               'django_migrations','django_content_type','auth_permission',
-              'stewardship_download_policy'))
+              'stewardship_download_policy', 'stewardship_refresh_check_start'))
         ORDER BY n.nspname, c.relname
     LOOP
         IF relation.relrowsecurity AND NOT (relation.nspname='public'

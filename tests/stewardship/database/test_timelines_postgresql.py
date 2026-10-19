@@ -294,7 +294,7 @@ def test_last_portal_action_ignores_email_reader_fetches(request, auth_service, 
         response, body = as_web(admin, page)
         assert response.status_code == 200
         text = body.decode()
-        value = text[text.index("Last portal action: ") :].split(" · <a href=")[0]
+        value = text[text.index("Last portal action: ") :].split("</p>")[0]
         words = value.removeprefix("Last portal action: ").split(", <time")[0]
         at = re.search(r'<time datetime="([^"]+)"', value)
         return words, datetime.fromisoformat(at.group(1)) if at else None
