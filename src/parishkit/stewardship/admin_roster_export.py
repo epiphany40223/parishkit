@@ -1,9 +1,9 @@
-"""``export roster``: the Roster changes to enter download (ADM-11 PR 8g, #463).
+"""``export roster``: the roster changes to enter, as a file (ADM-11 PR 8g, #463).
 
-The page's download (``admin:ministry_roster_export``,
-``reports.ministry_roster_views.export``) is the Roster changes to enter
-list rendered in memory as CSV, XLSX or PDF. The command writes the same
-file through the page's own pieces, so the two cannot drift: its admission
+The file is the roster list rendered in memory as CSV, XLSX or PDF, the
+download of the retired Roster changes to enter page (folded into Ministry
+requests' To enter by hand Stage, R39 finding 2). The command writes it
+through the list's own pieces (``reports.ministry_roster_views``): its admission
 (``ministry_roster_views._principal``: Administrators and Staff, never a
 Ministry leader; first passive, then recording activity as the download's
 post does), the shared report read (``admin_report_reads._report``: the
@@ -45,7 +45,7 @@ class RosterExport(ReadModel):
 
 
 def export_roster(caller, service, *, show, ministry, fmt, zone_name, context):
-    """``export roster``: the Roster changes to enter download, as bytes.
+    """``export roster``: the roster list's download, as bytes.
 
     ``show`` is the page's Show choice (``todo`` or ``all``), ``ministry``
     its Ministry filter (a DUID, or None), ``fmt`` and ``zone_name`` the

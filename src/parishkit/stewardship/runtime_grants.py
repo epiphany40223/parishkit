@@ -624,6 +624,18 @@ CLOSURE_TABLES = {
     # An Administrator's review of an Automatic census change (0096, #528),
     # which web records and reads.
     "stewardship_proposal_review": ("stewardship_responses", "0006_proposal_review"),
+    # Review decisions on cannot-participate and cannot-attend answers
+    # (0126, #1685), which web records and reads.
+    "stewardship_limitation_review": (
+        "stewardship_responses",
+        "0013_information_limitation_review",
+    ),
+    # A census change the parish added and its later step (0129, #1710),
+    # which web records and reads.
+    **dict.fromkeys(
+        ("stewardship_census_addition", "stewardship_census_addition_resolution"),
+        ("stewardship_responses", "0015_census_additions"),
+    ),
     # A Campaign setup step an Administrator kept as is (0105, #1404), which
     # web records and reads.
     "stewardship_campaign_setup_review": (
@@ -640,6 +652,16 @@ CLOSURE_TABLES = {
         ),
         ("stewardship_jobs", "0035_leader_emails"),
     ),
+    # The baseline refresh re-evaluation's checks and their start (0132,
+    # #1689, provisional number): the worker records checks in promotion,
+    # and web and the worker read both.
+    **dict.fromkeys(
+        ("stewardship_refresh_check", "stewardship_refresh_check_start"),
+        ("stewardship_workflows", "0004_refresh_checks"),
+    ),
+    # A pledge's review history (0127, provisional number, #1686), which
+    # web records and reads.
+    "stewardship_pledge_review": ("stewardship_reports", "0032_pledge_review"),
 }
 
 
@@ -660,6 +682,12 @@ CLOSURE_COLUMNS = {
     ("stewardship_daily_digest_ready", "funnel_chart"): (
         "stewardship_reports",
         "0022_digest_funnel_charts",
+    ),
+    # The review pipeline's Ministry Edit (0131, #1684): web updates a
+    # request's edited Ministry with its paired revision.
+    ("stewardship_ministry_request", "reviewed_ministry_duid"): (
+        "stewardship_workflows",
+        "0003_ministry_review_pipeline",
     ),
 }
 
@@ -923,6 +951,13 @@ def runtime_grants(role, *, target=None):
             for table in PUBLICATION_WORKER_TABLES:
                 tables[table] = {"SELECT", "INSERT"}
             tables["stewardship_publication_confirmation"] = {"SELECT"}
+            # Refresh checks (#1689): promotion records one per final census
+            # change or decided Ministry request whose outcome changed, and
+            # reads the latest ones, the Not seen start and each request's
+            # Entered in ParishSoft tick. Its guard admits INSERT alone.
+            tables["stewardship_refresh_check"] = {"SELECT", "INSERT"}
+            tables["stewardship_refresh_check_start"] = {"SELECT"}
+            tables.setdefault("stewardship_ministry_roster_entry", set()).add("SELECT")
             add_service_status_housekeeping_grants(tables, columns)
         else:
             add_service_status_writer_grants(tables, columns)

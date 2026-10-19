@@ -141,7 +141,10 @@ day and the active window keep their campaign-zone definitions. Shown
 timestamps include a time zone abbreviation in detail views. A form that
 accepts a date and time carries the browser's IANA zone in a hidden field that
 the page script fills, and the server converts the typed wall-clock time to
-UTC; the page names the zone next to the fields. The Admin portal requires
+UTC; the page names the zone next to the fields. Exception: Census changes'
+From and Through filters (days, not times) leave that line out and its
+About panel says the days are in this computer's time zone (Administrator,
+2026-10-19, R38 finding 8). The Admin portal requires
 JavaScript ([#565](https://github.com/epiphany40223/parishkit/issues/565)), so
 a missing or unknown zone is refused rather than guessed, and when the browser
 reports none the page keeps Save unavailable, saying why. A typed time that
@@ -443,7 +446,7 @@ never scrolls to show it (Administrator, pk-local review of
   hidden periodic re-read links of
   [pages that update themselves](#pages-that-update-themselves)) or a form whose answer is the page again
   (`form[data-in-place]`, such as a POST whose server redirects back to the
-  page: Save follow-up on an information item and on a
+  page: Save follow-up on a
   [Ministry follow-up request](../admin-portal/spec.md#follow-up-workflows); System logs'
   cross-links, whose answer is the filtered page; Acknowledge on a security
   event; Clear verified refusal on a
@@ -1303,24 +1306,23 @@ choice no form offers, a sort or page size the table does not accept) keeps
 the report's error page. A range out of order is refused at its end with
 both ends marked, and its message is shown once, after them, in a line
 the form reserves so that a refusal shown in place moves nothing. Where
-that line is apart from the complete gate's hint row (the Additional
-information queue's Submitted dates, Financial stewardship's dates and
-amounts), the gate's hint, in the same words,
+that line is apart from the complete gate's hint row (Financial
+stewardship's dates and amounts), the gate's hint, in the same words,
 is held hidden in its row while the message shows, so the form says it
 once. A form whose complete gate already has a hint row (System logs, the
-Follow-up packet, an Additional information item's Save) shows the message
+Follow-up packet) shows the message
 in that row instead, over the gate's hint, which it hides while shown, so
 the page is no taller for a refusal only a request built by hand gets and
 says it once. The same holds for a report's own forms that a field can
-fix (the Follow-up packet's limit, an Additional information item's
-confirmation): the page is drawn again, 400, with the values sent. An
+fix (the Follow-up packet's limit): the page is drawn again, 400, with
+the values sent. An
 in-place Apply keeps the filter form and what was typed, and takes the
 marks and message from the answer. The server's mark clears, with its
 message and summary item, on the first edit of a field it marks (either
 end of a range), or when an in-place Apply is answered without it.
 **Shared code.** `web/filter_errors.py` (`FilterError`), the `filter_mark`
-and `filter_line` template tags; used by Financial stewardship, the
-Additional information queue and item, System logs, the Follow-up packet
+and `filter_line` template tags; used by Financial stewardship, System
+logs, the Follow-up packet
 and the Family directory's Exact Family code (shown in its gate's hint
 row).
 
@@ -1797,10 +1799,8 @@ Testing rehearsal.
   Testing rehearsal) and Chart population (Historical as of day | Current
   population), the
   [family directory](../reports/spec.md#active-parishioner-family-directory)'s Responses shown
-  (Production | Testing rehearsal), above its Filters panel, and
-  [Roster changes to enter](../admin-portal/spec.md#roster-changes-to-enter)'s
-  Show (Not yet entered | All, including entered), above its Ministry
-  filter, and the [Campaign calendar](../admin-portal/spec.md#campaign-calendar)'s
+  (Production | Testing rehearsal), above its Filters panel, and the
+  [Campaign calendar](../admin-portal/spec.md#campaign-calendar)'s
   Show (Upcoming emails | Include past emails), above Every email by date.
 - **Links.** Each segment is a link to the page's own address with that
   choice (`a[data-in-place]`, marked `aria-current="page"` when chosen), so
@@ -2570,9 +2570,10 @@ Apply while the panel and its form keep their elements. A report's export is
 not a disclosure: it is the compact row of
 [export buttons](#downloaded-files) below the page's table, always shown, which
 takes one line (#1679, replacing #227's closed export disclosure). The Family
-directory, Additional information, Financial stewardship, Limitations and
-Ministry requests follow the Filters panel rule (#227). Census changes, a
-worklist, keeps its filters always open
+directory, Financial stewardship and Ministry requests follow the Filters
+panel rule (#227). Census changes, a worklist, keeps its filters always open,
+as Additional information and Limitations do since they became review
+worklists ([#1685](https://github.com/epiphany40223/parishkit/issues/1685))
 ([its filters and downloads](../reports/spec.md#census-change-filters-and-downloads),
 [#1682](https://github.com/epiphany40223/parishkit/issues/1682)). Ministry requests keeps its
 compact filter bar rather than a Filters panel: its By Ministry counts apply
@@ -3672,9 +3673,8 @@ orders. In v1 that covers:
   Family code would need every code decrypted per view);
 - Financial stewardship detail (Family, Family DUID, Annual pledge and
   latest response);
-- the Additional information queue (Family, Family DUID and Submitted);
-- the follow-up queue on Ministry requests (Member and Ministry; newest
-  first by default, with no Submitted column to show it, #1064).
+- the Ministry requests review worklist (Member and Ministry; newest first
+  by default, #1064, #1684).
 
 Extending those vocabularies is a schema change; the DUID sorts of the
 financial, Additional information and Ministry tables came with one
@@ -3759,7 +3759,27 @@ selection.
 A **worklist** (a table a reader works through, such as the review
 pipeline's [review worklist](../review-pipeline/spec.md#review-worklist)) has its filters
 always open, never behind a disclosure, above the table, and its export
-buttons below the table. A table's create action (the review worklist's
+buttons below the table. Its filters sit in rows that wrap, each field
+13rem wide (on a phone, the whole row), and its Apply filters and
+Clear filters follow the last field as every filter form's do
+([Clear filters](#clear-filters)), with no line between that field and
+them (R38). Its view is in its address, so a reload re-renders the same
+view: after every in-place answer the address bar shows the page's own
+address with the Stage, the closed filters and the table's sort, size and
+page (`a[data-page-address]`), and the page draws that view from it. A
+private value (a name search) never reaches the address, as on the
+[POST reports](#admin-tables), so a reload clears only it (R38). The
+answer to the reader's own last decision
+(a review worklist's notice) sits under the filters, just above the table,
+on one reserved line (two on a phone, where it can wrap) that is kept
+while empty, so a notice appearing never
+moves the table (no layout shift), and nothing else reserves room above the
+filters (R38). On a worklist, a Family's or Member's name opens the
+Family hub (the Family's Timeline page) for the viewers who may open it,
+through the shared Family-name link, and is plain text for the others,
+such as Ministry leaders; the cell naming the item (Ministry requests'
+Ministry) opens the item's own page, where it has one, for every viewer
+(an Administrator decision, R38). A table's create action (the review worklist's
 **Add**) sits in its selection bar, shown only to readers allowed to add
 there ([#1680](https://github.com/epiphany40223/parishkit/issues/1680)).
 
@@ -3774,8 +3794,8 @@ Actions column. **Why.** One pattern for every list of editable things; a dialog
 names exactly what will be removed. **Shared code.** The `table_actions`
 template tag, `components/confirm-dialog.html` and `data-confirm-open` in
 `ui-v1.js`. **Precedent.** #879, #882 (first user), #947 (second slice),
-the Pages and emails email tables (third slice), Roster changes to enter
-(a recording action), Census changes (actions with a note); #1065 (row
+the Pages and emails email tables (third slice), Ministry requests'
+Entered by hand (a recording action), Census changes (actions with a note); #1065 (row
 links, System logs).
 
 A table whose rows can be acted on follows one pattern
@@ -3787,10 +3807,10 @@ sessions of
 [Automation access](../admin-automation/spec.md#revocation-and-listing),
 [Users](../admin-portal/spec.md#users-table), the email template tables of
 [Pages and emails](../admin-portal/spec.md#default-content) and the bulk
-outcomes of [Ministry follow-up](../admin-portal/spec.md#follow-up-workflows)
-([#1131](https://github.com/epiphany40223/parishkit/issues/1131)) and the
+decisions of the [Ministry requests](../admin-portal/spec.md#follow-up-workflows)
+review worklist (#1131, #1684) and the
 Entered in ParishSoft tick of
-[Roster changes to enter](../admin-portal/spec.md#roster-changes-to-enter) and
+[Ministry requests](../admin-portal/spec.md#roster-entry-on-ministry-requests) and
 the row actions of
 [Census changes](../reports/spec.md#manual-census-resolution); the
 other Admin tables with per-row actions move to it in later changes, as the
@@ -3799,29 +3819,48 @@ inventory on #879 lists.
 - **Actions column.** The last column holds each row's actions as small icon
   buttons (`table_actions`), all the same square size: Edit, a link to the
   item's own page, and Delete. Each has an accessible name and a matching
-  tooltip that name the row ("Edit Reminder 2", "Delete Reminder 2"), and the
+  tooltip that name the row ("Edit Reminder 2", "Delete Reminder 2"). An
+  icon's tooltip is one short phrase, never more than one sentence, with
+  no full stop, as these are; a selected icon's names its state and undo
+  in one phrase ("Accepted; choose Back to review to change it"), and a
+  guard checks every review worklist tooltip (R38). The
   icons are drawn inline, so they need no request and stay inside the
   content security policy. A destructive action with another name uses its
   own word and icon in Delete's place and works the same way; so far only
   Revoke ("Revoke nightly export") on Automation access. An action that
   records rather than removes, and that the row's other action undoes, also
   takes an icon of its own and acts [in place](#in-place-controls) without a
-  dialog; so far only Roster changes to enter's tick, "Mark … entered in
+  dialog; so far only the request page's tick, "Mark … entered in
   ParishSoft" (a check mark) and "Clear Entered in ParishSoft for …" (an
   undo arrow). An action that carries a note opens the confirmation dialog
   instead, which holds the note, with an ordinary confirm button unless the
   action cannot be undone; so far only Census changes ([#879](https://github.com/epiphany40223/parishkit/issues/879)), whose
-  decisions take an optional note and Reopen a required one. A row shows
-  only the actions that apply to it; a row with none shows nothing there.
+  decisions take an optional note and Reopen a required one. A note field
+  shared by several actions is labelled by the action chosen: "Note
+  (optional)", and "Note (required)" only while that action needs one,
+  changing in place as the dialog opens (the review worklist, R38). An
+  editor that records a corrected value (the review worklist's Edit) holds
+  its Save until the value differs from the one it opened with, saying so
+  in its reserved line, since saving the same value records no edit (R38).
+  A row
+  shows only the actions that apply to it; a row with none shows nothing
+  there.
 - **Selected state.** On a table whose row actions record a state (a
   review decision, a mark), the icon of the state in force is drawn
-  **selected**: filled with that state's status colour, with a white
-  glyph, and `aria-pressed="true"`; the row's other icons are drawn
+  **selected**: filled with that state's status colour, with the glyph in
+  `--paper` (white on the light scheme, and dark on the dark scheme, where
+  white on the lighter status colours would fail the 3:1 icon contrast),
+  and `aria-pressed="true"`; the row's other icons are drawn
   unselected (outline, `aria-pressed="false"`). Choosing the selected icon
   again is not an undo; the row's own undo action (the review pipeline's
-  Back to review) is. So the decision shows on the icons, not only in a
+  Back to review) is, so the selected icon is unavailable
+  (`aria-disabled="true"`) and its tooltip names the state and the undo
+  in one phrase.
+  So the decision shows on the icons, not only in a
   status column ([review pipeline](../review-pipeline/spec.md#selected-state-icons),
-  [#1680](https://github.com/epiphany40223/parishkit/issues/1680)).
+  [#1680](https://github.com/epiphany40223/parishkit/issues/1680)). **Shared
+  code.** `components/review-worklist.html` and `web/review_worklist.py`
+  ([#1681](https://github.com/epiphany40223/parishkit/issues/1681)).
 - **By role.** Row actions the reader's role does not allow are not shown,
   not shown disabled, so a Ministry leader and Staff may see different icon
   sets on the same table; the server and database still refuse them. The
@@ -3921,7 +3960,7 @@ of ParishSoft DUID:
 - **Family DUID:** wherever a Family is named, in its own column; staff
   search and match Families by it.
 - **Member DUID:** only where staff act on a specific Member in ParishSoft:
-  Census changes, Publish to ParishSoft, Roster changes to enter, the follow-up queue on Ministry
+  Census changes, Publish to ParishSoft, the follow-up queue on Ministry
   requests and its Export these requests, the host's join and leave lists
   and the packets, the Limitations report, Families the form cannot open, and the
   Users page's ParishSoft Ministry leaders table and its import review
@@ -3984,22 +4023,24 @@ Administrators that reports and notices go to,
 [#1562](https://github.com/epiphany40223/parishkit/issues/1562)). The
 one DUID column apart from its name is the recorded exception below.
 
-The follow-up queue on Ministry requests also has no Submitted column (Administrator
-decision, 2026-10-11,
-[#1064](https://github.com/epiphany40223/parishkit/issues/1064)), so its
-one-line rows take less width; the request page shows the submission time
-([Follow-up workflows](../admin-portal/spec.md#follow-up-workflows)).
+The follow-up queue on Ministry requests had no Submitted column
+(Administrator decision, 2026-10-11,
+[#1064](https://github.com/epiphany40223/parishkit/issues/1064)); the review
+worklist that replaced it has one, as every
+[review worklist](../review-pipeline/spec.md#review-worklist) does (#1684).
 
 Recorded exception: Families the form cannot open shows a Member DUID with
 no Member name on purpose: the name itself may be the value the form
 refuses, and that page never shows one
 ([System health page](../admin-portal/spec.md#system-health-page)).
 
-The three report tables an installed SQL selection orders
+The report tables an installed SQL selection orders
 ([Admin tables](#admin-tables)) sort their DUID columns through that
-selection: Financial stewardship detail and the Additional information queue
-(Family DUID), and the Ministry report (Member DUID in one Ministry's view)
-([#960](https://github.com/epiphany40223/parishkit/issues/960)).
+selection: Financial stewardship detail (Family DUID) and the Ministry
+report (Member DUID in one Ministry's view)
+([#960](https://github.com/epiphany40223/parishkit/issues/960)); the
+Additional information worklist, which did too, sorts its whole list in
+memory since [#1685](https://github.com/epiphany40223/parishkit/issues/1685).
 
 ### Family and Member names
 

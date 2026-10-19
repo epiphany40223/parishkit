@@ -7,16 +7,18 @@ three steps that fits, "beside" (side by side on the fields' last row),
 oracle: for each page and width it measures the form with the pair taken
 out, then tries each step on the pair, and checks that the step the page
 chose is the first that keeps every field's line and the form's height,
-so no row is added while an earlier step fits. Census changes and
-Financial stewardship are Filters panel grids (Pledges to enter shares the
-grid), the Family directory a filter bar in a panel, and Sent mail and the
-Timeline one-row filter bars. Run in the Linux Playwright image too: its
+so no row is added while an earlier step fits. Financial stewardship is
+a Filters panel grid, the Family directory a filter bar in a panel, Sent
+mail and the Timeline one-row filter bars, and Census changes and the
+review worklist's fixture (#1681) worklists, wrapping rows of fixed-width
+fields. Run in the Linux Playwright image too: its
 DejaVu fonts are wider (Sent mail's bar did not fit at 1280 px there, t32).
 """
 
 import pytest
 
-from .census_components import AUTOMATIC
+from .census_components import PATH as CENSUS
+from .review_worklist_components import PATH as WORKLIST
 from .timeline_components import ADMIN as TIMELINE
 from .waits import eventually
 
@@ -25,11 +27,12 @@ pytestmark = pytest.mark.parametrize(
 )
 
 PAGES = [
-    AUTOMATIC,
+    CENSUS,
     "/financial-report",
     "/family-directory",
     "/deliveries-names",
     TIMELINE,
+    WORKLIST,
 ]
 WIDTHS = [390, 768, 1280, 1440]
 STEPS = ("beside", "stacked", "row")

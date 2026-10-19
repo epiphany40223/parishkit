@@ -75,7 +75,9 @@ def census_model(campaign_id, query, result):
     return CensusReport(
         campaign_id=campaign_id,
         filters={
-            key: value for key, value in query.form_values().items() if key != "search"
+            key: value
+            for key, value in query.form_values().items()
+            if key not in {"search", "stage"}
         },
         matching=len(rows),
         routes={
@@ -159,7 +161,7 @@ def racing_write(error):
     does the command. Any other database refusal (a guard or audit
     mismatch) is not dressed up as the race.
     """
-    from .reports.census_change_views import UNIQUE_VIOLATION
+    from .reports.census_worklist import UNIQUE_VIOLATION
 
     return (
         isinstance(error, IntegrityError)

@@ -1,16 +1,26 @@
-"""Private native staff queue, history and optimistic follow-up editing."""
+"""Additional information: the review worklist and each request's page (#1685).
 
-from dataclasses import replace
-from uuid import UUID, uuid4
+The list is the stream's review worklist (the shared
+``components/review-worklist.html``): its filters, sorting and paging
+travel in CSRF-protected POST bodies, so search text never reaches an
+address, and a row's Accept, Ignore, Back to review or Handled, or the bulk
+bar's, posts to the page itself with the page's view
+(``review_worklist.read_decision``), so the answer is the same page,
+refreshed in place, with a notice naming the request.
+``information_worklist`` places the requests in their stages and records
+the decisions. A request's own page shows its text, its Family's contact
+details and its history; decisions are made on the list. Every view is
+audited (``information_viewed``) without the search or any shown value.
+"""
+
+from uuid import uuid4
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, transaction
-from django.http import HttpResponse, QueryDict
-from django.shortcuts import redirect
+from django.http import HttpResponse
 from django.template.loader import render_to_string
 from django.urls import reverse
-from django.utils.translation import gettext_lazy as _
-from django.views.decorators.http import require_GET, require_http_methods, require_POST
+from django.views.decorators.http import require_GET, require_http_methods
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.models import PortalUser
@@ -20,110 +30,48 @@ from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
+from parishkit.stewardship.pipeline import Stage
+from parishkit.stewardship.responses.census_review import KeyRebound
 from parishkit.stewardship.responses.information import (
-    ClearUnconfirmed,
-    update_information,
+    information_stage,
+    latest_revision,
 )
-from parishkit.stewardship.responses.models import AdditionalInformationItem
-from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
-from parishkit.stewardship.web.contracts import expected_version, filters
+from parishkit.stewardship.storage import StorageInvariantError
+from parishkit.stewardship.web.contracts import (
+    ErrorCode,
+    FieldError,
+    filters,
+    validation_response,
+)
 from parishkit.stewardship.web.dates import UnknownZone
-from parishkit.stewardship.web.filter_errors import (
-    FilterError,
-    error_context,
-    line_sizes,
-    refused,
-)
 from parishkit.stewardship.web.refusals import with_status_code
 from parishkit.stewardship.web.responses import campaign_response
-from parishkit.stewardship.web.tables import report_table
+from parishkit.stewardship.web.review_worklist import REBOUND, read_decision, record
+from parishkit.stewardship.web.tables import paginate, table_parameters
 
-from .chart_specs import information_followup
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .family_links import link_families
 from .information import (
-    FIELD_MESSAGES,
-    INFORMATION_SORTING,
-    PAGE_SIZE,
-    PAGE_SIZES,
     InformationQuery,
     information_history,
     information_page,
     parse_page,
 )
 from .information_contacts import family_contacts
-from .read_admission import admit_report_read
-from .report_paging import (
-    carried_filters,
-    clamp_query,
-    next_open,
-    pop_navigation,
-    pop_page_size,
-    queue_token,
-    recall_queue,
-    remember_queue,
-    with_queue,
+from .information_worklist import (
+    SORTING,
+    InformationDecisions,
+    RowItem,
+    WorklistQuery,
+    requests,
+    worklist_page,
 )
-
-# The name this queue's views are remembered under (report_paging.py).
-QUEUE = "information"
-# The element id of each filter field a refusal can be shown at (#1332).
-FIELD_IDS = {"start": "start", "end": "end"}
-# The reserved message line both dates are described by, shown once after
-# them (UX conventions, Field errors).
-FIELD_LINES = {"start": "submitted-dates", "end": "submitted-dates"}
-# An item's Save refused for clearing a completed follow-up without its
-# confirmation (#1332): the box it is shown at, and the Save hint row the
-# message is shown in, over the gate's hint, which says the same words.
-CONFIRM_MESSAGE = _("Tick the confirmation to reopen this follow-up.")
-CONFIRM_IDS = {"confirm_clear": "information-confirm-clear"}
-CONFIRM_LINES = {"confirm_clear": "information-save"}
-# The submitted values a refused Save is drawn again with.
-SENT_FIELDS = ("expected_version", "follow_up_needed", "followed_up", "notes")
-
-
-def unconfirmed_context(sent, sizes):
-    """The item page's context for a Save refused at its confirmation.
-
-    ``sent`` is the refused change (``change_values``): the form shows it,
-    with the version sent, so resubmitting it after another edit still
-    reads as a conflict. The confirmation box is marked, and the Save hint
-    row shows the message, sized to it (``sizes`` is the page's other
-    reserved lines), so its clearing on the first edit moves nothing.
-    """
-    error = FilterError("confirm_clear", CONFIRM_MESSAGE, None)
-    return error_context(error, CONFIRM_IDS, CONFIRM_LINES) | {
-        "sent": {key: sent[key] for key in SENT_FIELDS},
-        "filter_sizes": sizes | {CONFIRM_LINES["confirm_clear"]: CONFIRM_MESSAGE},
-    }
-
-
-def _recalled(request, campaign_id, token):
-    """The remembered queue view's filters and page size, or the default's.
-
-    A token that is unknown here (another sign-in, an older view, or values a
-    later release no longer accepts) shows the default queue, not an error.
-    """
-    values = recall_queue(request, QUEUE, campaign_id, token)
-    if values is None:
-        return InformationQuery(), PAGE_SIZE
-    try:
-        parameters = QueryDict(mutable=True)
-        parameters.update(values)
-        size = pop_page_size(parameters, PAGE_SIZES, default=PAGE_SIZE)
-        return InformationQuery.parse(parameters), size
-    except ValueError:
-        return InformationQuery(), PAGE_SIZE
-
-
-def _open(row):
-    """An item Save and next stops at: current, actionable and not completed."""
-    return row["disposition"] == "current_actionable" and not row["followed_up_at"]
+from .read_admission import admit_report_read
 
 
 def _principal(request, store, *, read_only=False):
-    """Every queue, item and mutation reloads the current Staff capability."""
+    """Every list, request page and decision reloads the current Staff capability."""
     principal = authenticated_admin(
         request, store=store, activity=not read_only, read_only=read_only
     )
@@ -135,7 +83,7 @@ def _principal(request, store, *, read_only=False):
 def _error(campaign_id, *, item_id=None, status=400, bound=False, zone=False):
     """No private form/exception values or database-dependent context processors.
 
-    ``bound`` marks a reused export form, whose 409 differs from an item edit's;
+    ``bound`` marks a reused export form, whose 409 differs from a decision's;
     ``zone`` marks dates sent without the browser's time zone (#558).
     """
     debug_swallowed("report request refused")
@@ -184,74 +132,159 @@ def _audit(principal, campaign_id, outcome):
         )
 
 
-def _page_response(request, campaign_id, *, item_id=None, sent=None):
+def paging_values(parameters):
+    """Remove and return the table's page/size/sort values from the form.
+
+    ``parameters`` is a mutable QueryDict. The values only choose what the
+    screen shows, so they never reach the filters; a bad choice is refused
+    now, as a 400, not later while the page is drawn.
+    """
+    values = {}
+    for name in table_parameters():
+        found = parameters.pop(name, None)
+        if found is None:
+            continue
+        if len(found) != 1:
+            raise ValueError("Table choices must be single values.")
+        values[name] = found[0]
+    paginate([], values, sorting=SORTING)
+    return values
+
+
+def _mutable(campaign_id):
+    """Whether the campaign admits decisions now (no other campaign work holds it)."""
+    try:
+        admit_campaign(campaign_id, mutating=True)
+    except PermissionError:
+        return False
+    return True
+
+
+def decision_label(revision):
+    """One history entry's decision, in the pipeline's words.
+
+    A revision saved before migration 0126 has no decision; the page words
+    it by its follow-up choices instead (None here).
+    """
+    if revision.review_decision == "accepted":
+        return "Handled" if revision.followed_up else "Accepted"
+    return {"ignored": "Ignored", "none": "Back to review"}.get(
+        revision.review_decision
+    )
+
+
+def _list_context(campaign_id, query, paging, principal):
+    """The worklist page's context: the placed requests, one page of them."""
+    action = reverse("admin:information_queue")
+    metadata, rows, counts = requests(campaign_id, query)
+    table = paginate(
+        rows, paging, carry=list(query.form_values().items()), sorting=SORTING
+    )
+    # Each shown Family name opens its Timeline (#1570): one read of the
+    # page's Family record ids.
+    link_families(campaign_id, table.rows)
+    mutable = _mutable(campaign_id)
+    worklist, table = worklist_page(counts, query, table, action, mutable=mutable)
+    return {
+        "metadata": metadata,
+        "worklist": worklist,
+        "table": table,
+        "query": query,
+        "query_fields": query.form_values(),
+        "export_fields": query.export_values(paging.get("sort", "")),
+        "mutable": mutable,
+    }
+
+
+def _item_context(campaign_id, item_id, history_page, principal, history_only):
+    """One request's page: its text, Stage, Family contact details and history."""
+    result = information_page(
+        campaign_id, InformationQuery(disposition="all"), item_id=item_id
+    )
+    item = result["rows"][0]
+    history, more_history = information_history(
+        item_id, history_page, version=item["version"]
+    )
+    # The Family's contact details (#1595); an in-place history page swaps
+    # only the history, so it skips the read.
+    contacts = (
+        None
+        if history_only
+        else family_contacts(
+            principal, result["metadata"]["source_id"], item["family_duid"]
+        )
+    )
+    ids = {row.actor_id for row in history} | {row.followed_up_by_id for row in history}
+    ids.add(item["followed_up_by_id"])
+    labels = {
+        str(key): email
+        for key, email in PortalUser.objects.filter(pk__in=ids - {None}).values_list(
+            "id", "email"
+        )
+    }
+    item["completed_by"] = labels.get(
+        str(item["followed_up_by_id"]), "Former portal user"
+    )
+    item["placement"] = information_stage(RowItem(item), latest_revision(item_id))
+    # The request page's Family name opens its Timeline (#1570).
+    link_families(campaign_id, result["rows"])
+    for row in history:
+        row.actor_label = labels.get(str(row.actor_id), "Former portal user")
+        row.completer_label = labels.get(
+            str(row.followed_up_by_id), "Former portal user"
+        )
+        row.decision_label = decision_label(row)
+    return {
+        "metadata": result["metadata"],
+        "item": item,
+        "contacts": contacts,
+        "history": history,
+        "history_page": history_page,
+        "previous_history": history_page - 1 if history_page > 1 else None,
+        "next_history": history_page + 1 if more_history else None,
+        "mutable": _mutable(campaign_id),
+    }
+
+
+def _respond(request, campaign_id, *, item_id=None):
     """Guard every data query, template render and byte; audit response completion.
 
-    Queue filters refused at a field (``FilterError``) draw the queue again,
-    answered 400, with the error at that field and the results for no
-    filters, as Financial stewardship does (#1332); the audit then ends
-    denied, not succeeded. An item Save refused at its confirmation
-    (``sent``, the refused change) draws the item page again, answered 400,
-    with the values sent and the error at the box; that page is the item
-    asked for, so its audit ends succeeded.
+    The list reads its filters, table choices and any decision from its own
+    POST body: a decision is recorded first, in its own work transaction, so
+    the page that answers shows its result. A request someone changed first
+    is the page's notice, not an error; a page sent again with other
+    choices is a 409 that asks for a reload.
     """
-    finish, handed_off, refusal = None, False, None
+    finish, handed_off = None, False
     try:
         service = runtime()
         principal = _principal(request, service.store)
+        notice, history_page, history_only, decision = None, 1, False, None
         if item_id is None:
             if request.GET:
-                # Only "Return to Additional information" carries a query
-                # string: the token of a remembered view, never a filter (#534).
-                if request.method != "GET":
-                    raise ValueError("Search and filters require a POST body.")
-                values = filters(request.GET, allowed={"queue"})
-                query, size = _recalled(
-                    request, campaign_id, queue_token(values["queue"])
-                )
-            else:
-                parameters = request.POST.copy()
-                parameters.pop("csrfmiddlewaretoken", None)
-                size = pop_page_size(parameters, PAGE_SIZES, default=PAGE_SIZE)
-                try:
-                    query = InformationQuery.parse(parameters)
-                except FilterError as error:
-                    # Every closed choice was accepted before a date was
-                    # checked, so the submitted sort is one the queue knows.
-                    # The view remembered below is this unfiltered one.
-                    refusal = error
-                    query = InformationQuery(sort=error.query.sort)
-            history_page = 1
-            # Remembered before the response streams: the session is saved
-            # once the view returns.
-            token = remember_queue(
-                request,
-                QUEUE,
-                campaign_id,
-                query.form_values() | {"page": str(query.page), "size": str(size)},
+                raise ValueError("Search and filters require a POST body.")
+            parameters = request.POST.copy()
+            parameters.pop("csrfmiddlewaretoken", None)
+            decision = read_decision(parameters)
+            paging = paging_values(parameters)
+            if "stage" not in parameters:
+                # The worklist opens on To review (review pipeline spec,
+                # "Review worklist").
+                parameters["stage"] = Stage.TO_REVIEW.value
+            query = WorklistQuery.parse(parameters)
+        admit_report_read(campaign_id)
+        if decision is not None:
+            notice = record(
+                InformationDecisions(service.store, campaign_id), principal, decision
             )
-            queue_view, history_only = None, False
-        else:
-            values = filters(request.GET, allowed={"page", "queue"})
+        if item_id is not None:
+            values = filters(request.GET, allowed={"page"})
             history_page = parse_page(values.get("page", "1"))
-            # A refused save shows this page again from its own POST body.
-            token = queue_token(
-                request.POST.get("queue", "") if sent else values.get("queue", "")
-            )
-            # A token the session doesn't hold (another sign-in, an older
-            # view) is not echoed into this page's links and form.
-            if token and recall_queue(request, QUEUE, campaign_id, token) is None:
-                token = ""
-            queue_view, _ = _recalled(request, campaign_id, token)
-            # An in-place history page swaps only the history (its links
-            # are data-in-place-only), so it skips the scan; a reload of
-            # that address is an ordinary load and scans as usual.
+            # An in-place history page swaps only the history (its links are
+            # data-in-place-only); a reload of that address reads it all.
             history_only = (
                 "page" in values and request.headers.get("X-Requested-With") == "fetch"
             )
-            query = InformationQuery(disposition="all")
-            size = PAGE_SIZE
-        admit_report_read(campaign_id)
         _audit(principal, campaign_id, Outcome.STARTED)
         finalized = False
 
@@ -261,12 +294,12 @@ def _page_response(request, campaign_id, *, item_id=None, sent=None):
             if finalized:
                 return
             finalized = True
-            outcome = Outcome.SUCCEEDED if completed else Outcome.FAILED
-            if completed and refusal is not None:
-                # The page was shown, but not for the filters asked for.
-                outcome = Outcome.DENIED
             try:
-                _audit(principal, campaign_id, outcome)
+                _audit(
+                    principal,
+                    campaign_id,
+                    Outcome.SUCCEEDED if completed else Outcome.FAILED,
+                )
             except (DatabaseError, StorageInvariantError) as error:
                 emit_failure(error, event=Event.REPORT_AUDIT_FAILED)
 
@@ -279,132 +312,21 @@ def _page_response(request, campaign_id, *, item_id=None, sent=None):
 
         def content():
             """All lazy SQL and rendering stay within the response-owned barrier."""
-            nonlocal query
-            result = information_page(
-                campaign_id, query, item_id=item_id, page_size=size
-            )
-            # A stale Next click after the queue shrank shows the last page.
-            moved = None if item_id else clamp_query(query, result["total"], size)
-            if moved is not None:
-                query = moved
-                result = information_page(campaign_id, query, page_size=size)
-            mutable = True
-            try:
-                admit_campaign(campaign_id, mutating=True)
-            except PermissionError:
-                mutable = False
-            # Save and next opens the next open item after this one in the
-            # remembered queue, found now under this guarded read (#534).
-            following = (
-                next_open(
-                    lambda number: information_page(
-                        campaign_id,
-                        replace(queue_view, page=number),
-                        page_size=max(PAGE_SIZES),
-                    )["rows"],
-                    max(PAGE_SIZES),
-                    item_id,
-                    _open,
-                )
-                if item_id and mutable and not history_only
-                else None
-            )
-            history, more_history = (
-                information_history(
-                    item_id, history_page, version=result["rows"][0]["version"]
-                )
-                if item_id
-                else ((), False)
-            )
-            # The Family's contact details (#1595), for the item page only;
-            # an in-place history page swaps only the history, so it skips
-            # the read.
-            contacts = (
-                family_contacts(
-                    principal,
-                    result["metadata"]["source_id"],
-                    result["rows"][0]["family_duid"],
-                )
-                if item_id and not history_only
-                else None
-            )
-            ids = {row.actor_id for row in history} | {
-                row.followed_up_by_id for row in history
-            }
-            ids.update(row["followed_up_by_id"] for row in result["rows"])
-            labels = {
-                str(key): email
-                for key, email in PortalUser.objects.filter(
-                    pk__in=ids - {None}
-                ).values_list("id", "email")
-            }
-            for row in result["rows"]:
-                row["completed_by"] = labels.get(
-                    str(row["followed_up_by_id"]), "Former portal user"
-                )
-            if item_id:
-                # The request page's Family name opens its Timeline (#1570).
-                # The queue's names stay links to their requests, so it
-                # needs no record ids.
-                link_families(campaign_id, result["rows"])
-            for row in history:
-                row.actor_label = labels.get(str(row.actor_id), "Former portal user")
-                row.completer_label = labels.get(
-                    str(row.followed_up_by_id), "Former portal user"
-                )
-            context = dict(
-                result,
-                campaign_id=campaign_id,
-                query=query,
-                query_fields=query.form_values(),
-                mutable=mutable,
-                item=result["rows"][0] if item_id else None,
-                contacts=contacts,
-                queue_token=token,
-                next_id=following,
-                history=history,
-                history_page=history_page,
-                previous_history=history_page - 1 if history_page > 1 else None,
-                next_history=history_page + 1 if more_history else None,
-                request_key=uuid4(),
-                # Every matching request by follow-up state, counted by the
-                # same selection as the total, not just this page (#720).
-                followup_chart=None
-                if item_id
-                else information_followup(result["counts"], result["total"]),
-                table=None
-                if item_id
-                else report_table(
-                    result["rows"],
-                    number=query.page,
-                    size=size,
-                    total=result["total"],
-                    carry=carried_filters(query),
-                    sorting=INFORMATION_SORTING,
-                    sort=query.sort,
-                    action=reverse("admin:information_queue"),
-                    sizes=PAGE_SIZES,
-                ),
-                # Per request, in the request's language.
-                filter_sizes=line_sizes(FIELD_MESSAGES, FIELD_LINES),
-            )
-            if sent is not None:
-                context |= unconfirmed_context(sent, context["filter_sizes"])
-            if refusal is not None:
-                # The filter form shows what was sent, with the error at its
-                # field; the panel counts, and the export carries, only the
-                # filters the results use (none).
-                context |= error_context(refusal, FIELD_IDS, FIELD_LINES) | {
-                    "applied": query,
-                    "query": refusal.query,
-                }
-            return iter(
-                (
-                    render_to_string(
-                        "stewardship/information.html", context, request=request
-                    ).encode(),
+            context = (
+                _list_context(campaign_id, query, paging, principal)
+                if item_id is None
+                else _item_context(
+                    campaign_id, item_id, history_page, principal, history_only
                 )
             )
+            context |= {"campaign_id": campaign_id, "notice": notice}
+            if item_id is None:
+                # The export form's own key, so a repeated submit is a replay.
+                context["request_key"] = uuid4()
+            html = render_to_string(
+                "stewardship/information.html", context, request=request
+            )
+            return iter((html.encode(),))
 
         response = campaign_response(
             request,
@@ -413,12 +335,17 @@ def _page_response(request, campaign_id, *, item_id=None, sent=None):
             open_content=content,
             on_close=finish,
         )
+        if response.status_code == 503 and not response.streaming:
+            return _error(campaign_id, item_id=item_id, status=503)
         handed_off = response.status_code == 200 and response.streaming
-        if handed_off and (refusal is not None or sent is not None):
-            # The refusal was known before the response was made, so its
-            # status is set before any byte is sent.
-            refused(response)
         return response
+    except KeyRebound:
+        # The same drawn form was sent again with other choices (its first
+        # answer was lost): nothing was recorded, and a reload draws fresh
+        # forms with fresh keys.
+        return validation_response(
+            [FieldError(ErrorCode.STALE)], status=409, refusal=REBOUND
+        )
     except (PermissionError, ObjectDoesNotExist):
         return denial()
     except (*SAFE_FAILURES, StorageInvariantError):
@@ -426,6 +353,8 @@ def _page_response(request, campaign_id, *, item_id=None, sent=None):
     except UnknownZone:
         return _error(campaign_id, item_id=item_id, zone=True)
     except ValueError:
+        # A malformed form or filter, or a decision the request does not
+        # take (a reopening with no note): a 400, nothing recorded.
         return _error(campaign_id, item_id=item_id)
     finally:
         if finish is not None and not handed_off:
@@ -434,80 +363,11 @@ def _page_response(request, campaign_id, *, item_id=None, sent=None):
 
 @require_http_methods(["GET", "POST"])
 def queue(request, campaign_id):
-    """Default GET is safe; private filtering and pagination use native POST."""
-    return _page_response(request, campaign_id)
+    """The default GET lists the requests To review; filters and decisions POST."""
+    return _respond(request, campaign_id)
 
 
 @require_GET
 def detail(request, campaign_id, item_id):
-    """Expose current status and bounded history for this campaign's item only."""
-    return _page_response(request, campaign_id, item_id=item_id)
-
-
-def change_values(parameters):
-    """Strict checkbox/form grammar; unchecked boxes are absent, never ambiguous."""
-    required = {"expected_version", "request_key", "notes"}
-    flags = {"follow_up_needed", "followed_up", "confirm_clear"}
-    keys = set(parameters) - {"csrfmiddlewaretoken"}
-    if (
-        not required <= keys
-        or keys - required - flags
-        or any(len(parameters.getlist(key)) != 1 for key in parameters)
-        or any(parameters[key] != "yes" for key in keys & flags)
-    ):
-        raise ValueError("Invalid follow-up form.")
-    return dict(
-        expected_version=expected_version(parameters["expected_version"]),
-        request_key=UUID(parameters["request_key"]),
-        # Native forms encode textarea line breaks as CRLF, while maxlength
-        # counts the browser's LF representation. Keep storage/replay canonical.
-        notes=parameters["notes"].replace("\r\n", "\n").replace("\r", "\n"),
-        **{flag: flag in keys for flag in flags},
-    )
-
-
-@require_POST
-def update(request, campaign_id, item_id):
-    """Bind the route's campaign, recheck policy in the owner, then redirect safely.
-
-    Save and next redirects instead to the next open item the page found, or,
-    after the last one, to the remembered queue view (#534). A refused or
-    stale save never moves on.
-    """
-    try:
-        service = runtime()
-        principal = _principal(request, service.store)
-        if request.GET:
-            raise ValueError("Follow-up edits require a POST body.")
-        parameters = request.POST.copy()
-        token, advance, following = pop_navigation(parameters)
-        values = change_values(parameters)
-        if not AdditionalInformationItem.objects.filter(
-            pk=item_id, submission__campaign_id=campaign_id, submission__mode="live"
-        ).exists():
-            raise PermissionError("This item is unavailable.")
-        update_information(service.store, principal.identity, item_id, **values)
-        if advance and following is None:
-            url = reverse("admin:information_queue")
-        else:
-            url = reverse(
-                "admin:information_item",
-                args=[following if advance else item_id],
-            )
-        response = redirect(with_queue(url, token))
-        response["Cache-Control"] = "no-store"
-        return response
-    except StaleRecordError:
-        return _error(campaign_id, item_id=item_id, status=409)
-    except ClearUnconfirmed:
-        # Save waits for the confirmation in the browser, so only a request
-        # built by hand (or a browser whose gate did not run) reaches this:
-        # the item page again, with the error at the box (#1332). The page
-        # answers in place, as a successful save does.
-        return _page_response(request, campaign_id, item_id=item_id, sent=values)
-    except (PermissionError, ObjectDoesNotExist):
-        return denial()
-    except (*SAFE_FAILURES, StorageInvariantError):
-        return _error(campaign_id, item_id=item_id, status=503)
-    except ValueError:
-        return _error(campaign_id, item_id=item_id)
+    """One request of this campaign: its text, contact details and history."""
+    return _respond(request, campaign_id, item_id=item_id)

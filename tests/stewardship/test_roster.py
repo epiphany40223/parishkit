@@ -1,18 +1,29 @@
-"""Roster changes to enter: eligibility and the download (#528, step 4)."""
+"""The roster changes to enter: eligibility, Ministry requests' roster rows
+and the file.
+
+Roster changes to enter (#528 step 4, #1687) was folded into Ministry
+requests (R39 finding 2): Staff mark roster changes at its Stage To enter by
+hand, where the rows a review stage leaves out (a Member no longer in
+ParishSoft, a request a later response replaced) offer Entered by hand
+alone, with no note. ``report roster`` and ``export roster`` still read the
+list and write its file.
+"""
 
 import csv
 import io
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from uuid import UUID
 from zoneinfo import ZoneInfo
 
 import pytest
 from openpyxl import load_workbook
 
+from parishkit.stewardship.accounts.policy import Principal
+from parishkit.stewardship.pipeline import Decision, Placement, Stage
 from parishkit.stewardship.reports import pdf_design
 from parishkit.stewardship.reports.ministry_roster_views import (
     HEADINGS,
     PDF_WEIGHTS,
-    SORTING,
     roster_csv,
     roster_pdf,
     roster_xlsx,
@@ -23,23 +34,46 @@ WHEN = datetime(2054, 10, 5, 14, 30, tzinfo=UTC)
 
 
 def roster_row(**values):
-    """One listed roster change, as ``roster_rows`` shapes it, with overrides."""
-    return {
+    """One listed roster change, as ``roster_rows`` and ``with_decisions``
+    shape it, with overrides; ``roster_entered`` sets its stage."""
+    row = {
         "id": "1",
         "member_name": "Sample, Pat",
+        "member_label": "Sample, Pat",
         "member_duid": 3,
+        "member_status": "current",
+        "source_mark": None,
         "family_name": "Sample, Pat and Lee",
         "family_duid": 1,
         "ministry_name": "Food pantry",
+        "family_ministry_name": "Food pantry",
         "ministry_duid": 9,
         "action": "join",
+        "state": "resolved",
+        "outcome": "joined",
+        "source_resolved": False,
         "resolved_at": WHEN,
-        "resolved_by": "admin@example.org",
+        "submitted_at": WHEN - timedelta(days=2),
+        "decided_by": "admin@example.org",
+        "decided_at": WHEN,
+        "note": "Called the Family",
         "latest": True,
         "roster_entered": True,
+        "roster_sequence": 1,
         "roster_by": "staff@example.org",
         "roster_at": WHEN,
     } | values
+    stage = Stage.ENTERED_BY_HAND if row["roster_entered"] else Stage.TO_ENTER_BY_HAND
+    decision = (
+        Decision.ADDED
+        if row.get("parish_added")
+        else Decision.ACCEPTED_EDITED
+        if row.get("reviewed_ministry_duid")
+        else Decision.ACCEPTED
+    )
+    row.setdefault("placement", Placement(stage, decision))
+    row.setdefault("stage", row["placement"].stage.value)
+    return row
 
 
 def test_only_person_resolved_roster_changes_take_the_tick():
@@ -62,29 +96,45 @@ def test_download_times_are_in_the_chosen_zone_and_formulas_are_neutral():
     assert "Ministry" in HEADINGS and "Ministry DUID" not in HEADINGS
     line = dict(zip(HEADINGS, table[1], strict=True))
     assert not line["Member"].startswith("=")
-    assert line["Resolved"] == "2054-10-05T09:30:00-05:00"
-    assert line["Resolved by"] == "admin@example.org"
+    assert line["Last decision at"] == "2054-10-05T09:30:00-05:00"
+    assert line["Last decision"] == "admin@example.org"
+    assert line["Note"] == "Called the Family"
     assert line["Entered at"] == "2054-10-05T09:30:00-05:00"
+    assert line["Submitted"] == "2054-10-03T09:30:00-05:00"
     assert line["Family"] == "Sample, Pat and Lee" and line["Family DUID"] == "1"
-    assert line["Entered in ParishSoft"] == "Yes"
+    assert line["Stage"] == "Entered by hand" and line["Decision"] == "Accepted"
+    assert line["Family's answer"] == "Join" and line["Reviewer's value"] == ""
 
 
 def test_download_words_a_new_member_and_an_unentered_change_as_the_page():
     """A Member added on the form has "New Member" for a DUID; a change not
-    yet entered says Not yet, with no one and no time."""
+    yet entered is To enter by hand, with no one and no time; an edited one
+    names the Family's Ministry and the one to enter."""
     row = roster_row(
         member_duid=None, roster_entered=False, roster_by="", roster_at=None
     )
     text = roster_csv([row], ZoneInfo("UTC")).decode()
     line = dict(zip(HEADINGS, list(csv.reader(io.StringIO(text)))[1], strict=True))
     assert line["Member DUID"] == "New Member"
-    assert line["Entered in ParishSoft"] == "Not yet"
+    assert line["Stage"] == "To enter by hand"
     assert line["Replaced by a later response"] == ""
     assert line["Entered by"] == "" and line["Entered at"] == ""
-    # A Family that answered again after the change was resolved.
+    # A Family that answered again after the change was decided.
     replaced = roster_csv([roster_row(latest=False)], ZoneInfo("UTC")).decode()
     line = dict(zip(HEADINGS, list(csv.reader(io.StringIO(replaced)))[1], strict=True))
     assert line["Replaced by a later response"] == "Yes"
+    edited = roster_row(
+        reviewed_ministry_duid=4,
+        reviewed_ministry_name="Adult Choir",
+        ministry_name="Adult Choir",
+        family_ministry_name="Altar Servers",
+    )
+    text = roster_csv([edited], ZoneInfo("UTC")).decode()
+    line = dict(zip(HEADINGS, list(csv.reader(io.StringIO(text)))[1], strict=True))
+    assert line["Ministry"] == "Adult Choir"
+    assert line["Family's answer"] == "Join Altar Servers"
+    assert line["Reviewer's value"] == "Join Adult Choir"
+    assert line["Decision"] == "Accepted (edited)"
 
 
 def test_csv_xlsx_and_pdf_carry_the_same_columns_and_rows():
@@ -114,7 +164,9 @@ def test_csv_xlsx_and_pdf_carry_the_same_columns_and_rows():
         body = roster_pdf(rows, zone, parish="P", campaign="C", as_of=WHEN)
     assert body.startswith(b"%PDF-")
     assert drawn["table"].headings == HEADINGS == tuple(table[0])
-    times = {HEADINGS.index("Resolved"), HEADINGS.index("Entered at")}
+    times = {
+        HEADINGS.index(name) for name in ("Entered at", "Submitted", "Last decision at")
+    }
 
     def untimed(values):
         """The row's cells other than its times."""
@@ -123,40 +175,20 @@ def test_csv_xlsx_and_pdf_carry_the_same_columns_and_rows():
     assert [untimed(values) for values in drawn["rows"]] == [
         untimed(values) for values in table[1:]
     ]
-    assert drawn["rows"][0][HEADINGS.index("Resolved")] == "Oct 5, 2054 9:30 AM"
+    assert drawn["rows"][0][HEADINGS.index("Last decision at")] == (
+        "Oct 5, 2054 9:30 AM"
+    )
     assert drawn["frame"].details == ("2 changes in this file.",)
-    assert set(PDF_WEIGHTS) == set(HEADINGS)
+    assert set(PDF_WEIGHTS) == set(HEADINGS) and sum(PDF_WEIGHTS.values()) == 100
     # A whole DUID stays on one line; a compact time keeps its date whole.
     for heading, text, lines in (
         ("Member DUID", "1234567", ["1234567"]),
         ("Family DUID", "1234567", ["1234567"]),
-        ("Resolved", "Sep 30, 2026 12:04 PM", ["Sep 30, 2026", "12:04 PM"]),
         ("Entered at", "Sep 30, 2026 12:04 PM", ["Sep 30, 2026", "12:04 PM"]),
     ):
         values = [text if name == heading else "" for name in HEADINGS]
         cell = drawn["table"].cells(values)[HEADINGS.index(heading)]
         assert [line.strip() for line in cell] == lines, heading
-
-
-def test_every_named_column_sorts_both_ways():
-    """Member, Family and Ministry, the Member and Family DUIDs, the request
-    and the resolution time sort in place; a New Member follows the numbered
-    DUIDs. No Ministry DUID is shown, so none sorts (#1123)."""
-    rows = [
-        roster_row(id="a", member_duid=7, family_duid=20, ministry_duid=5),
-        roster_row(id="b", member_duid=None, family_duid=10, ministry_duid=9),
-        roster_row(id="c", member_duid=3, family_duid=30, ministry_duid=1),
-    ]
-    order = {
-        "member_duid": ["c", "a", "b"],
-        "duid": ["b", "a", "c"],
-    }
-    assert "ministry_duid" not in SORTING.columns()
-    for key, expected in order.items():
-        assert [row["id"] for row in SORTING.sort_rows(rows, key)] == expected, key
-        assert [row["id"] for row in SORTING.sort_rows(rows, f"-{key}")] == list(
-            reversed(expected)
-        ), key
 
 
 def tick_html(row, **context):
@@ -211,121 +243,165 @@ def test_download_names_a_member_no_longer_in_parishsoft_in_its_own_column():
     assert lines[1]["Member"] == "Sample, Pat"
 
 
-def row_cell_html(row, **context):
-    """One row's Actions cell on Roster changes to enter, for one context."""
-    from django.template.loader import render_to_string
-
-    return render_to_string(
-        "stewardship/roster-tick-row.html",
-        {"row": row, "table": {"anchor": "roster"}, "tick_fields": ()} | context,
-    ).strip()
+STAFF = Principal(UUID(int=97), frozenset({"staff"}))
+LEADER = Principal(UUID(int=98), frozenset({"ministry_leader"}), frozenset({9}))
+GONE = ("Not in ParishSoft", "ParishSoft no longer has this Member")
 
 
-def test_the_tick_is_an_icon_button_named_for_its_row():
-    """The row's tick is a same-size icon button in the Actions cell (#879),
-    its accessible name and tooltip naming the row; a row without a tick,
-    or a campaign that admits no change, keeps an empty cell."""
-    from uuid import uuid4
+def request_row(**values):
+    """One follow-up selection row of an accepted join, with overrides."""
+    return {
+        "id": str(UUID(int=1)),
+        "version": 2,
+        "member_name": "Sample, Pat",
+        "member_label": "Sample, Pat",
+        "member_duid": 3,
+        "member_status": "current",
+        "source_mark": None,
+        "ministry_name": "Food pantry",
+        "ministry_duid": 9,
+        "action": "join",
+        "state": "resolved",
+        "outcome": "joined",
+        "source_resolved": False,
+        "latest": True,
+        "in_campaign": True,
+        "cannot_serve": False,
+        "reviewed_ministry_duid": None,
+        "reviewed_ministry_name": None,
+        "parish_added": False,
+        "added_in_place_of_id": None,
+        "last_contact_at": None,
+        "submitted_at": WHEN,
+    } | values
 
-    from parishkit.stewardship.reports.ministry_roster_views import row_controls
 
-    row = roster_row(id=str(uuid4()), roster_eligible=True, roster_entered=False)
-    row_controls([row])
-    assert row["label"] == "Sample, Pat — Food pantry" and row["local_day"] is None
-    cell = row_cell_html(row, mutable=True)
-    assert cell.startswith('<td class="table-actions"><form method="post"')
-    name = "Mark Sample, Pat — Food pantry entered in ParishSoft"
-    assert f'aria-label="{name}"' in cell and f'title="{name}"' in cell
-    assert 'class="action-icon"' in cell and 'name="entered" value="yes"' in cell
-    assert "data-local-day" not in cell
-    cell = row_cell_html(row | {"roster_entered": True}, mutable=True)
-    name = "Clear Entered in ParishSoft for Sample, Pat — Food pantry"
-    assert f'aria-label="{name}"' in cell and 'name="entered" value="no"' in cell
-    empty = '<td class="table-actions"></td>'
-    assert row_cell_html(row, mutable=False) == empty
-    assert row_cell_html(row | {"roster_eligible": False}, mutable=True) == empty
+def requests_worklist(rows, *, principal=STAFF, stage="to_enter_by_hand", marks=None):
+    """Ministry requests' worklist for detached selection ``rows``, at ``stage``."""
+    from django.urls import reverse
 
-
-def test_bulk_post_grammar_is_closed():
-    """The bulk bar's post takes only the chosen ticks and the page's key:
-    each tick as "<request>:<next sequence>", at most a page, none twice."""
-    from uuid import uuid4
-
-    from django.http import QueryDict
-
-    from parishkit.stewardship.reports.ministry_roster_views import (
-        MAX_BULK,
-        bulk_values,
+    from parishkit.stewardship.reports.ministry_worklist import (
+        WorklistQuery,
+        place,
+        worklist_context,
     )
 
-    key, first, second = uuid4(), uuid4(), uuid4()
-
-    def parse(**values):
-        """bulk_values over a form of the given fields (lists for many)."""
-        form = QueryDict(mutable=True)
-        for name, value in values.items():
-            form.setlist(name, value if isinstance(value, list) else [value])
-        return bulk_values(form)
-
-    assert parse(bulk_key=str(key), request=[f"{first}:1", f"{second}:3"]) == (
-        {first: 1, second: 3},
-        key,
-    )
-    # The browser's zone, which names a stale row's day (#558), may come too.
-    assert parse(bulk_key=str(key), request=[f"{first}:1"], zone="Asia/Tokyo") == (
-        {first: 1},
-        key,
-    )
-    for bad in (
-        {"request": [f"{first}:1"]},
-        {"bulk_key": str(key)},
-        {"bulk_key": [str(key), str(key)], "request": [f"{first}:1"]},
-        {"bulk_key": str(key), "request": [f"{first}:1", f"{first}:2"]},
-        {"bulk_key": str(key), "request": [f"{first}"]},
-        {"bulk_key": str(key), "request": [f"{first}:0"]},
-        {"bulk_key": str(key), "request": [f"{first}:1"], "show": "all"},
-        {"bulk_key": str(key), "request": [f"{first}:1"], "zone": ["UTC", "UTC"]},
-        {
-            "bulk_key": str(key),
-            "request": [f"{uuid4()}:1" for _ in range(MAX_BULK + 1)],
-        },
-    ):
-        with pytest.raises(ValueError):
-            parse(**bad)
+    result = {
+        "rows": rows,
+        "ministries": [dict(duid=9, name="Food pantry", in_campaign=True)],
+        "metadata": {},
+    }
+    place(result, principal, marks=marks or {})
+    return worklist_context(
+        UUID(int=92),
+        WorklistQuery(stage=stage),
+        principal,
+        result,
+        token="",
+        mutable=True,
+        action=reverse("admin:ministry_report"),
+        decisions={},
+        asked={},
+        families={},
+    )["worklist"]
 
 
-def test_a_change_listed_twice_names_each_row_by_its_resolved_day():
-    """The same change listed twice (a Family answered again and both
-    requests were resolved) would give both rows one name; those rows add
-    their Resolved day, so each icon, box and dialog names its own row. The
-    day is the browser's (#558): the name carries the UTC instant, which
-    date-format-v1.js replaces with the local day (data-local-day). A name
-    no other row shares stays short."""
-    from datetime import timedelta
-    from uuid import uuid4
+def test_staff_views_keep_the_roster_rows_the_review_stages_leave_out():
+    """The every-revision read keeps a Staff view's current requests for
+    current Members, and every accepted join or leave still to enter, for a
+    Member no longer in ParishSoft or one a later response replaced; the
+    "No longer in ParishSoft" choice keeps only such Members' rows."""
+    from parishkit.stewardship.reports.ministry_worklist import listed, roster_only
 
-    from parishkit.stewardship.reports.ministry_roster_views import row_controls
+    current = request_row(state="in_progress", outcome=None)
+    replaced_open = request_row(state="in_progress", outcome=None, latest=False)
+    withdrawn = request_row(state="cancelled", outcome=None)
+    gone_open = request_row(state="new", outcome=None, source_mark=GONE)
+    gone_roster = request_row(source_mark=GONE)
+    replaced_roster = request_row(latest=False)
+    declined_replaced = request_row(outcome="declined", latest=False)
+    keep = [
+        listed(row, "current")
+        for row in (
+            current,
+            replaced_open,
+            withdrawn,
+            gone_open,
+            gone_roster,
+            replaced_roster,
+            declined_replaced,
+        )
+    ]
+    assert keep == [True, False, False, False, True, True, False]
+    gone = [listed(row, "gone") for row in (current, gone_open, gone_roster)]
+    assert gone == [False, True, True]
+    assert [roster_only(row) for row in (current, gone_roster, replaced_roster)] == [
+        False,
+        True,
+        True,
+    ]
 
-    earlier = WHEN - timedelta(days=3)
+
+def test_a_roster_row_offers_entered_by_hand_alone_with_no_note():
+    """At To enter by hand an ordinary accepted request offers Back to review
+    and Entered by hand; a Member no longer in ParishSoft's, and one a later
+    response replaced, offer Entered by hand alone. Its dialog hides the
+    note (the ``no_note`` choice), and the bulk bar's Entered by hand does
+    too. A replaced row says so, in its name and under its Stage."""
     rows = [
-        roster_row(id=str(uuid4()), resolved_at=WHEN, roster_eligible=True),
-        roster_row(id="2", resolved_at=earlier, latest=False),
-        roster_row(id="3", member_name="Other, Lee"),
+        request_row(id=str(UUID(int=1))),
+        request_row(id=str(UUID(int=2)), source_mark=GONE, member_name=""),
+        request_row(id=str(UUID(int=3)), latest=False),
     ]
-    row_controls(rows)
-    assert [row["label"] for row in rows] == [
-        "Sample, Pat — Food pantry, resolved 2054-10-05T14:30:00+00:00",
-        "Sample, Pat — Food pantry, resolved 2054-10-02T14:30:00+00:00",
-        "Other, Lee — Food pantry",
+    worklist = requests_worklist(rows)
+    ordinary, gone, replaced = worklist.rows
+    offered = [
+        [icon["action"] for icon in row["icons"] if not icon["selected"]]
+        for row in worklist.rows
     ]
-    assert [row["local_day"] for row in rows] == [
-        "2054-10-05T14:30:00+00:00",
-        "2054-10-02T14:30:00+00:00",
-        None,
+    assert offered == [
+        ["back_to_review", "entered_by_hand"],
+        ["entered_by_hand"],
+        ["entered_by_hand"],
     ]
-    # The tick names the instant it marks for the page script to localize.
-    cell = row_cell_html(rows[0] | {"roster_entered": False}, mutable=True)
-    name = "Mark Sample, Pat — Food pantry, resolved 2054-10-05T14:30:00+00:00"
-    assert f'aria-label="{name} entered in ParishSoft"' in cell
-    assert f'title="{name} entered in ParishSoft"' in cell
-    assert 'data-local-day="2054-10-05T14:30:00+00:00"' in cell
+    assert gone["kinds"] == replaced["kinds"] == "entered_by_hand"
+    assert {icon["choice"] for icon in replaced["icons"] if not icon["selected"]} == {
+        "no_note"
+    }
+    bulk = {button["value"]: button["choice"] for button in worklist.bulk}
+    assert bulk["entered_by_hand"] == "no_note"
+    assert replaced["name"] == (
+        "Sample, Pat — Food pantry, replaced by a later response"
+    )
+    assert "Replaced by a later response" in str(replaced["decision_label"])
+    assert "replaced" not in ordinary["name"]
+
+
+def test_an_entered_row_says_who_marked_it_and_a_leader_sees_accepted():
+    """At Entered by hand the line under the Stage says who marked it and
+    when (a removed user as Former portal user); a Ministry leader's row
+    reads Accepted, with no mark and no Entered by hand."""
+    marks = {
+        str(UUID(int=1)): {
+            "entered": True,
+            "sequence": 1,
+            "by": "staff@example.org",
+            "at": WHEN,
+        },
+        str(UUID(int=2)): {"entered": True, "sequence": 1, "by": "", "at": None},
+    }
+    rows = [request_row(id=str(UUID(int=1))), request_row(id=str(UUID(int=2)))]
+    worklist = requests_worklist(rows, stage="entered_by_hand", marks=marks)
+    named, former = (str(row["decision_label"]) for row in worklist.rows)
+    assert named.startswith("Accepted<br>Entered by staff@example.org, ")
+    assert 'datetime="2054-10-05T14:30:00+00:00"' in named
+    assert former == "Accepted<br>Entered by Former portal user"
+    leader = requests_worklist(
+        [request_row(id=str(UUID(int=1)))],
+        principal=LEADER,
+        stage="accepted",
+        marks=marks,
+    )
+    (row,) = leader.rows
+    assert "Entered by" not in str(row["decision_label"])
+    assert all(icon["action"] != "entered_by_hand" for icon in row["icons"])
