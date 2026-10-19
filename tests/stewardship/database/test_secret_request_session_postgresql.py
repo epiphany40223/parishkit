@@ -1,6 +1,6 @@
-"""Migration 0152 binds a secret request to its automation session (#1763).
+"""Migration 0125 binds a secret request to its automation session (#1763).
 
-0152 (``schema/migrations/0152_secret_request_session.sql``) adds
+0125 (``schema/migrations/0125_secret_request_session.sql``) adds
 ``stewardship_secret_request.automation_session_id``, the definer check
 ``stewardship_automation_request_live_v1``, replaces the sealed intake check,
 the secret request state guard and the request's immutability guard so that
@@ -27,7 +27,7 @@ from parishkit.stewardship.accounts.secret_requests import stage_secret_request
 pytestmark = pytest.mark.django_db(transaction=True)
 
 MIGRATIONS = Path(__file__).resolve().parents[3] / "src/parishkit/stewardship/schema"
-FROZEN = (MIGRATIONS / "migrations/0152_secret_request_session.sql").read_text(
+FROZEN = (MIGRATIONS / "migrations/0125_secret_request_session.sql").read_text(
     encoding="utf-8"
 )
 LIVE = "stewardship_automation_request_live_v1"
@@ -36,9 +36,9 @@ ENDED = "stewardship_automation_instant_ended_v1"
 INTAKE = "stewardship_sealed_intake_admission_v1"
 STATE = "stewardship_secret_state_v2"
 MUTABLE = "stewardship_secret_request_mutable_v1"
-# The clause 0152 adds to the immutability guard.
+# The clause 0125 adds to the immutability guard.
 BOUND = ' OR NEW."automation_session_id" IS DISTINCT FROM OLD."automation_session_id"'
-# Each replaced body's md5 before 0152 (0124's intake check, 0114's state
+# Each replaced body's md5 before 0125 (0124's intake check, 0114's state
 # guard, the baseline's immutability guard), so the rebuilt earlier state is
 # the one an upgraded database has.
 EARLIER_MD5 = {
@@ -63,7 +63,7 @@ def frozen(number):
 
 
 def earlier_state():
-    """Statements that put the schema back as it was before 0152.
+    """Statements that put the schema back as it was before 0125.
 
     0114's ended-instant check (with its PUBLIC revoke), 0124's intake
     check, 0114's state guard, the immutability guard without the new
@@ -132,7 +132,7 @@ def test_the_installed_schema_is_as_declared():
 
 
 def test_the_file_runs_on_the_earlier_state_and_again():
-    """On the state before it, 0152 installs, changes no row and can run again.
+    """On the state before it, 0125 installs, changes no row and can run again.
 
     A staged request keeps every value, with no named session. The file has
     no UPDATE or DELETE; Admin sessions and the Family session, link and
@@ -176,7 +176,7 @@ def test_the_file_runs_on_the_earlier_state_and_again():
 
 
 def test_migration_check_refuses_each_earlier_or_weakened_install():
-    """0152's check passes as installed and refuses each regression."""
+    """0125's check passes as installed and refuses each regression."""
     capture = FROZEN[
         FROZEN.index("SELECT set_config(") : FROZEN.index("\n\nALTER TABLE public.")
     ]
@@ -282,11 +282,11 @@ def test_migration_check_refuses_each_earlier_or_weakened_install():
         for change, message in changes:
             # The change is named on failure, so a passing regression is found.
             with (
-                pytest.raises(DatabaseError, match=f"Migration 0152.*{message}"),
+                pytest.raises(DatabaseError, match=f"Migration 0125.*{message}"),
                 transaction.atomic(),
             ):
                 cursor.execute(change)
                 cursor.execute(check)
-                pytest.fail(f"0152's check admitted: {change[:120]}")
+                pytest.fail(f"0125's check admitted: {change[:120]}")
         cursor.execute(check)
         transaction.set_rollback(True)

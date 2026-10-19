@@ -1,4 +1,4 @@
--- Frozen forward migration file 0152 (the repository-wide file sequence): a
+-- Frozen forward migration file 0125 (the repository-wide file sequence): a
 -- secret request made through an automation session names that session
 -- instead of relying on its sign-in instant (#1763). This file is installed
 -- by the Django migration that names it in FROZEN_SQL and must never change
@@ -71,7 +71,7 @@ SET LOCAL search_path = public;
 -- many enabled triggers it serves (the sealed intake check guards two
 -- tables), before the replacement, compared in the DO block (transaction-
 -- local settings: the migration login has no TEMP privilege).
-SELECT set_config('stewardship.migration_0152_attributes', (
+SELECT set_config('stewardship.migration_0125_attributes', (
     SELECT string_agg(p.proname||'='||coalesce(p.proacl::text,'default')||'|'||p.prosecdef::text||'|'||coalesce(array_to_string(p.proconfig,','),'')||'|'||p.prolang::text||'|'||p.proowner::regrole::text, ';' ORDER BY p.proname)
     FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
     WHERE n.nspname='public' AND p.proname IN (
@@ -79,7 +79,7 @@ SELECT set_config('stewardship.migration_0152_attributes', (
             'stewardship_secret_request_mutable_v1',
             'stewardship_secret_state_v2'
     )), true);
-SELECT set_config('stewardship.migration_0152_triggers', (
+SELECT set_config('stewardship.migration_0125_triggers', (
     SELECT string_agg(p.proname||'='||(SELECT count(*) FROM pg_trigger t WHERE t.tgfoid=p.oid AND t.tgenabled<>'D')::text, ';' ORDER BY p.proname)
     FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
     WHERE n.nspname='public' AND p.proname IN (
@@ -288,7 +288,7 @@ BEGIN
         WHERE a.attrelid='public.stewardship_secret_request'::regclass
           AND a.attname='automation_session_id' AND NOT a.attisdropped
           AND a.atttypid='uuid'::regtype AND NOT a.attnotnull AND NOT a.atthasdef) THEN
-        RAISE EXCEPTION 'Migration 0152: stewardship_secret_request.automation_session_id is not installed as declared';
+        RAISE EXCEPTION 'Migration 0125: stewardship_secret_request.automation_session_id is not installed as declared';
     END IF;
     -- The new check: definer rights, its search_path, its exact body and
     -- no PUBLIC EXECUTE.
@@ -308,7 +308,7 @@ BEGIN
           AND p.prosrc LIKE '%a.authenticated_at=instant%'
           AND p.prosrc LIKE '%public.stewardship_automation_live_v1(a.id)%'
           AND NOT has_function_privilege('public', p.oid, 'EXECUTE')) THEN
-        RAISE EXCEPTION 'Migration 0152: stewardship_automation_request_live_v1 is not installed as declared';
+        RAISE EXCEPTION 'Migration 0125: stewardship_automation_request_live_v1 is not installed as declared';
     END IF;
     -- Each replaced function is its one overload, with exactly the new body.
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
@@ -323,7 +323,7 @@ BEGIN
           AND p.prosrc LIKE '%Sealed intake requires a live automation session%'
           AND p.prosrc LIKE '%Sealed intake requires installer consumers%'
           AND p.prosrc NOT LIKE '%instant_ended%')<>1 THEN
-        RAISE EXCEPTION 'Migration 0152: stewardship_sealed_intake_admission_v1 is not installed as declared';
+        RAISE EXCEPTION 'Migration 0125: stewardship_sealed_intake_admission_v1 is not installed as declared';
     END IF;
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_secret_state_v2'
@@ -337,7 +337,7 @@ BEGIN
           AND p.prosrc LIKE '%Credential testing requires a live sealed request%'
           AND p.prosrc LIKE '%Only the target installer may advance this request%'
           AND p.prosrc NOT LIKE '%instant_ended%')<>1 THEN
-        RAISE EXCEPTION 'Migration 0152: stewardship_secret_state_v2 is not installed as declared';
+        RAISE EXCEPTION 'Migration 0125: stewardship_secret_state_v2 is not installed as declared';
     END IF;
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_secret_request_mutable_v1'
@@ -346,26 +346,26 @@ BEGIN
           AND p.prosrc LIKE '%OR NEW."reauthenticated_at" IS DISTINCT FROM OLD."reauthenticated_at" OR%'
           AND p.prosrc LIKE '%Record identity and bindings are immutable%'
           AND p.prosrc LIKE '%Every update must advance the record version%')<>1 THEN
-        RAISE EXCEPTION 'Migration 0152: stewardship_secret_request_mutable_v1 is not installed as declared';
+        RAISE EXCEPTION 'Migration 0125: stewardship_secret_request_mutable_v1 is not installed as declared';
     END IF;
     -- The ended-instant check is gone, and nothing calls it.
     IF EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname='stewardship_automation_instant_ended_v1') THEN
-        RAISE EXCEPTION 'Migration 0152: stewardship_automation_instant_ended_v1 is still installed';
+        RAISE EXCEPTION 'Migration 0125: stewardship_automation_instant_ended_v1 is still installed';
     END IF;
     IF EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.prosrc LIKE '%stewardship_automation_instant_ended%') THEN
-        RAISE EXCEPTION 'Migration 0152: a function still calls stewardship_automation_instant_ended_v1';
+        RAISE EXCEPTION 'Migration 0125: a function still calls stewardship_automation_instant_ended_v1';
     END IF;
     -- Owner, rights, search_path, language and grants are as before.
-    IF current_setting('stewardship.migration_0152_attributes', true) IS DISTINCT FROM (
+    IF current_setting('stewardship.migration_0125_attributes', true) IS DISTINCT FROM (
            SELECT string_agg(p.proname||'='||coalesce(p.proacl::text,'default')||'|'||p.prosecdef::text||'|'||coalesce(array_to_string(p.proconfig,','),'')||'|'||p.prolang::text||'|'||p.proowner::regrole::text, ';' ORDER BY p.proname)
            FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
            WHERE n.nspname='public' AND p.proname IN (
                'stewardship_sealed_intake_admission_v1',
                'stewardship_secret_request_mutable_v1',
                'stewardship_secret_state_v2')) THEN
-        RAISE EXCEPTION 'Migration 0152: a replaced function changed its rights, configuration or grants';
+        RAISE EXCEPTION 'Migration 0125: a replaced function changed its rights, configuration or grants';
     END IF;
     -- None of them gained definer rights.
     IF EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
@@ -373,7 +373,7 @@ BEGIN
             'stewardship_sealed_intake_admission_v1',
             'stewardship_secret_request_mutable_v1',
             'stewardship_secret_state_v2')) THEN
-        RAISE EXCEPTION 'Migration 0152: a replaced guard has definer rights';
+        RAISE EXCEPTION 'Migration 0125: a replaced guard has definer rights';
     END IF;
     -- Every one is a trigger function that still guards every table it
     -- guarded, with each of its triggers still enabled.
@@ -384,14 +384,14 @@ BEGIN
             'stewardship_secret_state_v2')
           AND (p.prorettype<>'trigger'::regtype
                OR NOT EXISTS (SELECT 1 FROM pg_trigger t WHERE t.tgfoid=p.oid AND t.tgenabled<>'D')))
-       OR current_setting('stewardship.migration_0152_triggers', true) IS DISTINCT FROM (
+       OR current_setting('stewardship.migration_0125_triggers', true) IS DISTINCT FROM (
            SELECT string_agg(p.proname||'='||(SELECT count(*) FROM pg_trigger t WHERE t.tgfoid=p.oid AND t.tgenabled<>'D')::text, ';' ORDER BY p.proname)
            FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
            WHERE n.nspname='public' AND p.proname IN (
                'stewardship_sealed_intake_admission_v1',
                'stewardship_secret_request_mutable_v1',
                'stewardship_secret_state_v2')) THEN
-        RAISE EXCEPTION 'Migration 0152: a replaced guard no longer has its trigger';
+        RAISE EXCEPTION 'Migration 0125: a replaced guard no longer has its trigger';
     END IF;
 END
 $check$;

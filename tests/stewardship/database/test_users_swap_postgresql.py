@@ -429,7 +429,7 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # (0114's) and 0104's setup credential audit come back older from closure
 # files, so ``CLOSURE_REPLACED_ONLY`` runs 0124's replacements of those;
 # the rest (baseline guards no closure file installs again) survive.
-# 0152 (#1763) adds a request column (IF NOT EXISTS, so its file runs again)
+# 0125 (#1763) adds a request column (IF NOT EXISTS, so its file runs again)
 # and a definer check granted to web and three installers
 # (runtime_grants.CLOSURE_FUNCTIONS, so ``closure_functions_absent`` drops it
 # and installs the file whole again), drops 0114's ended-instant check (IF
