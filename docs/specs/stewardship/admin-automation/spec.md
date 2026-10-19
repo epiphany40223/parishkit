@@ -2717,18 +2717,18 @@ deleted when the export ends, so nothing regenerates it.
 | `campaign_comparison` | `report comparison [--day N]` ([#1018](https://github.com/epiphany40223/parishkit/issues/1018) slice 3, [campaign history](../campaign-history/spec.md#command-line)): aggregates only, with the small-count protection |
 | `campaign_comparison_export` | `export comparison [--day N] --format F [--timezone Z]` ([#1018](https://github.com/epiphany40223/parishkit/issues/1018) slice 6, [downloads](../campaign-history/spec.md#downloads-and-sharing)): the page's download form, through the same capture (`comparison_exports.read_capture`) and service (`create_comparison_export`), with the page's `campaign_comparison_exported` and `admin_cmd_export_comparison`; without `--timezone` the file's request time uses the parish's time zone ([#1161](https://github.com/epiphany40223/parishkit/issues/1161)) |
 | `daily_digest_chart`, `daily_digest_download` | Permanent: PNG images; the data is in the matching report or digest read |
-| `financial_report`, `limitations_report`, `information_queue` | `report financial`, `report limitations`, `report information`: summaries and counts (PR 8c; `report limitations` was `report talents` until #970); Family-level rows only as exports (PR 8e, PR 8h for limitations) |
+| `financial_report`, `limitations_report`, `information_queue` | `report financial`, `report limitations`, `report information`: summaries and counts (PR 8c; `report limitations` was `report talents` until #970), by worklist stage with `--stage` ([#1735](https://github.com/epiphany40223/parishkit/issues/1735)); Family-level rows only as exports (PR 8e, PR 8h for limitations). The worklists' decisions ([#1685](https://github.com/epiphany40223/parishkit/issues/1685)) are `limitations decide` and `information decide`, through the pages' own `LimitationDecisions` and `InformationDecisions` services; `information list` prints the requests' ids, versions, stages and actions, never their content ([#1735](https://github.com/epiphany40223/parishkit/issues/1735)) |
 | `information_item` | One Family's submission and its follow-up history: `followup information-show ITEM_ID` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11b; see [users and follow-up](#users-and-follow-up)); it prints only the item's state and history, and the submission's content comes through `export information` (PR 8e) |
 | `ministry_report` | `report ministry`, and `report ministry --ministry DUID --requests join\|leave` for one Ministry's join or leave count (PR 8c); rows only as exports (PR 8e). The Members joining and leaving pages (`ministry_joiners`, `ministry_leavers`) were retired ([#1157](https://github.com/epiphany40223/parishkit/issues/1157)); the commands stay, and `export ministry`, which writes one Ministry's join or leave list, now covers this summary, whose counts it lists. Since [#1133](https://github.com/epiphany40223/parishkit/issues/1133) the page is one Ministry requests page with the follow-up queue: its By Ministry counts are `report ministry`'s summary, and its queue is `followup list` (PR 11a) |
 | `ministry_packet` | A packet of Members' contacts, so export only: `export ministry-packet` (PR 8e) |
 | `past_campaign_archive` | `export archive` ([#1018](https://github.com/epiphany40223/parishkit/issues/1018) part (a), [archive export](../campaign-history/spec.md#download-campaign-archive)): Past campaigns' Download campaign archive, through the same service (`create_archive_export`), with the page's `campaign_archive_exported` and `admin_cmd_export_archive`; [fresh-gated](#fresh-gated-actions-from-the-command-line) |
-| `financial_export`, `information_export` | `export financial`, `export information` (PR 8e); `export financial` is [fresh-gated](#fresh-gated-actions-from-the-command-line). `export ministry` still captures one Ministry's join or leave list, whose page form (`ministry_export`) was retired with the lists (#1157) |
+| `financial_export`, `information_export` | `export financial`, `export information` (PR 8e; `--stage` as the worklist's export pane, [#1735](https://github.com/epiphany40223/parishkit/issues/1735)); `export financial` is [fresh-gated](#fresh-gated-actions-from-the-command-line). `export ministry` still captures one Ministry's join or leave list, whose page form (`ministry_export`) was retired with the lists (#1157) |
 | `family_directory`, `family_directory_export` | Export only: `export directory`, the Family-code directory, for the current campaign only until #145 (PR 8f); [fresh-gated](#fresh-gated-actions-from-the-command-line) |
 | `family_directory`, `family_directory_export` with mailing columns | Export only: `export postal`, the mail merge (PR 8f); [fresh-gated](#fresh-gated-actions-from-the-command-line) |
 | `find_family` | Permanent: a search by name; the command line takes no text that names a Family, and `export directory` is the file. This follows the pending "no search" default (PR 8e); if the Administrator allows searches, it becomes `--filter search=` on `export directory` |
 | `timeline`, `timeline_export` | One Family's Timeline (#1570), so export only: the page's export form and `export family-timeline FAMILY_RECORD_ID` (PR 8g, migration 0063); [fresh-gated](#fresh-gated-actions-from-the-command-line) |
 | `family_open_form` (new, #529) | Permanent: Open form signs this browser in to the Family form for a Family on the phone, a browser hand-off by nature; Families' responses are read through `report responses` and the directory exports with its Response filters |
-| `limitations_export` | `export limitations [--show S] [--format F] [--timezone Z]` (PR 8h, [#463](https://github.com/epiphany40223/parishkit/issues/463)): the page's download through the page's own writer (`limitation_views.export_body`), with #752's audit fields |
+| `limitations_export` | `export limitations [--stage S] [--show S] [--format F] [--timezone Z]` (PR 8h, [#463](https://github.com/epiphany40223/parishkit/issues/463)): the page's download through the page's own writer (`limitation_views.export_body`), with #752's audit fields; `--format jsonl` adds each answer's item id, version and actions for `limitations decide` ([#1735](https://github.com/epiphany40223/parishkit/issues/1735)) |
 | `census_changes`, `census_changes_export` | `report census`, counts ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the rows through `export census` (PR 8h, [#463](https://github.com/epiphany40223/parishkit/issues/463)). A row's Entered in ParishSoft, Ignore and Reopen ([#528](https://github.com/epiphany40223/parishkit/issues/528)) post to `census_changes`; their command is `census resolve PROPOSAL_ID --action entered\|ignored\|reopened` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), through the same `census_resolution` service. An Automatic row's Review (Approve, Ignore, Back to To review; ADM-09) posts there too; its command is `census review PROPOSAL_ID --decision approved\|ignored\|unreviewed` ([#528](https://github.com/epiphany40223/parishkit/issues/528)), through the same `census_review` service. The Review's Edit value and Clear edit (ADM-09.04) are `census edit PROPOSAL_ID --value TEXT\|- \| --clear`, and its Use the Family's value anyway (ADM-09.03) is `census resolve-conflict PROPOSAL_ID` ([#1434](https://github.com/epiphany40223/parishkit/issues/1434)), through the same service |
 | `census_publication`, `census_publication_confirmation`, `census_publication_retries` (new, [#528](https://github.com/epiphany40223/parishkit/issues/528); not built yet) | `census publish-check`, `census publish-plan`, `census publish-confirm` and `census publish-rerun`: the [Publish to ParishSoft](../reports/spec.md#publish-to-parishsoft) page's Check ParishSoft, plan, Apply and Run again, through the same `publication_tasks` and `publication_plans` services; see [the commands](#publish-to-parishsoft-commands) |
 | `report_export_create`, `report_export`, `report_export_cancel`, `report_export_retry`, `report_export_download` | `export create` (and `export exact create`, the latest-data export, whose page form [#1537](https://github.com/epiphany40223/parishkit/issues/1537) removed), `export status --watch`, `export cancel`, `export retry`, `export download --stream` (PR 8b; `report_export_regenerate` and `export regenerate` were removed by [#1398](https://github.com/epiphany40223/parishkit/issues/1398)); an exact request's status, cancel and retry, which these pages also serve, are `export exact status --watch`, `export exact cancel` and `export exact retry` (PR 8h) |
@@ -3010,13 +3010,94 @@ page's own `limitation_views.export_body` (both of which the page now
 calls), so its files are the page's; it has no command-only format, as no
 command acts on a row. It records the page's `talents_report_exported`
 (the name kept from Talents and limitations, #970) with the page's count
-(the Member and Family rows in the file) and #752's audit fields
+(the Member and Family rows the read returned, before the download's
+Stage keeps the file's rows, as the page counts them since #1685) and the
+audit fields of #752
 (`search_used`, always false, `report_filter` and, when no refresh promoted
 another snapshot during the read, `snapshot_id`), and no `admin_cmd_*`
-event. The name, `--show` without the search and the absent JSON Lines are
+event. The name and `--show` without the search are
 defaults pending Administrator confirmation; the
 [operator guide](../../../guides/stewardship-admin-automation.md#limitations-download)
 lists them.
+
+**Additional information and Limitations decisions.** [#1735](https://github.com/epiphany40223/parishkit/issues/1735) brings the two review worklists of
+[#1685](https://github.com/epiphany40223/parishkit/issues/1685) to the command line, as
+[#1733](https://github.com/epiphany40223/parishkit/issues/1733) does Pledges to enter, through each page's own pieces so
+the two cannot drift.
+
+- **Counts by stage.** `report limitations [--stage
+  to_review|to_handle|ignored|handled|all]` reads the page's
+  `limitations_report` as before and, through the page's own
+  `limitations.at_stage`, prints `cannot_serve` and `cannot_attend` at the
+  stage (`all`, the default, keeps the earlier summary), with `stage` and
+  `stages`, every answer by stage, zeros included. `report information
+  --stage to_review|to_handle|ignored|handled|history|all [--start --end
+  --zone]` counts the worklist instead of the old queue filters (combining
+  it with `--disposition`, `--needed` or `--completed` is `invalid`):
+  `matching` is the requests at the stage, as the page's
+  `information_worklist.requests` places them, and `stages` every stage's
+  count, History's too; without `--stage` the command is unchanged and
+  both are null. Both record their page's view events, as before.
+- **Files.** `export limitations` takes the page's download Stage
+  (`--stage`, Every stage by default, as the page's own download) and
+  `--format jsonl`, the command's own format as `export census`'s: one
+  object per answer, the CSV's cells under fixed keys with the answer's
+  `kind`, plus `item_id` (the page's answer id, `m<Family DUID>-<Member
+  DUID>`, `p<Family DUID>-<local id>` or `f<Family DUID>`), `version` and
+  `actions` (the decisions the reader may record now, empty while other
+  campaign work holds the campaign). `export information --stage S` queues
+  the page's complete export with the follow-up filters the worklist's
+  export pane posts for that Stage
+  (`information_worklist.EXPORT_FILTERS`, and its `sort=name` unless a
+  `--filter sort=` is given); the stage and a `--filter` for
+  `disposition`, `needed` or `completed` together are `invalid`.
+- **Information ids.** `information list [--stage S] [--start --end
+  --zone]` is the Additional information worklist's rows as identifiers
+  only, as `followup information-show` prints one request: each request's
+  `item_id`, `version`, `stage`, `decision`, `disposition`,
+  `submitted_at`, `decided_at` and `actions`, never the Family, its words
+  or the Staff notes. It admits passively with the page's
+  `information_views._principal`, reads through the shared report read and
+  the page's `requests`, and records the page's `information_viewed`
+  (started, then succeeded or failed). The content stays on the page and
+  in `export information`.
+- **Decisions.** `limitations decide` and `information decide` take
+  `--action accept|ignore|back_to_review|handled`, `--item ID:VERSION`
+  (up to 100, each once), `--note TEXT|-` and `--request-key`. Each
+  checks its page's admission first (a Ministry leader is `denied` before
+  any input or prompt) and refuses before any prompt a choice the page
+  could not post (too many items, a malformed item id, a note over 2,000
+  characters or with text the page refuses). Handled is final, so
+  `handled` [prompts by default](#mitigations) (or takes `--yes`); the
+  others can be changed again and ask nothing. In the page's command
+  scope it checks the current campaign as the page does, finds every item
+  in it (a request that is not a Live one of the campaign, or an answer
+  whose Family is not in it, is `not_available`), and builds the
+  `WorklistDecision` the page would post (one item with the key itself,
+  several as the bulk bar, each item's key derived from it) for the
+  page's `InformationDecisions` or `LimitationDecisions`, so every rule is
+  the page's, in Python and in the SQL guard of migration 0134: the role,
+  the version, the actions the stage offers, and a new note to reopen an
+  Ignored item (`invalid` at `note` otherwise), as the page's Back to
+  review asks for one. All or none: an item someone decided first, or
+  that the Family answered again since, is `stale_version`. The service
+  records `information_updated` or `limitation_reviewed` for each item,
+  with the session's user as the actor, and the command
+  `admin_cmd_information_decide` or `admin_cmd_limitations_decide` once
+  in the same transaction, only for a new key: a repeat with the same
+  items and decision returns the recorded rows (`created` false), and any
+  other use of the key (other items or another decision, matched against
+  the key itself and each item's key derived from it) is `invalid`, so
+  one key never records two decisions. `information decide` prints each
+  revision's `id`, `item_id`, `expected_version`, `decision`,
+  `follow_up_needed`, `followed_up` and `created_at`; `limitations
+  decide` prints each review's `id`, `kind`, `expected_version`,
+  `decision` and `created_at` in the order the items were given, without
+  the item id, which names the Family's DUID. Neither prints a note.
+
+`followup information-update` keeps its follow-up flags until #1688
+renames the commands; `information decide` is the worklist's Ignore,
+which the flags cannot record.
 
 `export census` ([#463](https://github.com/epiphany40223/parishkit/issues/463))
 is the Census changes page's in-memory download, streamed as `logs export`
@@ -3341,7 +3422,7 @@ unknown email `not_available`, and a key used with another intent `invalid`.
 | `ministry_followup_item` | `followup show REQUEST_ID` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11a; see below) |
 | `ministry_followup_update` | `followup update REQUEST_ID` (PR 11a; see below); follow-up has no assignment ([#552](https://github.com/epiphany40223/parishkit/issues/552)) |
 | `ministry_followup_bulk` | `followup bulk` (PR 11a; see below), the queue's bulk outcome ([#1131](https://github.com/epiphany40223/parishkit/issues/1131)), through the same `workflows.followup` service |
-| `information_update` | Retired by [#1685](https://github.com/epiphany40223/parishkit/issues/1685): the request page has no Save, and decisions are made on the Additional information worklist. `followup information-update ITEM_ID` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11b; see below) stays, through the same `responses.information` service, until #1688 renames the commands |
+| `information_update` | Retired by [#1685](https://github.com/epiphany40223/parishkit/issues/1685): the request page has no Save, and decisions are made on the Additional information worklist. `followup information-update ITEM_ID` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11b; see below) stays, through the same `responses.information` service, until #1688 renames the commands; the worklist's own decisions are `information decide` ([#1735](https://github.com/epiphany40223/parishkit/issues/1735)) |
 | `ministry_followup_export` | The queue's Export these requests ([#1157](https://github.com/epiphany40223/parishkit/issues/1157)), the follow-up queue's filtered set with each Member's contact details: `followup export [FILTERS] [--format F] [--timezone Z]` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11c; see below), the page's download through the page's own writer (`ministry_followup_exports.export_body`) |
 | `ministry_followup_roster`, `ministry_roster_bulk` | A resolved join or leave's Entered in ParishSoft tick ([#528](https://github.com/epiphany40223/parishkit/issues/528)), one at a time or several from Roster changes to enter ([#879](https://github.com/epiphany40223/parishkit/issues/879)): `followup roster-entered REQUEST_ID --set\|--clear` and `followup roster-bulk` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11b; see below), through the same `workflows.roster` service |
 | `ministry_roster`, `ministry_roster_export` | Roster changes to enter ([#528](https://github.com/epiphany40223/parishkit/issues/528)): `report roster`, counts ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the rows through `export roster [--show S] [--ministry DUID] [--format F] [--timezone Z]` (PR 8g, [#463](https://github.com/epiphany40223/parishkit/issues/463)), the page's download through the page's own writer (`ministry_roster_views.export_body`) |
