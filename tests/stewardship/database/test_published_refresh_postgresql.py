@@ -23,7 +23,7 @@ from parishkit.stewardship.reports.census_worklist import worklist_rows
 from parishkit.stewardship.responses import refresh_checks
 from parishkit.stewardship.responses.census_resolution import InvalidMemberId
 from parishkit.stewardship.responses.census_review import decide_census_changes
-from parishkit.stewardship.responses.models import ProposalResolution
+from parishkit.stewardship.responses.models import ProposalResolution, ProposedChange
 from parishkit.stewardship.responses.refresh_checks import census_source
 from parishkit.stewardship.source.corpus import normalize_core
 from parishkit.stewardship.source.models import SourceCurrent
@@ -399,6 +399,15 @@ ADDRESSES = {
     "full": PRIMARY | {"primaryAddress2": "Apt 2", "primaryAddress3": "Rear"},
     "one line": {"primaryAddress1": "1 Main", "primaryCity": "Louisville"},
     "none": {},
+    # ParishSoft returns a blank field as null, which reads as blank.
+    "nulls": {
+        "primaryAddress1": "1 Main",
+        "primaryAddress2": None,
+        "primaryAddress3": None,
+        "primaryCity": None,
+        "primaryState": None,
+        "primaryPostalCode": None,
+    },
 }
 
 
@@ -526,3 +535,145 @@ def test_do_block_refuses_the_old_definitions(db):
         ):
             cursor.execute(statement)
             cursor.execute(_check())
+
+
+def quick(harness, **record):
+    """Promote a quick (delta) refresh with Member 3's record changed."""
+    from parishkit.stewardship.source.leases import acquire_source
+    from parishkit.stewardship.source.snapshots import (
+        begin_snapshot,
+        finish_snapshot,
+        stage_entities,
+    )
+
+    from .source_builders import running_source_task
+    from .test_source_snapshots_postgresql import permit
+
+    data = ministry_source()
+    data.members[3].update(BASE | record)
+    corpus = normalize_core(replace(data, organization_id=12345), as_of=TODAY)
+    claim = acquire_source(**running_source_task(), phase="delta")
+    snapshot = begin_snapshot(claim, organization_id=12345, admit=permit)
+    for kind, values in corpus.items():
+        stage_entities(snapshot.pk, claim, kind=kind, entities=values, admit=permit)
+    finish_snapshot(
+        snapshot.pk,
+        claim,
+        expected_counts={kind: len(rows) for kind, rows in corpus.items()},
+        cursor={},
+        admit=permit,
+    )
+    return promote(snapshot, claim, harness.campaign, harness.rings)
+
+
+def test_a_quick_update_never_reopens_an_updated_change(response_service):
+    """A quick update's change list could lag the write, so it records
+    nothing for an Updated in ParishSoft change it finds at the Baseline;
+    the next full refresh decides."""
+    harness, staff, rows = answered(response_service, first_name)
+    change = published(harness, staff, rows["first_name"])
+    quick(harness)
+    assert checks(proposal=change) == []
+    assert fresh(change).execution == "published"
+    refresh(harness)
+    assert checks(proposal=change) == ["conflict"]
+
+
+def worker_refresh(harness, *, member=None, family=None, added=False):
+    """A full refresh promoted on the source worker's own login (the other
+    tests promote as the database owner), with Member ``ADDED`` listed in
+    Family 1 when ``added``."""
+    data = ministry_source()
+    data.members[3].update(BASE | (member or {}))
+    data.families[1].update(family or {})
+    if added:
+        data.members[ADDED] = {**ministry_source().members[3], "memberDUID": ADDED}
+    snapshot, claim = prepare(data)
+    with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
+        return promote(snapshot, claim, harness.campaign, harness.rings)
+
+
+def test_the_worker_login_moves_an_updated_change_to_conflict(response_service):
+    """The worker's own grants carry the conflict check and the move."""
+    harness, staff, rows = answered(response_service, first_name)
+    change = published(harness, staff, rows["first_name"])
+    worker_refresh(harness)
+    assert checks(proposal=change) == ["conflict"]
+    assert fresh(change).execution == "conflict"
+
+
+def test_the_worker_login_checks_new_members_and_home_addresses(response_service):
+    """The worker reads a New Member's recorded ID and a home address's
+    mailing answer and primary address under its grants: one New Member
+    entered with an ID and one without, and a home address."""
+
+    def edit(answers):
+        """Two New Members and a home address."""
+        new_member(answers)
+        new_member(answers)
+        home(answers, address(line1="PO Box 9"))
+
+    harness, staff, rows = answered(response_service, edit)
+    first, second = ProposedChange.objects.filter(field="new_member").order_by("pk")
+    with_id = mark(harness, staff, first, str(ADDED))
+    without = mark(harness, staff, second, "")
+    house = entered(harness, staff, rows["home_address"])
+    worker_refresh(harness, family=PRIMARY, added=True)
+    assert checks(proposal=with_id) == ["confirmed"]
+    assert checks(proposal=without) == []
+    assert checks(proposal=house) == ["confirmed"]
+
+
+def test_two_new_members_cannot_share_a_member_id(response_service):
+    """Two proposed Members of one Family cannot be one ParishSoft Member;
+    leading zeros are the same ID."""
+
+    def edit(answers):
+        """Two New Members."""
+        new_member(answers)
+        new_member(answers)
+
+    harness, staff, _ = answered(response_service, edit)
+    first, second = ProposedChange.objects.filter(field="new_member").order_by("pk")
+    assert mark(harness, staff, first, "0007")
+    assert ProposalResolution.objects.get(proposal=first).member_duid == ADDED
+    with pytest.raises(InvalidMemberId, match="Another New Member"):
+        mark(harness, staff, second, "7")
+    second = fresh(second)
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        pytest.raises(DatabaseError, match="lacks current authority"),
+        transaction.atomic(),
+    ):
+        ProposalResolution.objects.create(
+            proposal_id=second.pk,
+            actor_id=staff,
+            expected_version=second.version,
+            request_key=uuid4(),
+            action="entered",
+            member_duid=ADDED,
+        )
+
+
+def test_a_quick_update_reads_the_primary_address_from_its_corpus(
+    response_service,
+):
+    """The quick-update check runs before the update stages any address, so
+    it reads the base corpus's addresses: an entered home address
+    ParishSoft now holds is owed a check."""
+    from parishkit.stewardship.campaigns.work_locks import work_transaction
+    from parishkit.stewardship.responses.refresh_checks import (
+        refresh_checks_current,
+    )
+
+    harness, staff, rows = answered(response_service, home)
+    entered(harness, staff, rows["home_address"])
+    data = ministry_source()
+    data.members[3].update(BASE)
+    data.families[1].update(PRIMARY)
+    corpus = normalize_core(replace(data, organization_id=12345), as_of=TODAY)
+    snapshot = SimpleNamespace(pk=uuid4())
+    with work_transaction():
+        assert not refresh_checks_current(
+            snapshot, corpus, campaign_id=harness.campaign.pk
+        )

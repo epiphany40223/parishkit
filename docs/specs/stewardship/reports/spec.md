@@ -2240,8 +2240,9 @@ the **ParishSoft Member ID** of the Member Staff added, optional, with its
 help: "The new Member's ID in ParishSoft. The next refresh confirms the
 entry when ParishSoft lists this Member in the Family. Leave it blank if you
 do not have it: the mark is then final." A value that is not a whole
-number, or that is a Member the Family already listed, is refused with its
-reason in the dialog. The row then says "ParishSoft Member ID N." under its
+number, that is a Member the Family already listed, or that another New
+Member of the Family is entered as, is refused with its reason in the
+dialog. The row then says "ParishSoft Member ID N." under its
 stage. The bulk bar asks for none. What the refresh does with it is the
 review pipeline's
 [refresh checks](../review-pipeline/spec.md#refresh-checks); so is an

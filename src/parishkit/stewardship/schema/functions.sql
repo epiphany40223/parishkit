@@ -9715,6 +9715,16 @@ BEGIN
             SELECT 1 FROM public.stewardship_ministry_request request
             WHERE request.submission_id=NEW.parent_id AND request.entity_kind='member'
               AND request.state IN ('new','assigned','in_progress')
+        ) OR EXISTS (
+            -- An Updated in ParishSoft change this promotion found
+            -- ParishSoft no longer holds (#1749): its conflict check, at
+            -- its version and in this snapshot, comes first; the census
+            -- guard then moves it to conflict at this pinned snapshot.
+            SELECT 1 FROM public.stewardship_proposed_change change
+            JOIN public.stewardship_refresh_check k ON k.proposal_id=change.id
+                AND k.item_version=change.version AND k.outcome='conflict'
+                AND k.snapshot_id=NEW.snapshot_id
+            WHERE change.submission_id=NEW.parent_id AND change.execution='published'
         ))
         OR NOT public.stewardship_response_source_owner_v1(NEW.snapshot_id)
     ) THEN

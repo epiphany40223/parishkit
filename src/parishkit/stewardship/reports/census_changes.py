@@ -313,14 +313,15 @@ SELECT p.id::text, p.entity_kind, p.entity_key, p.field,
     latest.member_duid,
     -- Why a refresh put an Updated in ParishSoft change back in Conflict
     -- (#1749): its latest check says so and no review has decided it since;
-    -- "undone" when ParishSoft is back at the Baseline, else "changed".
+    -- "undone" while ParishSoft is back at the Baseline (its value now, as
+    -- reconciliation keeps it), else "changed".
     CASE WHEN p.execution='conflict' THEN (
-        SELECT CASE WHEN p.baseline_available
-                AND stewardship_response_comparison_v1(p.field,k.observed->'value')
+        SELECT CASE WHEN p.baseline_available AND p.current_available
+                AND stewardship_response_comparison_v1(p.field,p.current_value)
                     IS NOT DISTINCT FROM
                     stewardship_response_comparison_v1(p.field,p.baseline_value)
             THEN 'undone' ELSE 'changed' END
-        FROM (SELECT k.outcome, k.observed, k.item_version
+        FROM (SELECT k.outcome, k.item_version
             FROM stewardship_refresh_check k WHERE k.proposal_id=p.id
             ORDER BY k.created_at DESC, k.id DESC LIMIT 1) k
         WHERE k.outcome='conflict'

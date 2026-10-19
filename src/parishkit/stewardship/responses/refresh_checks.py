@@ -50,6 +50,7 @@ from parishkit.stewardship.pipeline import (
 )
 from parishkit.stewardship.source.pins import pin_snapshot
 from parishkit.stewardship.source.version_models import SnapshotAddress
+from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.workflows.models import (
     ACCEPTED_OUTCOMES,
     MinistryRequest,
@@ -64,7 +65,7 @@ from .comparison import ValueKind, canonical_value
 from .inputs import MEMBER_FIELDS, MemberSourceUnavailable, member_field_value
 from .member_requests import REQUEST_FIELDS
 from .merge import KnownValue
-from .models import ProposalResolution, ProposedChange, Submission
+from .models import ProposalResolution, ProposedChange
 from .reconciliation import _release_unused_source
 
 # The census executions a refresh check is for: final in the census guard.
@@ -403,26 +404,29 @@ def _primary_address(found):
     ``fields``), or None when the data has none. No read returns the
     country, so it is blank; ParishSoft's second and third street lines are
     joined into the second. Migration 0150's
-    ``stewardship_refresh_census_source_v1`` builds the same.
+    ``stewardship_refresh_census_source_v1`` builds the same. A field
+    ParishSoft returned as null reads as blank, as SQL's ``coalesce`` does.
     """
     if found is None or type(found.get("fields")) is not dict:
         return None
     fields = found["fields"]
+
+    def part(name):
+        """One primary-address field, blank when absent or null."""
+        return fields.get(name) or ""
+
     return KnownValue(
         True,
         {
-            "line1": fields.get("primaryAddress1", ""),
+            "line1": part("primaryAddress1"),
             "line2": " ".join(
                 line
-                for line in (
-                    fields.get("primaryAddress2", ""),
-                    fields.get("primaryAddress3", ""),
-                )
+                for line in (part("primaryAddress2"), part("primaryAddress3"))
                 if line
             ),
-            "city": fields.get("primaryCity", ""),
-            "region": fields.get("primaryState", ""),
-            "postal_code": fields.get("primaryPostalCode", ""),
+            "city": part("primaryCity"),
+            "region": part("primaryState"),
+            "postal_code": part("primaryPostalCode"),
             "country": "",
         },
     )
@@ -434,7 +438,7 @@ def _address_key(value):
     five digits. Migration 0150's ``stewardship_refresh_address_key_v1``."""
     if value is None:
         return None
-    postal = value.get("postal_code", "")
+    postal = value.get("postal_code") or ""
     found = ZIP_PLUS_FOUR.fullmatch(postal)
     return canonical_value(
         ValueKind.ADDRESS,
@@ -465,16 +469,18 @@ def _same(field, kind):
     return same
 
 
-def _annotate_marks(snapshot, rows):
+def _annotate_marks(snapshot, corpus, rows):
     """Give each change what ``census_source`` reads besides the corpus.
 
     ``added_duid``: a New Member's ParishSoft Member ID, from the
     resolution that made its current mark (the one at the version before
     its current one). For a home address, ``mailing_answer`` (the Family's
-    mailing address answer in the same response) and ``primary_address``
-    (``snapshot``'s primary address record of the Family, which the
-    promotion's decoded corpus does not carry). One query each, only when
-    some change needs it.
+    mailing address answer in the same response, its own census change,
+    since the source worker may not read a response's answers) and
+    ``primary_address`` (the Family's primary address record: the
+    corpus's when it carries addresses, as a quick update's base does,
+    else ``snapshot``'s rows, since the promotion's decoded corpus carries
+    none). One query each, only when some change needs it.
     """
     members = [row for row in rows if row.field == "new_member"]
     found = {}
@@ -488,19 +494,20 @@ def _annotate_marks(snapshot, rows):
     homes = {row.submission_id for row in rows if row.field == "home_address"}
     answers = {}
     if homes:
-        answers = {
-            pk: (answer or {}).get("family", {}).get("mailing_address")
-            for pk, answer in Submission.objects.filter(pk__in=homes).values_list(
-                "pk", "answers"
-            )
-        }
+        answers = dict(
+            ProposedChange.objects.filter(
+                submission_id__in=homes, entity_kind="family", field="mailing_address"
+            ).values_list("submission_id", "submitted_value")
+        )
     addresses = {}
     keys = {
         f"family:{row.family_duid}:primary"
         for row in rows
         if row.field == "home_address"
     }
-    if keys:
+    if keys and "address" in corpus:
+        addresses = {key: corpus["address"].get(key) for key in keys}
+    elif keys:
         addresses = {
             key: json.loads(canonical)
             for key, canonical in SnapshotAddress.objects.filter(
@@ -572,7 +579,7 @@ def _census_checks(snapshot, corpus, campaign_id, full, start):
         >= latest[(row.family_id, row.entity_kind, row.entity_key, row.field)]
     ]
     remarked = _remarked(rows)
-    _annotate_marks(snapshot, rows)
+    _annotate_marks(snapshot, corpus, rows)
     states = (
         check_states(
             proposals=[row.pk for row in rows],
@@ -641,6 +648,11 @@ def _census_checks(snapshot, corpus, campaign_id, full, start):
             same=same,
         )
         stored = STORED.get(result)
+        if stored == CONFLICT and not full:
+            # Only a full refresh moves an Updated in ParishSoft change to
+            # Conflict: a quick update's change list could lag the write,
+            # and its base still hold the old value (#1749).
+            continue
         if stored == UNCHANGED and state.outcome == "entered_incorrectly":
             # Rule 2: ParishSoft back at the value recorded at the mark is
             # no new evidence; the item stays where it is (#1737's fixes,
@@ -800,7 +812,7 @@ def _to_conflict(snapshot, check):
         parent_id=row.submission_id,
         admit=_pin_admission,
     )
-    ProposedChange.objects.filter(
+    moved = ProposedChange.objects.filter(
         pk=check.proposal_id, execution="published", version=check.item_version
     ).update(
         current_available=True,
@@ -809,6 +821,11 @@ def _to_conflict(snapshot, check):
         execution="conflict",
         version=F("version") + 1,
     )
+    if moved != 1:
+        # The guard locked and checked this change at that version; any
+        # other count means the check would stand alone, so the promotion
+        # rolls back instead.
+        raise StorageInvariantError("The updated change moved under its check.")
     _release_unused_source(row.submission_id, row.current_source_id)
 
 

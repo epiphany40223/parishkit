@@ -66,24 +66,43 @@ def member_id(proposal, raw):
     """The ParishSoft Member ID ``raw`` gives for marking ``proposal`` entered.
 
     ``raw`` is the dialog's text (blank for none, which is None). Only a New
-    Member takes one: a whole number, and never one of the Members the
-    Family's response listed, which a Member Staff added cannot be. Raises
-    ``InvalidMemberId`` otherwise. SQL checks the same.
+    Member takes one: a whole number, never one of the Members the Family's
+    response listed (a Member Staff added cannot be), and never the ID
+    another New Member of the Family is entered as now (two proposed
+    Members cannot be one ParishSoft Member; the same proposed Member
+    answered again may keep its own). Raises ``InvalidMemberId`` otherwise.
+    SQL checks the same. ``proposal.submission`` must be loaded.
     """
     text = (raw or "").strip()
     if not text:
         return None
     if proposal.entity_kind != "proposed_member" or proposal.field != "new_member":
         raise ValueError("Only a New Member takes a ParishSoft Member ID.")
-    if not (text.isascii() and text.isdecimal()) or len(text) > 19:
+    digits = text.lstrip("0") or "0"
+    if not (text.isascii() and text.isdecimal()) or len(digits) > 19:
         raise InvalidMemberId("Enter the ParishSoft Member ID as a whole number.")
-    value = int(text)
+    value = int(digits)
     if not 1 <= value <= MAX_MEMBER_ID:
         raise InvalidMemberId("Enter the ParishSoft Member ID as a whole number.")
-    if str(value) in (proposal.submission.answers.get("members") or {}):
+    submission = proposal.submission
+    if str(value) in (submission.answers.get("members") or {}):
         raise InvalidMemberId(
             "That ParishSoft Member ID is a Member the Family already listed. "
             "Enter the ID of the Member you added."
+        )
+    taken = ProposalResolution.objects.filter(
+        member_duid=value,
+        action="entered",
+        expected_version=F("proposal__version") - 1,
+        proposal__execution="resolved_external",
+        proposal__submission__family_id=submission.family_id,
+        proposal__submission__campaign_id=submission.campaign_id,
+        proposal__submission__mode=submission.mode,
+    ).exclude(proposal__entity_key=proposal.entity_key)
+    if taken.exists():
+        raise InvalidMemberId(
+            "Another New Member of this Family is already entered with that "
+            "ParishSoft Member ID. Enter the ID of this Member."
         )
     return value
 

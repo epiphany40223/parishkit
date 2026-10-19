@@ -632,13 +632,15 @@ only when a value was recorded and ParishSoft holds another one.
 
 - **An Updated in ParishSoft change found back at A, or at a third value,**
   is a Conflict (rule 2's exception and rule 3): the write was undone, or
-  ParishSoft changed after it. The refresh records a check saying so (with
-  ParishSoft's value) and, in the same promotion, moves the change to
+  ParishSoft changed after it. A full refresh records a check saying so
+  (with ParishSoft's value) and, in the same promotion, moves the change to
   Conflict at that value, as reconciliation moves an open change: the
   decision is kept, visible but not in force, and an Administrator's
   accepted ParishSoft value at the earlier data is not carried. The census
   guard admits a change leaving Updated in ParishSoft only this way, from
-  the source worker at fenced, pinned data, with that check. The row says
+  the source worker at fenced, pinned data, with that check. A quick update
+  records nothing for such a change, since its change list could lag the
+  write. The row says
   why under its stage: "ParishSoft no longer holds the update." when
   ParishSoft is back at the Baseline, else "ParishSoft changed after the
   update." From then on it is an open Conflict, decided again as any other.
@@ -649,8 +651,11 @@ only when a value was recorded and ParishSoft holds another one.
   that ID as an active, living Member of the change's Family; until then it
   is unchanged, and Not seen in ParishSoft counts as for any mark, so a
   wrong ID is noticed. It is never Entered incorrectly. The ID may not be
-  one of the Members the Family's response listed. Without an ID (marked
-  in bulk, or left blank) Entered by hand is final, as before. Nothing
+  one of the Members the Family's response listed, nor the ID another New
+  Member of the Family is entered as. Without an ID (marked in bulk, or
+  left blank) Entered by hand is final, as before. Either way the mark
+  cannot be made again: correcting a mistyped ID, or adding one later, is
+  [#1773](https://github.com/epiphany40223/parishkit/issues/1773). Nothing
   guesses the association: matching by name and birth date inside the
   Family (a twin, a namesake or a typo would confirm the wrong person or
   none) and confirming on any new Member in the Family (no evidence it is

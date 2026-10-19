@@ -9,9 +9,10 @@
 -- promoted refresh. 0136, 0140 and 0141 (provisional numbers) check a change
 -- Entered by hand and confirm an Updated in ParishSoft one. This file adds:
 --   * An Updated in ParishSoft change ParishSoft no longer holds (back at
---     the baseline, or at a third value) is a Conflict: the source worker
---     records a check saying so and moves the change to conflict, at that
---     value and the promoting snapshot, keeping its decision.
+--     the baseline, or at a third value) is a Conflict: a full refresh's
+--     source worker records a check saying so and moves the change to
+--     conflict, at that value and the promoting snapshot, keeping its
+--     decision.
 --   * A New Member Staff mark entered may name the ParishSoft Member ID
 --     of the Member they added; the refresh confirms the change once the
 --     snapshot lists that Member, active and living, in the Family.
@@ -33,7 +34,8 @@
 --     Family.
 --   * stewardship_proposal_resolution_guard_v1 (0140's): a member_duid
 --     only on an 'entered' resolution of a New Member, never a Member the
---     Family's response listed.
+--     Family's response listed nor one another New Member of the Family is
+--     entered as now.
 --   * stewardship_response_derived_guard_v1 (0140's; guards.sql has the
 --     same body): the worker may move a published change to conflict, only
 --     through its reconciliation branch (fenced, pinned, changed source)
@@ -44,9 +46,14 @@
 --     joined: 0140 and 0141 each replace 0136's and neither depends on the
 --     other, so this one carries both): a census check may be of a Family's
 --     home address or a New Member; 'conflict' is the outcome of exactly a
---     published change ParishSoft no longer holds; a New Member, a home
+--     published change ParishSoft no longer holds, on a full refresh only
+--     (a quick update records none for it); a New Member, a home
 --     address (and 0141's three fields) are never entered_incorrectly and
 --     take no value recorded at a mark.
+--   * stewardship_source_pin_guard (the baseline's; functions.sql has the
+--     same body): the source worker may also pin the promoting snapshot for
+--     a response whose Updated in ParishSoft change has this promotion's
+--     conflict check at its version, so the change can move to it.
 -- None of the functions is SECURITY DEFINER (each was created without one),
 -- so nothing else is restored. The file ends with a DO block that refuses
 -- to commit unless all of it is installed. Reversing needs its own forward
@@ -203,12 +210,26 @@ BEGIN
        OR (open_state AND NEW.action='reopened' AND NEW.note !~ '\S')
        -- A ParishSoft Member ID (#1749) names the Member Staff added for a
        -- New Member they mark entered, which the refresh then confirms by;
-       -- never a Member the Family's response already listed.
+       -- never a Member the Family's response already listed, nor one
+       -- another New Member of the Family is entered as now (the same
+       -- proposed Member answered again keeps its own).
        OR (NEW.member_duid IS NOT NULL AND (NEW.action<>'entered'
            OR proposal.entity_kind<>'proposed_member' OR proposal.field<>'new_member'
            OR coalesce((SELECT (response.answers->'members') ? NEW.member_duid::text
                FROM public.stewardship_submission response
-               WHERE response.id=proposal.submission_id),true)))
+               WHERE response.id=proposal.submission_id),true)
+           OR EXISTS (SELECT 1 FROM public.stewardship_proposal_resolution other
+               JOIN public.stewardship_proposed_change added ON added.id=other.proposal_id
+               JOIN public.stewardship_submission answered ON answered.id=added.submission_id
+               JOIN public.stewardship_submission this_response
+                   ON this_response.id=proposal.submission_id
+               WHERE other.member_duid=NEW.member_duid AND other.action='entered'
+                 AND other.expected_version=added.version-1
+                 AND added.execution='resolved_external'
+                 AND added.entity_key<>proposal.entity_key
+                 AND answered.family_id=this_response.family_id
+                 AND answered.campaign_id=this_response.campaign_id
+                 AND answered.mode=this_response.mode)))
     THEN RAISE EXCEPTION 'Census change resolution lacks current authority, version or state'
         USING ERRCODE='23514'; END IF;
     -- Attribution time is database-owned.
@@ -733,12 +754,16 @@ BEGIN
         -- was never read, a New Member and an address whose block is not
         -- known have no third value to be wrong at. An Updated in
         -- ParishSoft change ParishSoft no longer holds is a Conflict
-        -- (#1749), and only such a change is.
+        -- (#1749), and only such a change is; only a full refresh says so,
+        -- since a quick update's change list could lag the write. A quick
+        -- update records nothing for it.
         IF NEW.outcome='ignored_now_matches' OR matches IS DISTINCT FROM (NEW.outcome='confirmed')
            OR (NEW.outcome='entered_incorrectly' AND (change.execution<>'resolved_external'
                OR change.field IN ('moved_household','deceased_status','email_opt_out',
                    'home_address','new_member')))
-           OR (NEW.outcome='conflict') IS DISTINCT FROM (change.execution='published' AND NOT matches)
+           OR (change.execution='published' AND NOT matches
+               AND (NEW.outcome<>'conflict' OR NOT NEW.full_refresh))
+           OR (NEW.outcome='conflict' AND change.execution<>'published')
         THEN RAISE EXCEPTION 'A census refresh check differs from its evidence'
             USING ERRCODE='23514'; END IF;
         -- A change a later response of the Family replaced (the same field
@@ -816,6 +841,163 @@ BEGIN
     RETURN NEW;
 END $$;
 
+CREATE OR REPLACE FUNCTION public.stewardship_source_pin_guard() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+DECLARE snapshot record;
+BEGIN
+    -- Separate role branches before planning their private table queries.
+    -- A boolean AND does not prevent PostgreSQL privilege checks on subqueries.
+    IF current_user='pk_stewardship_worker' THEN
+      IF TG_OP='DELETE' THEN
+        -- Source retention deletes a superseded, disposable fact generation
+        -- and then releases its now-orphaned source input pin, only while it
+        -- owns the live compaction lease. The fact rows' own guards admit
+        -- only stewardship_fact_disposable generations.
+        IF OLD.parent_kind='facts'
+           AND NOT EXISTS (SELECT 1 FROM public.stewardship_daily_fact_set
+               WHERE id=OLD.parent_id)
+           AND EXISTS (SELECT 1 FROM public.stewardship_source_lease l
+               JOIN public.stewardship_task_run t ON t.id=l.owner_id
+               WHERE l.phase='compaction' AND l.expires_at > clock_timestamp()
+                 AND t.state='running' AND t.fence=l.task_fence
+                 AND t.worker_id=l.worker_id
+                 AND t.lease_expires_at > clock_timestamp())
+        THEN
+            -- Same snapshot row lock as every other pin release.
+            PERFORM 1 FROM stewardship_source_snapshot WHERE id=OLD.snapshot_id
+                FOR UPDATE;
+            RETURN OLD;
+        END IF;
+        IF OLD.parent_kind <> 'submission'
+           OR NOT public.stewardship_response_source_owner_v1(
+               (SELECT snapshot_id FROM public.stewardship_source_current))
+           OR public.stewardship_response_pin_required_v1(OLD.parent_id,OLD.snapshot_id)
+        THEN
+            RAISE EXCEPTION 'Worker may release only unused response comparison inputs'
+                USING ERRCODE='23514';
+        END IF;
+      ELSIF TG_OP='INSERT' AND NEW.parent_kind='digest' THEN
+        IF NEW.expires_at IS NOT NULL OR NOT EXISTS (
+            SELECT 1 FROM stewardship_daily_digest_snapshot s
+            WHERE s.id=NEW.parent_id AND s.source_id=NEW.snapshot_id
+              AND stewardship_daily_digest_live_v1(s.preparation_id,s.run_id,s.fence,s.worker_id)
+        ) OR NOT EXISTS (SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
+            AND locktype='advisory' AND classid=736220 AND objid=1 AND objsubid=2
+            AND mode='ExclusiveLock' AND granted) THEN
+            RAISE EXCEPTION 'Daily source protection requires its live exact snapshot'
+                USING ERRCODE='23514';
+        END IF;
+      ELSIF TG_OP='INSERT' AND NEW.parent_kind='facts' THEN
+        IF NEW.expires_at IS NOT NULL OR NOT (EXISTS (
+            SELECT 1 FROM stewardship_task_run t JOIN stewardship_fact_demand d
+                ON d.id=t.domain_request_id
+            WHERE t.task_type='report_facts' AND t.state='running'
+                AND t.lease_expires_at>clock_timestamp()
+                AND d.population_scope='current'
+                AND d.requested_source_id=NEW.snapshot_id
+                AND d.claimed_generation_id IS NULL
+        ) OR EXISTS (
+            SELECT 1 FROM stewardship_task_run t JOIN stewardship_exact_export_request r
+                ON r.id=t.domain_request_id AND r.task_id=t.root_id
+            WHERE t.task_type='report_exact_export' AND t.state='running'
+                AND t.lease_expires_at>clock_timestamp() AND r.population_scope='current'
+                AND r.source_id=NEW.snapshot_id
+                AND stewardship_export_authorized_v1(r.requester_id)
+                AND stewardship_export_admitted_v1(r.campaign_id,true)
+                AND NOT EXISTS(SELECT 1 FROM stewardship_exact_export_cancel WHERE request_id=r.id)
+        )) OR NOT EXISTS (SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
+            AND locktype='advisory' AND classid=736220 AND objid=1 AND objsubid=2
+            AND mode='ExclusiveLock' AND granted) THEN
+            RAISE EXCEPTION 'Worker fact input protection requires its live demand'
+                USING ERRCODE='23514';
+        END IF;
+      ELSE
+      IF (
+        TG_OP <> 'INSERT' OR NEW.parent_kind <> 'submission' OR NEW.expires_at IS NOT NULL
+        OR NOT EXISTS (SELECT 1 FROM pg_locks WHERE pid=pg_backend_pid()
+            AND locktype='advisory' AND classid=736220 AND objid=1 AND objsubid=2
+            AND mode='ExclusiveLock' AND granted)
+        OR NOT (EXISTS (
+            SELECT 1 FROM public.stewardship_proposed_change change
+            JOIN public.stewardship_submission response ON response.id=change.submission_id
+            WHERE response.id=NEW.parent_id
+              AND change.execution IN ('pending','conflict','queued','failed')
+        ) OR EXISTS (
+            SELECT 1 FROM public.stewardship_ministry_request request
+            WHERE request.submission_id=NEW.parent_id AND request.entity_kind='member'
+              AND request.state IN ('new','assigned','in_progress')
+        ) OR EXISTS (
+            -- An Updated in ParishSoft change this promotion found
+            -- ParishSoft no longer holds (#1749): its conflict check, at
+            -- its version and in this snapshot, comes first; the census
+            -- guard then moves it to conflict at this pinned snapshot.
+            SELECT 1 FROM public.stewardship_proposed_change change
+            JOIN public.stewardship_refresh_check k ON k.proposal_id=change.id
+                AND k.item_version=change.version AND k.outcome='conflict'
+                AND k.snapshot_id=NEW.snapshot_id
+            WHERE change.submission_id=NEW.parent_id AND change.execution='published'
+        ))
+        OR NOT public.stewardship_response_source_owner_v1(NEW.snapshot_id)
+    ) THEN
+        RAISE EXCEPTION 'Worker source protection requires current response reconciliation'
+            USING ERRCODE='23514';
+      END IF;
+      END IF;
+    END IF;
+    IF current_user='pk_stewardship_web' THEN
+      IF (
+        (TG_OP <> 'INSERT' AND OLD.parent_kind <> 'form_baseline') OR
+        (TG_OP <> 'DELETE' AND NEW.parent_kind NOT IN ('form_baseline','submission','report'))
+    ) THEN
+        RAISE EXCEPTION 'Web source protection is limited to Family forms'
+            USING ERRCODE='23514';
+    END IF;
+    IF TG_OP='INSERT' AND NEW.parent_kind='report' AND (
+        NEW.expires_at IS NOT NULL OR NOT EXISTS (
+            SELECT 1 FROM stewardship_exact_export_request r
+            WHERE r.id=NEW.parent_id AND r.source_id=NEW.snapshot_id
+                AND r.population_scope='current'
+                AND stewardship_export_authorized_v1(r.requester_id)
+                AND stewardship_export_admitted_v1(r.campaign_id,true)
+        )) THEN
+        RAISE EXCEPTION 'Web report protection requires its exact retained request'
+            USING ERRCODE='23514';
+    END IF;
+    IF TG_OP='INSERT' AND NEW.parent_kind='form_baseline' AND NOT EXISTS (
+        SELECT 1 FROM stewardship_family_form_baseline
+        WHERE id=NEW.parent_id AND source_id=NEW.snapshot_id AND state='open'
+          AND expires_at=NEW.expires_at
+    ) THEN
+        RAISE EXCEPTION 'Web form protection requires its owned baseline'
+            USING ERRCODE='23514';
+    END IF;
+    IF TG_OP='INSERT' AND NEW.parent_kind='submission' AND NOT EXISTS (
+        SELECT 1 FROM stewardship_submission response
+        JOIN stewardship_family_form_baseline baseline ON baseline.id=response.baseline_id
+        WHERE response.id=NEW.parent_id AND baseline.state='open'
+          AND NEW.snapshot_id IN (response.reviewed_source_id,response.validation_source_id)
+          AND NEW.expires_at IS NULL
+    ) THEN
+        RAISE EXCEPTION 'Web response protection requires its final submission'
+            USING ERRCODE='23514';
+    END IF;
+    END IF;
+    IF TG_OP='DELETE' THEN
+        PERFORM 1 FROM stewardship_source_snapshot WHERE id=OLD.snapshot_id FOR UPDATE;
+        RETURN OLD;
+    END IF;
+    SELECT state, compacted_at INTO snapshot FROM stewardship_source_snapshot WHERE id=NEW.snapshot_id
+        FOR UPDATE;
+    IF NOT FOUND OR snapshot.state <> 'promoted'
+       OR snapshot.compacted_at IS NOT NULL THEN
+        RAISE EXCEPTION 'Only reconstructable promoted snapshots can be protected'
+            USING ERRCODE='23514';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
 DO $check$
 BEGIN
     IF NOT EXISTS(SELECT 1 FROM pg_constraint
@@ -824,7 +1006,10 @@ BEGIN
               AND pg_get_constraintdef(oid) LIKE '%''conflict''%')
        OR NOT EXISTS(SELECT 1 FROM pg_constraint
             WHERE conrelid='public.stewardship_proposal_resolution'::regclass
-              AND conname='proposal_resolution_member' AND contype='c')
+              AND conname='proposal_resolution_member' AND contype='c'
+              AND pg_get_constraintdef(oid) LIKE '%member_duid IS NULL%'
+              AND pg_get_constraintdef(oid) LIKE '%''entered''::text%'
+              AND pg_get_constraintdef(oid) LIKE '%member_duid > 0%')
        OR NOT EXISTS(SELECT 1 FROM pg_attribute
             WHERE attrelid='public.stewardship_proposal_resolution'::regclass
               AND attname='member_duid' AND atttypid='bigint'::regtype
@@ -849,6 +1034,7 @@ BEGIN
     IF NOT EXISTS(SELECT 1 FROM pg_proc
             WHERE oid='public.stewardship_proposal_resolution_guard_v1()'::regprocedure
               AND prosrc LIKE '%OR (NEW.member_duid IS NOT NULL AND (NEW.action<>''entered''%'
+              AND prosrc LIKE '%WHERE other.member_duid=NEW.member_duid%'
               AND prosrc LIKE '%OR (NOT incorrect AND NOT open_state)%'
               AND NOT prosecdef
               AND proconfig=ARRAY['search_path=pg_catalog, public, pg_temp'])
@@ -881,7 +1067,8 @@ BEGIN
     END IF;
     IF NOT EXISTS(SELECT 1 FROM pg_proc
             WHERE oid='public.stewardship_refresh_check_guard_v1()'::regprocedure
-              AND prosrc LIKE '%(NEW.outcome=''conflict'') IS DISTINCT FROM (change.execution=''published'' AND NOT matches)%'
+              AND prosrc LIKE '%AND (NEW.outcome<>''conflict'' OR NOT NEW.full_refresh))%'
+              AND prosrc LIKE '%OR (NEW.outcome=''conflict'' AND change.execution<>''published'')%'
               AND prosrc LIKE '%stewardship_refresh_address_key_v1(NEW.observed->''value'')%'
               AND prosrc LIKE '%r.action=''entered''%'
               -- 0140's rules and 0141's, both kept.
@@ -901,5 +1088,18 @@ BEGIN
               AND t.tgenabled='O' AND NOT t.tgisinternal)<>1
     THEN
         RAISE EXCEPTION 'stewardship_refresh_check_guard_v1 lacks the published Conflict and the new census checks';
+    END IF;
+    IF NOT EXISTS(SELECT 1 FROM pg_proc
+            WHERE oid='public.stewardship_source_pin_guard()'::regprocedure
+              AND prosrc LIKE '%AND k.item_version=change.version AND k.outcome=''conflict''%'
+              AND prosrc LIKE '%Worker source protection requires current response reconciliation%'
+              AND NOT prosecdef)
+       OR (SELECT count(*) FROM pg_trigger t
+            WHERE t.tgrelid='public.stewardship_source_pin'::regclass
+              AND t.tgname='source_pin_guard'
+              AND t.tgfoid='public.stewardship_source_pin_guard()'::regprocedure
+              AND t.tgenabled='O' AND NOT t.tgisinternal)<>1
+    THEN
+        RAISE EXCEPTION 'stewardship_source_pin_guard lacks the published Conflict pin';
     END IF;
 END $check$;

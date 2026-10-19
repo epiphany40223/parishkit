@@ -352,3 +352,36 @@ def test_an_updated_change_parishsoft_no_longer_holds_is_a_conflict():
         )
         assert result is RefreshOutcome.CONFLICT
         assert STORED[result] == "conflict"
+
+
+def test_a_null_primary_address_field_reads_as_blank():
+    """ParishSoft returns a blank field as null: it reads as blank, as SQL's
+    ``coalesce`` does, and the key never fails on it."""
+    home = change(
+        "home_address",
+        "family",
+        "1",
+        primary_address=primary(
+            {
+                "primaryAddress1": "1 Main",
+                "primaryAddress2": None,
+                "primaryAddress3": None,
+                "primaryCity": None,
+                "primaryState": None,
+                "primaryPostalCode": None,
+            }
+        ),
+    )
+    found = census_source(home, corpus(family={"active": True}))
+    assert found.value == {
+        "line1": "1 Main",
+        "line2": "",
+        "city": "",
+        "region": "",
+        "postal_code": "",
+        "country": "",
+    }
+    assert _address_key(found.value) == _address_key(found.value | {"country": "US"})
+    assert _address_key(found.value | {"postal_code": None}) == _address_key(
+        found.value
+    )

@@ -412,7 +412,7 @@ FROZEN = {
         "9537e9417f513ddba109d1e21f21b4578fdc21b8cdb11d2cb3dfe2ca00286947"
     ),
     "0150_published_refresh_conflicts.sql": (
-        "6389d5d49f65eb6efa6be7309002d46fff8c817c04fcf5c8af891674167d4bc2"
+        "382e823051bc7e44a4644048d032a87267ed7a5995e246224b7acbd5b7c41bd7"
     ),
 }
 
