@@ -362,30 +362,27 @@ FROM (
 """
 
 
-def open_count(groups, *, administrator):
-    """The rows of the page's default Work to do view, from ``OPEN_GROUPS``.
+def open_count(groups):
+    """The rows of the page's default view, To review, from ``OPEN_GROUPS``.
 
     ``groups`` is the decoded JSON: ``[handling, entity_kind, decision,
-    execution, count]`` lists. Each group's status comes from ``status`` and
-    the default view's choice from ``wanted``, the functions the page itself
-    filters with, so the count cannot drift from what the link opens.
+    execution, count]`` lists. The worklist opens on its To review stage
+    (#1683), so the menu counts the groups ``census_placement`` puts there,
+    the mapping the page itself places rows with, so the count cannot drift
+    from what the link opens. An edited value never changes a stage, so the
+    groups need not carry it.
     """
-    default = CensusQuery()
     return sum(
         count
         for handling, entity_kind, decision, execution, count in groups
-        if wanted(
-            status(
-                {
-                    "handling": handling,
-                    "entity_kind": entity_kind,
-                    "decision": decision,
-                    "execution": execution,
-                }
-            ),
-            default,
-            administrator=administrator,
-        )
+        if census_placement(
+            decision=decision,
+            execution=execution,
+            handling=handling,
+            entity_kind=entity_kind,
+            admin_value_set=False,
+        ).stage
+        is Stage.TO_REVIEW
     )
 
 

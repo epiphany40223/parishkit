@@ -1188,9 +1188,9 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
 ):
     """One statement for every count, none without a counted link (#585).
 
-    Census changes' groups (#1590) are counted with the page's own status
-    rules: To do and Conflict for Staff, plus To review for an Administrator;
-    nothing published, ignored or superseded.
+    Census changes' groups (#1590) are counted at the worklist's default
+    stage, To review (#1683), for Staff and Administrators alike; nothing
+    in Conflict, published, ignored or superseded.
     """
     from parishkit.stewardship.accounts import admin_context
     from parishkit.stewardship.reports.ministry_followup import FollowupQuery
@@ -1199,8 +1199,8 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
     # The Ministries the follow-up selection reports it read (#389 L3).
     selected = [9]
     # Census changes' groups: handling, entity kind, decision, execution and
-    # rows. An automatic change no one reviewed (To review), a By-hand Family
-    # change (To do), a Conflict, and outcomes the default view leaves out.
+    # rows. An automatic change and a By hand Family change no one reviewed
+    # (both To review), a Conflict, and stages the default view leaves out.
     groups = [
         ["api", "member", "unreviewed", "pending", 2],
         ["manual", "family", "unreviewed", "pending", 1],
@@ -1247,17 +1247,16 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
         ("staff", active, {**queues, "ministry_roster": 6}),
         # A draft has nothing to enter yet, so its roster count is not read.
         ("staff", draft, queues),
-        # With the census: Staff count To do and Conflict, an Administrator
-        # To review as well.
+        # With the census: Staff and an Administrator both count To review.
         (
             "staff",
             census,
-            {"census_changes": 5, **queues, "ministry_roster": 6},
+            {"census_changes": 3, **queues, "ministry_roster": 6},
         ),
         (
             "administrator",
             census,
-            {"census_changes": 7, **queues, "ministry_roster": 6},
+            {"census_changes": 3, **queues, "ministry_roster": 6},
         ),
         # A leader has no Census changes or Roster changes to enter entry, so
         # neither count is read.

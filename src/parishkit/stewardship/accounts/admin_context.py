@@ -590,16 +590,9 @@ def _read_open_counts(offered, actor, campaign):
         ministry = None
     if roster_count is not None and not in_scope(actor, True, roster_ministries):
         roster_count = None
-    # Census changes' default view adds To review for an Administrator, as
-    # the page does (census_changes.census_changes).
-    census_count = (
-        None
-        if groups is None
-        else open_count(
-            json.loads(groups),
-            administrator=allows(actor, Capability.PUBLISH_CENSUS),
-        )
-    )
+    # Census changes opens on its To review stage for everyone who may read
+    # it (#1683), so the count is that stage's (census_changes.open_count).
+    census_count = None if groups is None else open_count(json.loads(groups))
     # An entry not asked for, or a Ministry follow-up the page would show as
     # off or unavailable, reads NULL and gets no count.
     return {

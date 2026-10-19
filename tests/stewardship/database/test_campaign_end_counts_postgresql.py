@@ -66,16 +66,17 @@ def steps(body):
 
 
 def test_census_count_is_the_pages_default_rows_by_role(response_service):
-    """Staff count the To do rows, an Administrator To review too; a
-    Ministry leader, whom the page refuses, gets no count even when asked."""
+    """Staff and an Administrator count the worklist's default stage, To
+    review (#1683); a Ministry leader, whom the page refuses, gets no count
+    even when asked."""
     harness = response_service
     start(harness)
     harness = activate_response_service(harness)
     submit_live(harness)
-    # One By-hand Family address (To do) and one automatic rename (To review).
-    for principal, expected in ((STAFF, 1), (ADMIN, 2)):
-        assert len(worklist(harness, principal)["rows"]) == expected
-        assert census_count(harness, principal) == expected
+    # One By hand Family address and one automatic rename, both To review.
+    for principal in (STAFF, ADMIN):
+        assert len(worklist(harness, principal, stage="to_review")["rows"]) == 2
+        assert census_count(harness, principal) == 2
     with pytest.raises(PermissionError):
         worklist(harness, LEADER)
     assert census_count(harness, LEADER) is None
@@ -94,7 +95,7 @@ def test_home_and_menu_show_the_census_count_for_an_administrator(
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = read(browser, "/admin/")
     assert response.status_code == 200
-    expected = len(worklist(harness, ADMIN)["rows"])
+    expected = len(worklist(harness, ADMIN, stage="to_review")["rows"])
     assert expected == 2
     assert _menu_count(body, "Census changes") == expected
     assert f"Census changes — {expected} to do" in steps(body)
