@@ -105,8 +105,10 @@ def portal_chrome(request):
     placed = admin_navigation.placement(request)
     sections, breadcrumbs = admin_navigation.build(match, items, placed)
     # Staff and Ministry leaders land on My review work, not Home (#1690):
-    # the menu's first link, the trail's root and a "Return to" Home name it
-    # so, as the page's heading does (ui-conventions "One name").
+    # its menu entry (Review work's first, or the top entry when the viewer
+    # has no Review work group; ``_home_in_review`` below), the trail's root
+    # and a "Return to" Home name it so, as the page's heading does
+    # (ui-conventions "One name").
     home_label = review_work.home_label(actor)
     if breadcrumbs and breadcrumbs[0]["label"] == admin_navigation.PAGES["index"].label:
         breadcrumbs[0]["label"] = home_label
