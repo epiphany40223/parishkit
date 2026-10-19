@@ -1219,12 +1219,12 @@ def test_flow_steps_and_return_link_orient_a_configuration_change(
 
 @pytest.mark.parametrize("width", [390, 1280])
 def test_go_live_steps_wrap_without_overflow(page, component_origin, axe_source, width):
-    """All five go-live steps fit a phone by wrapping, never scrolling (#196)."""
+    """All four go-live steps fit a phone by wrapping, never scrolling (#196)."""
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + "/go-live-steps")
     steps = page.get_by_role("list", name="Steps")
     visible(steps)
-    assert steps.locator("li").count() == 5
+    assert steps.locator("li").count() == 4
     assert steps.get_by_role("link").count() == 0
     current = steps.locator('[aria-current="step"]')
     assert current.count() == 1 and "Activation" in current.inner_text()

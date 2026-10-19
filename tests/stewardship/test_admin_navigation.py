@@ -219,6 +219,37 @@ def test_exact_page_entry_is_marked_as_the_current_page():
     ]
 
 
+def test_a_step_of_a_guided_page_marks_that_page_and_never_repeats_it():
+    """Go live's Prepare step is the Go live page: same name, its menu entry
+    is aria-current="page", and the trail names Go live once (``step_of``)."""
+    match = SimpleNamespace(url_name="go_live_prepare", namespace="admin", kwargs={})
+    sections, trail = navigation.build(match, _items())
+    marked = [
+        (item["name"], item["current"])
+        for section in sections
+        for item in section["items"]
+        if item["current"]
+    ]
+    assert marked == [("go_live", "page")]
+    assert [section["key"] for section in sections if section["current"]] == [
+        "campaign"
+    ]
+    labels = [str(crumb["label"]) for crumb in trail]
+    assert labels == [
+        str(navigation.PAGES["index"].label),
+        str(navigation.SECTION_LABELS["campaign"]),
+        "Go live",
+    ]
+    assert (
+        navigation.PAGES["go_live_prepare"].label == navigation.PAGES["go_live"].label
+    )
+    html = render_to_string(
+        "stewardship/admin-breadcrumbs.html", {"admin_chrome": {"breadcrumbs": trail}}
+    )
+    assert html.count("Go live") == 1
+    assert html.count('aria-current="page"') == 1
+
+
 def test_retained_content_trail_avoids_the_current_campaign_editor():
     """Historical content links back through Campaign settings, not the editor."""
     assert navigation._chain("content_history_revision") == [
@@ -454,20 +485,20 @@ def test_change_origins_need_a_session():
     assert navigation.change_origin(request, uuid4()) is None
 
 
-def test_go_live_steps_run_from_readiness_to_activation():
-    """Going live shows its five steps; earlier ones are done, none are links."""
-    shown = navigation.steps(navigation.Placement(flow="go_live", step="links"))
-    assert [item["state"] for item in shown] == [
-        "done",
-        "done",
-        "current",
-        "upcoming",
-        "upcoming",
+def test_go_live_steps_run_from_check_to_activation():
+    """Going live shows the Go live page's four steps, named as its step bar
+    names them (no retired page); earlier ones are done, none are links."""
+    shown = navigation.steps(navigation.Placement(flow="go_live", step="confirm"))
+    assert [(str(item["label"]), item["state"]) for item in shown] == [
+        ("Check", "done"),
+        ("Prepare", "done"),
+        ("Confirm Production", "current"),
+        ("Activation", "upcoming"),
     ]
     html = render_to_string(
         "stewardship/admin-flow-steps.html", {"admin_chrome": {"flow_steps": shown}}
     )
-    assert "<a " not in html and html.count("<li") == 5
+    assert "<a " not in html and html.count("<li") == 4
 
 
 @pytest.mark.parametrize("offered", [True, False])

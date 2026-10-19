@@ -30,13 +30,7 @@ from .test_taskrun_postgresql import act, new
 
 pytestmark = pytest.mark.django_db(transaction=True)
 STEPS = ["Make changes", "Review", "Apply"]
-GO_LIVE = [
-    "Check readiness",
-    "Testing cleanup",
-    "Family links",
-    "Confirm Production",
-    "Activation",
-]
+GO_LIVE = ["Check", "Prepare", "Confirm Production", "Activation"]
 
 
 @pytest.mark.parametrize("role", ["administrator", "staff", "ministry_leader"])

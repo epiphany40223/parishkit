@@ -2226,6 +2226,12 @@ registry and the rendered pages.
    the same name. The only exceptions are the object-named pages in the Admin portal's
    [page names and placement](../admin-portal/spec.md#page-names-and-placement)
    table.
+   A step of a guided page that has its own address is that page, not a
+   child of it (the [Go live page](../admin-portal/spec.md#go-live-page)'s
+   Prepare step): it has the page's name, marks the page's menu entry
+   current as the page itself (`aria-current="page"`), and its trail ends
+   with the page's name once, never one crumb per step (`Page.step_of` in
+   the registry).
    Every "Return to" link names its target by that target's name. The
    shared error page cannot know which page the reader came from, so its
    link says "Return to the previous page"; the export error page reads
