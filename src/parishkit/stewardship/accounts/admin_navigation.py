@@ -252,6 +252,10 @@ PAGES = {
     # Resolved Ministry joins and leaves to enter in ParishSoft by hand (#528),
     # a menu entry of its own with its count (#1660).
     "ministry_roster": Page("review", _("Roster changes to enter")),
+    # The financial stream's review worklist and manual report (#1686), a
+    # menu entry of its own in Review work, in the Administrator's order
+    # (R39 finding 1).
+    "pledges_to_enter": Page("review", _("Pledges")),
     "family_directory": Page("reports", _("Active parishioner family directory")),
     # One Family's summary and timeline (#477; the Timeline since #1570),
     # opened from every Family name the shared family_link tag draws.
@@ -526,6 +530,7 @@ MENU = (
     # page's own check (workflows.roster.can_tick), which a Ministry leader,
     # holding it only for their Ministries, never passes (#1660).
     Entry("ministry_roster", Capability.MINISTRY_FOLLOWUP, MINISTRY),
+    Entry("pledges_to_enter", Capability.FINANCIAL_DETAIL, FINANCIAL),
     Entry("information_queue", Capability.ADDITIONAL_FOLLOWUP, _downloaded(_campaign)),
     Entry("limitations_report", Capability.CAMPAIGN_REPORT, MINISTRY),
     # Reports and queries
@@ -737,7 +742,6 @@ NON_PAGES = frozenset(
         "past_campaign_archive",
         "financial_export",
         "information_export",
-        "information_update",
         "integration_status",
         "login",
         "logout",
@@ -752,6 +756,7 @@ NON_PAGES = frozenset(
         "ministry_roster_export",
         "ministry_roster_bulk",
         "ministry_packet",
+        "pledges_to_enter_export",
         # The ParishSoft refresh schedule editor's live check (#632), a
         # fragment the settings page reads.
         "refresh_schedule_check",
