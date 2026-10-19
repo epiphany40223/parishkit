@@ -55,8 +55,7 @@ BULKED = "/information-bulked"
 BULK_NOTICE = "2 requests accepted."
 STALE = "/information-stale"
 STALE_NOTICE = (
-    "The request from Family DUID 2000 was changed by someone else first, so "
-    "nothing was recorded. The list shows its current state."
+    "The request from Family DUID 2000: not recorded, changed by someone else."
 )
 
 
