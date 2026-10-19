@@ -2106,7 +2106,7 @@ capture times use the browser's zone
 **Access:** Admin and Staff; never Ministry leaders. Staff edits only
 manual-resolution state; Admin has the full review/publication controls.
 
-The page is **Census changes** under Responses and reports
+The page is **Census changes** under Review work
 ([#528](https://github.com/epiphany40223/parishkit/issues/528)): the
 worklist of every census change Families reported that someone must carry
 into ParishSoft, by hand or by
@@ -2460,7 +2460,7 @@ plan, confirmation, fenced writes, final refresh) and the
 that run it; this section says only what the Administrator sees and does.
 It is at `/admin/reports/census/publication/`, reached from a **Publish to
 ParishSoft** link above the Census changes table, and is not a menu entry:
-its breadcrumb is Home › Responses and reports › Census changes › Publish to
+its breadcrumb is Home › Review work › Census changes › Publish to
 ParishSoft.
 
 What can be written is narrow. ParishSoft's v2 API writes only contact
