@@ -87,7 +87,7 @@ def test_icons_show_the_decision_in_force(page, component_origin, axe_source, wi
     assert chosen.get_attribute("aria-pressed") == "true"
     assert chosen.get_attribute("aria-disabled") == "true"
     assert chosen.get_attribute("title") == (
-        "Accepted. To change it, choose Back to review."
+        "Accepted; choose Back to review to change it"
     )
     visible(row(page, 2).get_by_role("button", name=f"Send {name(2)} back to review"))
     # Choosing it again is no undo: nothing opens and nothing is sent.
@@ -99,7 +99,7 @@ def test_icons_show_the_decision_in_force(page, component_origin, axe_source, wi
     assert chosen.evaluate(fill) != accept.evaluate(fill)
     # An edited item's Accept is selected and says so.
     assert (
-        icon(page, 3, "Accept").get_attribute("title").startswith("Accepted (edited).")
+        icon(page, 3, "Accept").get_attribute("title").startswith("Accepted (edited);")
     )
     assert icon(page, 4, "Ignore").get_attribute("aria-pressed") == "true"
     # Entered by hand: Accept and the mark selected, final; Not seen flagged.

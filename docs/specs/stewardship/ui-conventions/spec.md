@@ -3642,7 +3642,11 @@ inventory on #879 lists.
 - **Actions column.** The last column holds each row's actions as small icon
   buttons (`table_actions`), all the same square size: Edit, a link to the
   item's own page, and Delete. Each has an accessible name and a matching
-  tooltip that name the row ("Edit Reminder 2", "Delete Reminder 2"), and the
+  tooltip that name the row ("Edit Reminder 2", "Delete Reminder 2"). An
+  icon's tooltip is one short phrase, never more than one sentence, with
+  no full stop, as these are; a selected icon's names its state and undo
+  in one phrase ("Accepted; choose Back to review to change it"), and a
+  guard checks every review worklist tooltip (R38). The
   icons are drawn inline, so they need no request and stay inside the
   content security policy. A destructive action with another name uses its
   own word and icon in Delete's place and works the same way; so far only
@@ -3669,7 +3673,8 @@ inventory on #879 lists.
   unselected (outline, `aria-pressed="false"`). Choosing the selected icon
   again is not an undo; the row's own undo action (the review pipeline's
   Back to review) is, so the selected icon is unavailable
-  (`aria-disabled="true"`) and its tooltip names the state and the undo.
+  (`aria-disabled="true"`) and its tooltip names the state and the undo
+  in one phrase.
   So the decision shows on the icons, not only in a
   status column ([review pipeline](../review-pipeline/spec.md#selected-state-icons),
   [#1680](https://github.com/epiphany40223/parishkit/issues/1680)). **Shared

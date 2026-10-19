@@ -68,7 +68,9 @@ class Words:
 
     ``label`` names a row's icon ("Accept {name}") and ``button`` the bulk
     bar's; ``selected`` is the tooltip of the icon drawn selected (None
-    for an action that records no state, which is never drawn so).
+    for an action that records no state, which is never drawn so). Every
+    icon tooltip is one short phrase with no full stop (UX conventions,
+    "Row actions and confirmation"), as the portal's other icons are.
     ``done`` is what a dialog announces when the answer carries no notice.
     """
 
@@ -89,7 +91,7 @@ WORDS = {
         "Accept {name}?",
         "Accept {count} {items}?",
         "accepted.",
-        "Accepted.",
+        "Accepted",
     ),
     Action.EDIT: Words(
         "edit",
@@ -109,7 +111,7 @@ WORDS = {
         "Ignore {name}?",
         "Ignore {count} {items}?",
         "ignored.",
-        "Ignored.",
+        "Ignored",
     ),
     Action.BACK_TO_REVIEW: Words(
         "clear",
@@ -127,7 +129,7 @@ WORDS = {
         "Mark {name} entered by hand?",
         "Mark {count} {items} entered by hand?",
         "marked entered by hand.",
-        "Entered by hand.",
+        "Entered by hand",
     ),
     Action.HANDLED: Words(
         "entered_box",
@@ -136,7 +138,7 @@ WORDS = {
         "Mark {name} handled?",
         "Mark {count} {items} handled?",
         "marked handled.",
-        "Handled.",
+        "Handled",
     ),
 }
 
@@ -217,8 +219,9 @@ def _selected_title(action, placement, undo):
     """
     state = WORDS[action].selected
     if action is Action.ACCEPT and placement.decision is not None:
-        state = f"{placement.decision.label}."
-    return f"{state} To change it, choose Back to review." if undo else state
+        state = placement.decision.label
+    # One phrase, no full stop (UX conventions, R38 finding 5).
+    return f"{state}; choose Back to review to change it" if undo else state
 
 
 def row_icons(stream, placement, roles, *, name, leads=False, by_hand=False):
