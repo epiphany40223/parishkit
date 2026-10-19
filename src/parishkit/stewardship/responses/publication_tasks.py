@@ -56,7 +56,7 @@ from .models import ProposedChange
 from .publication import PLANNABLE_EXECUTIONS, plan_entity
 from .publication_gateway import ContactGatewayError
 from .publication_models import PublicationConfirmation, PublicationPlan
-from .publication_plans import confirm_plan, record_plan
+from .publication_plans import confirm_plan, record_plan, unlisted_changes
 from .publication_worker import (
     REQUEST_SECONDS,
     PublicationDisabled,
@@ -230,7 +230,10 @@ def _preflight_scope():
     """The campaign, promoted snapshot, organization and changes to plan.
 
     The changes are every open, approved, Automatic Member change from a
-    live response in the current campaign; they are grouped by Member.
+    live response in the current campaign; they are grouped by Member. The
+    last item is the Members with a change whose Member the promoted data
+    no longer lists, active and living, in that change's Family
+    (``unlisted_changes``, #1738): preflight neither reads nor plans them.
     """
     campaign_id = _current_campaign()
     current = SourceCurrent.objects.get(singleton=True)
@@ -246,7 +249,16 @@ def _preflight_scope():
     members = {}
     for row in rows:
         members.setdefault(row.entity_key, []).append(row)
-    return campaign_id, current.snapshot_id, current.organization_id, rows, members
+    unlisted = unlisted_changes(row.pk for row in rows)
+    gone = {row.entity_key for row in rows if row.pk in unlisted}
+    return (
+        campaign_id,
+        current.snapshot_id,
+        current.organization_id,
+        rows,
+        members,
+        gone,
+    )
 
 
 def _read_members(execution, gateway, keys):
@@ -319,17 +331,22 @@ def _execute_preflight(execution, *, enabled, gateway):
         if scope is None:
             _refuse(execution, Action.CENSUS_PUBLICATION_REFUSED)
             return
-        campaign_id, snapshot_id, organization_id, rows, members = scope
+        campaign_id, snapshot_id, organization_id, rows, members, gone = scope
         source = gateway(execution)
         try:
-            payloads = _read_members(execution, source, members)
+            # A Member no longer in the change's Family is not read: with no
+            # payload the planner marks them *cannot check*, which blocks
+            # every write to them (#1738).
+            payloads = _read_members(
+                execution, source, [key for key in members if key not in gone]
+            )
         finally:
             source.close()
         if payloads is None:
             _refuse(execution, Action.CENSUS_PUBLICATION_READ_UNCONFIRMED)
             return
         plans = [
-            plan_entity("member", key, group, payloads[key])
+            plan_entity("member", key, group, payloads.get(key))
             for key, group in members.items()
         ]
         try:

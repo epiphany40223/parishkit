@@ -281,6 +281,69 @@ def test_an_unreadable_member_is_blocked(world):
     assert confirmation_counts(plan.pk)["write_entities"] == 0
 
 
+# How a Member leaves the change's Family in the promoted data (#1738): the
+# snapshot's record for the Member, rewritten in place (triggers off), so
+# the shared status reads moved, inactive or deceased.
+LEAVINGS = {
+    "moved": ("family_key='999999'", "{family_key}", '"999999"'),
+    "inactive": (None, "{active}", "false"),
+    "deceased": (None, "{deceased}", "true"),
+}
+
+
+def leave(row, how):
+    """Make the promoted data stop listing ``row``'s Member in its Family."""
+    column, path, value = LEAVINGS[how]
+    owner(
+        "UPDATE stewardship_source_member SET "
+        + (column + ", " if column else "")
+        + "canonical=jsonb_set(canonical::jsonb, %s, %s::jsonb)::text "
+        "WHERE id IN (SELECT payload_id FROM stewardship_snapshot_member m "
+        "JOIN stewardship_source_current c ON c.snapshot_id=m.snapshot_id "
+        "WHERE m.source_key=%s)",
+        [path, value, row.entity_key],
+    )
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT stewardship_member_source_status_v1(c.snapshot_id, %s, "
+            "f.family_duid) FROM stewardship_source_current c, "
+            "stewardship_family_campaign f WHERE f.id=%s",
+            [row.entity_key, row.submission.family_id],
+        )
+        assert cursor.fetchone()[0] == how
+
+
+@pytest.mark.parametrize("how", sorted(LEAVINGS))
+def test_a_member_no_longer_in_the_family_is_neither_read_nor_written(world, how):
+    """The promoted data no longer lists the Member, active and living, in
+    the change's Family (#1738): preflight does not read them, and plans
+    them as cannot check, which blocks every write to them."""
+    leave(world.first, how)
+    plan = world.planned(uuid4())
+    assert world.gateway.reads == []
+    entity = PublicationEntity.objects.get(plan=plan)
+    assert entity.blocked and entity.planned_sha256 is None
+    assert list(
+        PublicationField.objects.filter(entity=entity).values_list("outcome", flat=True)
+    ) == ["cannot_check"]
+    assert confirmation_counts(plan.pk)["write_entities"] == 0
+
+
+@pytest.mark.parametrize("how", sorted(LEAVINGS))
+def test_a_member_who_left_after_the_plan_is_not_written(world, how):
+    """A refresh after the confirmation keeps the change open (rule 4), so
+    the worker checks the Member again as it queues: the entity is
+    invalidated with no write, and the change goes back to pending."""
+    plan = world.planned(uuid4())
+    _, run = world.confirm(plan)
+    leave(world.first, how)
+    assert world.execute(run.run_id) and state(run) == "succeeded"
+    assert world.gateway.writes == []
+    entity = PublicationEntity.objects.get(plan=plan)
+    assert list(entity.outcomes.values_list("result", flat=True)) == ["invalidated"]
+    assert proposal(world.first) == "pending"
+
+
 def test_a_change_since_the_read_fails_the_preflight(world):
     """A decision recorded between the read and the plan leaves a stale
     version, which the plan guard refuses: the run fails, no plan."""
