@@ -418,6 +418,11 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # the weekly page proof (both the baseline's) in place. No closure file
 # installs any of them again, so their bodies survive the swap and nothing
 # is registered.
+# 0153 (#1705, provisional number) creates nothing: it adds what a Family
+# form showed (``reviewed_view``, ``shown_items`` and the check pairing
+# them) to the form baseline and the Submission. While the swap is pending
+# ``before_reviewed_form_shown_items`` drops the four columns (their checks
+# go with them), and ``CLOSURE_ALTERED`` runs the file again afterwards.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -726,6 +731,10 @@ CLOSURE_ALTERED = {
     ("stewardship_proposal_review", "accepted_base"): (
         "stewardship_responses",
         "0009_conflict_resolution",
+    ),
+    ("stewardship_family_form_baseline", "reviewed_view"): (
+        "stewardship_responses",
+        "0013_reviewed_form_shown_items",
     ),
 }
 
@@ -1133,6 +1142,21 @@ def before_staff_entered():
     ]
 
 
+def before_reviewed_form_shown_items():
+    """The statements that put baselines and submissions back as before 0153.
+
+    #1705's 0153 adds only ``reviewed_view`` and ``shown_items`` to both
+    tables, with a check on each that goes with the columns, so dropping
+    them is the production base; 0153's frozen file (or the full migration)
+    adds them again.
+    """
+    return [
+        f"ALTER TABLE public.{table} DROP COLUMN {column}"
+        for table in ("stewardship_family_form_baseline", "stewardship_submission")
+        for column in ("shown_items", "reviewed_view")
+    ]
+
+
 def before_branding_bundle_mode():
     """The statement that puts branding bundles back as they were before 0082.
 
@@ -1184,7 +1208,9 @@ def swap_pending():
     and the refusal table and its guard as they were before 0081
     (``before_bounce_report``), and branding bundles as they were before 0082
     (``before_branding_bundle_mode``), and the digest ready row's funnel
-    charts as they were before 0083 (``before_digest_funnel_charts``).
+    charts as they were before 0083 (``before_digest_funnel_charts``), and
+    form baselines and submissions as they were before 0153
+    (``before_reviewed_form_shown_items``).
     """
     from django.db.migrations.loader import MigrationLoader
 
@@ -1227,6 +1253,7 @@ def swap_pending():
             *before_staff_entered(),
             *before_leader_changes(),
             *before_branding_bundle_mode(),
+            *before_reviewed_form_shown_items(),
         ):
             cursor.execute(statement)
     try:
