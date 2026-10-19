@@ -68,7 +68,7 @@ def test_staff_see_and_take_every_review_decision(response_service, google):
     # The same form again (another tab, drawn before) is now stale.
     response, body = search(browser, ROUTE, decide(rows["first_name"], "accept"))
     assert response.status_code == 200
-    assert b"was changed by someone else first" in body
+    assert b"not recorded, changed by someone else" in body
     assert ProposalReview.objects.count() == 1
 
 
