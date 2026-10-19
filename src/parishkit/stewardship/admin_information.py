@@ -34,6 +34,8 @@ from .admin_roster_tick import admit_with, scoped_write
 # The longest Staff notes the page's form takes (its textarea's maxlength,
 # which ``update_information`` enforces again).
 MAX_NOTES = 5000
+# Reopening an ignored request needs a reason (#1685), as on the page.
+REOPEN_NOTE = "This request is Ignored; give --notes saying why it is reopened."
 # The page's confirmation box, on the command line.
 CONFIRM_CLEAR = (
     "This follow-up is completed; give --confirm-clear to reopen it. The "
@@ -236,7 +238,11 @@ def update_information_item(
     from .admin_report_reads import _current
     from .audit.schemas import Action
     from .campaigns.work_locks import require_work_order
-    from .responses.information import ClearUnconfirmed, update_information
+    from .responses.information import (
+        ClearUnconfirmed,
+        ReopenNeedsNote,
+        update_information,
+    )
     from .responses.models import (
         AdditionalInformationItem,
         AdditionalInformationRevision,
@@ -274,6 +280,8 @@ def update_information_item(
             )
         except ClearUnconfirmed:
             raise InvalidFollowup([problem("confirm_clear", CONFIRM_CLEAR)]) from None
+        except ReopenNeedsNote:
+            raise InvalidFollowup([problem("notes", REOPEN_NOTE)]) from None
         if previous is None:
             _record_command(
                 Action.ADMIN_CMD_FOLLOWUP_INFORMATION_UPDATE, actor, caller, written

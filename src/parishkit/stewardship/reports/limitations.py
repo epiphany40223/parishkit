@@ -3,8 +3,9 @@
 Lists Members who cannot participate in ministries, and Families who cannot
 attend Mass or prayer services. The report was "Talents and limitations"
 until talents were retired (#970); its SQL is
-``stewardship_limitations_report_v1`` (migration 0056), which neither lists
-nor counts the talents older submissions recorded.
+``stewardship_limitations_report_v2`` (migration 0134; v1 with each answer's
+key and latest review decision, #1685), which neither lists nor counts the
+talents older submissions recorded.
 """
 
 import csv
@@ -100,7 +101,7 @@ def limitations_report(campaign_id, query, principal):
         raise PermissionError("The Limitations report is unavailable.")
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT stewardship_limitations_report_v1(%s,%s::jsonb)::text",
+            "SELECT stewardship_limitations_report_v2(%s,%s::jsonb)::text",
             [campaign_id, json.dumps(query.form_values())],
         )
         value = cursor.fetchone()
@@ -117,9 +118,11 @@ def limitations_report(campaign_id, query, principal):
 
 
 def shape_result(result):
-    """Parse each row's response time for the page and the files."""
+    """Parse each row's response and decision times for the page and the files."""
     for row in result["members"] + result["families"]:
         row["submitted_at"] = datetime.fromisoformat(row["submitted_at"])
+        if row.get("decided_at"):
+            row["decided_at"] = datetime.fromisoformat(row["decided_at"])
     return result
 
 

@@ -101,6 +101,7 @@ class Action(StrEnum):
     CAMPAIGN_ARCHIVE_EXPORTED = "campaign_archive_exported"
     INFORMATION_VIEWED = "information_viewed"
     INFORMATION_UPDATED = "information_updated"
+    LIMITATION_REVIEWED = "limitation_reviewed"
     MINISTRY_FOLLOWUP_VIEWED = "ministry_followup_viewed"
     # The queue's Export these requests download (#1157).
     MINISTRY_FOLLOWUP_EXPORTED = "ministry_followup_exported"

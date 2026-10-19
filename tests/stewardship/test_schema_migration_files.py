@@ -396,6 +396,9 @@ FROZEN = {
     "0121_digest_skip_dates.sql": (
         "cc88c09f4be01751997f1144be6ac2ade39bc3a760f90dc99baf09da17ced446"
     ),
+    "0134_information_limitation_review.sql": (
+        "db614aaa69434d69c7b877c48e21f09454f0d3643beb2d88cc2752ce49fe4f7b"
+    ),
 }
 
 
