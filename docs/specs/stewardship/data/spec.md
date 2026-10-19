@@ -1213,8 +1213,9 @@ the prior current item `superseded` and links the replacement; clearing text
 marks it `withdrawn` without deleting history. Default Staff queues include only items still `current_actionable`; a report
 email's
 [open additional information requests block](../report-emails/spec.md#open-additional-information-requests-block)
-lists every such item not yet accepted or handled at its as-of moment, on
-every send, and keeps no state between sends. History views expose every
+lists every such item submitted by its as-of moment and not yet Handled or
+Ignored (To review or To handle), on every send, and keeps no state between
+sends. History views expose every
 disposition.
 Each Staff revision also records its review decision (`accepted`, `ignored`
 or `none`; empty on revisions saved before schema migration 0126), from which

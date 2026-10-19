@@ -12,8 +12,9 @@ then on there are no digest kinds, digest editors or digest commands.
 
 Status: **specified, not built.** The [delivery plan](#delivery-plan) ships
 it in small pull requests; the internal rework and the migration come first
-and change nothing a reader sees except the
-[additional information block's scope](#open-additional-information-requests-block).
+and change nothing a reader sees except the converted Weekly's
+[three documented changes](#conversion): the additional information block's
+scope, a send every week, and the rewording of its default introduction.
 Until the pull request that ships a part lands, the code that runs today is
 the reference for that part, and this document describes where it is going.
 
@@ -44,8 +45,9 @@ mid-level IT volunteers, so every control has plain-language help.
 ## Administrator decisions
 
 From the Administrator's interview of 2026-10-19 on #1786, superseding the
-issue's proposed defaults where they differ. Each is referred to below by
-its number.
+issue's proposed defaults where they differ. Decisions 15 to 17, made the
+same day, settle the three readings this document first proposed for the
+Administrator's sign-off. Each is referred to below by its number.
 
 1. **Page.** A new **Mail › Report emails** page (New, Edit, Preview, Send a
    test to me, Send now, Pause and Resume, Delete, past sends). It replaces
@@ -69,7 +71,7 @@ its number.
 6. **Nothing to show.** A block with nothing to show says so in one line.
    The per-report option **Send only when there is something to report**
    skips the whole email (on for the converted Weekly). Amended by
-   decision 14.
+   decisions 14 and 16.
 7. **Send now, tests and previews** never move any "since last sent" point.
    Made moot by decision 14: no block keeps one.
 8. **Pause.** A paused report does not catch up when resumed.
@@ -89,13 +91,31 @@ its number.
    campaign.
 14. **The additional information block lists every open request**
     (amending 4, 6, 7 and 8): every additional information request not yet
-    accepted or handled, on every send. It replaces "new since the last
-    email" entirely, so the block keeps no "since last sent" state. The
-    converted Weekly changes to this at deploy and may list requests it
-    listed before. For this block, Send now, test sends, pause and the first
+    accepted or handled (which decision 15 reads as not yet Handled or
+    Ignored), on every send. It replaces "new since the last email"
+    entirely, so the block keeps no "since last sent" state. The converted
+    Weekly changes to this at deploy and may list requests it listed
+    before. For this block, Send now, test sends, pause and the first
     send need no special rules. Its empty line is "No open requests", and
     "send only when there is something new" means "only when at least one
     block has content".
+15. **Open means To review and To handle.** The additional information
+    block lists every request not yet Handled or Ignored, including
+    accepted requests still waiting on action.
+16. **Any block counts for Send only when there is something to report.** A
+    report is skipped only when no block has content. Progress blocks
+    (Campaign totals, Response funnel, Participation charts, Day by day
+    table) always have content, so a report containing one always sends.
+    The converted Weekly (requests and Response funnel) therefore sends
+    every week, its requests block showing "No open requests." when nothing
+    is open. This is an accepted behavior change
+    from today's Weekly, which skips an empty week.
+17. **The migration rewords the Weekly's default introduction.** When the
+    converted Weekly's introduction is still the built-in default ("Here
+    are this week’s requests for follow-up."), the migration replaces it
+    with "Here are the additional information requests that are still
+    open."; an edited introduction is kept. The first Weekly after deploy
+    therefore differs in that one sentence too.
 
 Where this document had to decide something the decisions did not cover, it
 says so in [Decisions made in this specification](#decisions-made-in-this-specification).
@@ -127,7 +147,7 @@ the page and the command line; none is a raw stored rule.
 | `schedule` | Either one time (a campaign-local date and time) or a [repeat rule](#repeating-sends). |
 | `as_of` | `previous_day_end` (the end of the previous campaign-local day) or `send_time` (the moment the email is made). See [as of](#as-of). |
 | `blocks` | An ordered list of `{block, version, options}`, one to six entries, each block at most once (decision 10). See the [block registry](#block-registry). |
-| `content_required` | **Send only when there is something to report** (decision 14). Allowed only when the report has a [list block](#block-contract). |
+| `content_required` | **Send only when there is something to report** (decisions 14 and 16): skip a send in which no block has content. Offered for every report ([sending only when there is content](#sending-only-when-there-is-content)). |
 | `skip_dates` | Slot keys of single sends skipped ([skipped sends](#skipped-sends)). |
 | `paused_ranges` | Closed and open pause intervals ([pause and resume](#pause-and-resume)). |
 | `slot_basis` | `send_date` or `report_date`; fixed when the definition is created and never edited ([slot keys](#slot-keys)). |
@@ -482,8 +502,8 @@ override.
 
 One compiler builds every report from its blocks. The output of the two
 converted reports is byte for byte today's Daily and Weekly digest output,
-except the additional information block's documented scope
-([gating tests](#gating-tests)).
+except the converted Weekly's documented changes
+([conversion](#conversion), [gating tests](#gating-tests)).
 
 ### Shared email layout
 
@@ -572,16 +592,28 @@ snapshots are.
 
 ### Sending only when there is content
 
-With **Send only when there is something to report** on (decision 14), a
-send whose every [list block](#block-contract) is empty sends no email: the
-occurrence succeeds with an `empty` outcome and an `empty` fulfillment, so
-the slot is not reconsidered, as an empty weekly interval is today. Status
-blocks always draw something and do not count, so a report with a list
-block and the response funnel still skips when the list is empty, as the
-Weekly digest does today. The option is offered only when the report has a
-list block; removing the last list block clears it (a
-[conditional field](../ui-conventions/spec.md#conditional-fields)). Send
-now and test sends always send.
+With **Send only when there is something to report** on (decisions 14 and
+16), a send in which no block has content sends no email: the occurrence
+succeeds with an `empty` outcome and an `empty` fulfillment, so the slot is
+not reconsidered, as an empty weekly interval is today. Every block counts.
+A list block has content when it lists at least one item. A [status
+block](#block-contract) (decision 16's progress blocks) always has content,
+even when it draws its empty statement ("No campaign day has ended yet.")
+or, in Testing, the Response funnel's Testing note, so a report with one is
+never skipped. The one exception is Compared with past campaigns, which has
+content only when it is drawn (it is left out with no imported years). A
+report with the additional information block and the Response funnel, as the
+converted Weekly has, sends every time, its requests block drawing its empty
+statement. Today's Weekly digest skips an empty week; the converted Weekly
+no longer does (decision 16).
+
+The option is offered for every report, whatever its blocks, with help
+that says when it can take effect: "Skips a send only when every block is
+empty. Blocks that show where the campaign stands, such as the Response
+funnel, always count, so a report with one always sends." It is not a
+[conditional field](../ui-conventions/spec.md#conditional-fields): adding
+or removing a block never shows, hides or clears it. Send now and test
+sends always send.
 
 ## Block registry
 
@@ -598,8 +630,11 @@ Each block declares:
   editor lists, and one or two plain-language sentences of help.
 - **kind:** a *list block* reports records that can run out (it can be
   empty); a *status block* reports where the campaign stands and always
-  draws something. Only list blocks count for
-  [sending only when there is content](#sending-only-when-there-is-content).
+  draws something, so it always has content, even its empty statement
+  (Compared with past campaigns, left out with no imported years, is the one
+  exception). A report is
+  [skipped as empty](#sending-only-when-there-is-content) only when no
+  block has content.
 - **fact block:** whether it reads the pinned daily fact set (it then
   brings the [opening line and dashboard button](#shared-email-layout)).
 - **placement:** in the body (every block but one), or *after the button*
@@ -629,21 +664,27 @@ with no change to their output.
 [Additional information](../reports/spec.md#additional-information) request
 of the campaign that was submitted at or before the send's as-of moment
 and is still open when the send captures its data (follow-up flags keep no
-history, so whether an item was open at a past moment cannot be known): an
-item that is `current_actionable` and has no review decision and no
-completed follow-up, that is, an item at the
+history, so whether an item was open at a past moment cannot be known).
+Open means not yet Handled or Ignored (decision 15): an item that is
+`current_actionable` at the
 [review pipeline](../review-pipeline/spec.md#additional-information-stream)'s
-**To review** stage. Accepted (To handle), handled, ignored, superseded and
-withdrawn items are not listed. Until
-[#1685](https://github.com/epiphany40223/parishkit/issues/1685) moves
-Additional information to the pipeline, the stage is read from today's
-fields as the pipeline's
-[existing state mapping](../review-pipeline/spec.md#existing-state-to-stage)
-reads them: `current_actionable`, follow-up not needed and not followed up.
+**To review** or **To handle** stage, so accepted requests still waiting on
+action stay listed. Handled, ignored, superseded and withdrawn items are
+not listed. The stage is the one the
+[stream mapping](../review-pipeline/spec.md#additional-information-stream)
+derives, with each Staff revision's review decision
+([#1685](https://github.com/epiphany40223/parishkit/issues/1685), schema
+migration 0126): `current_actionable` and not followed up, with follow-up
+needed (To handle) or not needed and not Ignored (To review). An item a
+Staff member ignored, including one whose latest revision from before 0126
+left follow-up not needed
+([existing state](../review-pipeline/spec.md#existing-state-to-stage)), is
+Ignored and is not listed.
 
 It keeps no state between sends (decision 14): every send, scheduled,
 manual, recovery or test, lists every open request so read, and
-an item may be listed in many sends until someone accepts or handles it.
+an item may be listed in many sends until someone marks it handled or
+ignores it.
 There is no watermark, no per-recipient coverage and no corrections
 section: a request that is superseded or withdrawn simply leaves the list.
 
@@ -657,21 +698,24 @@ goes to the request in the send's saved copy (in a test send or Preview, to
 the live request). Empty statement: "No open
 requests." Testing: the same, from the rehearsal's items.
 
-This block is the one place where a converted report's output changes at
-deploy: the converted Weekly's heading said "N new actionable requests"
-(or, for a manual report, "N current actionable requests") and listed only
-requests new since its last scheduled send, followed by a corrections
-section. It now says "N open requests", lists every open request and has no
-corrections section ([gating tests](#gating-tests)).
+This block's scope is one of the converted Weekly's three changes at
+deploy ([conversion](#conversion)): the Weekly's heading said "N new
+actionable requests" (or, for a manual report, "N current actionable
+requests") and listed only requests new since its last scheduled send,
+followed by a corrections section. It now says "N open requests", lists
+every open request and has no corrections section
+([gating tests](#gating-tests)).
 
 ### Campaign totals block
 
 **Status block**, fact block; reader role Staff; no options. Today's
-**Campaign totals** section: two rows per figure, the label on a row of its
-own, then a bar drawn with table cells (so it shows with images off) and the
-exact value, for example "Families that have responded — 10 out of 93
-(10.8%)"; the value breaks only before its parenthesis, so four-digit counts
-still fit a 320px phone
+**Campaign totals** section: one line per figure on a desktop, its label
+(which never wraps), a bar drawn with table cells (so it shows with images
+off) and the exact value, for example "Families that have responded — 10 out
+of 93 (10.8%)"
+([#1844](https://github.com/epiphany40223/parishkit/issues/1844)). On a
+phone the label moves above its bar and value, and the value breaks only
+before its parenthesis, so four-digit counts still fit a 320px phone
 ([#1564](https://github.com/epiphany40223/parishkit/issues/1564)). The
 figures are the as-of day's first submissions, cumulative participation and
 percentage, and, when financial stewardship is enabled, cumulative annual
@@ -728,28 +772,35 @@ campaign day has ended yet."
 
 **Status block**, fact block; reader role Staff. Option: **days shown**, 1
 to 14, default 5. Today's **Day by day** table: the last N campaign days up
-to the as-of day (every covered day of a recovery send, however many), each
-day two rows, the date across the table and then its first submissions,
-cumulative participation and, with financial stewardship, cumulative annual
-pledges under their headings, so it fits a 320px phone
-([#1559](https://github.com/epiphany40223/parishkit/issues/1559)). The text
-part keeps one line per day. Empty statement: "No campaign day has ended
+to the as-of day (every covered day of a recovery send, however many). On a
+desktop each day is one row, its date first (never wrapped), then its first
+submissions, cumulative participation and, with financial stewardship,
+cumulative annual pledges (#1844). On a phone each day takes two rows, the
+date across the table and then its values under their headings, so it fits
+a 320px phone
+([#1559](https://github.com/epiphany40223/parishkit/issues/1559)). The phone
+layouts come from the email's style block, as the
+[UX conventions](../ui-conventions/spec.md#devices-and-browsers) require; a
+mail program that drops it shows the desktop layout. The text part keeps one
+line per day. Empty statement: "No campaign day has ended
 yet."
 
 ### Compared with past campaigns block
 
 **Status block**, fact block, placed after the button; reader role Staff; no
-options. Today's
-[Compared with past campaigns](../campaign-history/spec.md#digest-section)
-section ([#1698](https://github.com/epiphany40223/parishkit/issues/1698)):
-this campaign on its comparison day beside last year and the imported years'
+options. Today's [Compared with past
+campaigns](../campaign-history/spec.md#digest-section) section
+([#1698](https://github.com/epiphany40223/parishkit/issues/1698)): this
+campaign on its comparison day beside last year and the imported years'
 average, from the same pinned facts (the comparison day is the report day,
 or, for a report as of when it is made, the last complete campaign day, as
-that section's rules say), with its own charts and link to the
-Campaign comparison report, its computed aggregates retained with the
-snapshot so its saved copy shows it unchanged. With no imported years it is
-left out entirely, as today, rather than drawing an empty statement, since
-the Administrator chose it knowing it compares with imports.
+that section's rules say), with its own charts and link to the Campaign
+comparison report, its computed aggregates retained with the snapshot so its
+saved copy shows it unchanged. With no imported years it is left out
+entirely, as today, rather than drawing an empty statement, since the
+Administrator chose it knowing it compares with imports. Left out, it has no
+content for [Send only when there is something to
+report](#sending-only-when-there-is-content).
 
 ## Report emails page
 
@@ -842,8 +893,9 @@ this order:
    previous day (campaign time zone)" or "When the email is made", with help
    saying it applies to every figure.
 4. **Blocks** ([blocks field](#blocks-field)) and **Send only when there is
-   something to report**, a checkbox shown only while the report has a list
-   block ([conditional fields](../ui-conventions/spec.md#conditional-fields)).
+   something to report**, a checkbox always shown, with help saying it
+   skips a send only when every block is empty
+   ([sending only when there is content](#sending-only-when-there-is-content)).
 5. **Introduction** (optional), the HTML and plain-text editor every
    authored email part uses, with "Generate plain text from HTML".
 6. On Edit, the report's **past sends** and **Delete**.
@@ -1136,8 +1188,8 @@ pipeline file that only adds, then one conversion file that converts the
 rows and rewrites the database functions together
 ([database functions](#database-functions)), with a new campaign
 configuration validation schema name, following the pattern #469 used. It
-changes no output at deploy except the additional information block's
-scope.
+changes no output at deploy except the converted Weekly's three documented
+changes ([conversion](#conversion)).
 
 ### Conversion
 
@@ -1178,7 +1230,7 @@ design notes before code:
 | Value | Converted Daily | Converted Weekly |
 | --- | --- | --- |
 | `name` | Daily report | Weekly report |
-| `subject`, intro | its saved subject, and the intro of the email template it sends; an intro that still holds a built-in default, current or retired, becomes empty (the email already leaves such an intro out, so the output is unchanged) | its saved subject, and the intro of the email template it sends, kept even when it is the default ("Here are this week’s requests for follow-up."), since today's email keeps it |
+| `subject`, intro | its saved subject, and the intro of the email template it sends; an intro that still holds a built-in default, current or retired, becomes empty (the email already leaves such an intro out, so the output is unchanged) | its saved subject, and the intro of the email template it sends; an intro that still holds a built-in default, current or retired, becomes "Here are the additional information requests that are still open." in both parts (decision 17); any other intro is kept as written |
 | `recipients` | All Administrators | All Administrators |
 | `schedule` | every day at its saved time, From the day after the campaign's first day, Until the day after its last day | every week on its saved weekday at its saved time, From the campaign's first day, Until the first send after its last day (the one post-close weekly slot today's evaluator can give) |
 | `as_of` | `previous_day_end` | `send_time` |
@@ -1190,15 +1242,26 @@ design notes before code:
 The Daily's schedule reproduces today's rule exactly: a send the morning
 after each active campaign day, including the day after close. The Weekly's
 sends are today's slots, including the post-close slot on the first chosen
-weekday after the campaign's last day. That post-close send changes in one
-way, with the documented scope change: today it is considered only while
-items or corrections are still owed; now it is an ordinary send, made
-whenever any request is open (and skipped as empty otherwise, under Send
-only when there is something to report). The converted Weekly keeps its
-saved introduction; when it is still the default ("Here are this week’s
-requests for follow-up."), the Administrator may want to reword it, since
-the block now lists every open request; the conversion does not change it,
-so the output stays byte-identical.
+weekday after the campaign's last day.
+
+The converted Daily's output is byte-identical. The converted Weekly
+changes in exactly three ways at deploy, each an accepted behavior change;
+everything else in it stays byte-identical:
+
+- **Scope** (decisions 14 and 15): its requests block lists every open
+  request (To review and To handle) on every send, under "N open requests",
+  with no corrections section
+  ([the block](#open-additional-information-requests-block)).
+- **It sends every week** (decision 16): it keeps Send only when there is
+  something to report on, but its Response funnel always has content, so
+  it is never skipped as empty; a week with nothing open sends with the
+  requests block's "No open requests." line. Its post-close slot, today
+  considered only while items or corrections are still owed, is now an
+  ordinary send and is made too.
+- **Its default introduction is reworded** (decision 17): an introduction
+  still holding a built-in default, current ("Here are this week’s requests
+  for follow-up.") or retired, becomes "Here are the additional information
+  requests that are still open."; an edited introduction is kept.
 
 The digest email templates the two schedules sent are kept, unchanged, for
 the saved copies that name them; the daily and weekly digest email types
@@ -1268,20 +1331,25 @@ file, so no release reads a `report` row with digest code.
 ### Gating tests
 
 The migration's pull request carries a test that compiles each converted
-report from fixture data and requires the same subject, HTML and text as
-the old digest compiler, byte for byte, in Production and in Testing, for:
-a single-day Daily; a recovery Daily covering several days; a Daily with
+report from fixture data and requires the same subject, HTML and text as the
+old digest compiler, byte for byte, in Production and in Testing, for: a
+single-day Daily; a recovery Daily covering several days; a Daily with
 Compared with past campaigns; a Daily with a default and an edited intro; a
-manual and a scheduled Weekly; and a Testing Daily and Weekly. The only
-permitted difference is the documented Weekly scope change: the test builds
-the expected Weekly output by applying exactly that change (the heading
-wording, every open request listed, no corrections section) to the old
-compiler's rows, and fails on any other difference. A second test runs the
-migration on a database seeded with both digests, their occurrences,
-fulfillments, skip dates and a post-close resolution, and asserts that the
-next sends planned are the same instants and slot keys as before. The
-upgrade-parity, frozen-file digest, function-equality and
-`SECURITY DEFINER` tests of the schema policy apply unchanged.
+manual and a scheduled Weekly, each with the current default, a retired
+default and an edited intro; and a Testing Daily and Weekly. The only
+permitted differences are the converted Weekly's documented changes: the
+test builds the expected Weekly output by applying exactly those changes
+(the heading wording, every To review and To handle request listed, no
+corrections section, and the reworded current or retired default intro, an
+edited intro staying as it was) to the old compiler's rows, and fails on any
+other difference. It also asserts that a Weekly with no open request now
+sends, with the "No open requests." line, where the old compiler recorded an
+empty interval. A second test runs the migration on a database seeded with
+both digests, their occurrences, fulfillments, skip dates and a post-close
+resolution, and asserts that the next sends planned are the same instants
+and slot keys as before. The upgrade-parity, frozen-file digest,
+function-equality and `SECURITY DEFINER` tests of the schema policy apply
+unchanged.
 
 ### Deploy conditions
 
@@ -1307,26 +1375,27 @@ require.
    daily and weekly compilers into `reports/report_blocks/`, with one
    compiler and the shared layout, still driven by today's digest schedules
    and with byte-identical output (the gating tests' byte-identical cases,
-   without the scope change). No schema change; no visible change.
+   without the converted Weekly's three changes). No schema change; no
+   visible change.
 3. **Report pipeline**: the pipeline frozen file (new tables, guards,
    write functions, page proof and slot evaluation), the report values'
    validation, the repeat rule with campaign bounds, slot basis and pause
    intervals in `SchedulePlan`, and the report preparation, capture, fanout,
    recheck and completion code, all unused until PR 4. No visible change.
-4. **Conversion**: the conversion frozen file with its function rewrites
-   and the conversion; the scheduler, catch-up, recovery, live pause
-   recovery, archive inventory, Testing cleanup, Go-live readiness and
-   activation counts (`campaigns/readiness_digests.py`,
-   `reports/readiness_weekly.py`, which counted weekly messages from the
-   watermark) on `report`; the outbox purposes; the additional information
-   block's scope change. New scheduled email and the date-change review stop
-   offering the digest mail types (no digest kind exists to add). Ships in a
-   maintenance window with no send pending. Until PRs 5 and 6 the existing
-   pages and commands work on the converted reports: Dates and mail
-   schedules' digest editors edit their time, weekday, comparison block and
-   skips; Emailed reports lists their sends, old and new; Send a weekly
-   report now is Send now of the report converted from the Weekly; and the
-   digest commands do the same.
+4. **Conversion**: the conversion frozen file with its function rewrites and
+   the conversion; the scheduler, catch-up, recovery, live pause recovery,
+   archive inventory, Testing cleanup, Go-live readiness and activation
+   counts (`campaigns/readiness_digests.py`, `reports/readiness_weekly.py`,
+   which counted weekly messages from the watermark) on `report`; the outbox
+   purposes; the additional information block's scope change, the converted
+   Weekly sending every week and the rewording of its default intro. New
+   scheduled email and the date-change review stop offering the digest mail
+   types (no digest kind exists to add). Ships in a maintenance window with
+   no send pending. Until PRs 5 and 6 the existing pages and commands work
+   on the converted reports: Dates and mail schedules' digest editors edit
+   their time, weekday, comparison block and skips; Emailed reports lists
+   their sends, old and new; Send a weekly report now is Send now of the
+   report converted from the Weekly; and the digest commands do the same.
 5. **Report emails list and sends**: the Report emails page's list, status
    and action matrix, Send now, Pause and Resume, Delete, past sends and
    saved copies, with `report-email list`, `show`, `sends`, `copy`,
@@ -1360,20 +1429,23 @@ reason; the Administrator may change any of them.
 - **Where it lives.** A specification of its own, since report emails span
   background processing, data, the Admin portal, reports and automation;
   those specs link here instead of repeating it.
-- **Open means To review.** "Not yet accepted or handled" is read as the
-  review pipeline's To review stage: accepted (To handle), handled and
-  ignored items are not listed. Corrections are dropped with the "since
+- **No corrections section.** Corrections are dropped with the "since
   last sent" state, because a request that is no longer open simply leaves
   the list.
-- **Which blocks count for "send only when there is something to report"
-  (a reading of decision 14 that needs the Administrator's sign-off).**
-  Decision 14 says "only when at least one block has content". This
-  specification counts only list blocks (today only the additional
-  information block), because the funnel and the other status blocks always
-  draw something, so counting them would make the converted Weekly send
-  every week, which it does not today. The option is also labeled
+- **"Something to report", not "something new".** The option is labeled
   "something to report" rather than the issue's "something new", since no
   block reports what is new any more.
+- **The option is offered for every report** (following decision 16). It can
+  take effect only when every block is a list block or Compared with past
+  campaigns, so it could have been shown only then; but a field that appears
+  and clears as blocks are added would hide the converted Weekly's saved
+  setting and surprise an editor. One always-shown checkbox, whose help says
+  it skips a send only when every block is empty, is clearer.
+- **Retired Weekly default intros are reworded too.** Decision 17 names
+  today's default; an intro still holding an earlier built-in Weekly
+  default (from before #720) was never edited either and is just as out of
+  date, so the migration treats it as the default, as the Daily's
+  conversion does.
 - **Opening line and closing button.** Kept exactly as each digest draws
   them: a report with a fact block (or as of the end of the previous day)
   gets the opening line and the Response dashboard button; otherwise the
@@ -1424,6 +1496,11 @@ reason; the Administrator may change any of them.
 - **Expand a repeat rule into one schedule per send, as reminders do.** A
   report would become dozens of definitions, each with its own history, and
   a change to the time would touch every one.
+- **Count only list blocks for Send only when there is something to
+  report.** It would have kept the converted Weekly skipping empty weeks,
+  but decision 16 counts every block.
+- **Open means To review only.** Accepted requests still waiting on action
+  would have left the list; decision 15 keeps them listed.
 - **One shared "last sent" cursor, or one per report, for the additional
   information block.** Superseded by decision 14: listing every open
   request needs no cursor and never hides a request from a recipient.
