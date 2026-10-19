@@ -16,7 +16,7 @@ the "Family asked again" case
 ([#1684](https://github.com/epiphany40223/parishkit/issues/1684);
 [follow-up workflows](../admin-portal/spec.md#follow-up-workflows)), the
 financial stream on it
-([Pledges to enter](../reports/spec.md#pledges-to-enter),
+([Pledges](../reports/spec.md#pledges),
 [#1686](https://github.com/epiphany40223/parishkit/issues/1686)), and
 the refresh re-evaluation of census and Ministry, with the cases it leaves
 for later ([#1689](https://github.com/epiphany40223/parishkit/issues/1689);
@@ -709,7 +709,7 @@ annual pledge and frequency, Ignored, or none after Back to review) and the
 Entered by hand mark. The
 [Financial stewardship detail](../reports/spec.md#financial-stewardship-detail)
 report still lists every current pledge, and
-[Pledges to enter](../reports/spec.md#pledges-to-enter) is the stream's
+[Pledges](../reports/spec.md#pledges) is the stream's
 worklist and manual report. Staff can still change a pledge through Open
 form (a whole new response marked Entered by Staff), and Edit (amount and
 frequency, decision 4) is the review's own correction.
@@ -721,7 +721,7 @@ selection the page, the counts and the row guard share:
 - no row, a latest row with no decision (Back to review), or a pledge answer
   changed since the latest row's response: **To review**, or **Confirmed**
   ("Already in ParishSoft", no reviewer; the
-  [page's](../reports/spec.md#pledges-to-enter) words at $0.00 differ) or
+  [page's](../reports/spec.md#pledges) words at $0.00 differ) or
   **Conflict** when a refresh found so;
 - Ignored: **Ignored**;
 - Accepted or Accepted (edited), not marked: **To enter by hand**, or
@@ -834,25 +834,37 @@ Ministry leaders never see this stream.
 
 ### Cannot participate stream
 
-Stored state: none beyond the live response; the
-[Limitations](../reports/spec.md#limitations) report lists Members who cannot
-participate and Families who cannot attend. Baseline is empty, nothing goes
-to ParishSoft. Gap: per-answer items with To review → Accepted → To handle →
-Handled, so the office can record that it acted on each.
+Stored state: the live response, and one immutable review row per
+decision (`stewardship_limitation_review`,
+[#1685](https://github.com/epiphany40223/parishkit/issues/1685)); the
+[Limitations](../reports/spec.md#limitations) worklist lists Members who
+cannot participate and Families who cannot attend. Baseline is empty,
+nothing goes to ParishSoft. An item is one current answer (one Member's
+cannot-participate answer, one Family's cannot-attend answer), read from
+the Family's effective live response as the report always read it, so the
+Family submit path stores nothing new. Its decision is the latest review row
+for that answer while every later live response still gives the answer:
+none, or Back to review → To review; Accepted → To handle; Ignored →
+Ignored; Handled → Handled. A response that answers the other way
+withdraws the item, and giving it again later is a new item, To review; one
+that leaves the answer out changes nothing
+([rule 1 to 5](#resubmission-while-the-setting-is-off)).
 
 ### Additional information stream
 
 Stored state: `AdditionalInformationItem` disposition and the
 `follow_up_needed` / `followed_up_at` workflow with Staff notes
-([Follow-up records](../data/spec.md#follow-up-records)). Mapping: current
-actionable and follow-up not needed (the default) → To review, unless a
-Staff edit set it not needed, which is Ignored (a
-[one-time migration](#existing-state-to-stage) records this, because the
-default cannot be told from a Staff choice); follow-up needed → To handle;
-followed up → Handled; superseded / withdrawn → history. Gap: closest to the pipeline already, but
-per item only (no selection column or bulk action today); it needs the
-shared vocabulary, the shared table with bulk Accept / Handled, and its
-two booleans expressed as one stage.
+([Follow-up records](../data/spec.md#follow-up-records)), and each Staff
+revision's review decision (`accepted`, `ignored` or `none`, from schema
+migration 0134,
+[#1685](https://github.com/epiphany40223/parishkit/issues/1685)). Mapping:
+followed up → Handled; follow-up needed → To handle; current actionable and
+not needed → Ignored when the latest revision says so, else To review (the
+[existing state](#existing-state-to-stage) rule for revisions saved before
+0134); superseded / withdrawn → history. The
+[Additional information](../reports/spec.md#additional-information)
+worklist expresses the two booleans as one stage, with bulk Accept,
+Ignore, Back to review and Handled.
 
 ## Role views
 
@@ -887,8 +899,8 @@ export below it. Its parts:
    stream's own filters after it.
 2. The selection bar and table. Columns: the stream's identity columns in
    the shared [column order](../ui-conventions/spec.md#table-column-order),
-   Baseline (where a stream has one), Family's answer, Reviewer's value,
-   ParishSoft now (on Conflict, Entered incorrectly and Not seen rows),
+   Baseline (where a stream has one), Family's answer, Reviewer's value
+   (where a stream has Edit), ParishSoft now (on Conflict, Entered incorrectly and Not seen rows),
    Stage, Submitted, Last decision (who, when, note), Actions.
 3. The shared export pane below the table, as on every report
    ([#1679](https://github.com/epiphany40223/parishkit/issues/1679)).
@@ -968,7 +980,7 @@ and bulk action, exported through the shared export component in CSV, XLSX
 and PDF. The same report has Stage choices for Entered incorrectly and Not
 seen in ParishSoft. Roster changes to enter is the Ministry stream's report
 today and becomes the shared component's first user; Census changes'
-*By hand* view and a new financial "Pledges to enter" report follow.
+*By hand* view and a new financial "Pledges" report follow.
 
 ## What cannot be automated
 
@@ -1258,17 +1270,19 @@ that is done safely.
 | Financial | the live answer, no `stewardship_pledge_review` row yet | To review |
 | Cannot participate | the live answer only | To review |
 
-One state needs a one-time migration. `follow_up_needed` defaults to false,
-so "Not needed" cannot be told from "never looked at" by the item alone,
-and mapping every such item to Ignored would mark unread text as reviewed.
-A forward migration in
-[#1685](https://github.com/epiphany40223/parishkit/issues/1685) fills a new,
-nullable decision column with Ignored only for items whose audited edit
-history shows a Staff member setting follow-up to not needed; every other
-such item is To review. It writes no existing column, records one audit
-event with only the count, and is reversible: clearing the new column
-returns every item to today's reading, since the original fields are
-untouched.
+One state needed a decision. `follow_up_needed` defaults to false, so
+"Not needed" cannot be told from "never looked at" by the item alone, and
+mapping every such item to Ignored would mark unread text as reviewed.
+[#1685](https://github.com/epiphany40223/parishkit/issues/1685) adds a new,
+nullable decision column to each Staff revision, which every revision from
+then on states; a current item whose latest revision is older (the column
+empty) and left follow-up not needed reads as Ignored, since a Staff member
+chose that, and an item with no revision is To review. The rule is read,
+not written, as the derived values below are: storing it on the item would
+have to advance every such item's version (the response guard requires it)
+and storing it on the old revisions would rewrite immutable history, so the
+migration changes no existing row, needs no audit count and has nothing to
+reverse.
 
 No other state needs a migration. Two derived values for items closed
 before their slice ships are read, not stored:
@@ -1371,7 +1385,7 @@ Cut first if time runs short, in this order:
 4. Entered incorrectly and Not seen in #1689 (today's reconciliation still
    confirms census and Ministry);
 5. the Limitations half of #1685 (its report stays as it is);
-6. the pledge Edit in #1686 (keep Accept and the Pledges to enter
+6. the pledge Edit in #1686 (keep Accept and the Pledges
    report; Staff correct a pledge through Open form, as today);
 7. census Add in #1683 (Staff use Open form); cut from #1683 and moved to
    [#1710](https://github.com/epiphany40223/parishkit/issues/1710).

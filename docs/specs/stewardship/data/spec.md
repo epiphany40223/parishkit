@@ -1210,6 +1210,17 @@ digest content include only items still `current_actionable` at generation.
 The next digest includes a compact correction section for items sent in a prior
 digest and since superseded/withdrawn, preventing stale emailed work from
 remaining silently actionable. History views expose every disposition.
+Each Staff revision also records its review decision (`accepted`, `ignored`
+or `none`; empty on revisions saved before schema migration 0134), from which
+the [review pipeline](../review-pipeline/spec.md#additional-information-stream)
+derives the item's stage.
+
+A cannot-participate or cannot-attend answer stores nothing beyond the live
+response. Each review decision on one is an immutable
+`stewardship_limitation_review` row naming the Family campaign record, the
+answer (a Member's key, or the Family itself), the effective live response
+it was decided on, a per-answer sequence, the decision, the note, the actor
+and the time ([Limitations](../reports/spec.md#limitations)).
 
 A `MinistryRequest` represents one Member/Ministry requested action (`join` or
 `leave`). Latest effective submissions may create, cancel, or supersede a

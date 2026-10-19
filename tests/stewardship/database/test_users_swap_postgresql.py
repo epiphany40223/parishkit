@@ -700,6 +700,23 @@ CLOSURE_CREATED = {
         ),
         ("stewardship_workflows", "0004_refresh_checks"),
     ),
+    # 0134 (#1685, provisional number) creates the Limitations review table
+    # (in CLOSURE_TABLES) with its guard, deferred audit check, answer and
+    # in-force reads and the report's v2 selection; all of them go, and the
+    # column it adds to the information revisions goes too
+    # (``before_information_limitation_review``), so its file installs whole
+    # again, the revision guard's replacement included.
+    **dict.fromkeys(
+        (
+            "public.stewardship_limitation_review_guard_v1()",
+            "public.stewardship_limitation_review_effect_v1()",
+            "public.stewardship_limitation_answer_v1(jsonb,text,text)",
+            "public.stewardship_limitation_stated_v1(jsonb,text,text)",
+            "public.stewardship_limitation_in_force_v1(uuid)",
+            "public.stewardship_limitations_report_v2(uuid,jsonb)",
+        ),
+        ("stewardship_responses", "0014_information_limitation_review"),
+    ),
     # 0135 (#1686, provisional number) creates the pledge review table (in
     # CLOSURE_TABLES) with these functions; all go, so its file installs
     # whole again.
@@ -1281,6 +1298,21 @@ def before_ministry_review_pipeline():
     ]
 
 
+def before_information_limitation_review():
+    """The statement that puts the information revisions back as before 0134.
+
+    #1685's 0134 adds only ``stewardship_information_revision``'s review
+    decision (and its check, which goes with the column) to a table the base
+    has; its new table and functions are ``CLOSURE_TABLES`` and
+    ``CLOSURE_CREATED``. The revision guard it replaced keeps its 0134 body,
+    which nothing on the users upgrade's base calls; 0134's file (or the full
+    migration) adds the column again.
+    """
+    return [
+        'ALTER TABLE "stewardship_information_revision" DROP COLUMN "review_decision"'
+    ]
+
+
 @contextmanager
 def swap_pending():
     """Put the database in the state `migrate --users-upgrade-base` leaves.
@@ -1349,6 +1381,7 @@ def swap_pending():
             *before_leader_changes(),
             *before_branding_bundle_mode(),
             *before_ministry_review_pipeline(),
+            *before_information_limitation_review(),
         ):
             cursor.execute(statement)
     try:

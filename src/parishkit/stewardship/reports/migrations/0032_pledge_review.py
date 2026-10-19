@@ -43,12 +43,11 @@ class Migration(migrations.Migration):
     dependencies = [
         ("stewardship_reports", "0031_leader_request_contacts"),
         ("stewardship_campaigns", "0014_digest_skip_dates"),
-        ("stewardship_responses", "0012_gender_by_hand"),
-        # The migration that installs the previous frozen file (0124, the
-        # guard wording), so the files apply in prefix order.
-        ("stewardship_accounts", "0029_guard_wording"),
-        # The Ministry review pipeline's frozen file (0132) comes before
-        # this one (0135) wherever both branches meet.
+        # The migration that installs the previous frozen file (0134, the
+        # Additional information and Limitations review, #1685, on which
+        # this PR stacks), so the files apply in prefix order; it depends on
+        # the census (0131) and Ministry (0132) pipelines in turn.
+        ("stewardship_responses", "0014_information_limitation_review"),
         ("stewardship_workflows", "0003_ministry_review_pipeline"),
     ]
 

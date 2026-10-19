@@ -263,7 +263,9 @@ def queue_document(result, contacts, query, *, parish_name, requested_at, zone):
                     "ParishSoft data, not from when each version was submitted.",
                 ),
             )
-            if query.history == "all"
+            # The worklist's view (WorklistQuery) has no history choice; the
+            # command line's FollowupQuery may ask for every revision.
+            if getattr(query, "history", "current") == "all"
             else ()
         ),
     )

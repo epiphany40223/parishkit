@@ -20,6 +20,8 @@ REPORTS = (
     # The browser-zone report day selection (#558, migration 0064).
     "stewardship_information_report_v2",
     "stewardship_limitations_report_v1",
+    # The Limitations worklist's selection (#1685, migration 0134).
+    "stewardship_limitations_report_v2",
     "stewardship_ministry_report_v1",
     "stewardship_ministry_report_v3",
 )

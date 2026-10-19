@@ -1,4 +1,4 @@
-"""Pledges to enter reviews pledges in place (#1686).
+"""Pledges reviews pledges in place (#1686).
 
 The page is the view's own context over sample rows
 (``pledges_components``); each POST is answered with the page after the

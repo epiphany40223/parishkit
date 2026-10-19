@@ -3357,7 +3357,7 @@ unknown email `not_available`, and a key used with another intent `invalid`.
 | `ministry_followup_item` | `followup show REQUEST_ID` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11a; see below) |
 | `ministry_followup_update` | `followup update REQUEST_ID` (PR 11a; see below); follow-up has no assignment ([#552](https://github.com/epiphany40223/parishkit/issues/552)) |
 | `ministry_followup_bulk` | `followup bulk` (PR 11a; see below), the queue's bulk outcome ([#1131](https://github.com/epiphany40223/parishkit/issues/1131)), through the same `workflows.followup` service |
-| `information_update` | `followup information-update ITEM_ID` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11b; see below), the item's Save, through the same `responses.information` service |
+| `information_update` | Retired by [#1685](https://github.com/epiphany40223/parishkit/issues/1685): the request page has no Save, and decisions are made on the Additional information worklist. `followup information-update ITEM_ID` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11b; see below) stays, through the same `responses.information` service, until #1688 renames the commands |
 | `ministry_followup_export` | The queue's Export these requests ([#1157](https://github.com/epiphany40223/parishkit/issues/1157)), the follow-up queue's filtered set with each Member's contact details: `followup export [FILTERS] [--format F] [--timezone Z]` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11c; see below), the page's download through the page's own writer (`ministry_followup_exports.export_body`) |
 | `ministry_followup_roster`, `ministry_roster_bulk` | A resolved join or leave's Entered in ParishSoft tick ([#528](https://github.com/epiphany40223/parishkit/issues/528)), one at a time or several from Roster changes to enter ([#879](https://github.com/epiphany40223/parishkit/issues/879)): `followup roster-entered REQUEST_ID --set\|--clear` and `followup roster-bulk` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11b; see below), through the same `workflows.roster` service |
 | `ministry_roster`, `ministry_roster_export` | Roster changes to enter ([#528](https://github.com/epiphany40223/parishkit/issues/528)): `report roster`, counts ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the rows through `export roster [--show S] [--ministry DUID] [--format F] [--timezone Z]` (PR 8g, [#463](https://github.com/epiphany40223/parishkit/issues/463)), the page's download through the page's own writer (`ministry_roster_views.export_body`) |
@@ -3622,7 +3622,12 @@ pages' own pieces.
   values), notes are at most 5,000 characters with line breaks as the
   browser counts them, and clearing a completed follow-up without
   `--confirm-clear`, the page's confirmation box, is `invalid` at
-  `confirm_clear`.
+  `confirm_clear`. Its revision's review decision (#1685) follows the
+  flags: needed or completed is Accepted; neither keeps a To review or
+  Ignored item as it was; and clearing a To handle or Handled item sends it
+  back to review, so the command never ignores an item on its own. Taking
+  an Ignored item out of Ignored needs new `--notes` saying why, as the
+  page's Back to review does (`invalid` at `notes` otherwise).
 - **Keys, scope and audit.** The three changes need a full-scope session,
   run in the page's command scope, and are not fresh-gated, as the pages'
   actions are not privileged. An item or request that is not a Live one of

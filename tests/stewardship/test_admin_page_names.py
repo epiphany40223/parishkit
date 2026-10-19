@@ -288,7 +288,8 @@ def test_return_links_name_a_page(template):
     source = _source(template)
     # The Census changes worklist's "Back to To review" is a review decision,
     # not a link back to a page (see ALLOWED), as is the review pipeline's
-    # Back to review on Ministry requests (#1684).
+    # Back to review on Ministry requests (#1684), Additional information and
+    # Limitations (#1685).
     if template not in {"census-changes.html", *REVIEW_PIPELINE_PAGES}:
         assert "Back to " not in source
     for target in re.findall(r'"Return to ([^"]+)"', source):
@@ -481,9 +482,16 @@ RETIRED = (
 
 # Legitimate uses, as (path relative to the package, retired name), each
 # with the reason it is not a page name.
-# The Ministry stream's review pipeline pages (#1684), whose help names the
-# decision Back to review.
-REVIEW_PIPELINE_PAGES = frozenset({"ministry-requests.html", "ministry-followup.html"})
+# The review pipeline's pages (#1684 Ministry, #1685 Additional information
+# and Limitations), whose help names the decision Back to review.
+REVIEW_PIPELINE_PAGES = frozenset(
+    {
+        "ministry-requests.html",
+        "ministry-followup.html",
+        "information.html",
+        "limitations-report.html",
+    }
+)
 ALLOWED = {
     # "Back to edit" steps back inside the Family form, outside the Admin
     # portal and its page names.
@@ -491,8 +499,9 @@ ALLOWED = {
     # "Back to To review" is the Census changes review button that undoes an
     # Approve or Ignore (#528), not a link back to a page.
     ("accounts/templates/stewardship/census-changes.html", "Back to "),
-    # The review pipeline's decision Back to review (#1684), named in the
-    # help of Ministry requests and of its request pages.
+    # The review pipeline's decision Back to review (#1684, #1685), named in
+    # the help of Ministry requests and its request pages, Additional
+    # information and Limitations.
     *(
         (f"accounts/templates/stewardship/{template}", "Back to ")
         for template in sorted(REVIEW_PIPELINE_PAGES)

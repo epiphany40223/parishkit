@@ -151,6 +151,7 @@
 !src/parishkit/stewardship/schema/migrations/0124_guard_wording.sql
 !src/parishkit/stewardship/schema/migrations/0131_census_pipeline_review.sql
 !src/parishkit/stewardship/schema/migrations/0132_ministry_review_pipeline.sql
+!src/parishkit/stewardship/schema/migrations/0134_information_limitation_review.sql
 !src/parishkit/stewardship/schema/migrations/0135_pledge_review.sql
 !src/parishkit/stewardship/schema/migrations/0136_refresh_checks.sql
 !src/parishkit/stewardship/schema/migrations/0139_pledge_refresh_checks.sql

@@ -245,6 +245,25 @@ def test_build_gives_each_row_its_box_kinds_and_posts():
     assert built.span == 9
 
 
+def test_a_stream_without_baseline_or_edit_drops_those_columns():
+    """No Baseline or Reviewer's value column for a stream without them (#1685)."""
+    from django.template.loader import render_to_string
+
+    table = paginate(rows(), {"size": "25"}, carry=[("stage", "all")])
+    built = made(shown=table.rows, baseline=False, reviewer=False)
+    assert not built.baseline and not built.reviewer
+    # Who, Family's answer, Stage, Submitted, Last decision, Actions and the
+    # selection column.
+    assert built.span == 7
+    html = render_to_string(
+        "stewardship/components/review-worklist.html",
+        {"worklist": built, "table": table, "csrf_token": "x"},
+    )
+    head = html.split("<thead>")[1].split("</thead>")[0]
+    assert "Reviewer's value" not in head and "Baseline" not in head
+    assert "Family's answer" in head
+
+
 def test_add_needs_the_role_and_an_editor():
     """Add shows for Staff only once the stream gives its editor."""
     assert made(add_template="editor.html").add

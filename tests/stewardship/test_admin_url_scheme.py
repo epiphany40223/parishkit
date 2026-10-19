@@ -540,7 +540,6 @@ def test_report_actions_and_records_resolve_to_their_own_routes():
         (f"/admin/reports/families/{T}/", "timeline"),
         ("/admin/reports/information/exports/", "information_export"),
         (f"/admin/reports/information/{T}/", "information_item"),
-        (f"/admin/reports/information/{T}/record/", "information_update"),
         ("/admin/reports/ministries/", "ministry_report"),
         (f"/admin/reports/ministries/follow-up/{T}/", "ministry_followup_item"),
         (f"/admin/reports/exports/{T}/", "report_export"),

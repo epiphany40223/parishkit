@@ -1,4 +1,4 @@
-"""Pledges to enter under the real web role (#1686).
+"""Pledges under the real web role (#1686).
 
 Frozen migration 0135 (provisional number,
 ``schema/migrations/0135_pledge_review.sql``) adds the financial stream's
@@ -492,3 +492,82 @@ def test_the_page_lists_decides_and_downloads_for_staff_only(response_service, g
     head, _actor, _rule, _ = leader(harness, google)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         assert get(head, route)[0].status_code == 403
+
+
+def test_limitations_lists_cannot_contribute_at_its_pledges_stage(response_service):
+    """A Family's Cannot contribute financially answer is a Limitations row
+    with its Pledges stage, a link to Pledges and no action (R39 finding
+    11), and the Limitations menu count includes it while it is To review."""
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.accounts import admin_context
+    from parishkit.stewardship.accounts.policy import Principal
+    from parishkit.stewardship.reports.limitation_worklist import (
+        answer_rows,
+        at_stage,
+        worklist_rows,
+    )
+    from parishkit.stewardship.reports.limitations import (
+        LimitationsQuery,
+        limitations_report,
+    )
+
+    harness = response_service
+    financial_source(harness, options=map(asdict, OPTIONS))
+    harness = activate_response_service(harness)
+    with web_login():
+        submission = pledge(
+            harness,
+            load_form(harness),
+            annual_pledge="",
+            frequency="",
+            shares={},
+            cannot_give=True,
+        )
+    staff = Principal(admin(), frozenset({"staff"}), frozenset())
+    items = [
+        SimpleNamespace(name="limitations_report", url="/admin/reports/limitations/"),
+        SimpleNamespace(
+            name="pledges_to_enter", url="/admin/reports/financial/pledges/"
+        ),
+    ]
+
+    def read(**filters):
+        """The Limitations report and the menu's count, as the web role reads them."""
+        with (
+            task_login(ServiceRole.WEB, exact=True, reconnect=True),
+            transaction.atomic(),
+        ):
+            result = limitations_report(
+                harness.campaign.pk, LimitationsQuery.parse(filters), staff
+            )
+            counts = admin_context._open_counts(
+                SimpleNamespace(), staff, items, harness.campaign
+            )
+        return result, counts.get("limitations_report")
+
+    result, count = read()
+    (row,) = result["contributions"]
+    assert (row["kind"], row["pledge_item"]) == ("cannot_give", str(submission.pk))
+    assert row["pledges_url"] == reverse(ROUTE) + "?stage=to_review"
+    rows = answer_rows(result)
+    shown, counts = at_stage(rows, "to_review")
+    assert count == counts["to_review"] == len(shown)
+    (drawn,) = [r for r in worklist_rows(shown) if r["kind"] == "cannot_give"]
+    assert drawn["family_answer"] == "Cannot contribute financially"
+    assert drawn["elsewhere"]["label"] == "Open in Pledges"
+    # A menu that does not offer Pledges (a viewer without FINANCIAL_DETAIL)
+    # leaves the Cannot contribute row out of the count (pledges false).
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        without = admin_context._open_counts(
+            SimpleNamespace(), staff, items[:1], harness.campaign
+        ).get("limitations_report")
+    assert (without or 0) == count - 1
+    # Decided on Pledges, it follows its Pledges stage and leaves the count.
+    decide(harness, admin(), "accept", [submission])
+    result, after = read()
+    (row,) = result["contributions"]
+    assert row["placement"].stage.value == "to_enter_by_hand"
+    assert (after or 0) == count - 1
+    # Show narrowed to a Limitations answer lists none.
+    assert read(show="cannot_attend")[0]["contributions"] == []

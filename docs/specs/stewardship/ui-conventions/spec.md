@@ -446,7 +446,7 @@ never scrolls to show it (Administrator, pk-local review of
   hidden periodic re-read links of
   [pages that update themselves](#pages-that-update-themselves)) or a form whose answer is the page again
   (`form[data-in-place]`, such as a POST whose server redirects back to the
-  page: Save follow-up on an information item and on a
+  page: Save follow-up on a
   [Ministry follow-up request](../admin-portal/spec.md#follow-up-workflows); System logs'
   cross-links, whose answer is the filtered page; Acknowledge on a security
   event; Clear verified refusal on a
@@ -1270,24 +1270,23 @@ choice no form offers, a sort or page size the table does not accept) keeps
 the report's error page. A range out of order is refused at its end with
 both ends marked, and its message is shown once, after them, in a line
 the form reserves so that a refusal shown in place moves nothing. Where
-that line is apart from the complete gate's hint row (the Additional
-information queue's Submitted dates, Financial stewardship's dates and
-amounts), the gate's hint, in the same words,
+that line is apart from the complete gate's hint row (Financial
+stewardship's dates and amounts), the gate's hint, in the same words,
 is held hidden in its row while the message shows, so the form says it
 once. A form whose complete gate already has a hint row (System logs, the
-Follow-up packet, an Additional information item's Save) shows the message
+Follow-up packet) shows the message
 in that row instead, over the gate's hint, which it hides while shown, so
 the page is no taller for a refusal only a request built by hand gets and
 says it once. The same holds for a report's own forms that a field can
-fix (the Follow-up packet's limit, an Additional information item's
-confirmation): the page is drawn again, 400, with the values sent. An
+fix (the Follow-up packet's limit): the page is drawn again, 400, with
+the values sent. An
 in-place Apply keeps the filter form and what was typed, and takes the
 marks and message from the answer. The server's mark clears, with its
 message and summary item, on the first edit of a field it marks (either
 end of a range), or when an in-place Apply is answered without it.
 **Shared code.** `web/filter_errors.py` (`FilterError`), the `filter_mark`
-and `filter_line` template tags; used by Financial stewardship, the
-Additional information queue and item, System logs, the Follow-up packet
+and `filter_line` template tags; used by Financial stewardship, System
+logs, the Follow-up packet
 and the Family directory's Exact Family code (shown in its gate's hint
 row).
 
@@ -2441,9 +2440,10 @@ Apply while the panel and its form keep their elements. A report's export is
 not a disclosure: it is the compact row of
 [export buttons](#downloaded-files) below the page's table, always shown, which
 takes one line (#1679, replacing #227's closed export disclosure). The Family
-directory, Additional information, Financial stewardship, Limitations and
-Ministry requests follow the Filters panel rule (#227). Census changes, a
-worklist, keeps its filters always open
+directory, Financial stewardship and Ministry requests follow the Filters
+panel rule (#227). Census changes, a worklist, keeps its filters always open,
+as Additional information and Limitations do since they became review
+worklists ([#1685](https://github.com/epiphany40223/parishkit/issues/1685))
 ([its filters and downloads](../reports/spec.md#census-change-filters-and-downloads),
 [#1682](https://github.com/epiphany40223/parishkit/issues/1682)). Ministry requests keeps its
 compact filter bar rather than a Filters panel: its By Ministry counts apply
@@ -3519,7 +3519,6 @@ orders. In v1 that covers:
   Family code would need every code decrypted per view);
 - Financial stewardship detail (Family, Family DUID, Annual pledge and
   latest response);
-- the Additional information queue (Family, Family DUID and Submitted);
 - the Ministry requests review worklist (Member and Ministry; newest first
   by default, #1064, #1684).
 
@@ -3880,11 +3879,13 @@ no Member name on purpose: the name itself may be the value the form
 refuses, and that page never shows one
 ([System health page](../admin-portal/spec.md#system-health-page)).
 
-The three report tables an installed SQL selection orders
+The report tables an installed SQL selection orders
 ([Admin tables](#admin-tables)) sort their DUID columns through that
-selection: Financial stewardship detail and the Additional information queue
-(Family DUID), and the Ministry report (Member DUID in one Ministry's view)
-([#960](https://github.com/epiphany40223/parishkit/issues/960)).
+selection: Financial stewardship detail (Family DUID) and the Ministry
+report (Member DUID in one Ministry's view)
+([#960](https://github.com/epiphany40223/parishkit/issues/960)); the
+Additional information worklist, which did too, sorts its whole list in
+memory since [#1685](https://github.com/epiphany40223/parishkit/issues/1685).
 
 ### Family and Member names
 

@@ -36,6 +36,7 @@ from parishkit.stewardship.pipeline import (
     may_add,
     role_actions,
 )
+from parishkit.stewardship.web.refusals import Refusal
 
 # The row icons, in the order every row draws them, so an action keeps its
 # place from row to row (UX conventions, "Row actions and confirmation").
@@ -384,14 +385,21 @@ def _decorate(stream, row, roles, prefix, columns):
     """
     placement = row["placement"]
     name = row["name"]
-    icons = row_icons(
-        stream,
-        placement,
-        roles,
-        name=name,
-        leads=row.get("leads", False),
-        by_hand=row.get("by_hand", False),
-        withheld=row.get("withheld", ()),
+    # A row decided on another page (``elsewhere``: its label and link, a
+    # Limitations page's Cannot contribute financially row, decided on
+    # Pledges) offers no icon and so no box; its Actions cell is the link.
+    icons = (
+        []
+        if row.get("elsewhere")
+        else row_icons(
+            stream,
+            placement,
+            roles,
+            name=name,
+            leads=row.get("leads", False),
+            by_hand=row.get("by_hand", False),
+            withheld=row.get("withheld", ()),
+        )
     )
     key = uuid4()
     reopen = placement.stage is Stage.IGNORED
@@ -456,9 +464,10 @@ class Worklist:
     ``prefix`` keeps the page's element ids apart; ``action`` is the page
     the filters and every decision post back to, whose answer is the page
     again, redrawn in place. ``baseline`` is whether the stream has a
-    Baseline column. ``fields`` are the page's view (its filters, Stage
-    included), which every form posts so its answer shows the same view.
-    The templates are the stream's own: its filters
+    Baseline column and ``reviewer`` whether it has a Reviewer's value
+    column (a stream with no Edit has none). ``fields`` are the page's view
+    (its filters, Stage included), which every form posts so its answer
+    shows the same view. The templates are the stream's own: its filters
     after Stage, its value editor (Edit and Add), and its export pane
     below the table.
     """
@@ -476,6 +485,7 @@ class Worklist:
     caption: str
     fields: dict = field(default_factory=dict)
     baseline: bool = True
+    reviewer: bool = True
     shows_now: bool = False
     bulk_too_many: bool = False
     bulk_key: UUID = field(default_factory=uuid4)
@@ -556,7 +566,7 @@ class Worklist:
     @property
     def span(self):
         """How many columns a full-width row (the empty table's) spans."""
-        fixed = 6 + int(self.baseline) + int(self.shows_now)
+        fixed = 5 + int(self.baseline) + int(self.reviewer) + int(self.shows_now)
         return len(self.columns) + fixed + int(self.selectable)
 
 
@@ -574,6 +584,7 @@ def build(
     items="items",
     caption="Review worklist",
     baseline=True,
+    reviewer=True,
     fields=None,
     address="",
     **templates,
@@ -591,7 +602,8 @@ def build(
     (ParishSoft now holds an Ignored item's Family answer) and ``withheld``
     (actions this item cannot take). ``roles`` is the reader's role set.
     ``stage`` is the Stage filter's value and ``fields`` the stream's other
-    filters, posted by every form. ``address`` is the view's own address
+    filters, posted by every form; ``baseline`` and ``reviewer`` say whether
+    the stream has those columns. ``address`` is the view's own address
     (``page_address``). ``templates`` takes the stream's
     ``filters_template``, ``editor_template``, ``add_template`` and
     ``export_template``.
@@ -614,6 +626,7 @@ def build(
         caption=caption,
         fields={"stage": stage} | dict(fields or {}),
         baseline=baseline,
+        reviewer=reviewer,
         shows_now=any(row["shows_now"] for row in decorated),
         bulk_too_many=len(decorated) > MAX_BULK,
         address=address,
@@ -802,3 +815,13 @@ def record(service, principal, decision):
         return service.decide(principal, decision)
     except StaleDecision as error:
         return STALE.format(name=error.name or "A chosen item")
+
+
+# A drawn form sent again with other choices after its first answer was
+# lost (a request key already bound to another decision): nothing was
+# recorded, and a reload draws fresh forms with fresh keys. Each stream's
+# view answers it as a 409 with this refusal.
+REBOUND = Refusal(
+    "This page was already used to record different choices, so nothing was recorded.",
+    "Reload the page, then try again.",
+)
