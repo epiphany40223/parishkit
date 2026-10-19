@@ -1796,16 +1796,23 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
    Warning looks with their icon (UX conventions, "Status indicators"). */
 .stage-chip { display: inline-flex; align-items: center; gap: .3rem; padding: .1rem .55rem; border: 1px solid var(--border); border-radius: 999px; background: var(--paper-soft); color: var(--ink); font-size: .8125rem; font-weight: 600; white-space: nowrap; }
 .stage-chip:is(.status-error, .status-warning) { border-color: var(--status-line); background: var(--status-bg); color: var(--status-ink); }
-/* A worklist's filters are always open (no Filters disclosure), laid out as
-   the Filters panel's grid: one column on a phone, 14rem columns from
-   40rem, Apply in the next cell and the reserved hint on its own row. */
-.worklist-filters { display: grid; grid-template-columns: minmax(0, 1fr); gap: .5rem 1rem; align-items: end; margin-block: 1rem; }
+/* A worklist's filters are always open (no Filters disclosure), in rows
+   that wrap: each field cell grows from 14rem (to at most 22rem, so a field
+   alone on the last row stays field-sized), and Apply filters with Clear
+   filters (.filter-actions) follow the last field, on its row when the row
+   has room, else at the start of the next (R38 finding 9). A wrapping row,
+   not the Filters panel's equal grid columns, because a grid cell can be
+   narrower than the pair with Linux's or WebKit's wider fonts, which then
+   wraps Clear under Apply and adds a row; the pair is never split here
+   unless the page itself is narrower than both. On a phone each field
+   takes the whole row. The reserved hint takes its own row. */
+.worklist-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .5rem 1rem; margin-block: 1rem; }
 .worklist-filters label { margin: 0 0 .25rem; font-size: .925rem; }
-.worklist-filters > div { margin: 0; }
+.worklist-filters > div:not(.filter-actions) { flex: 1 1 14rem; max-width: 22rem; margin: 0; }
 .worklist-filters > div > :is(input, select) { max-width: none; }
-.worklist-filters > :is(p, [data-complete-hint]) { grid-column: 1 / -1; margin: 0; }
-.worklist-filters > button { justify-self: start; margin: 0; }
-@media (min-width: 40rem) { .worklist-filters { grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); } }
+.worklist-filters > :is(p, [data-complete-hint]) { flex-basis: 100%; margin: 0; }
+.worklist-filters > .filter-actions { flex: 0 1 auto; min-width: 0; margin: 0; }
+@media (max-width: 40rem) { .worklist-filters > div:not(.filter-actions) { flex-basis: 100%; max-width: none; } }
 .button-danger { background: var(--error-border); border-color: var(--error-border); color: var(--paper); }
 .button-danger:not(:disabled):hover { background: var(--error-ink); border-color: var(--error-ink); }
 .confirm-dialog { margin: 12vh auto auto; width: min(34rem, calc(100vw - 2rem)); padding: 1.25rem 1.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--paper); color: var(--ink); box-shadow: var(--shadow); }

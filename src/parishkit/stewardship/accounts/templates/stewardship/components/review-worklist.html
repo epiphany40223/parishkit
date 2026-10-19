@@ -9,7 +9,9 @@
     table;
   - the filters, always open (UX conventions, "Admin tables": a worklist
     has no Filters disclosure), Stage first with its counts, then the
-    stream's own (worklist.filters_template);
+    stream's own (worklist.filters_template), then Apply filters and Clear
+    filters (components/filter-actions.html) right after the last field,
+    on its row when it has room;
   - the table region: the selection bar (the bulk buttons, which wait
     until every ticked row offers their action, data-confirm-kind; Add, for
     readers allowed to add there), the table in the shared column order and
@@ -30,8 +32,8 @@
 {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
 <div><label for="{{ w.prefix }}-stage">{% translate "Stage" %}</label><select id="{{ w.prefix }}-stage" name="stage">{% for value, label in w.stage_choices %}<option value="{{ value }}"{% if w.stage == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
 {% if w.filters_template %}{% include w.filters_template %}{% endif %}
-{% button type="submit" %}{% translate "Apply filters" %}{% endbutton %}
-<p class="help" data-complete-hint hidden></p>
+{% with apply_hint=w.prefix|add:"-filter-hint" %}{% include "stewardship/components/filter-actions.html" with apply_hint=apply_hint %}
+<p class="help" id="{{ apply_hint }}" data-complete-hint hidden></p>{% endwith %}
 </form>
 <div id="{{ table.anchor }}" data-table-region>
 {% include "stewardship/table-navigator.html" with table=table label=w.pages_label %}

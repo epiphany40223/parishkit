@@ -283,3 +283,33 @@ def test_a_leader_sees_only_their_actions(page, component_origin):
         "Back to review",
     ]
     assert bar.get_by_role("button", name="Add").count() == 0
+
+
+@pytest.mark.parametrize("width", [390, 700, 1280])
+def test_apply_and_clear_sit_after_the_last_filter(page, component_origin, width):
+    """Apply filters and Clear filters take the cell right after the last
+    filter field: on its row when the row has room (R38 finding 9), else at
+    the start of the next, and the page never scrolls sideways."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + PATH)
+    form = page.locator("#table-filters")
+    apply = form.get_by_role("button", name="Apply filters")
+    clear = form.get_by_role("button", name="Clear filters")
+    visible(clear)
+    last = form.locator(":scope > div:not(.filter-actions)").last.bounding_box()
+    actions = form.locator(":scope > .filter-actions").bounding_box()
+    box = apply.bounding_box()
+    start = form.bounding_box()["x"]
+    if width == 1280:
+        # Beside the last field, Apply's bottom on its box's bottom.
+        assert actions["x"] >= last["x"] + last["width"]
+        assert abs((box["y"] + box["height"]) - (last["y"] + last["height"])) <= 2
+    else:
+        # No room on the row: the next row's first cell, nothing between.
+        assert (
+            last["y"] + last["height"]
+            <= actions["y"]
+            <= last["y"] + last["height"] + 20
+        )
+        assert abs(actions["x"] - start) <= 2
+    assert page.evaluate("document.documentElement.scrollWidth") <= width

@@ -24,6 +24,7 @@ INCLUDE = '{% include "stewardship/components/filter-actions.html"'
 FILTER_FORMS = {
     "background.html",
     "census-changes.html",
+    "components/review-worklist.html",
     "deliveries.html",
     "delivery-refusals.html",
     "directory.html",

@@ -3602,7 +3602,12 @@ selection.
 A **worklist** (a table a reader works through, such as the review
 pipeline's [review worklist](../review-pipeline/spec.md#review-worklist)) has its filters
 always open, never behind a disclosure, above the table, and its export
-buttons below the table. A table's create action (the review worklist's
+buttons below the table. Its filters sit in rows that wrap, each field
+growing from 14rem, and Apply filters with [Clear filters](#clear-filters)
+follow the last field: on the same row when it has room, else at the
+start of the next, side by side unless the page is narrower than both;
+on a phone each field takes the whole row. No line sits between the last
+field and the buttons (R38). A table's create action (the review worklist's
 **Add**) sits in its selection bar, shown only to readers allowed to add
 there ([#1680](https://github.com/epiphany40223/parishkit/issues/1680)).
 
