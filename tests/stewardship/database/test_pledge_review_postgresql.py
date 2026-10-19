@@ -578,3 +578,60 @@ def test_limitations_lists_cannot_contribute_at_its_pledges_stage(response_servi
     assert (after or 0) == count - 1
     # Show narrowed to a Limitations answer lists none.
     assert read(show="cannot_attend")[0]["contributions"] == []
+
+
+def test_limitations_lists_a_confirmed_cannot_contribute_under_every_stage(
+    response_service,
+):
+    """Cannot contribute against no ParishSoft pledge is Confirmed at submit
+    (#1753): Limitations still lists it, with its Pledges stage and link,
+    but only under Every stage, and the menu count leaves it out."""
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.accounts import admin_context
+    from parishkit.stewardship.accounts.policy import Principal
+    from parishkit.stewardship.reports.limitation_worklist import (
+        answer_rows,
+        at_stage,
+    )
+    from parishkit.stewardship.reports.limitations import (
+        LimitationsQuery,
+        limitations_report,
+    )
+
+    harness = response_service
+    financial_source(harness, options=map(asdict, OPTIONS))
+    harness = activate_response_service(harness)
+    with web_login():
+        pledge(
+            harness,
+            load_form(harness),
+            annual_pledge="",
+            frequency="",
+            shares={},
+            cannot_give=True,
+        )
+    staff = Principal(admin(), frozenset({"staff"}), frozenset())
+    items = [
+        SimpleNamespace(name="limitations_report", url="/admin/reports/limitations/"),
+        SimpleNamespace(
+            name="pledges_to_enter", url="/admin/reports/financial/pledges/"
+        ),
+    ]
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        transaction.atomic(),
+    ):
+        result = limitations_report(
+            harness.campaign.pk, LimitationsQuery.parse({}), staff
+        )
+        count = admin_context._open_counts(
+            SimpleNamespace(), staff, items, harness.campaign
+        ).get("limitations_report")
+    (row,) = result["contributions"]
+    assert row["placement"].stage.value == "confirmed"
+    assert row["pledges_url"] == reverse(ROUTE) + "?stage=confirmed"
+    rows = answer_rows(result)
+    assert not [r for r in at_stage(rows, "to_review")[0] if r["kind"] == "cannot_give"]
+    assert [r["kind"] for r in at_stage(rows, "all")[0]].count("cannot_give") == 1
+    assert not count

@@ -73,7 +73,7 @@ def stage_row(harness, submission):
 
 
 def line(harness, submission):
-    """The Pledges to enter row's line under its Stage, as text."""
+    """The Pledges row's line under its Stage, as text."""
     from parishkit.stewardship.reports.pledge_review_views import _stage_line
 
     found = row(harness, submission)
