@@ -41,6 +41,7 @@ from ..reports import (
     ministry_followup_exports,
     ministry_followup_views,
     ministry_roster_views,
+    pledge_review_views,
     timeline_views,
     weekly_manual_views,
     weekly_views,
@@ -84,6 +85,14 @@ patterns = [
         "reports/financial/exports/",
         financial_export_views.create,
         "financial_export",
+    ),
+    # Pledges to enter (#1686): the financial stream's review worklist, whose
+    # decisions post to the page itself, and its CSV/XLSX/PDF download.
+    _page("reports/financial/pledges/", pledge_review_views.page, "pledges_to_enter"),
+    _page(
+        "reports/financial/pledges/exports/",
+        pledge_review_views.export,
+        "pledges_to_enter_export",
     ),
     _page("reports/limitations/", limitation_views.report, "limitations_report"),
     _page(
