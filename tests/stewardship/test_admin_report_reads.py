@@ -169,13 +169,28 @@ def financial():
 
 
 def limitations():
-    """``limitations_report``'s shaped result: the summary and a Member row."""
+    """``limitations_report``'s shaped result: a Member and a Family row,
+    counted at the Stage (#1735)."""
+    from parishkit.stewardship.pipeline import Placement, Stage
+
     return admin_report_reads.limitations_model(
         CAMPAIGN,
         {
             "summary": {"cannot_serve": 1, "cannot_attend": 1},
-            "members": [{"member_name": "Private Member"}],
+            "members": [
+                {
+                    "member_name": "Private Member",
+                    "placement": Placement(Stage.TO_REVIEW),
+                }
+            ],
+            "families": [
+                {
+                    "family_name": "Private Family",
+                    "placement": Placement(Stage.IGNORED),
+                }
+            ],
         },
+        "to_review",
     )
 
 
@@ -467,7 +482,9 @@ GOLDEN = {
         {
             "campaign_id": str(CAMPAIGN),
             "cannot_serve": 1,
-            "cannot_attend": 1,
+            "cannot_attend": 0,
+            "stage": "to_review",
+            "stages": {"to_review": 1, "to_handle": 0, "ignored": 1, "handled": 0},
         },
     ),
     "report information": (
@@ -483,6 +500,8 @@ GOLDEN = {
             },
             "source_as_of": ISO,
             "matching": 6,
+            "stage": None,
+            "stages": None,
         },
     ),
     "report ministry": (
@@ -712,6 +731,8 @@ def test_the_report_commands_name_menu_entries():
         ["report", "ministry", "--requests", "maybe"],
         ["report", "participation", "--campaign", str(CAMPAIGN)],
         ["report", "information", "--search", "Private"],
+        ["report", "information", "--stage", "conflict"],
+        ["report", "limitations", "--stage", "history"],
         ["report", "roster", "--show", "entered"],
         ["report", "roster", "--ministry", "09"],
         ["report", "roster", "--campaign", str(CAMPAIGN)],

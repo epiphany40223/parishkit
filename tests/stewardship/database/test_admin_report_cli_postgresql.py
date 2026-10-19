@@ -420,7 +420,13 @@ def test_ministry_summary_and_request_counts(response_service, google, cli):
     )
     code, document = run("report", "limitations")
     assert code == 0, document
-    assert set(document["result"]) == {"campaign_id", "cannot_serve", "cannot_attend"}
+    assert set(document["result"]) == {
+        "campaign_id",
+        "cannot_serve",
+        "cannot_attend",
+        "stage",
+        "stages",
+    }
 
 
 def harness_admin(run):
