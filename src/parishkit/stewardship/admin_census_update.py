@@ -504,14 +504,24 @@ def update_preview(caller, service, plan_id, *, request_key):
         counts = confirmation_counts(plan.pk)
         if not replay:
             _offered(plan, counts, kind="update")
-        return counts, _update_lines(plan, counts)
+        return counts, _update_lines(plan, counts, replay=replay)
 
     return _held(lambda: _refusing(step))
 
 
-def _update_lines(plan, counts):
-    """The prompt's lines: the plan, the page's question and its sentences."""
+def _update_lines(plan, counts, *, replay=False):
+    """The prompt's lines: the plan, the page's question and its sentences.
+
+    A repeat of a key that already confirmed the plan writes nothing new,
+    so it says so rather than asking about an irreversible write.
+    """
     from .reports import census_publication as publication
+
+    if replay:
+        return [
+            f"Update for check {plan.pk} was already confirmed with this "
+            "request key; the same confirmation and run are returned."
+        ]
 
     held = counts["blocked_entities"]
     lines = [
@@ -645,8 +655,12 @@ class UpdateRerun(ReadModel):
     task: dict
 
 
-def _rerun_replay(plan, request_key):
-    """Whether ``request_key`` already retried ``plan``'s run (a repeat)."""
+def _rerun_replay(plan, request_key, actor_id):
+    """Whether ``actor_id``'s ``request_key`` already retried ``plan``'s run.
+
+    Another Administrator's key is not a repeat, as for the other two
+    writes: it meets the page's checks, and the service refuses the key.
+    """
     from .jobs.models import TaskRun
     from .reports import census_publication as publication
 
@@ -654,7 +668,9 @@ def _rerun_replay(plan, request_key):
     return (
         run is not None
         and TaskRun.objects.filter(
-            root_id=run.root_id, retry_command_id=request_key
+            root_id=run.root_id,
+            retry_command_id=request_key,
+            initiated_by_id=actor_id,
         ).exists()
     )
 
@@ -669,14 +685,16 @@ def rerun_preview(caller, service, plan_id, *, request_key):
     from .reports import census_publication as publication
     from .responses.publication_plans import confirmation_counts
 
-    _admit_update(caller, service.store)
+    actor = _admit_update(caller, service.store)
 
     def step():
         """The page's checks before its confirmation is drawn."""
         _switched_on()
         campaign_id = _campaign()
         plan, replay = _repeat_or_newest(
-            campaign_id, plan_id, lambda plan: _rerun_replay(plan, request_key)
+            campaign_id,
+            plan_id,
+            lambda plan: _rerun_replay(plan, request_key, actor.identity),
         )
         if replay:
             return [
@@ -730,7 +748,9 @@ def update_rerun(caller, service, plan_id, *, request_key, context):
         _switched_on()
         campaign_id = _campaign()
         plan, replay = _repeat_or_newest(
-            campaign_id, plan_id, lambda plan: _rerun_replay(plan, request_key)
+            campaign_id,
+            plan_id,
+            lambda plan: _rerun_replay(plan, request_key, actor.identity),
         )
         checked["plan"] = plan
         if not replay:

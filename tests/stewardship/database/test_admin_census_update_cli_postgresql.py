@@ -336,10 +336,13 @@ def test_keys_recover_and_never_act_twice(
     task = document["result"]["task"]
     assert world.execute(UUID(task["id"]))
     newer = world.planned(uuid4())
-    code, document, _ = run(
-        "census", "update-confirm", str(plan.pk), "--request-key", key, "--yes"
+    code, document, errors = run(
+        "census", "update-confirm", str(plan.pk), "--request-key", key, answer=b"yes\n"
     )
     assert code == 0 and not document["result"]["created"], document
+    # The question says nothing new is written.
+    assert "already confirmed with this request key" in errors
+    assert "cannot be undone" not in errors
     assert document["result"]["task"]["id"] == task["id"]
     # A new key for the older plan is still superseded, as on the page.
     code, document, _ = run("census", "update-confirm", str(plan.pk), "--yes")

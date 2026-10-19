@@ -2561,7 +2561,9 @@ newest check they have seen. No SQL guard or service checks this: the
 page's view checks it in Python, through one shared helper the command line
 uses too ([#1755](https://github.com/epiphany40223/parishkit/issues/1755)),
 before calling `confirm_and_publish`, so both refuse an older plan the same
-way.
+way (a command repeated with a key that already confirmed the plan returns
+that confirmation; see
+[Update ParishSoft commands](../admin-automation/spec.md#update-parishsoft-commands)).
 
 Once the run is queued the dialog closes and the page redraws in place: the
 plan's region shows the run's live status below the summary line
