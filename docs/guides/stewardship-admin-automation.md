@@ -273,12 +273,16 @@ background work holds while mail is being sent, is exit 1
 ### `go-live readiness` and `go-live progress`
 
 These matter again for the next campaign. Both read the current campaign
-unless `--campaign UUID` names another. Starting cleanup, the public web
-address check, preparing links, confirming Production and withdrawing stay
-on the pages until ADM-11 PR 12.
+unless `--campaign UUID` names another. The
+[Go live page's](../specs/stewardship/admin-portal/spec.md#go-live-page)
+actions (the public web address check, Start go-live, Retry stopping
+go-live, the Prepare step's Retry, Refresh and prepare again and Stop
+go-live, Confirm Production, mail preparation's Retry, Cancel go-live and
+the Testing submissions list) stay on the pages until ADM-11
+PR 12 ([#1809](https://github.com/epiphany40223/parishkit/issues/1809)).
 
-`go-live readiness` is the Go-live readiness page's preview of the current
-Testing draft, without its public web address check:
+`go-live readiness` is the Go live page's Check step: its preview of the
+current Testing draft, without its public web address check:
 
 | Field | What it holds |
 | --- | --- |
@@ -303,14 +307,13 @@ current Testing draft is exit 1 (`stale_version`), as on the page.
 | --- | --- |
 | `campaign_id`, `campaign_state` | The campaign and its state (`scheduled`, `active` or `closed`) |
 | `confirmation_id`, `confirmed_at` | The Production confirmation |
-| `withdrawal_available` | Whether the page offers withdrawal (before the start only) |
+| `withdrawal_available` | Whether the page offers Cancel go-live (before the start only) |
 | `preparation` | The initial mail preparation, or `null` when the campaign was confirmed before its start and has none: `complete`, `task_id` (follow it with `task show`), `task_state`, `updated_at`, `phase`, `items_completed`, `groups_completed`, `failure` (a stored code, or `null`) and `retry_available` (the page offers mail preparation's **Retry**) |
 | `outcomes` | Each count the confirmation previewed, by `key` (`family_messages`, `daily_messages`, `weekly_messages`, `coalesced_slots`, `active_families`, `eligible_families`, `no_email_families`): `preview`, `actual`, `difference`, and `complete` once that count is final |
 
 A campaign that is not the current Production campaign, a Testing draft
 included, is exit 1 (`denied`), as on the page; the current Production
-campaign with no confirmation receipt is exit 1 (`not_available`). Retrying
-failed preparation stays on the page until PR 12.
+campaign with no confirmation receipt is exit 1 (`not_available`).
 
 ### `system health`
 
