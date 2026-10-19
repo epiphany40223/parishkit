@@ -4607,6 +4607,42 @@ BEGIN
                AND NOT EXISTS (SELECT 1 FROM public.stewardship_proposed_change proposal
                    WHERE proposal.submission_id=NEW.id AND proposal.entity_kind=answer.entity
                      AND proposal.entity_key=answer.identity AND proposal.field=answer.field)
+               -- The same answer again for a change already entered by hand
+               -- or published, which the download may not show yet, keeps
+               -- that change and makes no row (the review pipeline's
+               -- resubmission rule, #1683): the newest earlier change for
+               -- the key is entered or published with this very answer, and
+               -- the prior census response gave it too. Without that, an
+               -- answer set back to ParishSoft's value in between (which
+               -- makes no row) would let the old answer again pass with no
+               -- row, where responses/proposals.py makes a new one. Not for
+               -- a terminal request, which is no longer presented once
+               -- entered, so asking for it again is a new request.
+               AND ((answer.entity='member'
+                     AND answer.field IN ('moved_household','deceased_status','death_date'))
+                    OR NOT EXISTS (SELECT 1 FROM (
+                   SELECT proposal.execution, proposal.submitted_value
+                   FROM public.stewardship_proposed_change proposal
+                   JOIN public.stewardship_submission history ON history.id=proposal.submission_id
+                   WHERE history.family_id=NEW.family_id AND history.campaign_id=NEW.campaign_id
+                     AND history.mode=NEW.mode
+                     AND history.rehearsal_epoch_id IS NOT DISTINCT FROM NEW.rehearsal_epoch_id
+                     AND history.family_version<NEW.family_version
+                     AND proposal.entity_kind=answer.entity
+                     AND proposal.entity_key=answer.identity AND proposal.field=answer.field
+                   ORDER BY history.family_version DESC LIMIT 1) latest
+                   JOIN public.stewardship_submission census_prior
+                     ON census_prior.id=public.stewardship_response_census_anchor_v1(NEW.prior_submission_id)
+                   CROSS JOIN LATERAL (SELECT census_prior.answers #> CASE answer.entity
+                         WHEN 'family' THEN ARRAY['family',answer.field]
+                         WHEN 'member' THEN ARRAY['members',answer.identity,answer.field]
+                         ELSE ARRAY['proposed_members',answer.identity] END AS value) given
+                   WHERE latest.execution IN ('published','resolved_external')
+                     AND public.stewardship_response_comparison_v1(answer.field,latest.submitted_value)
+                         IS NOT DISTINCT FROM submitted_key
+                     AND given.value IS NOT NULL
+                     AND public.stewardship_response_comparison_v1(answer.field,given.value)
+                         IS NOT DISTINCT FROM submitted_key))
             THEN
                 RAISE EXCEPTION 'Submitted census change requires atomic derived work' USING ERRCODE='23514';
             END IF;

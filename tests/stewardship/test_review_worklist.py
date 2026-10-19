@@ -245,6 +245,25 @@ def test_build_gives_each_row_its_box_kinds_and_posts():
     assert built.span == 9
 
 
+def test_a_stream_without_baseline_or_edit_drops_those_columns():
+    """No Baseline or Reviewer's value column for a stream without them (#1685)."""
+    from django.template.loader import render_to_string
+
+    table = paginate(rows(), {"size": "25"}, carry=[("stage", "all")])
+    built = made(shown=table.rows, baseline=False, reviewer=False)
+    assert not built.baseline and not built.reviewer
+    # Who, Family's answer, Stage, Submitted, Last decision, Actions and the
+    # selection column.
+    assert built.span == 7
+    html = render_to_string(
+        "stewardship/components/review-worklist.html",
+        {"worklist": built, "table": table, "csrf_token": "x"},
+    )
+    head = html.split("<thead>")[1].split("</thead>")[0]
+    assert "Reviewer's value" not in head and "Baseline" not in head
+    assert "Family's answer" in head
+
+
 def test_add_needs_the_role_and_an_editor():
     """Add shows for Staff only once the stream gives its editor."""
     assert made(add_template="editor.html").add
@@ -404,6 +423,44 @@ def test_record_words_a_race_as_the_notice():
     assert record(Service(StaleDecision()), "staff", decision) == (
         "A chosen item: not recorded, changed by someone else."
     )
+
+
+def test_a_withheld_action_is_left_out_of_one_row():
+    """An item that cannot take an action has no icon for it (#1683).
+
+    A census field no value can be typed for (moved, deceased, the email
+    opt-out, a New Member) has no Edit, whatever its stage.
+    """
+    assert icons(
+        "census", Placement(Stage.TO_REVIEW), by_hand=True, withheld={"edit"}
+    ) == [
+        ("accept", False, False),
+        ("ignore", False, False),
+        ("entered_by_hand", False, False),
+    ]
+
+
+@pytest.mark.parametrize(
+    "placement,expected",
+    [
+        (Placement(Stage.TO_REVIEW), ""),
+        # The stage's word already says the decision.
+        (Placement(Stage.IGNORED, Decision.IGNORED), ""),
+        (Placement(Stage.READY_TO_UPDATE, Decision.ACCEPTED), "Accepted."),
+        # A Conflict keeps its earlier decision visible, not in force.
+        (
+            Placement(Stage.CONFLICT, held_decision=Decision.ACCEPTED_EDITED),
+            "Earlier: Accepted (edited), not in force.",
+        ),
+        (
+            Placement(Stage.READY_TO_UPDATE, Decision.ACCEPTED, failed=True),
+            "Accepted. The last update failed.",
+        ),
+    ],
+)
+def test_the_decision_line_words_held_and_failed_items(placement, expected):
+    """The line under a row's stage (#1683)."""
+    assert worklist.decision_label(placement) == expected
 
 
 def test_every_icon_tooltip_is_one_phrase_without_a_full_stop():

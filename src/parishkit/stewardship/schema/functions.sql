@@ -5999,23 +5999,29 @@ CREATE FUNCTION public.stewardship_sealed_intake_admission_v1() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
-DECLARE ended boolean := false;
+DECLARE live boolean := true;
 BEGIN
     IF TG_TABLE_NAME='stewardship_secret_request' THEN
-        -- The recorded sign-in instant may be of any age (#1547). One that
-        -- is a full-scope automation session's needs one such session
-        -- live (ADM-11), so an ended session's request is refused. A
-        -- separate statement, reached only by the web (which holds
-        -- EXECUTE) or the schema owner: EXECUTE is checked whenever an
-        -- expression is initialized. A setup install's installer
-        -- records the setup browser session's instant.
-        IF NEW.required_consumers<>'[]'::jsonb
-           AND (current_user='pk_stewardship_web' OR pg_has_role(current_user,
-                (SELECT nspowner FROM pg_namespace WHERE nspname='public'),'USAGE')) THEN
-            ended := coalesce(public.stewardship_automation_instant_ended_v1(
-                NEW.requested_by_id,NEW.reauthenticated_at),false);
+        -- A request made through an automation session names it (#1763):
+        -- it must be a live, full-scope session of the requester holding
+        -- the recorded sign-in instant (ADM-11), so an ended session
+        -- stages nothing. A browser request names none and is not checked
+        -- here, whatever automation sessions its sign-in approved; its
+        -- sign-in may be of any age (#1547). Only the web (which holds
+        -- EXECUTE on the check) or the schema owner may name a session;
+        -- any other login naming one is refused. The call is its own
+        -- statement: EXECUTE is checked whenever an expression is
+        -- initialized.
+        IF NEW.automation_session_id IS NOT NULL THEN
+            IF current_user='pk_stewardship_web' OR pg_has_role(current_user,
+                (SELECT nspowner FROM pg_namespace WHERE nspname='public'),'USAGE') THEN
+                live := coalesce(public.stewardship_automation_request_live_v1(
+                    NEW.automation_session_id,NEW.requested_by_id,NEW.reauthenticated_at),false);
+            ELSE
+                live := false;
+            END IF;
         END IF;
-        IF ended THEN
+        IF NOT live THEN
             RAISE EXCEPTION 'Sealed intake requires a live automation session'
                 USING ERRCODE='23514';
         END IF;
@@ -6112,7 +6118,7 @@ CREATE FUNCTION public.stewardship_secret_request_mutable_v1() RETURNS trigger
     LANGUAGE plpgsql
     AS $$
             BEGIN
-                IF NEW."id" IS DISTINCT FROM OLD."id" OR NEW."created_at" IS DISTINCT FROM OLD."created_at" OR NEW."target" IS DISTINCT FROM OLD."target" OR NEW."staging_reference" IS DISTINCT FROM OLD."staging_reference" OR NEW."requested_by_id" IS DISTINCT FROM OLD."requested_by_id" OR NEW."reauthenticated_at" IS DISTINCT FROM OLD."reauthenticated_at" OR NEW."expires_at" IS DISTINCT FROM OLD."expires_at" OR NEW."expected_fingerprint" IS DISTINCT FROM OLD."expected_fingerprint" OR NEW."required_consumers" IS DISTINCT FROM OLD."required_consumers" OR (OLD."resulting_fingerprint" IS NOT NULL AND NEW."resulting_fingerprint" IS DISTINCT FROM OLD."resulting_fingerprint") OR (OLD."installed_at" IS NOT NULL AND NEW."installed_at" IS DISTINCT FROM OLD."installed_at") OR (OLD."acknowledged_at" IS NOT NULL AND NEW."acknowledged_at" IS DISTINCT FROM OLD."acknowledged_at") THEN
+                IF NEW."id" IS DISTINCT FROM OLD."id" OR NEW."created_at" IS DISTINCT FROM OLD."created_at" OR NEW."target" IS DISTINCT FROM OLD."target" OR NEW."staging_reference" IS DISTINCT FROM OLD."staging_reference" OR NEW."requested_by_id" IS DISTINCT FROM OLD."requested_by_id" OR NEW."reauthenticated_at" IS DISTINCT FROM OLD."reauthenticated_at" OR NEW."expires_at" IS DISTINCT FROM OLD."expires_at" OR NEW."expected_fingerprint" IS DISTINCT FROM OLD."expected_fingerprint" OR NEW."required_consumers" IS DISTINCT FROM OLD."required_consumers" OR NEW."automation_session_id" IS DISTINCT FROM OLD."automation_session_id" OR (OLD."resulting_fingerprint" IS NOT NULL AND NEW."resulting_fingerprint" IS DISTINCT FROM OLD."resulting_fingerprint") OR (OLD."installed_at" IS NOT NULL AND NEW."installed_at" IS DISTINCT FROM OLD."installed_at") OR (OLD."acknowledged_at" IS NOT NULL AND NEW."acknowledged_at" IS DISTINCT FROM OLD."acknowledged_at") THEN
                     RAISE EXCEPTION 'Record identity and bindings are immutable'
                         USING ERRCODE = '23514';
                 END IF;
@@ -6181,7 +6187,7 @@ CREATE FUNCTION public.stewardship_secret_state_v2() RETURNS trigger
     LANGUAGE plpgsql
     SET search_path TO 'pg_catalog', 'public', 'pg_temp'
     AS $$
-DECLARE ended boolean := false;
+DECLARE live boolean := true;
 BEGIN
     IF TG_OP='DELETE' THEN
         RAISE EXCEPTION 'Secret request history cannot be deleted' USING ERRCODE='23514';
@@ -6226,19 +6232,25 @@ BEGIN
         RAISE EXCEPTION 'Credential acknowledgement requires consumer evidence' USING ERRCODE='23514';
     END IF;
     IF OLD.state='staged' AND NEW.state='testing' THEN
-        -- The request's sign-in instant may be of any age (#1547). One
-        -- that is a full-scope automation session's needs one such session
-        -- still live (ADM-11): ending the session stops its staged
-        -- credential here. Only these targets' installers hold EXECUTE on
-        -- the check, so it is its own statement, reached only for them; a
-        -- live initial setup install relies on its frozen setup instead.
-        IF NEW.target IN ('parishsoft','google_workspace','slack')
-           AND NOT public.stewardship_setup_install_live_v1(NEW.id) THEN
-            ended := coalesce(public.stewardship_automation_instant_ended_v1(
-                NEW.requested_by_id,NEW.reauthenticated_at),false);
+        -- A request made through an automation session names it (#1763):
+        -- that session must still be live, of full scope, the requester's
+        -- and hold the recorded sign-in instant (ADM-11), so ending it
+        -- stops the credential it staged here. A browser request names
+        -- none and is not checked, whatever its sign-in approved; its
+        -- sign-in may be of any age (#1547). Only these targets'
+        -- installers hold EXECUTE on the check, so it is its own
+        -- statement, reached only for them; no other target takes an
+        -- automation session's request.
+        IF NEW.automation_session_id IS NOT NULL THEN
+            IF NEW.target IN ('parishsoft','google_workspace','slack') THEN
+                live := coalesce(public.stewardship_automation_request_live_v1(
+                    NEW.automation_session_id,NEW.requested_by_id,NEW.reauthenticated_at),false);
+            ELSE
+                live := false;
+            END IF;
         END IF;
         IF NEW.actor_id IS NOT NULL OR NEW.expires_at<=statement_timestamp()
-           OR ended
+           OR NOT live
            OR NEW.required_consumers='[]'::jsonb
            OR NOT EXISTS(SELECT 1 FROM stewardship_sealed_credential_staging WHERE request_id=NEW.id AND ciphertext IS NOT NULL) THEN
             RAISE EXCEPTION 'Credential testing requires a live sealed request' USING ERRCODE='23514';

@@ -531,13 +531,21 @@ def recipient_sort_key(selected, actor):
     )
 
 
+# A typed Family DUID: its digits, or the digits grouped by commas as a
+# copied US-formatted number shows them, at most DUID_LONGEST characters.
+# The Test with Families page checks the same rule in the browser (#1577).
+DUID_TEXT = r"[0-9]+|[1-9][0-9]{0,2}(?:,[0-9]{3})+"
+DUID_LONGEST = 25
+NOT_A_DUID = "Use an exact Family DUID."
+
+
 def family_duid(value):
     """Accept copied US-grouped identifiers as well as their canonical digits."""
-    if type(value) is not str or len(value) > 25:
-        raise ValueError("Use an exact Family DUID.")
-    if re.fullmatch(r"[0-9]+|[1-9][0-9]{0,2}(?:,[0-9]{3})+", value) is None:
-        raise ValueError("Use an exact Family DUID.")
+    if type(value) is not str or len(value) > DUID_LONGEST:
+        raise ValueError(NOT_A_DUID)
+    if re.fullmatch(DUID_TEXT, value) is None:
+        raise ValueError(NOT_A_DUID)
     result = int(value.replace(",", ""))
     if not 0 < result < 2**63:
-        raise ValueError("Use an exact Family DUID.")
+        raise ValueError(NOT_A_DUID)
     return result

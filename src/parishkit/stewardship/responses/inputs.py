@@ -313,9 +313,12 @@ def family_field_value(field):
     """Keep unsupported source semantics unavailable rather than invent mappings.
 
     The verified normalized source has a primary contact address, not separate
-    home/mailing addresses or their country. Its sendNoMail flag is not email
-    opt-out. A future verified read adapter must change this shared projection
-    and its independent SQL reconstruction together before claiming availability.
+    home/mailing addresses or their country. Its sendNoMail flag is what the
+    review pipeline confirms an entered email opt-out against (Administrator,
+    2026-10-18, #1680), but the Family form's baseline for the opt-out stays
+    unavailable here: showing it is a Family-form change of its own. A future
+    verified read adapter must change this shared projection and its
+    independent SQL reconstruction together before claiming availability.
     """
     if field not in FAMILY_FIELDS:
         _unavailable()

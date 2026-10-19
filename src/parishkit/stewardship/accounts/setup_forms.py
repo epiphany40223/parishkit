@@ -8,12 +8,19 @@ from django.utils.translation import gettext_lazy as _
 from parishkit.config import ConfigError
 from parishkit.stewardship.schema_primitives import canonical_timezone
 from parishkit.stewardship.web.admin_forms import AdminForm
-from parishkit.stewardship.web.field_rules import RuleField
+from parishkit.stewardship.web.field_rules import (
+    EMAIL,
+    EmailRuleField,
+    FieldRule,
+    RuleField,
+    apply,
+    email_lines_pattern,
+)
 from parishkit.stewardship.web.refusals import UserFacingError
 from parishkit.stewardship.web.sender_name_field import SenderNameField
 
 from . import setup_help
-from .integration_forms import SLACK_CHANNEL
+from .integration_forms import MISSING_HINTS, SLACK_CHANNEL
 from .parish_views import ParishForm
 from .policy_schema import normalized_email
 from .timezone_field import browser_default
@@ -51,6 +58,17 @@ class SetupParishForm(ParishForm):
         return value if self.fields["timezone"].disabled else canonical_timezone(value)
 
 
+# At most fifty addresses, one per line, each as sign-in reads it (at most
+# 254 characters, normalized_email), checked by the browser and the server
+# alike (#1577). One refusal covers a malformed line and too many lines.
+IDENTITY_LINES = FieldRule(
+    name="email_lines",
+    pattern=email_lines_pattern(50, 254),
+    message=_("Enter one email address on each line, at most fifty."),
+    code="invalid_email",
+)
+
+
 class IdentityLines(forms.CharField):
     """Normalize at most fifty distinct email addresses, one per line."""
 
@@ -63,10 +81,17 @@ class IdentityLines(forms.CharField):
             help_text=_("One per line. Leave empty when no one else needs this role."),
             **kwargs,
         )
+        apply(self, IDENTITY_LINES)
 
     def clean(self, value):
-        """No malformed or duplicate address."""
+        """No malformed or duplicate address.
+
+        The shared rule refuses a malformed line or more than fifty first,
+        in its words; the checks after it are what the rule mirrors.
+        """
         value = super().clean(value)
+        if value:
+            IDENTITY_LINES.check(value)
         lines = [line.strip() for line in value.splitlines() if line.strip()]
         if len(lines) > 50:
             raise forms.ValidationError(
@@ -102,10 +127,22 @@ class SetupAccessForm(AdminForm):
 class SetupMailForm(AdminForm):
     """Public mail scope does not imply credential installation or test delivery."""
 
-    delegated_email = forms.EmailField(label=_("Delegated mailbox"), max_length=254)
-    sender = forms.EmailField(label=_("From address"), max_length=254)
+    # Each address is checked by the browser and the server alike (#1577),
+    # in the words Integration settings uses for it.
+    delegated_email = EmailRuleField(
+        EMAIL.worded(MISSING_HINTS["delegated_email"]),
+        label=_("Delegated mailbox"),
+        max_length=254,
+    )
+    sender = EmailRuleField(
+        EMAIL.worded(MISSING_HINTS["sender"]), label=_("From address"), max_length=254
+    )
     sender_name = SenderNameField()
-    reply_to = forms.EmailField(label=_("Reply-to address"), max_length=254)
+    reply_to = EmailRuleField(
+        EMAIL.worded(MISSING_HINTS["reply_to"]),
+        label=_("Reply-to address"),
+        max_length=254,
+    )
 
     def __init__(self, *args, **kwargs):
         """Explain the mailbox, From and Reply-to roles."""
@@ -164,8 +201,10 @@ class SetupSlackForm(AdminForm):
 class SetupTestingForm(AdminForm):
     """One destination applies to all test mail; no Production switch exists here."""
 
-    testing_recipient = forms.EmailField(
-        label=_("Testing email address"), max_length=254
+    testing_recipient = EmailRuleField(
+        EMAIL.worded(_("Enter a valid Testing email address.")),
+        label=_("Testing email address"),
+        max_length=254,
     )
 
     def __init__(self, *args, **kwargs):

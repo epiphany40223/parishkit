@@ -429,6 +429,14 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # (0114's) and 0104's setup credential audit come back older from closure
 # files, so ``CLOSURE_REPLACED_ONLY`` runs 0124's replacements of those;
 # the rest (baseline guards no closure file installs again) survive.
+# 0125 (#1763) adds a request column (IF NOT EXISTS, so its file runs again)
+# and a definer check granted to web and three installers
+# (runtime_grants.CLOSURE_FUNCTIONS, so ``closure_functions_absent`` drops it
+# and installs the file whole again), drops 0114's ended-instant check (IF
+# EXISTS; 0114 is no longer in CLOSURE_FUNCTIONS, so nothing makes it
+# again) and replaces three bodies (0124's intake check, 0114's state guard,
+# the baseline's request guard) that no closure file installs again, so
+# nothing else is registered.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -690,6 +698,47 @@ CLOSURE_CREATED = {
         ),
         ("stewardship_jobs", "0035_leader_emails"),
     ),
+    # 0126 (#1685, provisional number) creates the Limitations review table
+    # (in CLOSURE_TABLES) with its guard, deferred audit check, answer and
+    # in-force reads and the report's v2 selection; all of them go, and the
+    # column it adds to the information revisions goes too
+    # (``before_information_limitation_review``), so its file installs whole
+    # again, the revision guard's replacement included.
+    **dict.fromkeys(
+        (
+            "public.stewardship_limitation_review_guard_v1()",
+            "public.stewardship_limitation_review_effect_v1()",
+            "public.stewardship_limitation_answer_v1(jsonb,text,text)",
+            "public.stewardship_limitation_stated_v1(jsonb,text,text)",
+            "public.stewardship_limitation_in_force_v1(uuid)",
+            "public.stewardship_limitations_report_v2(uuid,jsonb)",
+        ),
+        ("stewardship_responses", "0013_information_limitation_review"),
+    ),
+    # 0127 (#1686, provisional number) creates the pledge review table (in
+    # CLOSURE_TABLES) with these functions; all go, so its file installs
+    # whole again.
+    **dict.fromkeys(
+        (
+            "public.stewardship_pledge_answer_v1(jsonb,numeric)",
+            "public.stewardship_pledge_review_states_v1(uuid,uuid)",
+            "public.stewardship_pledge_review_guard_v1()",
+            "public.stewardship_pledge_review_effect_v1()",
+        ),
+        ("stewardship_reports", "0032_pledge_review"),
+    ),
+    # 0129 (#1710) creates the census addition tables (in CLOSURE_TABLES)
+    # with their guards and deferred audit checks, and replaces nothing, so
+    # its file installs whole again.
+    **dict.fromkeys(
+        (
+            "public.stewardship_census_addition_guard_v1()",
+            "public.stewardship_census_addition_effect_v1()",
+            "public.stewardship_census_addition_resolution_guard_v1()",
+            "public.stewardship_census_addition_resolution_effect_v1()",
+        ),
+        ("stewardship_responses", "0015_census_additions"),
+    ),
 }
 
 
@@ -765,8 +814,12 @@ CLOSURE_ALTERED = {
 # entry comes after 0094's: 0094's file, run again for the limitations
 # report, puts that selection back without the counts first.
 # 0101 (#528) replaces the task-type maps 0077's file brings back.
-# 0107 (#528, ADM-09.04) replaces the review guard 0096's file brings back
-# with the one that also admits an edited value.
+# 0107 (#528, ADM-09.04) replaced the review guard 0096's file brings back
+# with the one that also admits an edited value, and 0108's file (run by
+# ``CLOSURE_ALTERED``) with the accepted base; 0128 (#1683) replaces it last,
+# for the review pipeline, and 0130 (#1719) after it, for an edited
+# address; neither creates anything, so 0130's file (the latest body) runs
+# again whenever the guard lacks its phrase.
 # 0110 (#558) replaces the baseline financial selection that 0094's file,
 # run again above for the limitations report, puts back without the
 # browser-zone days, so its entry comes after 0094's.
@@ -815,8 +868,8 @@ CLOSURE_REPLACED = {
         (("stewardship_responses", "0007_publication_tasks"), "census_publication"),
     ),
     "public.stewardship_proposal_review_guard_v1()": (
-        ("stewardship_responses", "0008_proposal_review_edit"),
-        "OR decided=edited",
+        ("stewardship_responses", "0016_census_address_guard"),
+        "PERFORM public.stewardship_response_address_guard_v1(NEW.admin_value);",
     ),
     "public.stewardship_response_derived_guard_v1()": (
         ("stewardship_responses", "0010_upstream_at_check"),
@@ -1230,6 +1283,21 @@ def before_ministry_review_pipeline():
     ]
 
 
+def before_information_limitation_review():
+    """The statement that puts the information revisions back as before 0126.
+
+    #1685's 0126 adds only ``stewardship_information_revision``'s review
+    decision (and its check, which goes with the column) to a table the base
+    has; its new table and functions are ``CLOSURE_TABLES`` and
+    ``CLOSURE_CREATED``. The revision guard it replaced keeps its 0126 body,
+    which nothing on the users upgrade's base calls; 0126's file (or the full
+    migration) adds the column again.
+    """
+    return [
+        'ALTER TABLE "stewardship_information_revision" DROP COLUMN "review_decision"'
+    ]
+
+
 @contextmanager
 def swap_pending():
     """Put the database in the state `migrate --users-upgrade-base` leaves.
@@ -1298,6 +1366,7 @@ def swap_pending():
             *before_leader_changes(),
             *before_branding_bundle_mode(),
             *before_ministry_review_pipeline(),
+            *before_information_limitation_review(),
         ):
             cursor.execute(statement)
     try:

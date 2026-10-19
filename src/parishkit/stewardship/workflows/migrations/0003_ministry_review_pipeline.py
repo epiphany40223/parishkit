@@ -31,10 +31,10 @@ FROZEN_SQL = (
 class Migration(migrations.Migration):
     dependencies = [
         ("stewardship_workflows", "0002_roster_entries"),
-        # The migration that installs main's latest frozen file (0124, the
-        # guard wording), so the files apply in prefix order. The follow-up
-        # selection 0094 replaced last comes before it.
-        ("stewardship_accounts", "0029_guard_wording"),
+        # The migration that installs the previous frozen file (0130, the
+        # census address guard), so the files apply in prefix order. The
+        # follow-up selection 0094 replaced last comes before it.
+        ("stewardship_responses", "0016_census_address_guard"),
     ]
 
     operations = [
