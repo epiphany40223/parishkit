@@ -535,6 +535,9 @@ the review service refuses Back to review on it; its revision guard does not
 read the checks, and a request reopened anyway would be resolved as
 Confirmed by the next refresh, as an open request whose roster is current is
 today. Roster changes to enter no longer counts it as not yet entered.
+Decided pledges get pledge refresh checks of their own
+([Financial stream](#financial-stream),
+[#1704](https://github.com/epiphany40223/parishkit/issues/1704)).
 
 Nothing already stored is rewritten: a census change today's reconciliation
 resolved upstream before #1689 (an Ignored one ParishSoft matched, or an
@@ -733,30 +736,68 @@ changed with it). An unchanged resubmission keeps the decision at any stage
 answers them, as on Financial stewardship detail: a Family that answers
 again while the financial section is switched off leaves the list until it
 answers the financial questions again, keeping its history. Rules 3 and 4
-need ParishSoft's upcoming-year pledge, which no read returns yet (#1704). An Entered by hand mark records ParishSoft's pledge for
-the upcoming year when a read gives it; until #1704 adds that read the mark
-records none, and #1704 reads such a mark against A, which is then no pledge.
+need ParishSoft's upcoming-year pledge at the Family's submit, which the
+response does not record
+([#1747](https://github.com/epiphany40223/parishkit/issues/1747)).
 Pledges and funds are read-only in ParishSoft's API, so the stream never has
 Ready to update.
 
-Gaps after #1686: confirmation (below, #1704).
+Gaps after #1704: a To review pledge ParishSoft already holds and a pledge
+at a third value
+([#1747](https://github.com/epiphany40223/parishkit/issues/1747), below).
 
 **Pledge confirmation** (decision 5). ParishSoft's v2 `GET
 offering/pledge/list` returns each pledge with `familyID`, `fundID`,
 `pledgeDate`, `pledgeStartDate`, `currentPledgeAmount`, `initialPledgeAmount`,
 `installmentAmount`, `numberOfMonths` and `fulfillmentMethod`, filterable by
-Family, fund and date. ParishKit already reads it for the comparison period
-(`source/giving.py` keeps the Family, fund, `currentPledgeAmount` and date).
-The refresh also reads the **upcoming stewardship year** for the campaign's
-configured pledge fund or funds, and maps a Family's ParishSoft pledge for
-that year to the pipeline item:
+Family, fund and date. The refresh already reads every pledge of the
+campaign's configured funds and keeps those whose `pledgeStartDate` falls in
+the **upcoming stewardship year** (the campaign's financial period, its
+`fund_duids`) or in the comparison period (`source/giving.py` keeps the
+Family, fund, `currentPledgeAmount` and date), so confirmation needs no new
+read ([#1704](https://github.com/epiphany40223/parishkit/issues/1704)). It
+maps a Family's ParishSoft pledge for the upcoming year to the pipeline item:
 
 - R for the amount is the sum of the Family's `currentPledgeAmount` on the
-  configured funds dated in the upcoming year (none read as no pledge);
-  A is that value when the Family answered (usually no pledge); C is the
-  annual amount carried forward. The [refresh rules](#baseline-refresh-re-evaluation)
-  then confirm the pledge, flag Not seen in ParishSoft, or flag Entered
-  incorrectly (a typo at entry).
+  upcoming year's funds dated in that year, from the promoted snapshot, and
+  only when that snapshot's giving read is proven complete for the
+  campaign's configured window (the Family form's rule); without the proof
+  no pledge is checked. No pledge reads as $0.00, the same as a zero
+  pledge, so a Family pledging nothing is Confirmed by a ParishSoft holding
+  no pledge for it. A is $0.00: the upcoming year usually has no pledge when
+  the Family answers, and the response does not record the snapshot it was
+  answered against. C is the annual amount carried forward (the Edit's,
+  else the Family's). Money compares as exact two-decimal amounts. The
+  [refresh rules](#baseline-refresh-re-evaluation) then confirm the
+  pledge, flag Not seen in ParishSoft, or flag Entered incorrectly (a typo
+  at entry).
+- The items are the decided pledges whose decision is in force (To enter by
+  hand, Entered by hand, Ignored). Each gets a **pledge refresh check**,
+  written as a census change's [refresh check](#refresh-checks) is: an
+  immutable row per refresh and item in `stewardship_pledge_refresh_check`
+  (frozen migration 0139, provisional number), naming the decision row in
+  force, with the outcome, R and whether the refresh was full. A check
+  counts only while its decision row is the item's latest and in force, so
+  any later decision, or the Family changing its pledge, leaves it behind.
+  Its guard admits an insert only from the promoting source worker, for a
+  decided pledge in force, with R equal to the snapshot's own sum
+  (`stewardship_pledge_upcoming_v1`) and an outcome that agrees with it. A
+  Family no longer in the snapshot gets no check (rule 4).
+- R = C makes an accepted pledge **Confirmed**, keeping its Accepted or
+  Accepted (edited), with nothing offered; on an Ignored pledge it only
+  notes "ParishSoft now matches the Family's answer". A marked pledge whose
+  R differs from C and from the amount recorded at the mark is **Entered
+  incorrectly**, shown with ParishSoft now beside the Reviewer's value and
+  no action until
+  [#1737](https://github.com/epiphany40223/parishkit/issues/1737); one
+  still at the mark after the configured number of full refreshes is
+  flagged **Not seen in ParishSoft**. A pledge at a third value that is
+  not marked would be a Conflict, which the stream cannot show yet: it
+  records nothing ([#1747](https://github.com/epiphany40223/parishkit/issues/1747)).
+- **Entered by hand** records ParishSoft's upcoming-year amount from the
+  current snapshot when its giving read is proven complete (0139 lets the
+  pledge review guard admit it, and checks it against the snapshot);
+  otherwise the mark records none, and the refresh reads it as A, $0.00.
 - Frequency is compared only after a human-run, read-only smoke check on the
   Test Family records how ParishSoft stores a weekly, monthly, quarterly and
   annual pledge (`installmentAmount`, `numberOfMonths`,
