@@ -2800,8 +2800,10 @@ section is the page.
 - **Row and bulk actions** are the role table's for the stream: a To review or
   Conflict row offers Accept, Edit and Ignore (a Conflict's earlier decision
   reads "Earlier: Accepted, not in force." under its stage, and the decision
-  taken on it records ParishSoft's amount as the pledge's new baseline); an
-  Ignored row Back to review, with a required
+  taken on it records ParishSoft's amount as the pledge's new baseline; a
+  decision posted from a page drawn before a refresh found a Conflict, or
+  moved ParishSoft's amount under one, is refused as someone else's change
+  and the page is redrawn); an Ignored row Back to review, with a required
   note; a To enter by hand row Entered by hand and Back to review; an Entered by
   hand row nothing (the mark is final), and neither does an Entered
   incorrectly row until its fixes land

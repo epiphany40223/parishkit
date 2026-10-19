@@ -26,7 +26,11 @@ from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.pipeline import Action
 from parishkit.stewardship.reports.pledge_models import PledgeReview
-from parishkit.stewardship.reports.pledge_review import PledgeDecisions, read_items
+from parishkit.stewardship.reports.pledge_review import (
+    PledgeDecisions,
+    read_items,
+    version_of,
+)
 from parishkit.stewardship.web.review_worklist import StaleDecision, WorklistDecision
 
 from ..policy_factory import address
@@ -108,7 +112,7 @@ def decide(harness, actor, action, submissions, *, note="", key=None, **fields):
     """One decision through the service on the restricted web login."""
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         items = read_items(harness.campaign.pk)
-        versions = {str(s.pk): items[s.pk].sequence for s in submissions}
+        versions = {str(s.pk): version_of(items[s.pk]) for s in submissions}
         decision = WorklistDecision(
             Action(action),
             versions,

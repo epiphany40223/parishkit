@@ -28,17 +28,23 @@
 --   * stewardship_pledge_stages_v1 (new): 0135's selection with each item's
 --     latest counting check of either kind, so the page, the counts, the
 --     pledge review guard and the worker's selection share Confirmed,
---     Conflict and Entered incorrectly, with each item's A and the A a
---     decision taken now records.
+--     Conflict and Entered incorrectly, with each item's A, the A a
+--     decision taken now records, and how many checks the Family's pledge
+--     has (the page's version adds them to the sequence, so a decision
+--     made over a check the reader never saw is stale).
 --   * stewardship_pledge_refresh_items_v2 (new, SECURITY DEFINER, granted to
 --     the source worker alone): every pledge a refresh re-evaluates (To
 --     review, and the decided ones in force, never a Confirmed one) with C,
---     A, the amount recorded at the mark and the latest check. The worker
---     still reads no response answers or decision rows itself.
+--     A, the amount recorded at the mark (A when it recorded none) and the
+--     latest check. The worker still reads no response answers or decision
+--     rows itself. 0139's v1 is left in place, called by nothing and no
+--     longer granted: its EXECUTE is revoked from the worker's login here
+--     (database-grants never revokes), so a later migration may drop it.
 --   * 0139's pledge refresh check guard and 0135's pledge review guard,
 --     replaced in place: the check guard reads v2 and admits a Conflict
---     (R differing from A and C) on an accepted pledge not yet marked, and
---     an unchanged check there only at A; the review guard places the item
+--     (R differing from A and C) on an accepted pledge not yet marked, an
+--     unchanged check there only at A, and on a marked pledge an unchanged
+--     check only at the mark; the review guard places the item
 --     through stages_v1, so it refuses every decision on a Confirmed pledge
 --     (and, as before, on Entered incorrectly until #1737), offers Accept,
 --     Edit and Ignore on a Conflict, and sets baseline_pledge.
@@ -67,12 +73,15 @@ ALTER TABLE "stewardship_pledge_review" ADD COLUMN "baseline_pledge" numeric(24,
 -- the pledge answer. ``baseline`` is the item's A: the in-force row's
 -- baseline_pledge, else $0.00. ``next_baseline`` is what a decision recorded
 -- now carries forward: a Conflict's amount, else the in-force row's own.
+-- ``checks`` counts every check of the Family's pledge, of either kind, so
+-- it grows with every check a refresh writes and never shrinks: the page's
+-- version (sequence + checks) then changes with every decision and check.
 CREATE FUNCTION public.stewardship_pledge_stages_v1(
     campaign_uuid uuid, family_uuid uuid DEFAULT NULL)
 RETURNS TABLE(family_id uuid, family_duid bigint, submission_id uuid,
     sequence bigint, stage text, base_stage text, review_id uuid,
     in_force boolean, check_outcome text, observed numeric, baseline numeric,
-    next_baseline numeric)
+    next_baseline numeric, checks bigint)
 LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
     SELECT i.family_id,i.family_duid,i.submission_id,i.sequence,
         CASE WHEN k.outcome IN ('confirmed','conflict','entered_incorrectly')
@@ -80,7 +89,12 @@ LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
         i.stage,i.review_id,i.in_force,k.outcome,k.observed,
         coalesce(CASE WHEN i.in_force THEN r.baseline_pledge END,0)::numeric(24,2),
         CASE WHEN k.outcome='conflict' THEN k.observed
-            WHEN i.in_force THEN r.baseline_pledge END
+            WHEN i.in_force THEN r.baseline_pledge END,
+        (SELECT count(*) FROM stewardship_pledge_open_check c
+            WHERE c.family_id=i.family_id)
+        +(SELECT count(*) FROM stewardship_pledge_refresh_check c
+            JOIN stewardship_pledge_review v ON v.id=c.review_id
+            WHERE v.family_id=i.family_id)
     FROM stewardship_pledge_review_states_v1(campaign_uuid,family_uuid) i
     LEFT JOIN stewardship_pledge_review r ON r.id=i.review_id
     LEFT JOIN LATERAL (
@@ -106,8 +120,8 @@ $$;
 -- Every pledge a refresh re-evaluates: a To review one and a decided one in
 -- force, never a Confirmed one (it is not checked again), each with C (a To
 -- review pledge's current answer, else the Edit's annual pledge, else the
--- answer decided on), the amount recorded at its mark ($0.00 without one), A
--- and its latest counting check. ``family_uuid`` or ``review_uuid`` limits it
+-- answer decided on), the amount recorded at its mark (A when it recorded
+-- none, as the spec reads it), A and its latest counting check. ``family_uuid`` or ``review_uuid`` limits it
 -- to that item, whose campaign it finds; ``review_uuid`` only to a decided
 -- item whose row it is.
 CREATE FUNCTION public.stewardship_pledge_refresh_items_v2(
@@ -137,7 +151,7 @@ LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
             ELSE (r.answer->>'annual_pledge')::numeric END,
         CASE WHEN i.base_stage='entered_by_hand' AND r.marked_pledge_known
                 AND r.marked_pledge IS NOT NULL
-            THEN r.marked_pledge ELSE 0 END,
+            THEN r.marked_pledge ELSE i.baseline END,
         i.baseline,i.check_outcome,i.observed
     FROM chosen c
     CROSS JOIN LATERAL stewardship_pledge_stages_v1(c.campaign,c.family) i
@@ -152,8 +166,9 @@ ALTER FUNCTION public.stewardship_pledge_refresh_items_v2(uuid, uuid, uuid) SECU
 REVOKE ALL ON FUNCTION public.stewardship_pledge_refresh_items_v2(uuid, uuid, uuid) FROM PUBLIC;
 
 -- 0139's check guard of a decided pledge, reading v2 (the same items, now
--- with A): a Conflict on an accepted pledge not yet marked, and an unchanged
--- check there only at A (#1747). Every other rule is 0139's, unchanged.
+-- with A): a Conflict on an accepted pledge not yet marked, an unchanged
+-- check there only at A, and on a marked pledge an unchanged check only at
+-- the mark (#1747). Every other rule is 0139's, unchanged.
 CREATE OR REPLACE FUNCTION public.stewardship_pledge_refresh_check_guard_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE
@@ -185,7 +200,7 @@ BEGIN
     THEN RAISE EXCEPTION 'A pledge refresh check requires a decided pledge in force'
         USING ERRCODE='23514'; END IF;
     -- The snapshot's own amount, compared with the carried-forward one, A
-    -- and the one recorded at the mark ($0.00 when it recorded none).
+    -- and the one recorded at the mark (A when it recorded none).
     refreshed:=stewardship_pledge_upcoming_v1(NEW.snapshot_id,item.campaign_id,
         item.family_duid);
     IF refreshed IS NULL OR NEW.observed IS DISTINCT FROM refreshed THEN
@@ -196,10 +211,13 @@ BEGIN
     IF (item.decision='ignored'
             AND (NEW.outcome NOT IN ('unchanged','ignored_now_matches')
                  OR matches IS DISTINCT FROM (NEW.outcome='ignored_now_matches')))
+       -- Marked: Confirmed at C, unchanged at the mark, else Entered
+       -- incorrectly.
        OR (item.decision<>'ignored' AND item.entered
             AND (NEW.outcome NOT IN ('confirmed','unchanged','entered_incorrectly')
                  OR matches IS DISTINCT FROM (NEW.outcome='confirmed')
-                 OR (NEW.outcome='entered_incorrectly' AND refreshed=item.marked)))
+                 OR (NOT matches AND (refreshed=item.marked)
+                     IS DISTINCT FROM (NEW.outcome='unchanged'))))
        -- Not yet marked: Confirmed at C, unchanged at A, else a Conflict.
        OR (item.decision<>'ignored' AND NOT item.entered
             AND (NEW.outcome NOT IN ('confirmed','unchanged','conflict')
@@ -332,8 +350,26 @@ BEGIN
     RETURN NEW;
 END $$;
 
+-- The worker now reads v2 alone; database-grants never revokes, and the
+-- worker refuses to start holding EXECUTE on a definer it does not declare,
+-- so an environment that granted 0139's v1 loses it here.
+DO $revoke$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='pk_stewardship_worker') THEN
+        REVOKE ALL ON FUNCTION public.stewardship_pledge_refresh_items_v1(uuid, uuid)
+            FROM pk_stewardship_worker;
+    END IF;
+END
+$revoke$;
+
 DO $check$
 BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='pk_stewardship_worker')
+       AND has_function_privilege('pk_stewardship_worker',
+           'public.stewardship_pledge_refresh_items_v1(uuid,uuid)','EXECUTE')
+    THEN
+        RAISE EXCEPTION 'The worker still holds the earlier pledge selection';
+    END IF;
     IF NOT EXISTS(SELECT 1 FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid
             WHERE t.tgrelid='public.stewardship_pledge_open_check'::regclass
               AND t.tgname='stewardship_pledge_open_check_guard'
@@ -369,7 +405,8 @@ BEGIN
               AND proconfig=ARRAY['search_path=pg_catalog, public, pg_temp']
               AND prosrc LIKE '%stewardship_pledge_review_states_v1(%'
               AND prosrc LIKE '%stewardship_pledge_open_check%'
-              AND prosrc LIKE '%c.item_version=i.sequence%')
+              AND prosrc LIKE '%c.item_version=i.sequence%'
+              AND prosrc LIKE '%count(*) FROM stewardship_pledge_open_check%')
     THEN
         RAISE EXCEPTION 'The pledge stage selection is not installed as declared';
     END IF;
@@ -380,7 +417,8 @@ BEGIN
               AND provolatile='s' AND prosecdef
               AND proconfig=ARRAY['search_path=pg_catalog, public, pg_temp']
               AND prosrc LIKE '%stewardship_pledge_stages_v1(%'
-              AND prosrc LIKE '%i.stage<>''confirmed''%')
+              AND prosrc LIKE '%i.stage<>''confirmed''%'
+              AND prosrc LIKE '%r.marked_pledge ELSE i.baseline END%')
        OR has_function_privilege('public',
             'public.stewardship_pledge_refresh_items_v2(uuid,uuid,uuid)','EXECUTE')
     THEN
@@ -398,6 +436,7 @@ BEGIN
               AND proconfig=ARRAY['search_path=pg_catalog, public, pg_temp']
               AND prosrc LIKE '%stewardship_pledge_refresh_items_v2(NULL,NULL,NEW.review_id)%'
               AND prosrc LIKE '%''confirmed'',''unchanged'',''conflict''%'
+              AND prosrc LIKE '%(refreshed=item.marked)%'
               AND prosrc LIKE '%k.outcome=''confirmed''%')
     THEN
         RAISE EXCEPTION 'stewardship_pledge_refresh_check_guard_v1 does not know a Conflict';

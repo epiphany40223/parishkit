@@ -86,7 +86,7 @@ class Pending:
     pledge no decision is in force for, whose check names ``submission_id``
     at ``sequence``; a decided one's names ``review_id``). ``carried`` is C
     (the Edit's annual pledge, else the Family's), ``marked`` the amount
-    recorded at the mark ($0.00 without one) and ``baseline`` A.
+    recorded at the mark (A without one) and ``baseline`` A.
     ``check`` and ``observed`` are its latest counting check's outcome and
     amount (None without one).
     """

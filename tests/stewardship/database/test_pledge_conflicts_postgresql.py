@@ -13,6 +13,7 @@ confirmation).
 
 from decimal import Decimal
 from pathlib import Path
+from uuid import uuid4
 
 import pytest
 from django.db import DatabaseError, connection, transaction
@@ -210,6 +211,57 @@ def test_an_unchanged_answer_keeps_the_check_a_changed_one_leaves_it(
     assert row(harness, changed)["placement"].stage is Stage.TO_REVIEW
 
 
+def test_a_decision_over_an_unseen_check_is_stale(response_service):
+    """The page's version counts the checks: an Accept posted from a page
+    drawn before a refresh found a Conflict is refused as someone else's
+    change, so A never absorbs an amount nobody was shown."""
+    from parishkit.stewardship.pipeline import Action
+    from parishkit.stewardship.reports.pledge_review import (
+        PledgeDecisions,
+        read_items,
+        version_of,
+    )
+    from parishkit.stewardship.web.review_worklist import (
+        StaleDecision,
+        WorklistDecision,
+    )
+
+    from .test_pledge_review_postgresql import Actor
+
+    harness, submission = pledged(response_service)
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        seen = version_of(read_items(harness.campaign.pk)[submission.pk])
+    refresh(harness, "900.00")
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        pytest.raises(StaleDecision),
+    ):
+        PledgeDecisions(harness.service.store, harness.campaign.pk).decide(
+            Actor(admin()),
+            WorklistDecision(Action.ACCEPT, {str(submission.pk): seen}, "", uuid4()),
+        )
+    assert not PledgeReview.objects.exists()
+    decide(harness, admin(), "accept", [submission])
+    assert latest().baseline_pledge == Decimal("900.00")
+
+
+def test_a_mark_without_an_amount_reads_as_a(response_service):
+    """A mark made while the giving read is unproven records no amount; the
+    refresh reads it as A (here a Conflict's amount), so ParishSoft still at
+    A is unchanged, not Entered incorrectly."""
+    harness, submission = pledged(response_service)
+    refresh(harness, "500.00")
+    decide(harness, admin(), "accept", [submission])
+    refresh(harness, "500.00", covered=False)
+    decide(harness, admin(), "entered_by_hand", [submission])
+    assert not latest().marked_pledge_known
+    refresh(harness, "500.00")
+    # Unchanged with no Not seen start owes no check; read as $0.00, the
+    # mark would have been Entered incorrectly.
+    assert checks() == []
+    assert row(harness, submission)["placement"].stage is Stage.ENTERED_BY_HAND
+
+
 def test_the_worker_login_records_open_checks(response_service):
     """Promotion on the source worker's own login reads To review pledges
     through its definer selection and inserts their checks."""
@@ -314,21 +366,23 @@ def test_the_open_guard_refuses_each_forgery_inside_a_promotion(
 @pytest.mark.parametrize(
     "fields,amounts",
     [
-        # A Conflict is never recorded on a marked pledge, and an accepted
-        # pledge not yet marked is unchanged only at A.
+        # A Conflict is never recorded on a marked pledge, an accepted
+        # pledge not yet marked is unchanged only at A, and a marked one
+        # only at its mark.
         ({"outcome": "conflict", "observed": Decimal("900.00")}, ("900.00",)),
         ({"outcome": "unchanged", "observed": Decimal("900.00")}, ("900.00",)),
+        ({"outcome": "unchanged", "observed": Decimal("900.00")}, ("900.00",)),
     ],
-    ids=["conflict on a mark", "unchanged off A"],
+    ids=["conflict on a mark", "unchanged off A", "unchanged off the mark"],
 )
 def test_the_decided_guard_knows_a_conflict(
-    response_service, monkeypatch, fields, amounts
+    response_service, monkeypatch, request, fields, amounts
 ):
     """0139's check guard, replaced: a Conflict only before the mark, and
     an unmarked pledge unchanged only at A."""
     from parishkit.stewardship.responses import refresh_checks
 
-    marked = fields["outcome"] == "conflict"
+    marked = request.node.callspec.id != "unchanged off A"
     harness, submission = accepted(response_service, marked=marked)
     review = latest()
 

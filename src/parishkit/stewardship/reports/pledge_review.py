@@ -59,7 +59,7 @@ from .pledge_refresh import marked_pledge
 
 STATES = (
     "SELECT family_id, family_duid, submission_id, sequence, stage, base_stage, "
-    "review_id, in_force, check_outcome, observed "
+    "review_id, in_force, check_outcome, observed, checks "
     "FROM stewardship_pledge_stages_v1(%s, %s)"
 )
 # What each worklist action records: the stored action, and the decision
@@ -85,13 +85,15 @@ class Item:
     """One Family's pledge item, as the shared selection reads it.
 
     ``submission_id`` (the Family's current live response) is the item's id
-    on the page and ``sequence`` (its latest row's, 0 with none) its
-    version; ``review`` is that latest row, ``in_force`` whether the Family's
-    pledge answer is unchanged since it, and ``stage`` the selection's own
+    on the page and ``sequence`` its latest row's (0 with none); its version
+    on the page is ``version_of(item)``. ``review`` is that latest row,
+    ``in_force`` whether the Family's pledge answer is unchanged since it,
+    and ``stage`` the selection's own
     stage, which ``placement`` must agree with. ``base_stage`` is the stage
     its decision rows alone give (0135's), ``check`` the outcome of its
-    latest refresh check that counts (None without one) and ``observed``
-    ParishSoft's amount that check found.
+    latest refresh check that counts (None without one), ``observed``
+    ParishSoft's amount that check found, and ``checks`` how many checks
+    the Family's pledge has (#1747).
     """
 
     family_id: UUID
@@ -104,6 +106,19 @@ class Item:
     base_stage: str = ""
     check: str | None = None
     observed: Decimal | None = None
+    checks: int = 0
+
+
+def version_of(item):
+    """The item's version on the page: its sequence plus its checks.
+
+    A decision is made against what the reader saw. Both parts only grow, so
+    the sum changes with every decision and with every refresh check (a
+    Conflict found, or ParishSoft's amount moving under one, #1747): a
+    decision posted over a check the reader never saw is stale, never
+    applied to a Conflict nobody looked at.
+    """
+    return item.sequence + item.checks
 
 
 def read_items(campaign_id, family_id=None):
@@ -127,6 +142,7 @@ def read_items(campaign_id, family_id=None):
             in_force=row[7],
             check=row[8],
             observed=row[9],
+            checks=row[10],
         )
         for row in found
     }
@@ -307,7 +323,7 @@ class PledgeDecisions:
         matched = False
         for item_id, version in ids.items():
             item = items.get(item_id)
-            if item is None or item.sequence != version:
+            if item is None or version_of(item) != version:
                 # The Family answered again (another response is current) or
                 # someone decided first.
                 raise StaleDecision(self.namer(item_id))

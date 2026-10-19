@@ -93,6 +93,7 @@ from .pledge_review import (
     placement,
     read_items,
     reader_roles,
+    version_of,
 )
 from .read_admission import admit_report_read
 
@@ -738,8 +739,9 @@ def decorate(rows):
     """Give each shown row what the worklist component reads.
 
     The row's id is the Family's current response and its version the
-    item's latest row's sequence, so a decision made against an earlier
-    answer, or after someone else's, is stale (``PledgeDecisions``). The
+    item's latest row's sequence plus its refresh checks (``version_of``),
+    so a decision made against an earlier answer, after someone else's, or
+    over a check the reader never saw, is stale (``PledgeDecisions``). The
     Last decision cell shows the latest row only while it is in force.
     """
     decorated = []
@@ -751,7 +753,7 @@ def decorate(rows):
         decorated.append(
             {
                 "id": str(item.submission_id),
-                "version": item.sequence,
+                "version": version_of(item),
                 "name": row_label(row),
                 "placement": row["placement"],
                 "family": row["family_name"] or source_status_label("missing"),
