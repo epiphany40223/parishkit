@@ -6869,12 +6869,13 @@ history. Member tabs always show (Administrator, R39 finding 8): before the
 Family's first response with census answers, there is one tab per active,
 living Member of the Family in the current ParishSoft data, by Member DUID,
 labelled with the ParishSoft name, and the Family tab says it has no census
-answers yet. Such a tab shows no census part, only its mark: **No submission yet** when the
-Family has no response, saying the Member's answers appear once the Family
-submits, or **No census answers yet** when the Family answered before census
-joined the campaign, saying they appear once the Family answers again. Once
-a response gives Member tabs, the tabs follow that response: a Member who
-appears in ParishSoft after it has no tab until the Family answers again.
+answers yet. Such a tab shows no census part, only its mark: **No
+submission yet** when the Family has no response, saying the Member's
+answers appear once the Family submits, or **No census answers yet** when
+the Family answered before census joined the campaign, saying they appear
+once the Family answers again. Once a response gives Member tabs, the tabs
+follow that response: a Member who appears in ParishSoft after it has no tab
+until the Family answers again.
 
 **Marks.** Each panel opens with its subject's name as a heading, so a
 panel fetched after the Family answered again (which can renumber the
@@ -6943,9 +6944,9 @@ no tab of its own (ParishSoft no longer lists the Member in the Family and no
 census request keeps it) has no hub row. A No submission yet tab (the
 Family has no response) shows only its mark, with no Ministry part and no
 read; a No census answers yet tab (a response from before census joined)
-still shows its Ministry joins and leaves after the mark. Ministry requests leaves out, by
-default, a request whose Member ParishSoft no longer lists as current in the
-Family (#1217) and lists it only with Status set to Members no longer in
+still shows its Ministry joins and leaves after the mark. Ministry
+requests leaves out, by default, a request whose Member ParishSoft no longer
+lists as current in the Family (#1217) and lists it only with Status set to Members no longer in
 ParishSoft; the hub still shows such a request on the Member's tab, with its
 stage, and its note says so (the Member's standing is read as Ministry
 requests reads it, `stewardship_ministry_request_member_status_v1`).
