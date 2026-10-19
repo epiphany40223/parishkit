@@ -369,6 +369,11 @@ class Action(StrEnum):
     # census resolve-conflict: an Automatic Conflict's Use the Family's value
     # anyway (#1434, ADM-09.03).
     ADMIN_CMD_CENSUS_RESOLVE_CONFLICT = "admin_cmd_census_resolve_conflict"
+    # census update-check, update-confirm and update-rerun: Update
+    # ParishSoft's Check ParishSoft, Update and Run again (#1755).
+    ADMIN_CMD_CENSUS_UPDATE_CHECK = "admin_cmd_census_update_check"
+    ADMIN_CMD_CENSUS_UPDATE_CONFIRM = "admin_cmd_census_update_confirm"
+    ADMIN_CMD_CENSUS_UPDATE_RERUN = "admin_cmd_census_update_rerun"
     # followup roster-entered and followup roster-bulk: a resolved request's
     # Entered in ParishSoft tick and Roster changes to enter's bulk mark;
     # followup information-update: an Additional information item's Save

@@ -1073,7 +1073,10 @@ On failure `ok` is false and `error` holds `code`, the same user-facing
 `message` the page would show (never exception text or paths), the request key
 or receipt when one exists.
 Field errors reuse the closed `web.contracts.ErrorCode` values with
-server-owned field identifiers.
+server-owned field identifiers. A command that answers with one of its
+page's own refusals may add `reason`, the page's closed reason code (the
+[Update ParishSoft commands](#update-parishsoft-commands) do), and takes the
+exit code it gives that refusal before the table below applies.
 
 Exceptions map in this order, and the first match wins. Order matters:
 `StartupBusy` subclasses `ConfigError`, and `UserFacingDenied` subclasses

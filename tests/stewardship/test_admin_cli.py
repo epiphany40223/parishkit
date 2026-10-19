@@ -186,6 +186,11 @@ def test_the_catalog_lists_every_command_with_its_flags():
         # Its Edit value and Use the Family's value anyway (#1434).
         "census edit",
         "census resolve-conflict",
+        # Update ParishSoft's check, plan, Update and Run again (#1755).
+        "census update-check",
+        "census update-plan",
+        "census update-confirm",
+        "census update-rerun",
         "export census",
         "export limitations",
         "export roster",
@@ -296,6 +301,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
                 "integration key replace",
                 "integration backup-key confirm",
                 "send confirm",
+                # Update ParishSoft's Update (#1755).
+                "census update-confirm",
             }
         ), name
         # A prompting command, and only one, takes --yes. Other branches add
@@ -962,6 +969,10 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_followup_roster_entered",
         "admin_cmd_followup_roster_bulk",
         "admin_cmd_followup_information_update",
+        # Update ParishSoft's Check ParishSoft, Update and Run again (#1755).
+        "admin_cmd_census_update_check",
+        "admin_cmd_census_update_confirm",
+        "admin_cmd_census_update_rerun",
     ]
     for event in events:
         assert Action(event) and event in DESCRIPTIONS, event

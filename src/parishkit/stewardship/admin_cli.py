@@ -84,7 +84,10 @@ bulk`` (PR 11a, in ``admin_followup``) read and record Ministry follow-up.
 and ``followup information-update`` (PR 11b, in ``admin_information``)
 read and record Additional information follow-up. ``followup export``
 (PR 11c, in ``admin_followup_export``) is the queue's Export these
-requests, streamed as ``export roster`` is.
+requests, streamed as ``export roster`` is. ``census update-check``,
+``census update-plan``, ``census update-confirm`` and ``census
+update-rerun`` (#1755, in ``admin_census_update``) are the Update
+ParishSoft page's steps, through the page's own checks and services.
 """
 
 import argparse
@@ -338,6 +341,9 @@ def configure_admin_process(configuration):
     values["DATABASES"] = {"default": database_settings(configuration)}
     values["STEWARDSHIP_OPERATIONAL_POLICY"] = configuration.operational_alerts
     values["STEWARDSHIP_REPORTS_ROOT"] = configuration.paths["reports"]
+    # The census update-* commands obey the web's parishsoft_publication
+    # setting, from the same deployment file, as the page does (#1755).
+    values["STEWARDSHIP_PARISHSOFT_PUBLICATION"] = configuration.parishsoft_publication
     values.update(profile_settings(configuration))
     settings.configure(**values)
     django.setup()
@@ -7572,6 +7578,173 @@ def _followup_export_specs():
 # ------------------------------------------- end of follow-up export block
 
 
+# ------------------------------------------ Update ParishSoft (#1755)
+#
+# ``census update-check``, ``census update-plan``, ``census update-confirm``
+# and ``census update-rerun`` (in ``admin_census_update``): the Update
+# ParishSoft page's Check ParishSoft, its plan, Update's Apply and Run
+# again, through the page's own checks and services.
+
+
+def census_update_check(args, preamble, runtime, context):
+    """Check ParishSoft, as the Update ParishSoft page's button does (#1755).
+
+    The Administrator's role first, so Staff are ``denied`` before anything
+    is read. Without ``--request-key`` a new key is made and written to
+    standard error before anything is done. The page asks nothing, so
+    neither does the command.
+    """
+    from .accounts.policy import Capability
+    from .admin_census_update import update_check
+
+    _role_first(context, runtime, Capability.PUBLISH_CENSUS)
+    key = _request_key(args, context)
+    return update_check(context["caller"], runtime, request_key=key, context=context)
+
+
+def census_update_plan(args, preamble, runtime, context):
+    """The Update ParishSoft page's plan, ids and counts only (#1755)."""
+    from .admin_census_update import read_update_plan
+
+    return read_update_plan(context["caller"], runtime, args.plan_id)
+
+
+def census_update_confirm(args, preamble, runtime, context):
+    """Update's Apply for the newest plan, after its question (#1755).
+
+    The role first; then the page's checks and its question with the
+    plan's counts, asked before any transaction opens (or ``--yes``); then
+    the confirmation with exactly the counts asked about. Without
+    ``--request-key`` a new key is made and written to standard error
+    first, so a run that crashes can be repeated with it.
+    """
+    from .accounts.policy import Capability
+    from .admin_census_update import update_confirm, update_preview
+
+    _role_first(context, runtime, Capability.PUBLISH_CENSUS)
+    key = _request_key(args, context)
+    caller = context["caller"]
+    counts, lines = update_preview(caller, runtime, args.plan_id, request_key=key)
+    confirm(context, lines)
+    return update_confirm(
+        caller, runtime, args.plan_id, counts=counts, request_key=key, context=context
+    )
+
+
+def census_update_rerun(args, preamble, runtime, context):
+    """Run again for the newest plan's unfinished Members, after asking (#1755).
+
+    As ``census update-confirm``: the role first, the page's checks and
+    question before any transaction opens, then the retry under the key.
+    """
+    from .accounts.policy import Capability
+    from .admin_census_update import rerun_preview, update_rerun
+
+    _role_first(context, runtime, Capability.PUBLISH_CENSUS)
+    key = _request_key(args, context)
+    caller = context["caller"]
+    confirm(context, rerun_preview(caller, runtime, args.plan_id, request_key=key))
+    return update_rerun(caller, runtime, args.plan_id, request_key=key, context=context)
+
+
+def _update_key_option(parser):
+    """``--request-key``: a version 4 UUID, as the page's keys must be."""
+    parser.add_argument(
+        "--request-key",
+        type=_uuid4,
+        help="a version 4 UUID that makes a repeat safe (default: a new "
+        "one, written to standard error)",
+    )
+
+
+def _update_plan_options(parser):
+    """Options of ``census update-plan``: an optional plan id."""
+    parser.add_argument(
+        "plan_id",
+        nargs="?",
+        type=_uuid,
+        metavar="PLAN_ID",
+        help="a plan of the current campaign (default: the newest)",
+    )
+
+
+def _update_plan_step_options(parser):
+    """Options of ``census update-confirm`` and ``update-rerun``."""
+    parser.add_argument(
+        "plan_id",
+        type=_uuid,
+        metavar="PLAN_ID",
+        help="the newest plan, as census update-plan prints it",
+    )
+    _update_key_option(parser)
+
+
+def _census_update_specs():
+    """Update ParishSoft's commands (#1755, ``admin_census_update``).
+
+    ``census update-plan`` is a passive read, for any session.
+    ``census update-check`` is keyed and full scope, and asks nothing, as
+    on the page. ``census update-confirm`` is privileged (fresh-gated) and
+    asks, and ``census update-rerun`` asks; both are keyed and full scope.
+    None takes ``--watch``: each write prints its task, which ``task show
+    --watch`` follows.
+    """
+    from .admin_census_update import UpdateCheck, UpdateConfirm, UpdatePlan, UpdateRerun
+
+    return (
+        CommandSpec(
+            "census update-check",
+            "Check ParishSoft for the changes Ready to update.",
+            census_update_check,
+            "full",
+            True,
+            UpdateCheck.field_names(),
+            8,
+            options=(_update_key_option,),
+            request_key=True,
+        ),
+        CommandSpec(
+            "census update-plan",
+            "Show the newest check's plan for updating ParishSoft.",
+            census_update_plan,
+            "read_only",
+            False,
+            UpdatePlan.field_names(),
+            8,
+            options=(_update_plan_options,),
+            audit_event="census_publication_viewed",
+        ),
+        CommandSpec(
+            "census update-confirm",
+            "Write the newest check's changes to ParishSoft, after asking.",
+            census_update_confirm,
+            "full",
+            True,
+            UpdateConfirm.field_names(),
+            8,
+            options=(_update_plan_step_options,),
+            fresh_gated=True,
+            prompts=True,
+            request_key=True,
+        ),
+        CommandSpec(
+            "census update-rerun",
+            "Run an update again for the Members it did not finish.",
+            census_update_rerun,
+            "full",
+            True,
+            UpdateRerun.field_names(),
+            8,
+            options=(_update_plan_step_options,),
+            prompts=True,
+            request_key=True,
+        ),
+    )
+
+
+# ---------------------------------------- end of Update ParishSoft block
+
+
 COMMANDS = (
     COMMANDS
     + _read_specs()
@@ -7594,6 +7767,7 @@ COMMANDS = (
     + _integration_specs()
     + _followup_more_specs()
     + _followup_export_specs()
+    + _census_update_specs()
 )
 BY_NAME = {spec.name: spec for spec in COMMANDS}
 
@@ -7755,6 +7929,10 @@ def classify(error, *, admitted_process, changed, committed=False):
         return "outcome_unknown"
     if isinstance(error, (WatchTimeout, ConfirmationRequired)):
         return error.code
+    if getattr(error, "command_code", None) in COMMAND_CODES:
+        # A page's refusal a command marked with its code and reason
+        # (``admin_census_update._refused``, #1755).
+        return error.command_code
     if isinstance(error, StartupBusy):
         return "busy"
     # A configuration change activating, or a restore under review, is as
@@ -7793,6 +7971,10 @@ def classify(error, *, admitted_process, changed, committed=False):
     if isinstance(error, (ValueError, ConfigError)):
         return "invalid"
     return "outcome_unknown" if changed else "internal"
+
+
+# The codes a command may mark a page's refusal with (``command_code``).
+COMMAND_CODES = frozenset({"invalid", "stale_version", "not_available"})
 
 
 # The codes an unexpected error ends as. Their documents say only that much,
@@ -8177,6 +8359,9 @@ def run(args, *, stdin, stdout, stderr):
             if code == "invalid" and getattr(error, "fields", None):
                 # The page's own messages for each field it refused.
                 output["error"]["fields"] = error.fields
+            if code in COMMAND_CODES and getattr(error, "command_reason", None):
+                # The page's closed reason code for its refusal (#1755).
+                output["error"]["reason"] = error.command_reason
             if code == "outcome_unknown" and context.get("request_id"):
                 # The request the command may have recorded, fixed before it
                 # acted, so the operator can read it (config request show) or
