@@ -47,6 +47,9 @@ class Migration(migrations.Migration):
         # The migration that installs the previous frozen file (0124, the
         # guard wording), so the files apply in prefix order.
         ("stewardship_accounts", "0029_guard_wording"),
+        # The Ministry review pipeline's frozen file (0132) comes before
+        # this one (0135) wherever both branches meet.
+        ("stewardship_workflows", "0003_ministry_review_pipeline"),
     ]
 
     operations = [
