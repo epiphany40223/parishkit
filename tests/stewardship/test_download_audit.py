@@ -191,7 +191,33 @@ def test_system_logs_show_the_choices_in_words():
         "directory_data_check",
         "directory_response_columns",
         "directory_sort",
+        # A report view the open page made by itself (#1620).
+        "automatic",
     }
+
+
+def test_automatic_report_views_read_as_an_automatic_refresh():
+    """An automatic view's marker is a boolean action key, shown in words.
+
+    The open Participation or Campaign comparison page re-reads itself to
+    bring newer figures in; its audited view records ``automatic: true``
+    (#1620), which System logs words as an automatic refresh.
+    """
+    context = {"outcome": Outcome.STARTED, "automatic": True}
+    assert sanitize(ContextKind.ACTION, context) == {
+        "outcome": "started",
+        "automatic": True,
+    }
+    for value in ("true", 1, None):
+        with pytest.raises(ValueError):
+            sanitize(ContextKind.ACTION, {"automatic": value})
+    with pytest.raises(ValueError):
+        sanitize(ContextKind.REQUEST, {"automatic": True})
+    rows = detail_labels([("automatic", "True"), ("outcome", "succeeded")])
+    assert [(str(key), str(value)) for key, value in rows] == [
+        ("How it was opened", "Automatic refresh (the open page updated itself)"),
+        ("Outcome", "succeeded"),
+    ]
 
 
 def test_directory_sorts_read_in_words():

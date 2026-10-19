@@ -16,6 +16,7 @@ from parishkit.stewardship.reports.money import MoneyAmount
 from parishkit.stewardship.reports.participation import ParticipationDay
 from parishkit.stewardship.reports.workspace import ReportQuery
 from parishkit.stewardship.reports.workspace_views import (
+    figures_status,
     scope_links,
     statistics_panel,
 )
@@ -26,6 +27,11 @@ from .automation_components import canonical
 
 # The Response dashboard's real address (#1537), where its choices lead.
 REAL = reverse("admin:response_dashboard")
+
+
+# The figures status read's fixed answers (#1586, test_report_figures.py).
+FIGURES_PENDING = "/figures-status-pending"
+FIGURES_NEWER = "/figures-status-newer"
 
 
 # Answered after a pause (see the server in conftest.py): applying this
@@ -74,6 +80,10 @@ def viewing(query, **changes):
     shaped = page_context(query)
     if query.mode == "production":
         shaped["selection"] = SimpleNamespace(updating=True, expected=True)
+        # The chart is Updating: its figures status (#1586) is watched fast.
+        shaped |= figures_status(
+            "dashboard", query.scope, document().participation.fact_set_id, True
+        )
     return shaped | changes
 
 
@@ -219,6 +229,23 @@ def components(context, admin):
         zoned = (query + "&" if query else "?") + "timezone=America%2FLos_Angeles"
         pages[canonical(REAL + zoned)] = ("response-dashboard", page)
     pages[canonical(REAL + "?" + options(los_angeles))] = ("response-dashboard", page)
+    # The same page once newer figures are ready (test_report_figures.py):
+    # no longer Updating, with the current-population answer's statistics.
+    pages["/participation-later"] = (
+        "response-dashboard",
+        page
+        | statistics_panel(refreshed)
+        | figures_status("dashboard", "historical", UUID(int=50), False),
+    )
+    # The status read's answers: still Updating, and newer figures ready.
+    pages[FIGURES_PENDING] = (
+        "report-figures-status",
+        figures_status("dashboard", "historical", chart.fact_set_id, True),
+    )
+    pages[FIGURES_NEWER] = (
+        "report-figures-status",
+        figures_status("dashboard", "historical", chart.fact_set_id, False, newer=True),
+    )
     pages[canonical(REAL + "?" + options(current))] = (
         "response-dashboard",
         viewing(current, **statistics_panel(refreshed)),
@@ -229,6 +256,13 @@ def components(context, admin):
     for query in (testing, los_angeles):
         address = urlsplit(query.url(page=1)).query
         pages[canonical(REAL + "?" + address)] = ("response-dashboard", viewing(query))
+    # Every page's own figures status read (#1586) answers that the chart
+    # shown is still the newest and is still Updating, so the watched region
+    # stays as it is in every test that does not route it.
+    for _template, data in list(pages.values()):
+        status = data.get("figures_status")
+        if status is not None and status["updating"]:
+            pages.setdefault(canonical(status["url"]), ("report-figures-status", data))
     return {
         path: (
             "text/html",

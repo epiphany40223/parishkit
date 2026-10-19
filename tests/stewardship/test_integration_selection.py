@@ -210,3 +210,19 @@ def test_reference_format_adds_only_slack_with_its_first_key():
     # Ordinary patches still cannot add an integration with a key.
     with pytest.raises(ConfigError):
         build_candidate(base, change, candidate_id=uuid4())
+
+
+def test_finish_switching_is_a_privileged_confirm(monkeypatch):
+    """Finish switching's Apply is an integration change, privileged like the
+    page's other confirm and ``pk-admin integration key finish-switching``."""
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.accounts import integration_selection_views as views
+
+    seen = {}
+    monkeypatch.setattr(views, "form_action", lambda *args, **kwargs: None)
+    monkeypatch.setattr(views, "_preview_schema", lambda *args: "schema")
+    monkeypatch.setattr(views, "confirm", lambda *args, **kwargs: seen.update(kwargs))
+    request = SimpleNamespace(FILES={}, POST={"request_id": str(uuid4())})
+    views.confirm_finish(request, object(), object(), "slack")
+    assert seen["privileged"] is True

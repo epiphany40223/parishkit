@@ -770,7 +770,9 @@ def test_admin_sets_tests_and_removes_the_drive_folder(workspace):
     """The Backups page adds the folder, queues a check, and turns copies off."""
     store = workspace.store
     browser, _ = signed_in()
-    assert b"Off-site backups are not set up" in browser.get("/admin/").content
+    # Home no longer invites the setup (#1673): System health's Backups
+    # panel and the Integrations list do.
+    assert b"Off-site backups are not set up" not in browser.get("/admin/").content
     # The Integrations list links to the setup page even before it's set up.
     index = browser.get("/admin/system/integrations/").content
     assert b"Off-site backups (Google Drive)" in index
@@ -844,8 +846,10 @@ def test_admin_sets_tests_and_removes_the_drive_folder(workspace):
         manifest_digest="a" * 64,
         folder_id=FOLDER,
     )
+    # Home no longer shows the off-site line (#1673); System health's
+    # Backups panel does.
     home = browser.get("/admin/")
-    assert b"Off-site backups" in home.content
+    assert home.status_code == 200 and b"Off-site backups:" not in home.content
     index = browser.get("/admin/system/integrations/").content
     assert f'href="{URL}">Change</a>'.encode() in index
     assert b"copied to Google Drive" in browser.get(URL).content
