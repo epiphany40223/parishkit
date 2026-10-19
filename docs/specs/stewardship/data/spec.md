@@ -587,6 +587,8 @@ the corpus:
   corpus would change none of them, with the same decision promotion makes,
   so a new submission, a staff review edit or a row the last promotion
   itself reconciled does not force another promotion;
+- no added Member link (see [Proposed changes](#proposed-changes)) is
+  waiting to be recorded;
 - an active Family link generation is still current (a stale one fails the
   refresh, as promotion would).
 
@@ -1121,6 +1123,32 @@ Decision and execution are orthogonal:
 Ignored decisions remain searchable and may return to unreviewed/approved.
 Published or resolved records are immutable outcomes; a later response creates
 new proposed-change records where necessary.
+
+A Member the Family added on the form has only the form's local UUID, and
+the form drops that entry once its New Member change is Entered by hand;
+from then on the Family answers for the person under the new ParishSoft
+Member, once a refresh shows them. Each promotion
+records an added Member link (`stewardship_added_member_link`, one
+immutable row per Family campaign and added Member: the local UUID, the
+ParishSoft Member DUID, the Entered by hand New Member change it rests on
+and the snapshot that showed the Member;
+[#1670](https://github.com/epiphany40223/parishkit/issues/1670)) when the
+evidence is causal and unique, never by matching names, email or birth
+dates:
+
+- the added Member's New Member change is Entered by hand (Staff created
+  the person in ParishSoft);
+- it is the Family's only Entered by hand New Member without a link; and
+- the promoted snapshot has exactly one active, living Member of the Family
+  who was not in the Family's ParishSoft household on any live response up
+  to the one that first added the person (its `members` answers) and who has
+  no link yet.
+
+Anything ambiguous records nothing, and a recorded link never changes. Only
+the promoting source worker may insert a link, and its guard checks the
+change, the snapshot's Member and the earlier responses again. The Ministry
+leader contact rule reads the link
+([cannot participate](../reports/spec.md#ministry-change-summary)).
 
 Writability is `api`, `manual`, or `report-only`. It is derived from a shared
 ParishSoft capability registry, not guessed in views. The initial registry is:
