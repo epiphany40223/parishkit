@@ -407,7 +407,6 @@ def followup_page(**context):
             "form": {},
             "history": [],
             "export_fields": query.form_values(),
-            "export_timezones": ["America/Chicago", "UTC"],
             "export_pdf_limit": 1000,
             # Ministry requests' totals and packet (#1133), with no request.
             "totals": {"joining": 0, "leaving": 0, "requests": 0},
@@ -449,15 +448,12 @@ def contact_section(html):
 
 
 def test_the_queue_offers_export_these_requests():
-    """The closed export disclosure (#227) carries the applied view, the
-    source note and the zone."""
+    """The shared export row (#1679) carries the applied view, the source
+    note (its toggletip) and the browser's zone, unasked."""
     html = followup_page(total=1)
-    start = html.index('<details class="export-panel">')
-    section = html[start : html.index("</details>", start)]
-    assert (
-        '<summary id="followup-export-heading">'
-        "Export these requests (CSV, XLSX or PDF)</summary>" in section
-    )
+    start = html.index('<form id="table-export"')
+    section = html[start : html.index("</form>", start)]
+    assert 'aria-label="Export these requests"' in section
     assert 'id="table-export" data-table-sync' in section
     assert '<input type="hidden" name="search" value="">' in section
     assert '<input type="hidden" name="state" value="unresolved">' in section
@@ -465,8 +461,12 @@ def test_the_queue_offers_export_these_requests():
     assert "Sensitive parish" not in section
     assert "trusted device" not in section
     assert "Ministry leaders receive the email and phones of each Member" in section
-    assert 'name="timezone" data-browser-timezone' in section
-    assert 'id="followup-export-count" data-table-sync' in section
+    assert 'name="browser_timezone" data-browser-zone' in section
+    assert 'name="timezone"' not in section
+    # No count line (R37); the PDF limit line is drawn hidden below the limit.
+    assert 'id="followup-export-pdf-limit" data-table-sync hidden' in html
+    assert "The file holds" not in html
+    assert "Export XLSX" in section and "Export CSV" in section
 
 
 def test_a_join_request_page_shows_its_members_contact_details():
@@ -503,21 +503,25 @@ def test_no_details_say_so():
     assert "No contact details are available for this request." in section
 
 
-def format_menu(html):
-    """The export's format menu."""
-    start = html.index('id="followup-export-format"')
-    return html[start : html.index("</select>", start)]
+def export_buttons(html):
+    """The export row's buttons, the data-table-sync node each view redraws."""
+    start = html.index('id="followup-export-buttons"')
+    return html[start : html.index("</span>", start)]
 
 
 def test_the_pdf_is_offered_only_up_to_its_limit():
-    """Above the limit PDF is unavailable, and the export line says why;
-    CSV and XLSX stay offered. The menu is redrawn with each applied view."""
+    """Above the limit Export PDF is unavailable, and the line below the row
+    says why; CSV and XLSX stay offered. The row and the line are redrawn with
+    each applied view."""
     html = followup_page(total=3, export_pdf_limit=2)
-    assert '<option value="pdf" disabled>PDF</option>' in format_menu(html)
-    assert 'id="followup-export-format-field" data-table-sync' in html
+    buttons = export_buttons(html)
+    assert 'value="pdf" disabled data-server-disabled' in buttons
+    assert 'value="csv" aria-describedby' in buttons
+    assert 'id="followup-export-buttons" data-table-sync' in html
     assert "The PDF is limited to 2 requests" in html
+    assert 'id="followup-export-pdf-limit" data-table-sync>' in html
     html = followup_page(total=2, export_pdf_limit=2)
-    assert '<option value="pdf">PDF</option>' in format_menu(html)
+    assert "disabled" not in export_buttons(html)
     assert "The PDF is limited" not in html
 
 

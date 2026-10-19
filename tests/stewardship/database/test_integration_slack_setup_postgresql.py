@@ -184,16 +184,13 @@ def test_slack_is_set_up_removed_and_set_up_again(slack):
     remove_slack(slack)
     # The old key cannot bring Slack back without a newly pasted, checked
     # token (#338 review): its selection is refused and not offered.
-    select = f"/admin/system/key-changes/{row.pk}/selection/"
     count = ConfigurationChangeRequest.objects.count()
-    assert browser.get(select).status_code == 409
+    assert post(browser, URL, {"action": "finish"}).status_code == 409
     assert ConfigurationChangeRequest.objects.count() == count
-    status = browser.get(f"/admin/system/key-changes/{row.pk}/").content
-    assert select.encode() not in status
-    # Removed: no leftover "installed" line or dead Finish switching link.
+    # Removed: no leftover "installed" line or dead Finish switching button.
     page = browser.get(URL).content
     assert b"Slack is not set up" in page
-    assert b"/select" not in page and b"switching to it did not" not in page
+    assert b'value="finish"' not in page and b"switching to it did not" not in page
     assert b"Key updated." not in page
     # Set it up again, with a new token and channel.
     again = add_slack(slack, AGAIN, channel="C0456DEF")
@@ -243,13 +240,15 @@ def test_a_failed_slack_add_can_finish_switching(slack):
     assert result.state == "failed" and result.failure_code == "stale_base"
     page = browser.get(URL).content
     assert b"Slack alerts are not sent" in page
-    select = f"/admin/system/key-changes/{row.pk}/selection/"
-    assert select.encode() in page
-    status = browser.get(f"/admin/system/key-changes/{row.pk}/").content
-    assert select.encode() in status
-    preview = hidden(browser.get(select), "preview")
+    # Finish switching opens the page's review dialog (#1568).
+    assert b'<input type="hidden" name="action" value="finish">' in page
+    preview = hidden(post(browser, URL, {"action": "finish"}), "preview")
     with identity("pk_stewardship_web"):
-        response = post(browser, select, {"action": "confirm", "preview": preview})
+        response = post(
+            browser,
+            URL,
+            {"action": "confirm", "preview": preview, "request_id": str(row.pk)},
+        )
     assert response.status_code == 302, response.content
     finish = response["Location"].rstrip("/").rsplit("/", 1)[-1]
     assert apply(slack, finish).state == "applied"
