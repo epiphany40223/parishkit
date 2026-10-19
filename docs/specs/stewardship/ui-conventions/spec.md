@@ -1712,10 +1712,8 @@ Testing rehearsal.
   Testing rehearsal) and Chart population (Historical as of day | Current
   population), the
   [family directory](../reports/spec.md#active-parishioner-family-directory)'s Responses shown
-  (Production | Testing rehearsal), above its Filters panel, and
-  [Roster changes to enter](../admin-portal/spec.md#roster-changes-to-enter)'s
-  Show (Not yet entered | All, including entered), above its Ministry
-  filter, and the [Campaign calendar](../admin-portal/spec.md#campaign-calendar)'s
+  (Production | Testing rehearsal), above its Filters panel, and the
+  [Campaign calendar](../admin-portal/spec.md#campaign-calendar)'s
   Show (Upcoming emails | Include past emails), above Every email by date.
 - **Links.** Each segment is a link to the page's own address with that
   choice (`a[data-in-place]`, marked `aria-current="page"` when chosen), so

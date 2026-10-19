@@ -780,9 +780,21 @@ Every stream has a **To enter by hand** (or To handle) report: the
 worklist filtered to that stage, with Entered by hand / Handled as its row
 and bulk action, exported through the shared export component in CSV, XLSX
 and PDF. The same report has Stage choices for Entered incorrectly and Not
-seen in ParishSoft. Roster changes to enter is the Ministry stream's report
-today and becomes the shared component's first user; Census changes'
-*By hand* view and a new financial "Pledges to enter" report follow.
+seen in ParishSoft (once [#1689](https://github.com/epiphany40223/parishkit/issues/1689)
+lands; until then, To enter by hand and Entered by hand). A report offers
+only the mark: its rows and bulk bar draw no review decision (those stay
+on the stream's review worklist), and its dialogs take no note when the
+stream's mark records none (`web/review_worklist.build`'s `only` and
+`notes`). Each stream's report, as it lands:
+
+- **Ministry:** [Roster changes to enter](../admin-portal/spec.md#roster-changes-to-enter),
+  the first user ([#1687](https://github.com/epiphany40223/parishkit/issues/1687)).
+- **Census:** Census changes' worklist at its To enter by hand Stage, with
+  its export ([#1683](https://github.com/epiphany40223/parishkit/issues/1683)).
+- **Financial:** a new "Pledges to enter" report
+  ([#1686](https://github.com/epiphany40223/parishkit/issues/1686)).
+- **Cannot participate and Additional information:** their To handle
+  view, with Handled ([#1685](https://github.com/epiphany40223/parishkit/issues/1685)).
 
 ## What cannot be automated
 

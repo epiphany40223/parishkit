@@ -711,7 +711,7 @@ Notes on the groups:
   page's own selection with every filter it applies (only the leader's own
   Ministries for a Ministry leader); where that page would say the follow-up
   is unavailable, no number shows; for Roster changes to enter, the rows of
-  its default Not yet entered view, read through that page's own selection
+  its default To enter by hand view, read through that page's own selection
   with its eligibility (a person resolved the request as Joined or Left) and
   each row's current Entered in ParishSoft mark, only once the campaign is
   past go-live (active, closed or archived; a draft has no resolved request
@@ -1052,7 +1052,7 @@ closed or archived campaign offers Administrators and Staff each of them
 with its count ([#1590](https://github.com/epiphany40223/parishkit/issues/1590)),
 and each count is the menu's, the number of rows its link opens by
 default: Census changes as "N to do" (its Work to do view); Roster changes
-to enter as "N not yet entered" (its Not yet entered view); Additional
+to enter as "N not yet entered" (its default To enter by hand view); Additional
 information and Ministry requests as "N open". Roster changes to enter is
 offered, and greyed with its reason, exactly as the viewer's menu entry is
 ([#1660](https://github.com/epiphany40223/parishkit/issues/1660)), so only
@@ -1160,7 +1160,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `ministry_leavers` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry requests — Requested leavers; Leaving; Members leaving | `/admin/reports/ministries/leaving/` | (retired; 404) | Retired with no redirect (#1157), as Members joining. |
 | `ministry_followup` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry follow-up; Follow-up | `/admin/reports/ministries/follow-up/` | (retired; 404) | Retired with no redirect ([#1133](https://github.com/epiphany40223/parishkit/issues/1133)): the queue is now Ministry requests, at `/admin/reports/ministries/`. |
 | `ministry_followup_item` | Follow-up request | Ministry requests | Administrator, Staff, Ministry leader | Ministry follow-up (one request) | `/admin/reports/ministries/follow-up/<request>/` | (same) | Return to the queue keeps its filters and page. Status, notes and outcome only; no Assign to (#552). Shows the Member's contact details (#1157). A resolved join or leave's Entered in ParishSoft tick posts to `follow-up/<request>/roster/` (#528). |
-| `ministry_roster` | Roster changes to enter | Menu: Roster changes to enter | Administrator, Staff | (new, #528) | (none) | `/admin/reports/ministries/follow-up/roster/` | [Roster changes to enter](#roster-changes-to-enter); its CSV/XLSX/PDF download (`roster/exports/`) and its bulk Mark entered in ParishSoft (`roster/marks/`, #879) are non-page actions. |
+| `ministry_roster` | Roster changes to enter | Menu: Roster changes to enter | Administrator, Staff | (new, #528) | (none) | `/admin/reports/ministries/follow-up/roster/` | [Roster changes to enter](#roster-changes-to-enter); its CSV/XLSX/PDF download (`roster/exports/`) is a non-page action; its Entered by hand marks, one or in bulk, post to the page itself (#1687). |
 | `family_directory` | Active parishioner family directory | Menu: Active parishioner family directory | Administrator, Staff | (same) | `/admin/reports/families/` | (same) |  |
 | `timeline` | Timeline | Active parishioner family directory | Administrator, Staff | (new, #477; renamed from Family timeline, #1570) | `/admin/reports/families/<family>/` | (same) | One Family's [Timeline](../reports/spec.md#timeline); opened from every Family name the shared `family_link` helper draws (directory rows, Find a Family, NAV-19, and every other Admin table that names a Family; see the [Timeline](../reports/spec.md#timeline) for the list); `<family>` is the opaque campaign record id. Staff see the summary only. |
 | `emailed_reports` | Emailed reports | Menu: Emailed reports | Administrator, Staff | (new) | `/admin/reports/emailed/` | (same) | New page (decision 7, ADM-12.17): the current campaign's daily reports (and weekly reports for Administrators), newest first, each linking its page; Send a weekly report now is on it and returns to it, linking the report it produced. |
@@ -6557,8 +6557,8 @@ shared confirmation dialog and its optional note):
   request the parish added it withdraws it instead: the request leaves every
   list and stays in its history.
 - **Entered by hand** (Staff and Administrators only) ticks Entered in
-  ParishSoft, as Roster changes to enter does; clearing a tick stays on that
-  page and the request page.
+  ParishSoft, as Roster changes to enter does; clearing a tick stays on the
+  request page.
 - A Confirmed request offers nothing, and neither does a request for a
   Member no longer in ParishSoft.
 
@@ -6788,62 +6788,70 @@ ParishSoft, and this tick only records that a person did.
 Administrators and Staff) is the list staff work from: a menu entry of its
 own with its count ([Menu groups](#menu-groups),
 [#1660](https://github.com/epiphany40223/parishkit/issues/1660)), also
-linked from Ministry requests. It lists the resolved joins
-and leaves with no resolution source that are not yet ticked, or, with
-**Show** set to All, including entered, every one of them, to find and
-clear a mistaken mark, and **Ministry** narrows it to one Ministry (a closed
-DUID value, no schema change). Show (Not yet entered | All, including
-entered) is a [binary choice](../ui-conventions/spec.md#binary-choices)
-above the Ministry filter, applied at once in place, its links keeping the
-applied Ministry, sort and page size and going back to the first page
-([#1535](https://github.com/epiphany40223/parishkit/issues/1535)); Ministry
-keeps its Apply, which keeps the Show shown. Its columns follow the
-[table column order](../ui-conventions/spec.md#table-column-order): Member,
-Member DUID ("New Member" for a Member added on the form), ParishSoft
-status (blank while ParishSoft lists the Member in that Family; otherwise
-Not in ParishSoft, Inactive in ParishSoft or Deceased in ParishSoft,
+linked from Ministry requests. It is the Ministry stream's
+[manual handling report](../review-pipeline/spec.md#manual-handling-reports)
+([#1687](https://github.com/epiphany40223/parishkit/issues/1687)): the shared
+[review worklist](../review-pipeline/spec.md#review-worklist) over the
+accepted joins and leaves with no resolution source (the ones a ParishSoft
+refresh has not already shown), offering only the update phase's mark. Its
+filters are always open: **Stage** first, then **Ministry** (one Ministry to
+enter, a closed DUID value, no schema change), with the worklist's Apply
+filters, applied in place. Stage offers **To enter by hand** (the default:
+not yet marked), **Entered by hand** (to find a mark) and Every stage, each
+with its count under the applied Ministry; once
+[#1689](https://github.com/epiphany40223/parishkit/issues/1689) lands it also
+offers Not seen in ParishSoft. Stage replaces the earlier Show pair (Not yet
+entered | All, including entered), which was a row filter, not a page mode
+(Administrator decision, 2026-10-18, on #1687).
+
+Its columns are the worklist's, in the
+[table column order](../ui-conventions/spec.md#table-column-order): Member
+(linking to the request's page, with the shared
+[ParishSoft status](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
+badge for a Member ParishSoft no longer lists in that Family, or lists as
+inactive or deceased,
 [#1217](https://github.com/epiphany40223/parishkit/issues/1217): such a
-change stays listed, since it may still need entering), Family, Family
-DUID, Ministry, Request (Join or Leave), Resolved, Resolved by,
-Replaced by a later response (Yes when the Family answered again after the
-change was resolved), Entered in ParishSoft (Yes or Not yet), Entered by and
-Entered at, with the tick last as the row's
-[row action](../ui-conventions/spec.md#row-actions-and-confirmation); a resolver or marker whose portal user is
-gone shows as "Former portal user"; times are browser-local in the compact date format. Ministry is the
-Ministry to enter: for a request accepted with an edit, the edited Ministry,
-and for one the parish added, its Ministry (#1684). Every named
-column sorts in place, and Show, Ministry, sorting and paging travel in the
-address,
-since nothing on the list is private search text. A resolved change stays
-listed after the Family answers again (marked as replaced by a later
-response), since it still has to be entered. A tick there keeps the list's
-Show, Ministry, sort and page; a tick someone else changed first leaves the
-list as it is with a notice, which is what the page announces; the notice's
-two lines are kept while empty
-([no layout shift](../ui-conventions/spec.md#no-layout-shift)).
+change stays listed, since it may still need entering), Member DUID ("New
+Member" for a Member added on the form), Family (its Timeline link) and
+Family DUID, Ministry, then Family's answer (Join or Leave, naming the
+Family's own Ministry when an Edit carried another forward), Reviewer's
+value (an Edit's or the parish's added request, "Join Adult Choir"), Stage,
+Submitted, Last decision and Actions. Ministry is the Ministry to enter:
+for a request accepted with an edit, the edited Ministry, and for one the
+parish added, its Ministry (#1684). The line under the Stage says "Replaced
+by a later response" when the Family answered again after the change was
+decided (the change stays listed, since it still has to be entered), and
+who marked an entered change and when. A resolver or marker whose portal
+user is gone shows as "Former portal user"; times are browser-local in the
+compact date format. Member, Member DUID, Family, Family DUID and Ministry
+sort in place; the newest decision comes first by default.
 
-Several changes not yet ticked can be marked at once
-([#879](https://github.com/epiphany40223/parishkit/issues/879)) through the
-shared selection column, bulk bar and confirmation dialog of
-[row actions](../ui-conventions/spec.md#row-actions-and-confirmation): the
-bar's only action is Mark entered in ParishSoft, and clearing stays per row.
-The dialog posts to `roster/marks/`, which records each chosen tick exactly
-as a single tick is recorded (its own entry and audit event), all in one
-transaction or none; a change someone else ticked or cleared first refuses
-the whole request, naming that change in the dialog. A change listed twice
-(the Family answered again and both requests were resolved) names each row,
-in its box, its tick and that refusal, with the day it was resolved in the
-browser's time zone
-([#558](https://github.com/epiphany40223/parishkit/issues/558)); the dialog
-posts the browser's zone for the refusal, which leaves the day out rather
-than guess when no known zone came.
+Each row not yet marked offers one action, **Entered by hand** (the
+check-in-a-box icon), which asks in the worklist's dialog and records the
+Entered in ParishSoft tick, and the bulk bar offers the same for the
+ticked rows of one page, all or none (each recorded exactly as a single
+tick, with its own entry and audit event). A marked row shows the icon
+selected. Neither takes a note: a roster tick has none. The review
+decisions (Accept, Edit, Ignore, Back to review) stay on Ministry requests,
+and a mistaken mark is cleared on the request's own page (the Member link),
+which keeps the Clear Entered in ParishSoft button. A tick someone else
+changed first records nothing, and the list answers with its current state
+and the notice that says so. Every control acts in place and keeps the
+applied view.
 
-Its CSV, XLSX and PDF downloads carry the page's columns, without the tick
-([downloaded files](../ui-conventions/spec.md#downloaded-files)), for every
-row of the chosen Show and Ministry, in the browser's time zone (the PDF in the parish's
-compact date format). The view and each download are audited as counts.
-Its menu entry and Home's [Next steps](#home-page) give its default Not
-yet entered view's count (#1590, #1660).
+Below the table is the shared row of
+[export buttons](../ui-conventions/spec.md#downloaded-files): CSV, XLSX and
+PDF downloads of every row of the applied Stage and Ministry, in the
+browser's time zone (the PDF in the parish's compact date format). They
+carry the page's columns, without Actions, with the Member cell split into
+Member and ParishSoft status, the Stage cell into Stage, Decision, Replaced by a
+later response, Entered by and Entered at, and the Last decision cell into
+Last decision, Last decision at and Note. The view and each download are
+audited as counts. Its menu entry and Home's [Next steps](#home-page) give
+its default To enter by hand view's count (#1590, #1660). `pk-admin report
+roster` and `export roster` keep their `--show todo|all` choice, with the
+same meaning, until the commands are renamed
+([#1688](https://github.com/epiphany40223/parishkit/issues/1688)).
 
 The [Ministry change summary](../reports/spec.md#ministry-change-summary)
 does not show the tick: its stored export cannot carry it without replacing
