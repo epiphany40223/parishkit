@@ -337,7 +337,7 @@ def test_rows_offer_entered_by_hand_alone():
     assert todo["version"] == 3
     assert [icon["action"] for icon in done["icons"]] == ["entered_by_hand"]
     assert done["icons"][0]["selected"] and done["icons"][0]["title"] == (
-        "Entered by hand."
+        "Entered by hand"
     )
     assert done["kinds"] == ""
     assert [button["value"] for button in worklist.bulk] == ["entered_by_hand"]

@@ -188,7 +188,7 @@ def test_the_stage_filter_applies_in_place(page, component_origin):
     assert "stage=entered_by_hand" in sent[-1]
     assert selected.get_attribute("aria-pressed") == "true"
     assert selected.get_attribute("aria-disabled") == "true"
-    assert selected.get_attribute("title") == "Entered by hand."
+    assert selected.get_attribute("title") == "Entered by hand"
     assert "Entered by staff@example.org" in row(page, 29).inner_text()
     assert row(page, 29).locator("input[data-select-row]").count() == 0
     assert page.locator("#table-export input[name=stage]").input_value() == (

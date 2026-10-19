@@ -82,7 +82,13 @@ from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .family_links import link_families
 from .ministry_followup import FollowupQuery, followup_page, valid_ministry
-from .ministry_worklist import _last_decisions, _member_cell, _time, reviewer_value
+from .ministry_worklist import (
+    _item_url,
+    _last_decisions,
+    _member_cell,
+    _time,
+    reviewer_value,
+)
 from .read_admission import admit_report_read
 
 FORMATS = {
@@ -109,7 +115,7 @@ PREFIX = "roster"
 # adds Family's answer, Reviewer's value, Stage, Submitted, Last decision and
 # Actions.
 COLUMNS = (
-    Column("member_cell", "Member", sort="member"),
+    Column("member_cell", "Member", sort="member", link="item_url"),
     Column("duid_cell", "Member DUID", sort="member_duid", numeric=True),
     Column("family", "Family", sort="family"),
     Column("family_duid_cell", "Family DUID", sort="duid", numeric=True),
@@ -671,7 +677,8 @@ def decorate(rows):
                 "version": row["roster_sequence"] + 1,
                 "name": label,
                 "placement": row["placement"],
-                "member_cell": _member_cell(row, ""),
+                "member_cell": _member_cell(row),
+                "item_url": _item_url(row, ""),
                 "duid_cell": str(row["member_duid"])
                 if row["member_duid"]
                 else NEW_MEMBER,
