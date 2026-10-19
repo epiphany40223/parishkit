@@ -37,6 +37,7 @@ from parishkit.stewardship.web.contracts import (
     filters,
     validation_response,
 )
+from parishkit.stewardship.web.field_rules import refuse_empty_file
 from parishkit.stewardship.web.refusals import (
     UserFacing,
     UserFacingStale,
@@ -132,13 +133,16 @@ def _error(error):
 class LogoForm(AdminForm):
     """Only the bounded original image is submitted; output names are server-owned."""
 
-    logo = forms.FileField(
-        label=_("Parish logo"),
-        max_length=254,
-        widget=forms.FileInput(attrs={"accept": "image/png,image/jpeg,image/webp"}),
-        help_text=_(
-            "PNG, JPEG or WebP, up to 5 MB. All four display sizes are generated."
-        ),
+    # A 0-byte file is refused as soon as it is chosen (#1577).
+    logo = refuse_empty_file(
+        forms.FileField(
+            label=_("Parish logo"),
+            max_length=254,
+            widget=forms.FileInput(attrs={"accept": "image/png,image/jpeg,image/webp"}),
+            help_text=_(
+                "PNG, JPEG or WebP, up to 5 MB. All four display sizes are generated."
+            ),
+        )
     )
     base_digest = forms.RegexField(
         regex=r"^[0-9a-f]{64}$", max_length=64, widget=forms.HiddenInput
@@ -237,6 +241,7 @@ class LogoUploadForm(LogoForm):
                     }
                 ),
             )
+            refuse_empty_file(field)
             field_tips.add(field, slot.tip, slot.hint)
             field.template_name = SIZE_FIELD_TEMPLATE
             self.fields[name] = field

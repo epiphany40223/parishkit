@@ -22,6 +22,11 @@ from parishkit.stewardship.web.content import (
     validate_receipt_content,
     validate_template,
 )
+from parishkit.stewardship.web.field_rules import (
+    FieldRule,
+    RuleField,
+    placeholder_text_pattern,
+)
 from parishkit.stewardship.web.presentation import campaign_year, parish_date
 from parishkit.stewardship.web.presentation import phone as format_phone
 from parishkit.stewardship.web.refusals import UserFacingError
@@ -99,6 +104,17 @@ BOUNDED_MESSAGE = _(
     "Use only the documented placeholders, and keep the text within the size limit."
 )
 SUBJECT_MESSAGE = _("Use only the documented placeholders, on one line.")
+# An email subject's placeholders, checked by the browser and the server
+# alike (#1577): what validate_template(subject=True) admits. A subject's
+# further rules for some emails (no Family code or link, a digest's public
+# placeholders) stay the server's, said at the field after Preview.
+SUBJECT_RULE = FieldRule(
+    name="email_subject",
+    pattern=placeholder_text_pattern(PLACEHOLDERS, "\x00\r\n"),
+    message=SUBJECT_MESSAGE,
+    code="invalid_subject",
+    empty=_("Enter the email subject."),
+)
 PART_LABELS = {
     "subject": _("The email subject"),
     "html": _("The HTML version"),
@@ -142,7 +158,7 @@ class ContentForm(AdminForm):
     """HTML is sanitized before preview; plaintext can be generated or edited."""
 
     base_digest = forms.CharField(widget=forms.HiddenInput(), max_length=64)
-    subject = forms.CharField(label=_("Email subject"), max_length=254)
+    subject = RuleField(SUBJECT_RULE, label=_("Email subject"), max_length=254)
     html = forms.CharField(
         label=_("HTML source"),
         required=False,

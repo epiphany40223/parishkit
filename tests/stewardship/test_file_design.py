@@ -206,7 +206,7 @@ def test_participation_census_and_limitations_workbooks_share_the_style():
         family_answer="new@example.org",
         edited="",
         route_label="Staff update",
-        status_label="Pending",
+        stage_label="Ready to update",
         submitted_at=datetime(2026, 10, 5, 14, tzinfo=UTC),
     )
     book = load_workbook(io.BytesIO(census({"rows": [row]})))

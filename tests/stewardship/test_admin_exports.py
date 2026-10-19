@@ -184,11 +184,14 @@ def test_every_export_command_has_a_golden_document():
         "export limitations",
         # The roster list's download (#463).
         "export roster",
+        # The Pledges download (#1733).
+        "export pledges",
     }
     from parishkit.stewardship import (
         admin_census_export,
         admin_exact_exports,
         admin_limitations_export,
+        admin_pledges,
         admin_roster_export,
     )
 
@@ -202,6 +205,7 @@ def test_every_export_command_has_a_golden_document():
         "export census": admin_census_export.CensusExport,
         "export limitations": admin_limitations_export.LimitationsExport,
         "export roster": admin_roster_export.RosterExport,
+        "export pledges": admin_pledges.PledgeExport,
     }
     for name in exports:
         model = models.get(name, admin_exports.ExportChange)

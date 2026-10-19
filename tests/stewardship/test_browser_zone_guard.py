@@ -113,6 +113,8 @@ SERVER_INSTANTS = {
     "reports/limitations.py": "export in the chosen zone",
     # The roster export stamp is in the chosen zone.
     "reports/ministry_roster_views.py": "export in the chosen zone",
+    # Pledges' PDF (#1686), in the zone the download names.
+    "reports/pledge_review_views.py": "export in the chosen zone",
 }
 # Form fields whose label, help or errors name a fixed zone, by (form class,
 # field).

@@ -554,6 +554,7 @@ ROLES = ("administrator", "staff", "ministry_leader")
 REPORTS = [
     "census_changes",
     "ministry_report",
+    "pledges_to_enter",
     "information_queue",
     "limitations_report",
     "response_dashboard",
@@ -585,6 +586,7 @@ SPEC_ORDER = [
     # Review work
     "census_changes",
     "ministry_report",
+    "pledges_to_enter",
     "information_queue",
     "limitations_report",
     # Reports and queries
@@ -670,6 +672,7 @@ def test_every_campaign_entry_is_greyed_out_without_a_current_campaign():
         "response_dashboard",
         "campaign_comparison",
         "financial_report",
+        "pledges_to_enter",
         "limitations_report",
         "census_changes",
         "information_queue",
@@ -1160,9 +1163,10 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
 ):
     """One statement for every count, none without a counted link (#585).
 
-    Census changes' groups (#1590) are counted with the page's own status
-    rules: To do and Conflict for Staff, plus To review for an Administrator;
-    nothing published, ignored or superseded.
+    Census changes' groups (#1590) are counted at the worklist's To review
+    and Conflict stages, for Staff and Administrators alike (Administrator
+    decision, 2026-10-18); nothing ready to update, published, ignored or
+    superseded.
     """
     from parishkit.stewardship.accounts import admin_context
     from parishkit.stewardship.reports.ministry_followup import FollowupQuery
@@ -1171,12 +1175,14 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
     # The Ministries the follow-up selection reports it read (#389 L3).
     selected = [9]
     # Census changes' groups: handling, entity kind, decision, execution and
-    # rows. An automatic change no one reviewed (To review), a By-hand Family
-    # change (To do), a Conflict, and outcomes the default view leaves out.
+    # rows. An automatic change and a By hand Family change no one reviewed
+    # (both To review), a Conflict, an approved change Ready to update, and
+    # stages the count leaves out.
     groups = [
         ["api", "member", "unreviewed", "pending", 2],
         ["manual", "family", "unreviewed", "pending", 1],
         ["api", "member", "approved", "conflict", 4],
+        ["api", "member", "approved", "pending", 8],
         ["api", "member", "approved", "published", 5],
         ["manual", "member", "ignored", "pending", 6],
         ["api", "member", "approved", "superseded", 7],
@@ -1202,6 +1208,7 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
                 json.dumps(groups) if statements[-1]["census"] else None,
                 6 if statements[-1]["roster"] else None,
                 [] if statements[-1]["roster"] else None,
+                4 if statements[-1]["limitations"] else None,
             )
 
     monkeypatch.setattr(
@@ -1212,19 +1219,20 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
     active = _campaign("active")
     census = _campaign("active", modules=("ministry", "census"))
     draft = _campaign("draft")
-    queues = {"information_queue": 3, "ministry_report": 2}
+    # Limitations (R39 finding 10) is counted for Administrators and Staff.
+    queues = {"information_queue": 3, "ministry_report": 2, "limitations_report": 4}
     cases = (
         # Both queues and the To enter by hand count (ENTRY_COUNT, which
         # replaced Roster changes to enter's, R39) for Staff: every Ministry.
         ("staff", active, {**queues, "ministry_entry": 6}),
         # A draft has nothing to enter yet, so its roster count is not read.
         ("staff", draft, queues),
-        # With the census: Staff count To do and Conflict, an Administrator
-        # To review as well.
+        # With the census: Staff and an Administrator both count To review
+        # and Conflict, never Ready to update.
         (
             "staff",
             census,
-            {"census_changes": 5, **queues, "ministry_entry": 6},
+            {"census_changes": 7, **queues, "ministry_entry": 6},
         ),
         (
             "administrator",
@@ -1273,6 +1281,17 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
                 | {"assignee": "any", "presence": "any"}
             )
             assert statements[0]["roster_outcomes"] == ["joined", "leave_confirmed"]
+            # Limitations runs its page's selection with the page's defaults.
+            assert statements[0]["limitations"] is (role != "ministry_leader")
+            # With Pledges in the menu, Limitations' count adds the Cannot
+            # contribute answers at To review (R39 finding 11).
+            assert statements[0]["pledges"] is any(
+                item.name == "pledges_to_enter" and item.url for item in items
+            )
+            assert json.loads(statements[0]["limitation_filters"]) == {
+                "search": "",
+                "show": "any",
+            }
     # A count over a Ministry outside the leader's own scope is drift the
     # follow-up page refuses, so the menu shows no number either.
     selected[:] = [9, 77]

@@ -272,7 +272,17 @@ LEDGER = {
     "daily_digest_chart": permanent(IMAGES),
     "daily_digest_download": permanent(IMAGES),
     "financial_report": command("report financial"),
-    "limitations_report": command("report limitations"),
+    # Pledges (#1686, #1733): counts only, as its rows name
+    # Families and their pledges; its decisions go through the page's own
+    # PledgeDecisions service, and its rows with their ids and versions are
+    # export pledges --format jsonl's.
+    "pledges_to_enter": command("report pledges", "pledges decide"),
+    "pledges_to_enter_export": command("export pledges"),
+    # Limitations (#1685, #1735): counts by stage only, as its rows name
+    # Families and Members; its decisions go through the page's own
+    # LimitationDecisions service, and its rows with their ids and versions
+    # are export limitations --format jsonl's.
+    "limitations_report": command("report limitations", "limitations decide"),
     # Counts only (#463): its rows name Families and Members, so they are
     # export census's. A row's Entered in ParishSoft, Ignore and Reopen post
     # here too (#528): census resolve; so does an Automatic row's Review
@@ -291,7 +301,19 @@ LEDGER = {
     "census_publication": pending(
         "#528 slice 4", "census publish-check", "census publish-plan"
     ),
-    "information_queue": command("report information"),
+    # Additional information's review worklist (#1685) posts its decisions
+    # to the page itself: ``information decide`` (#1735), through the page's
+    # own InformationDecisions service, with ``information list`` the rows'
+    # ids, versions and stages. The retired request Save's ``followup
+    # information-update`` (#463 PR 11b) stays here until #1688 renames the
+    # commands; ``followup information-show`` reads one request.
+    "information_queue": command(
+        "report information",
+        "information list",
+        "information decide",
+        "followup information-show",
+        "followup information-update",
+    ),
     # One Family's submission and its follow-up history: ``followup
     # information-show`` (#463 PR 11b), which prints only the item's state
     # and history, as the Ministry follow-up items are read; its content is
@@ -440,10 +462,6 @@ LEDGER = {
     # Home's Acknowledge buttons; events list reads what they acknowledge.
     "security_event_acknowledge": command("events list", "events acknowledge"),
     "critical_events_acknowledge": command("events list", "events acknowledge"),
-    # An item's Save (#463 PR 11b).
-    "information_update": command(
-        "followup information-show", "followup information-update"
-    ),
     # A Ministry request's page and its Save (#463 PR 11a).
     "ministry_followup_item": command("followup show"),
     "ministry_followup_update": command("followup show", "followup update"),

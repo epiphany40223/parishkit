@@ -601,6 +601,48 @@ def test_applied_filters_redraw_the_summary_charts_in_place(page, component_orig
     assert_clean(page, errors)
 
 
+def test_a_reload_after_apply_shows_the_same_view(page, component_origin):
+    """Apply posts privately; the address bar then names the view (#1586).
+
+    The answer's hidden data-page-address (only the closed choices: here
+    Frequency, the sort and the rows per page) replaces the address, so a
+    browser reload asks for that address by GET, never sending the POST
+    again, and draws the same view, the filtered summary included.
+    """
+    from playwright.sync_api import expect
+
+    errors = watch(page)
+    route = reverse("admin:financial_report")
+    address = route + "?frequency=monthly&sort=pledge_desc&size=100"
+    answer = page.request.get(component_origin + "/financial-filtered").text()
+    page.goto(component_origin + route)
+    expect(page.locator("[data-stat=families] .stat-value")).to_have_text("51")
+    page.route(
+        lambda url: url.endswith(route),
+        lambda sent: (
+            sent.fulfill(body=answer, content_type="text/html")
+            if sent.request.method == "POST"
+            else sent.fallback()
+        ),
+    )
+    page.get_by_label("Search Family name or Family DUID").fill("Private name")
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("button", name="Apply filters").click()
+    assert "search=Private+name" in sent.value.post_data
+    expect(page.locator("[data-stat=families] .stat-value")).to_have_text("4")
+    expect(page).to_have_url(component_origin + address)
+    assert "Private" not in page.url
+    # The reload is the address's GET: no POST is sent again.
+    methods = []
+    page.on("request", lambda request: methods.append(request.method))
+    with page.expect_navigation():
+        page.reload()
+    expect(page.locator("[data-stat=families] .stat-value")).to_have_text("4")
+    expect(page).to_have_url(component_origin + address)
+    assert "POST" not in methods and "GET" in methods
+    assert_clean(page, errors)
+
+
 AT_MOST = (
     "Enter At most in whole dollars or dollars and cents, no less than At "
     "least, or clear it."

@@ -141,7 +141,10 @@ day and the active window keep their campaign-zone definitions. Shown
 timestamps include a time zone abbreviation in detail views. A form that
 accepts a date and time carries the browser's IANA zone in a hidden field that
 the page script fills, and the server converts the typed wall-clock time to
-UTC; the page names the zone next to the fields. The Admin portal requires
+UTC; the page names the zone next to the fields. Exception: Census changes'
+From and Through filters (days, not times) leave that line out and its
+About panel says the days are in this computer's time zone (Administrator,
+2026-10-19, R38 finding 8). The Admin portal requires
 JavaScript ([#565](https://github.com/epiphany40223/parishkit/issues/565)), so
 a missing or unknown zone is refused rather than guessed, and when the browser
 reports none the page keeps Save unavailable, saying why. A typed time that
@@ -443,7 +446,7 @@ never scrolls to show it (Administrator, pk-local review of
   hidden periodic re-read links of
   [pages that update themselves](#pages-that-update-themselves)) or a form whose answer is the page again
   (`form[data-in-place]`, such as a POST whose server redirects back to the
-  page: Save follow-up on an information item and on a
+  page: Save follow-up on a
   [Ministry follow-up request](../admin-portal/spec.md#follow-up-workflows); System logs'
   cross-links, whose answer is the filtered page; Acknowledge on a security
   event; Clear verified refusal on a
@@ -908,9 +911,28 @@ the [in-place controls](#in-place-controls); no other mechanism.
   other step, no blank or expired state), keeps the sort, filters, page
   and other choices the address carries, and resumes updating if work is
   still pending.
+- **Reload on a POST report.** A report whose filters are private POST
+  state ([admin tables](#admin-tables)) still names its view in the address:
+  after each in-place answer it accepts, the address bar shows the view's
+  own address, which the answer draws as an `a[data-page-address]` link:
+  the page with its closed, non-identifying filters and its sort. Search
+  text, Family or person identifiers and amounts never enter it (the
+  [reports](../reports/spec.md#shared-report-behavior) URL rule), and neither
+  does a page number, since the private filters the list was numbered with
+  are dropped. So a reload keeps the closed choices, clears only the private
+  ones and shows the first page. The page's GET accepts its own address and
+  refuses private values in a query (400). Each page's own spec names what
+  its address carries: the Active parishioner family directory shows its
+  bare page while a search or code is applied, since its presets alone would
+  be a different list; Sent mail and System logs also carry the rows per
+  page and their days; Financial stewardship carries the rows per
+  page.
+  The directory, Sent mail, System logs and Financial stewardship do this
+  ([#1586](https://github.com/epiphany40223/parishkit/issues/1586)).
 - **Go-live pages.** Go-live readiness, Testing cleanup, Prepare Family
   links and Production activation still have their Refresh links until the
-  go-live redesign applies this rule there (#1586 slice 2).
+  go-live redesign applies this rule there
+  ([#1585](https://github.com/epiphany40223/parishkit/issues/1585)).
 
 ### No layout shift
 
@@ -1151,7 +1173,8 @@ unavailable, named by the notice that says why. The Pages and emails editor's
 Preview changes waits for a change, except while the page offers saving what
 it shows as it is (the default text filled in, a saved text that needs
 re-saving, a confirmation email with a retired receipt closing note folded
-in, a refused Preview drawn again). On Campaign settings the Ministry
+in, a refused Preview drawn again); it and Share options' Save also wait for
+a subject or option labels whose placeholders the server admits (#1577). On Campaign settings the Ministry
 leader roles need one ticked while Ministry stewardship is on, and on a live
 campaign Save waits while the Ministries and another setting both changed
 (`data-change-alone`), with the server's own words. The automation
@@ -1253,9 +1276,21 @@ gate ([prerequisite gates](#prerequisite-gates)), so Save, Review or Save
 and continue waits, with the same words as its reason, while any field is
 invalid. Each rule has accepted and refused examples in one shared table
 (`tests/stewardship/fixtures/field_rule_cases.json`), run through the
-server's form field and through every browser engine. A server rule the
-browser does not check yet is a gap
-([#1577](https://github.com/epiphany40223/parishkit/issues/1577)).
+server's form field and through every browser engine. A textarea, which has
+no `pattern`, carries its rule as `data-pattern` (one address per line). An
+email address or a URL is a text box that asks phones for that keyboard
+(`inputmode`), not `type="email"` or `type="url"`: the browser's own check of
+those types admits values the server refuses (`a@b`) and refuses some it
+admits (a quoted user name, a padded value), so the rule is the one check
+both sides share. Where no pattern can say the rule, the page script checks
+it with the server's own limits and words, and its examples sit in the same
+table where they can: a list of Family DUIDs (no number twice), a financial
+period's end (exactly the day the start gives, drawn as its `min` and
+`max`) and a chosen file of 0 bytes (`data-empty-file-message`, beside
+`data-max-bytes`). A rule only the server can decide stays the server's,
+shown at the field after Save: a mail schedule's send date, typed in the
+browser's time zone and judged on the campaign's days
+([#1787](https://github.com/epiphany40223/parishkit/issues/1787)).
 
 A report's filters follow the same rule (#1332). A filter the server
 refuses at one field (a request built by hand, or a browser whose check did
@@ -1267,24 +1302,23 @@ choice no form offers, a sort or page size the table does not accept) keeps
 the report's error page. A range out of order is refused at its end with
 both ends marked, and its message is shown once, after them, in a line
 the form reserves so that a refusal shown in place moves nothing. Where
-that line is apart from the complete gate's hint row (the Additional
-information queue's Submitted dates, Financial stewardship's dates and
-amounts), the gate's hint, in the same words,
+that line is apart from the complete gate's hint row (Financial
+stewardship's dates and amounts), the gate's hint, in the same words,
 is held hidden in its row while the message shows, so the form says it
 once. A form whose complete gate already has a hint row (System logs, the
-Follow-up packet, an Additional information item's Save) shows the message
+Follow-up packet) shows the message
 in that row instead, over the gate's hint, which it hides while shown, so
 the page is no taller for a refusal only a request built by hand gets and
 says it once. The same holds for a report's own forms that a field can
-fix (the Follow-up packet's limit, an Additional information item's
-confirmation): the page is drawn again, 400, with the values sent. An
+fix (the Follow-up packet's limit): the page is drawn again, 400, with
+the values sent. An
 in-place Apply keeps the filter form and what was typed, and takes the
 marks and message from the answer. The server's mark clears, with its
 message and summary item, on the first edit of a field it marks (either
 end of a range), or when an in-place Apply is answered without it.
 **Shared code.** `web/filter_errors.py` (`FilterError`), the `filter_mark`
-and `filter_line` template tags; used by Financial stewardship, the
-Additional information queue and item, System logs, the Follow-up packet
+and `filter_line` template tags; used by Financial stewardship, System
+logs, the Follow-up packet
 and the Family directory's Exact Family code (shown in its gate's hint
 row).
 
@@ -1813,19 +1847,38 @@ Testing rehearsal.
 ### Clear filters
 
 **Rule.** Every Admin filter form (a page's `form#table-filters`, in a
-filter bar or a Filters panel) ends with two buttons side by side: **Apply
-filters**, then **Clear filters** directly after it (in a Filters panel
-both share Apply's grid cell, Clear wrapping under Apply where that cell is
-too narrow, so no row is added; in a filter bar whose filters leave too
-little room beside them, such as Sent mail's at 1280 px, Clear likewise
-wraps under Apply in the same item, Apply staying on the fields' row).
-The pair is never wider than its line, so on a phone Clear wraps under
-Apply rather than widening the page, and its two buttons have a narrower
-inline padding than other buttons, so that side by side they fit one
-Filters panel cell even with wider fonts. In Sent mail's and the
-Timeline's filter bars the pair takes the room beside the filters first,
-up to both buttons side by side, and the filters grow from what is left,
-never narrower than their own label line.
+filter bar or a Filters panel) ends with two buttons: **Apply filters**,
+then **Clear filters**. They are placed to take the least vertical space
+above the table, by the first of these steps that fits:
+
+1. **Beside the fields, side by side.** If Apply and Clear side by side
+   fit on the fields' last row without adding a row, they sit there, side
+   by side (in a Filters panel's grid, in one empty cell of that row, or
+   in two when one is too narrow for both).
+2. **Beside the fields, stacked.** Otherwise, if Clear under Apply fits on
+   that same row without making it taller, they sit there stacked.
+3. **A row of their own.** Otherwise they sit side by side on a new row
+   at the bottom of the form.
+
+"Fits" means the fields' last row keeps its place and height and the pair
+stays inside it; the fields may narrow, but never below their own label
+line. The same steps apply in a filter bar (the bar's last line) and in a
+Filters panel's grid (the grid's last row), at every width, so on a phone
+the pair usually takes its own row. The two buttons have a narrower inline
+padding than other buttons, so side by side they fit one Filters panel cell
+even with wider fonts, and the pair is never wider than its line: on a
+screen too narrow for both, Clear wraps under Apply rather than widening
+the page. **Why.** The Administrator asked for the least vertical space
+above tables on every filter form, with one placement rule rather than
+each page's own (pk-local review R38, 2026-10-19,
+[#1776](https://github.com/epiphany40223/parishkit/issues/1776)).
+**Shared code.** `ui-v1.js` tries the steps in order (the pair's
+`data-filter-place`: `beside`, `stacked` or `row`) and tries them again
+when the window's width changes, when a Filters panel opens, when web
+fonts finish loading and after an in-place swap;
+`test_filter_actions_place.py` checks the placement on the pages it
+names, in each engine and at phone, tablet and laptop widths.
+
 Clear filters puts every filter back to the page's default in one step and
 shows the result in place. No filter form names its apply button otherwise
 (the Ministries list's Filter, Background work's Show tasks, Refused
@@ -2423,8 +2476,8 @@ report whose filter form is longer than a row puts it in a "Filters" panel (the
 `filterpanel` template tag): a native disclosure that starts closed and renders
 open whenever the shown results use any filter other than the page's default,
 so an applied filter is never hidden. Open, a long form is a compact grid of
-its fields, each label tight above its box and Apply and
-[Clear filters](#clear-filters) beside the last field when the row has room, in one column on a phone (#1411); the Family
+its fields, each label tight above its box, with Apply and
+[Clear filters](#clear-filters) placed by that section's three steps, in one column on a phone (#1411); the Family
 directory's short fields keep their filter bar. The Family directory and
 Census changes are the two exceptions to the closed start: the Family
 directory's Filters panel is open by default (an Administrator decision, #227),
@@ -2436,9 +2489,10 @@ Apply while the panel and its form keep their elements. A report's export is
 not a disclosure: it is the compact row of
 [export buttons](#downloaded-files) below the page's table, always shown, which
 takes one line (#1679, replacing #227's closed export disclosure). The Family
-directory, Additional information, Financial stewardship, Limitations and
-Ministry requests follow the Filters panel rule (#227). Census changes, a
-worklist, keeps its filters always open
+directory, Financial stewardship and Ministry requests follow the Filters
+panel rule (#227). Census changes, a worklist, keeps its filters always open,
+as Additional information and Limitations do since they became review
+worklists ([#1685](https://github.com/epiphany40223/parishkit/issues/1685))
 ([its filters and downloads](../reports/spec.md#census-change-filters-and-downloads),
 [#1682](https://github.com/epiphany40223/parishkit/issues/1682)). Ministry requests keeps its
 compact filter bar rather than a Filters panel: its By Ministry counts apply
@@ -3514,7 +3568,6 @@ orders. In v1 that covers:
   Family code would need every code decrypted per view);
 - Financial stewardship detail (Family, Family DUID, Annual pledge and
   latest response);
-- the Additional information queue (Family, Family DUID and Submitted);
 - the Ministry requests review worklist (Member and Ministry; newest first
   by default, #1064, #1684).
 
@@ -3547,7 +3600,8 @@ scroll position, rows still shown keep their selection, focus returns to the
 chosen heading or control, the heading's `aria-sort` and a polite live region
 announce the new order or the rows now shown, and a GET table's choice
 replaces the address so reload, bookmarks and returning to the page keep it; a
-POST table's address never changes. Applying a page's filters works the same
+POST table's address shows only its view's closed choices
+([reload on a POST report](#pages-that-update-themselves)). Applying a page's filters works the same
 way (#484): the filter form is sent as it would have been (a GET query, or a
 CSRF POST body), every table region is replaced, and so are the counts,
 summaries and filter-dependent panels outside the tables (a report's matching
@@ -3875,11 +3929,13 @@ no Member name on purpose: the name itself may be the value the form
 refuses, and that page never shows one
 ([System health page](../admin-portal/spec.md#system-health-page)).
 
-The three report tables an installed SQL selection orders
+The report tables an installed SQL selection orders
 ([Admin tables](#admin-tables)) sort their DUID columns through that
-selection: Financial stewardship detail and the Additional information queue
-(Family DUID), and the Ministry report (Member DUID in one Ministry's view)
-([#960](https://github.com/epiphany40223/parishkit/issues/960)).
+selection: Financial stewardship detail (Family DUID) and the Ministry
+report (Member DUID in one Ministry's view)
+([#960](https://github.com/epiphany40223/parishkit/issues/960)); the
+Additional information worklist, which did too, sorts its whole list in
+memory since [#1685](https://github.com/epiphany40223/parishkit/issues/1685).
 
 ### Family and Member names
 

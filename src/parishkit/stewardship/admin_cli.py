@@ -58,8 +58,8 @@ shares`` (PR 10, in ``admin_settings``), ``parish preview`` and
 ``parish confirm`` (PR 10, in ``admin_parish``), and ``events list`` and
 ``events acknowledge`` (PR 11, in ``admin_events``). A
 command that streams a file (``logs export``, ``export census``,
-``export limitations``, ``export roster``, ``followup export`` and
-``export download --stream``) writes the file's bytes, and nothing else,
+``export limitations``, ``export roster``, ``export pledges``, ``followup
+export`` and ``export download --stream``) writes the file's bytes, and nothing else,
 to standard output, and its document to standard error. Other areas join the same
 subparser tree in later pull requests, each listed in the catalog with the
 pull request that added it. ``report roster`` (in ``admin_roster``) counts
@@ -84,7 +84,13 @@ bulk`` (PR 11a, in ``admin_followup``) read and record Ministry follow-up.
 and ``followup information-update`` (PR 11b, in ``admin_information``)
 read and record Additional information follow-up. ``followup export``
 (PR 11c, in ``admin_followup_export``) is the queue's Export these
-requests, streamed as ``export roster`` is.
+requests, streamed as ``export roster`` is. ``information list``,
+``information decide`` and ``limitations decide`` (#1735, in
+``admin_worklists``) list the Additional information worklist's requests as
+identifiers and decide both worklists through the pages' own decision
+services. ``report pledges``, ``export pledges`` and ``pledges decide``
+(#1733, in ``admin_pledges``) count, download and decide Pledges through
+the page's own read, writer and ``PledgeDecisions`` service.
 """
 
 import argparse
@@ -2291,6 +2297,7 @@ def export_information(args, preamble, runtime, context):
         zone=args.timezone,
         request_key=_request_key(args, context),
         context=context,
+        stage=args.stage,
     )
 
 
@@ -2559,7 +2566,7 @@ def report_limitations(args, preamble, runtime, context):
     """The Limitations report's summary, without its rows (PR 8c, #970)."""
     from .admin_report_reads import read_limitations
 
-    return read_limitations(context["caller"], runtime)
+    return read_limitations(context["caller"], runtime, args.stage)
 
 
 def report_information(args, preamble, runtime, context):
@@ -2577,6 +2584,7 @@ def report_information(args, preamble, runtime, context):
             "end": args.end,
             "zone": args.zone,
         },
+        stage=args.stage,
     )
 
 
@@ -2652,6 +2660,7 @@ def export_limitations(args, preamble, runtime, context):
         fmt=args.format,
         zone_name=args.timezone,
         context=context,
+        stage=args.stage,
     )
 
 
@@ -4076,6 +4085,33 @@ def _export_information_options(parser):
     parser.add_argument(
         "--history", action="store_true", help="include each item's workflow history"
     )
+    _information_stage_option(
+        parser,
+        default=None,
+        help="the worklist's Stage, as its export pane posts it (instead of "
+        "the disposition, needed and completed filters)",
+    )
+
+
+def _information_stage_option(parser, *, default, help):
+    """``--stage``: the Additional information worklist's Stage choice."""
+    from .admin_worklists import INFORMATION_STAGES
+
+    parser.add_argument(
+        "--stage", choices=INFORMATION_STAGES, default=default, help=help
+    )
+
+
+def _limitation_stage_option(parser):
+    """``--stage``: the Limitations worklist's Stage, every stage by default."""
+    from .admin_worklists import LIMITATION_STAGES
+
+    parser.add_argument(
+        "--stage",
+        choices=LIMITATION_STAGES,
+        default="all",
+        help="the worklist's Stage (default all, every stage)",
+    )
 
 
 def _export_ministry_options(parser):
@@ -4240,6 +4276,11 @@ def _report_information_options(parser):
     parser.add_argument("--needed", help="follow-up needed: any (default), yes or no")
     parser.add_argument("--completed", help="followed up: any (default), yes or no")
     _date_options(parser)
+    _information_stage_option(
+        parser,
+        default=None,
+        help="count the worklist by Stage instead of the follow-up filters",
+    )
 
 
 def _ministry_duid(value):
@@ -4329,11 +4370,13 @@ def _export_limitations_options(parser):
         help="any (default), cannot_serve (cannot participate in ministries) "
         "or cannot_attend (cannot attend Mass or prayer services)",
     )
+    _limitation_stage_option(parser)
     parser.add_argument(
         "--format",
-        choices=("csv", "xlsx", "pdf"),
+        choices=("csv", "xlsx", "pdf", "jsonl"),
         default=DEFAULT_EXPORT_FORMAT,
-        help=f"default {DEFAULT_EXPORT_FORMAT}",
+        help=f"default {DEFAULT_EXPORT_FORMAT}; jsonl adds each answer's item "
+        "id, version and actions",
     )
     parser.add_argument(
         "--timezone",
@@ -6461,6 +6504,7 @@ def _report_specs():
             False,
             LimitationsReport.field_names(),
             8,
+            options=(_limitation_stage_option,),
             # The page keeps the event it recorded as Talents and limitations.
             audit_event="talents_report_viewed",
         ),
@@ -7571,6 +7615,441 @@ def _followup_export_specs():
 
 # ------------------------------------------- end of follow-up export block
 
+# ------------------- Additional information and Limitations decisions (#1735)
+#
+# ``information list``, ``information decide`` and ``limitations decide``
+# (in ``admin_worklists``): the Additional information worklist's requests
+# as identifiers, and both worklists' row and bulk decisions through the
+# pages' own decision services.
+
+
+def information_list(args, preamble, runtime, context):
+    """The Additional information worklist's requests, as identifiers (#1735)."""
+    from .admin_worklists import list_information
+
+    return list_information(
+        context["caller"],
+        runtime,
+        stage=args.stage,
+        dates={"start": args.start, "end": args.end, "zone": args.zone},
+    )
+
+
+def _worklist_decide(stream, args, context, runtime):
+    """Record one decision on one or several items, as the page does (#1735).
+
+    The page's own role check comes first, so a Ministry leader is
+    ``denied`` before any input or prompt. Without ``--request-key`` a new
+    key is made and written to standard error before anything is done.
+    Handled is final, so, as a decision that cannot be undone, it asks
+    first (or takes ``--yes``); the others can be changed again and ask
+    nothing.
+    """
+    from . import admin_worklists
+    from .web.review_worklist import MAX_NOTE
+
+    admin_worklists.admit_decide(stream, context["caller"], runtime)
+    versions = dict(args.item)
+    if len(versions) != len(args.item):
+        raise ValueError("An item was chosen twice.")
+    key = _request_key(args, context)
+    # The page strips the note it posts; so does a note read from standard
+    # input (``_input``).
+    note = _input(args.note, context, MAX_NOTE * 4).strip()
+    # Refused before the prompt: nothing is asked about a decision the page
+    # could not post (too many items, a malformed item, a long note).
+    admin_worklists.check_choice(stream, versions, note)
+    if args.action == "handled":
+        confirm(
+            context,
+            (
+                f"Mark {len(versions)} {stream.items} handled.",
+                "Handled is final: it cannot be undone.",
+            ),
+        )
+    return admin_worklists.decide(
+        stream,
+        context["caller"],
+        runtime,
+        versions,
+        action=args.action,
+        note=note,
+        request_key=key,
+        context=context,
+    )
+
+
+def information_decide(args, preamble, runtime, context):
+    """A decision on Additional information requests, as the worklist's (#1735)."""
+    from .admin_worklists import INFORMATION
+
+    return _worklist_decide(INFORMATION, args, context, runtime)
+
+
+def limitations_decide(args, preamble, runtime, context):
+    """A decision on Limitations answers, as the worklist's (#1735)."""
+    from .admin_worklists import LIMITATIONS
+
+    return _worklist_decide(LIMITATIONS, args, context, runtime)
+
+
+def _information_list_options(parser):
+    """Options of ``information list``: the page's Stage and dates, no search."""
+    _information_stage_option(
+        parser,
+        default="to_review",
+        help="default to_review; all is Every stage (without History)",
+    )
+    _date_options(parser)
+
+
+def _chosen_request(value):
+    """``--item ID:VERSION``: a request and the version its row shows."""
+    identity, separator, version = value.partition(":")
+    if not separator:
+        raise argparse.ArgumentTypeError("not ID:VERSION")
+    try:
+        return _uuid(identity), _tick_version(version)
+    except argparse.ArgumentTypeError:
+        raise argparse.ArgumentTypeError("not ID:VERSION") from None
+
+
+def _chosen_answer(value):
+    """``--item ID:VERSION``: an answer's item id and the version its row shows.
+
+    The id's own form is checked once Django is set up
+    (``limitation_review.parse_answer``, ``invalid`` otherwise); here only
+    that it is short printable ASCII, as the page's form check takes it.
+    """
+    from .admin_worklists import MAX_ITEM
+
+    identity, separator, version = value.rpartition(":")
+    if (
+        not separator
+        or not identity
+        or len(identity) > MAX_ITEM
+        or not identity.isascii()
+        or not identity.isprintable()
+    ):
+        raise argparse.ArgumentTypeError("not ID:VERSION")
+    try:
+        return identity, _tick_version(version)
+    except argparse.ArgumentTypeError:
+        raise argparse.ArgumentTypeError("not ID:VERSION") from None
+
+
+def _decide_options(chosen, source):
+    """Options of a ``decide`` command: a row's action or the bulk bar's."""
+
+    def add(parser):
+        """The action, the items, the note and the key."""
+        from .admin_worklists import DECIDE_ACTIONS
+
+        parser.add_argument(
+            "--action",
+            required=True,
+            choices=DECIDE_ACTIONS,
+            help="accept, ignore, back_to_review or handled (final)",
+        )
+        parser.add_argument(
+            "--item",
+            required=True,
+            action="append",
+            type=chosen,
+            metavar="ID:VERSION",
+            help=f"an item's item_id and version, as {source} prints them "
+            "(repeat for each, up to 100)",
+        )
+        parser.add_argument(
+            "--note",
+            default="",
+            help="an optional note (required to reopen an ignored item), or - "
+            "to read it from standard input (which then needs --yes)",
+        )
+        _request_key_option(parser)
+
+    return add
+
+
+def _worklist_specs():
+    """The worklists' commands (#1735, ``admin_worklists``).
+
+    ``information list`` is a passive read any session may run, as
+    ``followup information-show``; the ``decide`` commands are keyed and
+    full scope, and neither privileged nor asking except for Handled, as on
+    the pages.
+    """
+    from .admin_worklists import InformationList, WorklistDecide
+
+    return (
+        # Identifiers only: the requests' content stays on the page and in
+        # ``export information``.
+        CommandSpec(
+            "information list",
+            "List the Additional information requests' ids, versions and stages.",
+            information_list,
+            "read_only",
+            False,
+            InformationList.field_names(),
+            11,
+            options=(_information_list_options,),
+            audit_event="information_viewed",
+        ),
+        CommandSpec(
+            "information decide",
+            "Record a decision on Additional information requests.",
+            information_decide,
+            "full",
+            True,
+            WorklistDecide.field_names(),
+            11,
+            options=(_decide_options(_chosen_request, "information list"),),
+            # Only Handled, which is final, asks.
+            prompts=True,
+            request_key=True,
+        ),
+        CommandSpec(
+            "limitations decide",
+            "Record a decision on Limitations answers.",
+            limitations_decide,
+            "full",
+            True,
+            WorklistDecide.field_names(),
+            11,
+            options=(
+                _decide_options(_chosen_answer, "export limitations --format jsonl"),
+            ),
+            prompts=True,
+            request_key=True,
+        ),
+    )
+
+
+# ------------- end of Additional information and Limitations decisions block
+
+
+# ---------------------------------------------- Pledges (#1733)
+#
+# ``report pledges``, ``export pledges`` and ``pledges decide`` (in
+# ``admin_pledges``): Pledges' counts, its download and its row
+# and bulk decisions, through the page's own read, writer and
+# ``PledgeDecisions`` service.
+
+# A pledge's frequencies (``responses.financial.FREQUENCIES``), spelled out
+# because the parser is built before Django is set up; a test keeps them
+# equal.
+PLEDGE_FREQUENCIES = ("weekly", "monthly", "quarterly", "annual")
+
+
+def report_pledges(args, preamble, runtime, context):
+    """Pledges, as counts by stage only (#1733)."""
+    from .admin_pledges import read_pledges
+
+    return read_pledges(context["caller"], runtime, stage=args.stage)
+
+
+def export_pledges(args, preamble, runtime, context):
+    """The Pledges download, streamed to standard output (#1733)."""
+    from .admin_pledges import export_pledges as export
+
+    return export(
+        context["caller"],
+        runtime,
+        stage=args.stage,
+        fmt=args.format,
+        zone_name=args.timezone,
+        context=context,
+    )
+
+
+def pledges_decide(args, preamble, runtime, context):
+    """Record one decision on one or several pledges, as the page does (#1733).
+
+    The page's own role check comes first, so a Ministry leader is
+    ``denied`` before any input or prompt. Without ``--request-key`` a new
+    key is made and written to standard error before anything is done.
+    Entered by hand is final, so, as a decision that cannot be undone, it
+    asks first (or takes ``--yes``); the others can be changed again and
+    ask nothing.
+    """
+    from . import admin_pledges
+    from .web.review_worklist import MAX_NOTE
+
+    admin_pledges.admit_decide(context["caller"], runtime)
+    versions = dict(args.item)
+    if len(versions) != len(args.item):
+        raise ValueError("A pledge was chosen twice.")
+    key = _request_key(args, context)
+    # The page strips the note it posts; so does a note read from standard
+    # input (``_input``).
+    note = _input(args.note, context, MAX_NOTE * 4).strip()
+    # Refused before the prompt: nothing is asked about a decision the page
+    # could not post (too many pledges, a long note, a value or option an
+    # Edit would refuse).
+    admin_pledges.check_choice(
+        versions, args.action, amount=args.amount, frequency=args.frequency, note=note
+    )
+    if args.action == "entered_by_hand":
+        confirm(
+            context,
+            (
+                f"Mark {len(versions)} pledge(s) entered by hand in ParishSoft.",
+                "Entered by hand is final: it cannot be undone.",
+            ),
+        )
+    return admin_pledges.decide_pledges(
+        context["caller"],
+        runtime,
+        versions,
+        action=args.action,
+        amount=args.amount,
+        frequency=args.frequency,
+        note=note,
+        request_key=key,
+        context=context,
+    )
+
+
+def _pledge_stage_option(parser):
+    """``--stage``: the page's Stage choice, To review by default."""
+    from .admin_pledges import DEFAULT_STAGE, STAGE_CHOICES
+
+    parser.add_argument(
+        "--stage",
+        choices=STAGE_CHOICES,
+        default=DEFAULT_STAGE,
+        help=f"default {DEFAULT_STAGE}; all is Every stage",
+    )
+
+
+def _export_pledges_options(parser):
+    """Options of ``export pledges``: the page's Stage, format and time zone.
+
+    The page's search is left out: no command takes text that names a
+    Family. The format choices are the page's own (``pledge_review_views.
+    FORMATS``, which a test keeps equal) and the command's ``jsonl``.
+    """
+    _pledge_stage_option(parser)
+    parser.add_argument(
+        "--format",
+        choices=("csv", "xlsx", "pdf", "jsonl"),
+        default=DEFAULT_EXPORT_FORMAT,
+        help=f"default {DEFAULT_EXPORT_FORMAT}; jsonl adds each pledge's item "
+        "id, version and actions",
+    )
+    parser.add_argument(
+        "--timezone",
+        default="UTC",
+        help="the time zone of the file's times (default UTC)",
+    )
+
+
+def _chosen_pledge(value):
+    """``--item ID:VERSION``: a pledge item and the version its row shows."""
+    identity, separator, version = value.partition(":")
+    if not separator:
+        raise argparse.ArgumentTypeError("not ID:VERSION")
+    try:
+        return _uuid(identity), _tick_version(version)
+    except argparse.ArgumentTypeError:
+        raise argparse.ArgumentTypeError("not ID:VERSION") from None
+
+
+def _pledges_decide_options(parser):
+    """Options of ``pledges decide``: a row's action or the bulk bar's."""
+    from .admin_pledges import DECIDE_ACTIONS
+
+    parser.add_argument(
+        "--action",
+        required=True,
+        choices=DECIDE_ACTIONS,
+        help="accept, edit (one pledge, with --amount), ignore, "
+        "back_to_review or entered_by_hand (final)",
+    )
+    parser.add_argument(
+        "--item",
+        required=True,
+        action="append",
+        type=_chosen_pledge,
+        metavar="ID:VERSION",
+        help="a pledge's item_id and version, as export pledges --format "
+        "jsonl prints them (repeat for each, up to 100)",
+    )
+    parser.add_argument(
+        "--amount",
+        help="edit: the annual pledge, as the Family form takes it",
+    )
+    parser.add_argument(
+        "--frequency",
+        choices=PLEDGE_FREQUENCIES,
+        help="edit: how often the Family gives (none for a zero pledge)",
+    )
+    parser.add_argument(
+        "--note",
+        default="",
+        help="an optional note (required to reopen an ignored pledge), or - "
+        "to read it from standard input (entered_by_hand then needs --yes)",
+    )
+    _request_key_option(parser)
+
+
+def _pledge_specs():
+    """Pledges' commands (#1733, ``admin_pledges``).
+
+    ``report pledges`` is a read-only count; ``export pledges`` needs full
+    scope, as every export and as the download's post records activity;
+    ``pledges decide`` is keyed and full scope, and neither privileged nor
+    asking except for Entered by hand, as on the page.
+    """
+    from .admin_pledges import PledgeDecide, PledgeExport, PledgeReport
+
+    return (
+        # Counts only: each row names a Family and its pledge.
+        CommandSpec(
+            "report pledges",
+            "Count the pledges on the Pledges page, by stage.",
+            report_pledges,
+            "read_only",
+            False,
+            PledgeReport.field_names(),
+            8,
+            options=(_pledge_stage_option,),
+            audit_event="pledges_to_enter_viewed",
+        ),
+        # The page's file, or JSON Lines with each pledge's item id,
+        # version and actions for ``pledges decide``.
+        CommandSpec(
+            "export pledges",
+            "Write the Pledges download to standard output.",
+            export_pledges,
+            "full",
+            False,
+            PledgeExport.field_names(),
+            8,
+            options=(_export_pledges_options,),
+            audit_event="pledges_to_enter_exported",
+            streams=True,
+        ),
+        # A row's Accept, Edit, Ignore, Back to review or Entered by hand,
+        # or the bulk bar's: the page's service, keyed.
+        CommandSpec(
+            "pledges decide",
+            "Record a decision on pledges, as Pledges' actions do.",
+            pledges_decide,
+            "full",
+            True,
+            PledgeDecide.field_names(),
+            8,
+            options=(_pledges_decide_options,),
+            # Only Entered by hand, which is final, asks.
+            prompts=True,
+            request_key=True,
+        ),
+    )
+
+
+# ------------------------------------------- end of Pledges block
+
 
 COMMANDS = (
     COMMANDS
@@ -7594,6 +8073,8 @@ COMMANDS = (
     + _integration_specs()
     + _followup_more_specs()
     + _followup_export_specs()
+    + _worklist_specs()
+    + _pledge_specs()
 )
 BY_NAME = {spec.name: spec for spec in COMMANDS}
 

@@ -249,6 +249,10 @@ PAGES = {
     # once a page of its own, was merged into it.
     "ministry_report": Page("review", _("Ministry requests")),
     "ministry_followup_item": Page("review", _("Follow-up request"), "ministry_report"),
+    # The financial stream's review worklist and manual report (#1686), a
+    # menu entry of its own in Review work, in the Administrator's order
+    # (R39 finding 1).
+    "pledges_to_enter": Page("review", _("Pledges")),
     "family_directory": Page("reports", _("Active parishioner family directory")),
     # One Family's summary and timeline (#477; the Timeline since #1570),
     # opened from every Family name the shared family_link tag draws.
@@ -519,6 +523,7 @@ MENU = (
     # Review work, in the Administrator's order (R39 finding 1).
     Entry("census_changes", Capability.VIEW_CENSUS, CENSUS),
     Entry("ministry_report", Capability.MINISTRY_REPORT, MINISTRY, scoped=True),
+    Entry("pledges_to_enter", Capability.FINANCIAL_DETAIL, FINANCIAL),
     Entry("information_queue", Capability.ADDITIONAL_FOLLOWUP, _downloaded(_campaign)),
     Entry("limitations_report", Capability.CAMPAIGN_REPORT, MINISTRY),
     # Reports and queries
@@ -730,7 +735,6 @@ NON_PAGES = frozenset(
         "past_campaign_archive",
         "financial_export",
         "information_export",
-        "information_update",
         "integration_status",
         "login",
         "logout",
@@ -742,6 +746,7 @@ NON_PAGES = frozenset(
         "ministry_followup_update",
         "ministry_followup_roster",
         "ministry_packet",
+        "pledges_to_enter_export",
         # The ParishSoft refresh schedule editor's live check (#632), a
         # fragment the settings page reads.
         "refresh_schedule_check",
