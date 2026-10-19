@@ -639,9 +639,10 @@ rule ([navigation rule 10](../ui-conventions/spec.md#navigation-rules),
 #### Menu groups
 
 The menu is grouped by what an Administrator is doing during a campaign, in
-the order a campaign runs: set it up, send it, read the responses, then the
-parish data, users and system pages that change rarely. The sidebar starts with
-Home, then these groups, each listing the entries the viewer's role may open:
+the order a campaign runs: set it up, send it, review the responses and read
+the reports, then the parish data, users and system pages that change rarely.
+The sidebar starts with Home, then these groups, each listing the entries the
+viewer's role may open:
 
 | Group | Entry | URL | Roles | Unavailable when (the reason shown) |
 | --- | --- | --- | --- | --- |
@@ -660,16 +661,16 @@ Home, then these groups, each listing the entries the viewer's role may open:
 | Mail and Family portal | Sent mail | `/admin/mail/sent/` | Administrator | Never |
 | Mail and Family portal | Family portal availability | `/admin/mail/family-portal/` | Administrator | Never |
 | Mail and Family portal | Families on the form now | `/admin/mail/presence/` | Administrator | Never |
-| Responses and reports | Response dashboard | `/admin/reports/responses/` | Administrator, Staff | No current campaign |
-| Responses and reports | Campaign comparison | `/admin/reports/comparison/` | Administrator, Staff | No current campaign |
-| Responses and reports | Financial stewardship | `/admin/reports/financial/` | Administrator, Staff | The campaign has no financial module |
-| Responses and reports | Limitations | `/admin/reports/limitations/` | Administrator, Staff | The campaign has no Ministry module |
-| Responses and reports | Census changes | `/admin/reports/census/` | Administrator, Staff | The campaign does not include the census |
-| Responses and reports | Additional information | `/admin/reports/information/` | Administrator, Staff | No current campaign, or ParishSoft data has not been downloaded yet |
-| Responses and reports | Ministry requests | `/admin/reports/ministries/` | Administrator, Staff, Ministry leader | The campaign has no Ministry module |
-| Responses and reports | Roster changes to enter | `/admin/reports/ministries/follow-up/roster/` | Administrator, Staff | The campaign has no Ministry module |
-| Responses and reports | Active parishioner family directory | `/admin/reports/families/` | Administrator, Staff | No current campaign, or ParishSoft data has not been downloaded yet |
-| Responses and reports | Emailed reports | `/admin/reports/emailed/` | Administrator, Staff | Never |
+| Review work | Census changes | `/admin/reports/census/` | Administrator, Staff | The campaign does not include the census |
+| Review work | Ministry requests | `/admin/reports/ministries/` | Administrator, Staff, Ministry leader | The campaign has no Ministry module |
+| Review work | Roster changes to enter | `/admin/reports/ministries/follow-up/roster/` | Administrator, Staff | The campaign has no Ministry module |
+| Review work | Additional information | `/admin/reports/information/` | Administrator, Staff | No current campaign, or ParishSoft data has not been downloaded yet |
+| Review work | Limitations | `/admin/reports/limitations/` | Administrator, Staff | The campaign has no Ministry module |
+| Reports and queries | Response dashboard | `/admin/reports/responses/` | Administrator, Staff | No current campaign |
+| Reports and queries | Campaign comparison | `/admin/reports/comparison/` | Administrator, Staff | No current campaign |
+| Reports and queries | Financial stewardship | `/admin/reports/financial/` | Administrator, Staff | The campaign has no financial module |
+| Reports and queries | Active parishioner family directory | `/admin/reports/families/` | Administrator, Staff | No current campaign, or ParishSoft data has not been downloaded yet |
+| Reports and queries | Emailed reports | `/admin/reports/emailed/` | Administrator, Staff | Never |
 | Parish data | Parish settings | `/admin/parish/settings/` | Administrator | Never |
 | Parish data | Parish logos | `/admin/parish/logos/` | Administrator | Never |
 | Parish data | Ministries | `/admin/parish/ministries/` | Administrator | ParishSoft data has not been downloaded yet |
@@ -687,6 +688,14 @@ Home, then these groups, each listing the entries the viewer's role may open:
 
 Notes on the groups:
 
+- **Review work** comes before **Reports and queries** (the Administrator,
+  R39 findings 1 and 4, 2026-10-19): one group holds the
+  [review pipeline](../review-pipeline/spec.md)'s worklists, the daily work
+  while a campaign runs, in the order Census changes, Ministry requests,
+  Additional information, Limitations; the other holds the read-only reports
+  and queries. Until the split this was one group, Responses and reports.
+  Both groups' pages keep their `/admin/reports/` addresses (see
+  [URL scheme](#url-scheme)), so no address changed.
 - Every report has its own entry, so none is reached only through another
   report: the [Response dashboard](../reports/spec.md#response-dashboard)
   (which absorbed Participation,
@@ -1243,11 +1252,13 @@ Admin URLs follow the menu, so the address says where the reader is
 (issue #525):
 
 - **The first segment after `/admin/` is the menu group:** `campaign`
-  (Campaign setup), `mail` (Mail and Family portal), `reports` (Responses and
-  reports), `parish` (Parish data), `users` (Users and access) and `system`
-  (System). Home is `/admin/`, a change's status page is
-  `/admin/changes/<request>/`, and the sign-in, maintenance and setup wizard
-  pages keep their own prefixes outside the menu.
+  (Campaign setup), `mail` (Mail and Family portal), `reports` (Review work
+  and Reports and queries, which share it: Review work was split from
+  Reports and queries without moving its pages), `parish` (Parish data),
+  `users` (Users and access) and `system` (System). Home is `/admin/`, a
+  change's status page is `/admin/changes/<request>/`, and the sign-in,
+  maintenance and setup wizard pages keep their own prefixes outside the
+  menu.
 - **No campaign identifier:** every page is `/admin/<group>/<page>/`, for
   example `/admin/campaign/settings/`, `/admin/mail/family-history/` and
   `/admin/reports/responses/`, and campaign pages show the current
@@ -1334,7 +1345,9 @@ follows them.
 
 1. **Menu groups and their order?** Home, Campaign setup, Mail and Family
    portal, Responses and reports, Parish data, Users and access, System (as
-   proposed).
+   proposed). On 2026-10-19 (R39) the Administrator split Responses and
+   reports into Review work, then Reports and queries
+   ([Menu groups](#menu-groups)).
 2. **One menu entry per report, or a Reports landing page?** One entry per
    report (as proposed).
 3. **How does an unavailable entry show its reason?** Greyed out, with the
@@ -6276,7 +6289,7 @@ rest of this section follows those decisions:
 
 1. The page name is **Data to fix in ParishSoft**.
 2. It is the last entry of the Parish data menu group, not an entry under
-   Responses and reports.
+   Responses and reports (since R39, Review work and Reports and queries).
 3. The sections run: Families the form cannot open, refused email
    addresses, Families no mail can reach, census and roster changes to
    enter.
