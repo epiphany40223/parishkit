@@ -136,6 +136,9 @@ def test_member_tabs_follow_the_spec_order_with_their_marks():
         ("member-6", "Adams, Cy", "new"),
         ("member-7", "Adams, Zed", "new"),
     ]
+    # A ParishSoft Member's DUID goes beside the panel heading; a Member the
+    # Family added has none yet.
+    assert [item.duid for item in members] == [3, 4, 5, 12, 7, None, None]
     assert str(members[1].mark_label) == "No longer in this household"
     assert str(members[4].mark_label) == "Not in ParishSoft"
     assert "not in ParishSoft yet" in str(members[5].mark_note)
@@ -255,6 +258,8 @@ def test_the_family_panel_is_the_only_one_drawn():
     page = render("family", shape(ANSWERS, NAMES, ROWS))
     assert page.count("data-tab-loaded") == 1
     panel = page.split('id="family-tabs-panel-family"')[1]
+    # The heading carries the Family DUID, as the header strip writes it.
+    assert '<h2 id="hub-family-heading">Family (DUID 1234)</h2>' in panel
     assert 'id="hub-family-changed-caption"' in panel
     assert "Reviewer's value</th>" not in panel
     assert '<span class="status-word">To review</span>' in panel
@@ -271,6 +276,7 @@ def test_a_member_panel_draws_its_mark_and_reviewers_value():
     census = shape(ANSWERS, NAMES, ROWS)
     page = render("member-1", census)
     panel = page.split('id="family-tabs-panel-member-1"')[1]
+    assert '<h2 id="hub-member-1-heading">Adams, Requested (DUID 3)</h2>' in panel
     assert "Reviewer's value</th>" in panel and "<td>Anne</td>" in panel
     assert "Ready to update" in panel and 'id="hub-member-1-unchanged-caption"' in panel
     page = render("member-2", census)
@@ -279,6 +285,8 @@ def test_a_member_panel_draws_its_mark_and_reviewers_value():
     assert "Show unchanged" not in panel.split("</section>")[0]
     page = render("member-7", census)
     panel = page.split('id="family-tabs-panel-member-7"')[1]
+    # An added Member has no DUID yet: the name alone, and its New Member badge.
+    assert '<h2 id="hub-member-7-heading">Adams, Zed</h2>' in panel
     assert "Adding this Member:" in panel and "The Family's answers" in panel
 
 

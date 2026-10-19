@@ -174,7 +174,10 @@ class Subject:
     ``key`` is the tab's key, ``label`` its name, ``mark`` a ``MARKS`` key
     ("" for a current Member or the Family) and ``rows`` its fields in form
     order. A Member the Family added has ``addition``, the stage of the
-    addition itself, and its rows are the Family's answers.
+    addition itself, and its rows are the Family's answers. ``duid`` is a
+    ParishSoft Member's DUID, shown beside the panel's heading; None for the
+    Family (the heading shows the page's Family DUID) and for a Member the
+    Family added, who has none yet.
     """
 
     key: str
@@ -182,6 +185,7 @@ class Subject:
     rows: tuple = ()
     mark: str = ""
     addition: FieldRow | None = None
+    duid: int | None = None
 
     @property
     def changed(self):
@@ -384,6 +388,7 @@ def shape(answers, names, rows, *, census=True):
                 mark,
                 field_rows(fields, answer or {}, mine) if census else (),
                 None,
+                int(key),
             )
         )
     added = []
@@ -399,13 +404,13 @@ def shape(answers, names, rows, *, census=True):
             )
             for field in MEMBER_FIELDS
         )
-        added.append((member_label(answer, None), "new", values, addition))
+        added.append((member_label(answer, None), "new", values, addition, None))
     subjects += sorted(added, key=lambda item: item[0].casefold())
     return HubCensus(
         family,
         tuple(
-            Subject(f"member-{place}", label, fields, mark, addition)
-            for place, (label, mark, fields, addition) in enumerate(subjects, 1)
+            Subject(f"member-{place}", label, fields, mark, addition, duid)
+            for place, (label, mark, fields, addition, duid) in enumerate(subjects, 1)
         ),
         census,
     )

@@ -6872,7 +6872,12 @@ the Family tab says it has no census answers yet.
 
 **Marks.** Each panel opens with its subject's name as a heading, so a
 panel fetched after the Family answered again (which can renumber the
-Member tabs) still says whose it is. A Member tab then shows the Member's
+Member tabs) still says whose it is. The heading adds the subject's DUID,
+written as in the header strip: "Family (DUID 100034)" on the Family tab and
+"Anderson, Michael (DUID 500010)" on a Member tab (Administrator,
+2026-10-19). A Member the Family added has no DUID yet, so its heading is
+the name alone; its **New Member** badge says it is not in ParishSoft yet.
+Tab labels stay names only. A Member tab then shows the Member's
 mark, as a badge, when the Member is not a current Member: **New Member** (the Family added the
 Member; not in ParishSoft yet), **No longer in this household**,
 **Deceased**, or **Not in ParishSoft** (ParishSoft no longer lists the
