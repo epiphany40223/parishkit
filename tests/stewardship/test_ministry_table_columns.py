@@ -66,7 +66,6 @@ def ministry_page(rows=(), *, summaries=(), packet_choices=(), totals=None, **ex
         "bulk_kind_hints": BULK_KIND_HINTS,
         "bulk_key": UUID(int=1),
         "export_fields": query.form_values(),
-        "export_timezones": ["UTC"],
         "export_pdf_limit": 1000,
         "totals": totals,
         "followup_chart": ministry_followup(totals),

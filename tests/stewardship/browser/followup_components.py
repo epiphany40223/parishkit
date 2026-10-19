@@ -252,7 +252,6 @@ def components(context, admin):
         metadata=dict(name="Sample campaign", source_as_of=moment, timezone="UTC"),
         # Export these requests (#1157): the applied view and zone choices.
         export_fields=query.form_values(),
-        export_timezones=["America/Detroit", "UTC"],
         export_pdf_limit=1000,
         # Ministry requests' overview (#1133): the totals, By Ministry and
         # the packet's choices, every Ministry in scope.

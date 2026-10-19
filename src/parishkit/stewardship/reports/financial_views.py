@@ -19,7 +19,6 @@ from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.domain import Money
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
-from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.dates import UnknownZone
 from parishkit.stewardship.web.filter_errors import (
@@ -285,7 +284,6 @@ def report(request, campaign_id):
                 ),
                 "mutable": mutable,
                 "request_key": uuid4(),
-                "export_timezones": sorted(timezone_names()),
                 # Per request, in the request's language.
                 "filter_sizes": line_sizes(FIELD_MESSAGES, FIELD_LINES),
             }
