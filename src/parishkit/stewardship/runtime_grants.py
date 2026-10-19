@@ -647,6 +647,9 @@ CLOSURE_TABLES = {
         ("stewardship_refresh_check", "stewardship_refresh_check_start"),
         ("stewardship_workflows", "0004_refresh_checks"),
     ),
+    # A pledge's review history (0135, provisional number, #1686), which
+    # web records and reads.
+    "stewardship_pledge_review": ("stewardship_reports", "0032_pledge_review"),
 }
 
 

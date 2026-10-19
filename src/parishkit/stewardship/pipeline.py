@@ -364,9 +364,32 @@ def information_placement(
 # --- Financial and cannot participate -------------------------------------
 
 
-def financial_placement():
-    """A current pledge answer: To review, since no decision is stored yet (#1686)."""
-    return Placement(Stage.TO_REVIEW)
+FINANCIAL_DECISIONS = frozenset({"accepted", "accepted_edited", "ignored"})
+
+
+def financial_placement(*, decision=None, entered=False):
+    """A Family's current pledge answer's stage from its decision in force (#1686).
+
+    ``decision`` is the stored decision of the item's latest
+    ``stewardship_pledge_review`` row while it is in force (None with no
+    row, after Back to review, or once the Family changed its pledge since
+    the decision: ``reports.pledge_review`` reads that), and ``entered``
+    its Entered by hand mark. With no argument, as before any decision is
+    stored, every answer is To review.
+    """
+    if (decision is not None and decision not in FINANCIAL_DECISIONS) or type(
+        entered
+    ) is not bool:
+        raise ValueError("Unknown pledge review state.")
+    if entered and decision not in ("accepted", "accepted_edited"):
+        raise ValueError("Only an accepted pledge is entered by hand.")
+    if decision is None:
+        return Placement(Stage.TO_REVIEW)
+    if decision == "ignored":
+        return Placement(Stage.IGNORED, Decision.IGNORED)
+    accepted = Decision(decision)
+    stage = Stage.ENTERED_BY_HAND if entered else Stage.TO_ENTER_BY_HAND
+    return Placement(stage, accepted)
 
 
 def cannot_participate_placement():

@@ -261,6 +261,9 @@ LEDGER = {
     # The aggregate report reads (PR 8c): counts and summaries only; the
     # rows behind them are the Family-level exports (PR 8e and 8f).
     "reports": command("report list"),
+    # The figures status the Response dashboard and Campaign comparison poll
+    # (#1586): the dashboard's own report status.
+    "response_dashboard_status": command("report participation"),
     # The Campaign comparison page (#1018): its figures for a day.
     "campaign_comparison": command("report comparison"),
     # Its download form (#1018, slice 6): the same capture and export.
@@ -268,6 +271,10 @@ LEDGER = {
     "daily_digest_chart": permanent(IMAGES),
     "daily_digest_download": permanent(IMAGES),
     "financial_report": command("report financial"),
+    # Pledges to enter (#1686): its list, decisions and download get their
+    # commands in a later slice, through the same PledgeDecisions service.
+    "pledges_to_enter": pending("#1733", "report pledges", "pledges decide"),
+    "pledges_to_enter_export": pending("#1733", "export pledges"),
     "limitations_report": command("report limitations"),
     # Counts only (#463): its rows name Families and Members, so they are
     # export census's. A row's Entered in ParishSoft, Ignore and Reopen post

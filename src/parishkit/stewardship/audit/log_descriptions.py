@@ -867,6 +867,12 @@ DESCRIPTIONS = {
     "roster_changes_exported": _(
         "Someone downloaded the Roster changes to enter list."
     ),
+    "pledges_to_enter_viewed": _("Someone opened the Pledges to enter list."),
+    "pledges_to_enter_exported": _("Someone downloaded the Pledges to enter list."),
+    "pledge_review_updated": _(
+        "Someone accepted, edited, ignored or reopened a Family's pledge, or "
+        "marked it entered in ParishSoft."
+    ),
     "census_change_updated": _(
         "Someone marked a census change entered in ParishSoft, ignored it, "
         "or reopened it."
@@ -1274,6 +1280,8 @@ FIELD_LABELS = {
     "directory_data_check": _("ParishSoft data to check"),
     "directory_response_columns": _("Response columns included"),
     "directory_sort": _("Sorted by"),
+    # A report view the open page made by itself (#1620).
+    "automatic": _("How it was opened"),
 }
 # A response list's sort columns (#851), by sort key, in each list's own
 # column headings; ``-key`` is the same column sorted the other way. The
@@ -1315,6 +1323,9 @@ _DIRECTORY_SORT_COLUMNS = {"name": _("Family")} | {
 # "all" and "any" are each report's first, unfiltered choice.
 VALUE_LABELS = {
     "report_mode": {"production": _("Production"), "testing": _("Testing")},
+    # Recorded only as true (log_rows._details shows a boolean as text): a
+    # reader's own view has no such field (#1620).
+    "automatic": {"True": _("Automatic refresh (the open page updated itself)")},
     "report_filter": {
         "all": _("Everything (no filter)"),
         "any": _("Everything (no filter)"),

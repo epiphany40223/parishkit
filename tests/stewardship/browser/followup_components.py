@@ -272,8 +272,8 @@ def components(context, admin):
         channels=CHANNELS,
         future_message=REFUSALS["contact_future"][0],
         metadata=dict(name="Sample campaign", source_as_of=moment, timezone="UTC"),
-        # Export these requests (#1157): the zone choices.
-        export_timezones=["America/Detroit", "UTC"],
+        # Export these requests (#1157): the applied view and zone choices.
+        export_fields=query.form_values(),
         export_pdf_limit=1000,
         # Ministry requests' overview (#1133): By Ministry and the packet's
         # choices, every Ministry in scope.

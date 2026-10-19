@@ -208,6 +208,9 @@ PAGES = {
     "reports": Page("reports", _("Response dashboard"), entry="response_dashboard"),
     "campaign_comparison": Page("reports", _("Campaign comparison")),
     "financial_report": Page("reports", _("Financial stewardship")),
+    # The financial stream's review worklist and manual report (#1686), a
+    # menu entry of its own after Financial stewardship.
+    "pledges_to_enter": Page("reports", _("Pledges to enter")),
     "limitations_report": Page("reports", _("Limitations")),
     "census_changes": Page("reports", _("Census changes")),
     # Not a menu entry: Census changes links to it (#528, ADM-09).
@@ -522,6 +525,7 @@ MENU = (
     Entry("response_dashboard", Capability.CAMPAIGN_REPORT, _campaign),
     Entry("campaign_comparison", Capability.CAMPAIGN_REPORT, _campaign),
     Entry("financial_report", Capability.FINANCIAL_DETAIL, FINANCIAL),
+    Entry("pledges_to_enter", Capability.FINANCIAL_DETAIL, FINANCIAL),
     Entry("limitations_report", Capability.CAMPAIGN_REPORT, MINISTRY),
     Entry("census_changes", Capability.VIEW_CENSUS, CENSUS),
     Entry("information_queue", Capability.ADDITIONAL_FOLLOWUP, _downloaded(_campaign)),
@@ -704,6 +708,9 @@ NON_PAGES = frozenset(
         "branding_asset",
         # The Campaign comparison's download form (#1018), a POST.
         "campaign_comparison_export",
+        # The figures status the Response dashboard and Campaign comparison
+        # poll (#1586), a fragment.
+        "response_dashboard_status",
         # A Campaign setup step's Continue (#1404), a POST that redirects.
         "campaign_step_continue",
         "content_plain_text",
@@ -746,6 +753,7 @@ NON_PAGES = frozenset(
         "ministry_roster_export",
         "ministry_roster_bulk",
         "ministry_packet",
+        "pledges_to_enter_export",
         # The ParishSoft refresh schedule editor's live check (#632), a
         # fragment the settings page reads.
         "refresh_schedule_check",

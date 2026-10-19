@@ -14,9 +14,12 @@ Census changes uses
 deferred, below), and Ministry requests on it, with Edit, Staff Add and
 the "Family asked again" case
 ([#1684](https://github.com/epiphany40223/parishkit/issues/1684);
-[follow-up workflows](../admin-portal/spec.md#follow-up-workflows)), and
-the refresh re-evaluation of both, with the cases it leaves for later
-([#1689](https://github.com/epiphany40223/parishkit/issues/1689);
+[follow-up workflows](../admin-portal/spec.md#follow-up-workflows)), the
+financial stream on it
+([Pledges to enter](../reports/spec.md#pledges-to-enter),
+[#1686](https://github.com/epiphany40223/parishkit/issues/1686)), and
+the refresh re-evaluation of census and Ministry, with the cases it leaves
+for later ([#1689](https://github.com/epiphany40223/parishkit/issues/1689);
 [as built](#refresh-checks)). Every Staff
 and Ministry leader part ships during the current campaign. The
 Family-facing view of reviewed changes
@@ -691,18 +694,52 @@ stream detail.
 
 ### Financial stream
 
-Stored state: none beyond the Family's live response; the
+Stored state (since
+[#1686](https://github.com/epiphany40223/parishkit/issues/1686)): the
+Family's live response, and `stewardship_pledge_review`, one immutable row
+per decision on a Family's pledge (frozen migration 0135, provisional
+number): who, when, the note, the response it was made on, that response's
+pledge answer (annual pledge, frequency, cannot contribute and share
+methods), the decision (Accepted, Accepted (edited) with the reviewer's
+annual pledge and frequency, Ignored, or none after Back to review) and the
+Entered by hand mark. The
 [Financial stewardship detail](../reports/spec.md#financial-stewardship-detail)
-report lists every current pledge. Staff cannot edit a pledge today except
-by entering a whole new response through Open form (marked Entered by
-Staff).
+report still lists every current pledge, and
+[Pledges to enter](../reports/spec.md#pledges-to-enter) is the stream's
+worklist and manual report. Staff can still change a pledge through Open
+form (a whole new response marked Entered by Staff), and Edit (amount and
+frequency, decision 4) is the review's own correction.
 
-Gaps: the whole review stage, per pledge: Accept, **Edit** of the annual
-amount and the frequency (Families sometimes mistype the amount, and Staff
-fix it before entering it in ParishSoft; decision 4), Ignore, bulk Accept;
-a "Pledges to enter" report with Entered by hand; and confirmation.
+The item is one per Family: its current pledge answer. Its stage is derived
+from its latest row, by one SQL selection the page, the counts and the
+row guard share:
+
+- no row, a latest row with no decision (Back to review), or a pledge answer
+  changed since the latest row's response: **To review**;
+- Ignored: **Ignored**;
+- Accepted or Accepted (edited), not marked: **To enter by hand**;
+- marked Entered by hand: **Entered by hand**.
+
+"Changed" follows [rule 2 of the setting-off
+rule](#resubmission-while-the-setting-is-off): a live response that answers
+the financial questions after the decided one with a different pledge answer
+reopens the item, even if a later response returns to the decided answer.
+Pledge answers are compared as typed values: money exactly, and the share
+methods as a set with their Other text, as the Family form stores them (a
+form change that stored share methods differently would need the comparison
+changed with it). An unchanged resubmission keeps the decision at any stage
+(rule 1). A response without the financial questions changes no decision
+(rule 5), but the item is listed only while the Family's current response
+answers them, as on Financial stewardship detail: a Family that answers
+again while the financial section is switched off leaves the list until it
+answers the financial questions again, keeping its history. Rules 3 and 4
+need ParishSoft's upcoming-year pledge, which no read returns yet (#1704). An Entered by hand mark records ParishSoft's pledge for
+the upcoming year when a read gives it; until #1704 adds that read the mark
+records none, and #1704 reads such a mark against A, which is then no pledge.
 Pledges and funds are read-only in ParishSoft's API, so the stream never has
 Ready to update.
+
+Gaps after #1686: confirmation (below, #1704).
 
 **Pledge confirmation** (decision 5). ParishSoft's v2 `GET
 offering/pledge/list` returns each pledge with `familyID`, `fundID`,
@@ -1149,7 +1186,8 @@ that is done safely.
 | Additional information | `current_actionable`, followed up | Handled |
 | Additional information | `current_actionable`, follow-up not needed, not followed up | To review, unless a Staff edit set it (below) |
 | Additional information | `superseded`, `withdrawn` | history |
-| Financial, cannot participate | the live answer only | To review |
+| Financial | the live answer, no `stewardship_pledge_review` row yet | To review |
+| Cannot participate | the live answer only | To review |
 
 One state needs a one-time migration. `follow_up_needed` defaults to false,
 so "Not needed" cannot be told from "never looked at" by the item alone,

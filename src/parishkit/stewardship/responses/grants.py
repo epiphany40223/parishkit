@@ -78,6 +78,9 @@ def add_response_web_grants(tables, columns):
     # requests; web only reads them and the Not seen start.
     tables["stewardship_refresh_check"] = {"SELECT"}
     tables["stewardship_refresh_check_start"] = {"SELECT"}
+    # A pledge's review history (#1686): Staff and Administrators record
+    # each decision; its guard checks the actor, the item and its stage.
+    tables["stewardship_pledge_review"] = {"SELECT", "INSERT"}
     # Publication plans and outcomes (#528, DAT-09.01): web reads them all and
     # writes only an Administrator's confirmation; the worker writes the rest.
     for table in (

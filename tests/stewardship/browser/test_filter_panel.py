@@ -35,7 +35,8 @@ FILTERED = {
 def test_unfiltered_report_starts_with_filters_and_export_closed(
     page, component_origin, path
 ):
-    """With no filter applied the Filters and export panels are both closed."""
+    """With no filter applied the Filters panel is closed; the export row
+    (#1679) is shown."""
     from playwright.sync_api import expect
 
     page.goto(component_origin + path)
@@ -44,7 +45,9 @@ def test_unfiltered_report_starts_with_filters_and_export_closed(
     expect(panel).not_to_have_attribute("open", "")
     has_text(panel.locator("summary"), "Filters: none applied")
     expect(page.get_by_role("button", name="Apply filters")).to_be_hidden()
-    expect(page.locator("details.export-panel")).not_to_have_attribute("open", "")
+    # The export is a row of buttons, not a disclosure (#1679).
+    expect(page.locator("details.export-panel")).to_have_count(0)
+    visible(page.get_by_role("button", name="Export XLSX"))
     # The panel is a native disclosure: it opens with a click, below its own
     # summary line, which stays where it was on the page (a click first
     # scrolls a summary below the window into view, which is not a shift).
@@ -59,7 +62,8 @@ def test_unfiltered_report_starts_with_filters_and_export_closed(
 def test_family_directory_starts_with_filters_open_and_export_closed(
     page, component_origin
 ):
-    """The Family directory opens Filters by default (#227); export stays closed."""
+    """The Family directory opens Filters by default (#227); its export is
+    the row of buttons below the table (#1679)."""
     from playwright.sync_api import expect
 
     page.goto(component_origin + "/directory-unfiltered")
@@ -67,7 +71,8 @@ def test_family_directory_starts_with_filters_open_and_export_closed(
     expect(panel).to_have_attribute("open", "")
     has_text(panel.locator("summary"), "Filters: none applied")
     visible(page.get_by_role("button", name="Apply filters"))
-    expect(page.locator("details.export-panel")).not_to_have_attribute("open", "")
+    expect(page.locator("details.export-panel")).to_have_count(0)
+    visible(page.get_by_role("button", name="Export XLSX"))
 
 
 @pytest.mark.parametrize("path", sorted(FILTERED))
