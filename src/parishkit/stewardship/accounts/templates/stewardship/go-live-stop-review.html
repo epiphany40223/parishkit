@@ -7,9 +7,11 @@
 
   ``refused``: go-live is no longer in progress here, marked
   data-review-refusal so the dialog shows it as drawn: another
-  Administrator stopped it, or Production is already confirmed.
+  Administrator stopped it, or Production is already confirmed; or
+  "changed": Apply found go-live moving under the work lock (a cleanup or
+  link task changed at that moment), so nothing was stopped.
 {% endcomment %}{% if not refused %}<div data-review-answer data-review-done="{% translate 'Go-live stopped.' %}">
 <p id="go-live-stop-summary">{% if stage.stop_kind == 'cleanup' %}{% translate "Testing data deletion stops at the next safe point." %} {% elif stage.stop_kind == 'links' %}{% translate "The prepared Family links are discarded." %} {% endif %}{% translate "Testing data already deleted is not restored. The campaign stays a Testing draft and Testing work can start again." %}</p>
 <input type="hidden" name="control" value="{{ stage.controls.stop }}" data-review-preview>
 </div>
-{% else %}<div data-review-refusal>{% if refused == "confirmed" %}<p data-go-live-stop-refused="confirmed">{% translate "Another Administrator already confirmed Production." %}</p>{% else %}<p data-go-live-stop-refused="stopped">{% if stage.stopped_by_other %}{% translate "Another Administrator stopped go-live." %}{% else %}{% translate "Go-live was already stopped." %}{% endif %}</p><p><a href="{{ check_url }}">{% translate "Open Check" %}</a></p>{% endif %}</div>{% endif %}
+{% else %}<div data-review-refusal>{% if refused == "changed" %}<p data-go-live-stop-refused="changed">{% translate "Go-live changed while it was being stopped, so nothing was stopped. Close this and choose Stop go-live again." %}</p>{% elif refused == "confirmed" %}<p data-go-live-stop-refused="confirmed">{% translate "Another Administrator already confirmed Production." %}</p>{% else %}<p data-go-live-stop-refused="stopped">{% if stage.stopped_by_other %}{% translate "Another Administrator stopped go-live." %}{% else %}{% translate "Go-live was already stopped." %}{% endif %}</p><p><a href="{{ check_url }}">{% translate "Open Check" %}</a></p>{% endif %}</div>{% endif %}

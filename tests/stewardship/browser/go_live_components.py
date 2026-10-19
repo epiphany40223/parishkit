@@ -476,13 +476,24 @@ def prepare_pages(context, admin):
         (
             "/go-live-prepare-failed",
             prepare_stage(
-                "failed", "cleanup", 0, "failed", controls={"retry": "synthetic-retry"}
+                "failed",
+                "cleanup",
+                0,
+                "failed",
+                controls={"retry": "synthetic-retry"},
+                failed_at=context["server_now"],
             ),
         ),
         (
             "/go-live-prepare-again",
+            # Nothing runs while the step waits, so the links box is Not
+            # started, never In progress.
             prepare_stage(
-                "again", "hold_ended", 2, controls={"again": "synthetic-again"}
+                "again",
+                "hold_ended",
+                2,
+                "waiting",
+                controls={"again": "synthetic-again"},
             ),
         ),
         (
@@ -507,6 +518,7 @@ def prepare_pages(context, admin):
             # Quick, so a test sees an in-place update without waiting long.
             "live_interval": 2000,
             "live_limit": 3 * 60 * 60 * 1000,
+            "max_preparations": 4,
         }
         pages[path] = (
             "text/html",
