@@ -6544,10 +6544,13 @@ box, bulk bar or Add, and the page's locked notice says why; the rows stay
 readable. (The shared worklist has no unavailable state for its icons yet,
 so this page hides them rather than greying them as #1331 did for the
 bulk outcomes.) The Member's contact details on a request's page and in
-Export these requests are read for the Family's Ministry, so a leader of
-only the Ministry an Edit carried forward sees none for that request until
-the Ministry report's reads follow the Edit
-([#1718](https://github.com/epiphany40223/parishkit/issues/1718)).
+Export these requests are read for the request's current Ministry: the one
+an Edit carried forward, else the Family's. A leader of the carried-forward
+Ministry sees them; a leader of only the Family's Ministry, who sees the
+edited request read only, sees "No contact details are available" on
+its page and Unavailable in the file
+([#1718](https://github.com/epiphany40223/parishkit/issues/1718); the
+[contact rule](../reports/spec.md#ministry-change-summary)).
 
 Every decision is checked on the server and in the database, never only by
 hiding an icon: the actor's current authority for the request's current
