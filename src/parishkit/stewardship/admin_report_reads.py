@@ -876,7 +876,8 @@ def read_limitations(caller, service):
         # As the page: the snapshot is named only when no refresh promoted
         # another between the statements of the read.
         before = current_snapshot()
-        result = limitations_report(campaign_id, query, actor)
+        # Only the summary is printed, so Pledges' rows are not read.
+        result = limitations_report(campaign_id, query, actor, contributions=False)
         snapshot = before if current_snapshot() == before else None
         return limitations_model(campaign_id, result), audit_choices(query, snapshot)
 

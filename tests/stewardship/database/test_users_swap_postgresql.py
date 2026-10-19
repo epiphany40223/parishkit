@@ -715,6 +715,18 @@ CLOSURE_CREATED = {
         ),
         ("stewardship_responses", "0013_information_limitation_review"),
     ),
+    # 0127 (#1686, provisional number) creates the pledge review table (in
+    # CLOSURE_TABLES) with these functions; all go, so its file installs
+    # whole again.
+    **dict.fromkeys(
+        (
+            "public.stewardship_pledge_answer_v1(jsonb,numeric)",
+            "public.stewardship_pledge_review_states_v1(uuid,uuid)",
+            "public.stewardship_pledge_review_guard_v1()",
+            "public.stewardship_pledge_review_effect_v1()",
+        ),
+        ("stewardship_reports", "0032_pledge_review"),
+    ),
 }
 
 
