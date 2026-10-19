@@ -1,0 +1,38 @@
+{% load i18n stewardship %}{% comment %}
+  Update ParishSoft's answers in the shared review dialog (#1688;
+  census_publication_views._dialog), never a page of their own: Update N
+  changes and Run again post their review step (action=preview, with the
+  plan the page showed) without a page load, and ui-v1.js shows this
+  fragment in the dialog (update-parishsoft.html holds both dialogs).
+
+  - ``update.preview``: Update's confirmation (UX conventions, "A
+    confirmation when Review would only repeat the page"): the table behind
+    the dialog shows every value, so it says in one sentence what Apply
+    does (update-review-summary, the dialog's description), with the
+    Members held back, and its title asks the question with the plan's
+    counts (data-review-title). Apply posts the plan, the counts shown,
+    which the confirmation binds, and the review's key (data-review-preview),
+    so a repeated Apply returns the same run.
+  - ``rerun.preview``: Run again's confirmation, naming how many Members
+    the run did not finish; Apply posts the plan and the review's key, the
+    rerun's command id.
+  - ``update.started`` / ``rerun.started``: Apply's answer once the run is
+    queued: a plain fragment (no live status region, so the dialog does
+    not wait on it), after which the dialog closes and the page is read
+    again in place, showing the run's status in the plan's region.
+  A refusal is the closed JSON refusal the dialog shows below its buttons.
+{% endcomment %}{% if update.preview %}{% with counts=update.counts %}<div data-review-answer data-review-done="{% translate 'Update started.' %}" data-review-title="{{ update.title }}" data-review-describedby="update-review-summary">
+<p id="update-review-summary">{% translate "Each Member's contact record in ParishSoft is read again, and only these changes are written; nothing else changes." %}{% if counts.blocked_entities %} {% blocktranslate count held=counts.blocked_entities with held_text=counts.blocked_entities|number trimmed %}{{ held_text }} Member is held back.{% plural %}{{ held_text }} Members are held back.{% endblocktranslate %}{% endif %} {% translate "This cannot be undone from here." %}</p>
+<input type="hidden" name="plan" value="{{ update.plan.pk }}">
+<input type="hidden" name="write_entities" value="{{ counts.write_entities }}">
+<input type="hidden" name="write_fields" value="{{ counts.write_fields }}">
+<input type="hidden" name="blocked_entities" value="{{ counts.blocked_entities }}">
+<input type="hidden" name="request_key" value="{{ update.key }}" data-review-preview>
+</div>{% endwith %}
+{% elif rerun.preview %}<div data-review-answer data-review-done="{% translate 'Run again started.' %}" data-review-title="{{ rerun.title }}" data-review-describedby="rerun-review-summary">
+<p id="rerun-review-summary">{% translate "Each of these Members is read from ParishSoft again before anything is written, and a write that already landed is never repeated. Members this check already finished are left as they are." %}</p>
+<input type="hidden" name="plan" value="{{ rerun.plan.pk }}">
+<input type="hidden" name="command_key" value="{{ rerun.key }}" data-review-preview>
+</div>
+{% elif update.started %}<p data-update-started>{% translate "Update started." %}</p>
+{% elif rerun.started %}<p data-update-started>{% translate "Run again started." %}</p>{% endif %}

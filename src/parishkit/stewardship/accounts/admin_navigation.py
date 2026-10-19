@@ -210,8 +210,9 @@ PAGES = {
     "financial_report": Page("reports", _("Financial stewardship")),
     "limitations_report": Page("reports", _("Limitations")),
     "census_changes": Page("reports", _("Census changes")),
-    # Not a menu entry: Census changes links to it (#528, ADM-09).
-    "census_publication": Page("reports", _("Publish to ParishSoft"), "census_changes"),
+    # Not a menu entry: Census changes links to it (#528, ADM-09; renamed
+    # from Publish to ParishSoft by #1688).
+    "update_parishsoft": Page("reports", _("Update ParishSoft"), "census_changes"),
     "response_dashboard": Page("reports", _("Response dashboard")),
     "information_queue": Page("reports", _("Additional information")),
     "information_item": Page("reports", _("Information request"), "information_queue"),
@@ -739,6 +740,10 @@ NON_PAGES = frozenset(
         "logs_export",
         "limitations_export",
         "census_changes_export",
+        # Update ParishSoft's confirmation and Run again (#1688): POSTs that
+        # answer the review dialog with a fragment.
+        "update_parishsoft_confirmation",
+        "update_parishsoft_retries",
         "maintenance",
         "ministry_followup_export",
         "ministry_followup_update",

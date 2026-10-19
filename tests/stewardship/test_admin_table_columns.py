@@ -213,13 +213,13 @@ FAMILY_ROWS = {
 FAMILY_LABELS = {"find-family-results.html": "a Family search result's DUID"}
 # The pages where staff act on a specific Member in ParishSoft, the only ones
 # that show a Member DUID (UX conventions, "Table column order", #1123):
-# Publish to ParishSoft writes each Member whole and leaves its Conflicts and
+# Update ParishSoft writes each Member whole and leaves its Conflicts and
 # Cannot checks for staff to find in ParishSoft (#528). Plus
 # the Users page's ParishSoft Ministry leaders table and its import review,
 # kept at the Administrator's request (2026-10-12, #932).
 MEMBER_DUID_PAGES = {
     "census-changes.html",
-    "census-publication.html",
+    "update-parishsoft.html",
     "limitations-report.html",
     "ministry-followup.html",
     # Ministry requests' review worklist (#1684): its help and Add's Member.

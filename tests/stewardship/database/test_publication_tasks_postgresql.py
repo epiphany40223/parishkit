@@ -391,14 +391,15 @@ def test_a_member_with_changes_from_two_families_plans_the_current_one(
 
 
 def test_the_waiting_count_leaves_out_a_member_who_left(world):
-    """The Publish page counts only what preflight would plan, so a change
-    whose Member left the Family cannot offer Check ParishSoft alone."""
+    """Update ParishSoft counts only what preflight would plan, so a change
+    whose Member left the Family cannot offer Check ParishSoft alone; it is
+    counted apart (#1688, #1749's note)."""
     from parishkit.stewardship.reports.census_publication import waiting
 
     campaign = world.first.submission.campaign_id
-    assert waiting(campaign) == {"changes": 1, "members": 1}
+    assert waiting(campaign) == {"changes": 1, "members": 1, "away": 0}
     leave(world.first, "moved")
-    assert waiting(campaign) == {"changes": 0, "members": 0}
+    assert waiting(campaign) == {"changes": 0, "members": 0, "away": 1}
 
 
 def test_the_queueing_transaction_checks_the_member_again(world, monkeypatch):
