@@ -1301,9 +1301,14 @@ without the age clause, under the
 The command-session rule holds in every one of them, restore decisions and
 staged setup credentials included. The secret request guards keep their
 own tie to the automation session (see [secret replacement](#secret-replacement)).
-`stewardship_automation_fresh_principal_v1(principal, instant)` stays
-installed but unused, as do the recorded sign-in columns; dropping them is
-[#1550](https://github.com/epiphany40223/parishkit/issues/1550).
+Frozen migration 0123 (`stewardship_accounts.0028_sign_in_leftovers`,
+[#1550](https://github.com/epiphany40223/parishkit/issues/1550)) dropped
+`stewardship_automation_fresh_principal_v1(principal, instant)`, which no
+guard called after 0114, with its grants. It also made an Admin session's
+sign-in instant (`authenticated_at`) immutable: only the retired step-up
+sign-in moved it, and a new sign-in issues a new session. The recorded
+sign-in columns stay, as audit evidence that several guards still bind to
+the live session.
 
 ### Secret replacement
 
@@ -1405,8 +1410,9 @@ wrapper's secret input
   [Integrations and credentials](#integrations-and-credentials).
   `integration key status --watch` follows staged, testing, installing and
   acknowledged progress, and `integration key finish-switching-preview`
-  and `integration key finish-switching` are the page's **Finish switching
-  to the new key** (`select_credential`), the confirmation prompting.
+  and `integration key finish-switching` are the settings page's **Finish
+  switching to the new key** confirmation (its review dialog, #1568), the
+  confirmation prompting.
   A failed or expired change leaves the old key installed, as on the
   page. Dismissing a finished change's line is `integration dismiss`; the
   status and Finish switching commands are described in
@@ -1917,7 +1923,7 @@ checks that every other ledger route is named here.
 | `signed_in_sessions` (list and Sign out, new, #953) | Permanent: browser session chrome; the operator's offline recovery signs everyone out |
 | `maintenance` | Permanent: the status page the access gate shows |
 | `campaign_step_continue` ([#1404](https://github.com/epiphany40223/parishkit/issues/1404)) | Permanent: the browser [Campaign setup stepper](../admin-portal/spec.md#create-the-campaign)'s own progress (a step kept as is, then the next step page, or one Pages and emails item kept as is, then Pages and emails, #1404 PR 6b); the command line applies settings directly and has no stepper |
-| `held_emails` ([#757](https://github.com/epiphany40223/parishkit/issues/757)) | Permanent: held-email decisions stay in the browser. The exemption predates [#1547](https://github.com/epiphany40223/parishkit/issues/1547), when they needed a recent Google sign-in that the decision guard (migration 0017) checked; since migration 0114 the guard binds only a live session of the actor |
+| `held_emails` ([#757](https://github.com/epiphany40223/parishkit/issues/757)) | Permanent: held-email decisions belong to a restore review (the `maintenance` page, also web-only) and its follow-up after release, each with a preview, a required note and an exact-count check; a command for them would be a new feature ([#1762](https://github.com/epiphany40223/parishkit/issues/1762)) |
 | `automation_access`, `automation_approval`, `automation_sessions` (revoke) and `automation_notices` (acknowledgement) (new) | Permanent: these pages are the human side of the interface (PR 2); `sessions` takes the page's filter and sort for one's own sessions (#621) |
 | `response_dashboard` ([#517](https://github.com/epiphany40223/parishkit/issues/517)), `response_dashboard_status` (the figures status the open page polls, [#1586](https://github.com/epiphany40223/parishkit/issues/1586)) | `report responses` with counts (PR 8c), and `report participation` for the statistics and daily table it absorbed from Participation ([#1537](https://github.com/epiphany40223/parishkit/issues/1537)) |
 
@@ -3678,9 +3684,9 @@ lists them.
 | `integrations`, `integration_settings`, `integration_status` | `integration list`, `integration show TARGET` and `integration status TARGET [--watch S]` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), the pages' reads (any session; no event, as the pages' reads record none; see below); `integration preview TARGET` and `integration confirm TARGET` for the settings page's non-secret Save and its Remove ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below); `integration backup-probe [--folder LINK]` for the Off-site backups page's Test access ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below); `integration preview parishsoft` takes the [refresh schedule](../background-processing/spec.md#refresh-schedule) with the page's validation, and `integration schedule-preview` prints the page's [seven-day preview](../admin-portal/spec.md#seven-day-preview) and [cost and freshness summary](../admin-portal/spec.md#cost-and-freshness-summary), for a saved or a proposed schedule ([#632](https://github.com/epiphany40223/parishkit/issues/632)) |
 | `refresh_schedule_check` | `integration schedule-preview [--refresh-schedule DOCUMENT\|-]` ([#632](https://github.com/epiphany40223/parishkit/issues/632)): the ParishSoft page's no-save live check of the refresh schedule editor's rows, with the same validation, preview and cost summary (any session; no event, as the check records none; see below) |
 | `dismiss_credential_result` | `integration dismiss TARGET --request-id ID` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
-| `credential_status` | `integration key status TARGET [--request-id ID] [--watch S]` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
+| Key change status, the settings page's status line (`integration_status`; the separate `credential_status` page is retired, #1568) | `integration key status TARGET [--request-id ID] [--watch S]` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
 | Key replacement through `integration_settings` | `integration key replace TARGET` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see [secret replacement](#secret-replacement) and below) |
-| `select_credential` | `integration key finish-switching-preview TARGET` and `integration key finish-switching TARGET` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
+| Finish switching through `integration_settings` (its review dialog; the separate `select_credential` page is retired, #1568) | `integration key finish-switching-preview TARGET` and `integration key finish-switching TARGET` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
 | Backup encryption key change, through `integration_settings` with proof of possession | `integration backup-key challenge`, `integration backup-key preview` and `integration backup-key confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see [secret replacement](#secret-replacement) and below) |
 
 The refresh schedule is given to `integration preview parishsoft` as
@@ -3820,8 +3826,9 @@ required integration not set up is `not_available`. It prints `target`,
 `request_id` and `dismissed`.
 
 `integration key status TARGET [--request-id ID] [--watch S]`
-(`parishsoft`, `google_workspace` or `slack`) is the **Key replacement
-status** page: any session of an Administrator reads it, and it records
+(`parishsoft`, `google_workspace` or `slack`) is the key change's status,
+which the settings page's status line shows (until #1568 it was the **Key
+replacement status** page): any session of an Administrator reads it, and it records
 nothing, as the page's read records nothing. As on the page, only the
 session Administrator's own key changes are read (`secret_request_status`),
 by default the latest for `TARGET`; another Administrator's, another
@@ -3833,7 +3840,8 @@ following the key change its first read found. As on the page, a change is
 no longer pending once the key is installed and acknowledged, even while
 its automatic switch is still queued; `integration status TARGET` shows
 whether that switch finished. `integration key finish-switching-preview
-TARGET` is the review on **Finish switching to the new key**: it needs a
+TARGET` is the review that **Finish switching to the new key** opens in
+the settings page's review dialog: it needs a
 full-scope session, as the page records activity, passes the page's
 fresh gate with it (a preview records no notice), and is offered only
 while the settings page's key change line is `unselected`; otherwise it is

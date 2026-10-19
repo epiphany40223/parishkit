@@ -107,6 +107,14 @@ def test_the_bar_fits_one_row_and_wraps_on_a_phone(page, component_origin):
     tops = [top for top, _ in boxes[:5]]
     assert max(tops) - min(tops) <= 2, boxes
     assert boxes[5][0] < min(bottom for _, bottom in boxes[:5]), boxes
+    # Apply filters lines up with the fields' controls, not their labels;
+    # Clear filters may wrap under it in the same cell (#1651).
+    apply_top, field_top = page.evaluate(
+        """() => ['#table-filters .filter-actions button', '#delivery-recipient']
+            .map(selector => Math.round(
+                document.querySelector(selector).getBoundingClientRect().top))"""
+    )
+    assert abs(apply_top - field_top) <= 4, (apply_top, field_top)
     # Every label, the Recipient's with its toggletip too, shares one line.
     labels = page.evaluate(
         """() => [...document.querySelectorAll(

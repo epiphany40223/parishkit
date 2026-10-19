@@ -87,8 +87,6 @@ TEMPLATES = {
     "source_form": "source-form.html",
     "parishsoft_fixes": "data-to-fix.html",
     "integrations": "integrations.html",
-    "credential_status": "credential-status.html",
-    "select_credential": "credential-selection.html",
     "background": "background.html",
     "background_task_page": "background-task.html",
     "logs": "logs.html",
@@ -268,7 +266,6 @@ UNNAMED_RETURNS = {
 VARIABLE_RETURNS = {
     ("campaign-mail.html", "return_link.label"),
     ("configuration-request.html", "admin_chrome.back.label"),
-    ("credential-status.html", "admin_chrome.back.label"),
     ("integration-preview.html", "label"),
     ("report-export.html", "report_name"),
 }

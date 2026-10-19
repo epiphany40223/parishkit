@@ -23,8 +23,6 @@ SLASHLESS = (
     ("system/source-form", "source_form"),
     ("system/integrations", "integrations"),
     ("system/integrations/<str:target>", "integration_settings"),
-    ("system/key-changes/<uuid:request_id>", "credential_status"),
-    ("system/key-changes/<uuid:request_id>/selection", "select_credential"),
     ("system/background", "background"),
     ("system/background/<uuid:task_id>", "background_task_page"),
     ("system/logs", "logs"),

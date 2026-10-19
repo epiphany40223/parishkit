@@ -2448,10 +2448,13 @@ already says "Here is yesterday’s report" (#1532). An intro still holding
 an earlier default, current or retired ("Here is yesterday’s report.",
 whose saved text is kept until the Administrator resets it), is left out
 of the email when it is sent, so the sentence is not said twice; an edited
-intro is kept. **Campaign totals** follow, one line per
-figure: its label, a bar drawn with table cells (so it shows in every mail
-program, with images off too), and the exact value, for example "Families
-that have responded — 10 out of 93 (10.8%)". Families that have responded are
+intro is kept. **Campaign totals** follow, two rows per
+figure: its label on a row of its own, then a bar drawn with table cells (so
+it shows in every mail program, with images off too) and the exact value, for
+example "Families that have responded — 10 out of 93 (10.8%)". The value
+breaks only before its parenthesis, so with four-digit counts the totals
+still fit a 320px phone without scrolling sideways
+([#1564](https://github.com/epiphany40223/parishkit/issues/1564)). Families that have responded are
 drawn against the Families they are out of, and "First submissions that day"
 against the busiest campaign day so far, which is stated beside the number; a
 bar is never drawn full unless the share is complete. Pledges have no bar,
