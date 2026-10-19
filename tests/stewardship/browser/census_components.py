@@ -114,6 +114,7 @@ def components(context, admin):
                 "value": '"Bo"',
                 "in_place_of": None,
                 "created_at": when + timedelta(hours=1),
+                "baseline": None,
                 "family_duid": 1003,
                 "family_name": "Family 03",
                 "member_name": "Member 03",

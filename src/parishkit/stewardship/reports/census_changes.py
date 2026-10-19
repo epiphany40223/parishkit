@@ -330,7 +330,7 @@ ORDER BY f.family_duid, s.submitted_at, p.entity_kind,
 # come with it. Takes the unnamed-Family words, then the campaign.
 ADDITION_ROWS = """
 SELECT a.id::text, a.entity_kind, a.entity_key, a.field, a.value::text,
-    a.in_place_of_id::text, a.created_at, f.family_duid,
+    a.in_place_of_id::text, a.created_at, a.baseline::text, f.family_duid,
     stewardship_family_display_name_v1(sc.snapshot_id, f.family_duid, %s)
         AS family_name,
     nullif(btrim(concat_ws(' ',
@@ -357,6 +357,7 @@ ADDITION_COLUMNS = (
     "value",
     "in_place_of",
     "created_at",
+    "baseline",
     "family_duid",
     "family_name",
     "member_name",
@@ -424,6 +425,19 @@ FROM (
 """
 
 
+# The stages at which a Family's change is still open: decided, or still
+# to be, but not yet in ParishSoft. An addition of the same field beside one
+# says so (#1710).
+OPEN_CHANGE_STAGES = frozenset(
+    stage.value
+    for stage in (
+        Stage.TO_REVIEW,
+        Stage.CONFLICT,
+        Stage.READY_TO_UPDATE,
+        Stage.UPDATING,
+        Stage.TO_ENTER_BY_HAND,
+    )
+)
 # The stages the menu and Home count (``open_count``).
 OPEN_STAGES = frozenset({Stage.TO_REVIEW, Stage.CONFLICT})
 
@@ -483,11 +497,7 @@ def census_changes(campaign_id, query, principal):
         for row in changes
         if row["stage"] == Stage.IGNORED.value
     ]
-    result["replacements"] = {
-        row["in_place_of"]: f"{row['label']}: {row['edited']}"
-        for row in added
-        if row["in_place_of"] and row["stage"] != Stage.HISTORY.value
-    }
+    result["replacements"] = link_additions(changes, added)
     # The reader's pipeline roles on the census stream (the review
     # worklist's icons and bulk bar follow them): Staff hold the census
     # capability, an Administrator also publishes.
@@ -500,6 +510,45 @@ def census_changes(campaign_id, query, principal):
         if allows(principal, capability)
     )
     return result
+
+
+def _key(row):
+    """A row's Family, Member (or Family) and field."""
+    return (row["family_duid"], row["entity_kind"], row["entity_key"], row["field"])
+
+
+def link_additions(changes, added):
+    """Tie the parish's additions to the Family's changes of the same field.
+
+    Returns each ignored change's additions made in place of it (its
+    history line names them), and marks rows in place: an open addition
+    whose field the Family has an open change of too (``overlap``, from a
+    later response), and an ignored change an open addition of its field
+    covers (``covered``: it is not sent back to review while that addition
+    is open, so the field never has two open changes, #1710).
+    """
+    replacements = {}
+    for row in added:
+        if row["in_place_of"] and row["stage"] != Stage.HISTORY.value:
+            replacements.setdefault(row["in_place_of"], []).append(
+                f"{row['label']}: {row['edited']}"
+            )
+    # An open addition whose field the Family has an open change of too (a
+    # later response asked again): the row says so, so one is withdrawn.
+    asked = {_key(row) for row in changes if row["stage"] in OPEN_CHANGE_STAGES}
+    for row in added:
+        key = _key(row)
+        row["overlap"] = row["stage"] == Stage.TO_ENTER_BY_HAND.value and key in asked
+    # An ignored change an open addition of its field covers is not sent
+    # back to review while it is open (``census_additions.
+    # covering_additions`` refuses it too), so the field never has two.
+    covering = {
+        _key(row) for row in added if row["stage"] == Stage.TO_ENTER_BY_HAND.value
+    }
+    for row in changes:
+        key = _key(row)
+        row["covered"] = row["stage"] == Stage.IGNORED.value and key in covering
+    return replacements
 
 
 def census_rows(campaign_id):
@@ -545,18 +594,22 @@ def shape_addition(raw):
     To enter by hand while open, then Entered by hand, or History once
     withdrawn. Its version is 1 while open and 2 after its one later step.
     Its last decision is that step, else the Add itself (who, when, the
-    note). Its Submitted time is when it was added.
+    note). Its Submitted time is when it was added, and its Baseline
+    ParishSoft's value then, where the source could read it.
     """
     state = raw["step"] or "open"
     value = json.loads(raw["value"])
+    # ParishSoft's value when the change was added, where it could be read.
+    baseline = json.loads(raw["baseline"]) if raw["baseline"] else {}
+    known = baseline.get("available") is True
     shown = shape(
         {
             "id": ADDED_PREFIX + raw["id"],
             "entity_kind": raw["entity_kind"],
             "entity_key": raw["entity_key"],
             "field": raw["field"],
-            "baseline_available": False,
-            "baseline_value": None,
+            "baseline_available": known,
+            "baseline_value": baseline.get("value") if known else None,
             "submitted_value": None,
             "current_available": False,
             "current_value": None,

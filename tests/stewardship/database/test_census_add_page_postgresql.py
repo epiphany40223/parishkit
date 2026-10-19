@@ -249,3 +249,35 @@ def test_add_over_http_answers_in_place_or_at_the_field(response_service, google
     assert [error["field_id"] for error in refusal["errors"]] == ["value_member"]
     assert refusal["refusal"]["message"].startswith("ParishSoft's data does not list")
     assert getattr(response, "stewardship_codes", None) == ("add_not_in_parishsoft",)
+
+
+def test_an_ignored_change_an_addition_covers_is_not_reopened(response_service):
+    """While an open addition of its field stands in for it, the ignored
+    change cannot go back to review; once withdrawn, it can."""
+    from parishkit.stewardship.responses.census_additions import AddRefusal
+
+    harness, _, staff, rows = prepared(response_service)
+    campaign = campaign_of(rows)
+    decide(harness, staff, [rows["first_name"]], "ignore")
+    ignored = fresh(rows["first_name"])
+    first, _ = add(harness, staff, campaign, member_form(rows, "first_name", "Rob"))
+    with pytest.raises(AddRefusal) as refused:
+        worklist(
+            harness,
+            staff,
+            campaign,
+            "back_to_review",
+            {str(ignored.pk): ignored.version},
+            note="Family meant it",
+        )
+    assert refused.value.code == "reopen_added"
+    worklist(harness, staff, campaign, "back_to_review", {f"add-{first.pk}": 1})
+    worklist(
+        harness,
+        staff,
+        campaign,
+        "back_to_review",
+        {str(ignored.pk): ignored.version},
+        note="Family meant it",
+    )
+    assert state(ignored)[0] == "unreviewed"

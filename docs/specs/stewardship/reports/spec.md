@@ -2378,7 +2378,8 @@ of is that Family's ignored one. A refusal is shown in the dialog at the
 field it concerns, with its own code (`add_field`, `add_family`,
 `add_no_response`, `add_member`, `add_not_in_parishsoft`, `add_value`,
 `add_exists`, `add_in_place_of`); nothing is recorded. The same request key
-again records nothing more.
+again with the same Add records nothing more, and with any other Family,
+field, value or replaced change is refused.
 
 An added change is a row of the worklist like any other: Who, What changed,
 the Reviewer's value (the added value) and no Family's answer, Submitted
@@ -2391,9 +2392,23 @@ writes an addition to ParishSoft, whatever the handling registry says of its
 field. It offers only **Entered by hand** (final, as for any change) and
 **Back to review**, which withdraws it: it moves to *History*, and the field
 may be added again. Both are in the bulk bar too, together with the
-Family's own changes, all or none. The ignored change it replaced shows
-"Added in its place:" with the field and value under its stage, and the
-added change says it was added in place of an ignored change. The downloads
+Family's own changes, all or none; the bulk dialog says a ticked added
+change is withdrawn. Each ignored change it replaced shows "Added in its
+place:" with the field and value of every addition made for it under its
+stage, and the added change says it was added in place of an ignored change.
+
+The field never has two open changes by the worklist's own decisions: while
+an addition of the field is open, an ignored change of the same field
+offers no Back to review, and one posted anyway is refused (`reopen_added`;
+withdraw the addition first). A later Family response may still ask for the
+same field again; the open addition then says the Family has an open change
+of this field too, so Staff decide that one and withdraw the addition if it
+is no longer needed. Its Baseline is ParishSoft's value of the field when it
+was added (blank where it cannot be read, as for every Family address),
+which the database records with the snapshot it came from: the baseline the
+refresh rules re-evaluate an open addition against once
+[#1689](https://github.com/epiphany40223/parishkit/issues/1689) ships. Until
+then a refresh leaves additions as they are. The downloads
 and `pk-admin report census` include additions; the other `pk-admin census`
 commands act on the Family's changes only.
 
@@ -2403,13 +2418,10 @@ addition. Forward migration 0137 (provisional number) adds two
 migration-owned tables, each INSERT only: the addition (who, when, the note,
 the Family, the Member or Family, the field, the value and the change it
 replaced) and its one later step (Entered by hand or withdrawn, at most one
-per addition). Their guards check again that the actor is a current Staff
-member or Administrator, the campaign admits changes, the Family responded,
-the Member is current there, the field is one Edit takes, the value has its
-field's shape (as 0131 checks an edit's) and is not blank, the replaced
-change is the Family's open ignored one, and no open change of the field
-waits already. Each row is paired with a `census_change_updated` audit event
-naming only its id and version.
+per addition). Their guards check the actor and campaign again and,
+for an addition, the rules above, the value's shape as 0131 checks an
+edit's, and record the baseline themselves. Each row is paired with a
+`census_change_updated` audit event naming only its id and version.
 
 ### Publish to ParishSoft
 

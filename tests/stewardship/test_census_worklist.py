@@ -1,6 +1,7 @@
 """Census changes on the shared review worklist (#1683), without a database."""
 
 import re
+from datetime import UTC
 from html import unescape
 
 import pytest
@@ -16,9 +17,12 @@ from parishkit.stewardship.reports.census_change_views import SORTING
 from parishkit.stewardship.reports.census_changes import (
     CensusQuery,
     editor,
+    export_rows,
+    link_additions,
     placement,
     select,
     shape,
+    shape_addition,
 )
 from parishkit.stewardship.reports.census_worklist import (
     _value,
@@ -40,11 +44,12 @@ def shaped(**values):
     return shape(row(reopened=False) | values)
 
 
-def page(rows, *, stage="all", roles=STAFF, mutable=True, **extra):
+def page(rows, *, stage="all", roles=STAFF, mutable=True, replacements=None, **extra):
     """The rendered Census changes page for ``rows`` and its worklist."""
     query = CensusQuery(stage=stage)
     result = select(rows, query, administrator="administrator" in roles)
     result["roles"] = roles
+    result["replacements"] = replacements or {}
     table = paginate(result["rows"], {}, sorting=SORTING)
     worklist, table = worklist_page(
         result, query, table, "/admin/reports/census/", mutable=mutable
@@ -407,3 +412,64 @@ def test_an_addition_is_added_to_enter_by_hand_until_its_step():
     assert census_addition_placement("withdrawn") == Placement(Stage.HISTORY)
     with pytest.raises(ValueError):
         census_addition_placement("ignored")
+
+
+def added(**values):
+    """One shaped parish-added row, as ``ADDITION_ROWS`` returns it."""
+    return shape_addition(
+        {
+            "id": "a1",
+            "entity_kind": "member",
+            "entity_key": "41",
+            "field": "mobile_phone",
+            "value": '{"display": "555-0123", "number": "5550123"}',
+            "in_place_of": None,
+            "created_at": SUBMITTED,
+            "baseline": '{"available": true, "value": "555-0100"}',
+            "family_duid": 7001,
+            "family_name": "Sample",
+            "member_name": "Pat Sample",
+            "snapshot_id": None,
+            "added_by": "staff@example.org",
+            "added_note": "",
+            "step": None,
+            "step_note": None,
+            "step_at": None,
+            "step_by": None,
+        }
+        | values
+    )
+
+
+def test_additions_are_tied_to_the_familys_changes_of_their_field():
+    """Every addition in place of an ignored change is listed under it; an
+    open addition beside the Family's open change of the field says so; an
+    ignored change an open addition covers offers no Back to review."""
+    ignored = shaped(id="9", decision="ignored")
+    asked = shaped(id="8", entity_key="42")
+    first = added(in_place_of="9")
+    second = added(id="a2", in_place_of="9", entity_key="42")
+    gone = added(id="a3", in_place_of="9", step="withdrawn", step_at=SUBMITTED)
+    replacements = link_additions([ignored, asked], [first, second, gone])
+    assert len(replacements["9"]) == 2
+    assert ignored["covered"] and not asked.get("covered")
+    assert second["overlap"] and not first["overlap"] and not gone["overlap"]
+    worklist, _ = page([ignored, asked, first, second, gone], replacements=replacements)
+    rows = {row["id"]: row for row in worklist.rows}
+    assert "back_to_review" not in [icon["action"] for icon in rows["9"]["icons"]]
+    assert rows["9"]["decision_label"].count("Mobile phone: 555-0123") == 2
+    assert "open change of this field too" in rows["add-a2"]["decision_label"]
+    (back,) = [item for item in worklist.bulk if item["value"] == "back_to_review"]
+    assert back["body"].endswith("is withdrawn instead.")
+
+
+def test_downloads_list_an_addition_as_the_page_does():
+    """The files carry an addition's row: no Family's answer, the added value
+    as the reviewer's, By hand, To enter by hand and who added it."""
+    result = select(
+        [added(added_note="Phoned in")], CensusQuery(stage="all"), administrator=False
+    )
+    (line,) = export_rows(result, UTC)
+    assert line[7:11] == ("", "555-0123", "By hand", "To enter by hand")
+    assert line[12] == "staff@example.org" and line[14] == "Phoned in"
+    assert result["rows"][0]["baseline"] == "555-0100"

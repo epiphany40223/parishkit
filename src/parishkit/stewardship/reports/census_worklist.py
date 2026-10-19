@@ -39,7 +39,9 @@ from parishkit.stewardship.responses.census_additions import (
     ADD_FIELDS,
     ADDED_PREFIX,
     FAMILY_ADD_FIELDS,
+    AddRefusal,
     add_census_change,
+    covering_additions,
     parse_add,
     resolve_census_additions,
 )
@@ -113,6 +115,9 @@ def _withheld(row):
         withheld.add(Action.EDIT)
     if row["placement"].stage is Stage.CONFLICT and not row["resolvable"]:
         withheld |= {Action.ACCEPT, Action.EDIT}
+    if row.get("covered"):
+        # An open addition of the field stands in for it (#1710).
+        withheld.add(Action.BACK_TO_REVIEW)
     return withheld
 
 
@@ -214,11 +219,21 @@ def worklist_page(result, query, table, action, *, mutable):
     replacements = result.get("replacements", {})
     for row in worklist.rows:
         _added_words(row, replacements)
+    if any(row.get("added") for row in worklist.rows):
+        # A ticked added change's Back to review withdraws it.
+        for choice in worklist.bulk:
+            if choice["value"] == Action.BACK_TO_REVIEW.value:
+                choice["body"] = f"{choice['body']} {BULK_WITHDRAW}"
     return worklist, table
 
 
 # An added change's Back to review withdraws it (spec, "Reviewed stage").
 WITHDRAW_TITLE = "Withdraw {name}?"
+BULK_WITHDRAW = "A ticked change the parish added is withdrawn instead."
+OVERLAP = (
+    "The Family has an open change of this field too: decide that one, and "
+    "withdraw this one if it is no longer needed."
+)
 WITHDRAW_BODY = (
     "The added change is withdrawn: nothing is entered in ParishSoft, and it "
     "moves to History."
@@ -231,7 +246,8 @@ def _added_words(row, replacements):
     An added change's Back to review withdraws it, so its dialog says so;
     an ignored change the parish added another in place of names that one
     under its stage ("Ignored. Added in its place: ..."), and an addition
-    made in place of one says so (#1710).
+    made in place of one says so (#1710), as does one whose field the
+    Family has an open change of too.
     """
     parts = [row["decision_label"]] if row["decision_label"] else []
     if row.get("added"):
@@ -241,8 +257,10 @@ def _added_words(row, replacements):
                 icon["body"] = WITHDRAW_BODY
         if row.get("in_place_of"):
             parts.append("Added in place of an ignored change.")
+        if row.get("overlap"):
+            parts.append(OVERLAP)
     elif row["id"] in replacements:
-        parts.append(f"Added in its place: {replacements[row['id']]}")
+        parts.append(f"Added in its place: {'; '.join(replacements[row['id']])}")
     row["decision_label"] = " ".join(parts)
 
 
@@ -491,6 +509,18 @@ class CensusDecisions:
             raise ValueError("Only Edit sends a value.")
         if additions and decision.action not in ADDITION_STEPS:
             raise ValueError("An added change takes no such decision.")
+        if decision.action is Action.BACK_TO_REVIEW and covering_additions(
+            item for item in proposals.values() if item.decision == "ignored"
+        ):
+            # The page withholds the icon; a page drawn before the Add, or
+            # the bulk bar, still posts it (#1710).
+            raise AddRefusal(
+                "reopen_added",
+                "A change the parish added for this field is still open, so this "
+                "ignored change cannot go back to review. Withdraw the added "
+                "change first.",
+                field_ids=("bulk_note" if decision.bulk else "note",),
+            )
         try:
             with work_transaction():
                 recorded = []
