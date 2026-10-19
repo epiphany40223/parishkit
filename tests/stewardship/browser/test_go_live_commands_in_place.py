@@ -1,7 +1,7 @@
 """The go-live command buttons act in place (#519 PR 7c-3).
 
-Go-live readiness's Check, Testing cleanup's Retry and Cancel, Prepare Family
-links' Prepare, Cancel, Retry and Retry disposal, and Production activation's
+Testing cleanup's Retry and Cancel, Prepare Family links' Prepare, Cancel,
+Retry and Retry disposal, and Production activation's
 Retry failed mail preparation each post to their own page. The pages are
 served at their real addresses (go_live_components). A route answers each
 POST with the page after the command, as the view's redirect back would show
@@ -19,7 +19,6 @@ import pytest
 
 from .go_live_components import (
     CLEANUP,
-    GO_LIVE,
     LINKS,
     LINKS_DISPOSAL,
     LINKS_NEW,
@@ -27,7 +26,7 @@ from .go_live_components import (
     PRODUCTION_RETRIED,
 )
 from .test_in_place import MARK, MARKED, count_requests
-from .waits import available, focused, greyed, hidden, painted, visible
+from .waits import focused, greyed, hidden, painted, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -130,50 +129,6 @@ def announced(page, text):
     from playwright.sync_api import expect
 
     expect(page.locator(LIVE)).to_contain_text(text)
-
-
-def test_check_readiness_is_in_place(page, component_origin):
-    """Check readiness posts once and the re-rendered page is swapped in: the
-    check's result is read out, focus is back on the fresh Check button, the
-    address is unchanged, and the Start Testing cleanup form it brings waits
-    for its acknowledgment as on a page that loaded with it."""
-    offset, posts = command(
-        page,
-        component_origin,
-        GO_LIVE,
-        "Check readiness and public web address",
-        "/go-live",
-    )
-    announced(page, "Readiness checked: every check passed.")
-    stayed(page, offset)
-    focused(page.get_by_role("button", name="Check readiness and public web address"))
-    assert len(posts) == 1 and "action=verify" in posts[0]
-    assert page.url == component_origin + GO_LIVE
-    start = page.get_by_role("button", name="Start Testing cleanup")
-    greyed(start)
-    page.get_by_label("I acknowledge", exact=False).check()
-    available(start)
-
-
-def test_check_readiness_announces_a_failed_check(page, component_origin):
-    """When the public web address passes but another check fails, Check
-    readiness reads out why cleanup can't start yet, never only that the
-    address passed, so a screen-reader user is not told readiness passed."""
-    offset, posts = command(
-        page,
-        component_origin,
-        GO_LIVE,
-        "Check readiness and public web address",
-        "/go-live-problems",
-    )
-    announced(page, "Cleanup can't start yet. Fix the configuration and data checks")
-    stayed(page, offset)
-    from playwright.sync_api import expect
-
-    expect(page.locator(LIVE)).not_to_contain_text("passed")
-    visible(page.get_by_text("The public web address passed", exact=False))
-    focused(page.get_by_role("button", name="Check readiness and public web address"))
-    assert len(posts) == 1
 
 
 @pytest.mark.parametrize(

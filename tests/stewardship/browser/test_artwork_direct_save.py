@@ -88,7 +88,7 @@ def test_a_chosen_image_turns_continue_into_save_and_continue(page, component_or
     proceed, save, cell = primary(page)
     visible(proceed)
     hidden(save)
-    assert proceed.inner_text() == "Continue to Go-live readiness"
+    assert proceed.inner_text() == "Continue to Go live"
     # The slots draw no Upload and review and open no review dialog.
     assert page.get_by_role("button", name="Upload and review").count() == 0
     assert page.locator("form[data-review-open][data-wizard-upload]").count() == 0

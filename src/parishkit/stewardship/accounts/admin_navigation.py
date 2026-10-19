@@ -187,7 +187,7 @@ PAGES = {
     # shares that page's name.
     "artwork_upload": Page("campaign", _("Campaign images"), "artwork_settings"),
     "reminder_workgroup": Page("campaign", _(REMINDER_WORKGROUP_NAME)),
-    "go_live": Page("campaign", _("Go-live readiness")),
+    "go_live": Page("campaign", _("Go live")),
     "go_live_families": Page("campaign", _("Testing submissions"), "go_live"),
     "go_live_cleanup": Page("campaign", _("Testing cleanup"), "go_live"),
     "go_live_links": Page("campaign", _("Prepare Family links"), "go_live_cleanup"),
@@ -359,7 +359,7 @@ STRUCTURE_FIXED = _(
 )
 ALREADY_LIVE = _("Only a draft campaign can go live; this one already has")
 NOT_CONFIRMED = _(
-    "Production has not been confirmed for this campaign; start at Go-live readiness"
+    "Production has not been confirmed for this campaign; start at Go live"
 )
 PRODUCTION_ONLY = _("Available in Production mode")
 NO_SOURCE_DATA = _("ParishSoft data has not been downloaded yet")
@@ -448,7 +448,7 @@ def _structural(module_reason):
 
 
 def _draft(state):
-    """Go-live readiness: only a draft campaign can go live."""
+    """Go live: only a draft campaign can go live."""
     if not state.campaign:
         return NO_CAMPAIGN
     if state.campaign.state != "draft":
@@ -933,7 +933,7 @@ def _link(name, arguments, offered=None):
     A menu page is linked only when the sidebar offers that exact URL: the
     sidebar already greys out entries their page would refuse (Share options
     once the campaign is locked, Campaign images for an archived campaign,
-    Go-live readiness after the draft), so a trail or "Return to" link
+    Go live after the draft), so a trail or "Return to" link
     reuses that decision instead of repeating it (#196). A page standing for
     an entry (``Page.entry``) is linked only while that entry is offered. None
     skips the check.

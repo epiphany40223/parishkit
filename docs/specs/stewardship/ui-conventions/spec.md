@@ -613,21 +613,21 @@ never scrolls to show it (Administrator, pk-local review of
   never in the address. A reload draws the page from its address, so the
   list and the filter fields agree
   ([#1562](https://github.com/epiphany40223/parishkit/issues/1562)). The
-  Refresh links of Go-live readiness
-  ("Readiness preview refreshed."), Testing cleanup, Prepare Family links
-  and Production activation ("Progress refreshed.") re-read their page's
+  Refresh links of Testing cleanup, Prepare Family links and Production
+  activation ("Progress refreshed.") re-read their page's
   own address this way rather than reloading it; Prepare Family links keeps
   the history page shown, and a disclosure such as Technical details stays
   open because only the list inside it is a region. Their command buttons
-  post in place too: Check readiness and public web address (focus returns
-  to Check, and the overall result is read out: why cleanup can't start yet
-  when any check failed, else that every check passed), Testing cleanup's Retry and
+  post in place too, as does the [Go live page](../admin-portal/spec.md#go-live-page)'s
+  Check readiness and public web address (it redirects back to Check, focus
+  returns to the fresh button, and the overall result is read out: what
+  still needs fixing, else that every check passed), Testing cleanup's Retry and
   Cancel, Prepare inactive Family links and each preparation's Cancel, Retry
   and Retry disposal, and Retry failed mail preparation. A button that is
   gone once its request is taken hands focus to the page's Refresh link just
   below (cleanup, Production), or, on Prepare Family links, to the newest
-  preparation's heading; Start Testing cleanup stays a navigation to the
-  cleanup page.
+  preparation's heading; Start go-live's Apply opens the step in progress
+  as a page.
 - **Errors and fallback.** A POST that got an answer is never sent again; a
   saving POST is never re-sent at all; a read-only table POST with no answer
   falls back to the ordinary submission. A refused POST (an error answer, or
@@ -948,9 +948,9 @@ the [in-place controls](#in-place-controls); no other mechanism.
   page.
   The directory, Sent mail, System logs and Financial stewardship do this
   ([#1586](https://github.com/epiphany40223/parishkit/issues/1586)).
-- **Go-live pages.** Go-live readiness, Testing cleanup, Prepare Family
-  links and Production activation still have their Refresh links until the
-  go-live redesign applies this rule there
+- **Go-live pages.** The Go live page's Check step has no Refresh link.
+  Testing cleanup, Prepare Family links and Production activation still
+  have theirs until the go-live redesign applies this rule there
   ([#1585](https://github.com/epiphany40223/parishkit/issues/1585)).
 
 ### No layout shift
@@ -1094,8 +1094,7 @@ as its hint; first used by Past campaigns' archive file (20 MiB). The server
 checks the size again.
 
 Wherever a form requires an acknowledgment checkbox (finishing setup, a test
-that may already have arrived, chosen-Family tests, Testing cleanup,
-withdrawal, refusal removal, bounce reports, manual reports, duplicate
+that may already have arrived, chosen-Family tests, withdrawal, refusal removal, bounce reports, manual reports, duplicate
 resends, resetting all pages and emails to their default text), the page
 script keeps the form's primary button disabled until the box is checked,
 and the server refuses a missing acknowledgment. While the button waits, a
@@ -1211,8 +1210,7 @@ again after a refused Save shows what was posted, so its Save does not
 wait for a change then.
 
 The same holds for the rest of the Admin portal (#563, the audit's last
-slice): Start Testing cleanup on Go-live readiness and Confirm Production
-before a passing check (named by the step still needed); Confirm cancelling
+slice): Confirm Production before a passing check (named by the step still needed); Confirm cancelling
 go-live while mail blocks it; the retry the Mail message page would offer while
 the resend admission refuses it; Queue new manual report while an earlier
 Weekly Admin digest is still being prepared or delivered (checked when the
@@ -1493,7 +1491,10 @@ line), whose hidden fields Apply posts, the signed preview marked
 `data-review-refusal` that the dialog shows as drawn. A page whose own
 address records a view when read (System health) marks its dialog
 `data-review-redraw="body"`: Apply's answer then holds the regions the
-change redraws, and the page is not read again. **Precedent.**
+change redraws, and the page is not read again. A dialog whose Apply
+leads to another step's page (the Go live page's Start go-live) marks it
+`data-review-redraw="leave"`: Apply's redirect is opened as a page, and
+that page follows its own work. **Precedent.**
 Administrator decision, 2026-10-11, on
 [#750](https://github.com/epiphany40223/parishkit/issues/750), which replaces
 the in-place review panel of #532 and the separate Review and Change status
@@ -2496,7 +2497,7 @@ match.
     setup** (or **Leave setup**), which opens Home; Home then offers
     **Continue campaign setup:** and the next step not done yet while the
     wizard applies. A wizard finishes at its last step (Finish setup, or
-    Go-live readiness). The Admin menu works as always, and a menu page that
+    Go live). The Admin menu works as always, and a menu page that
     is neither a step nor a sub-page draws no stepper.
 12. **Outside the wizard nothing changes.** The same page outside its wizard
     (setup has finished, the campaign is no longer a Testing draft, a go-live

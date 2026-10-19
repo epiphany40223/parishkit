@@ -1,0 +1,94 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n static stewardship %}
+{% comment %}
+  The Go live page's Check step (admin-portal spec, "Go live page"; #1585
+  slice 2; go_live_views.check). One frame: the heading, the About panel,
+  the Go live step bar (only this one: the Campaign setup stepper is not
+  drawn here, campaign-stepper.html), the step's content and one action
+  row (Back first where Preview and test email can be opened, then exactly
+  one primary, or none while there is nothing to do), with the reserved
+  status line under it.
+
+  The step bar, content and row are one region (#go-live-check) that
+  updates itself (live-status-v1.js): closely while go-live runs or is
+  being stopped, every 30 seconds otherwise, so a fix made in another tab
+  shows here; there is no Refresh link (#1586). Its data-live-announce
+  sentence is read out (data-live-announcer below) only when it changes. A
+  reload draws the same state from the server, the kept public web address
+  check included, and every action posts in place or through the dialog,
+  so a reload never sends a form again.
+
+  ``state`` is go_live_check's: started, stopping, stop_failed, closed,
+  not_ready, unchecked or passed.
+{% endcomment %}
+{% block title %}{% translate "Go live" %}{% endblock %}
+{% block head %}{% if not admin_chrome.campaign_wizard %}<link rel="stylesheet" href="{% static 'stewardship/stepper-v1.css' %}">{% endif %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
+{% block content %}
+<h1>{% translate "Go live" %}</h1>
+{% aboutpage "go-live" %}<p>{% translate "Going live takes four steps. Check that the campaign is ready, then start going live: the system deletes the Testing data, refreshes the ParishSoft data and prepares the Family links by itself. You then confirm Production, and the campaign starts on its dates." %}</p>
+<p>{% translate "Checking changes nothing. Starting deletes the Testing data, which cannot be restored, even if you stop going live later. Testing links and codes stop working then. Nothing reaches Families until you confirm Production." %}</p>
+<p>{% translate "Who gets mail is checked again when it is actually prepared, so a later ParishSoft change can alter the counts shown here. Responses and emails from Testing mode do not count once the campaign is live." %}</p>{% endaboutpage %}
+{% if state == 'started' %}{% translate "Go-live has started." as headline %}{% elif state == 'stopping' %}{% if stage.stop_kind == 'cleanup' %}{% translate "Stopping go-live. Testing data deletion is stopping at the next safe point." as headline %}{% else %}{% translate "Stopping go-live. The prepared Family links are being discarded." as headline %}{% endif %}{% elif state == 'stop_failed' %}{% translate "Stopping go-live did not finish: discarding the prepared Family links failed after its automatic retries." as headline %}{% elif state == 'closed' %}{% translate "The campaign has closed and cannot go live with these dates." as headline %}{% elif state == 'not_ready' %}{% blocktranslate trimmed count counter=problems|length asvar headline %}{{ counter }} thing to fix before going live{% plural %}{{ counter }} things to fix before going live{% endblocktranslate %}{% elif state == 'unchecked' %}{% translate "Everything else is ready." as headline %}{% else %}{% translate "Everything is ready." as headline %}{% endif %}
+<div id="go-live-check" class="go-live-check" data-in-place-region data-live-status="go-live-check" data-live-pending{% if live_interval %} data-live-interval="{{ live_interval }}"{% endif %} data-live-give-up="{{ live_limit }}" data-live-announce="{{ headline }}">
+<nav class="setup-stepper" aria-labelledby="go-live-steps-heading">
+<h2 id="go-live-steps-heading" class="setup-sr-only">{% translate "Go live progress" %}</h2>
+<div class="setup-stepper-summary">
+<p class="setup-stepper-current">{% blocktranslate trimmed with total=wizard.total %}Step 1 of {{ total }}:{% endblocktranslate %} <strong>{{ wizard.current.label }}</strong></p>
+<p class="setup-stepper-count">{% blocktranslate trimmed with done=wizard.completed total=wizard.total %}{{ done }} of {{ total }} steps completed{% endblocktranslate %}</p>
+<p class="setup-stepper-moves"><span>{% blocktranslate trimmed with label=wizard.next.label %}Next: {{ label }}{% endblocktranslate %}</span></p>
+</div>
+{% translate "Go live steps" as track_label %}{% translate "All go live steps" as list_summary %}{% include 'stewardship/stepper-steps.html' with track_label=track_label list_id='go-live-step-list' list_summary=list_summary %}
+</nav>
+<section class="go-live-step" aria-labelledby="go-live-state">
+{% if stage.stopped_at and state != 'started' %}<p data-go-live-stopped>{% translate "Go-live stopped at" %} <time data-local-instant datetime="{{ stage.stopped_at|instant }}">{{ stage.stopped_at|instant }}</time>.</p>{% endif %}
+<h2 id="go-live-state">{{ headline }}</h2>
+{% if state == 'started' %}<p>{% translate "Started" %} <time data-local-instant datetime="{{ stage.request.created_at|instant }}">{{ stage.request.created_at|instant }}</time>{% if stage.started_by %} {% blocktranslate trimmed with who=stage.started_by %}by {{ who }}{% endblocktranslate %}{% endif %}. {% translate "Campaign settings are locked while going live." %}</p>
+{% elif state == 'stopping' or state == 'stop_failed' %}{% if stage.total %}<p data-go-live-stop-progress>{% if stage.stop_kind == 'cleanup' %}{% blocktranslate trimmed with done=stage.done|number total=stage.total|number %}{{ done }} of {{ total }} Testing records were deleted before stopping; they stay deleted.{% endblocktranslate %}{% else %}{% blocktranslate trimmed with done=stage.done|number total=stage.total|number %}{{ done }} of {{ total }} Family links discarded.{% endblocktranslate %}{% endif %}</p>{% endif %}
+{% if state == 'stop_failed' and stage.failed %}<p data-go-live-stop-failed>{% translate "Its last attempt failed at" %} <time data-local-instant datetime="{{ stage.failed.1.updated_at|instant }}">{{ stage.failed.1.updated_at|instant }}</time>.</p>{% endif %}
+<p>{% if state == 'stop_failed' %}{% translate "Start go-live stays unavailable until stopping finishes. Retrying changes no other data." %}{% else %}{% translate "Start go-live is available again once this finishes; this page updates by itself." %}{% endif %}</p>
+{% elif state == 'closed' %}<p>{% translate "Review the campaign's dates, then check readiness again." %}</p>
+{% else %}{% if problems %}<ul class="go-live-problems">{% for problem in problems %}<li>{{ problem.text }}{% for url, label in problem.links %} <a href="{{ url }}">{{ label }}</a>{% endfor %}</li>{% endfor %}</ul>{% endif %}
+{% if preview.resave %}<div id="resave-content"><p>{% translate "These saved pages and emails have markup that sending now removes. Open each one, then preview and apply it again to store the cleaned version. An invitation or reminder marked “Can't be sent until fixed” cannot be sent until its Family code or link is put back." %}</p>{% include "stewardship/resave-list.html" with items=preview.resave %}</div>{% endif %}
+<ul class="go-live-warnings">{% if warnings.backup_at %}<li>{% translate "Last backup completed" %} <time data-local-instant datetime="{{ warnings.backup_at|instant }}">{{ warnings.backup_at|instant }}</time>. {% menu_link "system_health" _("System health") %}</li>{% else %}<li>{% translate "No backup has completed yet." %} {% menu_link "system_health" _("System health") %}</li>{% endif %}{% if warnings.debug %}<li>{% translate "Debug logging is on. Turn it off before going live." %} {% menu_link "system_health" _("System health") %}</li>{% endif %}</ul>
+<p data-go-live-impact>{% if preview.target_state == 'scheduled' %}{% translate "The campaign is scheduled to start" %} <time data-local-instant datetime="{{ campaign.active_configuration.starts_at|instant }}">{{ campaign.active_configuration.starts_at|instant }}</time>{% translate "; nothing is sent until then." %}{% else %}{% blocktranslate trimmed with count_text=counts.messages|number count counter=counts.messages %}The campaign becomes active at once and about {{ count_text }} Family email is sent.{% plural %}The campaign becomes active at once and about {{ count_text }} Family emails are sent.{% endblocktranslate %}{% endif %}</p>
+<details class="go-live-counts" data-keep-open><summary>{% translate "Mail and Testing data counts" %}</summary>
+<h3>{% translate "Family mail" %}</h3>
+<dl><dt>{% translate "Active Families" %}</dt><dd>{{ counts.active|number }}</dd>
+<dt>{% translate "Families with an eligible email address" %}</dt><dd>{{ email_eligibility|out_of }}</dd>
+<dt>{% translate "Families without an eligible email address" %}</dt><dd>{{ no_email|out_of }}</dd>
+<dt>{% translate "Family emails due at once" %}</dt><dd>{{ counts.messages|number }}</dd>
+<dt>{% translate "Family sends combined into one message (not extra messages)" %}</dt><dd>{{ counts.coalesced_slots|number }}</dd>
+<dt>{% translate "Family sends skipped" %}</dt><dd>{{ counts.skipped_slots|number }}</dd>
+<dt>{% translate "Families with blocked delivery work" %}</dt><dd>{{ counts.blocked_families|number }}</dd></dl>
+<h3>{% translate "Admin report mail" %}</h3>
+<dl><dt>{% translate "Daily report emails due at once" %}</dt><dd>{{ preview.digests.daily_messages|number }}</dd>
+<dt>{% translate "Weekly report emails due at once" %}</dt><dd>{{ preview.digests.weekly_messages|number }}</dd>
+<dt>{% translate "Report sends combined into one message (not extra messages)" %}</dt><dd>{{ preview.digests.coalesced_slots|number }}</dd>
+<dt>{% translate "Weekly reports skipped (nothing new to report)" %}</dt><dd>{{ preview.digests.empty_weekly_reports|number }}</dd>
+<dt>{% translate "Admin report groups that are blocked" %}</dt><dd>{{ preview.digests.blocked_groups|number }}</dd></dl>
+<h3>{% translate "Testing data to delete" %}</h3>
+<dl><dt>{% translate "Testing submissions" %}</dt><dd>{{ preview.cleanup.submissions|number }}</dd>
+<dt>{% translate "Families with Testing submissions" %}</dt><dd>{{ preview.cleanup.families|number }}</dd>
+<dt>{% translate "Testing messages" %}</dt><dd>{{ preview.cleanup.messages|number }}</dd>
+<dt>{% translate "Unresolved Testing deliveries" %}</dt><dd>{{ preview.cleanup.unresolved|number }}</dd>
+<dt>{% translate "Total Testing records to delete" %}</dt><dd>{{ preview.cleanup.inventory.total|number }}</dd></dl>
+{% if inventory %}<dl>{% for category,count in inventory %}<dt>{{ category }}</dt><dd>{{ count|number }}</dd>{% endfor %}</dl>{% endif %}
+<p><a href="{% url 'admin:go_live_families' %}">{% translate "View Testing submissions" %}</a></p>
+</details>
+{% endif %}
+</section>
+<div class="campaign-step-actions go-live-actions" data-go-live-actions>
+{% if state != 'started' and state != 'stopping' and state != 'stop_failed' and admin_chrome.campaign_wizard.previous.url %}{% button href=admin_chrome.campaign_wizard.previous.url variant="secondary" data-go-live-back %}{% translate "Back" %}<span class="setup-sr-only">: {{ admin_chrome.campaign_wizard.previous.label }}</span>{% endbutton %}{% endif %}
+{% if state == 'started' %}{% button href=stage.in_progress_url data-go-live-primary %}{% translate "Continue to Prepare" %}{% endbutton %}
+{% elif state == 'stop_failed' %}<form method="post" action="{% url 'admin:go_live' %}#go-live-check" data-in-place="go-live-retry-stop" data-in-place-message="{% translate 'Retrying stopping go-live.' %}" data-go-live-primary>{% csrf_token %}<input type="hidden" name="action" value="retry_stop"><input type="hidden" name="control" value="{{ stage.retry }}">{% button type="submit" %}{% translate "Retry stopping go-live" %}{% endbutton %}</form>
+{% elif state == 'closed' %}{% url 'admin:schedule_settings' as dates_url %}{% button href=dates_url data-go-live-primary %}{% translate "Review campaign dates" %}{% endbutton %}
+{% elif state == 'passed' %}{% comment %}data-review-redirects: a Review answered with the step in progress (go-live this Administrator already started in another tab) opens it.{% endcomment %}<form method="post" action="{% url 'admin:go_live' %}" data-review-open="go-live-start-review" data-review-redirects data-go-live-primary>{% csrf_token %}<input type="hidden" name="action" value="review">{% button type="submit" %}{% translate "Start go-live" %}{% endbutton %}</form>
+{% elif state == 'not_ready' or state == 'unchecked' %}{% comment %}Check posts in place (ui-v1.js, form[data-in-place]) and follows the redirect back here, so the region is swapped and focus returns to the fresh button; the overall result is read out from the step's heading.{% endcomment %}<form method="post" action="{% url 'admin:go_live' %}#go-live-check" data-in-place="go-live-verify" data-in-place-message-from="go-live-check-said" data-in-place-message="{% translate 'Readiness checked.' %}" data-go-live-primary>{% csrf_token %}<input type="hidden" name="action" value="verify">{% button type="submit" %}{% translate "Check readiness and public web address" %}{% endbutton %}</form>{% endif %}
+</div>
+{% if state == 'not_ready' or state == 'unchecked' or state == 'passed' %}{% comment %}The public web address check's result, beside its button: kept in the signed-in session for the inputs it checked, so a reload shows it until something it checked changes.{% endcomment %}
+<p id="go-live-check-result" class="go-live-check-result" data-go-live-check-result="{% if origin_verified is True %}passed{% elif origin_verified is False %}failed{% endif %}">{% if origin_verified is True %}{% translate "The public web address passed the URL and DNS checks. Still check separately that the site's HTTPS certificate works and that the site opens in a browser." %}{% elif origin_verified is False %}{% translate "The public web address check failed or timed out. Check the site's configured URL and its DNS record, then try again." %}{% endif %}</p>
+<span id="go-live-check-said" class="setup-sr-only">{% if state == 'passed' %}{% translate "Readiness checked: every check passed." %}{% elif origin_verified is False %}{% translate "The public web address check failed." %} {{ headline }}{% else %}{{ headline }}{% endif %}</span>{% endif %}
+</div>
+{% include 'stewardship/components/review-outcome.html' with outcome_id="go-live-check-outcome" %}
+<p class="setup-sr-only" data-live-announcer="go-live-check" role="status"></p>
+{% comment %}Start go-live's dialog (UX conventions, "Review dialog"), outside the region so an update never removes it while it is open. Its Apply posts the confirm step here, which starts Testing cleanup and answers with the step in progress, where the page goes (data-review-redraw="leave").{% endcomment %}{% url 'admin:go_live' as check_url %}{% translate "Start going live?" as start_title %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="go-live-start-review" title=start_title apply_url=check_url outcome_id="go-live-check-outcome" fallback="go-live-check-outcome" redraw_leave=True %}
+{% endblock %}

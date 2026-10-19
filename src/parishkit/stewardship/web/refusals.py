@@ -488,6 +488,15 @@ STEP_REASONS = {
     "needs_holds": "release_refused",
     "superseded": "resend_refused",
     "held_elsewhere": "resend_refused",
+    # The Go live page's Start go-live (#1585): another Administrator's
+    # Start applied first, a stop is still running or failed, or the
+    # campaign closed since the check; or the public web address check run
+    # again at Apply failed, which is the deployment's state, not the input.
+    "started": "stale_page",
+    "stopping": "stale_page",
+    "stop_failed": "stale_page",
+    "closed": "stale_page",
+    "origin_unverified": "configuration",
 }
 
 

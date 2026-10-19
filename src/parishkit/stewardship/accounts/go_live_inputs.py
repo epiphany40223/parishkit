@@ -75,7 +75,7 @@ def collect_inputs(caller, service, campaign_id):
     close, source expiry and newly due slots can still invalidate a preview.
     A final response must independently repeat current authorization.
 
-    ``caller`` is an ``AdminCaller``: the Go-live readiness page and the
+    ``caller`` is an ``AdminCaller``: the Go live page's Check step and the
     ``go-live readiness`` command (ADM-11) read through this one function.
     Until PR 12 moves them, ``go_live_commands`` still pass their request,
     which ``principal`` converts.
@@ -197,8 +197,8 @@ def collect_inputs(caller, service, campaign_id):
 def recent_cleanup_requests(campaign_id):
     """The campaign's ten most recent cleanup requests, newest first.
 
-    Go-live readiness lists them (identifier, state and creation instant
-    only), and so does ``go-live readiness``.
+    ``go-live readiness`` lists them (identifier, state and creation
+    instant only); the Go live page's Check step shows the latest instead.
     """
     return list(
         ProductionTransitionRequest.objects.filter(campaign_id=campaign_id)

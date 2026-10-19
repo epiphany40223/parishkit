@@ -209,7 +209,8 @@ def test_new_campaign_pages_refuse_without_a_current_campaign(auth_service, goog
     browser.get(reverse("admin:logs"))
     csrf = {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value}
     for name, args, values in (
-        ("go_live", [], {"action": "cleanup", "preview_token": "x"}),
+        ("go_live", [], {"action": "confirm", "preview_token": "x"}),
+        ("go_live", [], {"action": "retry_stop", "control": "x"}),
         ("go_live_cleanup", [uuid4()], {"control": "x"}),
         ("go_live_links", [uuid4()], {"control": "x"}),
         (

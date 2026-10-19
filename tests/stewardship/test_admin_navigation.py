@@ -694,16 +694,14 @@ def test_every_campaign_entry_is_greyed_out_without_a_current_campaign():
             "draft",
             "testing",
             "production_progress",
-            "Production has not been confirmed for this campaign; "
-            "start at Go-live readiness",
+            "Production has not been confirmed for this campaign; start at Go live",
         ),
         # Production mode set without a confirmation: the draft never went live.
         (
             "draft",
             "production",
             "production_progress",
-            "Production has not been confirmed for this campaign; "
-            "start at Go-live readiness",
+            "Production has not been confirmed for this campaign; start at Go live",
         ),
         (
             "active",
@@ -835,7 +833,7 @@ def test_way_forward_links_only_entries_the_viewer_is_offered():
     assert str(greyed.refusal().refusal.link_label) == "Go to Campaign settings"
     draft = _menu("administrator", CAMPAIGNS["draft"], "testing")
     assert navigation.greyed_entry("delivery_control", draft).forward == (
-        "Go-live readiness",
+        "Go live",
         reverse("admin:go_live"),
     )
     live = _menu("administrator", CAMPAIGNS["active"], "production")

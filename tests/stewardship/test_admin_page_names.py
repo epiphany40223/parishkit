@@ -55,7 +55,7 @@ TEMPLATES = {
     "artwork_settings": "artwork-settings.html",
     "artwork_upload": "artwork-settings.html",
     "reminder_workgroup": "reminder-workgroup.html",
-    "go_live": "go-live-readiness.html",
+    "go_live": "go-live-check.html",
     "go_live_families": "go-live-families.html",
     "go_live_cleanup": "go-live-cleanup.html",
     "go_live_links": "go-live-links.html",
@@ -438,6 +438,8 @@ RETIRED = (
     "Families with Testing submissions",
     "How Families will share",
     "Production activation progress",
+    # Renamed Go live by #1585 slice 2.
+    "Go-live readiness",
     # Retired after NAV-5b review: the setup content editor's old wording.
     "content list",
     # Retired by NAV-5b.
@@ -517,13 +519,20 @@ ALLOWED = {
     # "Distinct Families with Testing submissions": a readiness count and
     # the Testing submissions table's caption, not the page's name.
     (
-        "accounts/templates/stewardship/go-live-readiness.html",
+        "accounts/templates/stewardship/go-live-check.html",
+        "Families with Testing submissions",
+    ),
+    (
+        "accounts/templates/stewardship/go-live-start-review.html",
         "Families with Testing submissions",
     ),
     (
         "accounts/templates/stewardship/go-live-families.html",
         "Families with Testing submissions",
     ),
+    # ``pk-admin go-live readiness`` is a command's name, kept when the page
+    # was renamed Go live (#1585), as ``content list`` below.
+    ("admin_cli.py", "Go-live readiness"),
     # ``pk-admin content list`` (#463) is a command's name, as ``files
     # list``, not the retired wording for the Pages and emails page.
     ("admin_cli.py", "content list"),

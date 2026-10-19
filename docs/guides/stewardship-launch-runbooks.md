@@ -119,7 +119,7 @@ still the design record for preparation and disposal),
    `debug_logging_enabled` line right after `startup_validated`, so
    `docker compose ... logs SERVICE | grep debug_logging_enabled` finds it.
 2. **Administrator: clear readiness.** In the menu's Campaign setup group,
-   choose **Go-live readiness**
+   choose **Go live**
    (`/admin/campaign/go-live/`). The page lists what still needs
    attention, each item with its remedy. Clear these beforehand: every
    provider credential must have a current check; a selected Family test

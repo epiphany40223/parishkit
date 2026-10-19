@@ -1,4 +1,4 @@
-"""Current Admin authority protects the exact passive readiness/impact preview."""
+"""Current Admin authority protects the Go live page's passive Check step (#1585)."""
 
 # ruff: noqa: F811 -- imported pytest fixtures are injected by name.
 
@@ -22,7 +22,7 @@ from parishkit.stewardship.storage import StaleRecordError
 from .auth_builders import signed_in
 from .campaign_builders import campaign_clock
 from .leader_builders import grant_role
-from .test_admin_navigation_postgresql import GO_LIVE, flow_steps
+from .test_admin_navigation_postgresql import flow_steps
 from .test_campaign_mail_postgresql import campaign_test  # noqa: F401
 from .test_setup_mail_views_postgresql import web_login
 from .test_setup_views_postgresql import post
@@ -39,13 +39,33 @@ def test_web_preview_is_passive_current_and_never_starts_deletion(campaign_test)
         response = browser.get(path)
         assert response.status_code == 200, response.content
         assert response["Cache-Control"] == "no-store"
-        assert flow_steps(response.content) == (GO_LIVE, "Check readiness")
+        body = response.content.decode()
+        # One step bar, Go live's own: not the old step list, not the
+        # Campaign setup stepper (#1585).
+        assert flow_steps(response.content) is None
+        assert 'id="campaign-stepper"' not in body
+        assert "<h1>Go live</h1>" in body
+        assert "Step 1 of 4:" in body and "<strong>Check</strong>" in body
+        assert "0 of 4 steps completed" in body and "Next: Prepare" in body
+        # Three later steps: in the bar (name and tooltip) and in both lists.
+        first = "Not available yet: Start go-live on the Check step first."
+        assert body.count(first) == 12
         preview = response.context["preview"]
         assert "full_refresh_required" in preview.problems
         assert "mail_template_unavailable" in preview.problems
         assert "family_test_mail_required" in preview.problems
         assert preview.target_state == "scheduled"
-        assert b"no Testing records to delete" in response.content
+        assert response.context["state"] == "not_ready"
+        # The one primary is the check; no Refresh link, no Start (#1586).
+        assert "Check readiness and public web address" in body
+        assert "Refresh readiness preview" not in body
+        assert "data-review-open" not in body
+        assert "things to fix before going live" in body
+        # Each problem links to the page that fixes it.
+        assert f'href="{reverse("admin:source_refresh")}"' in body
+        # The page updates itself in place (live-status-v1.js).
+        assert 'data-live-status="go-live-check"' in body
+        assert 'data-live-interval="30000"' in body
         again = browser.get(path)
         assert again.context["preview"].digest == preview.digest
         assert PortalSession.objects.get().last_activity_at == before
@@ -54,7 +74,8 @@ def test_web_preview_is_passive_current_and_never_starts_deletion(campaign_test)
         families_path = reverse("admin:go_live_families")
         families = browser.get(families_path)
         assert families.status_code == 200
-        assert flow_steps(families.content) == (GO_LIVE, "Check readiness")
+        # A sub-page of Check: no step indicator of its own.
+        assert flow_steps(families.content) is None
         assert b'class="table-nav"' in families.content
         assert browser.get(families_path + "?size=25").status_code == 200
         assert browser.get(families_path + "?page=0").status_code == 400
@@ -92,7 +113,7 @@ def test_testing_submissions_after_go_live_say_so_plainly(
     """After go-live the Testing list refuses with its own notice (#867).
 
     The refusal is not a permission problem, so it never offers "Sign in
-    again"; Go-live readiness, the only page linking here, refuses too.
+    again"; Go live's Check step, the only page linking here, refuses too.
     """
     browser, _ = signed_in()
     with web_login():
@@ -132,7 +153,7 @@ def test_revocation_during_render_prevents_private_response(campaign_test, monke
     monkeypatch.setattr(go_live_views, "render", revoke)
     response = browser.get(reverse("admin:go_live"))
     assert response.status_code == 403
-    assert b"Testing cleanup inventory" not in response.content
+    assert b"Testing data to delete" not in response.content
 
 
 def test_exact_close_is_a_readiness_blocker_not_active_target(campaign_test):
@@ -143,12 +164,22 @@ def test_exact_close_is_a_readiness_blocker_not_active_target(campaign_test):
     assert response.status_code == 200, response.content
     assert response.context["preview"].target_state == "closed"
     assert "campaign_closed" in response.context["preview"].problems
+    # Its own state, whose one primary opens Dates and mail schedules.
+    assert response.context["state"] == "closed"
+    body = response.content.decode()
+    assert "The campaign has closed and cannot go live with these dates." in body
+    assert "Review campaign dates" in body
+    assert "Check readiness and public web address" not in body
 
 
 def test_explicit_origin_check_does_not_mistake_dns_for_complete_readiness(
     campaign_test, monkeypatch, settings
 ):
-    """Only explicit POST checks DNS; unresolved inputs still block cleanup."""
+    """Only explicit POST checks DNS; unresolved inputs still block cleanup.
+
+    The check answers a redirect back to Check (no POST draws a page), and
+    its result is kept in the session, so a reload shows it again (#1585).
+    """
     _, browser, _, _ = campaign_test
     settings.STEWARDSHIP_PUBLIC_ORIGIN = "http://localhost:8000"
     settings.STEWARDSHIP_DEPLOYMENT_PROFILE = "test"
@@ -168,11 +199,20 @@ def test_explicit_origin_check_does_not_mistake_dns_for_complete_readiness(
         assert browser.get(path).status_code == 200
         assert not calls
         response = post(browser, path, {"action": "verify"})
-        assert response.status_code == 200, response.content
-        assert response.context["origin_verified"] is True
-        assert response.context["cleanup_token"] is None
-        assert response.context["preview"].problems
+        assert response.status_code == 303, response.content
+        assert response["Location"] == path
+        for _ in range(2):
+            page = browser.get(path)
+            assert page.context["origin_verified"] is True
+            assert page.context["preview"].problems
+            assert page.context["state"] == "not_ready"
+            assert b"passed the URL and DNS checks" in page.content
         assert not ProductionTransitionRequest.objects.exists()
+        # Start go-live's review refuses while a problem remains.
+        review = post(browser, path, {"action": "review"})
+        assert review.status_code == 409
+        assert b'data-go-live-start-refused="changed"' in review.content
+        assert post(browser, path, {"action": "other"}).status_code == 400
         assert (
             post(
                 browser, path, {"action": "verify", "origin": "https://evil.invalid"}

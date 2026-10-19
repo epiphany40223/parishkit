@@ -89,10 +89,13 @@
 }
 /* The Campaign setup action row at the bottom of each step page (#1404):
    Back, secondary and first, and the one primary Continue, last and
-   right-aligned, as the setup wizard's row; they stack on a phone. */
+   right-aligned, as the setup wizard's row; they stack on a phone. The Go
+   live page's Check step (#1585) shares the row: its one primary is a link
+   or a form (go-live-check.html). */
 .campaign-step-actions { display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; margin-block: 1.5rem .25rem; }
 .campaign-step-actions > * { margin: 0; }
-.campaign-step-actions > [data-campaign-continue], .campaign-step-actions > [data-campaign-create], .campaign-step-actions > [data-campaign-primary] { margin-inline-start: auto; }
+.campaign-step-actions > [data-campaign-continue], .campaign-step-actions > [data-campaign-create], .campaign-step-actions > [data-campaign-primary],
+.campaign-step-actions > [data-go-live-primary] { margin-inline-start: auto; }
 /* A direct-save step's primary (#1404 PR 4): Continue and Save and continue
    share one grid cell, so the cell is as wide as the longer label and the
    switch between them moves nothing; the one not offered keeps its space
@@ -106,7 +109,8 @@
 /* Its status line keeps one line's height while empty (no layout shift). */
 .campaign-step-status { min-block-size: 1.5em; margin-block: .25rem 0; }
 @media (max-width: 26rem) {
-  .campaign-step-actions > [data-campaign-continue], .campaign-step-actions > [data-campaign-create], .campaign-step-actions > [data-campaign-primary], .campaign-step-actions > form button { flex: 1 1 100%; width: 100%; }
+  .campaign-step-actions > [data-campaign-continue], .campaign-step-actions > [data-campaign-create], .campaign-step-actions > [data-campaign-primary],
+  .campaign-step-actions > [data-go-live-primary], .campaign-step-actions > form button { flex: 1 1 100%; width: 100%; }
 }
 @media (forced-colors: active) {
   .setup-steps [aria-current="step"] { outline: 3px solid CanvasText; }

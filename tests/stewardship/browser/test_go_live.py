@@ -1,4 +1,8 @@
-"""Irreversible acknowledgement and cleanup progress on mobile and desktop."""
+"""Cleanup and link preparation progress on mobile and desktop.
+
+Go live's Check step, where go-live starts, has its own tests
+(test_go_live_check.py, #1585).
+"""
 
 import pytest
 
@@ -10,27 +14,10 @@ pytestmark = pytest.mark.parametrize(
 
 
 @pytest.mark.parametrize("width", [320, 1280])
-def test_go_live_acknowledgement_and_status_are_accessible(
-    page, component_origin, axe_source, width
-):
-    """Actual templates expose explicit intent, local times and formatted progress."""
+def test_go_live_status_is_accessible(page, component_origin, axe_source, width):
+    """Actual templates expose local times and formatted progress."""
     page.set_viewport_size({"width": width, "height": 900})
-    page.goto(component_origin + "/go-live")
-    confirmation = page.get_by_role(
-        "checkbox",
-        name=(
-            "I acknowledge that deleting the inventoried Testing data is irreversible."
-        ),
-    )
-    form = page.locator("form").filter(has=confirmation)
-    assert not form.evaluate("element => element.checkValidity()")
-    confirmation.focus()
-    page.keyboard.press("Space")
-    assert confirmation.is_checked() and form.evaluate(
-        "element => element.checkValidity()"
-    )
-    assert "1,000 out of 1,500" in page.locator("main").inner_text()
-    for path in ("/go-live", "/go-live-links", "/go-live-cleanup"):
+    for path in ("/go-live-links", "/go-live-cleanup"):
         page.goto(component_origin + path)
         assert page.evaluate(
             "document.documentElement.scrollWidth <= window.innerWidth"

@@ -1,8 +1,8 @@
 """The go-live command buttons act in place (#519 PR 7c-3): markup the shared
 mechanism in ui-v1.js relies on.
 
-Each command posts to its own page, whose view redirects back to it (or, for
-Check readiness, re-renders it), so the forms only opt in: a key, a message,
+Each command posts to its own page, whose view redirects back to it, so the
+forms only opt in: a key, a message,
 a focus fallback where the button goes away, and an action whose fragment
 names a region of the same template. The fragment rule itself is checked for
 every template by test_in_place_controls.py.
@@ -30,10 +30,17 @@ def in_place_form(text, key):
     "name, key, action, message, fallback",
     [
         (
-            "go-live-readiness.html",
-            "readiness-check",
-            "{% url 'admin:go_live' %}#readiness-preview",
-            "Readiness checked: every check passed.",
+            "go-live-check.html",
+            "go-live-verify",
+            "{% url 'admin:go_live' %}#go-live-check",
+            "Readiness checked.",
+            None,
+        ),
+        (
+            "go-live-check.html",
+            "go-live-retry-stop",
+            "{% url 'admin:go_live' %}#go-live-check",
+            "Retrying stopping go-live.",
             None,
         ),
         (
@@ -104,11 +111,11 @@ def test_go_live_commands_post_in_place(name, key, action, message, fallback):
         assert "data-in-place-fallback" not in form
 
 
-def test_every_go_live_post_form_is_in_place_except_start_cleanup():
-    """No same-page command on these pages reloads any more. Start Testing
-    cleanup is the one exception: it opens the cleanup page, a navigation."""
+def test_every_go_live_post_form_is_in_place_or_opens_the_dialog():
+    """No same-page command on these pages reloads any more. Start go-live
+    opens its review dialog (#1585), whose Apply opens the step in progress."""
     for name in (
-        "go-live-readiness.html",
+        "go-live-check.html",
         "go-live-cleanup.html",
         "go-live-links.html",
         "production-progress.html",
@@ -117,15 +124,16 @@ def test_every_go_live_post_form_is_in_place_except_start_cleanup():
         plain = re.findall(
             r"<form method=\"post\"(?![^>]*data-in-place)[^>]*>.*?</form>", text, re.S
         )
-        assert [form for form in plain if 'value="cleanup"' not in form] == [], name
+        assert [form for form in plain if "data-review-open" not in form] == [], name
 
 
 def test_check_readiness_reads_out_its_overall_result():
     """Check readiness announces the overall result, never only the public
-    web address's: the line saying why cleanup can't start yet whenever it
-    is drawn, else its own message that every check passed."""
-    text = (TEMPLATES / "go-live-readiness.html").read_text()
-    form = in_place_form(text, "readiness-check")
-    assert 'data-in-place-message-from="cleanup-unavailable"' in form
-    assert text.count('id="cleanup-unavailable"') == 1
+    web address's: what still needs fixing, else that every check passed,
+    from one line the answer draws beside the button (#1585)."""
+    text = (TEMPLATES / "go-live-check.html").read_text()
+    form = in_place_form(text, "go-live-verify")
+    assert 'data-in-place-message-from="go-live-check-said"' in form
+    assert text.count('id="go-live-check-said"') == 1
+    assert "Readiness checked: every check passed." in text
     assert "origin-check" not in text
