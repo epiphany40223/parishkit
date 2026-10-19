@@ -255,7 +255,11 @@ def test_the_ledger_covers_the_tick_its_bulk_and_information_follow_up():
     covered (the queue's export is PR 11c's, test_admin_followup.py)."""
     for route, commands in (
         ("ministry_followup_roster", ("followup show", "followup roster-entered")),
-        ("ministry_roster", ("report roster", "followup roster-bulk")),
+        # The roster list is Ministry requests' To enter by hand Stage (R39).
+        (
+            "ministry_report",
+            ("report roster", "export roster", "followup roster-bulk"),
+        ),
         ("information_item", ("followup information-show",)),
         (
             "information_update",
@@ -263,7 +267,7 @@ def test_the_ledger_covers_the_tick_its_bulk_and_information_follow_up():
         ),
     ):
         assert LEDGER[route].kind == "command", route
-        assert LEDGER[route].detail == commands, route
+        assert set(commands) <= set(LEDGER[route].detail), route
         assert LEDGER[route].owed is None, route
 
 

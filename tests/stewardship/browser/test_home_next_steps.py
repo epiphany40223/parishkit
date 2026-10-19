@@ -5,6 +5,8 @@ pages, a greyed card names the menu's reason as text, and pointing at or
 focusing a card moves nothing (the no-layout-shift rule).
 """
 
+import re
+
 import pytest
 
 from .home_steps_components import CLOSED_PATH, LEADER_PATH, PATH
@@ -14,8 +16,9 @@ from .waits import same_place
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
 )
-# Roster changes to enter, linked from the campaign-end steps (#1590).
-ROSTER = "/admin/reports/ministries/follow-up/roster/"
+# Ministry requests at To enter by hand, linked from the campaign-end steps
+# (#1590; Roster changes to enter until R39 finding 2 folded it in).
+ROSTER = "/admin/reports/ministries/?stage=to_enter_by_hand"
 AXE = """async () => (await axe.run(document, {
   runOnly: {type: 'tag', values: ['wcag2a','wcag2aa','wcag21aa','wcag22aa']}
 })).violations.map(({id,impact}) => ({id,impact}))"""
@@ -48,13 +51,14 @@ def test_next_steps_link_their_pages_and_never_shift(
     expect(panel.get_by_role("link", name="Response dashboard")).to_have_count(0)
     listed = panel.locator("[data-link-card]")
     # Neither the census nor Ministry stewardship is on: Census changes,
-    # Roster changes to enter (a menu entry of its own, #1660) and Ministry
-    # requests are text with the menu's reason (#1590).
+    # Ministry requests to enter by hand (following Ministry requests' entry)
+    # and Ministry requests are text with the menu's reason (#1590).
     expect(listed.nth(0)).to_have_text(
         "Census changes This campaign does not include the census"
     )
     expect(listed.nth(1)).to_have_text(
-        "Roster changes to enter This campaign does not include Ministry stewardship"
+        "Ministry requests to enter by hand This campaign does not include "
+        "Ministry stewardship"
     )
     expect(listed.nth(2)).to_have_text("Additional information 3 open")
     expect(listed.nth(2)).to_have_class("link-card link-card-attention")
@@ -96,13 +100,13 @@ def test_closed_campaign_lists_the_campaign_end_work_with_counts(
             CLOSED_PATH,
             [
                 "Census changes 4 to do",
-                "Roster changes to enter 5 not yet entered",
+                "Ministry requests to enter by hand 5 to enter by hand",
                 "Additional information 3 open",
                 "Ministry requests 2 open",
             ],
             {
                 "Census changes": "/admin/reports/census/",
-                "Roster changes to enter": ROSTER,
+                "Ministry requests to enter by hand": ROSTER,
                 "Additional information": "/admin/reports/information/",
                 "Ministry requests": "/admin/reports/ministries/",
             },
@@ -120,7 +124,10 @@ def test_closed_campaign_lists_the_campaign_end_work_with_counts(
         panel = page.get_by_role("region", name="Next steps")
         expect(panel.locator("[data-link-card]")).to_have_text(expected)
         for name, href in links.items():
-            expect(panel.get_by_role("link", name=name)).to_have_attribute("href", href)
+            # Each card's name, then its count: "Ministry requests" is also
+            # the start of "Ministry requests to enter by hand".
+            card = panel.get_by_role("link", name=re.compile(rf"^{re.escape(name)} \d"))
+            expect(card).to_have_attribute("href", href)
         before = page.evaluate(BOXES)
         for step in panel.get_by_role("link").all():
             step.hover()

@@ -249,9 +249,6 @@ PAGES = {
     # once a page of its own, was merged into it.
     "ministry_report": Page("review", _("Ministry requests")),
     "ministry_followup_item": Page("review", _("Follow-up request"), "ministry_report"),
-    # Resolved Ministry joins and leaves to enter in ParishSoft by hand (#528),
-    # a menu entry of its own with its count (#1660).
-    "ministry_roster": Page("review", _("Roster changes to enter")),
     "family_directory": Page("reports", _("Active parishioner family directory")),
     # One Family's summary and timeline (#477; the Timeline since #1570),
     # opened from every Family name the shared family_link tag draws.
@@ -522,10 +519,6 @@ MENU = (
     # Review work, in the Administrator's order (R39 finding 1).
     Entry("census_changes", Capability.VIEW_CENSUS, CENSUS),
     Entry("ministry_report", Capability.MINISTRY_REPORT, MINISTRY, scoped=True),
-    # Administrators and Staff only: unscoped MINISTRY_FOLLOWUP is the
-    # page's own check (workflows.roster.can_tick), which a Ministry leader,
-    # holding it only for their Ministries, never passes (#1660).
-    Entry("ministry_roster", Capability.MINISTRY_FOLLOWUP, MINISTRY),
     Entry("information_queue", Capability.ADDITIONAL_FOLLOWUP, _downloaded(_campaign)),
     Entry("limitations_report", Capability.CAMPAIGN_REPORT, MINISTRY),
     # Reports and queries
@@ -748,7 +741,6 @@ NON_PAGES = frozenset(
         "ministry_followup_export",
         "ministry_followup_update",
         "ministry_followup_roster",
-        "ministry_roster_export",
         "ministry_packet",
         # The ParishSoft refresh schedule editor's live check (#632), a
         # fragment the settings page reads.

@@ -105,7 +105,6 @@ TEMPLATES = {
     # Ministry requests is the follow-up queue's page (#1133).
     "ministry_report": "ministry-requests.html",
     "ministry_followup_item": "ministry-followup.html",
-    "ministry_roster": "ministry-roster.html",
     "family_directory": "directory.html",
     "emailed_reports": "emailed-reports.html",
     "timeline": "timeline.html",

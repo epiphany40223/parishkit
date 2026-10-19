@@ -1,9 +1,10 @@
-"""``report roster``: the Roster changes to enter list as counts (ADM-11).
+"""``report roster``: the roster changes to enter, as counts (ADM-11).
 
-The page (``admin:ministry_roster``, ``reports.ministry_roster_views``)
-lists the resolved Ministry joins and leaves staff still have to enter in
-ParishSoft by hand (#528). The command reads the same list through the
-page's own pieces, so the two cannot drift: its admission
+The list (``reports.ministry_roster_views``) is the resolved Ministry joins
+and leaves staff still have to enter in ParishSoft by hand (#528), on the
+page Ministry requests' To enter by hand Stage since the Roster changes to
+enter page was folded into it (R39 finding 2). The command reads the list
+through its own pieces: its admission
 (``ministry_roster_views._principal``: Administrators and Staff, never a
 Ministry leader), the shared report read (``admin_report_reads._report``:
 the current campaign, ``admit_report_read`` and the campaign read guard)

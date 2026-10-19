@@ -51,14 +51,6 @@ EMPTY_PAGES = {
         "No Members match these filters. Clear the Search name",
         "No Families match these filters. Clear the Search name",
     ),
-    "/roster-none": ("No roster changes to enter. A change is listed here",),
-    "/roster-none-ministry": (
-        "No roster changes to enter for this Ministry. Set Ministry to",
-    ),
-    "/roster-none-all": ("No roster changes yet. A change is listed here",),
-    "/roster-none-all-ministry": (
-        "No roster changes at this stage for this Ministry. Set Ministry to",
-    ),
     "/source-form-none": ("Every Family that can use the portal can open the form,",),
 }
 # The Filters box beside each empty table with one (#227): its title, from

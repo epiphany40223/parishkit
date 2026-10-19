@@ -34,7 +34,6 @@ EXPORTS = {
     ("logs.html", "admin:logs_export"): "csv xlsx jsonl",
     ("ministry-worklist-export.html", "admin:ministry_followup_export"): "csv xlsx pdf",
     ("ministry-packet.html", "admin:ministry_packet"): "pdf xlsx csv",
-    ("ministry-roster-export.html", "admin:ministry_roster_export"): "csv xlsx pdf",
     ("response-dashboard.html", "admin:report_export_create"): "csv xlsx pdf",
 }
 # The pages that let the reader view times in UTC, so their export keeps a

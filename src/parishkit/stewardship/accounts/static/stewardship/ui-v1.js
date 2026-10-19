@@ -4478,12 +4478,18 @@
     // ("reopen" when it sends an Ignored item back to review); a bulk button's
     // holds only while some ticked row's box carries the same choice, so
     // sending items back to review in bulk asks for a reason only when it reopens an
-    // Ignored item (review pipeline spec, "Reviewed stage").
+    // Ignored item (review pipeline spec, "Reviewed stage"). The "no_note"
+    // choice is an action that records no note (a Ministry roster tick, R39):
+    // it holds for every ticked row, and it hides the note (data-note-field),
+    // which data-confirm-reset has just emptied, so an empty one is posted.
     const want = opener.dataset.confirmChoice || "";
-    const holds = !bulk || [...form.elements].some((box) =>
+    const holds = !bulk || want === "no_note" || [...form.elements].some((box) =>
       box.matches("input[data-select-row]:checked") && box.dataset.confirmChoice === want);
     dialog.querySelectorAll("input[data-confirm-choice]").forEach((field) => {
       field.value = want && holds ? want : "";
+    });
+    dialog.querySelectorAll("[data-note-field]").forEach((field) => {
+      field.hidden = want === "no_note";
     });
     if (form.hasAttribute("data-require-complete")) gateComplete(form);
     confirming = {

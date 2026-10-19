@@ -1,11 +1,12 @@
 """Campaign-end Next steps and menu counts under the real web role (#1590).
 
-Home offers Administrators and Staff Census changes, Roster changes to enter,
-Additional information and Ministry requests, each with its menu count, and
-each count is the number of rows its link opens by default: Census changes'
-Work to do view, and Roster changes to enter's Not yet entered view (a menu
-entry of its own since #1660), both held equal to the pages' own row
-selection. A Ministry leader gets neither count, and both pages refuse them.
+Home offers Administrators and Staff Census changes, Ministry requests to
+enter by hand, Additional information and Ministry requests, each with its
+count, and each count is the number of rows its link opens: Census changes'
+Work to do view, and Ministry requests' To enter by hand Stage (which holds
+the roster changes since Roster changes to enter was folded into it, R39
+finding 2), both held equal to the pages' own row selection. A Ministry
+leader gets neither count.
 """
 
 import re
@@ -20,6 +21,7 @@ from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports.ministry_roster_views import roster_rows
+from parishkit.stewardship.reports.ministry_worklist import WorklistQuery, read_rows
 from parishkit.stewardship.workflows.roster import can_tick
 
 from .response_builders import activate_response_service
@@ -35,8 +37,9 @@ from .test_roster_entries_postgresql import resolved, tick
 pytestmark = pytest.mark.django_db(transaction=True)
 
 CENSUS = [SimpleNamespace(name="census_changes", url="/admin/reports/census/")]
-ROSTER_URL = "/admin/reports/ministries/follow-up/roster/"
-ROSTER = [SimpleNamespace(name="ministry_roster", url=ROSTER_URL)]
+ROSTER_URL = "/admin/reports/ministries/?stage=to_enter_by_hand"
+OLD_URL = "/admin/reports/ministries/follow-up/roster/"
+ROSTER = [SimpleNamespace(name="ministry_report", url="/admin/reports/ministries/")]
 
 
 def census_count(harness, principal, items=CENSUS):
@@ -48,13 +51,21 @@ def census_count(harness, principal, items=CENSUS):
 
 
 def roster_count(principal, campaign):
-    """The menu's Roster changes to enter count, always asked for, on the
-    web login (the menu offers the entry only to Administrators and Staff;
-    asking anyway shows the count's own checks)."""
+    """Home's Ministry requests to enter by hand count, always asked for, on
+    the web login (only Administrators and Staff get it; asking anyway
+    shows the count's own checks)."""
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         return admin_context._open_counts(
             SimpleNamespace(), principal, ROSTER, campaign
-        ).get("ministry_roster")
+        ).get(admin_context.ENTRY_COUNT)
+
+
+def to_enter(campaign, principal):
+    """How many rows Ministry requests lists at To enter by hand, as the page
+    reads them, on the web login."""
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        rows = read_rows(campaign.pk, WorklistQuery(), principal)["rows"]
+    return sum(row["stage"] == "to_enter_by_hand" for row in rows)
 
 
 def steps(body):
@@ -105,9 +116,9 @@ def test_home_and_menu_show_the_census_count_for_an_administrator(
 
 
 def test_roster_count_is_the_lists_not_yet_entered_rows(response_service):
-    """The menu's Roster changes to enter count follows the list: one
-    resolved join to enter, none once it is ticked, again one once cleared.
-    A Ministry leader is refused, by the count as by the page."""
+    """The To enter by hand count follows the list and Ministry requests'
+    Stage: one resolved join to enter, none once it is ticked, again one
+    once cleared. A Ministry leader gets no count."""
     harness, admin, join, _ = resolved(response_service)
     staff = actor(harness, ("staff",), ())
     administrator = actor(harness, ("administrator",), ())
@@ -117,17 +128,21 @@ def test_roster_count_is_the_lists_not_yet_entered_rows(response_service):
     )
 
     def counts(principal):
-        """The list's default rows and the menu's count, on the web login."""
+        """The list's default rows, the Stage's rows and the count."""
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             rows, _ = roster_rows(campaign.pk, principal, "todo")
-        return len(rows), roster_count(principal, campaign)
+        return (
+            len(rows),
+            to_enter(campaign, principal),
+            roster_count(principal, campaign),
+        )
 
     for principal in (staff, administrator):
-        assert counts(principal) == (1, 1)
+        assert counts(principal) == (1, 1, 1)
     tick(harness, admin, join, True)
-    assert counts(staff) == (0, 0)
+    assert counts(staff) == (0, 0, 0)
     tick(harness, admin, join, False)
-    assert counts(staff) == (1, 1)
+    assert counts(staff) == (1, 1, 1)
     # The page admits Administrators and Staff only (its _principal).
     assert not can_tick(own)
     assert roster_count(own, campaign) is None
@@ -141,18 +156,20 @@ def test_roster_count_is_the_lists_not_yet_entered_rows(response_service):
 
 
 def agree(harness):
-    """A function returning the Roster changes to enter rows and the menu's
-    count for Staff, which must always be equal (#1660), on the web login."""
+    """A function returning the roster list's rows, Ministry requests' To
+    enter by hand rows and Home's count for Staff, which must always be
+    equal (#1660, R39 finding 2), on the web login."""
     staff = actor(harness, ("staff",), ())
     campaign = Campaign.objects.select_related("active_configuration").get(
         pk=harness.campaign.pk
     )
 
     def counts():
-        """(page rows, menu count) of the default Not yet entered view."""
+        """One number if the list, the Stage and the count agree, else all."""
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             rows, _ = roster_rows(campaign.pk, staff, "todo")
-        return len(rows), roster_count(staff, campaign)
+        found = {len(rows), to_enter(campaign, staff), roster_count(staff, campaign)}
+        return (found.pop(),) * 2 if len(found) == 1 else tuple(found)
 
     return counts
 
@@ -240,40 +257,43 @@ def test_staff_home_lists_the_campaign_end_work_with_counts(response_service, go
     listed = steps(body)
     assert [re.sub(r" \d.*", "", step) for step in listed] == [
         "Census changes",
-        "Roster changes to enter",
+        "Ministry requests to enter by hand",
         "Additional information",
         "Ministry requests",
     ]
-    assert "Roster changes to enter 1 not yet entered" in listed
-    # The step's number is the menu entry's own (#1660).
-    assert _menu_count(body, "Roster changes to enter") == 1
+    assert "Ministry requests to enter by hand 1 to enter by hand" in listed
     # The harness's leave request is still open; its join was resolved.
+    # The menu count stays Ministry requests' own (R39 finding 2).
     assert "Ministry requests 1 open" in listed
     assert _menu_count(body, "Ministry requests") == 1
     assert f'href="{ROSTER_URL}"' in body.decode()
+    assert "Roster changes to enter" not in body.decode()
 
 
-def test_roster_page_is_its_own_menu_entry(response_service, google):
-    """Roster changes to enter opens with its own menu entry current and a
-    trail of Home › Review work › the page (#1660)."""
+def test_the_to_enter_link_opens_ministry_requests_at_its_stage(
+    response_service, google
+):
+    """Home's link opens Ministry requests at To enter by hand, its menu entry
+    current under Review work; the retired Roster changes to enter address is
+    gone, with no redirect (R39 finding 2)."""
     harness, _, _, _ = resolved(response_service)
     browser, _, _, _ = leader(harness, google, roles=("staff",))
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = read(browser, ROSTER_URL)
-    assert response.status_code == 200
+        old, _ = read(browser, OLD_URL)
+    assert response.status_code == 200 and old.status_code == 404
     text = body.decode()
-    assert f'<a href="{ROSTER_URL}" aria-current="page">' in text
-    assert _menu_count(body, "Roster changes to enter") == 1
+    assert '<a href="/admin/reports/ministries/" aria-current="page">' in text
+    assert "To enter by hand (1)" in text
     trail = re.search(r'<nav[^>]*aria-label="Breadcrumb".*?</nav>', text, re.S)
-    assert trail is not None
-    assert "Ministry requests" not in trail.group(0)
+    assert trail is not None and "Review work" in trail.group(0)
 
 
 def test_count_database_error_leaves_the_link_without_a_number(
     response_service, google, monkeypatch, caplog
 ):
     """A database error in the menu's counts statement does not fail Home:
-    the Roster step still links to the list with no number, and the failure
+    the to-enter step still links to its Stage with no number, and the failure
     is logged at WARNING as report_shaping_failed."""
     harness, _, _, _ = resolved(response_service)
     browser, _, _, _ = leader(harness, google, roles=("staff",))
@@ -285,8 +305,8 @@ def test_count_database_error_leaves_the_link_without_a_number(
     ):
         response, body = read(browser, "/admin/")
     assert response.status_code == 200
-    assert "Roster changes to enter" in steps(body)
-    assert _menu_count(body, "Roster changes to enter") is None
+    assert "Ministry requests to enter by hand" in steps(body)
+    assert _menu_count(body, "Ministry requests") is None
     assert f'href="{ROSTER_URL}"' in body.decode()
     (warning,) = [
         r for r in caplog.records if r.getMessage() == "report_shaping_failed"

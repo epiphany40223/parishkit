@@ -94,7 +94,7 @@ from .ministry_followup import (
     followup_page,
     valid_ministry,
 )
-from .ministry_worklist import WorklistQuery, read_rows, worklist_context
+from .ministry_worklist import WorklistQuery, read_rows, row_name, worklist_context
 from .read_admission import admit_report_read
 from .report_paging import (
     next_open,
@@ -361,22 +361,25 @@ def _queue_query(request, principal, parameters):
     """The worklist view a queue request asks for (#534, #1133, #1684).
 
     A query string carries either the token of a remembered view ("Return
-    to Ministry requests", #534) or one Ministry: from Home's My Ministries
-    panel (#533), or with a request type and stage from a count on By
-    Ministry (#1133). Search and every other filter stay private POST state
-    (``parameters``, the POST body less any decision's fields).
+    to Ministry requests", #534) or closed link filters: one Ministry, from
+    Home's My Ministries panel (#533) or with a request type and stage from
+    a count on By Ministry (#1133), or a Stage alone, from Home's Ministry
+    requests to enter by hand card (R39 finding 2). Search and every other
+    filter stay private POST state (``parameters``, the POST body less any
+    decision's fields).
     """
     if request.GET:
         if request.method != "GET":
             raise ValueError("Search and filters require a POST body.")
         values = filters(request.GET, allowed={"queue", *LINK_FILTERS})
-        if "ministry" in values and "queue" not in values:
+        if "queue" not in values and ("ministry" in values or set(values) == {"stage"}):
             # Remembered below like any view, so its token keeps these
             # filters on each request page, Save and next and the way back
-            # to the worklist. The parse checks the closed values; the
+            # to the worklist. The parse checks the closed values; a
             # Ministry is then checked against scope.
             query = WorklistQuery.parse(values)
-            _linked_ministry(query.ministry, principal)
+            if query.ministry:
+                _linked_ministry(query.ministry, principal)
             return query
         if values.keys() == {"queue"}:
             return _recalled(request, None, queue_token(values["queue"]))
@@ -1089,7 +1092,7 @@ def roster(request, campaign_id, request_id):
 
 
 def _row_name(campaign_id, principal, request_id):
-    """A request as its worklist row names it ("Member — Ministry"), or None.
+    """A request as its worklist row names it (``row_name``), or None.
 
     Read through the scoped selection, so only a request the person may see
     is named; any failure falls back to a notice that names no row.
@@ -1104,4 +1107,4 @@ def _row_name(campaign_id, principal, request_id):
             )["rows"][0]
     except (DatabaseError, *SAFE_FAILURES, StorageInvariantError, IndexError):
         return None
-    return f"{row['member_label']} — {row['ministry_name']}"
+    return row_name(row)

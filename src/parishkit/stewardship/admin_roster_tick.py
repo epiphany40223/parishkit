@@ -10,11 +10,11 @@ pages' own pieces, so the two cannot drift:
   (``ministry_followup_views._principal``) and its service
   (``workflows.roster.set_roster_entered``), which records
   ``ministry_roster_entered``.
-- ``followup roster-bulk`` is Roster changes to enter's bulk Entered by
-  hand (#879, posted to ``admin:ministry_roster`` itself since #1687): the
-  list's admission
-  (``ministry_roster_views._principal``, Administrators and Staff) and its
-  service (``mark_many_entered``), all or none.
+- ``followup roster-bulk`` is the roster list's bulk Entered by hand
+  (#879; on the page, Ministry requests' To enter by hand Stage since
+  Roster changes to enter was folded into it, R39 finding 2): the list's
+  admission (``ministry_roster_views._principal``, Administrators and
+  Staff) and its service (``mark_many_entered``), all or none.
 
 Each runs in the page's command scope (the command session's row locked,
 the admission repeated around the effect) and records the command's

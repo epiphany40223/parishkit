@@ -1,12 +1,12 @@
-"""``export roster``: the Roster changes to enter download (#463, ADM-11 PR 8g).
+"""``export roster``: the roster changes to enter, as a file (#463, ADM-11 PR 8g).
 
 Process admission is replaced by the test's own Django assembly; everything
 after it is the real command line on the restricted web login, reading the
-list through the page's own admission, Show and Ministry choices and
+list through its own admission, Show and Ministry choices and
 ``roster_rows`` under the campaign read guard and writing it through the
-page's own writer. Its CSV is the page's download byte for byte, and it
-records the page's ``roster_changes_exported`` with the same outcomes and
-context members.
+list's own writer. The list's page, Roster changes to enter, was folded into
+Ministry requests' To enter by hand Stage (R39 finding 2); the command keeps
+the file and its ``roster_changes_exported`` event.
 """
 
 import hashlib
@@ -20,15 +20,13 @@ from .test_admin_census_export_cli_postgresql import workbook
 from .test_admin_digest_list_cli_postgresql import revoke
 from .test_admin_export_cli_postgresql import read_only_session
 from .test_admin_logs_cli_postgresql import counted, stream
-from .test_admin_report_cli_postgresql import cli, parity  # noqa: F401
+from .test_admin_report_cli_postgresql import cli  # noqa: F401
 from .test_admin_roster_cli_postgresql import with_roles
 from .test_admin_status_cli_postgresql import admin, session  # noqa: F401
-from .test_information_followup_postgresql import search
 from .test_roster_entries_postgresql import resolved, tick
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
-ROUTE = "/admin/reports/ministries/follow-up/roster/exports/"
 EVENT = "roster_changes_exported"
 
 
@@ -37,35 +35,18 @@ def export(run, *argv, secret=None):
     return stream(None, "export", "roster", *argv, secret=secret or run.secret)
 
 
-def test_the_page_s_files(response_service, google, cli):  # noqa: F811
-    """CSV is the page's download byte for byte; XLSX holds the page's
-    sheet; PDF is a PDF; the Show (the page's Stage) and Ministry choices
-    narrow the file. Each
-    records the page's event with the rows in the file, and nothing else."""
+def test_the_list_s_files(response_service, google, cli):  # noqa: F811
+    """CSV, XLSX (the list's sheet) and PDF; the Show and Ministry choices
+    narrow the file. Each records the list's event with the rows in the
+    file, and nothing else."""
     harness, admin_id, join, _ = resolved(response_service)
-    browser, _ = signed_in()
+    signed_in()
     run = cli()
-    form = {
-        "format": "csv",
-        "timezone": "America/New_York",
-        "stage": "to_enter_by_hand",
-    }
     argv = ("--timezone", "America/New_York")
-    found = {}
 
-    def page():
-        """The page's download, as the browser posts it (in memory)."""
-        response, found["page"] = search(browser, ROUTE, form)
-        assert response.status_code == 200
-
-    def command():
-        """The command's CSV of the same list."""
-        found["command"] = export(run, *argv, "--format", "csv")
-
-    parity(EVENT, page, command)
-    code, body, document = found["command"]
+    code, body, document = export(run, *argv, "--format", "csv")
     assert code == 0, document
-    assert body == found["page"]
+    assert b",To enter by hand," in body
     result = document["result"]
     assert result["campaign_id"] == str(harness.campaign.pk)
     assert result["format"] == "csv" and result["content_type"] == "text/csv"
@@ -75,43 +56,34 @@ def test_the_page_s_files(response_service, google, cli):  # noqa: F811
     assert result["sha256"] == hashlib.sha256(body).hexdigest()
     assert result["file_name"].startswith("stewardship-roster-changes-")
     assert result["file_name"].endswith(".csv")
-    assert counted(EVENT)[-2:] == [1, 1]
+    assert counted(EVENT)[-1:] == [1]
 
     code, body, document = export(run, *argv, "--format", "xlsx")
     assert code == 0, document
     assert document["result"]["content_type"].endswith("spreadsheetml.sheet")
     command_book, _ = workbook(body)
-    response, page_body = search(browser, ROUTE, form | {"format": "xlsx"})
-    assert response.status_code == 200
-    page_book, _ = workbook(page_body)
-    assert list(page_book) == list(command_book) == ["Roster changes"]
-    assert page_book["Roster changes"] == command_book["Roster changes"]
+    assert list(command_book) == ["Roster changes"]
 
     code, body, document = export(run, *argv, "--format", "pdf")
     assert code == 0 and body.startswith(b"%PDF-"), document
     assert document["result"]["content_type"] == "application/pdf"
 
-    # Marked entered: gone from the default file, listed under --show all,
-    # as on the page; another Ministry's file is empty. Only the page's
-    # event is recorded.
+    # Marked entered: gone from the default file, listed under --show all;
+    # another Ministry's file is empty. Only the list's event is recorded.
     tick(harness, admin_id, join, True)
     before = set(AuditEvent.objects.values_list("pk", flat=True))
     code, body, document = export(run, "--format", "csv")
     assert code == 0 and document["result"]["count"] == 0, document
     code, body, document = export(run, "--show", "all", "--format", "csv")
     assert code == 0 and document["result"]["count"] == 1, document
-    response, page_body = search(
-        browser, ROUTE, {"format": "csv", "timezone": "UTC", "stage": "all"}
-    )
-    # The command's --show all is the page's Every stage (until #1688).
-    assert body == page_body and b",Entered by hand," in body
+    assert b",Entered by hand," in body
     code, _, document = export(run, "--show", "all", "--ministry", "4")
     assert code == 0 and document["result"]["count"] == 0, document
     code, _, document = export(run, "--show", "all", "--ministry", "9")
     assert code == 0 and document["result"]["count"] == 1, document
     added = AuditEvent.objects.exclude(pk__in=before)
     assert set(added.values_list("event_type", flat=True)) == {EVENT}
-    assert added.count() == 5
+    assert added.count() == 4
 
 
 def test_refusals_print_nothing_and_record_nothing(response_service, google, cli):  # noqa: F811

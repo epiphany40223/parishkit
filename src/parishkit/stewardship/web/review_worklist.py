@@ -188,6 +188,10 @@ BODIES = {
 }
 REOPEN_BODY = "The ignored item goes back to To review. Say why it is reopened."
 REOPEN = "reopen"
+# The choice of an action whose decision records no note (a Ministry roster
+# tick has none): its dialog hides the note (ui-v1.js data-note-field), and
+# the stream's service refuses one (``build``'s ``silent``).
+NO_NOTE = "no_note"
 BULK_BODY = (
     "Each item is recorded as its own icon would record it. If someone "
     "else changed one of them first, nothing is recorded."
@@ -224,7 +228,7 @@ def _selected_title(action, placement, undo):
     return f"{state}; choose Back to review to change it" if undo else state
 
 
-def row_icons(stream, placement, roles, *, name, leads=False, by_hand=False, only=None):
+def row_icons(stream, placement, roles, *, name, leads=False, by_hand=False):
     """One row's action icons for one reader, in ``ROW_ORDER``.
 
     Each is offered (an icon that opens its dialog, ``aria-pressed`` false
@@ -232,15 +236,11 @@ def row_icons(stream, placement, roles, *, name, leads=False, by_hand=False, onl
     in force: filled, ``aria-pressed`` true and unavailable, since choosing
     it again is no undo; Back to review is). An action the reader's role
     does not allow is left out, selected or not (UX conventions, "By role").
-    ``only`` limits the icons to those actions: a manual handling report
-    draws its mark alone (spec, "Manual handling reports").
     """
     offered = allowed_actions(
         stream, placement.stage, roles, leads=leads, by_hand=by_hand
     )
     allowed = role_actions(stream, roles, leads=leads)
-    if only is not None:
-        offered, allowed = offered & only, allowed & only
     selected = selected_actions(placement) & allowed
     undo = Action.BACK_TO_REVIEW in offered
     icons = []
@@ -272,19 +272,19 @@ def row_icons(stream, placement, roles, *, name, leads=False, by_hand=False, onl
     return icons
 
 
-def bulk_buttons(stream, roles, *, items="items", only=None):
+def bulk_buttons(stream, roles, *, items="items", silent=frozenset()):
     """The bulk bar's buttons this reader may use on ``stream``.
 
     Each is available only while every ticked row offers its action
     (ui-v1.js wireSelection: its value is the kind each row's box lists).
     A Ministry leader's actions count here as on a Ministry they lead; a
     row on another Ministry offers them nothing, so its box lists no kind.
-    ``only`` limits the buttons to those actions, as ``row_icons``.
+    ``silent`` actions record no note, so their dialog shows none.
     """
     allowed = role_actions(stream, roles, leads=True)
     buttons = []
     for action in BULK:
-        if action not in allowed or (only is not None and action not in only):
+        if action not in allowed:
             continue
         words = WORDS[action]
         buttons.append(
@@ -299,7 +299,11 @@ def bulk_buttons(stream, roles, *, items="items", only=None):
                 # Reopening an ignored item needs a reason (spec, "Reviewed
                 # stage"): the note is required while a ticked row is
                 # Ignored (its box's data-confirm-choice).
-                "choice": REOPEN if action is Action.BACK_TO_REVIEW else "",
+                "choice": NO_NOTE
+                if action in silent
+                else REOPEN
+                if action is Action.BACK_TO_REVIEW
+                else "",
             }
         )
     return buttons
@@ -346,13 +350,14 @@ class Column:
     link: str = ""
 
 
-def _decorate(stream, row, roles, prefix, columns, only=None):
+def _decorate(stream, row, roles, prefix, columns, silent=frozenset()):
     """Give one row what its cells, box and icons need.
 
     Each offered icon opens the page's one decision dialog (Edit: the
     row's own value editor) with its own title, words and fields, so one
     dialog serves every row. Back to review on an Ignored item carries the
-    ``reopen`` choice, which makes the dialog's note required (ui-v1.js
+    ``reopen`` choice, which makes the dialog's note required, and a
+    ``silent`` action the ``no_note`` choice, which hides it (ui-v1.js
     data-confirm-choice).
     """
     placement = row["placement"]
@@ -364,7 +369,6 @@ def _decorate(stream, row, roles, prefix, columns, only=None):
         name=name,
         leads=row.get("leads", False),
         by_hand=row.get("by_hand", False),
-        only=only,
     )
     key = uuid4()
     reopen = placement.stage is Stage.IGNORED
@@ -384,7 +388,9 @@ def _decorate(stream, row, roles, prefix, columns, only=None):
         icon["title_one"] = words.title_one
         icon["done"] = "{name} " + words.done
         back = action is Action.BACK_TO_REVIEW
-        icon["choice"] = REOPEN if back and reopen else ""
+        icon["choice"] = (
+            NO_NOTE if action in silent else REOPEN if back and reopen else ""
+        )
         icon["body"] = (
             REOPEN_BODY if icon["choice"] else BODIES.get(action, DECIDE_BODY)
         )
@@ -452,9 +458,6 @@ class Worklist:
     baseline: bool = True
     shows_now: bool = False
     bulk_too_many: bool = False
-    # Whether the decision and bulk dialogs take a note: a manual handling
-    # report whose mark records none posts an empty one instead.
-    notes: bool = True
     bulk_key: UUID = field(default_factory=uuid4)
     add_key: UUID = field(default_factory=uuid4)
     filters_template: object = None
@@ -465,9 +468,6 @@ class Worklist:
     # address bar after each in-place answer, so a reload shows the same
     # view; empty for a stream that keeps none.
     address: str = ""
-    # A stream's own empty-table message, for its filters (UX conventions,
-    # "Empty tables and lists"); without one the component's own is used.
-    empty_template: object = None
 
     max_bulk = MAX_BULK
 
@@ -475,13 +475,6 @@ class Worklist:
     def pages_label(self):
         """The table navigator's name."""
         return f"{self.caption} pages"
-
-    @property
-    def note_template(self):
-        """The decision and bulk dialogs' fields: the note, or an empty one."""
-        if self.notes:
-            return "stewardship/components/review-worklist-note.html"
-        return "stewardship/components/review-worklist-no-note.html"
 
     @property
     def notice_id(self):
@@ -563,8 +556,7 @@ def build(
     baseline=True,
     fields=None,
     address="",
-    only=None,
-    notes=True,
+    silent=frozenset(),
     **templates,
 ):
     """The ``worklist`` for one reader of one page of ``stream``'s rows.
@@ -580,17 +572,16 @@ def build(
     ParishSoft flag). ``roles`` is the reader's role set. ``stage`` is the
     Stage filter's value and ``fields`` the stream's other filters, posted
     by every form. ``address`` is the view's own address
-    (``page_address``). ``only`` (a set of actions) limits every row's icons
-    and the bulk bar to those actions, and ``notes`` False drops the note
-    from their dialogs: a manual handling report offers its mark alone
-    (spec, "Manual handling reports"). ``templates``
-    takes the stream's ``filters_template``, ``editor_template``,
-    ``add_template``, ``export_template`` and ``empty_template``.
+    (``page_address``). ``silent`` names the actions whose decision records
+    no note (a Ministry roster tick, R39 finding 2): their dialogs show no
+    note, and the stream's service refuses one. ``templates`` takes the
+    stream's ``filters_template``, ``editor_template``, ``add_template`` and
+    ``export_template``.
     """
     stream = Stream(stream)
     columns = tuple(columns)
-    only = None if only is None else frozenset(only)
-    decorated = [_decorate(stream, row, roles, prefix, columns, only) for row in rows]
+    silent = frozenset(silent)
+    decorated = [_decorate(stream, row, roles, prefix, columns, silent) for row in rows]
     add = may_add(stream, roles) and templates.get("add_template") is not None
     return Worklist(
         stream=stream,
@@ -600,7 +591,7 @@ def build(
         columns=columns,
         stage=stage,
         stage_choices=stage_choices(counts, stages),
-        bulk=bulk_buttons(stream, roles, items=items, only=only),
+        bulk=bulk_buttons(stream, roles, items=items, silent=silent),
         add=add,
         items=items,
         caption=caption,
@@ -609,7 +600,6 @@ def build(
         shows_now=any(row["shows_now"] for row in decorated),
         bulk_too_many=len(decorated) > MAX_BULK,
         address=address,
-        notes=notes,
         **templates,
     )
 

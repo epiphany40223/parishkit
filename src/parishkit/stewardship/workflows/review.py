@@ -171,6 +171,12 @@ def campaign_ministries(campaign_id):
     return frozenset(int(duid) for duid in configuration.values["ministry_duids"])
 
 
+# The Ministry actions whose decision records no note: a roster tick has
+# none, so its worklist dialog shows none (``web.review_worklist.build``'s
+# ``silent``) and ``MinistryDecisions`` refuses one.
+SILENT = frozenset({Action.ENTERED_BY_HAND})
+
+
 class MinistryDecisions:
     """The Ministry stream's ``DecisionService`` for one campaign's worklist.
 
@@ -196,6 +202,9 @@ class MinistryDecisions:
         actor = principal.identity
         if len(decision.note) > MAX_NOTE:
             raise ValueError("A decision note is too long.")
+        # A roster tick records no note (its dialog shows none, ``SILENT``).
+        if decision.action in SILENT and decision.note:
+            raise ValueError("Entered by hand takes no note.")
         try:
             if decision.action is Action.ADD:
                 return self._add(actor, decision)
@@ -213,7 +222,14 @@ class MinistryDecisions:
             principal = current_principal(self.store, actor)
             roles = reader_roles(principal)
             try:
-                targets = _targets(self.store, actor, versions)
+                # The roster tick is recorded for a Member no longer in
+                # ParishSoft too: the roster work may still be real.
+                targets = _targets(
+                    self.store,
+                    actor,
+                    versions,
+                    gone_ok=decision.action is Action.ENTERED_BY_HAND,
+                )
             except PermissionError:
                 # A replay, or a post outdated by someone else's decision,
                 # can find the reader no longer leads the request's current

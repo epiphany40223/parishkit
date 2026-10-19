@@ -1,3 +1,0 @@
-{% load i18n stewardship %}{% comment %}Roster changes to enter's export (#1679, ui-conventions "Downloaded files"), below the worklist's table (#1687): one row of small export buttons (export_actions), each posting its format, in the browser's time zone, for every row of the applied Stage and Ministry; the form's hidden filters follow each in-place Apply, sort, page or mark (data-table-sync).{% endcomment %}<div class="export-pane">
-<form id="table-export" data-table-sync method="post" action="{% url 'admin:ministry_roster_export' %}">{% csrf_token %}{% for key, value in export_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
-{% export_actions "csv" "xlsx" "pdf" name="roster" label=_("Export this list") %}</form></div>

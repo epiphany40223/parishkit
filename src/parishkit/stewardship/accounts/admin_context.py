@@ -104,10 +104,7 @@ def portal_chrome(request):
     match = getattr(request, "resolver_match", None)
     placed = admin_navigation.placement(request)
     sections, breadcrumbs = admin_navigation.build(match, items, placed)
-    open_counts = _open_counts(request, actor, items, campaign)
-    for section in sections:
-        for entry in section["items"]:
-            entry["count"] = open_counts.get(entry["name"]) if entry["url"] else None
+    attach_counts(sections, _open_counts(request, actor, items, campaign))
     return {
         "admin_chrome": {
             "admin": admin,
@@ -414,13 +411,15 @@ def _find_family(actor, items, campaign):
 
 
 # Menu entries that show how many open items their queue holds (#585,
-# #1590, #1660).
-COUNTED = frozenset(
-    {"census_changes", "information_queue", "ministry_report", "ministry_roster"}
-)
-# Campaign states in which Roster changes to enter's count is read: past
-# go-live (active, closed or archived). A draft or a scheduled campaign has
-# no resolved live request to enter yet, so its menu pays nothing for it.
+# #1590).
+COUNTED = frozenset({"census_changes", "information_queue", "ministry_report"})
+# The count of Ministry requests' To enter by hand Stage, by this key: Home's
+# Next steps show it (home_steps), the menu never does, since Ministry
+# requests' menu count is its own (R39 finding 2).
+ENTRY_COUNT = "ministry_entry"
+# Campaign states in which that count is read: past go-live (active, closed
+# or archived). A draft or a scheduled campaign has no resolved live request
+# to enter yet, so its Home pays nothing for it.
 ROSTER_STATES = frozenset({"active", "closed", "archived"})
 # Every count in one statement, each only when asked for (NULL otherwise).
 # Census changes reads its rows grouped by the columns its status depends on
@@ -442,14 +441,15 @@ ROSTER_STATES = frozenset({"active", "closed", "archived"})
 # shows. When the page would say the Ministry follow-up is turned off or
 # unavailable, or the viewer has no Ministry in scope, the count is NULL and
 # no number shows.
-# Roster changes to enter (#1660) runs the same selection as its page
-# (ministry_roster_views.roster_rows: resolved requests, every revision and
-# every Member, all rows) and counts, in SQL, the rows its default Not yet
-# entered view lists: the page's eligibility (workflows.roster.eligible: an
-# outcome in ROSTER_OUTCOMES that no ParishSoft resolution source settled)
-# and no current Entered in ParishSoft mark (the newest tick row, as
+# Ministry requests' To enter by hand Stage (ENTRY_COUNT, which replaced
+# Roster changes to enter's count, #1660) runs the selection its roster
+# rows come from (ministry_worklist.read_rows for Staff: resolved requests,
+# every revision and every Member, all rows) and counts, in SQL, the rows
+# that Stage lists: the eligibility (workflows.roster.eligible: an outcome
+# in ROSTER_OUTCOMES that no ParishSoft resolution source settled) and no
+# current Entered in ParishSoft mark (the newest tick row, as
 # workflows.roster.roster_marks reads it). Counting here rather than through
-# the page's Python keeps the menu at one statement; a database test holds
+# the page's Python keeps the chrome at one statement; a database test holds
 # the count equal to the page's rows. Its Ministries get the same Python
 # cross-check as Ministry requests' count.
 OPEN_COUNTS = """
@@ -497,6 +497,21 @@ LEFT JOIN LATERAL (
     WHERE %(roster)s
 ) t ON true
 """
+
+
+def attach_counts(sections, counts):
+    """Give each menu entry its open count, in place, only while it is a link.
+
+    Ministry requests also carries Home's To enter by hand count
+    (``entry_count``, ``ENTRY_COUNT``), which the menu never shows (R39
+    finding 2). Test fixtures that draw the chrome call this too, so they
+    attach the counts exactly as the chrome does.
+    """
+    for section in sections:
+        for entry in section["items"]:
+            entry["count"] = counts.get(entry["name"]) if entry["url"] else None
+            if entry["name"] == "ministry_report":
+                entry["entry_count"] = counts.get(ENTRY_COUNT) if entry["url"] else None
 
 
 def _open_counts(request, actor, items, campaign):
@@ -551,12 +566,12 @@ def _read_open_counts(offered, actor, campaign):
     # the page's own capability again keeps the count from ever reaching
     # anyone else, whatever the caller passes.
     census = "census_changes" in offered and allows(actor, Capability.VIEW_CENSUS)
-    # Likewise Roster changes to enter, whose page admits only Administrators
-    # and Staff (can_tick), and only past go-live (ROSTER_STATES).
+    # Likewise the To enter by hand count, which only Administrators and
+    # Staff see (can_tick), and only past go-live (ROSTER_STATES).
     roster = (
-        "ministry_roster" in offered
+        "ministry_report" in offered
         and can_tick(actor)
-        and campaign.state in ROSTER_STATES
+        and getattr(campaign, "state", None) in ROSTER_STATES
     )
     with connection.cursor() as cursor:
         cursor.execute(
@@ -568,7 +583,7 @@ def _read_open_counts(offered, actor, campaign):
                 "roster": roster,
                 "campaign": campaign.pk,
                 "filters": selection_filters(FollowupQuery()),
-                # The page's own selection (roster_rows, via _ticked).
+                # The roster rows' own selection (read_rows for Staff).
                 "roster_filters": selection_filters(
                     FollowupQuery(state="resolved", history="all"), every_member=True
                 ),
@@ -608,7 +623,7 @@ def _read_open_counts(offered, actor, campaign):
             ("census_changes", census_count),
             ("information_queue", information),
             ("ministry_report", ministry),
-            ("ministry_roster", roster_count),
+            (ENTRY_COUNT, roster_count),
         )
         if count is not None
     }

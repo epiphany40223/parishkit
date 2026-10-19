@@ -1,32 +1,33 @@
-"""Roster changes to enter: eligibility, the worklist page and the download.
+"""The roster changes to enter: eligibility, Ministry requests' roster rows
+and the file.
 
-The list is the Ministry stream's manual handling report on the shared
-review worklist (#528 step 4, #1687): Stage and Ministry filters, Entered by
-hand alone as each row's and the bulk bar's action, and the files.
+Roster changes to enter (#528 step 4, #1687) was folded into Ministry
+requests (R39 finding 2): Staff mark roster changes at its Stage To enter by
+hand, where the rows a review stage leaves out (a Member no longer in
+ParishSoft, a request a later response replaced) offer Entered by hand
+alone, with no note. ``report roster`` and ``export roster`` still read the
+list and write its file.
 """
 
 import csv
 import io
 from datetime import UTC, datetime, timedelta
-from uuid import UUID, uuid4
+from uuid import UUID
 from zoneinfo import ZoneInfo
 
 import pytest
 from openpyxl import load_workbook
 
-from parishkit.stewardship.pipeline import Action, Decision, Placement, Stage
-from parishkit.stewardship.reports import ministry_roster_views as views
+from parishkit.stewardship.accounts.policy import Principal
+from parishkit.stewardship.pipeline import Decision, Placement, Stage
 from parishkit.stewardship.reports import pdf_design
 from parishkit.stewardship.reports.ministry_roster_views import (
     HEADINGS,
     PDF_WEIGHTS,
-    SORTING,
     roster_csv,
     roster_pdf,
     roster_xlsx,
 )
-from parishkit.stewardship.web.review_worklist import StaleDecision, WorklistDecision
-from parishkit.stewardship.workflows import roster
 from parishkit.stewardship.workflows.roster import eligible
 
 WHEN = datetime(2054, 10, 5, 14, 30, tzinfo=UTC)
@@ -190,31 +191,6 @@ def test_csv_xlsx_and_pdf_carry_the_same_columns_and_rows():
         assert [line.strip() for line in cell] == lines, heading
 
 
-def test_every_named_column_sorts_both_ways():
-    """Member, Family and Ministry, the Member and Family DUIDs, the request
-    and the resolution time sort in place; a New Member follows the numbered
-    DUIDs. No Ministry DUID is shown, so none sorts (#1123)."""
-    rows = [
-        roster_row(id="a", member_duid=7, family_duid=20, ministry_duid=5),
-        roster_row(id="b", member_duid=None, family_duid=10, ministry_duid=9),
-        roster_row(id="c", member_duid=3, family_duid=30, ministry_duid=1),
-    ]
-    order = {
-        "member_duid": ["c", "a", "b"],
-        "duid": ["b", "a", "c"],
-    }
-    assert "ministry_duid" not in SORTING.columns()
-    # Request is no column of the worklist, so it does not sort (#1687).
-    assert "request" not in SORTING.columns()
-    for key, expected in order.items():
-        assert [row["id"] for row in SORTING.sort_rows(rows, key)] == expected, key
-        assert [row["id"] for row in SORTING.sort_rows(rows, f"-{key}")] == list(
-            reversed(expected)
-        ), key
-    # Every sortable worklist column has the list's own sort token.
-    assert {column.sort for column in views.COLUMNS} <= set(SORTING.columns())
-
-
 def tick_html(row, **context):
     """The roster tick template rendered for one row and context."""
     from django.template.loader import render_to_string
@@ -267,266 +243,165 @@ def test_download_names_a_member_no_longer_in_parishsoft_in_its_own_column():
     assert lines[1]["Member"] == "Sample, Pat"
 
 
-def test_the_view_grammar_is_closed():
-    """The page takes Stage (To enter by hand by default), Ministry and the
-    table's paging; the Show pair is gone (#1687) and so is any other field;
-    a download takes Stage and Ministry with its format and zone."""
-    from django.http import QueryDict
+STAFF = Principal(UUID(int=97), frozenset({"staff"}))
+LEADER = Principal(UUID(int=98), frozenset({"ministry_leader"}), frozenset({9}))
+GONE = ("Not in ParishSoft", "ParishSoft no longer has this Member")
 
-    def form(**values):
-        """A QueryDict of the given single values."""
-        query = QueryDict(mutable=True)
-        for name, value in values.items():
-            query[name] = value
-        return query
 
-    stage, extra = views._choices(form(), export=False)
-    assert stage == "to_enter_by_hand" and extra["ministry"] == ""
-    stage, extra = views._choices(
-        form(stage="entered_by_hand", ministry="9", sort="member", size="25"),
-        export=False,
+def request_row(**values):
+    """One follow-up selection row of an accepted join, with overrides."""
+    return {
+        "id": str(UUID(int=1)),
+        "version": 2,
+        "member_name": "Sample, Pat",
+        "member_label": "Sample, Pat",
+        "member_duid": 3,
+        "member_status": "current",
+        "source_mark": None,
+        "ministry_name": "Food pantry",
+        "ministry_duid": 9,
+        "action": "join",
+        "state": "resolved",
+        "outcome": "joined",
+        "source_resolved": False,
+        "latest": True,
+        "in_campaign": True,
+        "cannot_serve": False,
+        "reviewed_ministry_duid": None,
+        "reviewed_ministry_name": None,
+        "parish_added": False,
+        "added_in_place_of_id": None,
+        "last_contact_at": None,
+        "submitted_at": WHEN,
+    } | values
+
+
+def requests_worklist(rows, *, principal=STAFF, stage="to_enter_by_hand", marks=None):
+    """Ministry requests' worklist for detached selection ``rows``, at ``stage``."""
+    from django.urls import reverse
+
+    from parishkit.stewardship.reports.ministry_worklist import (
+        WorklistQuery,
+        place,
+        worklist_context,
     )
-    assert (stage, extra["ministry"]) == ("entered_by_hand", "9")
-    assert views._choices(form(stage="all"), export=False)[0] == "all"
-    for bad in (
-        {"show": "all"},
-        {"stage": "to_review"},
-        {"stage": "ignored"},
-        {"ministry": "x"},
-        {"changed": "1"},
-        {"sort": "nonsense"},
-    ):
-        with pytest.raises(ValueError):
-            views._choices(form(**bad), export=False)
-    stage, extra = views._choices(
-        form(stage="all", ministry="9", format="pdf", browser_timezone="Asia/Tokyo"),
-        export=True,
-    )
-    assert (stage, extra["format"], extra["zone"].key) == ("all", "pdf", "Asia/Tokyo")
-    with pytest.raises(ValueError):
-        views._choices(form(stage="all", page="2", format="csv"), export=True)
 
-
-def page_worklist(rows, roles=frozenset({"staff"}), stage="all"):
-    """The worklist the page draws for ``rows`` (``page_context``)."""
-    return views.page_context(
-        rows,
-        {"metadata": {}, "ministries": []},
-        stage,
-        {"ministry": "", "paging": {"size": "25"}},
-        roles,
-        mutable=bool(roles),
-        notice=None,
-        prepare=lambda shown: None,
+    result = {
+        "rows": rows,
+        "ministries": [dict(duid=9, name="Food pantry", in_campaign=True)],
+        "metadata": {},
+    }
+    place(result, principal, marks=marks or {})
+    return worklist_context(
+        UUID(int=92),
+        WorklistQuery(stage=stage),
+        principal,
+        result,
+        token="",
+        mutable=True,
+        action=reverse("admin:ministry_report"),
+        decisions={},
+        asked={},
+        families={},
     )["worklist"]
 
 
-def test_rows_offer_entered_by_hand_alone():
-    """A row not yet marked offers only Entered by hand, never the review
-    decisions (they stay on Ministry requests); a marked row shows it
-    selected, with no undo here; the bulk bar has Entered by hand alone and
-    its dialogs take no note. Its version is the tick's next sequence."""
+def test_staff_views_keep_the_roster_rows_the_review_stages_leave_out():
+    """The every-revision read keeps a Staff view's current requests for
+    current Members, and every accepted join or leave still to enter, for a
+    Member no longer in ParishSoft or one a later response replaced; the
+    "No longer in ParishSoft" choice keeps only such Members' rows."""
+    from parishkit.stewardship.reports.ministry_worklist import listed, roster_only
+
+    current = request_row(state="in_progress", outcome=None)
+    replaced_open = request_row(state="in_progress", outcome=None, latest=False)
+    withdrawn = request_row(state="cancelled", outcome=None)
+    gone_open = request_row(state="new", outcome=None, source_mark=GONE)
+    gone_roster = request_row(source_mark=GONE)
+    replaced_roster = request_row(latest=False)
+    declined_replaced = request_row(outcome="declined", latest=False)
+    keep = [
+        listed(row, "current")
+        for row in (
+            current,
+            replaced_open,
+            withdrawn,
+            gone_open,
+            gone_roster,
+            replaced_roster,
+            declined_replaced,
+        )
+    ]
+    assert keep == [True, False, False, False, True, True, False]
+    gone = [listed(row, "gone") for row in (current, gone_open, gone_roster)]
+    assert gone == [False, True, True]
+    assert [roster_only(row) for row in (current, gone_roster, replaced_roster)] == [
+        False,
+        True,
+        True,
+    ]
+
+
+def test_a_roster_row_offers_entered_by_hand_alone_with_no_note():
+    """At To enter by hand an ordinary accepted request offers Back to review
+    and Entered by hand; a Member no longer in ParishSoft's, and one a later
+    response replaced, offer Entered by hand alone. Its dialog hides the
+    note (the ``no_note`` choice), and the bulk bar's Entered by hand does
+    too. A replaced row says so, in its name and under its Stage."""
     rows = [
-        roster_row(id=str(UUID(int=1)), roster_entered=False, roster_sequence=2),
-        roster_row(id=str(UUID(int=2))),
+        request_row(id=str(UUID(int=1))),
+        request_row(id=str(UUID(int=2)), source_mark=GONE, member_name=""),
+        request_row(id=str(UUID(int=3)), latest=False),
     ]
-    worklist = page_worklist(rows)
-    todo, done = worklist.rows
-    assert [icon["action"] for icon in todo["icons"]] == ["entered_by_hand"]
-    assert not todo["icons"][0]["selected"] and todo["kinds"] == "entered_by_hand"
-    assert todo["version"] == 3
-    assert [icon["action"] for icon in done["icons"]] == ["entered_by_hand"]
-    assert done["icons"][0]["selected"] and done["icons"][0]["title"] == (
-        "Entered by hand"
-    )
-    assert done["kinds"] == ""
-    assert [button["value"] for button in worklist.bulk] == ["entered_by_hand"]
-    assert worklist.add is False and worklist.notes is False
-    assert worklist.note_template.endswith("review-worklist-no-note.html")
-    # While other campaign work holds the list, no row offers anything.
-    held = page_worklist(rows, roles=frozenset())
-    assert all(not row["kinds"] for row in held.rows) and not held.selectable
-
-
-def test_the_stage_filter_counts_every_stage_and_keeps_one():
-    """Stage counts every change under the applied Ministry, To enter by hand
-    first; the table holds only the chosen Stage's rows."""
-    rows = [
-        roster_row(id=str(UUID(int=1)), roster_entered=False),
-        roster_row(id=str(UUID(int=2)), roster_entered=False),
-        roster_row(id=str(UUID(int=3))),
+    worklist = requests_worklist(rows)
+    ordinary, gone, replaced = worklist.rows
+    offered = [
+        [icon["action"] for icon in row["icons"] if not icon["selected"]]
+        for row in worklist.rows
     ]
-    worklist = page_worklist(rows, stage="to_enter_by_hand")
-    assert worklist.stage_choices == [
-        ("to_enter_by_hand", "To enter by hand (2)"),
-        ("entered_by_hand", "Entered by hand (1)"),
-        ("all", "Every stage (3)"),
+    assert offered == [
+        ["back_to_review", "entered_by_hand"],
+        ["entered_by_hand"],
+        ["entered_by_hand"],
     ]
-    assert [row["id"] for row in worklist.rows] == [str(UUID(int=1)), str(UUID(int=2))]
-    assert worklist.fields == {"stage": "to_enter_by_hand", "ministry": "", "page": "1"}
-    assert [row["id"] for row in page_worklist(rows, stage="entered_by_hand").rows] == [
-        str(UUID(int=3))
-    ]
-
-
-def test_the_stage_line_says_replaced_and_who_marked():
-    """Under the Stage: the decision the stage word does not say, Replaced
-    by a later response, and who marked an entered change and when."""
-    worklist = page_worklist(
-        [
-            roster_row(id=str(UUID(int=1)), latest=False, roster_entered=False),
-            roster_row(
-                id=str(UUID(int=2)),
-                reviewed_ministry_duid=4,
-                reviewed_ministry_name="Adult Choir",
-            ),
-            roster_row(id=str(UUID(int=3)), roster_by="", roster_at=None),
-        ]
-    )
-    replaced, edited, unknown = (str(row["decision_label"]) for row in worklist.rows)
-    assert replaced == "Accepted<br>Replaced by a later response"
-    assert edited.startswith("Accepted (edited)<br>Entered by staff@example.org, ")
-    assert 'datetime="2054-10-05T14:30:00+00:00"' in edited
-    assert unknown == "Accepted<br>Entered by Former portal user"
-
-
-def test_a_change_listed_twice_names_each_row():
-    """The same change listed twice (a Family answered again and both
-    requests were accepted) would give both rows one name; the earlier one,
-    replaced by the later response, says so, so each icon, box, dialog and
-    notice names its own row. Other rows stay short."""
-    rows = [
-        roster_row(id=str(UUID(int=1))),
-        roster_row(id=str(UUID(int=2)), latest=False),
-        roster_row(id=str(UUID(int=3)), member_name="Other, Lee"),
-    ]
-    assert [row["name"] for row in views.decorate(rows)] == [
-        "Sample, Pat — Food pantry",
-        "Sample, Pat — Food pantry, replaced by a later response",
-        "Other, Lee — Food pantry",
-    ]
-
-
-def test_a_family_with_no_name_is_not_linked():
-    """The Family cell links its Timeline only when ParishSoft names it; a
-    blank name stays blank, as before (#1570)."""
-    named, blank = views.decorate(
-        [
-            roster_row(id=str(UUID(int=1)), family_id=uuid4()),
-            roster_row(id=str(UUID(int=2)), family_id=uuid4(), family_name=""),
-        ]
-    )
-    assert named["family_id"] is not None and blank["family_id"] is None
-
-
-class FakePrincipal:
-    """A principal with a fixed identity."""
-
-    identity = UUID(int=99)
-
-
-def test_roster_decisions_record_ticks_and_word_races(monkeypatch):
-    """Entered by hand on one row sets its tick with the row's key and next
-    sequence; the bulk bar marks every ticked row, all or none, with the
-    page's key. A tick someone else changed first, or a request sent back
-    to review since, is a StaleDecision naming it; any other action, or a
-    note, is a malformed form."""
-    calls = []
-    one, two = UUID(int=1), UUID(int=2)
-    monkeypatch.setattr(
-        roster,
-        "set_roster_entered",
-        lambda store, actor, request_id, **kw: calls.append(("one", request_id, kw)),
-    )
-    monkeypatch.setattr(
-        roster,
-        "mark_many_entered",
-        lambda store, actor, sequences, **kw: calls.append(("many", sequences, kw)),
-    )
-    names = {one: "Sample, Pat — Food pantry", two: "Other, Lee — Choir"}
-    service = roster.RosterDecisions(object(), namer=names.get)
-    key = uuid4()
-    single = WorklistDecision(Action.ENTERED_BY_HAND, {str(one): 3}, "", key)
-    assert service.decide(FakePrincipal(), single) == (
-        "Sample, Pat — Food pantry marked entered by hand."
-    )
-    assert calls[-1] == (
-        "one",
-        one,
-        {"sequence": 3, "entered": True, "request_key": key},
-    )
-    bulk = WorklistDecision(
-        Action.ENTERED_BY_HAND, {str(one): 1, str(two): 2}, "", key, bulk=True
-    )
-    assert service.decide(FakePrincipal(), bulk) == "2 changes marked entered by hand."
-    assert calls[-1] == ("many", {one: 1, two: 2}, {"bulk_key": key})
-
-    def stale(error):
-        """Make both services raise ``error``."""
-
-        def fail(*args, **kwargs):
-            """Raise the error."""
-            raise error
-
-        monkeypatch.setattr(roster, "set_roster_entered", fail)
-        monkeypatch.setattr(roster, "mark_many_entered", fail)
-
-    stale(roster.RosterStale(two))
-    with pytest.raises(StaleDecision) as raised:
-        service.decide(FakePrincipal(), bulk)
-    assert raised.value.name == "Other, Lee — Choir"
-    stale(roster.RosterIneligible("This request does not take the roster tick."))
-    with pytest.raises(StaleDecision) as raised:
-        service.decide(FakePrincipal(), single)
-    assert raised.value.name == "Sample, Pat — Food pantry"
-    with pytest.raises(StaleDecision) as raised:
-        service.decide(FakePrincipal(), bulk)
-    assert raised.value.name is None
-    for bad in (
-        WorklistDecision(Action.ACCEPT, {str(one): 3}, "", key),
-        WorklistDecision(Action.ENTERED_BY_HAND, {str(one): 3}, "a note", key),
-        WorklistDecision(
-            Action.ENTERED_BY_HAND, {str(one): 3}, "", key, fields={"value": ["9"]}
-        ),
-    ):
-        with pytest.raises(ValueError):
-            service.decide(FakePrincipal(), bad)
-
-
-def test_a_notice_names_the_row_as_the_list_does(monkeypatch):
-    """The notice's namer reads the request through the scoped selection and
-    names it as its row: the Ministry to enter (an Edit's), and a change the
-    Family answered again after it was decided says so; a failed read names
-    no row."""
-    from contextlib import nullcontext
-
-    from django.db import DatabaseError
-
-    found = {}
-
-    def page(campaign_id, query, principal, *, request_id, every_member):
-        """The selection's one row for ``request_id``."""
-        assert every_member and query.history == "all"
-        return {"rows": [found[request_id]]}
-
-    monkeypatch.setattr(views, "followup_page", page)
-    monkeypatch.setattr(views.transaction, "atomic", nullcontext)
-    found["edited"] = roster_row(
-        reviewed_ministry_name="Adult Choir", ministry_name="Altar Servers"
-    )
-    found["replaced"] = roster_row(id=str(UUID(int=7)), latest=False)
-    assert views.roster_name(None, None, "edited") == "Sample, Pat — Adult Choir"
-    assert views.roster_name(None, None, "replaced") == (
+    assert gone["kinds"] == replaced["kinds"] == "entered_by_hand"
+    assert {icon["choice"] for icon in replaced["icons"] if not icon["selected"]} == {
+        "no_note"
+    }
+    bulk = {button["value"]: button["choice"] for button in worklist.bulk}
+    assert bulk["entered_by_hand"] == "no_note"
+    assert replaced["name"] == (
         "Sample, Pat — Food pantry, replaced by a later response"
     )
-    # The row the page draws for the same change has the same name.
-    assert views.decorate([found["replaced"]])[0]["name"] == views.roster_name(
-        None, None, "replaced"
+    assert "Replaced by a later response" in str(replaced["decision_label"])
+    assert "replaced" not in ordinary["name"]
+
+
+def test_an_entered_row_says_who_marked_it_and_a_leader_sees_accepted():
+    """At Entered by hand the line under the Stage says who marked it and
+    when (a removed user as Former portal user); a Ministry leader's row
+    reads Accepted, with no mark and no Entered by hand."""
+    marks = {
+        str(UUID(int=1)): {
+            "entered": True,
+            "sequence": 1,
+            "by": "staff@example.org",
+            "at": WHEN,
+        },
+        str(UUID(int=2)): {"entered": True, "sequence": 1, "by": "", "at": None},
+    }
+    rows = [request_row(id=str(UUID(int=1))), request_row(id=str(UUID(int=2)))]
+    worklist = requests_worklist(rows, stage="entered_by_hand", marks=marks)
+    named, former = (str(row["decision_label"]) for row in worklist.rows)
+    assert named.startswith("Accepted<br>Entered by staff@example.org, ")
+    assert 'datetime="2054-10-05T14:30:00+00:00"' in named
+    assert former == "Accepted<br>Entered by Former portal user"
+    leader = requests_worklist(
+        [request_row(id=str(UUID(int=1)))],
+        principal=LEADER,
+        stage="accepted",
+        marks=marks,
     )
-
-    def broken(*args, **kwargs):
-        """A read that fails."""
-        raise DatabaseError("down")
-
-    monkeypatch.setattr(views, "followup_page", broken)
-    assert views.roster_name(None, None, "edited") is None
+    (row,) = leader.rows
+    assert "Entered by" not in str(row["decision_label"])
+    assert all(icon["action"] != "entered_by_hand" for icon in row["icons"])

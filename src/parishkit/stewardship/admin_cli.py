@@ -6502,7 +6502,7 @@ def _report_specs():
         # The Roster changes to enter download (PR 8g): the page's file.
         CommandSpec(
             "export roster",
-            "Write the Roster changes to enter download to standard output.",
+            "Write the roster changes to enter, as a file, to standard output.",
             export_roster,
             "full",
             False,

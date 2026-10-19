@@ -285,9 +285,6 @@ SLASHLESS_EXPECTED = {
     f"/admin/reports/ministries/follow-up/{T}": (
         f"/admin/reports/ministries/follow-up/{T}/"
     ),
-    "/admin/reports/ministries/follow-up/roster": (
-        "/admin/reports/ministries/follow-up/roster/"
-    ),
     "/admin/reports/families": "/admin/reports/families/",
     f"/admin/reports/families/{T}": f"/admin/reports/families/{T}/",
     # Exports and emailed reports (NAV-12).

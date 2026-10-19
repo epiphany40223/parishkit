@@ -554,7 +554,6 @@ ROLES = ("administrator", "staff", "ministry_leader")
 REPORTS = [
     "census_changes",
     "ministry_report",
-    "ministry_roster",
     "information_queue",
     "limitations_report",
     "response_dashboard",
@@ -586,7 +585,6 @@ SPEC_ORDER = [
     # Review work
     "census_changes",
     "ministry_report",
-    "ministry_roster",
     "information_queue",
     "limitations_report",
     # Reports and queries
@@ -676,7 +674,6 @@ def test_every_campaign_entry_is_greyed_out_without_a_current_campaign():
         "census_changes",
         "information_queue",
         "ministry_report",
-        "ministry_roster",
         "family_directory",
     }
     for item in items:
@@ -731,12 +728,6 @@ def test_every_campaign_entry_is_greyed_out_without_a_current_campaign():
             "census only",
             "testing",
             "ministry_report",
-            "This campaign does not include Ministry stewardship",
-        ),
-        (
-            "census only",
-            "testing",
-            "ministry_roster",
             "This campaign does not include Ministry stewardship",
         ),
     ],
@@ -1223,9 +1214,9 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
     draft = _campaign("draft")
     queues = {"information_queue": 3, "ministry_report": 2}
     cases = (
-        # Both queues and Roster changes to enter (#1660) for Staff: every
-        # Ministry.
-        ("staff", active, {**queues, "ministry_roster": 6}),
+        # Both queues and the To enter by hand count (ENTRY_COUNT, which
+        # replaced Roster changes to enter's, R39) for Staff: every Ministry.
+        ("staff", active, {**queues, "ministry_entry": 6}),
         # A draft has nothing to enter yet, so its roster count is not read.
         ("staff", draft, queues),
         # With the census: Staff count To do and Conflict, an Administrator
@@ -1233,15 +1224,15 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
         (
             "staff",
             census,
-            {"census_changes": 5, **queues, "ministry_roster": 6},
+            {"census_changes": 5, **queues, "ministry_entry": 6},
         ),
         (
             "administrator",
             census,
-            {"census_changes": 7, **queues, "ministry_roster": 6},
+            {"census_changes": 7, **queues, "ministry_entry": 6},
         ),
-        # A leader has no Census changes or Roster changes to enter entry, so
-        # neither count is read.
+        # A leader has no Census changes entry and never sees To enter by
+        # hand, so neither count is read.
         ("ministry_leader", census, {"ministry_report": 2}),
         # A leader only has Ministry requests, scoped to their Ministry.
         ("ministry_leader", active, {"ministry_report": 2}),
