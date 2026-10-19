@@ -97,7 +97,10 @@ class PledgeReview(ImmutableRecord):
                         reviewed_annual_pledge__lte=Decimal("999999999.99"),
                     )
                     & (
-                        models.Q(reviewed_frequency__in=PLEDGE_FREQUENCIES)
+                        models.Q(
+                            reviewed_frequency__isnull=False,
+                            reviewed_frequency__in=PLEDGE_FREQUENCIES,
+                        )
                         | models.Q(
                             reviewed_frequency__isnull=True,
                             reviewed_annual_pledge=0,
@@ -119,14 +122,30 @@ class PledgeReview(ImmutableRecord):
             # The row's state is what its action records: a mark keeps an
             # accepted decision, every other action is not a mark.
             models.CheckConstraint(
-                condition=models.Q(action="accept", decision="accepted", entered=False)
-                | models.Q(action="edit", decision="accepted_edited", entered=False)
-                | models.Q(action="ignore", decision="ignored", entered=False)
+                condition=models.Q(
+                    action="accept",
+                    decision="accepted",
+                    decision__isnull=False,
+                    entered=False,
+                )
+                | models.Q(
+                    action="edit",
+                    decision="accepted_edited",
+                    decision__isnull=False,
+                    entered=False,
+                )
+                | models.Q(
+                    action="ignore",
+                    decision="ignored",
+                    decision__isnull=False,
+                    entered=False,
+                )
                 | models.Q(
                     action="back_to_review", decision__isnull=True, entered=False
                 )
                 | models.Q(
                     action="entered_by_hand",
+                    decision__isnull=False,
                     decision__in=("accepted", "accepted_edited"),
                     entered=True,
                 ),

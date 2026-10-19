@@ -164,7 +164,10 @@ class Migration(migrations.Migration):
                                         ),
                                     )
                                     & (
-                                        models.Q(reviewed_frequency__in=FREQUENCIES)
+                                        models.Q(
+                                            reviewed_frequency__isnull=False,
+                                            reviewed_frequency__in=FREQUENCIES,
+                                        )
                                         | models.Q(
                                             reviewed_frequency__isnull=True,
                                             reviewed_annual_pledge=0,
@@ -185,15 +188,22 @@ class Migration(migrations.Migration):
                             ),
                             models.CheckConstraint(
                                 condition=models.Q(
-                                    action="accept", decision="accepted", entered=False
+                                    action="accept",
+                                    decision="accepted",
+                                    decision__isnull=False,
+                                    entered=False,
                                 )
                                 | models.Q(
                                     action="edit",
                                     decision="accepted_edited",
+                                    decision__isnull=False,
                                     entered=False,
                                 )
                                 | models.Q(
-                                    action="ignore", decision="ignored", entered=False
+                                    action="ignore",
+                                    decision="ignored",
+                                    decision__isnull=False,
+                                    entered=False,
                                 )
                                 | models.Q(
                                     action="back_to_review",
@@ -202,6 +212,7 @@ class Migration(migrations.Migration):
                                 )
                                 | models.Q(
                                     action="entered_by_hand",
+                                    decision__isnull=False,
                                     decision__in=("accepted", "accepted_edited"),
                                     entered=True,
                                 ),

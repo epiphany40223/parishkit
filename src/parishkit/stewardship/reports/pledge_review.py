@@ -41,7 +41,11 @@ from parishkit.stewardship.pipeline import (
     allowed_actions,
     financial_placement,
 )
-from parishkit.stewardship.responses.financial import FREQUENCIES, pledge_amount
+from parishkit.stewardship.responses.financial import (
+    FREQUENCIES,
+    pledge_amount,
+    pledge_error,
+)
 from parishkit.stewardship.responses.models import Submission
 from parishkit.stewardship.web.review_worklist import WORDS, StaleDecision
 
@@ -148,7 +152,6 @@ class EditRefusal(ValueError):
         self.message = message
 
 
-AMOUNT_HINT = "Enter the annual pledge in dollars, like 1200 or 1200.50."
 FREQUENCY_HINT = "Choose how often the Family gives: a pledge above zero needs one."
 
 
@@ -168,7 +171,10 @@ def edited_value(fields):
     try:
         amount = pledge_amount(fields["value_amount"][0])
     except ValueError:
-        raise EditRefusal(("value_amount",), AMOUNT_HINT) from None
+        # The Family form's own words: a blank amount, the limit, or the
+        # format (responses.financial.pledge_error).
+        message = pledge_error(fields["value_amount"][0])
+        raise EditRefusal(("value_amount",), message) from None
     frequency = fields["value_frequency"][0]
     if frequency not in ("", *FREQUENCIES):
         raise ValueError("Unknown pledge frequency.")

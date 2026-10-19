@@ -273,9 +273,10 @@ def forge(submission, actor, **values):
         cursor.execute(
             "INSERT INTO stewardship_pledge_review (id,correlation_id,actor_id,"
             "family_id,submission_id,sequence,request_key,action,decision,"
-            "entered,answer,marked_pledge_known,note) VALUES (gen_random_uuid(),"
-            "gen_random_uuid(),%s,%s,%s,%s,gen_random_uuid(),%s,%s,%s,'{}',"
-            "%s,'') RETURNING id",
+            "reviewed_annual_pledge,reviewed_frequency,entered,answer,"
+            "marked_pledge_known,note) VALUES (gen_random_uuid(),"
+            "gen_random_uuid(),%s,%s,%s,%s,gen_random_uuid(),%s,%s,%s,%s,%s,"
+            "'{}',%s,'') RETURNING id",
             [
                 actor,
                 submission.family_id,
@@ -283,6 +284,8 @@ def forge(submission, actor, **values):
                 row["sequence"],
                 row["action"],
                 row["decision"],
+                row.get("amount"),
+                row.get("frequency"),
                 row["entered"],
                 row.get("known", False),
             ],
@@ -290,32 +293,59 @@ def forge(submission, actor, **values):
         return cursor.fetchone()[0]
 
 
-@pytest.mark.parametrize(
-    "case",
-    ["no_order", "sequence", "leader", "known", "stage", "audit"],
-)
+GUARD = "Pledge review lacks current authority, version or state"
+# Each forged row, and the refusal that names why: the guard's, a check
+# constraint's, or (for a row otherwise valid) the deferred audit check at
+# commit. Every other case is refused at the INSERT itself.
+FORGED = {
+    "no_order": ({}, "Pledge review requires ordered admission"),
+    "sequence": ({"sequence": 2}, GUARD),
+    "leader": ({}, GUARD),
+    "stage": ({"action": "entered_by_hand", "entered": True}, GUARD),
+    "known": (
+        {"sequence": 2, "action": "entered_by_hand", "entered": True, "known": True},
+        GUARD,
+    ),
+    "no_frequency": (
+        {"action": "edit", "decision": "accepted_edited", "amount": "500.00"},
+        "pledge_review_value_shape",
+    ),
+    "null_decision": ({"decision": None}, "pledge_review_action_state"),
+    "audit": ({}, "Pledge review requires its audit"),
+}
+
+
+@pytest.mark.parametrize("case", sorted(FORGED))
 def test_the_guard_refuses_rows_the_service_never_writes(
     response_service, google, case
 ):
     """Outside the writers' order, at another version, from a Ministry leader,
-    with a ParishSoft pledge, at a stage that does not offer it, or without
-    its audit event, the database refuses the row."""
+    at a stage that does not offer it, with a ParishSoft pledge, an Edit
+    above zero with no frequency, an action with no decision, or without
+    its audit event, the database refuses the row, each for its own
+    reason."""
     harness, submission = pledged(response_service)
     actor = admin()
+    if case == "known":
+        # Accepted, so the mark itself is offered; only the ParishSoft
+        # pledge it claims to record is refused.
+        decide(harness, actor, "accept", [submission])
     if case == "leader":
         _browser, actor, _rule, _ = leader(harness, google)
-    values = {
-        "sequence": {"sequence": 2},
-        "known": {"action": "entered_by_hand", "entered": True, "known": True},
-        "stage": {"action": "entered_by_hand", "entered": True},
-    }.get(case, {})
+    values, reason = FORGED[case]
+    at_insert = case != "audit"
     with (
         task_login(ServiceRole.WEB, exact=True, reconnect=True),
-        pytest.raises(DatabaseError),
+        pytest.raises(DatabaseError, match=reason),
         transaction.atomic() if case == "no_order" else work_transaction(),
     ):
-        forge(submission, actor, **values)
-    assert not PledgeReview.objects.exists()
+        try:
+            forge(submission, actor, **values)
+        except DatabaseError:
+            assert at_insert
+            raise
+        assert not at_insert
+    assert PledgeReview.objects.count() == (1 if case == "known" else 0)
 
 
 def test_review_rows_are_immutable(response_service):

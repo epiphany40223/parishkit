@@ -169,6 +169,9 @@ PDF_WEIGHTS = {
 PRIVACY = "Sensitive parish report. Share only with authorized recipients."
 FORMER = "Former portal user"
 CANNOT_GIVE = "Cannot contribute"
+# The stages at which a file names the pledge to enter: accepted, and
+# not yet or already entered. At the others nothing is to be entered.
+ENTERING = frozenset({Stage.TO_ENTER_BY_HAND.value, Stage.ENTERED_BY_HAND.value})
 NO_FREQUENCY = "No frequency"
 CHANGED = "The Family changed its pledge after the last decision."
 EDIT_REFUSED = "Correct the value, then save it again."
@@ -372,7 +375,7 @@ def export_rows(rows, zone, *, time_text=iso_time):
                 frequency,
                 shares,
                 *reviewed_parts(row),
-                *to_enter(row),
+                *(to_enter(row) if row["stage"] in ENTERING else ("", "")),
                 row["placement"].stage.label,
                 decision.label if decision else "",
                 entered_by or "",

@@ -2870,7 +2870,9 @@ section is the page.
   Family DUID, ParishSoft status, Annual pledge, Frequency, Share methods,
   Reviewer's annual pledge, Reviewer's frequency, Annual pledge to enter,
   Frequency to enter, Stage, Decision, Entered by, Entered at, Submitted, Last
-  decision, Last decision at and Note. Money keeps its cents.
+  decision, Last decision at and Note. Money keeps its cents. The two "to
+  enter" columns are filled only for To enter by hand and Entered by hand
+  rows; at the other stages nothing is to be entered.
 - **Audit.** Each decision is one immutable history row (frozen migration
   0135, provisional number) with a `pledge_review_updated` event that names
   only versions; viewing and downloading the page are audited as a count only

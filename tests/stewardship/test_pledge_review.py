@@ -347,3 +347,27 @@ def test_the_files_name_every_column_once():
         "Last decision at": "2054-10-06T10:30:00-05:00",
         "Note": "Checked with the Family",
     }
+
+
+@pytest.mark.parametrize(
+    "amount,message",
+    [
+        ("", "Enter an annual pledge."),
+        ("1000000000", "Enter an annual pledge under $1,000,000,000."),
+        ("12.345", "Enter a dollar amount, like 1200 or 1200.50."),
+    ],
+)
+def test_an_edit_amount_is_refused_in_the_family_forms_words(amount, message):
+    """A blank amount, the limit and the format are each said as the form says."""
+    with pytest.raises(EditRefusal) as refused:
+        edited_value(fields(amount, "monthly"))
+    assert refused.value.message == message
+
+
+def test_only_accepted_pledges_name_a_pledge_to_enter_in_the_files():
+    """At To review and Ignored the files leave the "to enter" columns blank."""
+    zone = ZoneInfo("America/Chicago")
+    for found in (item(), item("ignored", review("ignored"))):
+        (line,) = views.export_rows([pledge_row(found)], zone)
+        cells = dict(zip(views.HEADINGS, line, strict=True))
+        assert cells["Annual pledge to enter"] == cells["Frequency to enter"] == ""
