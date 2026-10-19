@@ -647,25 +647,37 @@ Ministry leaders never see this stream.
 
 ### Cannot participate stream
 
-Stored state: none beyond the live response; the
-[Limitations](../reports/spec.md#limitations) report lists Members who cannot
-participate and Families who cannot attend. Baseline is empty, nothing goes
-to ParishSoft. Gap: per-answer items with To review → Accepted → To handle →
-Handled, so the office can record that it acted on each.
+Stored state: the live response, and one immutable review row per
+decision (`stewardship_limitation_review`,
+[#1685](https://github.com/epiphany40223/parishkit/issues/1685)); the
+[Limitations](../reports/spec.md#limitations) worklist lists Members who
+cannot participate and Families who cannot attend. Baseline is empty,
+nothing goes to ParishSoft. An item is one current answer (one Member's
+cannot-participate answer, one Family's cannot-attend answer), read from
+the Family's effective live response as the report always read it, so the
+Family submit path stores nothing new. Its decision is the latest review row
+for that answer while every later live response still gives the answer:
+none, or Back to review → To review; Accepted → To handle; Ignored →
+Ignored; Handled → Handled. A response that answers the other way
+withdraws the item, and giving it again later is a new item, To review; one
+that leaves the answer out changes nothing
+([rule 1 to 5](#resubmission-while-the-setting-is-off)).
 
 ### Additional information stream
 
 Stored state: `AdditionalInformationItem` disposition and the
 `follow_up_needed` / `followed_up_at` workflow with Staff notes
-([Follow-up records](../data/spec.md#follow-up-records)). Mapping: current
-actionable and follow-up not needed (the default) → To review, unless a
-Staff edit set it not needed, which is Ignored (a
-[one-time migration](#existing-state-to-stage) records this, because the
-default cannot be told from a Staff choice); follow-up needed → To handle;
-followed up → Handled; superseded / withdrawn → history. Gap: closest to the pipeline already, but
-per item only (no selection column or bulk action today); it needs the
-shared vocabulary, the shared table with bulk Accept / Handled, and its
-two booleans expressed as one stage.
+([Follow-up records](../data/spec.md#follow-up-records)), and each Staff
+revision's review decision (`accepted`, `ignored` or `none`, from schema
+migration 0134,
+[#1685](https://github.com/epiphany40223/parishkit/issues/1685)). Mapping:
+followed up → Handled; follow-up needed → To handle; current actionable and
+not needed → Ignored when the latest revision says so, else To review (the
+[existing state](#existing-state-to-stage) rule for revisions saved before
+0134); superseded / withdrawn → history. The
+[Additional information](../reports/spec.md#additional-information)
+worklist expresses the two booleans as one stage, with bulk Accept,
+Ignore, Back to review and Handled.
 
 ## Role views
 
@@ -700,8 +712,8 @@ export below it. Its parts:
    stream's own filters after it.
 2. The selection bar and table. Columns: the stream's identity columns in
    the shared [column order](../ui-conventions/spec.md#table-column-order),
-   Baseline (where a stream has one), Family's answer, Reviewer's value,
-   ParishSoft now (on Conflict, Entered incorrectly and Not seen rows),
+   Baseline (where a stream has one), Family's answer, Reviewer's value
+   (where a stream has Edit), ParishSoft now (on Conflict, Entered incorrectly and Not seen rows),
    Stage, Submitted, Last decision (who, when, note), Actions.
 3. The shared export pane below the table, as on every report
    ([#1679](https://github.com/epiphany40223/parishkit/issues/1679)).
@@ -1067,17 +1079,19 @@ that is done safely.
 | Additional information | `superseded`, `withdrawn` | history |
 | Financial, cannot participate | the live answer only | To review |
 
-One state needs a one-time migration. `follow_up_needed` defaults to false,
-so "Not needed" cannot be told from "never looked at" by the item alone,
-and mapping every such item to Ignored would mark unread text as reviewed.
-A forward migration in
-[#1685](https://github.com/epiphany40223/parishkit/issues/1685) fills a new,
-nullable decision column with Ignored only for items whose audited edit
-history shows a Staff member setting follow-up to not needed; every other
-such item is To review. It writes no existing column, records one audit
-event with only the count, and is reversible: clearing the new column
-returns every item to today's reading, since the original fields are
-untouched.
+One state needed a decision. `follow_up_needed` defaults to false, so
+"Not needed" cannot be told from "never looked at" by the item alone, and
+mapping every such item to Ignored would mark unread text as reviewed.
+[#1685](https://github.com/epiphany40223/parishkit/issues/1685) adds a new,
+nullable decision column to each Staff revision, which every revision from
+then on states; a current item whose latest revision is older (the column
+empty) and left follow-up not needed reads as Ignored, since a Staff member
+chose that, and an item with no revision is To review. The rule is read,
+not written, as the derived values below are: storing it on the item would
+have to advance every such item's version (the response guard requires it)
+and storing it on the old revisions would rewrite immutable history, so the
+migration changes no existing row, needs no audit count and has nothing to
+reverse.
 
 No other state needs a migration. Two derived values for items closed
 before their slice ships are read, not stored:
