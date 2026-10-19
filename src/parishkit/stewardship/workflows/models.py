@@ -310,6 +310,9 @@ REFRESH_OUTCOMES = (
     "unchanged",
     "entered_incorrectly",
     "ignored_now_matches",
+    # An Updated in ParishSoft change ParishSoft no longer holds (#1749):
+    # the check that moves it to Conflict.
+    "conflict",
 )
 
 

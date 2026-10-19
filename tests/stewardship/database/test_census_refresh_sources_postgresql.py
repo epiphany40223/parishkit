@@ -406,12 +406,31 @@ def _previous_guard():
     return "CREATE OR REPLACE" + text[start + len("CREATE") : end]
 
 
+def _own_bodies():
+    """0141's own two bodies, as replacement statements: a later file
+    (0150, #1749) replaces both, so the check is run against these."""
+    text = FROZEN.read_text(encoding="utf-8")
+    source = text.index("CREATE FUNCTION public.stewardship_refresh_census_source_v1")
+    guard = text.index(
+        "CREATE OR REPLACE FUNCTION public.stewardship_refresh_check_guard_v1"
+    )
+    return [
+        "CREATE OR REPLACE"
+        + text[source + len("CREATE") : text.index("$$;", source)]
+        + "$$;",
+        text[guard : text.index("END $$;", guard) + len("END $$;")],
+    ]
+
+
 def test_do_block_refuses_the_old_definitions(db):
     """The closing check passes as installed and raises once the guard is put
     back to 0136's body, its trigger is disabled, or the source function is
-    made SECURITY DEFINER."""
+    made SECURITY DEFINER. Each runs on 0141's own bodies, rolled back."""
     with transaction.atomic(), connection.cursor() as cursor:
+        for statement in _own_bodies():
+            cursor.execute(statement)
         cursor.execute(_check())
+        transaction.set_rollback(True)
     for statement, words in (
         (_previous_guard(), "refresh check guard"),
         (
@@ -430,5 +449,7 @@ def test_do_block_refuses_the_old_definitions(db):
             transaction.atomic(),
             connection.cursor() as cursor,
         ):
+            for own in _own_bodies():
+                cursor.execute(own)
             cursor.execute(statement)
             cursor.execute(_check())
