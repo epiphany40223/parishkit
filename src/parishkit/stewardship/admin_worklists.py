@@ -17,7 +17,7 @@ commands use the pages' own pieces, so the two cannot drift:
   the bulk bar: a ``WorklistDecision`` recorded by the page's own service
   (``information_worklist.InformationDecisions``,
   ``limitation_worklist.LimitationDecisions``), so the role, version, stage,
-  note rule and the SQL guard of frozen migration 0134 are the page's. Each
+  note rule and the SQL guard of frozen migration 0126 are the page's. Each
   runs in the page's command scope and records the service's events and
   the command's ``admin_cmd_<stream>_decide`` in the same transaction, once
   per request key.

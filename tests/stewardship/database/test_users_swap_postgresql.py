@@ -690,7 +690,7 @@ CLOSURE_CREATED = {
         ),
         ("stewardship_jobs", "0035_leader_emails"),
     ),
-    # 0134 (#1685, provisional number) creates the Limitations review table
+    # 0126 (#1685, provisional number) creates the Limitations review table
     # (in CLOSURE_TABLES) with its guard, deferred audit check, answer and
     # in-force reads and the report's v2 selection; all of them go, and the
     # column it adds to the information revisions goes too
@@ -1214,13 +1214,13 @@ def before_leader_changes():
 
 
 def before_information_limitation_review():
-    """The statement that puts the information revisions back as before 0134.
+    """The statement that puts the information revisions back as before 0126.
 
-    #1685's 0134 adds only ``stewardship_information_revision``'s review
+    #1685's 0126 adds only ``stewardship_information_revision``'s review
     decision (and its check, which goes with the column) to a table the base
     has; its new table and functions are ``CLOSURE_TABLES`` and
-    ``CLOSURE_CREATED``. The revision guard it replaced keeps its 0134 body,
-    which nothing on the users upgrade's base calls; 0134's file (or the full
+    ``CLOSURE_CREATED``. The revision guard it replaced keeps its 0126 body,
+    which nothing on the users upgrade's base calls; 0126's file (or the full
     migration) adds the column again.
     """
     return [

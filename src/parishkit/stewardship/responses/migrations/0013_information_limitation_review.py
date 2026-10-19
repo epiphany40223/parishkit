@@ -1,7 +1,7 @@
 """Forward migration: Additional information and Limitations reviews (#1685).
 
 Its SQL is the frozen file
-``schema/migrations/0134_information_limitation_review.sql`` (number 0134,
+``schema/migrations/0126_information_limitation_review.sql`` (number 0126,
 provisional until it is assigned in merge order), read whole and never
 parsed. It adds each Additional information Staff revision's review
 decision and replaces the revision guard so every new revision states one
@@ -30,7 +30,7 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0134_information_limitation_review.sql"
+    / "0126_information_limitation_review.sql"
 )
 
 

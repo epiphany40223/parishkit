@@ -3089,7 +3089,7 @@ the two cannot drift.
   `WorklistDecision` the page would post (one item with the key itself,
   several as the bulk bar, each item's key derived from it) for the
   page's `InformationDecisions` or `LimitationDecisions`, so every rule is
-  the page's, in Python and in the SQL guard of migration 0134: the role,
+  the page's, in Python and in the SQL guard of migration 0126: the role,
   the version, the actions the stage offers, and a new note to reopen an
   Ignored item (`invalid` at `note` otherwise), as the page's Back to
   review asks for one. All or none: an item someone decided first, or

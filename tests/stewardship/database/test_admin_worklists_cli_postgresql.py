@@ -5,7 +5,7 @@ after it is the real command line on the restricted web login. The commands
 read the Additional information and Limitations worklists through the
 pages' own admissions and reads under the campaign read guard, and decide
 through the pages' ``InformationDecisions`` and ``LimitationDecisions`` in
-the pages' command scope, so the SQL guard of frozen migration 0134 checks
+the pages' command scope, so the SQL guard of frozen migration 0126 checks
 every row. Each records the pages' events; the ``decide`` commands also
 record ``admin_cmd_<stream>_decide``, once per request key.
 """

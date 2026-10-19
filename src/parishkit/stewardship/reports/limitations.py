@@ -3,7 +3,7 @@
 Lists Members who cannot participate in ministries, and Families who cannot
 attend Mass or prayer services. The report was "Talents and limitations"
 until talents were retired (#970); its SQL is
-``stewardship_limitations_report_v2`` (migration 0134; v1 with each answer's
+``stewardship_limitations_report_v2`` (migration 0126; v1 with each answer's
 key and latest review decision, #1685), which neither lists nor counts the
 talents older submissions recorded.
 """

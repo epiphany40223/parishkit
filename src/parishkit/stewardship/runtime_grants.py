@@ -620,7 +620,7 @@ CLOSURE_TABLES = {
     # which web records and reads.
     "stewardship_proposal_review": ("stewardship_responses", "0006_proposal_review"),
     # Review decisions on cannot-participate and cannot-attend answers
-    # (0134, #1685), which web records and reads.
+    # (0126, #1685), which web records and reads.
     "stewardship_limitation_review": (
         "stewardship_responses",
         "0013_information_limitation_review",
