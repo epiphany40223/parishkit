@@ -26,8 +26,15 @@ from .sessions import sign_in_instant
 SALT = "stewardship-production-confirmation-v1"
 
 
-def verify_preview(request, service, campaign_id, transition_id, preparation_id):
-    """Verify the public origin outside SQL, then collect exact current impact."""
+def verify_preview(
+    request, service, campaign_id, transition_id, preparation_id, *, key=None
+):
+    """Verify the public origin outside SQL, then collect exact current impact.
+
+    ``key`` is the confirmation's request key: the Confirm Production
+    dialog's Apply (#1585) passes the one its Review named, so a resend of
+    the same Apply is the same confirmation; otherwise a new one.
+    """
     if connection.in_atomic_block:
         raise StorageInvariantError(
             "Confirmation verification must own its transaction."
@@ -49,7 +56,7 @@ def verify_preview(request, service, campaign_id, transition_id, preparation_id)
                 "campaign": str(campaign_id),
                 "request": str(transition_id),
                 "preparation": str(preparation_id),
-                "key": str(uuid4()),
+                "key": str(key or uuid4()),
                 "digest": preview.readiness.digest,
                 "origin": origin,
                 "profile": profile.value,

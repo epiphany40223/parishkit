@@ -1,4 +1,8 @@
-"""Production controls use native accessible forms on mobile and desktop."""
+"""Production activation and Cancel go-live: accessible on mobile and desktop.
+
+Confirm Production itself is the Go live page's step, in its review dialog
+(test_go_live_confirm.py, #1585 slice 4).
+"""
 
 import pytest
 
@@ -10,41 +14,13 @@ pytestmark = pytest.mark.parametrize(
 
 
 @pytest.mark.parametrize("width", [320, 1280])
-def test_confirmation_and_progress_are_accessible(
+def test_progress_and_cancellation_are_accessible(
     page, component_origin, axe_source, width
 ):
-    """Exercise actual templates, keyboard input, responsive layout and WCAG."""
+    """Exercise actual templates, responsive layout and WCAG."""
     page.set_viewport_size({"width": width, "height": 900})
-    page.goto(component_origin + "/production-confirmation")
-    field = page.get_by_label("Type Production to confirm this exact transition")
-    form = page.locator("form").filter(has=field)
-    assert not form.evaluate("element => element.checkValidity()")
-    field.fill("production")
-    assert not form.evaluate("element => element.checkValidity()")
-    field.fill("")
-    field.focus()
-    page.keyboard.type("Production")
-    assert form.evaluate("element => element.checkValidity()")
-    assert "1,000 out of 1,500 (66.7%)" in page.locator("main").inner_text()
-
-    # Enter submits this native form in every engine, independently of the
-    # host OS setting controlling whether Tab visits non-text controls.
-    def receive(route):
-        """A local success response avoids testing browser-native 405 error pages."""
-        if route.request.method == "POST":
-            assert "typed=Production" in route.request.post_data
-            assert "preview=synthetic-confirmation" in route.request.post_data
-            route.fulfill(status=200, content_type="text/plain", body="Received")
-        else:
-            route.continue_()
-
-    page.route("**/production-confirmation", receive)
-    with page.expect_navigation(wait_until="load") as submitted:
-        page.keyboard.press("Enter")
-    assert submitted.value.status == 200
     for path in (
         "/production-withdrawal",
-        "/production-confirmation",
         "/production-progress",
         "/production-scheduled",
     ):
@@ -76,13 +52,7 @@ def test_confirmation_and_progress_are_accessible(
 
 
 def test_production_forms_carry_their_versions(page, component_origin):
-    """Confirmation and recovery post the exact preview and control they show."""
-    page.goto(component_origin + "/production-confirmation")
-    page.get_by_label("Type Production to confirm this exact transition").fill(
-        "Production"
-    )
-    visible(page.get_by_role("button", name="Confirm Production", exact=True))
-    assert page.locator('form input[name="preview"]').get_attribute("value")
+    """Recovery and cancellation post the exact control and preview they show."""
     page.goto(component_origin + "/production-progress")
     visible(page.get_by_role("button", name="Retry failed mail preparation"))
     visible(page.get_by_role("link", name="Refresh Production progress"))

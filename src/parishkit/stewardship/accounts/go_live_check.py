@@ -256,14 +256,14 @@ def check_state(problems, target, verified):
     return "passed" if verified is True else "unchecked"
 
 
-def bar(state, *, current="check", prepared=False, confirm_url=None):
+def bar(state, *, current="check", prepared=False):
     """The Go live step bar, as a ``setup_wizard.Wizard``, on step ``current``.
 
     Before Start, Check is not done and every later step is unavailable,
     saying why. Once go-live has started (``state`` "started"), Check is
     completed and Prepare opens; once the Family links are ready
-    (``prepared``) Prepare is completed too and Confirm Production opens at
-    ``confirm_url``. Activation waits for the confirmation.
+    (``prepared``) Prepare is completed too and Confirm Production opens.
+    Activation waits for the confirmation.
     """
     started = state == "started"
     first = _("Not available yet: Start go-live on the Check step first.")
@@ -277,7 +277,7 @@ def bar(state, *, current="check", prepared=False, confirm_url=None):
     urls = {
         "check": reverse("admin:go_live"),
         "prepare": reverse("admin:go_live_prepare") if started else None,
-        "confirm": confirm_url if started and prepared else None,
+        "confirm": reverse("admin:go_live_confirm") if started and prepared else None,
     }
     steps = []
     for number, (key, label) in enumerate(STEPS, start=1):

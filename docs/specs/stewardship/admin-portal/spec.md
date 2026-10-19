@@ -4482,9 +4482,7 @@ outcome.
      ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)),
      and the server refuses Apply without it. A refusal (below) is shown
      inside the dialog, names the change and offers to review again. Apply
-     checks the typed word, then that the sign-in is still recent (until
-     [#1560](https://github.com/epiphany40223/parishkit/pull/1560)), runs
-     the public web address check again, builds the preview
+     checks the typed word, runs the public web address check again, builds the preview
      again and compares its inputs digest and target with the Review's;
      only then is the confirmation token minted and Production confirmed.
      A resend of an Apply that already confirmed opens Activation (its

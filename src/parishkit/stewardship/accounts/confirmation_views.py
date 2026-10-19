@@ -1,4 +1,8 @@
-"""Native forms for exact Production confirmation and durable catch-up progress."""
+"""Production activation: durable catch-up progress and its retry.
+
+The final confirmation itself is the Go live page's Confirm Production step
+(``go_live_confirm_views``, #1585 slice 4).
+"""
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.http import HttpResponseRedirect
@@ -6,96 +10,11 @@ from django.shortcuts import render
 from django.urls import reverse
 from django.views.decorators.http import require_http_methods
 
-from parishkit.stewardship.campaigns.domain import Percentage
-from parishkit.stewardship.campaigns.work_locks import work_transaction
-from parishkit.stewardship.storage import StaleRecordError
-from parishkit.stewardship.web.refusals import unexpected_fields
-
-from . import admin_navigation, confirmation_commands, confirmation_progress
+from . import admin_navigation, confirmation_progress
 from .admin_caller import AdminCaller
-from .admin_editing import principal
 from .authentication import runtime
-from .confirmation_readiness import collect_readiness
-from .go_live_views import PROBLEMS
-from .installation_lock import ConfigurationBusy
 from .integration_views import ERRORS, _checked
 from .setup_views import _closed, error_response
-
-
-@require_http_methods(["GET", "HEAD", "POST"])
-def confirmation(request, campaign_id, request_id, preparation_id):
-    """GET/HEAD cannot verify DNS, enumerate impact or activate Production."""
-    try:
-        service = runtime()
-        if campaign_id is None:
-            # No current campaign (the campaign-free route passes None).
-            # Authorize first, as every page does before inspecting state,
-            # then refuse plainly before any lookup or campaign transaction.
-            principal(request, service, passive=True)
-            raise ObjectDoesNotExist("No current campaign.")
-        arguments = request, service, campaign_id, request_id, preparation_id
-        action = request.POST.get("action") if request.method == "POST" else None
-        _closed(
-            request,
-            {"action", "preview", "typed"} if action == "confirm" else {"action"},
-        )
-        if action == "confirm":
-            confirmation_commands.confirm(
-                *arguments,
-                token=request.POST.get("preview", ""),
-                typed=request.POST.get("typed", ""),
-            )
-            return _checked(
-                request,
-                service,
-                HttpResponseRedirect(reverse("admin:production_progress")),
-            )
-        preview, verified, token = None, None, None
-        if action == "verify":
-            preview, verified, token = confirmation_commands.verify_preview(*arguments)
-            state = preview.readiness
-        elif request.method == "POST":
-            # No sources: an unknown action value, not an unexpected field.
-            raise unexpected_fields()
-        else:
-            with work_transaction():
-                state = collect_readiness(*arguments)
-        context = {
-            "campaign": state.campaign,
-            "transition": state.transition,
-            "state": state,
-            "preview": preview,
-            "origin_verified": verified,
-            "confirmation_token": token,
-            "problems": [
-                PROBLEMS[code]
-                for code in (preview.problems if preview else state.problems)
-            ],
-        }
-        if preview:
-            counts = preview.families.counts
-            context.update(
-                counts=counts,
-                email_eligibility=Percentage(counts.email_eligible, counts.active),
-                no_email=Percentage(counts.no_eligible_email, counts.active),
-            )
-        # The fourth step of going live (#196).
-        admin_navigation.place(request, flow="go_live", step="confirm")
-        return _checked(
-            request,
-            service,
-            render(request, "stewardship/production-confirmation.html", context),
-        )
-    except ConfigurationBusy:
-        return error_response(
-            StaleRecordError(
-                "Another configuration operation is finishing; retry confirmation."
-            )
-        )
-    except ObjectDoesNotExist:
-        return error_response(LookupError("Production confirmation is unavailable."))
-    except ERRORS as error:
-        return error_response(error)
 
 
 @require_http_methods(["GET", "HEAD", "POST"])

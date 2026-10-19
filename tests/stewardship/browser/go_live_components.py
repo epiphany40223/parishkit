@@ -7,8 +7,9 @@ from uuid import UUID
 from django.template.loader import render_to_string
 from django.urls import reverse
 
-from parishkit.stewardship.accounts import go_live_check, stages
+from parishkit.stewardship.accounts import go_live_check, go_live_confirm_views, stages
 from parishkit.stewardship.accounts.go_live_check import Progress
+from parishkit.stewardship.accounts.go_live_confirm import Confirm
 from parishkit.stewardship.accounts.go_live_prepare import STAGES, Prepare
 from parishkit.stewardship.campaigns.domain import Percentage
 
@@ -19,9 +20,9 @@ from parishkit.stewardship.campaigns.domain import Percentage
 GO_LIVE = reverse("admin:go_live")
 PREPARE = reverse("admin:go_live_prepare")
 PRODUCTION = reverse("admin:production_progress")
-# Where Prepare's Continue leads once the links are ready (today's Confirm
-# Production page, until #1585 slice 4).
-CONFIRM = reverse("admin:production_confirmation", args=[UUID(int=59), UUID(int=60)])
+# Go live's Confirm Production step (#1585 slice 4), where Prepare's
+# Continue leads once the links are ready and where its dialog posts.
+CONFIRM = reverse("admin:go_live_confirm")
 # Where the fixture server's redirect after Retry failed mail preparation
 # lands: a stand-in for the page once the retry has run, at the same path.
 PRODUCTION_RETRIED = PRODUCTION + "?retried=1"
@@ -92,16 +93,6 @@ def components(context, admin):
         "no_email": Percentage(500, 1500),
         "inventory": [("submissions", 1234)],
         "origin_verified": True,
-        "confirmation_token": "synthetic-confirmation",
-    }
-    confirmation = ready | {
-        "state": Value(
-            target_state="active",
-            observed_at=context["server_now"],
-            impact_revision=1234,
-        ),
-        "transition": Value(pk=UUID(int=59)),
-        "confirmation_token": "synthetic-confirmation",
     }
     production = {
         "campaign": campaign,
@@ -153,19 +144,9 @@ def components(context, admin):
                 produced,
             ),
             (
-                "/production-confirmation-unchecked",
-                "stewardship/production-confirmation.html",
-                confirmation | {"confirmation_token": None, "origin_verified": None},
-            ),
-            (
                 PRODUCTION_RETRIED,
                 "stewardship/production-progress.html",
                 produced,
-            ),
-            (
-                "/production-confirmation",
-                "stewardship/production-confirmation.html",
-                confirmation,
             ),
             (
                 "/production-progress",
@@ -204,7 +185,12 @@ def components(context, admin):
             ),
         )
     }
-    return pages | check_pages(context, admin, ready) | prepare_pages(context, admin)
+    return (
+        pages
+        | check_pages(context, admin, ready)
+        | prepare_pages(context, admin)
+        | confirm_pages(context, admin)
+    )
 
 
 def check(context, state, stage=None, **values):
@@ -403,6 +389,12 @@ def actions():
             "review_stop": (200, None, "/go-live-prepare-review"),
             "stop": (303, GO_LIVE, ""),
         },
+        # Confirm Production's dialog: Review answers it; Apply with the
+        # typed word opens Production activation, without it is refused.
+        CONFIRM: {
+            "review": (200, None, "/go-live-confirm-review"),
+            "confirm": (303, PRODUCTION, ""),
+        },
     }
 
 
@@ -414,8 +406,13 @@ def action_answer(path, body, responses):
     answers = actions().get(path)
     if answers is None:
         return None
-    action = parse_qs(body.decode()).get("action", [""])[0]
+    fields = parse_qs(body.decode(), keep_blank_values=True)
+    action = fields.get("action", [""])[0]
     status, location, page = answers.get(action, (400, None, ""))
+    typed = fields.get("typed", [""])[0]
+    # As the view: Apply needs the typed word, spaces around it ignored.
+    if path == CONFIRM and action == "confirm" and typed.strip() != "Production":
+        status, location, page = 400, None, "/go-live-confirm-review-typed"
     return status, location, responses[page][1] if page else ""
 
 
@@ -512,7 +509,6 @@ def prepare_pages(context, admin):
                 "started" if stage.started else "idle",
                 current="prepare",
                 prepared=stage.state == "ready",
-                confirm_url=stage.confirm_url,
             ),
             "live_pending": stage.started,
             # Quick, so a test sees an in-place update without waiting long.
@@ -546,4 +542,135 @@ def prepare_pages(context, admin):
             },
         ),
     )
+    return pages
+
+
+def confirm_shown(context, state, prepare_state="ready", reason=None, **values):
+    """A Confirm Production state (go_live_confirm.Confirm) with its preview.
+
+    The preview's counts are synthetic, its target "active" unless
+    ``values`` say otherwise; ``problems`` are its readiness problem codes.
+    """
+    campaign = Value(
+        pk=UUID(int=58),
+        state="draft",
+        active_configuration=Value(
+            name="Annual census",
+            starts_at=context["server_now"],
+            ends_at=context["deadline"],
+        ),
+    )
+    target = values.pop("target", "active")
+    problems = values.pop("problems", ())
+    preview = Value(
+        readiness=Value(
+            target_state=target,
+            observed_at=context["server_now"],
+            campaign=campaign,
+            configuration=Value(family_templates=()),
+        ),
+        families=Value(
+            counts=Value(
+                active=1500,
+                email_eligible=1000,
+                no_eligible_email=500,
+                messages=1031,
+                coalesced_slots=20,
+                skipped_slots=3,
+            )
+        ),
+        digests=Value(
+            daily_messages=2,
+            weekly_messages=1,
+            coalesced_slots=4,
+            empty_weekly_reports=1,
+        ),
+        problems=tuple(problems),
+    )
+    prepare = prepare_stage(
+        prepare_state,
+        reason,
+        3 if prepare_state == "ready" else 2,
+        **values,
+    )
+    prepare = Prepare(
+        **(
+            vars(prepare)
+            | {
+                "request": Value(
+                    pk=UUID(int=59),
+                    created_at=context["server_now"],
+                    campaign=campaign,
+                )
+            }
+        )
+    )
+    shows_preview = state in {"ready", "problems"}
+    return Confirm(state, prepare, preview if shows_preview else None)
+
+
+def confirm_pages(context, admin):
+    """The Confirm Production step in its states (#1585 slice 4), by path.
+
+    CONFIRM, the real address its dialog posts to, is ready. Each page's
+    context is the view's own (``go_live_confirm_views._context``), except
+    that the region re-reads itself every 2 seconds, so a test sees an
+    in-place update without waiting long.
+    """
+    states = (
+        (CONFIRM, confirm_shown(context, "ready")),
+        (
+            "/go-live-confirm-scheduled",
+            confirm_shown(context, "ready", target="scheduled"),
+        ),
+        (
+            "/go-live-confirm-problems",
+            confirm_shown(context, "problems", problems=("other_campaign_live",)),
+        ),
+        (
+            "/go-live-confirm-hold",
+            confirm_shown(
+                context,
+                "hold_ended",
+                "again",
+                "hold_ended",
+                controls={"again": "synthetic-again"},
+            ),
+        ),
+        (
+            "/go-live-confirm-closed",
+            confirm_shown(context, "closed", "closed"),
+        ),
+        (
+            "/go-live-confirm-moved",
+            confirm_shown(context, "moved", "running", "repreparing", preparation=2),
+        ),
+    )
+    pages = {}
+    for path, shown in states:
+        values = go_live_confirm_views._context(shown) | {"live_interval": 2000}
+        pages[path] = (
+            "text/html",
+            render_to_string(
+                "stewardship/go-live-confirm.html",
+                context | {"admin_chrome": admin} | values,
+            ),
+        )
+    ready = states[0][1]
+    for path, values in (
+        ("/go-live-confirm-review", {"review": "synthetic-review", "shown": ready}),
+        ("/go-live-confirm-review-typed", {"refused": "typed"}),
+        ("/go-live-confirm-review-changed", {"refused": "changed"}),
+    ):
+        answer = values | {
+            "check_url": GO_LIVE,
+            "prepare_url": PREPARE,
+            "here": CONFIRM,
+        }
+        if "shown" in values:
+            answer |= values["shown"].counts()
+        pages[path] = (
+            "text/html",
+            render_to_string("stewardship/go-live-confirm-review.html", answer),
+        )
     return pages

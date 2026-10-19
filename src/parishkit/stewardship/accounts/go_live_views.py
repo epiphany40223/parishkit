@@ -81,6 +81,11 @@ PROBLEMS = {
     "full_refresh_stale": _(
         "The last full refresh is too old. Run another full refresh."
     ),
+    # Confirm Production after the attempt's refresh hold ended (#1585).
+    "go_live_hold_ended": _(
+        "ParishSoft refreshes resumed while this waited. Refresh and prepare "
+        "again on the Prepare step."
+    ),
     "testing_delivery_unresolved": _(
         "Wait for or resolve all unfinished and uncertain Testing deliveries."
     ),

@@ -827,8 +827,8 @@ def test_go_live_and_production_refreshes_are_in_place():
     (``href=""``), re-read the page in place (#519 PR 7b-2): each names its
     page's real address and a region there as its fragment, and says what it
     did. Production activation gains a region of its own. The Go live
-    page's Check and Prepare steps have no Refresh link: they update
-    themselves (#1585, #1586)."""
+    page's Check, Prepare and Confirm Production steps have no Refresh link:
+    they update themselves (#1585, #1586)."""
     check = (TEMPLATES / "go-live-check.html").read_text()
     assert 'data-in-place="refresh"' not in check
     assert '{% translate "Refresh' not in check
@@ -838,6 +838,10 @@ def test_go_live_and_production_refreshes_are_in_place():
     # Its one "Refresh" control is Refresh and prepare again, a command.
     assert not re.search(r'<a [^>]*>{% translate "Refresh', prepare)
     assert 'data-live-status="go-live-prepare"' in prepare
+    confirm = (TEMPLATES / "go-live-confirm.html").read_text()
+    assert 'data-in-place="refresh"' not in confirm
+    assert not re.search(r'<a [^>]*>{% translate "Refresh', confirm)
+    assert 'data-live-status="go-live-confirm"' in confirm
     for name, region, words, message in (
         (
             "production-progress.html",

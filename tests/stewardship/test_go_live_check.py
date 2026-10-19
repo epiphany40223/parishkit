@@ -67,11 +67,13 @@ def test_bar_on_prepare_opens_confirm_production_once_the_links_are_ready():
     assert waiting.current.key == "prepare" and waiting.current.number == 2
     assert str(waiting.next.label) == "Confirm Production"
     assert waiting.completed == 1 and waiting.step("confirm").url is None
-    ready = go_live_check.bar(
-        "started", current="prepare", prepared=True, confirm_url="/confirm/"
-    )
+    ready = go_live_check.bar("started", current="prepare", prepared=True)
     assert ready.completed == 2 and ready.step("prepare").state == "done"
-    assert ready.step("confirm").url == "/confirm/"
+    assert ready.step("confirm").url == "/admin/campaign/go-live/confirmation/"
+    # On Confirm Production itself: Activation is next and still waits.
+    confirm = go_live_check.bar("started", current="confirm", prepared=True)
+    assert confirm.current.number == 3 and str(confirm.next.label) == "Activation"
+    assert confirm.step("activate").state == "blocked"
     # Not started: Prepare is current but unavailable, with Check's reason.
     idle = go_live_check.bar("idle", current="prepare")
     assert idle.current.state == "blocked" and idle.current.url is None

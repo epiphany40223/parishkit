@@ -122,7 +122,6 @@ def _context(shown):
             "started" if shown.started else "idle",
             current="prepare",
             prepared=shown.state == "ready",
-            confirm_url=shown.confirm_url,
         ),
         # Work that moves by itself is followed closely; a step that waits
         # for the Administrator only re-reads now and then, for another tab.

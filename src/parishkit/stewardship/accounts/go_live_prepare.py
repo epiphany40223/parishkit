@@ -88,7 +88,8 @@ class Prepare:
     are the stage boxes (``stages.rows``' shape); ``done`` and ``total`` the
     detail line's counts and ``preparation`` the number of the attempt's
     preparation it names (of ``MAX_PREPARATIONS``). ``confirm_url`` opens
-    Confirm Production once the links are ready. ``controls`` holds each
+    Confirm Production once the links are ready, and ``prepared`` is then
+    the ready preparation it confirms. ``controls`` holds each
     offered control by action. ``stop_kind`` words the Stop go-live
     dialog: "cleanup" while Testing data is still being deleted, "links"
     once Family links are being prepared or are prepared, else None.
@@ -107,6 +108,7 @@ class Prepare:
     total: int = 0
     preparation: int = 0
     confirm_url: str | None = None
+    prepared: ProductionTokenPreparation | None = None
     controls: dict = field(default_factory=dict)
     stop_kind: str | None = None
     stopped_by_other: bool = False
@@ -357,10 +359,9 @@ def _started(actor, row):
     if states["links"] == "done":
         return Prepare(
             "ready",
-            confirm_url=reverse(
-                "admin:production_confirmation",
-                args=[row.pk, links["preparation"].pk],
-            ),
+            confirm_url=reverse("admin:go_live_confirm"),
+            prepared=links["preparation"],
+            preparation=made,
             **common,
         )
     if cleanup != "done":

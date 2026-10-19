@@ -103,25 +103,35 @@ def test_refusal_removal_waits_for_a_note_and_its_tick():
 
 
 def confirmation_page():
-    """Render Confirm Production with a fresh confirmation to type."""
+    """Render the Confirm Production dialog's review, with the word to type."""
+    from parishkit.stewardship.campaigns.domain import Percentage
+
+    readiness = Value(target_state="active", campaign=CAMPAIGN, observed_at=NOW)
     return render_to_string(
-        "stewardship/production-confirmation.html",
+        "stewardship/go-live-confirm-review.html",
         {
-            "campaign": CAMPAIGN,
-            "transition": Value(pk=uuid4()),
-            "state": Value(target_state="active", observed_at=NOW),
-            "confirmation_token": "synthetic",
+            "review": "synthetic",
+            "shown": Value(target="active", preview=Value(readiness=readiness)),
+            "email_eligibility": Percentage(2, 3),
+            "families": Value(messages=2),
         },
     )
 
 
 def test_confirm_production_waits_for_the_typed_word():
-    """The typed field is under the gate, with its hint after Confirm."""
+    """The typed field holds Apply in the dialog, and posts with Apply.
+
+    The review dialog's gate (data-review-require, ui-v1.js) reads the
+    field's hint; the field names the dialog's Apply form, so Apply posts it
+    beside the signed review it carries.
+    """
     html = confirmation_page()
-    assert tag(html, r'<form method="post" data-require-complete>')
-    typed = tag(html, r'<input id="production-confirmation"[^>]*>')
+    typed = tag(html, r'<input id="go-live-confirm-typed"[^>]*>')
+    assert "data-review-require" in typed
+    assert 'form="go-live-confirm-review-apply"' in typed
+    assert 'name="typed"' in typed and "required" in typed
     assert 'data-missing-hint="Type Production exactly as shown to confirm."' in typed
-    hint_follows(html, "Confirm Production", "production-complete-hint")
+    assert 'name="review" value="synthetic" data-review-preview' in html
 
 
 @pytest.mark.parametrize(

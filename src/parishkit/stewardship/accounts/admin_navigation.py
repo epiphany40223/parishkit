@@ -195,11 +195,11 @@ PAGES = {
     "reminder_workgroup": Page("campaign", _(REMINDER_WORKGROUP_NAME)),
     "go_live": Page("campaign", _("Go live")),
     "go_live_families": Page("campaign", _("Testing submissions"), "go_live"),
-    # The Go live page's Prepare step (#1585): the same page as Check, so
-    # it has its name and marks its menu entry, and its trail is the
-    # group, then Go live, never one crumb per step.
+    # The Go live page's Prepare and Confirm Production steps (#1585): the
+    # same page as Check, so each has its name and marks its menu entry,
+    # and its trail is the group, then Go live, never one crumb per step.
     "go_live_prepare": Page("campaign", _("Go live"), step_of="go_live"),
-    "production_confirmation": Page("campaign", _("Confirm Production"), "go_live"),
+    "go_live_confirm": Page("campaign", _("Go live"), step_of="go_live"),
     # A menu entry of its own, available once Production is confirmed.
     "production_progress": Page("campaign", _("Production activation")),
     # Cancel go-live (formerly Withdraw from Production) is offered only on
@@ -824,8 +824,8 @@ FLOWS = {
         ("send", _("Send and follow")),
     ),
     # Going live: the Go live page's four steps (go_live_check.STEPS), shown
-    # by Confirm Production and Production activation until #1585's later
-    # slices give them the Go live step bar.
+    # by Production activation until #1585 slice 5 gives it the Go live
+    # step bar.
     "go_live": (
         ("check", _("Check")),
         ("prepare", _("Prepare")),

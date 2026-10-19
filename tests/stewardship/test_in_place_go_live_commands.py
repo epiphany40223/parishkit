@@ -57,6 +57,16 @@ def in_place_form(text, key):
             "A new ParishSoft refresh was requested.",
             None,
         ),
+        # Confirm Production's Refresh and prepare again posts Prepare's own
+        # control; Prepare's answer has no region of this page, so the page
+        # opens it (#1585 slice 4).
+        (
+            "go-live-confirm.html",
+            "go-live-confirm-again",
+            "{% url 'admin:go_live_prepare' %}#go-live-confirm",
+            "A new ParishSoft refresh was requested.",
+            None,
+        ),
         (
             "production-progress.html",
             "production-retry",
@@ -84,12 +94,13 @@ def test_go_live_commands_post_in_place(name, key, action, message, fallback):
 
 
 def test_every_go_live_post_form_is_in_place_or_opens_the_dialog():
-    """No same-page command on these pages reloads any more. Start go-live
-    and Stop go-live open their review dialogs (#1585), whose Apply opens
-    the page that follows."""
+    """No same-page command on these pages reloads any more. Start go-live,
+    Stop go-live and Confirm Production open their review dialogs (#1585),
+    whose Apply opens the page that follows."""
     for name in (
         "go-live-check.html",
         "go-live-prepare.html",
+        "go-live-confirm.html",
         "production-progress.html",
     ):
         text = (TEMPLATES / name).read_text()
