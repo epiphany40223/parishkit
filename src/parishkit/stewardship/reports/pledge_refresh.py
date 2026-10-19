@@ -30,6 +30,7 @@ force was taken on; C is the annual pledge carried forward. Frequency is not
 compared until its smoke check, and share methods have no read.
 """
 
+import logging
 from dataclasses import dataclass
 from decimal import Decimal
 from uuid import UUID
@@ -37,6 +38,7 @@ from uuid import UUID
 from django.db import DatabaseError, connection, transaction
 
 from parishkit.stewardship.campaigns.models import Campaign
+from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.pipeline import RefreshOutcome, Stage, refresh_outcome
 from parishkit.stewardship.responses.financial_inputs import (
     InvalidFinancialSource,
@@ -66,7 +68,8 @@ CONFLICT = "conflict"
 # The largest amount a mark can record (``PledgeReview.marked_pledge``).
 MARK_LIMIT = Decimal("1e12")
 # The largest amount a response can record (``Submission.upcoming_pledge``,
-# numeric(24,2), as the selection's own cast): mirrors the column type.
+# numeric(24,2)): it only mirrors the column type, since the selection's own
+# numeric(24,2) cast already raises on a larger sum (absorbed as none).
 ANSWER_LIMIT = Decimal("1e22")
 UPCOMING = (
     "SELECT duid, stewardship_pledge_upcoming_v1(%s, %s, duid) "
@@ -367,11 +370,20 @@ def answered_pledge(snapshot_id, campaign_id, family_duid):
     unproven, records no amount. The read runs in a savepoint, so a source
     row the selection cannot read (a database error) also records none
     instead of aborting the Family's submit; the guard reads nothing then.
+    Such an error is logged as a warning (its kind and class, never an
+    amount), so a broken read in Production is seen rather than silent.
     """
     try:
         with transaction.atomic():
             return proven_pledge(
                 snapshot_id, campaign_id, family_duid, limit=ANSWER_LIMIT
             )
-    except DatabaseError:
+    except DatabaseError as error:
+        emit_failure(
+            error,
+            event=Event.REPORT_SHAPING_FAILED,
+            level=logging.WARNING,
+            shaping="answered_pledge",
+            name_class=True,
+        )
         return None

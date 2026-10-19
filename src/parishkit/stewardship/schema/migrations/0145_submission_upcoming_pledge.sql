@@ -21,8 +21,10 @@
 --     recorded amount must be 0139's stewardship_pledge_upcoming_v1 for the
 --     response's own validation snapshot, campaign and Family, on a response
 --     answering the financial questions. It pins the amount to the
---     snapshot's sum; the giving read's proof is the application's check,
---     as for the Entered by hand mark (0139). INSERT only: 0001's submission
+--     snapshot's sum; the giving read's full proof is the application's
+--     check, as for the Entered by hand mark (0139), though the selection
+--     itself is NULL (so refuses any amount) without a valid giving date.
+--     INSERT only: 0001's submission
 --     guard already refuses every UPDATE and admits only the rehearsal
 --     cleanup's DELETE. It runs with the submitting login's rights, which
 --     already read every input (web reads the pledge snapshot rows, the
@@ -161,7 +163,12 @@ BEGIN
               AND p.proname='stewardship_submission_pledge_guard_v1'
               AND p.prosrc LIKE '%NEW.upcoming_pledge IS DISTINCT FROM stewardship_pledge_upcoming_v1(%'
               AND p.prosrc LIKE '%NEW.validation_source_id,NEW.campaign_id%'
-              AND p.prosrc LIKE '%NOT (NEW.answers ? ''financial'')%')
+              AND p.prosrc LIKE '%NOT (NEW.answers ? ''financial'')%'
+              -- After 0001's guard, in name order (see CREATE TRIGGER).
+              AND t.tgname>'stewardship_submission_guard'
+              AND EXISTS(SELECT 1 FROM pg_trigger g
+                  WHERE g.tgrelid=t.tgrelid AND g.tgname='stewardship_submission_guard'
+                    AND g.tgenabled='O'))
     THEN
         RAISE EXCEPTION 'The responses'' upcoming pledge is not guarded as declared';
     END IF;

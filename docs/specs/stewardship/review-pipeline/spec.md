@@ -763,8 +763,8 @@ pledge was ever marked Entered by hand (even one later reopened), the new
 answer stays To review instead (its row says the Family changed its pledge),
 so Staff see it and can undo the entry, and the refresh judges it; rule 3's
 "Withdrawn by the Family after it was entered" note is not shown. Without a
-recorded amount the pledge is To review, as before. Pledges and funds are read-only in ParishSoft's API, so the stream
-never has Ready to update.
+recorded amount the pledge is To review, as before. Pledges and funds are
+read-only in ParishSoft's API, so the stream never has Ready to update.
 
 **Pledge confirmation** (decision 5). ParishSoft's v2 `GET
 offering/pledge/list` returns each pledge with `familyID`, `fundID`,

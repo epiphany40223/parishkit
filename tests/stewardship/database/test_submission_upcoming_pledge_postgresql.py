@@ -236,7 +236,11 @@ def test_the_response_guard_refuses_an_amount_not_the_snapshots(
     response_service, monkeypatch, fault
 ):
     """A recorded amount that is not the validation snapshot's own is
-    refused, so a writer cannot plant an A; nothing of the submit commits."""
+    refused, so a writer cannot plant an A; nothing of the submit commits.
+
+    The ``unproven`` case is refused because the selection reads no amount
+    (NULL) on a snapshot without a valid giving date, so any planted amount,
+    even $0.00, differs from it."""
     harness, submission = answered(
         response_service, "300.00", covered=fault == "amount"
     )
@@ -344,3 +348,25 @@ def test_a_source_row_the_selection_cannot_read_records_none(
     harness, submission = answered(response_service, "300.00")
     assert submission.upcoming_pledge is None
     assert stage_row(harness, submission)[0] == "to_review"
+
+
+def test_a_run_that_began_unrecorded_keeps_a_at_zero(response_service):
+    """Rule 1 against a response that recorded nothing (every response
+    before 0145): an unchanged resubmission records ParishSoft's newer
+    amount but keeps A at $0.00, so the Conflict that amount made stays,
+    and the item's A is still read as $0.00."""
+    harness, submission = answered(response_service, covered=False)
+    assert submission.upcoming_pledge is None
+    refresh(harness, "500.00")
+    assert row(harness, submission)["placement"].stage is Stage.CONFLICT
+    same = again(harness)
+    assert same.upcoming_pledge == Decimal("500.00")
+    assert stage_row(harness, same) == (
+        "conflict",
+        "conflict",
+        Decimal("500.00"),
+        Decimal("0.00"),
+        Decimal("500.00"),
+    )
+    refresh(harness, "500.00")
+    assert PledgeOpenCheck.objects.count() == 1
