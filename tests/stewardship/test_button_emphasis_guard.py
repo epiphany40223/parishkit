@@ -46,11 +46,6 @@ EMPHASIS_ALLOWED = {
     # notice, each with one action row and one primary button; session-v1.js
     # shows one panel at a time, which a text scan cannot see.
     "admin-banners.html": 2,
-    # Retry and Cancel sit side by side, both primary. Both pages are
-    # replaced by the Go live page's Prepare step (#1611), whose Stop
-    # go-live is already secondary; drop these with that change.
-    "go-live-cleanup.html": 1,
-    "go-live-links.html": 1,
 }
 
 # Containers that hold one group's controls, beside forms and dialogs.

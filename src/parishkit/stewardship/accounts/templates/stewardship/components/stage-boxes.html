@@ -10,7 +10,8 @@ names the list, ``key_attribute`` is the data attribute (without "data-")
 that carries each stage's key, and ``detail``, when given, is a template
 drawn inside each box after its status, with the stage as ``step``
 (Finishing setup's per-step explanation). Loading parish data, Finishing
-setup and Load ParishSoft data (#1404 PR 5) draw it.
+setup, Load ParishSoft data (#1404 PR 5) and the Go live page's Prepare
+step (#1585) draw it.
 {% endcomment %}<ol class="stage-boxes" aria-label="{{ label }}">{% for stage in stages %}
 <li class="stage-{{ stage.state }}" data-{{ key_attribute }}="{{ stage.key }}" data-stage-state="{{ stage.state }}"><span class="stage-label">{{ stage.label }}</span><span class="visually-hidden">:</span> <span class="stage-status" data-load-status>{{ stage.status }}</span>{% if detail %}{% include detail with step=stage %}{% endif %}</li>{% endfor %}
 </ol>

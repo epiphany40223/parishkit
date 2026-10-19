@@ -14,7 +14,7 @@ from uuid import UUID
 import pytest
 from django.http import Http404
 from django.test import RequestFactory
-from django.urls import Resolver404, resolve, reverse
+from django.urls import NoReverseMatch, Resolver404, resolve, reverse
 
 from parishkit.stewardship.accounts import admin_navigation as navigation
 from parishkit.stewardship.admin_urls import (
@@ -242,10 +242,7 @@ SLASHLESS_EXPECTED = {
     ),
     "/admin/campaign/go-live": "/admin/campaign/go-live/",
     "/admin/campaign/go-live/families": "/admin/campaign/go-live/families/",
-    f"/admin/campaign/go-live/cleanup/{T}": f"/admin/campaign/go-live/cleanup/{T}/",
-    f"/admin/campaign/go-live/cleanup/{T}/links": (
-        f"/admin/campaign/go-live/cleanup/{T}/links/"
-    ),
+    "/admin/campaign/go-live/preparing": "/admin/campaign/go-live/preparing/",
     f"/admin/campaign/go-live/cleanup/{T}/links/{T}/confirmation": (
         f"/admin/campaign/go-live/cleanup/{T}/links/{T}/confirmation/"
     ),
@@ -474,13 +471,27 @@ def test_test_email_pages_come_before_the_content_editor():
 
 
 def test_the_go_live_chain_names_no_campaign():
-    """Each go-live step sits under the one before it, with no campaign id."""
-    cleanup = reverse("admin:go_live_cleanup", args=[TASK])
-    links = reverse("admin:go_live_links", args=[TASK])
+    """Each go-live step sits under Go live, with no campaign id.
+
+    The Prepare step names no request either (#1585 slice 3); the retired
+    Testing cleanup and Prepare Family links addresses are gone, so only
+    Confirm Production still carries the ids, until slice 4.
+    """
     confirmation = reverse("admin:production_confirmation", args=[TASK, TASK])
     assert reverse("admin:go_live") == "/admin/campaign/go-live/"
-    assert cleanup.startswith("/admin/campaign/go-live/") and links.startswith(cleanup)
-    assert confirmation.startswith(links) and confirmation.endswith("/confirmation/")
+    assert reverse("admin:go_live_prepare") == "/admin/campaign/go-live/preparing/"
+    assert confirmation.startswith("/admin/campaign/go-live/cleanup/")
+    assert confirmation.endswith("/confirmation/")
+    for retired in ("go_live_cleanup", "go_live_links"):
+        with pytest.raises(NoReverseMatch):
+            reverse(f"admin:{retired}", args=[TASK])
+    for path in (
+        f"/admin/campaign/go-live/cleanup/{TASK}/",
+        f"/admin/campaign/go-live/cleanup/{TASK}/links/",
+        f"/admin/campaign/go-live/cleanup/{TASK}",
+    ):
+        with pytest.raises(Resolver404):
+            resolve(path)
     withdrawal = reverse("admin:production_withdrawal")
     assert withdrawal.startswith(reverse("admin:production_progress"))
 

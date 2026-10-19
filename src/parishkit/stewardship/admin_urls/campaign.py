@@ -15,7 +15,6 @@ from django.urls import path
 from parishkit.stewardship.campaigns.configuration import REMINDER_WORKGROUP_SLUG
 
 from ..accounts import (
-    activation_views,
     artwork_views,
     campaign_create_views,
     campaign_family_test_views,
@@ -27,6 +26,7 @@ from ..accounts import (
     content_delete_views,
     content_history,
     content_views,
+    go_live_prepare_views,
     go_live_views,
     reminder_workgroup_views,
     schedule_calendar_views,
@@ -153,8 +153,10 @@ patterns = [
         reminder_workgroup_views.reminder_workgroup,
         "reminder_workgroup",
     ),
-    # Going live: readiness, Testing cleanup, Family links, then Confirm
-    # Production, each step under the one before it.
+    # Going live (#1585): the Go live page's Check and Prepare steps, then
+    # Confirm Production (still at its old address until #1585 slice 4).
+    # The Testing cleanup and Prepare Family links pages retired with no
+    # redirect (#864): their addresses answer as unknown ones.
     _page("campaign/go-live/", go_live_views.check, "go_live"),
     _page(
         "campaign/go-live/families/",
@@ -162,14 +164,9 @@ patterns = [
         "go_live_families",
     ),
     _page(
-        "campaign/go-live/cleanup/<uuid:request_id>/",
-        go_live_views.cleanup_status,
-        "go_live_cleanup",
-    ),
-    _page(
-        "campaign/go-live/cleanup/<uuid:request_id>/links/",
-        activation_views.links,
-        "go_live_links",
+        "campaign/go-live/preparing/",
+        go_live_prepare_views.prepare,
+        "go_live_prepare",
     ),
     _page(
         "campaign/go-live/cleanup/<uuid:request_id>/links/<uuid:preparation_id>/"

@@ -1,0 +1,15 @@
+{% load i18n %}{% comment %}
+  The Stop go-live dialog's answers (admin-portal spec, "Go live page",
+  Stop go-live; #1585 slice 3), drawn by go_live_prepare_views._stop_answer
+  into the shared review dialog of go-live-prepare.html as a confirmation:
+  one sentence for the state, then what is never undone. Apply posts the
+  step's stop control (data-review-preview) and opens Check.
+
+  ``refused``: go-live is no longer in progress here, marked
+  data-review-refusal so the dialog shows it as drawn: another
+  Administrator stopped it, or Production is already confirmed.
+{% endcomment %}{% if not refused %}<div data-review-answer data-review-done="{% translate 'Go-live stopped.' %}">
+<p id="go-live-stop-summary">{% if stage.stop_kind == 'cleanup' %}{% translate "Testing data deletion stops at the next safe point." %} {% elif stage.stop_kind == 'links' %}{% translate "The prepared Family links are discarded." %} {% endif %}{% translate "Testing data already deleted is not restored. The campaign stays a Testing draft and Testing work can start again." %}</p>
+<input type="hidden" name="control" value="{{ stage.controls.stop }}" data-review-preview>
+</div>
+{% else %}<div data-review-refusal>{% if refused == "confirmed" %}<p data-go-live-stop-refused="confirmed">{% translate "Another Administrator already confirmed Production." %}</p>{% else %}<p data-go-live-stop-refused="stopped">{% if stage.stopped_by_other %}{% translate "Another Administrator stopped go-live." %}{% else %}{% translate "Go-live was already stopped." %}{% endif %}</p><p><a href="{{ check_url }}">{% translate "Open Check" %}</a></p>{% endif %}</div>{% endif %}

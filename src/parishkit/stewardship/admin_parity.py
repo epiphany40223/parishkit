@@ -214,10 +214,10 @@ LEDGER = {
     # The verified preview with the DNS check and cleanup come in PR 12.
     "go_live": command("go-live readiness", owed="PR 12"),
     "go_live_families": pending("PR 12", "go-live families"),
-    "go_live_cleanup": pending(
-        "PR 12", "go-live cleanup-status", "go-live cleanup-retry"
+    # The Prepare step (#1585 slice 3) shows cleanup and link preparation.
+    "go_live_prepare": pending(
+        "PR 12", "go-live cleanup-status", "go-live links-status"
     ),
-    "go_live_links": pending("PR 12", "go-live links", "go-live links-status"),
     "production_confirmation": pending(
         "PR 12", "go-live confirm-preview", "go-live confirm"
     ),

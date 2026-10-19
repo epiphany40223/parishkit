@@ -1,8 +1,9 @@
-"""The Go live page's Check step, Testing cleanup and Testing submissions.
+"""The Go live page's Check step and Testing submissions.
 
-Check (#1585 slice 2) shows passive readiness evidence and starts the
-irreversible Testing cleanup from the shared review dialog; Testing cleanup
-follows it until #1585 slice 3 replaces it with the Prepare step.
+Check (#1585 slice 2) shows passive readiness evidence and starts go-live
+from the shared review dialog: the irreversible Testing cleanup and attempt
+1, whose progress the Prepare step shows (go_live_prepare_views, #1585
+slice 3).
 """
 
 from uuid import UUID, uuid4
@@ -51,7 +52,6 @@ from .go_live_commands import (
     verify_preview,
 )
 from .go_live_inputs import collect_inputs
-from .go_live_progress import control, progress
 from .integration_views import ERRORS, _checked
 from .setup_views import _closed, error_response
 
@@ -287,7 +287,7 @@ def _check_context(request, service, campaign_id):
         context["campaign"] = stage.request.campaign
     context |= {
         "state": state,
-        "wizard": go_live_check.bar(state, stage.in_progress_url),
+        "wizard": go_live_check.bar(state),
         # Work that moves by itself is followed closely; otherwise the step
         # only re-reads now and then, for a fix made in another tab.
         "live_interval": None
@@ -479,26 +479,29 @@ def _sent_before(campaign_id, request):
 
 
 def _started(request, service, campaign_id, values):
-    """Start Testing cleanup from Apply's preview; redirect to the step in progress.
+    """Start go-live from Apply's preview; redirect to the Prepare step.
+
+    ``start_cleanup`` begins attempt 1 in the same transaction, so the
+    go-live producer has work from that moment (background-processing
+    spec, "Go-live sequencing").
 
     The binding is signed again, so its five-minute lifetime never reaches
     the Administrator; the DNS and origin check it once bounded has just
     run again (``_start``), and ``start_cleanup`` still re-reads and
     compares every input it binds under the work lock.
     """
-    status = start_cleanup(
+    start_cleanup(
         request,
         service,
         campaign_id,
         preview_token=signing.dumps(_binding(values), salt=COMMAND_SALT),
         acknowledge=True,
+        attempt=True,
     )
     return _checked(
         request,
         service,
-        HttpResponseRedirect(
-            reverse("admin:go_live_cleanup", args=[status.request_id]), status=303
-        ),
+        HttpResponseRedirect(reverse("admin:go_live_prepare"), status=303),
     )
 
 
@@ -516,49 +519,6 @@ def _start_answer(request, service, start):
         response.stewardship_safe_error = True
         refused_step(response, start["refused"])
     return _checked(request, service, response)
-
-
-@require_http_methods(["GET", "HEAD", "POST"])
-def cleanup_status(request, campaign_id, request_id):
-    """Passive progress and exact signed controls never expose direct deletion."""
-    try:
-        filters(request.GET, allowed=set())
-        _closed(request, {"control"})
-        service = runtime()
-        if request.method == "POST":
-            control(
-                request,
-                service,
-                campaign_id,
-                request_id,
-                token=request.POST.get("control", ""),
-            )
-            return _checked(
-                request,
-                service,
-                HttpResponseRedirect(
-                    reverse("admin:go_live_cleanup", args=[request_id])
-                ),
-            )
-        context = progress(request, service, campaign_id, request_id)
-        status = context["status"]
-        context["completion"] = Percentage(
-            status.processed_count, status.inventory_total
-        )
-        # The page follows itself (live-status-v1.js) until cleanup settles.
-        context["live_pending"] = status.state in {
-            "cleanup_queued",
-            "cleanup_running",
-            "cleanup_retry_wait",
-        } or (context["cancelling"] and status.state != "cancelled")
-        # The second step of going live (#196).
-        admin_navigation.place(request, flow="go_live", step="cleanup")
-        response = render(request, "stewardship/go-live-cleanup.html", context)
-        return _checked(request, service, response)
-    except ObjectDoesNotExist:
-        return error_response(LookupError("Cleanup request is unavailable."))
-    except ERRORS as error:
-        return error_response(error)
 
 
 @require_http_methods(["GET", "HEAD"])

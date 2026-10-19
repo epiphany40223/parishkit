@@ -74,19 +74,16 @@ def test_check_follows_a_stop_through_failure_retry_and_end(ready_links, ready_c
     Stopping, and once it is done Check says when go-live stopped above its
     readiness checks.
     """
-    browser, path, ring, login = ready_links
+    browser, links, ring, login = ready_links
     transition = ProductionTransitionRequest.objects.get()
     with web_login():
-        page = browser.get(path)
-        assert post(browser, path, {"control": page.context["prepare"]}).status_code
+        links.act(links.page()["prepare"])
         preparation = ProductionTokenPreparation.objects.get()
     _work(
         TaskRun.objects.get(pk=preparation.task_id), token_handler(public=ring.public)
     )
     with web_login():
-        page = browser.get(path)
-        cancel = {"control": page.context["records"][0]["controls"]["cancel"]}
-        assert post(browser, path, cancel).status_code == 302
+        links.act(links.page()["records"][0]["controls"]["cancel"])
         cancellation = ProductionTokenCancellation.objects.get()
     act(
         act(_status(TaskRun.objects.get(pk=cancellation.task_id)), "claim"),

@@ -26,6 +26,7 @@ from parishkit.stewardship.storage import StaleRecordError
 from . import test_setup_preparation_postgresql as setup_inputs
 from .campaign_builders import campaign_clock
 from .preview_builders import assert_out_of_date, previews_aged
+from .test_activation_views_postgresql import Links
 from .test_confirmation_readiness_postgresql import (  # noqa: F401
     bootstrapped,
     config_role,
@@ -362,12 +363,9 @@ def test_next_go_live_requires_new_test_cleanup_links_and_confirmation(
         assert status.request_id != item.confirmation.request_id
     with task_login(ServiceRole.WORKER, exact=True, reconnect=True):
         assert run(status)
-    path = reverse("admin:go_live_links", args=[status.request_id])
+    links = Links(*item.arguments, status.request_id)
     with web_login():
-        page = item.browser.get(path)
-        assert page.status_code == 200, page.content
-        response = post(item.browser, path, {"control": page.context["prepare"]})
-        assert response.status_code == 302, response.content
+        links.act(links.page()["prepare"])
     preparation = ProductionTokenPreparation.objects.get(
         transition_id=status.request_id
     )

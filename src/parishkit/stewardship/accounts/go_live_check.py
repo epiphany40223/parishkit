@@ -6,8 +6,8 @@ current status. Its state is one of:
 
 - ``started``: the campaign's latest go-live request still owns the gate
   and nobody asked to stop it; the step says when and by whom it started
-  and its one primary opens the step in progress (until #1585 slice 3,
-  today's Testing cleanup or Prepare Family links page).
+  and its one primary opens the step in progress, Prepare (which opens
+  Confirm Production itself once the Family links are ready).
 - ``stopping``: a stop was asked and is still running, either Testing data
   deletion stopping at its next safe point (``stop_kind`` "cleanup") or
   the stopped request's prepared Family links being discarded ("links").
@@ -71,6 +71,8 @@ class Progress:
     stop is still doing ("cleanup" or "links"); ``done``/``total`` its
     progress; ``retry`` the signed Retry stopping go-live control, and
     ``failed`` the failed disposal it retries as ``(preparation, task)``.
+    ``stopped_by_other`` is set when another Administrator than the viewer
+    stopped it, for the line that says so (#1585).
     """
 
     state: str
@@ -82,18 +84,14 @@ class Progress:
     retry: str | None = None
     failed: tuple | None = None
     stopped_at: datetime | None = None
+    stopped_by_other: bool = False
 
     @property
     def in_progress_url(self):
-        """The step in progress: Prepare Family links once cleanup is complete."""
+        """The step in progress: always Prepare, which leads on by itself."""
         if self.request is None:
             return None
-        name = (
-            "admin:go_live_links"
-            if self.request.state == "cleanup_complete"
-            else "admin:go_live_cleanup"
-        )
-        return reverse(name, args=[self.request.pk])
+        return reverse("admin:go_live_prepare")
 
 
 def _latest_task(root_id):
@@ -172,7 +170,10 @@ def progress(request, service, campaign_id):
             # Nothing started, or a go-live that was cancelled after
             # Production was confirmed: Check starts again from readiness.
             return Progress("idle")
-        stopping = ProductionCleanupCancellation.objects.filter(request=row).exists()
+        stop = ProductionCleanupCancellation.objects.filter(request=row).first()
+        stopping = stop is not None
+        # The line "Another Administrator stopped go-live." (#1585).
+        other = stopping and stop.actor_id != actor.identity
         if row.state in OPEN_STATES and not stopping:
             email = (
                 PortalUser.objects.filter(pk=row.initiated_by_id)
@@ -187,6 +188,7 @@ def progress(request, service, campaign_id):
                 stop_kind="cleanup",
                 done=row.processed_count,
                 total=row.inventory_total,
+                stopped_by_other=other,
             )
         state, done, total, failed = _links_stop(actor, row)
         if state is not None:
@@ -198,8 +200,9 @@ def progress(request, service, campaign_id):
                 total=total,
                 retry=retry_control(actor, row, *failed) if failed else None,
                 failed=failed,
+                stopped_by_other=other,
             )
-        return Progress("idle", row, stopped_at=row.updated_at)
+        return Progress("idle", row, stopped_at=row.updated_at, stopped_by_other=other)
 
 
 def remember_check(request, campaign_id, actor_id, inputs, verified, origin, profile):
@@ -253,34 +256,39 @@ def check_state(problems, target, verified):
     return "passed" if verified is True else "unchecked"
 
 
-def bar(state, in_progress_url=None):
-    """The Go live step bar on the Check step, as a ``setup_wizard.Wizard``.
+def bar(state, *, current="check", prepared=False, confirm_url=None):
+    """The Go live step bar, as a ``setup_wizard.Wizard``, on step ``current``.
 
-    Check is the current step. Before Start it is not done and every later
-    step is unavailable, saying why; once go-live has started Check is
-    completed, Prepare opens the step in progress, and the later steps wait
-    for the Family links and the confirmation.
+    Before Start, Check is not done and every later step is unavailable,
+    saying why. Once go-live has started (``state`` "started"), Check is
+    completed and Prepare opens; once the Family links are ready
+    (``prepared``) Prepare is completed too and Confirm Production opens at
+    ``confirm_url``. Activation waits for the confirmation.
     """
     started = state == "started"
-    reasons = {
-        "prepare": _("Not available yet: Start go-live on the Check step first."),
-        "confirm": _("Not available yet: Start go-live on the Check step first."),
-        "activate": _("Not available yet: Start go-live on the Check step first."),
-    }
+    first = _("Not available yet: Start go-live on the Check step first.")
+    reasons = {"prepare": first, "confirm": first, "activate": first}
     if started:
         reasons = {
             "confirm": _("Not available yet: the Family links are not prepared yet."),
             "activate": _("Not available yet: Confirm Production first."),
         }
+    done = {"check": started, "prepare": started and prepared}
+    urls = {
+        "check": reverse("admin:go_live"),
+        "prepare": reverse("admin:go_live_prepare") if started else None,
+        "confirm": confirm_url if started and prepared else None,
+    }
     steps = []
     for number, (key, label) in enumerate(STEPS, start=1):
-        url = reverse("admin:go_live") if key == "check" else None
-        state_name, status = "todo", _("Not done yet")
-        if key == "check" and started:
+        url = urls.get(key)
+        if done.get(key):
             state_name, status = "done", _("Completed")
-        elif key == "prepare" and started:
-            url, status = in_progress_url, _("In progress")
-        elif key != "check":
+        elif url and key == "prepare":
+            state_name, status = "todo", _("In progress")
+        elif url:
+            state_name, status = "todo", _("Not done yet")
+        else:
             state_name, status = "blocked", reasons[key]
         steps.append(
             Step(
@@ -291,13 +299,14 @@ def bar(state, in_progress_url=None):
                 url=url,
                 state=state_name,
                 status=status,
-                current=key == "check",
+                current=key == current,
             )
         )
+    index = [key for key, _label in STEPS].index(current)
     return Wizard(
         steps=tuple(steps),
         previous=None,
-        next=steps[1],
-        completed=1 if started else 0,
+        next=steps[index + 1] if index + 1 < len(steps) else None,
+        completed=sum(1 for value in done.values() if value),
         total=len(steps),
     )

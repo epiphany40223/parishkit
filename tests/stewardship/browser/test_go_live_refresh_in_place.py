@@ -1,18 +1,18 @@
 """Refresh on the go-live and Production pages acts in place (#519 PR 7b-2).
 
-Testing cleanup, Prepare Family links and Production
-activation are served at their real addresses (go_live_components), where
-their Refresh links lead, and each in-place read is answered with a later
+Production activation is served at its real address (go_live_components),
+where its Refresh link leads, and each in-place read is answered with a later
 version of the page. Each test sets a mark outside every region, which only
 a full page load could lose, scrolls the link below the fold with the mouse
 wheel (a scripted scroll can be undone by Firefox, #1088), and checks the
 mark, that the page did not jump back to the top, the fresh content, focus,
-the announcement and that exactly one in-place read was sent.
+the announcement and that exactly one in-place read was sent. The Go live
+page's steps have no Refresh link: they update themselves (#1585).
 """
 
 import pytest
 
-from .go_live_components import CLEANUP, LINKS, PRODUCTION
+from .go_live_components import PRODUCTION
 from .test_in_place import MARK, MARKED
 from .test_live_status_in_place import answer_reads
 from .waits import has_text, hidden, painted, visible
@@ -114,64 +114,6 @@ def refresh(page, component_origin, address, fresh, link, message, *, before=Non
     assert page.evaluate("document.activeElement.textContent") == link
     assert len(reads) == 1
     return reads
-
-
-def test_cleanup_refresh_keeps_details_open_and_updates_them(page, component_origin):
-    """Testing cleanup's Refresh brings the finished cleanup in place; an
-    open Technical details stays open with its updated values."""
-    details = page.locator("details.technical-details")
-
-    def open_details():
-        """Open Technical details before Refresh, showing the failed state."""
-        details.locator("summary").click()
-        visible(details.get_by_text("cleanup_failed", exact=True))
-
-    refresh(
-        page,
-        component_origin,
-        CLEANUP,
-        "/go-live-cleanup-fresh",
-        "Refresh cleanup progress",
-        "Progress refreshed.",
-        before=open_details,
-    )
-    visible(page.get_by_role("link", name="Prepare inactive Family links"))
-    hidden(page.get_by_role("button", name="Retry failed cleanup from its checkpoints"))
-    visible(details.get_by_text("cleanup_complete", exact=True))
-    assert details.evaluate("node => node.open")
-
-
-def test_links_refresh_keeps_the_page_and_is_in_place(page, component_origin):
-    """Prepare Family links' Refresh re-reads the shown history page and
-    brings the prepared links in place; paging the history afterwards is
-    still an ordinary load."""
-    reads = refresh(
-        page,
-        component_origin,
-        LINKS,
-        "/go-live-links-fresh",
-        "Refresh preparation progress",
-        # The history's navigator sits in the region, so its rows are read
-        # out too, as after a table refresh.
-        "Progress refreshed. Showing 1–1 · Page 1",
-    )
-    assert "page=1" in reads[0] and "size=25" in reads[0]
-    visible(page.get_by_role("link", name="Continue to Confirm Production"))
-    hidden(page.get_by_role("button", name="Retry failed preparation"))
-    # Paging the history stays an ordinary load (live-status-v1.js owns its
-    # panels), even from the navigator the Refresh swapped in.
-    # Not waited on to "load": Firefox does not always fire it for a page
-    # that keeps polling, and the navigation itself is what is under test.
-    with page.expect_navigation(wait_until="domcontentloaded"):
-        page.locator("select[data-page-size]").first.select_option("50")
-    assert "size=50" in page.url
-    # The new page carries no marker. A retrying locator assertion, not an
-    # evaluate: Firefox can still be tearing down the old page's context when
-    # domcontentloaded fires, and an evaluate then fails with "Execution
-    # context was destroyed".
-    from playwright.sync_api import expect  # imported late: collection needs no browser
-
-    expect(page.locator("h1[data-mark]")).to_have_count(0)
 
 
 def test_production_refresh_is_in_place(page, component_origin):

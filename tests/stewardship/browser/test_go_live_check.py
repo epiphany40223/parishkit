@@ -9,7 +9,7 @@ dialog's review, and Apply redirects to the step in progress.
 
 import pytest
 
-from .go_live_components import CLEANUP, GO_LIVE
+from .go_live_components import GO_LIVE, PREPARE
 from .test_components import axe_violations
 from .test_in_place import MARK, MARKED
 from .waits import focused, hidden, visible
@@ -99,7 +99,7 @@ def test_each_state_has_one_frame_and_at_most_one_primary(
     page.goto(component_origin + "/go-live-started")
     expect(page.locator(".setup-stepper-count")).to_have_text("1 of 4 steps completed")
     prepare = page.locator(".setup-track a").nth(1)
-    assert prepare.get_attribute("href") == CLEANUP
+    assert prepare.get_attribute("href") == PREPARE
     # Settings are locked, so Check has no Back once go-live has started.
     assert page.locator("[data-go-live-back]").count() == 0
     # Stop failed says when the disposal's last attempt failed.
@@ -192,7 +192,7 @@ def test_start_go_live_reviews_in_the_dialog_then_opens_the_step(
     reviews = len(posts)
     page.get_by_role("button", name="Start go-live").click()
     visible(dialog)
-    with page.expect_navigation(url=component_origin + CLEANUP):
+    with page.expect_navigation(url=component_origin + PREPARE):
         dialog.get_by_role("button", name="Apply").click()
     # The second Review, then one Apply, which carries the signed preview.
     assert len(posts) == reviews + 2
