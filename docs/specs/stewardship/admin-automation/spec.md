@@ -3045,9 +3045,10 @@ lists them.
 8g) is the Timeline page's export form, the
 [timeline export](../reports/spec.md#timeline-export) of its frozen
 migration: the same service (`timeline_exports.create_timeline_export`), the
-same record, `export_requested` and `admin_cmd_export_family_timeline`, for
-an Administrator only, as the page. The id is the Family's campaign record
-id, the opaque id in the page's address; a Family of another campaign is
+same record, `export_requested` and `admin_cmd_export_family_timeline`,
+with the page's role check (Administrators and Staff since #1799; an
+automation session is an Administrator's). The id is the Family's campaign
+record id, the opaque id in the page's address; a Family of another campaign is
 `not_available`. The file can hold the Family's code, so it is
 [fresh-gated](#fresh-gated-actions-from-the-command-line), as on its page:
 it asks at the prompt, then calls `sign_in_instant` in the export lock. The
