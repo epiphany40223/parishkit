@@ -611,7 +611,9 @@ the same function that drew the form. On a successful submit both fields
 are copied, unchanged, to the immutable `Submission`, in the transaction
 that already moves the baseline's pins to it, so every stream can read
 what the response's form showed. The migration that adds the four columns
-is additive (nullable, or false by default) and changes no existing row.
+is additive (`reviewed_view` not null, false by default; `shown_items`
+nullable) and changes no existing row, so every existing baseline and
+Submission reads as not drawn as the reviewed form.
 
 The submit then applies the resubmission rule for the form's own
 `reviewed_view`: a live form with it false (one drawn before the release
@@ -655,13 +657,17 @@ each item under the reviewed rule:
 - **Another session's submission** advances the Family's effective version
   and is refused for review, as today.
 - **A form open across the deploy** of #1705's last slice is never refused
-  for it: its baseline reference keeps today's format with `reviewed_view`
-  false, so it is judged by
+  for it: its baseline reference keeps today's dependency projection with
+  `reviewed_view` false, so it is judged by
   [the rule before the reviewed form](#resubmission-before-the-reviewed-form),
-  and the Family's next form is a reviewed form. A stale-form review after
-  the deploy fetches a fresh baseline that keeps the old one's
-  `reviewed_view`, as above. The deploy changes no stored answer or
-  decision.
+  and the Family's next sign-in draws a reviewed form. A stale-form review
+  after the deploy fetches a fresh baseline that keeps the old one's
+  `reviewed_view`, as above, and the fresh form is drawn by the same rule:
+  with `reviewed_view` false, today's merge (the Family's own answers) and
+  no shown items, as a Testing form is drawn. Otherwise the tab would show
+  reviewed values that the earlier rule compares with the Family's previous
+  answer, and an edited value sent back as shown would reopen. The deploy
+  changes no stored answer or decision.
 
 #### Privacy and wording
 
@@ -682,8 +688,9 @@ each item under the reviewed rule:
   slice (it ships in the same slice that turns the reviewed form on, so it
   is never shown while untrue): each census, Ministry and financial
   worklist's page help adds, in these words: "A Family that signs in again
-  sees the values you accepted, edited or added, and ParishSoft's value for
-  a change you ignored. Edit a Family's answer only to make it consistent
+  sees the values you accepted, edited or added, and, for a change you
+  ignored, ParishSoft's value where the form can show it, otherwise the
+  Family's own answer. Edit a Family's answer only to make it consistent
   (for example "St." for "Street") or to make a correction the Family asked
   for." The Edit, Add and Ignore dialogs add one sentence: "The Family will see this
   value the next time it signs in." (Edit, Add; for a Ministry join Add:
@@ -719,15 +726,19 @@ form's existing keyboard, focus and accessible-name checks run on a reviewed for
 - Before the last slice, the Family form, its payload and the submit's
   outcomes are unchanged: each of slices 1 to 5 proves it with a render and
   payload comparison against the base. Every slice, the last included,
-  keeps the baseline reference format, so a form open across any of their
-  deploys submits without a stale-form refusal.
+  keeps the baseline reference's dependency projection and token, so a form
+  open across any of their deploys submits without a stale-form refusal.
 
 #### Reviewed form delivery
 
 Small pull requests after every Staff and leader slice. Slices 1 to 5
 build the reviewed form without drawing it for a Family: each stream's
 reader and reviewed derivation is called only by tests until slice 6
-connects the live form and the submit to them. There is no setting
+connects the live form and the submit to them; slice 2's recording of
+`shown_items` likewise runs at a live baseline issue only from slice 6, and
+slice 3's and 4's relaxed completeness checks admit an absence only where
+a shown item exists, so they are inert while every live form records none.
+There is no setting
 ([Families see reviewed changes](#families-see-reviewed-changes)), so
 nothing a Family sees changes, and no form records `reviewed_view` true,
 until the release with slice 6 deploys. Rollback is fail-forward: a
@@ -747,7 +758,8 @@ problem found after that deploy is fixed in a new release.
    readers that slices 3 to 5 add. It needs the stages it names, so it
    follows #1683, #1684, #1685, #1686 (with #1704, #1747 and #1753), #1688
    and #1689. Tests: the unit tables; a PostgreSQL test that a Testing form
-   records nothing.
+   records nothing; a render and payload comparison showing the live Family
+   form unchanged.
 3. **Census.** The census reader; the census reviewed draw from the working
    change set (the
    [Effective-value merge](../data/spec.md#effective-value-merge) gains its
@@ -776,7 +788,8 @@ problem found after that deploy is fixed in a new release.
    Needs slice 2. Tests: every pledge stage, Confirmed included, times
    unchanged, changed and edited to zero; a Confirmed edited pledge
    resubmitted unchanged stays Confirmed; the share methods kept; a refresh
-   check after an unchanged resubmission still counting.
+   check after an unchanged resubmission still counting; the live Family
+   payload byte-identical to the base.
 6. **Turn on the reviewed form, Staff wording and browser coverage.** The
    live Family form (and Open form) draws the reviewed form and records
    `shown_items` with `reviewed_view` true, and the submit judges each form
@@ -788,7 +801,9 @@ problem found after that deploy is fixed in a new release.
    checklist for the Administrator, who approves this release's deploy as
    for any other. Needs slices 3 to 5. Tests also cover a form drawn before
    the release (`reviewed_view` false) submitted after it, judged by the
-   earlier rule without a stale-form refusal; a Testing form showing its
+   earlier rule without a stale-form refusal, and one refreshed after the
+   release (a stale-form review) still showing the Family's own answers and
+   judged by the earlier rule; a Testing form showing its
    own Testing answers; and that no credential is touched.
 
 #### Reviewed form decisions
@@ -1426,8 +1441,11 @@ that is done safely.
   never an edit to an applied migration. During the campaign the changes
   are additive only: new tables (decision rows for Ministry Edit, Add,
   financial and cannot-participate items, confirmation and mark records)
-  and new nullable columns. No column is dropped, renamed or narrowed, and
-  no CHECK is tightened over existing rows, before the campaign closes.
+  and new columns that are nullable or not null with a constant default
+  (metadata-only in PostgreSQL, so no row is rewritten; #1705's
+  `reviewed_view` is one). No column is dropped, renamed or narrowed, and
+  no CHECK is tightened over existing rows (a new column's own check, which
+  every existing row meets, is not), before the campaign closes.
 - **Stages are derived, not copied.** A stage is computed from each stream's
   stored state by the shared mapping
   ([#1691](https://github.com/epiphany40223/parishkit/issues/1691)), unit
@@ -1496,7 +1514,7 @@ no stored decision to carry, and bulk Accept handles them in a few clicks.
 - **The Family form does not change** until #1705's last slice deploys. Each slice
   that touches the submit path proves it with a render comparison of the
   Family form against the base, and keeps the form's baseline reference
-  format, so a Family whose form was open across a deploy submits without a
+  dependency projection, so a Family whose form was open across a deploy submits without a
   stale-form refusal and is judged by [rule 1 to
   5](#resubmission-before-the-reviewed-form).
 - **Existing pages keep working until their stream switches.** Each stream
