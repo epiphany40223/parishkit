@@ -938,9 +938,9 @@ Data comes first: the heading with the Family's name (the directory's
 surname-and-heads name from the latest ParishSoft data; "Timeline" alone when
 that data no longer has the Family, whose line then starts with the shared
 [Not in ParishSoft](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
-badge), a line with its DUID and envelope number (and, for Administrators,
-the hub's
-[Last portal action](../admin-portal/spec.md#hub-header-strip)) and a link
+badge), a line with its DUID and envelope number (and the hub's
+[Last portal action](../admin-portal/spec.md#hub-header-strip), for both
+roles) and a link
 to the directory, a line with the campaign's name and Counted at, then, in
 the Timeline tab, a summary that both roles see:
 
@@ -1033,7 +1033,10 @@ shows them all, with no paging or row navigator. Its lines are:
 - each submission, noting when Staff entered it for the Family and when no
   receipt was sent because the Family had no email address.
 
-Staff get none of these, and the server does not read them for a Staff view.
+Staff get none of these lines. For a Staff view the server reads only the
+sign-ins, session ends and engagement record behind the
+[Last portal action](../admin-portal/spec.md#hub-header-strip), and keeps
+only the lines that can be it.
 
 **Filters.** One compact filter bar above the table (it wraps on a phone)
 narrows the lines; it is an

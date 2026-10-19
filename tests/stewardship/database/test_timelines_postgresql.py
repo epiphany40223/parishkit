@@ -218,6 +218,9 @@ def test_timeline_for_administrators_and_staff(
     response, body = as_web(browser, corpus)
     assert response.status_code == 200
     assert f"<code>{code}</code>".encode() in body and b"data-open-form" in body
+    # Staff see the Last portal action too (Administrator decision,
+    # 2026-10-18): the live sign-out above, from the same records.
+    assert b"Last portal action: Signed out, <time" in body
     for absent in (
         b"Timeline</h2>",
         b"/admin/mail/sent/",

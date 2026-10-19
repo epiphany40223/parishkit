@@ -118,7 +118,13 @@ def components(context, admin):
                 "values": {"size": "all", "sort": "-when"},
             },
         ),
-        STAFF: (Timeline(TIMELINE.summary), {}),
+        # Staff's reduced view keeps only the portal lines (read_timeline).
+        STAFF: (
+            Timeline(
+                TIMELINE.summary, tuple(line for line in TIMELINE.events if line.portal)
+            ),
+            {},
+        ),
         UNAVAILABLE: (
             TIMELINE,
             {"full": True, "testing_codes": True, "family_test_url": ADMIN},

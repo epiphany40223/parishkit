@@ -667,8 +667,9 @@ def read_engagement(family_id, scope):
 class Timeline:
     """One Family's records in one scope: the summary, and the full view's extras.
 
-    ``events`` and ``engagement`` are only read for the full view; for the
-    reduced (Staff) view they stay empty and None.
+    ``engagement`` is only kept for the full view. For the reduced (Staff)
+    view it stays None and ``events`` holds only the ``portal`` lines, which
+    ``last_action`` needs, never the rest of the full timeline.
     """
 
     summary: Summary
@@ -683,8 +684,9 @@ class Timeline:
         ``portal`` (a submission of the Family's own, a sign-out, or a form
         step), the latest built when two share an instant. Sign-ins and form
         opens never count: a mail scanner fetching the Family's personal
-        link makes both exactly as the Family would. Only the full view
-        reads these lines, so the reduced (Staff) view has none.
+        link makes both exactly as the Family would. Both views read these
+        lines: Staff see the Last portal action too (Administrator decision,
+        2026-10-18).
         """
         return max(
             (line for line in self.events if line.portal),
@@ -696,31 +698,46 @@ class Timeline:
 def read_timeline(scope, family_id, *, full, current_mode="production"):
     """Read one Family's records in ``scope``; ``full`` adds the timeline.
 
-    Runs inside the report's read guard and read-only transaction. The
-    reduced view reads only the emails and submissions its summary needs;
-    the full view adds the skips, sign-ins and session ends (``current_mode``
-    is the runtime mode now, for attributing them), form opens and the
-    engagement record.
+    Runs inside the report's read guard and read-only transaction. Both
+    views read the emails and submissions the summary needs, and the
+    sign-ins, session ends (``current_mode`` is the runtime mode now, for
+    attributing them) and engagement record the Last portal action comes
+    from. The reduced (Staff) view keeps only the portal lines; the full
+    view adds the skips and form opens and keeps every line.
     """
     values = scope_values(scope, family_id)
+    bounds = lifetime(scope)
     with connection.cursor() as cursor:
         emails = read_emails(cursor, values)
         submissions = read_submissions(cursor, values, emails)
-        if not full:
-            return Timeline(summary(emails, submissions))
-        bounds = lifetime(scope)
-        window = values | {"started": bounds[0], "ended": bounds[1]}
-        cursor.execute(_SKIPS, window)
-        skips = cursor.fetchall()
-        cursor.execute(_WORKGROUP_SKIPS, window)
-        workgroup_skips = cursor.fetchall()
+        if full:
+            window = values | {"started": bounds[0], "ended": bounds[1]}
+            cursor.execute(_SKIPS, window)
+            skips = cursor.fetchall()
+            cursor.execute(_WORKGROUP_SKIPS, window)
+            workgroup_skips = cursor.fetchall()
+    engagement = read_engagement(family_id, scope)
+    sign_ins, ends = read_sessions(family_id, scope, current_mode, bounds)
+    if not full:
+        # Staff see the Last portal action (Administrator decision,
+        # 2026-10-18) but not the timeline: build the lines from what the
+        # action can come from and keep only the portal ones, so no email,
+        # sign-in or form open reaches Staff's page through ``events``.
+        lines = events(
+            emails,
+            submissions,
+            sign_ins=sign_ins,
+            engagement=engagement,
+            session_ends=ends,
+        )
+        return Timeline(
+            summary(emails, submissions), tuple(line for line in lines if line.portal)
+        )
     forms = FamilyFormBaseline.objects.filter(
         family_id=family_id,
         mode=values["response_mode"],
         rehearsal_epoch_id=scope.rehearsal_epoch_id,
     ).values_list("created_at", flat=True)
-    engagement = read_engagement(family_id, scope)
-    sign_ins, ends = read_sessions(family_id, scope, current_mode, bounds)
     return Timeline(
         summary(emails, submissions),
         events(

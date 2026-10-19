@@ -422,15 +422,18 @@ def test_staff_page_is_the_reduced_view():
     for absent in (
         "data-table-region",
         "table-filters",
-        "Last portal action",
         "/admin/mail/sent/",
         "Timeline</h2>",
         "Campaign email can reach",
         "Furthest step",
         "Last seen",
-        "mail scanner",
+        "A sign-in can also be a mail scanner",
     ):
         assert absent not in page, absent
+    # The Last portal action and its About text are for Staff too
+    # (Administrator decision, 2026-10-18).
+    assert "Last portal action: None recorded" in page
+    assert "Last portal action is the newest action" in page
 
 
 def test_open_form_is_unavailable_with_its_reason():
@@ -722,7 +725,15 @@ def test_the_page_is_a_hub_with_the_timeline_tab():
     # A campaign without any content tab: Timeline alone.
     page = render(TIMELINE)
     assert "Coming soon" not in page and page.count('role="tab"') == 1
-    # Staff get the tabs and the summary, but no Last portal action.
-    page = render(Timeline(TIMELINE.summary), full=False, sections=("family",))
+    # Staff get the tabs, the summary and the Last portal action
+    # (Administrator decision, 2026-10-18), from the portal lines alone.
+    portal = tuple(line for line in TIMELINE.events if line.portal)
+    page = render(Timeline(TIMELINE.summary, portal), full=False, sections=("family",))
     assert 'id="family-tabs-panel-timeline"' in page and "Coming soon" in page
-    assert "Last portal action" not in page
+    assert (
+        "Last portal action: "
+        f'Submitted a response, <time datetime="{SECOND.at.isoformat()}"'
+    ) in page
+    assert 'id="table-filters"' not in page
+    page = render(Timeline(TIMELINE.summary), full=False, sections=("family",))
+    assert "Last portal action: None recorded · <a href=" in page

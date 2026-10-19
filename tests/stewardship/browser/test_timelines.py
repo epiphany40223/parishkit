@@ -372,10 +372,11 @@ def test_the_hub_strip_and_tabs_frame_the_timeline(page, component_origin):
     assert_clean(page, errors)
 
 
-def test_staff_get_the_hub_without_the_last_portal_action(page, component_origin):
-    """Staff's strip has no Last portal action; their Timeline tab is the
-    summary, as before (#1678)."""
+def test_staff_get_the_hub_with_the_last_portal_action(page, component_origin):
+    """Staff's strip names the Last portal action too (Administrator decision,
+    2026-10-18); their Timeline tab is the summary, as before (#1678)."""
     page.goto(component_origin + STAFF)
     has_attribute(page.get_by_role("tab", name="Timeline"), "aria-selected", "true")
-    assert page.get_by_text("Last portal action").count() == 0
+    strip = page.locator("p", has_text="Last portal action:")
+    assert "Last portal action: Submitted a response, " in strip.inner_text()
     visible(page.get_by_role("tabpanel").get_by_role("heading", name="Summary"))

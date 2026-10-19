@@ -6725,7 +6725,7 @@ form ([Family and Member names](../ui-conventions/spec.md#family-and-member-name
 or "Timeline" alone when the latest ParishSoft data no longer has the Family;
 the browser title stays "Timeline", so browser history never keeps the name.
 Below it, on one line: the Family DUID, the envelope number when ParishSoft
-has one, the **Last portal action** (Administrators only, below) and the
+has one, the **Last portal action** (below) and the
 link to the Active parishioner family directory. The campaign's name and
 Counted at follow on the next line, as on the Timeline today.
 
@@ -6751,13 +6751,16 @@ Family, not per session, so steps taken while Staff fill in the form through
 Open form count as well; the About panel says so. The engagement record keeps
 only the first and the furthest step, so a Family that comes back later and
 neither submits, signs out nor reaches a step further than before leaves the
-value where it was. The value comes from the lines the Timeline already
-reads, so it adds no statement.
+value where it was. For Administrators the value comes from the lines the
+Timeline already reads, so it adds no statement.
 
-Only Administrators see it. Staff see the Timeline's summary only, and the
-records behind the full timeline (sign-outs and form steps) are not read for
-them ([Timeline](../reports/spec.md#timeline) access); Staff's strip shows
-the name, DUID, envelope number and directory link.
+Administrators and Staff both see it (Administrator decision, 2026-10-18).
+Staff still see only the Timeline's summary, not the full timeline
+([Timeline](../reports/spec.md#timeline) access): for them the page reads
+the sign-ins, session ends and engagement record the value comes from, and
+keeps only the lines that can be the Last portal action, so no other line of
+the timeline reaches their page. The About panel explains the value to both
+roles.
 
 ### Hub tabs
 

@@ -316,9 +316,9 @@ def page_context(campaign, family_id, identity, timeline, as_of, **options):
         "identity": identity,
         "full": full,
         "timeline": timeline,
-        # The hub's Last portal action (#1678), Administrators only: Staff's
-        # reduced view reads none of the lines it comes from.
-        "last_action": timeline.last_action if full else None,
+        # The hub's Last portal action (#1678), for Administrators and Staff
+        # (Administrator decision, 2026-10-18).
+        "last_action": timeline.last_action,
         "tabs": hub_tabs(
             page_url, options.get("parameters", {}), options.get("sections", ())
         ),
