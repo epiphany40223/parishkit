@@ -412,7 +412,7 @@ FROZEN = {
         "8b516b20ea34a8546225c1ecf9108f36a8e7d647c4544e9d62d40a258fbab810"
     ),
     "0139_pledge_refresh_checks.sql": (
-        "d39079cb22e628ec6e8e3d60f67f315aadd9099f4467669b4f4d88d8821c0a7c"
+        "9f5b4d3c66b4490d52f2a407bef7ad0c7f47d1a8b853341982a3f91652df78a7"
     ),
 }
 

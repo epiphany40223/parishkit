@@ -416,6 +416,30 @@ def test_the_mark_guard_refuses_an_amount_not_the_snapshots(
     assert not PledgeReview.objects.filter(entered=True).exists()
 
 
+def test_the_mark_guard_refuses_a_known_mark_without_an_amount(
+    response_service, monkeypatch
+):
+    """A mark that says it knows ParishSoft's amount must carry one, even
+    when the current snapshot has none to compare with (no giving read):
+    such a row would leave the refresh nothing to compare."""
+    from parishkit.stewardship.reports import pledge_models, pledge_review
+
+    harness, submission = accepted(response_service, marked=False)
+    refresh(harness, covered=False)
+    original = pledge_models.PledgeReview.objects.create
+
+    def known_none(**fields):
+        """Record the mark as known with no amount."""
+        if fields.get("entered"):
+            fields["marked_pledge_known"] = True
+        return original(**fields)
+
+    monkeypatch.setattr(pledge_review.PledgeReview.objects, "create", known_none)
+    with pytest.raises(DatabaseError, match="authority, version or state"):
+        decide(harness, admin(), "entered_by_hand", [submission])
+    assert not PledgeReview.objects.filter(entered=True).exists()
+
+
 def test_the_migration_check_refuses_the_old_pledge_review_guard(response_service):
     """0139's DO block refuses to commit while 0135's guard, which admits no
     mark amount, is installed."""

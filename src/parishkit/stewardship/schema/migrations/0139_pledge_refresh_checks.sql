@@ -103,7 +103,8 @@ LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
         r.decision::text,r.entered,
         CASE WHEN r.decision='accepted_edited' THEN r.reviewed_annual_pledge
             ELSE (r.answer->>'annual_pledge')::numeric END,
-        CASE WHEN r.marked_pledge_known THEN r.marked_pledge ELSE 0 END
+        CASE WHEN r.marked_pledge_known AND r.marked_pledge IS NOT NULL
+            THEN r.marked_pledge ELSE 0 END
     FROM chosen c
     CROSS JOIN LATERAL stewardship_pledge_review_states_v1(c.campaign,c.family) i
     JOIN stewardship_pledge_review r ON r.id=i.review_id
@@ -224,11 +225,13 @@ BEGIN
        OR length(NEW.note)>2000
        -- A mark records ParishSoft's upcoming-year amount from the current
        -- snapshot, or none (#1704); pledge_review_mark_shape keeps it to
-       -- marks.
-       OR (NEW.marked_pledge_known AND NEW.marked_pledge IS DISTINCT FROM
+       -- marks. A known amount is never NULL, even where the snapshot has
+       -- none to compare with.
+       OR (NEW.marked_pledge_known AND (NEW.marked_pledge IS NULL
+           OR NEW.marked_pledge IS DISTINCT FROM
            public.stewardship_pledge_upcoming_v1(
                (SELECT c.snapshot_id FROM public.stewardship_source_current c
-                WHERE c.singleton),family.campaign_id,family.family_duid))
+                WHERE c.singleton),family.campaign_id,family.family_duid)))
        OR NOT coalesce(offered,false)
     THEN RAISE EXCEPTION 'Pledge review lacks current authority, version or state'
         USING ERRCODE='23514'; END IF;
@@ -267,6 +270,7 @@ BEGIN
     IF NOT EXISTS(SELECT 1 FROM pg_proc
             WHERE oid='public.stewardship_pledge_upcoming_v1(uuid,uuid,bigint)'::regprocedure
               AND provolatile='s' AND NOT prosecdef
+              AND proconfig=ARRAY['search_path=pg_catalog, public, pg_temp']
               AND prosrc LIKE '%fund_duids%' AND prosrc LIKE '%giving_as_of_date%')
     THEN
         RAISE EXCEPTION 'The upcoming pledge selection is not installed as declared';
@@ -286,13 +290,18 @@ BEGIN
     END IF;
     -- The replaced pledge review guard: 0135's rules, and the mark's amount
     -- checked against the current snapshot.
-    IF NOT EXISTS(SELECT 1 FROM pg_proc
+    IF NOT EXISTS(SELECT 1 FROM pg_trigger t
+            WHERE t.tgrelid='public.stewardship_pledge_review'::regclass
+              AND t.tgname='stewardship_pledge_review_guard' AND t.tgenabled='O'
+              AND t.tgfoid='public.stewardship_pledge_review_guard_v1()'::regprocedure)
+       OR NOT EXISTS(SELECT 1 FROM pg_proc
             WHERE oid='public.stewardship_pledge_review_guard_v1()'::regprocedure
               AND NOT prosecdef
+              AND proconfig=ARRAY['search_path=pg_catalog, public, pg_temp']
               AND prosrc LIKE '%stewardship_export_authorized_v1(NEW.actor_id,false)%'
               AND prosrc LIKE '%stewardship_pledge_review_states_v1(%'
               AND prosrc LIKE '%classid=736220 AND objid=1 AND objsubid=2%'
-              AND prosrc LIKE '%NEW.marked_pledge_known AND NEW.marked_pledge IS DISTINCT FROM%'
+              AND prosrc LIKE '%NEW.marked_pledge_known AND (NEW.marked_pledge IS NULL%'
               AND prosrc LIKE '%stewardship_pledge_upcoming_v1(%')
     THEN
         RAISE EXCEPTION 'stewardship_pledge_review_guard_v1 does not admit the mark''s pledge';
