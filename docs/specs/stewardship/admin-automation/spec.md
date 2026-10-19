@@ -1265,7 +1265,7 @@ session** runs these commands, with no browser step:
   ([#1018](https://github.com/epiphany40223/parishkit/issues/1018) part (a));
 - integration setting changes (PR 10's `integration confirm`, including
   removing an integration) and starting Testing cleanup (PR 12's `go-live
-  cleanup`)
+  start`)
   ([#547](https://github.com/epiphany40223/parishkit/issues/547)).
 
 In Python, `sign_in_instant` (in `accounts.sessions`) takes the caller. For a
@@ -1821,12 +1821,14 @@ signatures:
   download's read and writer into a request-free
   `ministry_followup_exports.export_body` and its file name into
   `export_file_name`, which the page's view now calls.
-- **PR 12:** `go_live_commands` and `go_live_views.testing_families`, cleanup
-  retry and cancel, the link preparation controls (`activation_progress`, which
-  the Go live page's Prepare step calls),
-  `confirmation_views._fresh_after_cleanup`, `confirmation_commands`, the
-  Production preparation retry (`confirmation_progress.retry`) and
-  `withdrawal_commands`.
+- **PR 12:** the Go live page's actions, each already a function the page's
+  view calls with the request: Start go-live (`go_live_commands`) and
+  `go_live_views.testing_families`; the Prepare step's retry, refresh-again
+  and stop (`go_live_prepare_views`, through `go_live_progress` and
+  `activation_progress`) and Check's retry of a failed stop; Confirm
+  Production (`go_live_confirm_views`, `confirmation_commands`); the
+  Production preparation retry (`confirmation_progress.retry`) and Cancel
+  go-live (`withdrawal_commands`).
 
 ### Read models
 
@@ -2495,30 +2497,31 @@ Administrator confirmation.
 
 | URL names | Command or exemption |
 | --- | --- |
-| `go_live` | `go-live readiness` (PR 3b); `go-live preview` with the DNS check, `go-live cleanup --token …` (PR 12) |
+| `go_live` | `go-live readiness` (PR 3b); `go-live preview` (Check readiness and public web address: the DNS check, printing the start token) and `go-live start --token …` (Start go-live) (PR 12); `go-live retry` also retries a failed stop (Retry stopping go-live) |
 | `go_live_families` | `go-live families`, an export (PR 12) |
-| `go_live_prepare` | `go-live cleanup-status --watch`, `go-live cleanup-retry`, `go-live cleanup-cancel`, `go-live links`, `go-live links-status --watch`, `go-live links-retry`, `go-live links-cancel` (cancel or discard the preparation) (PR 12); the Go live page's Prepare step (#1585 slice 3) replaced the Testing cleanup and Prepare Family links pages |
-| `go_live_confirm` | `go-live confirm-preview`, `go-live confirm --token …` (PR 12); the Go live page's Confirm Production step (#1585 slice 4) replaced the old confirmation page |
-| `production_progress` | `go-live progress --watch` (PR 3b); the page's mail preparation **Retry**, and `go-live withdraw-preview --reason …`, `go-live withdraw --token …` for its Cancel go-live dialog (PR 12); the Go live page's Activation step (#1585 slice 5) replaced the separate Cancel go-live page |
+| `go_live_prepare` | `go-live status --watch` (the step's three boxes), `go-live retry` (a failed box's Retry, which retries the same task and changes no data), `go-live refresh-again` (Refresh and prepare again, which starts a new attempt) and `go-live stop` (Stop go-live) (PR 12) |
+| `go_live_confirm` | `go-live confirm-preview` (the Confirm Production dialog's review) and `go-live confirm --token …` (its Apply); its Stop go-live is `go-live stop` and its Refresh and prepare again `go-live refresh-again` (PR 12) |
+| `production_progress` | `go-live progress --watch` (PR 3b); `go-live retry` (mail preparation's **Retry**), and `go-live cancel-preview --reason …` and `go-live cancel --token …` (the Cancel go-live dialog's review and Apply) (PR 12) |
 
-Cleanup, cleanup cancel, link preparation discard, confirmation and withdrawal
-ask at the [prompt](#command-line-confirmation) unless `--yes` is given. See
+The rows follow the four-step
+[Go live page](../admin-portal/spec.md#go-live-page) of
+[#1585](https://github.com/epiphany40223/parishkit/issues/1585), which
+replaced the readiness, Testing cleanup, Family links, final confirmation and
+Cancel go-live pages; the cleanup and links commands planned for those pages
+retired with them. `go-live retry` retries the one failed task the current
+step offers a Retry for, as the page does. Start, refresh-again, stop,
+confirm and cancel ask at the [prompt](#command-line-confirmation) unless
+`--yes` is given. As on the page, each confirming command re-checks what
+its preview showed and mints the SQL guard's 5-minute token itself, so no
+command is refused for its preview's age (default, pending Administrator
+confirmation). See
 [Production transition](../admin-portal/spec.md#production-transition).
-These steps matter again only for the next campaign. The go-live redesign in
-[#462](https://github.com/epiphany40223/parishkit/issues/462) changes them to
-match the [Go live page](../admin-portal/spec.md#go-live-page):
-`go-live readiness` and `go-live preview` as today (the preview runs the DNS
-check and prints the start token); `go-live start --token …` (Start
-go-live); `go-live status --watch` (the Prepare step); `go-live retry`
-(a failed stage's Retry, which retries the same task and changes no data);
-`go-live refresh-again` (Refresh and prepare again, which starts a new
-attempt); `go-live confirm-preview` and `go-live confirm --token …` (Confirm
-Production); and `go-live stop` (Stop go-live). Start, refresh-again,
-confirm and stop ask at the [prompt](#command-line-confirmation) unless
-`--yes` is given. The cleanup and links commands retire with their pages.
-The URL-name rows above change with the slices that rename the pages, since
-`test_admin_page_names` checks them against the code. PR 12 follows
-whichever flow is current.
+These steps matter again only for the next campaign. The command names
+follow the page's labels (`go-live cancel` for Cancel go-live, formerly
+withdraw); the URL-name rows change with the pages, since
+`test_admin_page_names` checks them against the code. All of these actions
+are owed by PR 12, tracked in
+[#1809](https://github.com/epiphany40223/parishkit/issues/1809).
 
 `go-live readiness` and `go-live progress` read the current campaign, or the
 campaign `--campaign` names, as `schedule show` does. Neither page records a
@@ -2534,10 +2537,8 @@ not the current Production campaign (a Testing draft included) is `denied`
 problems as their stored codes and never the Admin report recipients.
 A `go-live progress` watch stops once there is no initial mail to prepare,
 once preparation is complete, or once its task has stopped: a failed task
-changes nothing until the page's retry, which the document reports as
-`retry_available` without its signed control. The **Retry failed mail
-preparation** control was missing from this inventory; it is assigned to
-PR 12 (default, pending Administrator confirmation).
+changes nothing until the page's **Retry**, which the document reports as
+`retry_available` without its signed control (`go-live retry` in PR 12).
 
 ### Family email sends and delivery controls
 
@@ -4587,11 +4588,12 @@ exactly the commands that exist.
   [users commands](#users-and-follow-up), which its slices land with their
   routes, ahead of the rest of PR 11; the event acknowledgements
   (`events list`, `events acknowledge`) land ahead of it too.
-- **PR 12, go-live and withdrawal:** the verified readiness preview, cleanup
-  with retry and cancel, link preparation with retry and cancel,
-  confirmation, the Production preparation retry and withdrawal; after
-  [#462](https://github.com/epiphany40223/parishkit/issues/462) if that has
-  landed.
+- **PR 12, go-live and Cancel go-live:** the
+  [Go live page's actions](#production-transition-and-withdrawal): the
+  verified readiness preview and Start go-live, the Prepare step's status,
+  retry, refresh-again and stop, Confirm Production, the Production
+  preparation retry and Cancel go-live
+  ([#1809](https://github.com/epiphany40223/parishkit/issues/1809)).
 
 ## Decisions
 
