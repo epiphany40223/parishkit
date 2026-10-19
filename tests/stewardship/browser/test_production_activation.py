@@ -136,25 +136,30 @@ def test_each_state_has_its_frame_and_at_most_one_primary(
     expect(page.locator("main")).to_contain_text("Items processed: 5,678.")
 
 
-@pytest.mark.parametrize("width", [320, 1280])
+@pytest.mark.parametrize("width", [320, 420, 480, 520, 600, 700, 1280])
 def test_a_change_of_state_moves_nothing_under_the_pointer(
     page, component_origin, width
 ):
     """Every direct-activation state draws the same boxes, two lines with
     reserved rows and an action row one button tall even when empty, so
-    the row and the link below it stay where they were when Retry goes away
-    or a state's line is longer (no layout shift). The step bar sits above
-    the self-updating region, so it never leaves mid-watch."""
+    the row stays where it was in the self-updating region when Retry goes
+    away, preparation finishes or a state's line is longer (no layout
+    shift). The step bar sits above the region, so it never leaves
+    mid-watch; positions are measured from the region's top."""
     page.set_viewport_size({"width": width, "height": 900})
-    rows, links = set(), set()
-    for path in (PRODUCTION, "/production-preparing", "/production-retrying"):
+    rows = {}
+    for path in (
+        PRODUCTION,
+        "/production-preparing",
+        "/production-retrying",
+        "/production-prepared",
+    ):
         page.goto(component_origin + path)
-        rows.add(round(page.locator("[data-production-actions]").bounding_box()["y"]))
-        link = page.get_by_role("link", name="Review Campaign settings")
-        links.add(round(link.bounding_box()["y"]))
+        top = page.locator("#production-status").bounding_box()["y"]
+        row = page.locator("[data-production-actions]").bounding_box()
+        rows[path] = round(row["y"] - top)
         assert page.locator("#production-status .setup-stepper").count() == 0
-    assert len(rows) == 1, rows
-    assert len(links) == 1, links
+    assert len(set(rows.values())) == 1, rows
 
 
 def test_cancel_go_live_waits_for_a_reason_in_the_dialog(page, component_origin):

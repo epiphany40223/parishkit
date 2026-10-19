@@ -111,11 +111,15 @@
 /* Production activation's row and the two lines above it (#1585 slice 5)
    keep their space in every state, so Retry going away, or a state's
    longer line, moves nothing under the pointer (no layout shift): the row
-   is one button tall even when empty, and each line keeps two rows (four
-   on a phone), the most any state's text needs. */
+   is one button tall even when empty, and each line keeps the rows the
+   longest state's text needs at that width: two on a wide screen, three
+   up to 37.5rem and four on a phone. The state's heading keeps two rows
+   below 45rem, where the longest one wraps. */
 .production-actions { min-block-size: var(--button-min-height); }
 .production-actions button { margin: 0; }
 .production-line { min-block-size: 2lh; }
+@media (max-width: 45rem) { .production-heading { min-block-size: 2lh; } }
+@media (max-width: 37.5rem) { .production-line { min-block-size: 3lh; } }
 @media (max-width: 26rem) {
   .production-line { min-block-size: 4lh; }
   .campaign-step-actions > [data-campaign-continue], .campaign-step-actions > [data-campaign-create], .campaign-step-actions > [data-campaign-primary],
