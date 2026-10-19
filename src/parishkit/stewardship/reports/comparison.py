@@ -23,6 +23,7 @@ value is an aggregate.
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal, localcontext
+from uuid import UUID
 
 from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.web.dates import format_date
@@ -176,6 +177,9 @@ class Comparison:
     current comparison day, the last day Compare on day can choose (``day``
     is that day or an earlier one). ``checksums`` pairs each imported year
     with its file's SHA-256, which a digest's section records (slice 7).
+    ``fact_set_id`` is the participation generation the figures come from
+    (None when there is none), which the page's figures status compares
+    with the newest (#1586).
     """
 
     campaign_name: str
@@ -188,6 +192,7 @@ class Comparison:
     last_year: Year | None
     latest_day: int | None = None
     checksums: tuple = ()
+    fact_set_id: UUID | None = None
 
 
 # ---------------------------------------------------------------- metrics

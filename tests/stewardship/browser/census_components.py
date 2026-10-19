@@ -253,7 +253,6 @@ def components(context, admin):
                     ),
                     "route_choices": ROUTE_LABELS.items(),
                     "kind_choices": KIND_LABELS.items(),
-                    "export_timezones": ["UTC", "America/Detroit"],
                     "notice": notice,
                     "action": path,
                     "mutable": True,

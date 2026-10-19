@@ -565,6 +565,10 @@ def test_a_refused_day_names_the_days_that_can_be_chosen():
     assert found["errors"] == [{"field_id": "compare-day", "message": message}]
     assert found["day_error"] == message
     assert page_context(built, principal)["errors"] == []
+    # A refused day's page is itself a 400, so its figures status is drawn
+    # but never watched: its own re-read would only be refused again (#1586).
+    assert found["figures_status"]["follow"] is False
+    assert page_context(built, principal)["figures_status"]["follow"] is True
     # Before day 1 has ended there is no field to link to.
     early = replace(built, day=None, report_date=None, latest_day=None)
     (error,) = page_context(early, principal, refused=True)["errors"]
