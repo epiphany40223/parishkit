@@ -312,6 +312,17 @@ def _attempt(execution, claim, gateway, item):
     execution.check()
     if not _production():
         return "stop"
+    rows = item.rows()
+    if not any(isinstance(row, _Unqueued) for row in rows) and unlisted_changes(
+        item.writes
+    ):
+        # The Member left a written change's Family since the preflight (a
+        # refresh kept the change, rule 4, #1738): no read of a Member now in
+        # another household, and no write. A change this plan already queued
+        # may have landed, so that entity is read back first as usual, and
+        # the queueing transaction checks the Member again.
+        _record(claim, item, "invalidated")
+        return "invalidated"
     try:
         fresh = _read(claim, gateway, item)
     except ContactGatewayError as error:

@@ -8,11 +8,18 @@ and ``promote``), under migration 0141's guard, and read by the real page's
 row reader.
 """
 
+import json
+from dataclasses import replace
+from pathlib import Path
+from types import SimpleNamespace
+
 import pytest
-from django.db import DatabaseError
+from django.db import DatabaseError, connection, transaction
 
 from parishkit.stewardship.pipeline import Stage
 from parishkit.stewardship.responses.models import ProposedChange
+from parishkit.stewardship.responses.refresh_checks import census_source
+from parishkit.stewardship.source.corpus import normalize_core
 from parishkit.stewardship.workflows.models import RefreshCheck
 
 from ..policy_factory import address as rule
@@ -30,9 +37,14 @@ from .test_refresh_checks_postgresql import (  # noqa: F401 (started: fixture)
 )
 from .test_response_http_postgresql import answers_for, load_form
 from .test_runtime_auth_grants_postgresql import web_login
-from .test_source_families_postgresql import prepare, promote
+from .test_source_families_postgresql import TODAY, prepare, promote
 
 pytestmark = pytest.mark.django_db(transaction=True)
+
+MIGRATIONS = (
+    Path(__file__).resolve().parents[3] / "src/parishkit/stewardship/schema/migrations"
+)
+FROZEN = MIGRATIONS / "0141_census_refresh_sources.sql"
 
 
 def refresh(harness, *, member=None, family=None):
@@ -297,3 +309,116 @@ def test_the_guard_refuses_an_opt_out_check_of_another_family(
     with pytest.raises(DatabaseError, match="its source value"):
         refresh(harness, family={"sendNoMail": False})
     assert RefreshCheck.objects.count() == 0
+
+
+# The data variants the SQL twin is compared over: Member 3's record and
+# Family 1's, and whether Member 3 is in the data at all.
+VARIANTS = {
+    "current": ({}, {"sendNoMail": True}, True),
+    "moved": ({"familyDUID": 2}, {"sendNoMail": True}, True),
+    "inactive": ({"memberStatus": "Inactive"}, {"sendNoMail": False}, True),
+    "deceased": (
+        {"memberStatus": "Deceased", "dateOfDeath": "2026-01-01"},
+        {"sendNoMail": True},
+        True,
+    ),
+    "removed": ({}, {}, False),
+    "family inactive": ({}, {"sendNoMail": True, "famGroupID": 8}, True),
+}
+# (kind, key, field) of each census change the twins read for Family 1.
+READS = (
+    ("member", "3", "moved_household"),
+    ("member", "3", "deceased_status"),
+    ("member", "3", "death_date"),
+    ("member", "3", "first_name"),
+    ("family", "1", "email_opt_out"),
+    ("family", "2", "email_opt_out"),
+)
+
+
+@pytest.mark.parametrize("variant", sorted(VARIANTS))
+def test_the_sql_source_agrees_with_census_source(response_service, variant):
+    """Migration 0141's stewardship_refresh_census_source_v1 returns exactly
+    what ``refresh_checks.census_source`` reads from the same promoted data,
+    for every field it reads, so the guard never refuses a check the
+    promotion owes (which would roll the whole refresh back)."""
+    harness, _, rows = answered(response_service, opt_out)
+    family = rows["email_opt_out"].submission.family_id
+    member, household, present = VARIANTS[variant]
+    data = ministry_source()
+    data.members[3].update(BASE | member)
+    data.families[1].update(household)
+    data.family_groups[8] = "Inactive"
+    if not present:
+        del data.members[3]
+        data.member_contactinfos.clear()
+        for roster in data.ministry_type_memberships.values():
+            roster["membership"] = []
+        # Family 1 keeps an active Member, so it stays in the data.
+        data.members[4] = {**ministry_source().members[3], "memberDUID": 4}
+    snapshot, claim = prepare(data)
+    promote(snapshot, claim, harness.campaign, harness.rings)
+    corpus = normalize_core(replace(data, organization_id=12345), as_of=TODAY)
+    for kind, key, field in READS:
+        row = SimpleNamespace(
+            entity_kind=kind, entity_key=key, field=field, family_duid=1
+        )
+        expected = census_source(row, corpus)
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT stewardship_refresh_census_source_v1(%s,%s,%s,%s,%s)",
+                [snapshot.pk, family, kind, key, field],
+            )
+            (found,) = cursor.fetchone()
+        found = json.loads(found) if isinstance(found, str) else found
+        # A value ParishSoft did not report is no evidence either way: the
+        # Python side records no check, and the guard admits none.
+        if found is not None and not found["available"]:
+            found = None
+        assert found == (
+            None
+            if expected is None
+            else {"available": expected.available, "value": expected.value}
+        ), (variant, kind, key, field)
+
+
+def _check():
+    """0141's closing DO block, as the file has it."""
+    text = FROZEN.read_text(encoding="utf-8")
+    return text[text.index("DO $check$") :]
+
+
+def _previous_guard():
+    """0136's refresh check guard, as a replacement statement."""
+    text = (MIGRATIONS / "0136_refresh_checks.sql").read_text(encoding="utf-8")
+    start = text.index("CREATE FUNCTION public.stewardship_refresh_check_guard_v1")
+    end = text.index("END $$;", start) + len("END $$;")
+    return "CREATE OR REPLACE" + text[start + len("CREATE") : end]
+
+
+def test_do_block_refuses_the_old_definitions(db):
+    """The closing check passes as installed and raises once the guard is put
+    back to 0136's body, its trigger is disabled, or the source function is
+    made SECURITY DEFINER."""
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(_check())
+    for statement, words in (
+        (_previous_guard(), "refresh check guard"),
+        (
+            "ALTER TABLE public.stewardship_refresh_check"
+            " DISABLE TRIGGER stewardship_refresh_check_guard",
+            "refresh check guard",
+        ),
+        (
+            "ALTER FUNCTION public.stewardship_refresh_census_source_v1"
+            "(uuid,uuid,text,text,text) SECURITY DEFINER",
+            "census refresh source",
+        ),
+    ):
+        with (
+            pytest.raises(DatabaseError, match=words),
+            transaction.atomic(),
+            connection.cursor() as cursor,
+        ):
+            cursor.execute(statement)
+            cursor.execute(_check())

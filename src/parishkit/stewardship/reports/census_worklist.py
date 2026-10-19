@@ -17,6 +17,7 @@ from django.db import IntegrityError
 from django.utils.html import format_html
 
 from parishkit.stewardship.accounts.policy import Capability, allows
+from parishkit.stewardship.accounts.templatetags.stewardship import source_status
 from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.pipeline import (
     Action,
@@ -82,15 +83,8 @@ def _who(row):
     and living, in the Family keeps its stage (rule 4, #1738), so the badge
     (Not in ParishSoft, Inactive or Deceased in ParishSoft) says why.
     """
-    label = source_status_label(row.get("member_status"))
-    if not label:
-        return row["who"]
-    return format_html(
-        '{} <span class="status-badge" data-source-status="{}">{}</span>',
-        row["who"],
-        row["member_status"],
-        label,
-    )
+    badge = source_status(row.get("member_status"))
+    return format_html("{} {}", row["who"], badge) if badge else row["who"]
 
 
 def _member_duid(row):

@@ -230,10 +230,12 @@ def _preflight_scope():
     """The campaign, promoted snapshot, organization and changes to plan.
 
     The changes are every open, approved, Automatic Member change from a
-    live response in the current campaign; they are grouped by Member. The
-    last item is the Members with a change whose Member the promoted data
-    no longer lists, active and living, in that change's Family
-    (``unlisted_changes``, #1738): preflight neither reads nor plans them.
+    live response in the current campaign; they are grouped by Member. A
+    change whose Member the promoted data no longer lists, active and
+    living, in that change's Family (``unlisted_changes``, #1738) is left
+    out: it stays open and unplanned, and its Member is not read for it.
+    So a Member with changes from two Families (one they left, kept by
+    rule 4, and the one they are in now) plans only the current Family's.
     """
     campaign_id = _current_campaign()
     current = SourceCurrent.objects.get(singleton=True)
@@ -246,19 +248,12 @@ def _preflight_scope():
             "entity_key", "field", "pk"
         )
     )
+    unlisted = unlisted_changes(row.pk for row in rows)
+    rows = [row for row in rows if row.pk not in unlisted]
     members = {}
     for row in rows:
         members.setdefault(row.entity_key, []).append(row)
-    unlisted = unlisted_changes(row.pk for row in rows)
-    gone = {row.entity_key for row in rows if row.pk in unlisted}
-    return (
-        campaign_id,
-        current.snapshot_id,
-        current.organization_id,
-        rows,
-        members,
-        gone,
-    )
+    return campaign_id, current.snapshot_id, current.organization_id, rows, members
 
 
 def _read_members(execution, gateway, keys):
@@ -331,22 +326,17 @@ def _execute_preflight(execution, *, enabled, gateway):
         if scope is None:
             _refuse(execution, Action.CENSUS_PUBLICATION_REFUSED)
             return
-        campaign_id, snapshot_id, organization_id, rows, members, gone = scope
+        campaign_id, snapshot_id, organization_id, rows, members = scope
         source = gateway(execution)
         try:
-            # A Member no longer in the change's Family is not read: with no
-            # payload the planner marks them *cannot check*, which blocks
-            # every write to them (#1738).
-            payloads = _read_members(
-                execution, source, [key for key in members if key not in gone]
-            )
+            payloads = _read_members(execution, source, members)
         finally:
             source.close()
         if payloads is None:
             _refuse(execution, Action.CENSUS_PUBLICATION_READ_UNCONFIRMED)
             return
         plans = [
-            plan_entity("member", key, group, payloads.get(key))
+            plan_entity("member", key, group, payloads[key])
             for key, group in members.items()
         ]
         try:

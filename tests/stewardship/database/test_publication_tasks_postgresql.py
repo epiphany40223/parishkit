@@ -316,29 +316,27 @@ def leave(row, how):
 @pytest.mark.parametrize("how", sorted(LEAVINGS))
 def test_a_member_no_longer_in_the_family_is_neither_read_nor_written(world, how):
     """The promoted data no longer lists the Member, active and living, in
-    the change's Family (#1738): preflight does not read them, and plans
-    them as cannot check, which blocks every write to them."""
+    the change's Family (#1738): preflight leaves the change out (open and
+    unplanned) and does not read the Member for it."""
     leave(world.first, how)
     plan = world.planned(uuid4())
     assert world.gateway.reads == []
-    entity = PublicationEntity.objects.get(plan=plan)
-    assert entity.blocked and entity.planned_sha256 is None
-    assert list(
-        PublicationField.objects.filter(entity=entity).values_list("outcome", flat=True)
-    ) == ["cannot_check"]
+    assert not PublicationEntity.objects.filter(plan=plan).exists()
     assert confirmation_counts(plan.pk)["write_entities"] == 0
+    assert proposal(world.first) == "pending"
 
 
 @pytest.mark.parametrize("how", sorted(LEAVINGS))
 def test_a_member_who_left_after_the_plan_is_not_written(world, how):
     """A refresh after the confirmation keeps the change open (rule 4), so
-    the worker checks the Member again as it queues: the entity is
-    invalidated with no write, and the change goes back to pending."""
+    the worker checks the Member again before reading them: the entity is
+    invalidated with no read and no write, and the change stays pending."""
     plan = world.planned(uuid4())
     _, run = world.confirm(plan)
     leave(world.first, how)
+    reads = len(world.gateway.reads)
     assert world.execute(run.run_id) and state(run) == "succeeded"
-    assert world.gateway.writes == []
+    assert len(world.gateway.reads) == reads and world.gateway.writes == []
     entity = PublicationEntity.objects.get(plan=plan)
     assert list(entity.outcomes.values_list("result", flat=True)) == ["invalidated"]
     assert proposal(world.first) == "pending"
