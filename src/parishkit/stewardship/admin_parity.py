@@ -268,7 +268,11 @@ LEDGER = {
     "daily_digest_chart": permanent(IMAGES),
     "daily_digest_download": permanent(IMAGES),
     "financial_report": command("report financial"),
-    "limitations_report": command("report limitations"),
+    # Limitations (#1685, #1735): counts by stage only, as its rows name
+    # Families and Members; its decisions go through the page's own
+    # LimitationDecisions service, and its rows with their ids and versions
+    # are export limitations --format jsonl's.
+    "limitations_report": command("report limitations", "limitations decide"),
     # Counts only (#463): its rows name Families and Members, so they are
     # export census's. A row's Entered in ParishSoft, Ignore and Reopen post
     # here too (#528): census resolve; so does an Automatic row's Review
@@ -288,11 +292,15 @@ LEDGER = {
         "#528 slice 4", "census publish-check", "census publish-plan"
     ),
     # Additional information's review worklist (#1685) posts its decisions
-    # to the page itself, where the retired request Save's
-    # ``followup information-update`` (#463 PR 11b) now belongs, until #1688
-    # renames the commands; ``followup information-show`` reads one request.
+    # to the page itself: ``information decide`` (#1735), through the page's
+    # own InformationDecisions service, with ``information list`` the rows'
+    # ids, versions and stages. The retired request Save's ``followup
+    # information-update`` (#463 PR 11b) stays here until #1688 renames the
+    # commands; ``followup information-show`` reads one request.
     "information_queue": command(
         "report information",
+        "information list",
+        "information decide",
         "followup information-show",
         "followup information-update",
     ),

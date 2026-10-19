@@ -370,6 +370,10 @@ class Action(StrEnum):
     ADMIN_CMD_FOLLOWUP_ROSTER_ENTERED = "admin_cmd_followup_roster_entered"
     ADMIN_CMD_FOLLOWUP_ROSTER_BULK = "admin_cmd_followup_roster_bulk"
     ADMIN_CMD_FOLLOWUP_INFORMATION_UPDATE = "admin_cmd_followup_information_update"
+    # information decide and limitations decide: a worklist decision, one
+    # item or in bulk (#1735).
+    ADMIN_CMD_INFORMATION_DECIDE = "admin_cmd_information_decide"
+    ADMIN_CMD_LIMITATIONS_DECIDE = "admin_cmd_limitations_decide"
 
 
 # Closed field identifiers are operational metadata, never census values.

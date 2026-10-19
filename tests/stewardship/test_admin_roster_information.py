@@ -264,6 +264,8 @@ def test_the_ledger_covers_the_tick_its_bulk_and_information_follow_up():
             "information_queue",
             (
                 "report information",
+                "information list",
+                "information decide",
                 "followup information-show",
                 "followup information-update",
             ),
