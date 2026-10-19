@@ -25,7 +25,7 @@
 <form method="post" class="panel">{% csrf_token %}
 <input type="hidden" name="action" value="cancel"><input type="hidden" name="attempt" value="{{ draft.status.attempt_id }}">
 <p>{% translate "Cancel permanently ends this attempt and clears its temporary settings. A new login is required to restart." %}</p>
-{% button type="submit" %}{% translate "Cancel setup and clear temporary settings" %}{% endbutton %}
+{% comment %}Cancel permanently ends the attempt, so it is drawn red (UX conventions, Button emphasis, #1713).{% endcomment %}{% button type="submit" class="button-danger" %}{% translate "Cancel setup and clear temporary settings" %}{% endbutton %}
 </form>
 {% endif %}
 {% else %}
