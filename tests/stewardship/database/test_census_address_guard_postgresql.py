@@ -26,7 +26,20 @@ pytestmark = pytest.mark.django_db(transaction=True)
 MIGRATIONS = Path(__file__).resolve().parents[3] / (
     "src/parishkit/stewardship/schema/migrations"
 )
-FROZEN = MIGRATIONS / "0138_census_address_guard.sql"
+
+
+def _frozen(name):
+    """The one frozen file named ``name``, whatever its number.
+
+    A stacked branch's frozen files keep provisional numbers until the
+    coordinator numbers them in merge order (an integration build renumbers
+    them), so the tests find each file by its name alone.
+    """
+    (path,) = MIGRATIONS.glob(f"[0-9][0-9][0-9][0-9]_{name}.sql")
+    return path
+
+
+FROZEN = _frozen("census_address_guard")
 GUARD = "stewardship_proposal_review_guard_v1"
 # The deferred pairing check's message: the guard admitted the review row,
 # and only the forged result's missing audit event refuses it.
@@ -189,7 +202,7 @@ def test_do_block_refuses_0131s_guard_and_installs_its_own():
     text = FROZEN.read_text(encoding="utf-8")
     check = text[text.index("DO $check$") :]
     earlier = _replaced(
-        (MIGRATIONS / "0131_census_pipeline_review.sql").read_text(encoding="utf-8"),
+        _frozen("census_pipeline_review").read_text(encoding="utf-8"),
         GUARD,
     )
     assert "stewardship_response_address_guard_v1" not in earlier
