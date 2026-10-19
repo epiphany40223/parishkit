@@ -3141,11 +3141,12 @@ to write or every Member finished (`publication_nothing_approved`,
 `publication_nothing_to_write`, `publication_finished`) is `invalid`; any
 other reason (the switch off, Testing mode, a held campaign, an update
 running, stopped or still writing these changes, a check under way) is
-`not_available`. A request key one of these commands already used for
-another plan, other counts or another Administrator is `invalid`. A repeat of a request key that already confirmed or retried
-the named plan returns what it recorded, even once a newer check exists,
-so a key recovers an unknown outcome (exit 6); a new key acts only on the
-newest plan. They print ids, versions, counts, outcomes and times, never a
+`not_available`. Once the page's checks pass, a request key one of these
+commands already used for another plan, other counts or another
+Administrator is `invalid`. A repeat of a request key that already
+confirmed or retried the named plan returns what it recorded, even once a
+newer check exists, so a key recovers an unknown outcome (exit 6); a new
+key acts only on the newest plan. They print ids, versions, counts, outcomes and times, never a
 value, name or note; the values stay in `export census`.
 
 None of them takes `--watch`: a [watch](#watching-progress) is a passive

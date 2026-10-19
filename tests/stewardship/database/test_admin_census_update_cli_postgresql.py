@@ -416,6 +416,50 @@ def test_an_outage_before_or_after_the_commit(
     assert count(CHECK) == 1
 
 
+def test_races_with_the_services_are_worded_as_the_page_would(
+    world,  # noqa: F811
+    google,
+    settings,
+    update_cli,
+    monkeypatch,
+):
+    """The switch turned off between the command's check and the service's
+    is publication_off; the guard finding the sign-in no longer live, with
+    the session itself still live, is denied. Nothing is recorded."""
+    from django.db import DatabaseError
+
+    from parishkit.stewardship.responses.publication_worker import (
+        PublicationDisabled,
+    )
+
+    settings.STEWARDSHIP_PARISHSOFT_PUBLICATION = True
+    signed_in()
+    run = update_cli()
+    plan = world.planned(uuid4())
+
+    def switched_off(*arguments, **options):
+        raise PublicationDisabled("off")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(tasks, "request_preflight", switched_off)
+        code, document, _ = run("census", "update-check")
+    assert code == 1 and refused(document, "not_available", "publication_off")
+
+    class Cause(Exception):
+        sqlstate = "42501"
+
+    def not_live(*arguments, **options):
+        error = DatabaseError("sign-in not live")
+        error.__cause__ = Cause()
+        raise error
+
+    with monkeypatch.context() as patch:
+        patch.setattr(tasks, "confirm_and_publish", not_live)
+        code, document, _ = run("census", "update-confirm", str(plan.pk), "--yes")
+    assert code == 1 and document["error"]["code"] == "denied", document
+    assert (count(CHECK), count(CONFIRM)) == (0, 0)
+
+
 def test_counts_that_changed_after_the_question_are_refused(
     world,  # noqa: F811
     google,

@@ -2472,9 +2472,9 @@ number of Members it would try, or takes `--yes`, and prints `created`,
 error when left out. Repeating `update-check`, `update-confirm` or
 `update-rerun` with the same key returns the same check, run or retry
 (`created` false) and records nothing new, even after a newer check (so
-the key recovers an unknown outcome, exit 6); a key the same command
-already used for another plan, or another Administrator's, is exit 1
-(`invalid`).
+the key recovers an unknown outcome, exit 6). Once the page's checks
+pass, a key the same command already used for another plan, or another
+Administrator's, is exit 1 (`invalid`).
 
 ## Digests
 
