@@ -45,7 +45,7 @@
 </section>{% endif %}
 {# The export (#1679, ui-conventions "Downloaded files"): one row of small export buttons below the table, with no zone choice (the file's times are in the browser's zone). The Timeline is Production only, so the form posts no mode. #}
 {% if export %}<div class="export-pane">
-<form id="timeline-export" data-submit-waits method="post" action="{{ export.url }}">{% csrf_token %}
+<form id="timeline-export" method="post" action="{{ export.url }}">{% csrf_token %}
 <input type="hidden" name="request_key" value="{{ export.request_key }}">
 {% if not export.mutable %}<p id="timeline-export-unavailable" class="help">{% translate "Exports are unavailable while other campaign work (a restore review, or a cleanup, purge or go-live step) is under way. Try again when it finishes." %}</p>{% endif %}
 {% translate "The file holds this Family's details, the summary and every line of the timeline, whatever Kind, From and Through show, as they are when you export; later activity is not included." as tip %}{% if show_codes %}{% translate "It includes the Family code." as codes %}{% endif %}{# Each button names the reason while exports are held (#563, #1331). #}{% export_actions "csv" "xlsx" "pdf" name="timeline" label=_("Export this timeline") tip=tip tip_more=codes enabled=export.mutable describedby=export.mutable|yesno:",timeline-export-unavailable" %}</form></div>{% endif %}

@@ -1229,8 +1229,11 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
    may shrink below that text, so a phone page never scrolls sideways. */
 .export-zone { min-width: 0; max-width: 100%; }
 .export-zone select { display: inline-block; flex: 0 1 auto; width: auto; min-width: 0; max-width: 100%; min-height: 2.25rem; padding-block: .25rem; }
-/* A slow export's waiting note (ui-v1.js) sits below the row, never in it. */
-.export-actions + .submit-wait { margin-top: 0; }
+/* The row's reserved status line (#1778): a slow export's waiting note or a
+   refusal, said in place under the buttons (ui-v1.js). It keeps two lines'
+   height while empty, three on a phone (.reserve-lines-wrap), and ui-v1.js
+   says at most two sentences there, so its text never moves the page. */
+.export-status { margin-block: 0 .25rem; }
 /* A worklist's always-open Filters box (Census changes, #1682): the open
    disclosure's box, its title a heading the size and place of a disclosure's
    summary line, so the page reads as the other reports do with their panels

@@ -3034,7 +3034,7 @@
   const submitControls = (form) => [...form.elements].filter((node) =>
     (node instanceof HTMLButtonElement || node instanceof HTMLInputElement)
     && node.type === "submit");
-  // Forms marked data-submit-waits (export queueing) can legitimately wait
+  // Forms marked data-submit-waits (long server steps) can legitimately wait
   // on the server for a minute or two, e.g. behind a ParishSoft refresh's
   // final step. They stay busy much longer and say so visibly, instead of
   // silently re-enabling after ten seconds, which looked like nothing happened.
@@ -3061,9 +3061,9 @@
       note = document.createElement("p");
       note.className = "help submit-wait";
       note.setAttribute("role", "status");
-      // An export's buttons share one row (export-actions.html, #1679), so
-      // the note goes below the row rather than between two buttons.
-      (submitter?.closest(".export-actions") || submitter || form).insertAdjacentElement("afterend", note);
+      // An export row's submit never reaches here: exports download in
+      // place (below, #1778), with their note in the row's own status line.
+      (submitter || form).insertAdjacentElement("afterend", note);
       waitNotes.set(form, note);
     }
     note.textContent = text;
@@ -3109,6 +3109,327 @@
       if (window.crypto?.randomUUID) input.value = window.crypto.randomUUID();
     });
   });
+
+  // Every Admin export downloads in place (#1778; ui-conventions "Downloads
+  // happen in place"): a submit from an export row (.export-actions) or a
+  // form[data-export-in-place] (the campaign archive) is posted with fetch,
+  // and the page never leaves. The answer is one of:
+  // - the file itself (an in-memory export such as Limitations), saved at
+  //   once;
+  // - a redirect to the export's status address (a queued export), which is
+  //   then read passively at the live-status pace (live-status-v1.js) until
+  //   its [data-export-state] says ready; its Download form is then posted
+  //   the same way and the file saved;
+  // - a refusal, said in the row's reserved status line
+  //   ([data-export-status]), in the server's own words where it gives some.
+  // The clicked button is busy and the form's other buttons wait until the
+  // file arrives or the export is refused; after five seconds the line says
+  // the export is still being worked on (a queued export's own status
+  // sentence, such as why it has not started, #340). The server is
+  // unchanged: freezing, auditing, limits, windows and one-use download
+  // grants are its own.
+  const EXPORT_PACE = [2000, 2000, 3000, 4000, 6000, 8000, 10000];
+  // A queued export is usually ready in seconds. Past this the page stops
+  // watching, so a stuck export never holds the buttons for good.
+  const EXPORT_GIVE_UP_MS = 30 * 60 * 1000;
+  // How long one request may take before it counts as unanswered: the
+  // start may wait behind a ParishSoft refresh's last step (up to two
+  // minutes), a status read is a quick passive page, and a download carries
+  // the file.
+  const EXPORT_START_MS = 180000;
+  const EXPORT_READ_MS = 30000;
+  const EXPORT_DOWNLOAD_MS = 120000;
+  // A ready file's Download answered busy (503) is posted again at the pace
+  // this many times; trying the button again would start a new export.
+  const EXPORT_DOWNLOAD_TRIES = 5;
+  const EXPORT_TEXT = {
+    waiting: "Still working… If a ParishSoft refresh is finishing, this can take up to two minutes. Keep this page open.",
+    failed: "The file could not be created. Try again; if it fails again, check System logs or ask your system administrator.",
+    gone: "This export ended before it was downloaded. Try again.",
+    cancelled: "This export was cancelled. Try again.",
+    signedOut: "Couldn't check on the file: your sign-in may have ended. Reload the page or sign in again.",
+    slow: "The file is taking longer than usual. Try again later; if it keeps happening, ask your system administrator.",
+    noAnswer: "No response from the server yet. Your export may still have been started; try again in a few minutes.",
+    unreachable: "The server could not be reached. Check your connection, then try again.",
+    empty: "No file came back. Reload the page, then try again.",
+  };
+  // The running exports, keyed by their form's id (the form itself when it
+  // has none), each with the clicked button's {name, value}. An in-place
+  // redraw may bring in a fresh copy of a running export's form (Campaign
+  // comparison's Compare on day) or of its buttons (Ministry requests'
+  // synced row), which must show the export busy and must not start a
+  // second one beside it.
+  const runningExports = new Map();
+  const exportKey = (form) => form.id || form;
+  // fetch() that gives up after ``ms`` (an AbortError, as a lost answer).
+  const fetchWithin = (url, init, ms) => {
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => controller.abort(), ms);
+    return fetch(url, {...init, credentials: "same-origin", signal: controller.signal})
+      .finally(() => window.clearTimeout(timer));
+  };
+  // The file name a download answer gives (RFC 6266's filename* first, as
+  // web/exports.py writes both), or a plain fallback.
+  const downloadName = (header) => {
+    const value = header || "";
+    const encoded = /filename\*=UTF-8''([^;]+)/i.exec(value);
+    if (encoded) {
+      try { return decodeURIComponent(encoded[1]); } catch { /* fall through */ }
+    }
+    return /filename="([^"]+)"/i.exec(value)?.[1] || "export";
+  };
+  // Whether an answer is the file itself (web/exports.download_headers).
+  const isDownload = (response) => response.ok
+    && /^\s*attachment\b/i.test(response.headers.get("Content-Disposition") || "");
+  // Whether an unanswered or failed read may be tried again: no answer, a
+  // server or proxy failure, or too many requests. Any other refusal is
+  // final.
+  const transient = (response) => !response || response.status >= 500 || response.status === 429;
+  // Save a download answer's body through a blob link with the server's
+  // file name; the link is never part of the page.
+  const saveDownload = async (response) => {
+    const name = downloadName(response.headers.get("Content-Disposition"));
+    const url = URL.createObjectURL(await response.blob());
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = name;
+    link.hidden = true;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    // Long enough for the browser to have taken the file.
+    window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+  };
+  // At most the first two sentences of ``text``: an error page's notice is
+  // written for a whole page, and the row's line keeps room for two lines.
+  const twoSentences = (text) => squeeze(text).split(/(?<=[.!?])\s+/).slice(0, 2).join(" ");
+  // The sentence a refusal gives: a JSON refusal's message; a plain-text
+  // answer's text; for the page drawn again (the campaign archive's 409),
+  // the reason its copy of ``form`` names on a button; for an error page,
+  // its notice's first paragraph; else the status's default.
+  const exportRefusal = (response, text, form) => {
+    const status = response.status;
+    const type = response.headers.get("Content-Type") || "";
+    try {
+      if (JSON.parse(text)?.refusal) return refusalText(status, text);
+    } catch { /* not JSON: a page or plain text */ }
+    if (/^text\/plain\b/i.test(type)) return twoSentences(text) || refusalText(status, "");
+    const parsed = new DOMParser().parseFromString(text || "", "text/html");
+    const same = form?.id ? parsed.getElementById(form.id) : null;
+    if (same) {
+      const reason = [...same.querySelectorAll("button[aria-describedby]")]
+        .flatMap((node) => node.getAttribute("aria-describedby").split(/\s+/))
+        .map((id) => squeeze(parsed.getElementById(id)?.textContent)).find(Boolean);
+      return reason || refusalText(status, "");
+    }
+    const node = parsed.querySelector("main [role=alert], main [role=status], main .notice-error");
+    const sentence = node && (node.matches("p") ? node : node.querySelector("p") || node);
+    return twoSentences(sentence?.textContent) || refusalText(status, "");
+  };
+  // The form an export runs for, as the page has it now: an in-place
+  // redraw (a Compare-on-day change, a refreshed table) may have replaced
+  // it with a fresh copy of the same id.
+  const liveForm = (form) => (form.isConnected || !form.id ? form
+    : document.getElementById(form.id) || form);
+  // Say ``text`` in the export row's reserved line, in the error colour for
+  // a refusal. An unchanged sentence is left alone, so a screen reader does
+  // not hear it again at every status read.
+  const sayExport = (form, text, error = false) => {
+    const line = liveForm(form).querySelector("[data-export-status]");
+    if (!line) return;
+    if (line.textContent !== text) line.textContent = text;
+    line.classList.toggle("error", Boolean(text) && error);
+  };
+  // A one-time request key is spent by each start, so the next click is a
+  // new export (a reused key would be refused as an already-bound form).
+  const renewRequestKey = (form) => {
+    const input = liveForm(form).querySelector('input[type="hidden"][name="request_key"]');
+    if (input && window.crypto?.randomUUID) input.value = window.crypto.randomUUID();
+  };
+  // The status page's own sentence for the row's line: a copy without the
+  // parts hidden from screen readers (queue-wait.html's ticking "queued"
+  // time, which would make every read a new announcement), its times in
+  // this browser's zone as date-format-v1.js shows them, and at most two
+  // sentences.
+  const statusSentence = (node) => {
+    if (!node) return "";
+    const copy = node.cloneNode(true);
+    copy.querySelectorAll("[aria-hidden=true]").forEach((part) => part.remove());
+    window.ParishDates?.localize(copy);
+    return twoSentences(copy.textContent);
+  };
+  // A queued export's status page answer: {state, pending, sentence,
+  // download, token} from it, {retry} for a read worth repeating, or
+  // {refusal} when it settled otherwise.
+  const parseExport = (response, text) => {
+    if (transient(response)) return {retry: true};
+    if (response.status === 410) {
+      // An ended export, or a campaign that is no longer current, whose
+      // typed refusal says so.
+      try {
+        if (JSON.parse(text)?.refusal) return {refusal: refusalText(410, text)};
+      } catch { /* the fixed "no longer available" page */ }
+      return {refusal: EXPORT_TEXT.gone};
+    }
+    const parsed = new DOMParser().parseFromString(text, "text/html");
+    const region = parsed.querySelector("[data-export-state]");
+    // Signed out (a redirect to sign-in) or no longer allowed.
+    if (!region) {
+      return {refusal: response.ok ? EXPORT_TEXT.signedOut : exportRefusal(response, text, null)};
+    }
+    const download = region.querySelector("form[data-live-autosubmit]");
+    return {
+      state: region.getAttribute("data-export-state"),
+      pending: region.hasAttribute("data-live-pending"),
+      sentence: statusSentence(region.querySelector(".export-state")),
+      download: download && new URL(download.getAttribute("action"), response.url).href,
+      token: download?.querySelector('input[name="csrfmiddlewaretoken"]')?.value,
+    };
+  };
+  // One passive read of the status address, as live-status-v1.js reads it.
+  // An unanswered read is {retry}, as a server failure is.
+  const readExport = async (url) => {
+    try {
+      const response = await fetchWithin(url, {cache: "no-store",
+        headers: {Accept: "text/html"}}, EXPORT_READ_MS);
+      return parseExport(response, await response.text());
+    } catch {
+      return {retry: true};
+    }
+  };
+  // Post a ready file's Download and save the file. A busy answer (503) is
+  // posted again at the pace; returns the refusal sentence, or "" once the
+  // file is saved.
+  const downloadExport = async (status) => {
+    for (let attempt = 0; ; attempt += 1) {
+      const body = new URLSearchParams();
+      if (status.token) body.set("csrfmiddlewaretoken", status.token);
+      let response;
+      try {
+        response = await fetchWithin(status.download, {method: "POST", body,
+          headers: {"X-Requested-With": "fetch"}}, EXPORT_DOWNLOAD_MS);
+      } catch {
+        return EXPORT_TEXT.unreachable;
+      }
+      if (isDownload(response)) {
+        await saveDownload(response);
+        return "";
+      }
+      if (response.status === 410) return EXPORT_TEXT.gone;
+      const text = await response.text();
+      if (response.status !== 503 || attempt + 1 >= EXPORT_DOWNLOAD_TRIES) {
+        return exportRefusal(response, text, null);
+      }
+      await pause(EXPORT_PACE[Math.min(attempt, EXPORT_PACE.length - 1)]);
+    }
+  };
+  // Follow a queued export from its first reading until it is ready, then
+  // download it. ``progress`` is the export's {slow, sentence}: the latest
+  // status sentence is kept there, and said once the export is slow. A
+  // read worth repeating (no answer, a server failure) is read again at
+  // the pace, as live-status-v1.js does. Returns the refusal sentence, or
+  // "" once the file is saved.
+  const followExport = async (form, url, first, progress) => {
+    const started = Date.now();
+    let status = first;
+    for (let attempt = 0; ; attempt += 1) {
+      if (status.refusal) return status.refusal;
+      if (!status.retry) {
+        if (status.state === "ready" && status.download) return downloadExport(status);
+        if (!status.pending) {
+          return status.state === "cancelled" ? EXPORT_TEXT.cancelled : EXPORT_TEXT.failed;
+        }
+        progress.sentence = status.sentence;
+        if (progress.slow) sayExport(form, status.sentence || EXPORT_TEXT.waiting);
+      }
+      if (Date.now() - started > EXPORT_GIVE_UP_MS) return EXPORT_TEXT.slow;
+      await pause(EXPORT_PACE[Math.min(attempt, EXPORT_PACE.length - 1)]);
+      // A hidden tab is not read; it is checked again once shown.
+      while (document.visibilityState !== "visible") await pause(1000);
+      status = await readExport(url);
+    }
+  };
+  // Show ``form``'s export busy (or released): the form aria-busy, its
+  // buttons waiting, the clicked one (by name and value) with its spinner.
+  // One helper for an export's start, a redraw while it runs and its end.
+  const showExportBusy = (form, clicked, busy) => {
+    if (busy) form.setAttribute("aria-busy", "true");
+    else form.removeAttribute("aria-busy");
+    submitControls(form).forEach((control) => {
+      const mine = Boolean(clicked) && control.name === clicked.name
+        && control.value === clicked.value;
+      control.classList.toggle("is-busy", busy && mine);
+      if (busy) control.setAttribute("aria-disabled", "true");
+      else control.removeAttribute("aria-disabled");
+    });
+  };
+  // A redraw brought in fresh copies: show each running export busy again
+  // on the form as the page has it now.
+  document.addEventListener("parishkit:swap", () => {
+    runningExports.forEach((clicked, key) => {
+      const form = typeof key === "string" ? document.getElementById(key) : key;
+      if (form instanceof HTMLFormElement && form.isConnected) showExportBusy(form, clicked, true);
+    });
+  });
+  // Run one export for ``form`` from the clicked ``submitter``: mark the
+  // form busy, post it, save the file or follow the queued export, and say
+  // any refusal in the row's line. The buttons are released, on the form as
+  // the page has it then, whatever happens.
+  const exportInPlace = async (form, submitter) => {
+    const clicked = submitter ? {name: submitter.name, value: submitter.value} : null;
+    runningExports.set(exportKey(form), clicked);
+    showExportBusy(form, clicked, true);
+    busyStatus.textContent = "Working…";
+    sayExport(form, "");
+    // Five seconds in, the line says the export is still being worked on:
+    // its latest status sentence once there is one.
+    const progress = {slow: false, sentence: ""};
+    const timer = window.setTimeout(() => {
+      progress.slow = true;
+      sayExport(form, progress.sentence || EXPORT_TEXT.waiting);
+    }, 5000);
+    const fields = new FormData(form, submitter || undefined);
+    let refusal = "";
+    try {
+      const response = await fetchWithin(form.getAttribute("action") || "", {method: "POST",
+        body: new URLSearchParams(fields), headers: {"X-Requested-With": "fetch"}},
+      EXPORT_START_MS);
+      if (isDownload(response)) {
+        await saveDownload(response);
+      } else if (response.ok && response.redirected) {
+        // A queued export: the redirect's answer is the status address's
+        // first read (or, signed out, the sign-in page: no export state).
+        const first = parseExport(response, await response.text());
+        refusal = await followExport(form, response.url, first, progress);
+      } else {
+        const text = await response.text();
+        refusal = response.ok && !text ? EXPORT_TEXT.empty : exportRefusal(response, text, form);
+      }
+    } catch (error) {
+      refusal = error?.name === "AbortError" ? EXPORT_TEXT.noAnswer : EXPORT_TEXT.unreachable;
+    } finally {
+      window.clearTimeout(timer);
+      // Renewed whatever the answer: even a lost one may have reached the
+      // server and bound the key.
+      renewRequestKey(form);
+      runningExports.delete(exportKey(form));
+      [form, liveForm(form)].forEach((node) => showExportBusy(node, clicked, false));
+    }
+    sayExport(form, refusal, Boolean(refusal));
+    busyStatus.textContent = refusal ? "" : "Download started.";
+  };
+  // Capture phase, so this runs before the busy-state handler above, which
+  // leaves a submission script took over alone.
+  document.addEventListener("submit", (event) => {
+    const form = event.target;
+    if (event.defaultPrevented || !(form instanceof HTMLFormElement)) return;
+    if (!form.hasAttribute("data-export-in-place") && !event.submitter?.closest(".export-actions")) return;
+    if (!sameOrigin(form.getAttribute("action") || "")) return;
+    event.preventDefault();
+    // A repeat (a double click, Enter pressed twice) while it runs is ignored.
+    if (runningExports.has(exportKey(form))) return;
+    exportInPlace(form, event.submitter);
+  }, true);
 
   // Required acknowledgments: a form's submit buttons stay disabled (muted by
   // button:disabled) until every visible [data-acknowledgment] checkbox that
