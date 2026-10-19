@@ -2408,9 +2408,9 @@ class DebugOffRefused(ActionRefused):
     """The database refused to set the debug-off switch (see ``ActionRefused``)."""
 
 
-# The guards' words (0062, 0078, kept by 0114) for a session that is no
-# longer live at the write: since #1547 they no longer check its age.
-SIGNED_OUT_REFUSAL = "requires fresh Administrator authentication"
+# The guards' words (0148, #1762) for a session that is no longer live at
+# the write; since #1547 they no longer check its age.
+SIGNED_OUT_REFUSAL = "requires a live Administrator session"
 
 
 def _admit_requester(caller, store):

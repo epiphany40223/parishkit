@@ -233,11 +233,11 @@ def guard_error(table, actor, session, instant):
     [
         (
             "stewardship_delivery_control",
-            "Delivery control requires fresh Admin authentication",
+            "Delivery control requires a live Admin session",
         ),
         (
             "stewardship_production_withdrawal",
-            "Withdrawal requires fresh Admin authentication",
+            "Withdrawal requires a live Admin session",
         ),
     ],
 )
@@ -410,7 +410,9 @@ def test_an_ended_automation_session_stages_no_secret(
     age(STALE)
     instant = AutomationSession.objects.get(pk=row.pk).authenticated_at
     revoke(row)
-    with pytest.raises(DatabaseError, match="Sealed intake requires fresh"):
+    with pytest.raises(
+        DatabaseError, match="Sealed intake requires a live automation session"
+    ):
         stage_as(row.principal_id, instant)
     browser = stage_as(row.principal_id, instant - timedelta(seconds=1))
     with identity("pk_stewardship_credential_slack"):

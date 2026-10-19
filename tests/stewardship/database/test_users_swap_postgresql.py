@@ -425,6 +425,10 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # the closure, so no closure file makes it again; IF EXISTS lets the file run
 # again) and replaces the baseline's portal session guard in place, which no
 # closure file installs again, so nothing is registered.
+# 0148 (#1762) creates nothing: it rewords guards in place. Four of them
+# (0114's) and 0104's setup credential audit come back older from closure
+# files, so ``CLOSURE_REPLACED_ONLY`` runs 0148's replacements of those;
+# the rest (baseline guards no closure file installs again) survive.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -943,14 +947,38 @@ CLOSURE_REPLACED_ONLY = {
     # (0062, 0078, 0080, 0087, 0088, 0090, 0104, and 0111/0112 once merged)
     # bring back older; its bodies all carry the issue number. It also
     # creates the ended-automation check, so it cannot run whole twice.
+    "stewardship_setup_secret_guard_v1": (
+        ("stewardship_accounts", "0027_no_sign_in_age"),
+        "(#1547)",
+    ),
+    # 0148 (#1762) rewords four of 0114's guards again, and 0104's setup
+    # credential audit (which 0104's rerun above brings back); each body is
+    # its latest earlier one with only the words changed, so its replacement
+    # runs alone, last, when the body lacks its new words.
     **{
-        name: (("stewardship_accounts", "0027_no_sign_in_age"), "(#1547)")
-        for name in (
-            "stewardship_backup_request_guard_v1",
-            "stewardship_debug_off_switch_guard_v1",
-            "stewardship_source_drop_acceptance_guard_v1",
-            "stewardship_publication_confirmation_guard_v1",
-            "stewardship_setup_secret_guard_v1",
+        name: (("stewardship_accounts", "0029_guard_wording"), phrase)
+        for name, phrase in (
+            (
+                "stewardship_backup_request_guard_v1",
+                "A backup request requires a live Administrator session",
+            ),
+            (
+                "stewardship_debug_off_switch_guard_v1",
+                "The debug-off switch requires a live Administrator session",
+            ),
+            (
+                "stewardship_source_drop_acceptance_guard_v1",
+                "Accepting a large ParishSoft change requires a live "
+                "Administrator session",
+            ),
+            (
+                "stewardship_publication_confirmation_guard_v1",
+                "Publishing to ParishSoft requires a live Administrator session",
+            ),
+            (
+                "stewardship_setup_secret_audit_v1",
+                "(the instant never changes in place, #1550)",
+            ),
         )
     },
 }
