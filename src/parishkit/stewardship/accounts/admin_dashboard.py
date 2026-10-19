@@ -243,6 +243,15 @@ def summary(actor, configuration, now, *, home=False):
         # A Ministry leader's own starting point (#533): Administrators and
         # Staff reach every Ministry from the Reports menu instead.
         result["my_ministries"] = my_ministries(campaign.pk, actor)
+    if home and campaign is not None and "administrator" in actor.roles:
+        from .review_work import read_counts
+
+        # The review panels Staff and Ministry leaders land on (#1690), with
+        # Ready to update for an Administrator: one statement. Home only.
+        result["review"] = {
+            "campaign": campaign,
+            "counts": read_counts(actor, campaign.pk),
+        }
     if "administrator" in actor.roles:
         from .security_events import open_events
 

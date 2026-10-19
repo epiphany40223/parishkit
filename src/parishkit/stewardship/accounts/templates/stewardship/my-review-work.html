@@ -1,0 +1,11 @@
+{% extends 'stewardship/admin-base.html' %}{% load i18n stewardship review_work %}
+{% block title %}{% translate "My review work" %}{% endblock %}
+{% block content %}
+  {% comment %}My review work (#1690; review pipeline spec, "Role views", decision 8): what a Staff member or Ministry leader signs in to instead of Home, with nothing above it.{% endcomment %}
+  <h1>{% translate "My review work" %}</h1>
+  {% aboutpage "my-review-work" %}<p>{% translate "What Families sent that is waiting for you, by kind. Each card counts the items at one step of the work; select it to open the list." %}</p>{% endaboutpage %}
+  {% review_panels review as panels %}
+  {% if not review.campaign %}<p>{% translate "There is no current campaign, so there is nothing to review." %}</p>
+  {% elif panels %}{% include "stewardship/review-work-panels.html" %}
+  {% else %}<p>{% translate "Nothing from Families is waiting for you to review." %}</p>{% endif %}
+{% endblock %}

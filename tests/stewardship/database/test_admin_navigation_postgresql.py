@@ -86,7 +86,9 @@ def test_navigation_and_testing_banner_match_current_capabilities(
     assert b"Postal outreach" not in body
     assert body.count(b'id="session-warning"') == 1
     assert body.count(b'id="session-expired"') == 1
-    assert (b"Family participation" in body) == (role != "ministry_leader")
+    # Staff and Ministry leaders land on My review work instead (#1690).
+    assert (b"Family participation" in body) == (role == "administrator")
+    assert (b"<h1>My review work</h1>" in body) == (role != "administrator")
     # Pages and emails, and Dates and mail schedules, are first-class entries.
     assert (b"Pages and emails" in body) == (role == "administrator")
     assert (b"Dates and mail schedules" in body) == (role == "administrator")
