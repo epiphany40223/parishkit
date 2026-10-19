@@ -29,7 +29,7 @@ that edit (``edit_census_change``, ADM-09.04): the same kind of review row,
 which keeps the decision and changes only the edit fields
 (``schema/migrations/0107_proposal_review_edit.sql``). The worklist's Edit
 is Accept with a value: one review row that approves and edits together
-(``decide_census_changes``, ``schema/migrations/0131_census_pipeline_review.sql``).
+(``decide_census_changes``, ``schema/migrations/0128_census_pipeline_review.sql``).
 The Family's answer is never changed. An edit is per change only, never in
 bulk.
 
@@ -164,7 +164,7 @@ def editable(proposal):
 ISO_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 BLANK_EDIT = "Enter the value to publish. To leave ParishSoft as it is, choose Ignore."
 # The review guard keeps at most this many bytes of an edit, measured as
-# PostgreSQL prints its JSON (``octet_length(admin_value::text)``, 0131).
+# PostgreSQL prints its JSON (``octet_length(admin_value::text)``, 0128).
 EDIT_BYTES = 1024
 LONG_ADDRESS = "This address is too long to save. Shorten its longest lines."
 # The Family form's messages that read wrong for an edit, in Edit value's
@@ -241,7 +241,7 @@ def edited_address(raw):
     is; each part's reason is kept by its part's name, so the page marks
     the part in error (``InvalidEdit.fields``). The review guard holds the
     edit to the same rules (``stewardship_response_address_guard_v1``,
-    migration 0138) and to its size limit, so what passes here is stored.
+    migration 0130) and to its size limit, so what passes here is stored.
     """
     if type(raw) is not dict or set(raw) != set(ADDRESS_COMPONENTS):
         raise ValueError("This census change cannot take an edited value.")

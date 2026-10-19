@@ -2351,7 +2351,7 @@ may change a proposal's decision only with such a row, and the row's own
 guard checks again that the actor may review, the campaign admits changes,
 the version is current, the change is open, and the decision or the edit
 changes. Migrations 0107 and 0108 added the edit and the accepted base.
-Forward migration 0131 (provisional number,
+Forward migration 0128 (provisional number,
 [#1683](https://github.com/epiphany40223/parishkit/issues/1683)) widens the
 guard for the pipeline: a current Staff member or Administrator; any census
 change the worklist lists, By hand ones included; a decision and an edit
@@ -2363,7 +2363,7 @@ address, text otherwise, at most 1,024 bytes), must not be blank and must
 differ from the Family's answer, as the census compares values; moved,
 deceased, the email opt-out and a New Member take no edit. Clearing needs an
 edit to be set. The value's full rules stay in the service, except for an
-address: forward migration 0138 (provisional number,
+address: forward migration 0130 (provisional number,
 [#1719](https://github.com/epiphany40223/parishkit/issues/1719)) holds an
 edited Family address to the same SQL address rules as the Family's own
 answer (a known country; for a US address a state or territory and a ZIP or

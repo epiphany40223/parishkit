@@ -1,11 +1,11 @@
--- Frozen forward migration file 0138 (the repository-wide file sequence;
+-- Frozen forward migration file 0130 (the repository-wide file sequence;
 -- provisional, the number is assigned centrally in merge order): an edited
 -- census address meets the Family's own address rules (#1719). This file is
 -- installed by its Django migration in the responses app and must never
 -- change once released; tests/stewardship/test_schema_migration_files.py
 -- pins its digest.
 --
--- 0131 (#1683) let a reviewer's Edit (Accept with a value) change a Family's
+-- 0128 (#1683) let a reviewer's Edit (Accept with a value) change a Family's
 -- home or mailing address, but its review guard checks only the edit's
 -- shape for one: an object of its six parts with a non-blank street line,
 -- at most 1,024 bytes, different from the Family's answer. The Family's own
@@ -14,7 +14,7 @@
 -- territory and a ZIP or ZIP+4 for a US address, a city, the per-part
 -- lengths and normalized single-line text), which the service mirrors in
 -- census.validate_address for both. So this file replaces
--- stewardship_proposal_review_guard_v1 (0131's, its latest body) with that
+-- stewardship_proposal_review_guard_v1 (0128's, its latest body) with that
 -- body plus one change: an address edit, once the shape and difference
 -- checks pass (their messages stay), is also passed to
 -- stewardship_response_address_guard_v1, so the database refuses the same

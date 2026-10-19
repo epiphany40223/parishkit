@@ -760,9 +760,9 @@ CLOSURE_ALTERED = {
 # 0101 (#528) replaces the task-type maps 0077's file brings back.
 # 0107 (#528, ADM-09.04) replaced the review guard 0096's file brings back
 # with the one that also admits an edited value, and 0108's file (run by
-# ``CLOSURE_ALTERED``) with the accepted base; 0131 (#1683) replaces it last,
-# for the review pipeline, and 0138 (#1719) after it, for an edited
-# address; neither creates anything, so 0138's file (the latest body) runs
+# ``CLOSURE_ALTERED``) with the accepted base; 0128 (#1683) replaces it last,
+# for the review pipeline, and 0130 (#1719) after it, for an edited
+# address; neither creates anything, so 0130's file (the latest body) runs
 # again whenever the guard lacks its phrase.
 # 0110 (#558) replaces the baseline financial selection that 0094's file,
 # run again above for the limitations report, puts back without the
@@ -812,7 +812,7 @@ CLOSURE_REPLACED = {
         (("stewardship_responses", "0007_publication_tasks"), "census_publication"),
     ),
     "public.stewardship_proposal_review_guard_v1()": (
-        ("stewardship_responses", "0014_census_address_guard"),
+        ("stewardship_responses", "0016_census_address_guard"),
         "PERFORM public.stewardship_response_address_guard_v1(NEW.admin_value);",
     ),
     "public.stewardship_response_derived_guard_v1()": (
