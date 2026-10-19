@@ -35,6 +35,9 @@ class Migration(migrations.Migration):
         # guard wording), so the files apply in prefix order. The follow-up
         # selection 0094 replaced last comes before it.
         ("stewardship_accounts", "0029_guard_wording"),
+        # The census pipeline's frozen file (0131) comes before this one
+        # (0132) wherever both branches meet, so it applies first.
+        ("stewardship_responses", "0013_census_pipeline_review"),
     ]
 
     operations = [
