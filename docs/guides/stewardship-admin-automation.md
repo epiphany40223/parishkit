@@ -275,11 +275,7 @@ background work holds while mail is being sent, is exit 1
 These matter again for the next campaign. Both read the current campaign
 unless `--campaign UUID` names another. The
 [Go live page's](../specs/stewardship/admin-portal/spec.md#go-live-page)
-actions (the public web address check, Start go-live, Retry stopping
-go-live, the Prepare step's Retry, Refresh and prepare again and Stop
-go-live, Confirm Production, mail preparation's Retry, Cancel go-live and
-the Testing submissions list) stay on the pages until ADM-11
-PR 12 ([#1809](https://github.com/epiphany40223/parishkit/issues/1809)).
+actions follow in [Going live](#going-live).
 
 `go-live readiness` is the Go live page's Check step: its preview of the
 current Testing draft, without its public web address check:
@@ -298,8 +294,9 @@ current Testing draft, without its public web address check:
 | `version` | Changes whenever anything the preview counts changes |
 
 The Admin report recipients and the Testing Families are not shown; the
-Testing Families list is an export (PR 12). A campaign that is not the
-current Testing draft is exit 1 (`stale_version`), as on the page.
+Testing Families list is `go-live families`, a streamed file. A campaign
+that is not the current Testing draft is exit 1 (`stale_version`), as on
+the page.
 
 `go-live progress` is the Production activation page:
 
@@ -314,6 +311,99 @@ current Testing draft is exit 1 (`stale_version`), as on the page.
 A campaign that is not the current Production campaign, a Testing draft
 included, is exit 1 (`denied`), as on the page; the current Production
 campaign with no confirmation receipt is exit 1 (`not_available`).
+
+### Going live
+
+The [Go live page's](../specs/stewardship/admin-portal/spec.md#go-live-page)
+actions (ADM-11 PR 12,
+[#1809](https://github.com/epiphany40223/parishkit/issues/1809)), on the
+current campaign, in the order of the
+[launch runbook's Production activation](stewardship-launch-runbooks.md#production-activation):
+
+```sh
+pk-admin go-live preview                  # Check readiness and public web address
+pk-admin go-live families > testing.csv   # the Testing submissions list
+pk-admin go-live start --token TOKEN      # Start go-live (prompts)
+pk-admin go-live status --watch 30        # the Prepare step
+pk-admin go-live retry                    # a failed part's Retry
+pk-admin go-live refresh-again            # Refresh and prepare again (prompts)
+pk-admin go-live stop                     # Stop go-live (prompts)
+pk-admin go-live confirm-preview          # Confirm Production's review
+pk-admin go-live confirm --token TOKEN    # Confirm Production (type Production)
+pk-admin go-live progress --watch 30      # Production activation
+pk-admin go-live cancel-preview --reason "Dates changed"
+pk-admin go-live cancel --token TOKEN     # Cancel go-live (prompts)
+```
+
+Every action needs a full-scope session; `go-live status` and `go-live
+families` also run on a read-only one. Each runs the page's own code, so
+the page's rules and server checks apply unchanged. A preview's token
+records what it showed; its confirming command builds everything again
+and refuses with exit 1 (`stale_version`) when anything it showed changed,
+so a token never expires by age alone. Exit 1 `stale_version` also means
+the step is not where the action needs it (go-live already stopped, the
+links being prepared again, Production already confirmed, the public web
+address check failing): read `go-live status` or `go-live progress` and
+act again. An exact repeat of `start`, `confirm` or `cancel` with the same
+token does nothing new and says so (`created` false); a repeated `start`
+asks nothing, while `confirm` and `cancel` ask again first. Another
+Administrator's token is exit 1 (`denied`) before any prompt.
+
+- `go-live preview` runs the public web address check, then reads readiness.
+  It prints `campaign_id`, `origin_verified`, `startable`, `readiness` (the
+  `go-live readiness` document) and `preview.token` (null unless
+  `startable`), the token `go-live start` takes.
+- `go-live start --token TOKEN` is Start go-live: typing `yes` (or
+  `--yes`) acknowledges that Testing data is deleted and cannot be
+  restored, and that Testing links and codes stop working now. It runs the
+  public web address check again first. It prints `created`, `request_id`
+  and `status` (the `go-live status` document). It notifies the
+  Administrators that an automation session took an irreversible action.
+- `go-live status` is the Prepare step: `state` (`running`, `failed`,
+  `again`, `ready`, `closed`, `stopped`, `not_started` or `confirmed`),
+  `reason`, `request_id`, the three `boxes` (`cleanup`, `refresh`,
+  `links`, each with its `state`), `done`, `total`, `preparation`,
+  `max_preparations`, `prepared_id`, `failed_at`, `stop_kind`,
+  `stopped_by_other`, which actions the page offers (`retry_available`,
+  `again_available`, `stop_available`, `confirm_available`) and
+  `stopping` (a stop still running or failed on Check, else `null`).
+  `--watch` stops once the state is no longer `running` and no stop is
+  still `stopping`.
+- `go-live retry` retries the failed part the current step offers a Retry
+  for: mail preparation on Production activation, a failed box on Prepare,
+  or a failed stop on Check. It changes no data and does not prompt.
+  Nothing failed is exit 1 (`not_available`). It prints `step`, `retried`
+  and `status`.
+- `go-live refresh-again` and `go-live stop` are Refresh and prepare again
+  and Stop go-live. Each prompts with the page's words and prints
+  `status`; `refresh-again` also prints `attempt`.
+- `go-live confirm-preview` is Confirm Production's review: `request_id`,
+  `preparation_id`, `target_state` (`active`: go live now; `scheduled`:
+  schedule the campaign), `starts_at`, `start_passed`, `reprepared`, the
+  `counts` the
+  confirmation binds and `preview.token`.
+- `go-live confirm --token TOKEN` asks you to type `Production` (or take
+  `--yes`), runs the public web address check again, rebuilds the preview
+  and confirms only if nothing changed (emails that fell due since the
+  review change the counts). It prints `created`, `confirmation_id`,
+  `target_state` and `progress` (the `go-live progress` document), and
+  notifies the Administrators of an irreversible action.
+- `go-live cancel-preview --reason TEXT` (or `--reason -` to read it from
+  standard input) is Cancel go-live's review, before the campaign starts:
+  `confirmation_id`, `reason`, `inventory` (`occurrences`, `cancellable`,
+  `messages`, `failed`, `delivered`, `blocking`), `cancellable` and
+  `preview.token` (null while mail blocks it: resolve that mail first).
+- `go-live cancel --token TOKEN` prompts, rebuilds the cancellation and
+  cancels only if nothing changed. It prints `created`, `withdrawal_id`
+  and `campaign_id`, and notifies the Administrators of an irreversible
+  action. The campaign is a Testing draft again.
+- `go-live families` writes the Testing submissions list (`duid`, `name`,
+  by DUID) as CSV to standard output, and its document (`campaign_id`,
+  `count`, `file_name`, `content_type`, `size`, `sha256`) to standard
+  error. It holds Family names: keep the file private.
+
+Each action records `admin_cmd_go_live_<verb>` in System logs beside the
+page's own events.
 
 ### `system health`
 
@@ -3926,3 +4016,8 @@ Each change is recorded in System logs as on the page
   `--stage` and the `stage` and `stages` fields (null without it);
   `export limitations` gains `--stage`, `--format jsonl` and the
   document's `stage`; `export information` gains `--stage`.
+- `pk-admin/1` (ADM-11 PR 12, #1809): additive. The Go live page's
+  actions: `go-live preview`, `go-live start`, `go-live status`, `go-live
+  retry`, `go-live refresh-again`, `go-live stop`, `go-live
+  confirm-preview`, `go-live confirm`, `go-live cancel-preview`, `go-live
+  cancel` and `go-live families` (a streamed file).
