@@ -64,7 +64,7 @@ when it lands.
   [unavailable menu pages](#unavailable-menu-pages),
   [navigation rules](#navigation-rules), [wizards](#wizards).
 - Admin page layout: [page help](#page-help),
-  [button labels](#button-labels),
+  [button labels](#button-labels), [button emphasis](#button-emphasis),
   [review pipeline terms](#review-pipeline-terms),
   [shared visual style](#shared-visual-style),
   [colour scheme](#colour-scheme),
@@ -2259,7 +2259,8 @@ match.
    that is not done yet, with the full step list as
    [step bars](#step-bars) describes it.
 2. **One primary action per step**, at the bottom of the page in one action
-   row: **Back** (secondary, first) and one primary control (last). A step
+   row: **Back** (secondary, first) and one primary control (last), an
+   instance of [button emphasis](#button-emphasis). A step
    never offers only an unavailable Save. Going on is never only in the
    stepper's summary or its list.
 3. **Accept as is.** While the step's form holds no change, the primary
@@ -2533,6 +2534,53 @@ whole label, such as the confirm dialog's `accept`. Labels built in Python
 or written by JavaScript are not covered. Progress text such as "Saving…"
 and truncated names are not labels, so they are unaffected.
 
+### Button emphasis
+
+**Rule.** A logical group of controls has at most one primary (green)
+button (Administrator, 2026-10-18,
+[#1713](https://github.com/epiphany40223/parishkit/issues/1713)):
+
+1. **One green button per group.** A group is one set of controls that act
+   together: a form, a filter bar, a dialog's action row, a bulk-action bar
+   or an export pane. Its green button is the group's main forward action,
+   such as Save, Apply filters, Send or Confirm. A page may have several
+   green buttons when they sit in different groups: the export pane's
+   buttons and the filter bar's Apply filters above the same table are two
+   groups.
+2. **Every other button in the group is white** (secondary): Cancel, Back,
+   Clear filters, Reset and the like. A group may have no green button at
+   all.
+3. **Destructive actions are red** (`button-danger`), as the
+   [row actions](#row-actions-and-confirmation) say.
+4. **Selected-state controls are separate.** Tabs,
+   [segmented pairs](#binary-choices) and selected-state action icons show
+   which choice is in force by fill. Exactly one segment is filled,
+   whatever primary button sits in the same page or group.
+
+The setup and campaign [wizards](#wizards)' one primary action per step is
+an instance of this rule. How a button is drawn primary or secondary is in
+[shared visual style](#shared-visual-style).
+
+**Why.** Green says "this is what you came to do here". Two green buttons
+side by side make the reader stop and work out which one moves the task
+forward; one green button per group answers that before they ask.
+
+**Guards.** A template test reads every portal template and counts, in each
+group, the shared `{% button %}` tags that draw primary: not the secondary
+or link variants, the danger class or an icon button. It reads each
+`{% if %}` branch on its own, so a button and its unavailable twin count
+once, and a button repeated by a loop inside a group counts twice; buttons
+that never show together are branches of one `{% if %}`. A group
+is a `<form>`, a `<dialog>`, an element with one of the group classes
+(`filter-bar`, `bulk-bar`, `export-panel`, `dialog-actions` and the other
+action rows the test names), an element marked `data-control-group`, or a
+row of sibling forms with nothing between them but template tags, which a
+reader sees as one row of buttons. A button with a `form` attribute belongs
+to that form's group. A list of reviewed exceptions may only shrink. The
+test does not follow `{% include %}`, so a browser test also opens
+representative pages and counts the visible green-filled buttons in each
+rendered group, including buttons a script builds.
+
 ### Review pipeline terms
 
 **Rule.** Every page, export, help text, notice, audit display and
@@ -2580,7 +2628,8 @@ The portal and the emails share one visual style
   shrink. A button is secondary only when it is drawn so (the secondary
   variant, or the `button-secondary` class on a button a script builds),
   never because of where it sits or what attributes it carries, and a test
-  holds the stylesheet's secondary rule to that class alone.
+  holds the stylesheet's secondary rule to that class alone. When to draw
+  each is in [button emphasis](#button-emphasis).
 - **Email buttons:** `email_button()` renders the same primary and
   secondary buttons for email: a one-cell table with inline styles from the
   tokens, `bgcolor`, and Outlook padding. The label is real text, so the
