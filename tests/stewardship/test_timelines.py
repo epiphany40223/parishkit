@@ -669,7 +669,7 @@ def test_last_portal_action_ignores_what_an_email_reader_makes():
     lines = events([INVITATION], [], sign_ins=[later], forms=[later])
     assert Timeline(summary([INVITATION], []), lines).last_action is None
     page = render(Timeline(summary([INVITATION], []), lines))
-    assert "Last portal action: None recorded · <a href=" in page
+    assert "Last portal action: None recorded</p>" in page
     # Staff's reduced view reads none of these lines and shows no value.
     assert Timeline(TIMELINE.summary).last_action is None
 
@@ -708,6 +708,8 @@ def test_the_page_is_a_hub_with_the_timeline_tab():
     strip = page.index("Last portal action:")
     row = page.index('role="tablist" aria-label="Family information"')
     assert page.index("<h1>") < strip < row
+    # The strip has no directory link: the Admin menu has it (2026-10-19).
+    assert "Active parishioner family directory</a>" not in page[strip:row]
     # The summary, the filter bar, the table region and the export are all
     # inside the Timeline's panel, which is the one drawn.
     panel = page.index('id="family-tabs-panel-timeline"')
@@ -736,4 +738,4 @@ def test_the_page_is_a_hub_with_the_timeline_tab():
     ) in page
     assert 'id="table-filters"' not in page
     page = render(Timeline(TIMELINE.summary), full=False, sections=("family",))
-    assert "Last portal action: None recorded · <a href=" in page
+    assert "Last portal action: None recorded</p>" in page

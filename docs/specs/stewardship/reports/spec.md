@@ -940,9 +940,8 @@ that data no longer has the Family, whose line then starts with the shared
 [Not in ParishSoft](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
 badge), a line with its DUID and envelope number (and the hub's
 [Last portal action](../admin-portal/spec.md#hub-header-strip), for both
-roles) and a link
-to the directory, a line with the campaign's name and Counted at, then, in
-the Timeline tab, a summary that both roles see:
+roles), with no link to the directory (the Admin menu has it), a line with
+the campaign's name and Counted at, then, in the Timeline tab, a summary that both roles see:
 
 - **Submitted:** Yes, with the first submission's time and, after more than
   one, how many and the latest, noting any that Staff entered for the Family

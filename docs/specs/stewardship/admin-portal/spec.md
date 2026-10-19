@@ -6725,9 +6725,10 @@ form ([Family and Member names](../ui-conventions/spec.md#family-and-member-name
 or "Timeline" alone when the latest ParishSoft data no longer has the Family;
 the browser title stays "Timeline", so browser history never keeps the name.
 Below it, on one line: the Family DUID, the envelope number when ParishSoft
-has one, the **Last portal action** (below) and the
-link to the Active parishioner family directory. The campaign's name and
-Counted at follow on the next line, as on the Timeline today.
+has one and the **Last portal action** (below). The strip has no link to the
+Active parishioner family directory: the Admin menu already has it
+(Administrator, 2026-10-19). The campaign's name and Counted at follow on
+the next line, as on the Timeline today.
 
 **Last portal action** is the newest action taken on the parishioner portal
 for the Family that an email reader could not have made, with its time in

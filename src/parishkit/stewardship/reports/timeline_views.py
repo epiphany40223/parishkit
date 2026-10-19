@@ -335,7 +335,6 @@ def page_context(campaign, family_id, identity, timeline, as_of, **options):
         "open_form_url": reverse("admin:family_open_form", args=[family_id]),
         "family_test_url": options.get("family_test_url"),
         "page_url": page_url,
-        "directory_url": reverse("admin:family_directory"),
         "export": options.get("export") if full else None,
     }
 
