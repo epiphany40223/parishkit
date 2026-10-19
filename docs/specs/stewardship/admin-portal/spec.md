@@ -1265,9 +1265,10 @@ Admin URLs follow the menu, so the address says where the reader is
   (Campaign setup), `mail` (Mail and Family portal), `reports` (Review work
   and Reports and queries, which share it: Review work was split from
   Reports and queries without moving its pages), `parish` (Parish data),
-  `users` (Users and access) and `system` (System). Home is `/admin/`, a change's status page is
-  `/admin/changes/<request>/`, and the sign-in, maintenance and setup wizard
-  pages keep their own prefixes outside the menu.
+  `users` (Users and access) and `system` (System). Home is `/admin/`, a
+  change's status page is `/admin/changes/<request>/`, and the sign-in,
+  maintenance and setup wizard pages keep their own prefixes outside the
+  menu.
 - **No campaign identifier:** every page is `/admin/<group>/<page>/`, for
   example `/admin/campaign/settings/`, `/admin/mail/family-history/` and
   `/admin/reports/responses/`, and campaign pages show the current
