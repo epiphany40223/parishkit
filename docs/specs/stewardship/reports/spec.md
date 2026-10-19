@@ -2161,7 +2161,12 @@ search, how the change reaches ParishSoft (Automatic and by hand, Automatic
 only, By hand only), kind of change (contact details, moved, deceased, new
 Member) and submitted date. The page has no summary: the counts are the
 Stage filter's. Sorting, paging and filters act
-[in place](../ui-conventions/spec.md#in-place-controls).
+[in place](../ui-conventions/spec.md#in-place-controls), and the address
+bar then shows the view's own address with its Stage, closed filters and
+table choices, so a reload draws the same view; the name search stays in
+POST bodies, so a reload clears only it, and a link carrying a search is
+refused (R38). Submitted from and Through are days in the browser's time
+zone; no zone line sits under the filters (R38).
 
 The filtered list downloads, from the pane below the table, as CSV, XLSX or
 PDF, every format with the page's values

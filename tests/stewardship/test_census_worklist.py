@@ -341,3 +341,21 @@ def test_census_takes_no_add_yet():
         CensusDecisions(None, None).decide(None, decision)
     worklist, _ = page([shaped()])
     assert not worklist.add
+
+
+def test_link_pairs_carry_only_the_link_safe_choices():
+    """The view's own address keeps the Stage and closed filters other than
+    their defaults, the zone only with a day, and the table's choices; the
+    name search never (R38 finding 6)."""
+    from parishkit.stewardship.reports.census_changes import CensusQuery
+    from parishkit.stewardship.reports.census_worklist import link_pairs
+    from parishkit.stewardship.web.review_worklist import page_address
+
+    plain = CensusQuery(stage="to_review", search="Smith", zone="UTC")
+    assert page_address("/c", link_pairs(plain)) == "/c"
+    chosen = CensusQuery(
+        stage="all", route="automatic", start="2054-10-01", zone="UTC", search="Smith"
+    )
+    assert page_address("/c", link_pairs(chosen, {"sort": "-who"})) == (
+        "/c?stage=all&route=automatic&start=2054-10-01&zone=UTC&sort=-who"
+    )
