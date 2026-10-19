@@ -399,6 +399,9 @@ FROZEN = {
     "0131_census_pipeline_review.sql": (
         "82f6ba01ad8054bbaa1a902d907f1e3f18e7ba22384b33a7a1ca0ec5aa4ab4ae"
     ),
+    "0137_census_additions.sql": (
+        "58d3dedcf5883df996a0ffbd3340825264e19e929852e5423d3b5e1dde9f54e7"
+    ),
 }
 
 

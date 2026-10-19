@@ -533,6 +533,15 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             "stewardship_proposal_review_guard",
             "stewardship_proposal_review_guard_v1",
         ),
+        # A census change the parish added and its later step (#1710):
+        # INSERT only, each under its own name.
+        **{
+            table: (f"{table}_guard", f"{table}_guard_v1")
+            for table in (
+                "stewardship_census_addition",
+                "stewardship_census_addition_resolution",
+            )
+        },
         # A Campaign setup step kept as is (#1404): INSERT only, under its
         # own name.
         "stewardship_campaign_setup_review": (
@@ -877,6 +886,8 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
                 "stewardship_proposal_resolution",
                 "stewardship_proposal_review",
                 "stewardship_campaign_setup_review",
+                "stewardship_census_addition",
+                "stewardship_census_addition_resolution",
                 "stewardship_ministry_roster_entry",
                 "stewardship_publication_plan",
                 "stewardship_publication_entity",
