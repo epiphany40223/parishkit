@@ -91,9 +91,10 @@ LEDGER = {
     "session_renew": permanent(SESSION_CHROME),
     "maintenance": permanent("the status page the access gate shows"),
     "held_emails": permanent(
-        "held-email decisions stay in the browser: the exemption predates "
-        "#1547, and the decision guard (migrations 0017 and 0114) now binds "
-        "only a live session of the deciding Administrator"
+        "held-email decisions belong to a restore review (the maintenance "
+        "page, also web-only) and its follow-up after release, each with a "
+        "preview, a required note and an exact-count check; a command for "
+        "them would be a new feature"
     ),
     # The human side of the automation interface (the specification's action
     # inventory): approving, listing and revoking sessions, and acknowledging
