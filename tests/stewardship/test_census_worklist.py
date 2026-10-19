@@ -250,8 +250,8 @@ def test_the_page_draws_the_worklist_columns_and_the_download_below():
     assert '<td class="numeric">41</td>' in html
     assert '<td class="numeric">New Member</td>' in html
     assert 'data-source-status="missing"' in html
-    assert html.index('id="table-filters"') < html.index("<table>")
-    assert html.index("<table>") < html.index('id="table-export"')
+    assert html.index('id="table-filters"') < html.index("<table")
+    assert html.index("<table") < html.index('id="table-export"')
 
 
 @pytest.mark.parametrize(
