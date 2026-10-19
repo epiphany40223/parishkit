@@ -2918,8 +2918,10 @@ open Pledges (Administrators and Staff) while the campaign has the
 financial module, only while Show is everything (the Show choices name the
 two Limitations answers only) and matching the search as Pledges' search
 does. Its stage counts in the Stage choice whose value it shares (To
-review, Ignored); a pledge To enter by hand or Entered by hand is listed,
-and counted, under Every stage only. A Pledges read that cannot be shaped
+review, Ignored); a pledge at a stage Limitations does not name (To enter
+by hand, Entered by hand, and any later Pledges stage such as Confirmed) is
+listed, and counted, under Every stage only, so a Cannot contribute answer
+that needs no work never shows in the default To review view. A Pledges read that cannot be shaped
 leaves these rows out with a logged warning rather than failing the page,
 and `pk-admin report limitations`, which prints only the summary, does not
 read them. The PDF's frame counts each kind on its own (Members, Families
