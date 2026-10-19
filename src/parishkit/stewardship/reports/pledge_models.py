@@ -159,3 +159,54 @@ class PledgeReview(ImmutableRecord):
                 name="pledge_review_mark_shape",
             ),
         ]
+
+
+# The outcomes a refresh records for a pledge, as 0136's census and Ministry
+# refresh checks name them (``workflows.models.REFRESH_OUTCOMES``).
+PLEDGE_REFRESH_OUTCOMES = (
+    "confirmed",
+    "unchanged",
+    "entered_incorrectly",
+    "ignored_now_matches",
+)
+
+
+class PledgeRefreshCheck(ImmutableRecord):
+    """One refresh's outcome for a decided pledge (#1704).
+
+    A pledge's stage is derived from its ``PledgeReview`` rows, so the
+    baseline refresh re-evaluation records what each refresh found here, as
+    ``workflows.models.RefreshCheck`` does for census changes and Ministry
+    requests: the outcome, ParishSoft's upcoming-year amount (``observed``)
+    and whether the refresh was full. ``review`` is the decision row in force
+    when it was written and ``item_version`` that row's sequence; a check
+    counts only while its row is still the item's latest and in force. Only
+    the source worker writes one, inside the promotion of ``snapshot_id``;
+    SQL checks the item, the amount and the outcome and keeps the rows
+    immutable (schema/migrations/0139_pledge_refresh_checks.sql).
+    """
+
+    snapshot_id = models.UUIDField()
+    full_refresh = models.BooleanField()
+    review = models.ForeignKey(
+        PledgeReview, on_delete=models.PROTECT, related_name="refresh_checks"
+    )
+    item_version = models.PositiveBigIntegerField()
+    outcome = models.CharField(max_length=24)
+    observed = models.DecimalField(max_digits=24, decimal_places=2)
+
+    class Meta:
+        db_table = "stewardship_pledge_refresh_check"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("snapshot_id", "review"), name="pledge_refresh_check_once"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(outcome__in=PLEDGE_REFRESH_OUTCOMES),
+                name="pledge_refresh_check_outcome",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(actor_id__isnull=True, item_version__gte=1),
+                name="pledge_refresh_check_identity",
+            ),
+        ]

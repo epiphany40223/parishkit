@@ -704,6 +704,18 @@ CLOSURE_CREATED = {
         ),
         ("stewardship_reports", "0032_pledge_review"),
     ),
+    # 0139 (#1704, provisional number) creates the pledge refresh check table
+    # (in CLOSURE_TABLES) with its guard and the upcoming pledge selection,
+    # and replaces 0135's pledge review guard, which 0135's own reinstall
+    # puts back first; all go, so its file installs whole again after 0135's.
+    **dict.fromkeys(
+        (
+            "public.stewardship_pledge_upcoming_v1(uuid,uuid,bigint)",
+            "public.stewardship_pledge_refresh_items_v1(uuid,uuid)",
+            "public.stewardship_pledge_refresh_check_guard_v1()",
+        ),
+        ("stewardship_reports", "0033_pledge_refresh_checks"),
+    ),
 }
 
 
@@ -1559,6 +1571,9 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
             # promotion and reads the start row; web only reads both.
             "stewardship_refresh_check": ("pk_stewardship_worker", "INSERT"),
             "stewardship_refresh_check_start": ("pk_stewardship_worker", "SELECT"),
+            # Pledge refresh checks (0139, #1704): the worker records them
+            # in promotion; web only reads them.
+            "stewardship_pledge_refresh_check": ("pk_stewardship_worker", "INSERT"),
         }
         for table in CLOSURE_TABLES:
             login, privilege = writers.get(table, ("pk_stewardship_web", "INSERT"))

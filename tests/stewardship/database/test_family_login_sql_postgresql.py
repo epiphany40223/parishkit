@@ -190,6 +190,8 @@ def test_web_admission_requires_exactly_the_login_function(family_service):  # n
         # The publication plans' audit answer (0087, #528).
         "stewardship_publication_audited_v1(text, uuid, uuid, jsonb)",
         "stewardship_debug_logging_off_v1()",
+        # The decided pledges a refresh re-evaluates (0139, #1704).
+        "stewardship_pledge_refresh_items_v1(uuid, uuid)",
     }
     tables, columns = runtime_grants(ServiceRole.WEB)
     allowed = {table: set(grants) for table, grants in tables.items()}
