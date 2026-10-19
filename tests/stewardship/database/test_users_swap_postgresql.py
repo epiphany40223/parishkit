@@ -785,6 +785,15 @@ CLOSURE_ALTERED = {
         "stewardship_workflows",
         "0003_ministry_review_pipeline",
     ),
+    # 0145 (#1753, provisional number) adds the responses' upcoming pledge
+    # with its INSERT guard and replaces 0142's stage selection in place,
+    # which 0142's reinstall (``CLOSURE_CREATED``) puts back first; its file
+    # then runs whole again (``before_submission_upcoming_pledge`` drops the
+    # column and the guard).
+    ("stewardship_submission", "upcoming_pledge"): (
+        "stewardship_responses",
+        "0014_submission_upcoming_pledge",
+    ),
 }
 
 
@@ -1229,6 +1238,21 @@ def before_leader_changes():
     return [body.replace("CREATE FUNCTION", "CREATE OR REPLACE FUNCTION", 1)]
 
 
+def before_submission_upcoming_pledge():
+    """The statements that put responses back as they were before 0145.
+
+    #1753's 0145 adds ``stewardship_submission.upcoming_pledge`` with its
+    INSERT guard and replaces 0142's stage selection, which ``swap_pending``
+    already dropped (``CLOSURE_CREATED``); dropping the guard function drops
+    its trigger. 0145's frozen file (or the full migration) installs all of
+    it again.
+    """
+    return [
+        "DROP FUNCTION public.stewardship_submission_pledge_guard_v1() CASCADE",
+        "ALTER TABLE public.stewardship_submission DROP COLUMN upcoming_pledge",
+    ]
+
+
 def before_ministry_review_pipeline():
     """The statements that put Ministry requests back as they were before 0132.
 
@@ -1317,6 +1341,7 @@ def swap_pending():
             *before_leader_changes(),
             *before_branding_bundle_mode(),
             *before_ministry_review_pipeline(),
+            *before_submission_upcoming_pledge(),
         ):
             cursor.execute(statement)
     try:

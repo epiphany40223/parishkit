@@ -16,16 +16,18 @@ version (0142, provisional). The shared selection
   ``refresh_checks.record_refresh_checks`` writes with the others;
 - ``pledge_check_states`` reads each decided item's check run for the
   page's Not seen in ParishSoft flag;
-- ``marked_pledge`` is ParishSoft's amount an Entered by hand mark records.
+- ``marked_pledge`` is ParishSoft's amount an Entered by hand mark records,
+  and ``answered_pledge`` the amount a Family's response records (#1753).
 
 R is the Family's ParishSoft pledge for the campaign's upcoming financial
 period in the snapshot (``stewardship_pledge_upcoming_v1``, which the guards
 read too, so both see the same evidence), read only with the snapshot's
 proven giving read (``giving_observation``, the Family form's rule). No
-pledge reads as $0.00. A is $0.00 for a Family's answer (a response records
-no snapshot, #1753), or the amount of the Conflict the decision in force was
-taken on; C is the annual pledge carried forward. Frequency is not compared
-until its smoke check, and share methods have no read.
+pledge reads as $0.00. A is ParishSoft's amount recorded on the response
+where the Family's current pledge answer began (``answered_pledge``, #1753;
+$0.00 when it recorded none), or the amount of the Conflict the decision in
+force was taken on; C is the annual pledge carried forward. Frequency is not
+compared until its smoke check, and share methods have no read.
 """
 
 from dataclasses import dataclass
@@ -63,6 +65,8 @@ PLEDGE_STORED = {**STORED, RefreshOutcome.CONFLICT: "conflict"}
 CONFLICT = "conflict"
 # The largest amount a mark can record (``PledgeReview.marked_pledge``).
 MARK_LIMIT = Decimal("1e12")
+# The largest amount a response can record (``Submission.upcoming_pledge``).
+ANSWER_LIMIT = Decimal("1e22")
 UPCOMING = (
     "SELECT duid, stewardship_pledge_upcoming_v1(%s, %s, duid) "
     "FROM unnest(%s::bigint[]) AS duid"
@@ -318,26 +322,47 @@ def pledge_checks(snapshot, corpus, campaign_id, full, start, *, evidence=None):
         yield _check(snapshot, full, item, stored, refreshed)
 
 
-def marked_pledge(campaign_id, family_duid):
-    """ParishSoft's upcoming-year amount an Entered by hand mark records, or None.
+def proven_pledge(snapshot_id, campaign_id, family_duid, *, limit):
+    """ParishSoft's upcoming-year amount for one Family in a snapshot, or None.
 
-    Read from the current snapshot, only with its proven giving read (the
-    rule ``pledge_checks`` applies), in the decision's own work order, so no
-    promotion moves the snapshot before the row is written; the pledge
-    review guard checks the amount against the same snapshot. An amount
-    the row cannot hold is recorded as none.
+    Only with the snapshot's proven giving read (the rule ``pledge_checks``
+    applies) and an amount under ``limit``, the largest the recording
+    column can hold; otherwise None, which records no amount. The caller
+    holds the work order, so no promotion moves the snapshot first.
     """
     definition = _definition(campaign_id)
-    snapshot_id = (
-        SourceCurrent.objects.filter(singleton=True)
-        .values_list("snapshot_id", flat=True)
-        .first()
-    )
     if definition is None or snapshot_id is None:
         return None
     if giving_observation(_cursor(snapshot_id), definition) is None:
         return None
     amount = _upcoming(snapshot_id, campaign_id, {family_duid}).get(family_duid)
-    if amount is None or abs(Decimal(amount)) >= MARK_LIMIT:
+    if amount is None or abs(Decimal(amount)) >= limit:
         return None
     return Decimal(amount)
+
+
+def marked_pledge(campaign_id, family_duid):
+    """ParishSoft's upcoming-year amount an Entered by hand mark records, or None.
+
+    Read from the current snapshot (``proven_pledge``), in the decision's
+    own work order; the pledge review guard checks the amount against the
+    same snapshot.
+    """
+    snapshot_id = (
+        SourceCurrent.objects.filter(singleton=True)
+        .values_list("snapshot_id", flat=True)
+        .first()
+    )
+    return proven_pledge(snapshot_id, campaign_id, family_duid, limit=MARK_LIMIT)
+
+
+def answered_pledge(snapshot_id, campaign_id, family_duid):
+    """ParishSoft's upcoming-year amount a Family's response records, or None.
+
+    The financial stream's A for the Family's answer (#1753): read at the
+    submit from the response's validation snapshot (the current one, which
+    the submission guard requires) by ``proven_pledge``; the response's own
+    guard (0145) checks it against the same snapshot. None, when the read is
+    unproven, records no amount and never stops the submit.
+    """
+    return proven_pledge(snapshot_id, campaign_id, family_duid, limit=ANSWER_LIMIT)

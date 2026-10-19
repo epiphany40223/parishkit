@@ -245,8 +245,21 @@ def test_an_ignored_pledge_is_only_noted(response_service):
 
 
 def test_a_zero_pledge_is_confirmed_by_no_pledge(response_service):
-    """No pledge reads as $0.00, so a Family pledging nothing is Confirmed."""
-    harness, submission = accepted(response_service, annual_pledge="0")
+    """No pledge reads as $0.00, so a pledge of nothing is Confirmed.
+
+    A Family answering $0.00 while ParishSoft holds no pledge is Confirmed at
+    its submit (#1753), so here the reviewer's Edit carries $0.00 forward.
+    """
+    harness, submission = pledged(response_service)
+    decide(
+        harness,
+        admin(),
+        "edit",
+        [submission],
+        value_amount="0",
+        value_frequency="",
+    )
+    decide(harness, admin(), "entered_by_hand", [submission])
     refresh(harness)
     assert checks() == [("confirmed", Decimal("0.00"))]
 
@@ -484,8 +497,10 @@ def test_the_quick_update_check_agrees_with_what_promotion_writes(response_servi
     the same snapshot would write a pledge check, and True once it has.
 
     A To review pledge is checked too (#1747): the first refresh finds the
-    Family's amount at a third value (a Conflict), and the Family then
-    answers ParishSoft's amount, which the next promotion Confirms."""
+    Family's amount at a third value (a Conflict); an Edit to ParishSoft's
+    amount is then owed a check, which the next promotion writes (Confirmed).
+    (A Family answering ParishSoft's amount is Confirmed at its submit,
+    #1753, so no check is owed for it.)"""
     from parishkit.stewardship.campaigns.work_locks import work_transaction
     from parishkit.stewardship.responses.refresh_checks import (
         refresh_checks_current,
@@ -505,7 +520,14 @@ def test_the_quick_update_check_agrees_with_what_promotion_writes(response_servi
     harness, submission = pledged(response_service)
     held = promoted()
     assert PledgeOpenCheck.objects.get().outcome == "conflict"
-    again(harness, annual_pledge="99")
+    decide(
+        harness,
+        admin(),
+        "edit",
+        [submission],
+        value_amount="99",
+        value_frequency="annual",
+    )
 
     def current():
         """The check as a quick update makes it: a staging snapshot just
@@ -523,7 +545,6 @@ def test_the_quick_update_check_agrees_with_what_promotion_writes(response_servi
 
     assert not current()
     held = promoted()
-    assert list(
-        PledgeOpenCheck.objects.order_by("created_at").values_list("outcome", flat=True)
-    ) == ["conflict", "confirmed"]
+    assert PledgeOpenCheck.objects.get().outcome == "conflict"
+    assert checks() == [("confirmed", Decimal("99.00"))]
     assert current()

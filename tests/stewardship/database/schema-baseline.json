@@ -1,15 +1,15 @@
 {
   "columns": {
-    "count": 2941,
-    "sha256": "2bc92e9225853c2fcdaf14994a01b1c7e127f1b1dd8ccf127fe52733f9737d95"
+    "count": 2942,
+    "sha256": "2b702a6a7bb7dbcc6b3012a7265b3355f683ec020fa25c4da83132eb31a5b620"
   },
   "constraints": {
     "count": 4067,
     "sha256": "403d7058bd8b28b82a6854f4b13eda1967ea8de81a1e49bcbd364882866b1f93"
   },
   "functions": {
-    "count": 761,
-    "sha256": "5473e2685cdba023d9743f8d1e00c02dbea8290195fd73a87c0ebbace54f3096"
+    "count": 762,
+    "sha256": "b735b86f4252775a1cf2801df4b5cbf3dc8570e010b6a6cd566cb7cc480541c3"
   },
   "indexes": {
     "count": 1191,
@@ -24,7 +24,7 @@
     "sha256": "75974fe409946c83bc105593e94ca575491eeb1fa001ffc341300606dac807cf"
   },
   "triggers": {
-    "count": 632,
-    "sha256": "f767e3892a4b07f9a5a5a05698fa927d7ff5b345fb0222d0e94d5590e934be9d"
+    "count": 633,
+    "sha256": "d4a723371bbe270ed2ebf440e7f9ba91193a8a781826ae4f9a3e8695d6c5cb0e"
   }
 }

@@ -183,7 +183,8 @@ def test_an_accepted_conflict_back_at_a_is_to_enter_by_hand_again(
 def test_back_to_review_carries_the_conflicts_baseline(response_service):
     """A decided Conflict's A survives Back to review while the pledge is
     unchanged, so the same amount is no new Conflict; a changed pledge
-    starts again at $0.00."""
+    starts again at ParishSoft's amount at its submit (#1753), so that
+    amount is no Conflict either, and a new one is."""
     harness, submission = pledged(response_service)
     refresh(harness, "900.00")
     decide(harness, admin(), "accept", [submission])
@@ -193,8 +194,12 @@ def test_back_to_review_carries_the_conflicts_baseline(response_service):
     assert len(opened()) == 1
     assert row(harness, submission)["placement"].stage is Stage.TO_REVIEW
     changed = again(harness, annual_pledge="1000")
+    assert changed.upcoming_pledge == Decimal("900.00")
     refresh(harness, "900.00")
-    assert opened()[-1] == ("conflict", Decimal("900.00"))
+    assert len(opened()) == 1
+    assert row(harness, changed)["placement"].stage is Stage.TO_REVIEW
+    refresh(harness, "950.00")
+    assert opened()[-1] == ("conflict", Decimal("950.00"))
     assert PledgeOpenCheck.objects.latest("created_at").submission_id == changed.pk
 
 
