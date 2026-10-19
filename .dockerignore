@@ -150,6 +150,7 @@
 !src/parishkit/stewardship/schema/migrations/0123_sign_in_leftovers.sql
 !src/parishkit/stewardship/schema/migrations/0124_guard_wording.sql
 !src/parishkit/stewardship/schema/migrations/0125_secret_request_session.sql
+!src/parishkit/stewardship/schema/migrations/0126_information_limitation_review.sql
 !src/parishkit/stewardship/schema/due_work_health.sql
 !src/parishkit/stewardship/schema/family_dispatch.sql
 !src/parishkit/stewardship/schema/production.sql

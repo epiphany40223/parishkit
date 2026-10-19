@@ -1833,6 +1833,10 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
 .worklist-filters > div:not(.filter-actions) { flex: 0 1 13rem; margin: 0; }
 .worklist-filters > div > :is(input, select) { max-width: none; }
 .worklist-filters > :is(p, [data-complete-hint]) { flex-basis: 100%; margin: 0; }
+/* A worklist filter whose choices are long phrases (Limitations' Show,
+   #1685) takes two field cells and their gap, so its chosen text reads
+   whole; on a phone it takes the whole row like every field (below). */
+.worklist-filters > div.wide { flex-basis: 27rem; }
 @media (max-width: 40rem) { .worklist-filters > div:not(.filter-actions) { flex-basis: 100%; } }
 .button-danger { background: var(--error-border); border-color: var(--error-border); color: var(--paper); }
 .button-danger:not(:disabled):hover { background: var(--error-ink); border-color: var(--error-ink); }

@@ -3,8 +3,9 @@
 Lists Members who cannot participate in ministries, and Families who cannot
 attend Mass or prayer services. The report was "Talents and limitations"
 until talents were retired (#970); its SQL is
-``stewardship_limitations_report_v1`` (migration 0056), which neither lists
-nor counts the talents older submissions recorded.
+``stewardship_limitations_report_v2`` (migration 0126; v1 with each answer's
+key and latest review decision, #1685), which neither lists nor counts the
+talents older submissions recorded.
 """
 
 import csv
@@ -18,6 +19,7 @@ from django.utils.datastructures import MultiValueDict
 
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
+from parishkit.stewardship.pipeline import Stage, cannot_participate_placement
 from parishkit.stewardship.source.snapshot_names import name_rows
 from parishkit.stewardship.source.source_status import (
     STATUS_HEADING,
@@ -33,11 +35,22 @@ from .information_rendering import xlsx_cell
 
 # The Show menu's choices: everything, or one of the two limitations.
 SHOW_WORDS = frozenset({"any", "cannot_serve", "cannot_attend"})
+# The stream's stages, in the order the worklist's Stage filter lists them
+# (review pipeline spec, "Cannot participate stream", #1685). An answer the
+# Family no longer gives is gone from the report, so there is no History.
+STAGES = (Stage.TO_REVIEW, Stage.TO_HANDLE, Stage.IGNORED, Stage.HANDLED)
+# Each answer in words, by its kind: the worklist's Family's answer.
+ANSWERS = {
+    "member": "Cannot participate in any ministries",
+    "proposed_member": "Cannot participate in any ministries",
+    "family": "Cannot attend Mass or prayer services",
+}
 # Each download table has its page table's columns, names and order (#932,
 # #966): the Members table leads with the Member and Member DUID, as on the
-# page, and the Families table has no "Cannot attend Mass" column, as on the
-# page, whose table heading says what it lists (every listed Family cannot
-# attend). ParishSoft status follows the Family's name, as the page's badge
+# page, and the Families table names each Family's limitation in its
+# Limitation column, in the worklist's words (R39 finding 11), as the Members
+# table's Cannot participate column does. ParishSoft status follows the
+# Family's name, as the page's badge
 # sits beside it: "Not in ParishSoft" with the name blank when the data no
 # longer has the Family, otherwise blank (#1216).
 MEMBER_HEADINGS = (
@@ -48,8 +61,16 @@ MEMBER_HEADINGS = (
     "Family DUID",
     "Cannot participate in ministries",
     "Latest response",
+    "Stage",
 )
-FAMILY_HEADINGS = ("Family", STATUS_HEADING, "Family DUID", "Latest response")
+FAMILY_HEADINGS = (
+    "Family",
+    STATUS_HEADING,
+    "Family DUID",
+    "Limitation",
+    "Latest response",
+    "Stage",
+)
 # Each table's page heading, which the PDF prints above that table.
 MEMBER_CAPTION = "Members who cannot participate in ministries"
 FAMILY_CAPTION = "Families that cannot attend Mass or prayer services"
@@ -62,7 +83,9 @@ PDF_WEIGHTS = {
     "Member": 9,
     "Member DUID": 5,
     "Cannot participate in ministries": 6,
+    "Limitation": 9,
     "Latest response": 8,
+    "Stage": 6,
 }
 PRIVACY = "Sensitive parish report. Share only with authorized recipients."
 # The report's name in its files: the PDF title, XLSX headers and properties.
@@ -100,7 +123,7 @@ def limitations_report(campaign_id, query, principal):
         raise PermissionError("The Limitations report is unavailable.")
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT stewardship_limitations_report_v1(%s,%s::jsonb)::text",
+            "SELECT stewardship_limitations_report_v2(%s,%s::jsonb)::text",
             [campaign_id, json.dumps(query.form_values())],
         )
         value = cursor.fetchone()
@@ -117,10 +140,41 @@ def limitations_report(campaign_id, query, principal):
 
 
 def shape_result(result):
-    """Parse each row's response time for the page and the files."""
+    """Parse each row's times and place it in its pipeline stage (#1685).
+
+    The stage comes from the answer's latest review decision while it is in
+    force (``pipeline.cannot_participate_placement``); the page, its
+    downloads and ``pk-admin`` read the same placement.
+    """
     for row in result["members"] + result["families"]:
         row["submitted_at"] = datetime.fromisoformat(row["submitted_at"])
+        if row.get("decided_at"):
+            row["decided_at"] = datetime.fromisoformat(row["decided_at"])
+        row["placement"] = cannot_participate_placement(
+            decision=row.get("decision"), in_force=bool(row.get("in_force"))
+        )
     return result
+
+
+def at_stage(result, stage):
+    """The report with only the answers at ``stage`` (a stage value, or "all").
+
+    The worklist's download applies its Stage filter through here, so the
+    file lists what the table shows; the summary counts what is left.
+    """
+    if stage == "all":
+        return result
+
+    def kept(rows):
+        """The rows at the stage."""
+        return [row for row in rows if row["placement"].stage.value == stage]
+
+    members, families = kept(result["members"]), kept(result["families"])
+    return result | {
+        "members": members,
+        "families": families,
+        "summary": {"cannot_serve": len(members), "cannot_attend": len(families)},
+    }
 
 
 def iso_time(moment):
@@ -159,11 +213,18 @@ def export_tables(result, zone, *, time_text=iso_time):
             str(row["family_duid"]),
             "Yes",
             instant(row["submitted_at"]),
+            row["placement"].stage.label,
         )
         for row in result["members"]
     ]
     families = [
-        (*_family(row), str(row["family_duid"]), instant(row["submitted_at"]))
+        (
+            *_family(row),
+            str(row["family_duid"]),
+            ANSWERS[row["kind"]],
+            instant(row["submitted_at"]),
+            row["placement"].stage.label,
+        )
         for row in result["families"]
     ]
     return members, families

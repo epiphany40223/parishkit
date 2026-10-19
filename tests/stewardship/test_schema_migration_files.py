@@ -408,6 +408,9 @@ FROZEN = {
     "0125_secret_request_session.sql": (
         "aaa27b6bb22e3e3df0723f659195396fd944b2137cc10111a130f7cc5ee982fd"
     ),
+    "0126_information_limitation_review.sql": (
+        "4acebc765834c122f5a007e690658b6a99280b9e8a56f066250841e19a7eb669"
+    ),
 }
 
 
