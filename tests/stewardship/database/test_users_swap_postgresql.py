@@ -429,7 +429,7 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # (0114's) and 0104's setup credential audit come back older from closure
 # files, so ``CLOSURE_REPLACED_ONLY`` runs 0124's replacements of those;
 # the rest (baseline guards no closure file installs again) survive.
-# 0136 (#1689, provisional number) creates the refresh check and start
+# 0132 (#1689, provisional number) creates the refresh check and start
 # tables (in CLOSURE_TABLES) with their two guards and replaces nothing; all
 # go, so its file installs whole again.
 CLOSURE_CREATED = {
@@ -748,7 +748,7 @@ CLOSURE_ALTERED = {
         "stewardship_responses",
         "0009_conflict_resolution",
     ),
-    # 0132 (#1684, provisional number) adds five Ministry request and
+    # 0131 (#1684, provisional number) adds five Ministry request and
     # revision columns; one entry, so its file runs once
     # (``before_ministry_review_pipeline`` drops them all).
     ("stewardship_ministry_request", "reviewed_ministry_duid"): (
@@ -777,7 +777,7 @@ CLOSURE_ALTERED = {
 # 0101 (#528) replaces the task-type maps 0077's file brings back.
 # 0107 (#528, ADM-09.04) replaced the review guard 0096's file brings back
 # with the one that also admits an edited value, and 0108's file (run by
-# ``CLOSURE_ALTERED``) with the accepted base; 0131 (#1683) replaces it last,
+# ``CLOSURE_ALTERED``) with the accepted base; 0128 (#1683) replaces it last,
 # for the review pipeline, and creates nothing, so its file runs again
 # whenever the guard lacks its phrase.
 # 0110 (#558) replaces the baseline financial selection that 0094's file,
@@ -828,7 +828,7 @@ CLOSURE_REPLACED = {
         (("stewardship_responses", "0007_publication_tasks"), "census_publication"),
     ),
     "public.stewardship_proposal_review_guard_v1()": (
-        ("stewardship_responses", "0013_census_pipeline_review"),
+        ("stewardship_responses", "0014_census_pipeline_review"),
         "OR (decided AND edited AND NEW.decision<>'approved')",
     ),
     "public.stewardship_response_derived_guard_v1()": (
@@ -926,8 +926,8 @@ def rerun_old_bodies(cursor, migrations):
 # reruns; 0118's body keeps 0096's, 0108's, 0112's and 0113's rules, so only
 # the latest replacement runs.
 CLOSURE_REPLACED_ONLY = {
-    # 0132 (#1684) replaces the follow-up selection last; 0094's rerun
-    # (above) puts back its older body, and 0132 adds columns, so only its
+    # 0131 (#1684) replaces the follow-up selection last; 0094's rerun
+    # (above) puts back its older body, and 0131 adds columns, so only its
     # replacement statement runs again.
     "stewardship_ministry_followup_v1": (
         ("stewardship_workflows", "0003_ministry_review_pipeline"),
@@ -1224,14 +1224,14 @@ def before_leader_changes():
 
 
 def before_ministry_review_pipeline():
-    """The statements that put Ministry requests back as they were before 0132.
+    """The statements that put Ministry requests back as they were before 0131.
 
-    #1684's 0132 adds the Edit's Ministry, the parish-added mark and the
+    #1684's 0131 adds the Edit's Ministry, the parish-added mark and the
     request an addition replaces to ``stewardship_ministry_request``, and
     the Edit's Ministry and the decision note to its revisions; dropping
     the columns drops their checks and foreign key with them. The guards and
-    selection it replaced keep their 0132 bodies, which nothing on the
-    users upgrade's base calls; 0132's file (or the full migration) adds
+    selection it replaced keep their 0131 bodies, which nothing on the
+    users upgrade's base calls; 0131's file (or the full migration) adds
     the columns again.
     """
     return [
@@ -1575,7 +1575,7 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
                 ),
                 ("pk_stewardship_worker", "INSERT"),
             ),
-            # Refresh checks (0136, #1689): the worker records them in
+            # Refresh checks (0132, #1689): the worker records them in
             # promotion and reads the start row; web only reads both.
             "stewardship_refresh_check": ("pk_stewardship_worker", "INSERT"),
             "stewardship_refresh_check_start": ("pk_stewardship_worker", "SELECT"),

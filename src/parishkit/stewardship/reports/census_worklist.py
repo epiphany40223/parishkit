@@ -6,7 +6,7 @@ records the worklist's decisions through the census services
 (``CensusDecisions``, the stream's ``DecisionService``). The stages, words
 and role actions are ``parishkit.stewardship.pipeline``'s; nothing here
 restates them, and nothing here decides what is allowed: the services and
-their SQL guards (migrations 0060, 0096, 0107, 0108 and 0131) refuse
+their SQL guards (migrations 0060, 0096, 0107, 0108 and 0128) refuse
 anything a reader may not do.
 """
 

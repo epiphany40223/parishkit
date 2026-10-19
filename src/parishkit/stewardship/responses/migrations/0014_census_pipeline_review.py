@@ -1,7 +1,7 @@
 """Forward migration: census changes adopt the review pipeline (#1683).
 
-Its SQL is the frozen file ``schema/migrations/0131_census_pipeline_review.sql``
-(number 0131, provisional until it is assigned in merge order), read whole and
+Its SQL is the frozen file ``schema/migrations/0128_census_pipeline_review.sql``
+(number 0128, provisional until it is assigned in merge order), read whole and
 never parsed. It replaces the census review guard so Staff and Administrators
 review every census change the worklist lists, By hand ones too, record Edit
 as Accept with a value (also on a Conflict, with the accepted base), edit a
@@ -20,7 +20,7 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0131_census_pipeline_review.sql"
+    / "0128_census_pipeline_review.sql"
 )
 
 

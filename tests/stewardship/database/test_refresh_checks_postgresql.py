@@ -56,7 +56,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 def started():
     """The Not seen start row, which each test's flush removes again.
 
-    Migration 0136 writes it once; a later insert is stamped now, so only
+    Migration 0132 writes it once; a later insert is stamped now, so only
     refreshes promoted after it count, as after the release.
     """
     with connection.cursor() as cursor:
@@ -390,7 +390,7 @@ def test_the_worker_login_records_checks_in_promotion(response_service):
 
 
 def test_the_migration_records_the_start_with_its_audit(response_service):
-    """Run on a database holding live responses, 0136's start block writes
+    """Run on a database holding live responses, 0132's start block writes
     the start row and its count-only audit event (a fresh install, with no
     response, writes the row alone)."""
     from pathlib import Path
@@ -400,7 +400,7 @@ def test_the_migration_records_the_start_with_its_audit(response_service):
     prepared(response_service)
     sql = (
         Path(__file__).resolve().parents[3]
-        / "src/parishkit/stewardship/schema/migrations/0136_refresh_checks.sql"
+        / "src/parishkit/stewardship/schema/migrations/0132_refresh_checks.sql"
     ).read_text(encoding="utf-8")
     block = sql[sql.index("DO $start$") : sql.index("$start$;") + len("$start$;")]
     RefreshCheckStart.objects.all().delete()

@@ -121,7 +121,7 @@ class Action(StrEnum):
     # once, by the migration, as a system event with no subject.
     CENSUS_HANDLING_CORRECTED = "census_handling_corrected"
     # The baseline refresh re-evaluation's Not seen start (#1689): written
-    # once, by migration 0136, as a system event with no subject.
+    # once, by migration 0132, as a system event with no subject.
     REFRESH_CHECKS_STARTED = "refresh_checks_started"
     MINISTRY_ROSTER_ENTERED = "ministry_roster_entered"
     # Publication to ParishSoft (#528, DAT-09.01): a preflight's plan (count:

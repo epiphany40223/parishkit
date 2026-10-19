@@ -635,7 +635,7 @@ CLOSURE_TABLES = {
         ),
         ("stewardship_jobs", "0035_leader_emails"),
     ),
-    # The baseline refresh re-evaluation's checks and their start (0136,
+    # The baseline refresh re-evaluation's checks and their start (0132,
     # #1689, provisional number): the worker records checks in promotion,
     # and web and the worker read both.
     **dict.fromkeys(
@@ -663,7 +663,7 @@ CLOSURE_COLUMNS = {
         "stewardship_reports",
         "0022_digest_funnel_charts",
     ),
-    # The review pipeline's Ministry Edit (0132, #1684): web updates a
+    # The review pipeline's Ministry Edit (0131, #1684): web updates a
     # request's edited Ministry with its paired revision.
     ("stewardship_ministry_request", "reviewed_ministry_duid"): (
         "stewardship_workflows",

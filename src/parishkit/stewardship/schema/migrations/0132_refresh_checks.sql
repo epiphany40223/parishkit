@@ -1,4 +1,4 @@
--- Frozen forward migration file 0136 (the repository-wide file sequence;
+-- Frozen forward migration file 0132 (the repository-wide file sequence;
 -- provisional, the number is assigned centrally in merge order): the
 -- baseline refresh re-evaluation's refresh checks (#1689).
 -- This file is installed by its Django migration in the workflows app and

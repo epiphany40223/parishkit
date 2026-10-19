@@ -405,14 +405,14 @@ FROZEN = {
     "0124_guard_wording.sql": (
         "cbe60936ca8d92a473280cbb173b2c0c379b295135eef83b114750c7b2ce035c"
     ),
-    "0131_census_pipeline_review.sql": (
-        "82f6ba01ad8054bbaa1a902d907f1e3f18e7ba22384b33a7a1ca0ec5aa4ab4ae"
+    "0128_census_pipeline_review.sql": (
+        "a586f0a0100242e02ee493f9baaf8fb8116efea5525dc6329cb35072239be7c1"
     ),
-    "0132_ministry_review_pipeline.sql": (
-        "70230abb1ba3f8b875786182f1a6e35cf7046ef220929059c27dff33b8eafc1b"
+    "0131_ministry_review_pipeline.sql": (
+        "a2c82ffe3c9e967b4d0c0d1599cbcc93c8658fa97235cfe9c37246c67372926b"
     ),
-    "0136_refresh_checks.sql": (
-        "8b516b20ea34a8546225c1ecf9108f36a8e7d647c4544e9d62d40a258fbab810"
+    "0132_refresh_checks.sql": (
+        "71f686b124fa6dd4eda1725feab9c124a74e65b986e95be1c883fc565988b342"
     ),
 }
 
