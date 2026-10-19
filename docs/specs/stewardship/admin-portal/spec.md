@@ -685,8 +685,9 @@ Notes on the groups:
   R39 findings 1 and 4, 2026-10-19): one group holds the
   [review pipeline](../review-pipeline/spec.md)'s worklists, the daily work
   while a campaign runs, in the order Census changes, Ministry requests,
-  Pledges, Additional information, Limitations; the other holds the read-only reports
-  and queries. Until the split this was one group, Responses and reports.
+  Pledges, Additional information, Limitations; the other holds the
+  read-only reports and queries. Until the split this was one group,
+  Responses and reports.
   Both groups' pages keep their `/admin/reports/` addresses (see
   [URL scheme](#url-scheme)), so no address changed.
 - Every report has its own entry, so none is reached only through another
