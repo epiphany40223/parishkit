@@ -670,11 +670,15 @@ input[data-time-entry=list] { max-width: 24rem; }
    table and is one line, kept while empty (R38 finding 10): it answers the
    reader's own last decision, so it needs no second line, and its margins
    are the gap the table would have under the filters anyway. */
-.action-status.worklist-notice { min-height: 1.6em; min-height: 1lh; margin-block: 0 .5rem; }
+/* A longer notice (a long item name; Linux's wider fonts wrapped the
+   overtaken-decision notice at 700 and 1024 px) is cut short with an
+   ellipsis rather than taking another line, as .review-outcome is; the
+   live region still holds the whole text for screen readers. */
+.action-status.worklist-notice { min-height: 1.6em; min-height: 1lh; margin-block: 0 .5rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 /* On a phone a notice naming its item can wrap (Linux's wider fonts wrap
    it at 390 px), so the line keeps two lines there, still with no margin
    above it. */
-@media (max-width: 40rem) { .action-status.worklist-notice { min-height: 3.2em; min-height: 2lh; } }
+@media (max-width: 40rem) { .action-status.worklist-notice { min-height: 3.2em; min-height: 2lh; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; white-space: normal; } }
 /* A status line that wraps keeps the lines it can take (#757): two, or
    three on a phone, where a long sentence in a wide font needs a third. Its
    emptying then never moves the buttons below it. */
