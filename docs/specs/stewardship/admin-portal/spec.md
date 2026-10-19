@@ -638,7 +638,8 @@ viewer's role may open:
 
 | Group | Entry | URL | Roles | Unavailable when (the reason shown) |
 | --- | --- | --- | --- | --- |
-| (top) | Home | `/admin/` | Administrator, Staff, Ministry leader | Never |
+| (top) | Home | `/admin/` | Administrator | Never |
+| Review work | My review work | `/admin/` | Staff, Ministry leader (not Administrators) | Never |
 | Campaign setup | Campaign settings | `/admin/campaign/settings/` | Administrator | No current campaign |
 | Campaign setup | Pages and emails | `/admin/campaign/content/` | Administrator | No current campaign, or it is archived |
 | Campaign setup | Campaign images | `/admin/campaign/images/` | Administrator | No current campaign, or it is archived |
@@ -688,6 +689,12 @@ Notes on the groups:
   and queries. Until the split this was one group, Responses and reports.
   Both groups' pages keep their `/admin/reports/` addresses (see
   [URL scheme](#url-scheme)), so no address changed.
+- For Staff and Ministry leaders who are not Administrators, `/admin/` is
+  [My review work](../review-pipeline/spec.md#role-views), and it is the
+  first entry of Review work instead of a Home entry above the groups (R39
+  finding 4): their landing sits with the worklists it counts. Their trail's
+  root still names it, as for Home. Administrators keep Home at the top and
+  have no My review work entry.
 - Every report has its own entry, so none is reached only through another
   report: the [Response dashboard](../reports/spec.md#response-dashboard)
   (which absorbed Participation,
@@ -1122,7 +1129,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 
 | Page | Name | Reached from | Roles | Current names | Current URL | New URL | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `index` | Home | Menu: Home | Administrator, Staff, Ministry leader | Campaign administration | `/admin/` | (same) | Heading becomes Home; parish and campaign shown as the data line. For Staff and Ministry leaders who are not Administrators the page is [My review work](../review-pipeline/spec.md#role-views) (#1690): its heading, the menu's first link, the trail's root and a "Return to" it all say My review work. |
+| `index` | Home | Menu: Home | Administrator, Staff, Ministry leader | Campaign administration | `/admin/` | (same) | Heading becomes Home; parish and campaign shown as the data line. For Staff and Ministry leaders who are not Administrators the page is [My review work](../review-pipeline/spec.md#role-views) (#1690): its heading, its menu entry (the first of Review work), the trail's root and a "Return to" it all say My review work. |
 | `configuration_request` | Change status | Settings page the change came from (else Home) | Administrator | Configuration change status; Configuration change | `/admin/changes/<request>/` | (same) |  |
 | `campaign_settings` | Campaign settings | Menu: Campaign settings | Administrator | (same) | `/admin/campaign/settings/` | (same) |  |
 | `campaign_create` | Create the campaign | Home | Administrator | (new, #142) | `/admin/campaign/first/` | (same) | Offered on Home only while the deployment has never had a campaign; refused once one exists. Not linked from a change's status page. |

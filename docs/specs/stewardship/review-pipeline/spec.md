@@ -724,7 +724,9 @@ changes what each role lands on:
     mapping does not place, the Limitations inputs unavailable) is logged
     and its cards show no number; the page never fails for it. The page's
     name is My review work in its heading, the menu, the trail's root and
-    every "Return to" it, for those who land on it.
+    every "Return to" it, for those who land on it. Its menu entry is the
+    first of the Review work group, not a Home entry above the groups
+    ([admin portal, menu groups](../admin-portal/spec.md#menu-groups)).
   - Until a stream moves to the worklist, its cards link to its current
     page unfiltered (no current page reads a stage from its address); each
     worklist slice makes its cards link `?stage=<value>`.
