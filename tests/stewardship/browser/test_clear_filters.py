@@ -289,3 +289,40 @@ def test_directory_clear_keeps_the_testing_view(page, component_origin):
     expect(page.locator("#table-filters input[name=mode]")).to_have_value("production")
     assert page.evaluate(MARKED) == "kept"
     unavailable(page)
+
+
+def test_directory_clear_drops_the_locked_reach(page, component_origin):
+    """While Include mailing columns is ticked, the locked reach select is
+    disabled and the reader's own reach travels in a hidden field
+    (data-locked-own). That field is a filter (data-filter), so Clear
+    filters posts neither it nor the mailing box, and the answer's form
+    shows the reach unlocked and the box unticked."""
+    from django.urls import reverse
+    from playwright.sync_api import expect
+
+    page.goto(component_origin + "/postal-directory")
+    reach = page.locator("#directory-reach")
+    expect(reach).to_be_disabled()
+    own = page.locator('#table-filters [data-locked-own="directory-reach"]')
+    expect(own).to_be_enabled()
+    has_attribute(own, "data-filter", "")
+    # The fixture page's plain address counts as the default view, so a
+    # typed search makes Clear available.
+    page.locator("#directory-search").fill("Another name")
+    available(page)
+    cleared = page.request.get(component_origin + "/family-directory").text()
+    page.route(
+        "**" + reverse("admin:family_directory"),
+        lambda route: (
+            route.fulfill(body=cleared, content_type="text/html")
+            if route.request.method == "POST"
+            else route.continue_()
+        ),
+    )
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("button", name="Clear filters").click()
+    fields = posted(sent.value)
+    assert not {"reach", "mailing", "search"} & set(fields), fields
+    expect(reach).to_be_enabled()
+    expect(page.locator("#directory-mailing")).not_to_be_checked()
+    expect(own).to_be_disabled()
