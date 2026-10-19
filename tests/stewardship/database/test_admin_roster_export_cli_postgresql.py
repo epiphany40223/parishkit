@@ -39,12 +39,17 @@ def export(run, *argv, secret=None):
 
 def test_the_page_s_files(response_service, google, cli):  # noqa: F811
     """CSV is the page's download byte for byte; XLSX holds the page's
-    sheet; PDF is a PDF; the Show and Ministry choices narrow the file. Each
+    sheet; PDF is a PDF; the Show (the page's Stage) and Ministry choices
+    narrow the file. Each
     records the page's event with the rows in the file, and nothing else."""
     harness, admin_id, join, _ = resolved(response_service)
     browser, _ = signed_in()
     run = cli()
-    form = {"format": "csv", "timezone": "America/New_York", "show": "todo"}
+    form = {
+        "format": "csv",
+        "timezone": "America/New_York",
+        "stage": "to_enter_by_hand",
+    }
     argv = ("--timezone", "America/New_York")
     found = {}
 
@@ -96,9 +101,10 @@ def test_the_page_s_files(response_service, google, cli):  # noqa: F811
     code, body, document = export(run, "--show", "all", "--format", "csv")
     assert code == 0 and document["result"]["count"] == 1, document
     response, page_body = search(
-        browser, ROUTE, {"format": "csv", "timezone": "UTC", "show": "all"}
+        browser, ROUTE, {"format": "csv", "timezone": "UTC", "stage": "all"}
     )
-    assert body == page_body and b",Yes," in body
+    # The command's --show all is the page's Every stage (until #1688).
+    assert body == page_body and b",Entered by hand," in body
     code, _, document = export(run, "--show", "all", "--ministry", "4")
     assert code == 0 and document["result"]["count"] == 0, document
     code, _, document = export(run, "--show", "all", "--ministry", "9")

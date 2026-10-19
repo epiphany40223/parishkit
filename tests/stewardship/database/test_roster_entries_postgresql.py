@@ -8,16 +8,13 @@ them.
 
 import csv
 import io
-import json
 import re
 from pathlib import Path
 from uuid import uuid4
-from zoneinfo import ZoneInfo
 
 import pytest
 from django.db import DatabaseError, IntegrityError, connection, transaction
 from django.test.utils import CaptureQueriesContext
-from django.urls import reverse
 from openpyxl import load_workbook
 
 from parishkit.stewardship.accounts.policy_models import PortalUser
@@ -25,14 +22,13 @@ from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.storage import StaleRecordError
-from parishkit.stewardship.web.dates import format_date
 from parishkit.stewardship.workflows.models import MinistryRequest, MinistryRosterEntry
 from parishkit.stewardship.workflows.roster import set_roster_entered
 
 from .auth_builders import signed_in
 from .family_link_checks import link_reads
 from .test_background_grants_postgresql import task_login
-from .test_export_views_postgresql import post, restricted_download_pool
+from .test_export_views_postgresql import restricted_download_pool
 from .test_information_followup_postgresql import search
 from .test_ministry_exports_postgresql import leader
 from .test_ministry_followup_postgresql import edit, member_gone, requests
@@ -176,100 +172,135 @@ def test_tick_history_is_immutable(response_service):
             cursor.execute(statement, [entry.pk])
 
 
+ROUTE = "/admin/reports/ministries/follow-up/roster/"
+
+
+def mark_form(target, sequence, **values):
+    """A row's Entered by hand post to the list, with its view."""
+    return {
+        "decide": "entered_by_hand",
+        "item": str(target.pk),
+        "version": str(sequence),
+        "request_key": str(uuid4()),
+        "note": "",
+        "stage": "to_enter_by_hand",
+    } | values
+
+
+def bulk_form(*items, **values):
+    """The bulk bar's Entered by hand post to the list, with its view."""
+    return {
+        "bulk": "entered_by_hand",
+        "bulk_key": str(uuid4()),
+        "bulk_note": "",
+        "item": list(items),
+        "stage": "to_enter_by_hand",
+    } | values
+
+
 def test_pages_list_tick_and_download_the_roster_changes(
     response_service, google, settings
 ):
-    """The list shows the resolved join to enter; the tick answers in place
-    on the request page; the list and its download follow the tick; the view
-    and download are audited as counts."""
+    """The list is the Ministry manual handling report (#1687): Stage first,
+    To enter by hand by default; Entered by hand posts to the list, which
+    answers with itself and its notice; a mark someone made first says so;
+    the download follows the Stage; the view and download are audited as
+    counts."""
     settings.STEWARDSHIP_DOWNLOAD_POOL = None  # restricted_download_pool sets it
     harness, _, join, _ = resolved(response_service)
     browser, login = signed_in()
     assert login.status_code == 302
-    route = "/admin/reports/ministries/follow-up/roster/"
+    route = ROUTE
     with restricted_download_pool(settings):
         with CaptureQueriesContext(connection) as queries:
             response, body = get(browser, route)
-        assert response.status_code == 200 and b"<td>Not yet</td>" in body
+        assert response.status_code == 200 and b"To enter by hand (1)" in body
+        assert b'data-row-action="entered_by_hand"' in body
         # The Member's Family name opens its Timeline (#1570): one record id
         # read for the page.
         assert b'<td><a href="/admin/reports/families/' in body
         assert len(link_reads(queries)) == 1
-        assert b"Mark entered in ParishSoft" in body and b"Family DUID" in body
-        assert get(browser, route + "?show=bad")[0].status_code == 400
-        # The Ministry filter keeps one Ministry's changes; a malformed one
-        # is refused.
+        assert b"Family DUID" in body and b'name="show"' not in body
+        for bad in ("?show=all", "?stage=bad", "?ministry=x", "?sort=id"):
+            assert get(browser, route + bad)[0].status_code == 400, bad
+        # The Ministry filter keeps one Ministry's changes.
         _, body = get(browser, route + "?ministry=9")
         assert f"follow-up/{join.pk}/".encode() in body
         _, body = get(browser, route + "?ministry=8")
         assert b"No roster changes to enter for this Ministry." in body
-        assert get(browser, route + "?ministry=x")[0].status_code == 400
-        assert get(browser, route + "?sort=id")[0].status_code == 400
-        tick_url = f"/admin/reports/ministries/follow-up/{join.pk}/roster/"
-        response, _ = search(
-            browser,
-            tick_url,
-            {
-                "sequence": "1",
-                "entered": "yes",
-                "request_key": str(uuid4()),
-                "return_to": "roster",
-                "show": "all",
-                "sort": "member",
-                "size": "25",
-                "page": "1",
-            },
+        # A malformed decision, any decision but the mark, a note, or a query
+        # string on the POST is the plain 400 page; nothing is recorded.
+        for bad in (
+            mark_form(join, 1, decide="accept"),
+            mark_form(join, 1, note="Typed"),
+            mark_form(join, 1, version="x"),
+        ):
+            assert search(browser, route, bad)[0].status_code == 400, bad
+        assert search(browser, route + "?x=1", mark_form(join, 1))[0].status_code == (
+            400
         )
-        # The answer keeps the list's own view (#821 review).
-        assert response.status_code == 302
-        location = response["Location"]
-        assert "/follow-up/roster/?" in location and "show=all" in location
-        assert "sort=member" in location and "size=25" in location
-        # The same form again is now stale: on the request page a 409; on
-        # the list, the list again with a notice, keeping its view.
+        # A request the page's campaign does not hold is denied (#1687).
+        unknown = mark_form(join, 1, item=str(uuid4()))
+        assert search(browser, route, unknown)[0].status_code == 403
+        assert MinistryRosterEntry.objects.count() == 0
+        response, body = search(browser, route, mark_form(join, 1))
+        assert response.status_code == 200
+        assert b"marked entered by hand." in body
+        assert b"No roster changes to enter." in body
+        # The same row's form again (its page drawn before) is now stale.
+        response, body = search(browser, route, mark_form(join, 1))
+        assert response.status_code == 200
+        assert b"was changed by someone else first" in body
+        assert MinistryRosterEntry.objects.filter(request=join).count() == 1
+        # The request page keeps its own tick: a stale one is a 409 there,
+        # and the list's old return is gone.
+        tick_url = f"/admin/reports/ministries/follow-up/{join.pk}/roster/"
         stale = {"sequence": "1", "entered": "yes", "request_key": str(uuid4())}
         assert search(browser, tick_url, stale)[0].status_code == 409
-        response, _ = search(
-            browser, tick_url, stale | {"return_to": "roster", "show": "all"}
-        )
-        assert response.status_code == 302
         assert (
-            "changed=1" in response["Location"] and "show=all" in response["Location"]
+            search(browser, tick_url, stale | {"return_to": "roster"})[0].status_code
+            == 400
         )
-        _, body = get(browser, response["Location"])
-        assert b"changed by someone else first" in body
         assert (
             search(browser, tick_url, stale | {"entered": "maybe"})[0].status_code
             == 400
         )
-        assert search(browser, tick_url, stale | {"show": "bad"})[0].status_code == 400
-        assert search(browser, tick_url, stale | {"sort": "id"})[0].status_code == 400
-        response, body = get(browser, route)
-        assert b"No roster changes to enter." in body
-        response, body = get(browser, route + "?show=all")
-        assert b"Clear Entered in ParishSoft" in body
+        # Entered by hand: the mark selected, who marked it under its stage.
+        response, body = search(browser, route, {"stage": "entered_by_hand"})
+        assert response.status_code == 200 and b"Entered by hand (1)" in body
+        assert (
+            b'aria-pressed="true"' in body and b"Entered by admin@example.org" in body
+        )
         item = f"/admin/reports/ministries/follow-up/{join.pk}/"
-        assert b"Entered in ParishSoft" in get(browser, item)[1]
+        assert b"Clear Entered in ParishSoft" in get(browser, item)[1]
         export = route + "exports/"
         response, body = search(
-            browser, export, {"format": "csv", "timezone": "UTC", "show": "all"}
+            browser, export, {"format": "csv", "timezone": "UTC", "stage": "all"}
         )
         assert response.status_code == 200 and response["Content-Type"] == "text/csv"
         assert "stewardship-roster-changes-" in response["Content-Disposition"]
-        assert b"Entered in ParishSoft" in body and b",Yes," in body
+        assert b"Stage" in body and b",Entered by hand," in body
+        response, body = search(browser, export, {"format": "csv", "timezone": "UTC"})
+        assert b",Entered by hand," not in body
         response, body = search(
-            browser, export, {"format": "xlsx", "timezone": "UTC", "show": "all"}
+            browser, export, {"format": "xlsx", "timezone": "UTC", "stage": "all"}
         )
         sheet = load_workbook(io.BytesIO(body))["Roster changes"]
-        # No Ministry DUID column (#1123); the ParishSoft status column (#1217)
-        # follows Member DUID, so Resolved by is the ninth.
-        assert sheet["I1"].value == "Resolved by" and sheet["F1"].value == "Ministry"
-        assert sheet["I2"].value == "admin@example.org" and sheet["K2"].value == "Yes"
+        # No Ministry DUID column (#1123); Stage is the ninth column, its
+        # Decision the tenth and the Last decision's who the fifteenth.
+        assert sheet["F1"].value == "Ministry" and sheet["I1"].value == "Stage"
+        assert sheet["I2"].value == "Entered by hand"
+        assert sheet["J1"].value == "Decision" and sheet["J2"].value == "Accepted"
+        assert sheet["O1"].value == "Last decision"
+        assert sheet["O2"].value == "admin@example.org"
         response, body = search(
-            browser, export, {"format": "pdf", "timezone": "UTC", "show": "all"}
+            browser, export, {"format": "pdf", "timezone": "UTC", "stage": "all"}
         )
         assert response.status_code == 200 and body.startswith(b"%PDF-")
         assert search(browser, export, {"format": "doc"})[0].status_code == 400
+        assert search(browser, export, {"format": "csv", "show": "all"})[
+            0
+        ].status_code == (400)
     for event in ("roster_changes_viewed", "roster_changes_exported"):
         contexts = [
             AuditContext.objects.get(event=row).context
@@ -390,7 +421,7 @@ def test_a_resubmitted_family_keeps_its_resolved_change_on_the_list(
     assert f"follow-up/{join.pk}/".encode() in body
     assert b"Replaced by a later response" in body
     _, body = search(browser, route + "exports/", {"format": "csv", "timezone": "UTC"})
-    assert b"Food pantry,Join" in body and b",,Not yet," in body
+    assert b"Food pantry,Join,,To enter by hand," in body
 
 
 def test_staff_tick_a_leave_but_not_a_source_resolved_request(response_service):
@@ -461,9 +492,19 @@ def test_a_gated_campaign_takes_no_tick_and_draws_no_form(response_service, goog
         )
         cursor.execute("SET CONSTRAINTS ALL IMMEDIATE")
         cursor.execute("ALTER TABLE stewardship_campaign_work_gate ENABLE TRIGGER USER")
-    _, body = get(browser, "/admin/reports/ministries/follow-up/roster/?show=all")
+    _, body = get(browser, ROUTE + "?stage=all")
     assert b"Other campaign work is under way" in body
-    assert b"Clear Entered in ParishSoft" not in body
+    assert b"data-row-action" not in body and b'id="roster-bulk"' not in body
+    # A forged mark posted to the list is refused too, and records nothing.
+    forged = {
+        "decide": "entered_by_hand",
+        "item": str(join.pk),
+        "version": "2",
+        "request_key": str(uuid4()),
+        "note": "",
+    }
+    assert search(browser, ROUTE, forged)[0].status_code == 403
+    assert MinistryRosterEntry.objects.count() == 1
     # The request's own page shows Clear unavailable, named by the locked
     # notice, rather than leaving it out (#563); a forged POST is refused.
     _, body = get(browser, f"/admin/reports/ministries/follow-up/{join.pk}/")
@@ -496,8 +537,9 @@ def test_a_change_for_a_member_no_longer_in_parishsoft_stays_listed(
     with restricted_download_pool(settings):
         _, body = get(browser, route)
         assert f"follow-up/{join.pk}/".encode() in body
-        assert b'<th scope="col">ParishSoft status</th>' in body
         assert b'data-source-status="moved">Not in ParishSoft</span>' in body
+        # It still offers Entered by hand (#1217).
+        assert b'data-row-action="entered_by_hand"' in body
         response, body = search(
             browser, route + "exports/", {"format": "csv", "timezone": "UTC"}
         )
@@ -511,24 +553,23 @@ def test_a_change_for_a_member_no_longer_in_parishsoft_stays_listed(
 
 
 def test_bulk_marks_several_changes_all_or_none(response_service, google):
-    """Roster changes to enter's bulk bar (#879): the list draws a box for
-    each change not yet entered, and its dialog's post marks every chosen
-    change at once, each with its own entry and audit event, replay-safe.
-    A change someone else ticked first refuses the whole post, naming it in
-    the dialog; a malformed form or a change already marked is a 400; a
-    leader is refused. Nothing is saved by a refused post."""
+    """Roster changes to enter's bulk bar (#879, #1687): the list draws a box
+    for each change not yet entered, and its dialog's post to the list marks
+    every chosen change at once, each with its own entry and audit event,
+    replay-safe. A change someone else marked or cleared first records
+    nothing and the list says so; a malformed form is a 400; a leader is
+    refused. Nothing is saved by a refused post."""
     harness, admin, join, leave = resolved(response_service)
     edit(harness, admin, leave, state="resolved", outcome="leave_confirmed")
     leave.refresh_from_db()
     browser, login = signed_in()
     assert login.status_code == 302
-    route = reverse("admin:ministry_roster_bulk")
-    _, body = get(browser, "/admin/reports/ministries/follow-up/roster/")
+    route = ROUTE
+    _, body = get(browser, route)
     for target in (join, leave):
         assert f'value="{target.pk}:1" form="roster-bulk"'.encode() in body
     assert b'id="roster-bulk" method="post" action="' + route.encode() in body
-    assert b'data-refresh-url="/admin/reports/ministries/follow-up/roster/?' in body
-    form = {"bulk_key": str(uuid4()), "request": [f"{join.pk}:1", f"{leave.pk}:1"]}
+    form = bulk_form(f"{join.pk}:1", f"{leave.pk}:1")
 
     def entries():
         """Every tick row, as (request, sequence, entered), in a fixed order."""
@@ -538,41 +579,36 @@ def test_bulk_marks_several_changes_all_or_none(response_service, google):
 
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         for _ in range(2):  # the second post replays the first
-            response = post(browser, route, form)
-            assert response.status_code == 204, response.content
+            response, body = search(browser, route, form)
+            assert response.status_code == 200, body
+            assert b"2 changes marked entered by hand." in body
         assert entries() == sorted([(join.pk, 1, True), (leave.pk, 1, True)])
     assert AuditEvent.objects.filter(event_type="ministry_roster_entered").count() == 2
     tick(harness, admin, join, False)
     before = entries()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         # The list showed join at sequence 2; someone cleared it since.
-        stale = post(
-            browser, route, {"bulk_key": str(uuid4()), "request": [f"{join.pk}:2"]}
+        response, body = search(browser, route, bulk_form(f"{join.pk}:2"))
+        assert response.status_code == 200
+        assert b"was changed by someone else first, so nothing was recorded" in body
+        # Leave is already marked, so the whole post records nothing.
+        response, body = search(
+            browser, route, bulk_form(f"{join.pk}:3", f"{leave.pk}:2")
         )
-        assert stale.status_code == 409
-        message = json.loads(stale.content)["refusal"]["message"]
-        assert "changed after this list was shown" in message
-        assert "nothing was marked" in message
-        # Leave is already marked, so the whole post is refused, join too.
-        mixed = {"bulk_key": str(uuid4()), "request": [f"{join.pk}:3", f"{leave.pk}:2"]}
-        assert post(browser, route, mixed).status_code == 400
+        assert response.status_code == 200 and b"nothing was recorded" in body
         for bad in (
-            {"request": [f"{join.pk}:3"]},
-            {"bulk_key": str(uuid4()), "request": []},
-            {"bulk_key": str(uuid4()), "request": [f"{join.pk}:3", f"{join.pk}:3"]},
-            {"bulk_key": str(uuid4()), "request": [f"{join.pk}"]},
-            {"bulk_key": "x", "request": [f"{join.pk}:3"]},
-            {"bulk_key": str(uuid4()), "request": [f"{join.pk}:3"], "extra": "1"},
+            bulk_form(f"{join.pk}:3", bulk="accept"),
+            bulk_form(f"{join.pk}:3", bulk_note="Typed"),
+            bulk_form(),
+            bulk_form(f"{join.pk}:3", f"{join.pk}:3"),
+            bulk_form(f"{join.pk}"),
+            bulk_form(f"{join.pk}:3", bulk_key="x"),
+            bulk_form(f"{join.pk}:3", extra="1"),
         ):
-            assert post(browser, route, bad).status_code == 400, bad
-        assert post(browser, route + "?x=1", mixed).status_code == 400
+            assert search(browser, route, bad)[0].status_code == 400, bad
         assert entries() == before
     leader_browser, _, _, _ = leader(harness, google)
-    refused = post(
-        leader_browser,
-        route,
-        {"bulk_key": str(uuid4()), "request": [f"{join.pk}:3"]},
-    )
+    refused, _ = search(leader_browser, route, bulk_form(f"{join.pk}:3"))
     assert refused.status_code in {403, 404}
     assert entries() == before
 
@@ -582,8 +618,8 @@ def test_staff_bulk_mark_a_gone_members_change_as_a_single_tick_does(
 ):
     """Staff use the bulk bar as Administrators do (#879), and a change for
     a Member ParishSoft no longer lists is marked like a single tick (#1217):
-    the roster work may still be real. A stale refusal still names that
-    Member's row, with the day it was resolved."""
+    the roster work may still be real. A stale mark still names that
+    Member's row."""
     from ..policy_factory import address
     from .campaign_builders import change
 
@@ -609,12 +645,11 @@ def test_staff_bulk_mark_a_gone_members_change_as_a_single_tick_does(
     google[0]["email"] = "staff@example.org"
     browser, login = signed_in()
     assert login.status_code == 302
-    _, body = get(browser, "/admin/reports/ministries/follow-up/roster/")
+    _, body = get(browser, ROUTE)
     assert f'value="{join.pk}:1" form="roster-bulk"'.encode() in body
-    route = reverse("admin:ministry_roster_bulk")
-    form = {"bulk_key": str(uuid4()), "request": [f"{join.pk}:1", f"{leave.pk}:1"]}
+    form = bulk_form(f"{join.pk}:1", f"{leave.pk}:1")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        assert post(browser, route, form).status_code == 204
+        assert search(browser, ROUTE, form)[0].status_code == 200
     marked = MinistryRosterEntry.objects.filter(entered=True)
     assert set(marked.values_list("request_id", flat=True)) == {join.pk, leave.pk}
     # The signed-in Staff member made them (a fresh identity for the same
@@ -626,25 +661,10 @@ def test_staff_bulk_mark_a_gone_members_change_as_a_single_tick_does(
     ) == {"staff@example.org"}
     assert AuditEvent.objects.filter(event_type="ministry_roster_entered").count() == 2
     tick(harness, staff, join, False)
-    resolved = MinistryRequest.objects.get(pk=join.pk).resolved_at
-    # The day is the browser's, from the zone the dialog posts (#558); with
-    # no known zone it is left out rather than guessed.
-    for zone in ("Pacific/Kiritimati", "Pacific/Pago_Pago", "", "Not/AZone"):
-        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-            stale = post(
-                browser,
-                route,
-                {
-                    "bulk_key": str(uuid4()),
-                    "request": [f"{join.pk}:2"],
-                    "zone": zone,
-                },
-            )
-        assert stale.status_code == 409
-        message = json.loads(stale.content)["refusal"]["message"]
-        if zone in ("", "Not/AZone"):
-            assert ", resolved" not in message and "changed after" in message
-            continue
-        day = resolved.astimezone(ZoneInfo(zone)).date()
-        assert f", resolved {format_date(day, compact=True)} changed after" in message
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = search(browser, ROUTE, bulk_form(f"{join.pk}:2"))
+    assert response.status_code == 200
+    assert b"was changed by someone else first" in body
+    # The notice names the row as the list does.
+    assert b"\xe2\x80\x94 Food pantry was changed by someone else first" in body
     assert MinistryRosterEntry.objects.filter(request=join).count() == 2

@@ -164,7 +164,6 @@ from .report_components import components as report_components
 from .response_dashboard_components import components as dashboard_components
 from .restore_review_components import components as restore_review_components
 from .review_worklist_components import components as review_worklist_components
-from .roster_components import POSTS as ROSTER_POSTS
 from .roster_components import components as roster_components
 from .schedule_list_components import POSTS as SCHEDULE_LIST_POSTS
 from .schedule_list_components import components as schedule_list_components
@@ -2325,7 +2324,6 @@ def component_origin():
         | AUTOMATION_POSTS
         | SIGNED_IN_POSTS
         | FOLLOWUP_POSTS
-        | ROSTER_POSTS
         | PUBLICATION_POSTS
         | INFORMATION_POSTS
         | FIND_FAMILY_POSTS

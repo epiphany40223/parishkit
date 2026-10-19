@@ -440,11 +440,11 @@ LEDGER = {
     # time or in bulk (#463 PR 11b).
     "ministry_followup_roster": command("followup show", "followup roster-entered"),
     # Counts only (#463): its rows name Members, so they are export roster's.
-    "ministry_roster": command("report roster"),
+    # Its Entered by hand marks (#879), posted to the page itself since
+    # #1687, are followup roster-bulk's.
+    "ministry_roster": command("report roster", "followup roster-bulk"),
     # The page's download, through the page's own writer.
     "ministry_roster_export": command("export roster"),
-    # The list's bulk Mark entered in ParishSoft (#879).
-    "ministry_roster_bulk": command("report roster", "followup roster-bulk"),
     # Integrations and credentials.
     "integrations": command("integration list"),
     # The settings page as it opens, its Save, its Remove, the backup

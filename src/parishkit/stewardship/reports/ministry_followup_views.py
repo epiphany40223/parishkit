@@ -50,8 +50,6 @@ from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.review_worklist import read_decision, record
 from parishkit.stewardship.web.tables import (
     PAGE_SIZES,
-    paginate,
-    table_parameters,
 )
 from parishkit.stewardship.workflows.followup import (
     FollowupRefusal,
@@ -1048,20 +1046,12 @@ def update(request, campaign_id, request_id):
 def roster(request, campaign_id, request_id):
     """Set or clear one resolved request's Entered in ParishSoft tick (#528).
 
-    The answer is the page the tick was drawn on, Post/Redirect/Get, so it
-    refreshes in place: the request's own page (keeping its queue token), or
-    Roster changes to enter (``return_to=roster``), which keeps the list's
-    own Show, sort, page and page size from the tick form, so the reader
-    stays where they were. A tick someone else changed first is a conflict:
-    on the request page a 409, as a stale follow-up save is; on the list,
-    the list again with a notice (``changed=1``), so the reader never leaves
-    it.
+    The answer is the request's own page, Post/Redirect/Get, keeping its
+    queue token, so it refreshes in place. A tick someone else changed first
+    is a conflict (409), as a stale follow-up save is. Roster changes to
+    enter records its marks through its own worklist since #1687; clearing
+    a mistaken mark is this page's.
     """
-    # Lazy: the list's module reads the follow-up selection from this one.
-    from .ministry_roster_views import SHOW
-    from .ministry_roster_views import SORTING as ROSTER_SORTING
-
-    view_fields = {"show", "ministry", *table_parameters()}
 
     def work(store, actor):
         """Validate the closed form, record the tick and name the answer."""
@@ -1074,40 +1064,23 @@ def roster(request, campaign_id, request_id):
                 "return_to",
                 "queue",
                 "csrfmiddlewaretoken",
-                *view_fields,
             },
         )
-        back = values.get("return_to", "item")
-        if values.get("entered") not in {"yes", "no"} or back not in {"item", "roster"}:
-            raise ValueError("Invalid roster tick.")
-        view = {key: values[key] for key in sorted(view_fields) if key in values}
-        if view.get("show", "todo") not in SHOW or (
-            view.get("ministry") and not valid_ministry(view["ministry"])
+        if (
+            values.get("entered") not in {"yes", "no"}
+            or values.get("return_to", "item") != "item"
         ):
-            raise ValueError("Invalid roster list choice.")
-        # Refuse a bad sort, page or size now, as the list itself would.
-        paging = {
-            key: value for key, value in view.items() if key not in {"show", "ministry"}
-        }
-        paginate([], paging, sorting=ROSTER_SORTING)
+            raise ValueError("Invalid roster tick.")
         token = queue_token(values.get("queue", ""))
         _in_campaign(campaign_id, [request_id])
-        listed = reverse("admin:ministry_roster")
-        try:
-            set_roster_entered(
-                store,
-                actor,
-                request_id,
-                sequence=expected_version(values.get("sequence", "")),
-                entered=values["entered"] == "yes",
-                request_key=UUID(values.get("request_key", "")),
-            )
-        except StaleRecordError:
-            if back != "roster":
-                raise
-            return f"{listed}?{urlencode(view | {'changed': '1'})}"
-        if back == "roster":
-            return f"{listed}?{urlencode(view)}" if view else listed
+        set_roster_entered(
+            store,
+            actor,
+            request_id,
+            sequence=expected_version(values.get("sequence", "")),
+            entered=values["entered"] == "yes",
+            request_key=UUID(values.get("request_key", "")),
+        )
         return with_queue(
             reverse("admin:ministry_followup_item", args=[request_id]), token
         )
@@ -1132,20 +1105,3 @@ def _row_name(campaign_id, principal, request_id):
     except (DatabaseError, *SAFE_FAILURES, StorageInvariantError, IndexError):
         return None
     return f"{row['member_label']} — {row['ministry_name']}"
-
-
-BULK_FIX = _("Cancel, then reload the list and try again.")
-
-
-def _bulk_refusal(status, message):
-    """A refusal a bulk dialog shows (ui-v1.js refusalText), below its buttons.
-
-    Roster changes to enter's bulk bar (#879) answers a mark someone else
-    changed first with it.
-    """
-    code = ErrorCode.STALE if status == 409 else ErrorCode.INVALID
-    return validation_response(
-        [FieldError(code)],
-        status=status,
-        refusal=Refusal(message, BULK_FIX if status == 409 else None),
-    )

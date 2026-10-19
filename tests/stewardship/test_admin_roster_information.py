@@ -255,7 +255,7 @@ def test_the_ledger_covers_the_tick_its_bulk_and_information_follow_up():
     covered (the queue's export is PR 11c's, test_admin_followup.py)."""
     for route, commands in (
         ("ministry_followup_roster", ("followup show", "followup roster-entered")),
-        ("ministry_roster_bulk", ("report roster", "followup roster-bulk")),
+        ("ministry_roster", ("report roster", "followup roster-bulk")),
         ("information_item", ("followup information-show",)),
         (
             "information_update",

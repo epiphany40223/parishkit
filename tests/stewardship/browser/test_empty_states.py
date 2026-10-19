@@ -57,7 +57,7 @@ EMPTY_PAGES = {
     ),
     "/roster-none-all": ("No roster changes yet. A change is listed here",),
     "/roster-none-all-ministry": (
-        "No roster changes for this Ministry. Set Ministry to",
+        "No roster changes at this stage for this Ministry. Set Ministry to",
     ),
     "/source-form-none": ("Every Family that can use the portal can open the form,",),
 }

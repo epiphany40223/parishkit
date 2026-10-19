@@ -10,8 +10,9 @@ pages' own pieces, so the two cannot drift:
   (``ministry_followup_views._principal``) and its service
   (``workflows.roster.set_roster_entered``), which records
   ``ministry_roster_entered``.
-- ``followup roster-bulk`` is Roster changes to enter's bulk Mark entered in
-  ParishSoft (#879, ``admin:ministry_roster_bulk``): the list's admission
+- ``followup roster-bulk`` is Roster changes to enter's bulk Entered by
+  hand (#879, posted to ``admin:ministry_roster`` itself since #1687): the
+  list's admission
   (``ministry_roster_views._principal``, Administrators and Staff) and its
   service (``mark_many_entered``), all or none.
 

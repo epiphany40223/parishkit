@@ -744,7 +744,6 @@ NON_PAGES = frozenset(
         "ministry_followup_update",
         "ministry_followup_roster",
         "ministry_roster_export",
-        "ministry_roster_bulk",
         "ministry_packet",
         # The ParishSoft refresh schedule editor's live check (#632), a
         # fragment the settings page reads.

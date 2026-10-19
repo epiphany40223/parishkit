@@ -146,7 +146,8 @@ patterns = [
     ),
     # The Entered in ParishSoft tick of a resolved join or leave (#528) is a
     # POST to its request's roster/, and Roster changes to enter, the list
-    # staff work from, sits beside the queue with its downloads under it.
+    # staff work from, sits beside the queue with its downloads under it;
+    # its Entered by hand marks post to the list itself (#1687).
     _page(
         "reports/ministries/follow-up/<uuid:request_id>/roster/",
         ministry_followup_views.roster,
@@ -161,13 +162,6 @@ patterns = [
         "reports/ministries/follow-up/roster/exports/",
         ministry_roster_views.export,
         "ministry_roster_export",
-    ),
-    # The list's bulk Mark entered in ParishSoft (#879), posted by its
-    # confirmation dialog.
-    _page(
-        "reports/ministries/follow-up/roster/marks/",
-        ministry_roster_views.bulk,
-        "ministry_roster_bulk",
     ),
     # The directory's fixed actions before its Family pages; a Family is a
     # UUID, so "exports" or "search" can never be taken for one (a unit test

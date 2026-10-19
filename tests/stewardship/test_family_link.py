@@ -125,7 +125,7 @@ FAMILY_NAME_PAGES = {
     "financial-report.html": "Financial stewardship",
     "census-changes.html": "Census changes",
     "census-publication.html": "Publish to ParishSoft, newest check",
-    "ministry-roster.html": "Roster changes to enter",
+    "components/review-worklist.html": "Review worklists (Roster changes to enter)",
     "limitations-report.html": "Limitations, both tables",
     "presence.html": "Families on the form now",
     "information.html": "Additional information request (queue: no link)",

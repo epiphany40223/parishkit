@@ -26,8 +26,10 @@ from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.pipeline import Action as Step
 from parishkit.stewardship.reports.export_services import admit_campaign
 from parishkit.stewardship.storage import StaleRecordError
+from parishkit.stewardship.web.review_worklist import WORDS, StaleDecision
 from parishkit.stewardship.web.tables import PAGE_SIZES
 
 from .models import MinistryRequest, MinistryRosterEntry
@@ -117,6 +119,12 @@ def _valid_sequence(sequence):
     return type(sequence) is int and 1 <= sequence < 2**63 - 1
 
 
+class RosterIneligible(ValueError):
+    """A request no longer takes this tick (sent back to review, or already
+    so marked): a ValueError for a command, a change since the page for the
+    Roster changes to enter worklist (``RosterDecisions``)."""
+
+
 def _record(actor_id, target, *, sequence, entered, request_key, system):
     """Write one tick on a locked, admitted request, with its audit event.
 
@@ -135,7 +143,7 @@ def _record(actor_id, target, *, sequence, entered, request_key, system):
             raise ValueError("This request key is already bound.")
         return previous
     if not eligible(target):
-        raise ValueError("This request does not take the roster tick.")
+        raise RosterIneligible("This request does not take the roster tick.")
     current = (
         MinistryRosterEntry.objects.filter(request_id=target.pk)
         .order_by("-sequence")
@@ -144,7 +152,7 @@ def _record(actor_id, target, *, sequence, entered, request_key, system):
     if sequence != (current.sequence if current else 0) + 1:
         raise StaleRecordError("The roster tick changed.")
     if entered == (current.entered if current else False):
-        raise ValueError("The roster tick already says so.")
+        raise RosterIneligible("The roster tick already says so.")
     entry = MinistryRosterEntry.objects.create(
         actor_id=actor_id, request_key=request_key, **intent
     )
@@ -269,3 +277,58 @@ def mark_many_entered(store, actor_id, sequences, *, bulk_key):
             except StaleRecordError:
                 raise RosterStale(target.pk) from None
     return entries
+
+
+class RosterDecisions:
+    """Roster changes to enter's ``DecisionService`` (#1687): Entered by hand.
+
+    The page is the Ministry stream's manual handling report on the shared
+    review worklist, offering only the mark, one row or the bulk bar's
+    ticked rows (``web.review_worklist``). Each row's version is its tick's
+    next sequence, so the decision is recorded exactly as the tick always
+    was: ``set_roster_entered`` for one row, ``mark_many_entered`` (all or
+    none) for several, with their replay keys. A tick someone else changed
+    first, or a request that no longer takes it (someone sent it back to
+    review), is a ``StaleDecision`` naming it, and nothing is recorded.
+    ``namer`` names one request as its row does, or returns None.
+    """
+
+    def __init__(self, store, *, namer=None):
+        self.store = store
+        self.namer = namer or (lambda request_id: None)
+
+    def decide(self, principal, decision):
+        """Record ``decision`` for ``principal``; the notice the page shows."""
+        if (
+            decision.action is not Step.ENTERED_BY_HAND
+            or decision.note
+            or decision.fields
+        ):
+            raise ValueError("Roster changes take only Entered by hand.")
+        sequences = {UUID(key): value for key, value in decision.versions.items()}
+        actor = principal.identity
+        try:
+            if decision.bulk:
+                mark_many_entered(self.store, actor, sequences, bulk_key=decision.key)
+            else:
+                ((request_id, sequence),) = sequences.items()
+                set_roster_entered(
+                    self.store,
+                    actor,
+                    request_id,
+                    sequence=sequence,
+                    entered=True,
+                    request_key=decision.key,
+                )
+        except RosterStale as error:
+            raise StaleDecision(self.namer(error.request_id)) from None
+        except (StaleRecordError, RosterIneligible):
+            # One row names itself; a bulk refusal without a request id
+            # (the already-marked check) names none.
+            only = next(iter(sequences)) if len(sequences) == 1 else None
+            raise StaleDecision(self.namer(only) if only else None) from None
+        done = WORDS[Step.ENTERED_BY_HAND].done
+        if len(sequences) == 1:
+            name = self.namer(next(iter(sequences))) or "The change"
+            return f"{name} {done}"
+        return f"{len(sequences)} changes {done}"
