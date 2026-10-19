@@ -421,6 +421,9 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # 0136 (#1689, provisional number) creates the refresh check and start
 # tables (in CLOSURE_TABLES) with their two guards and replaces nothing; all
 # go, so its file installs whole again.
+# 0141 (#1738, provisional number) creates the census refresh source and
+# replaces 0136's refresh check guard. The source goes, so its file installs
+# whole again after 0136's, putting its guard body back over 0136's.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -688,6 +691,10 @@ CLOSURE_CREATED = {
             "public.stewardship_refresh_check_start_guard_v1()",
         ),
         ("stewardship_workflows", "0004_refresh_checks"),
+    ),
+    "public.stewardship_refresh_census_source_v1(uuid,uuid,text,text,text)": (
+        "stewardship_workflows",
+        "0005_census_refresh_sources",
     ),
 }
 
