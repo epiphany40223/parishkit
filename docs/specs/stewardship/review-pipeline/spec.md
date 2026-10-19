@@ -699,10 +699,15 @@ changes what each role lands on:
     Cannot participate are only To review until
     [#1686](https://github.com/epiphany40223/parishkit/issues/1686) and
     [#1685](https://github.com/epiphany40223/parishkit/issues/1685) store
-    their decisions. Until those slices move them (and Additional
-    information) onto the pipeline, their cards still show counts, every
-    current item counting as waiting, rather than no number
-    (Administrator decision, 2026-10-18); the page's About text says so.
+    their decisions. Until those slices move them onto the pipeline,
+    their cards still show counts, every current answer counting as To
+    review, rather than no number (Administrator decision, 2026-10-18).
+    Additional information's cards show counts too, placed as its
+    [stream mapping](#additional-information-stream) says: needed follow-up is To handle,
+    completed follow-up is not counted, and every other current request,
+    one set "not needed" included, stays To review until
+    [#1685](https://github.com/epiphany40223/parishkit/issues/1685). The
+    page's About text says so.
     Entered incorrectly and Not seen in ParishSoft cards
     come with [#1689](https://github.com/epiphany40223/parishkit/issues/1689),
     which first places an item there.
