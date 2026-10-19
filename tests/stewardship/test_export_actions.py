@@ -32,7 +32,7 @@ EXPORTS = {
     ("information.html", "admin:information_export"): "csv xlsx pdf",
     ("limitations-report.html", "admin:limitations_export"): "csv xlsx pdf",
     ("logs.html", "admin:logs_export"): "csv xlsx jsonl",
-    ("ministry-followup.html", "admin:ministry_followup_export"): "csv xlsx pdf",
+    ("ministry-worklist-export.html", "admin:ministry_followup_export"): "csv xlsx pdf",
     ("ministry-packet.html", "admin:ministry_packet"): "pdf xlsx csv",
     ("ministry-roster.html", "admin:ministry_roster_export"): "csv xlsx pdf",
     ("response-dashboard.html", "admin:report_export_create"): "csv xlsx pdf",

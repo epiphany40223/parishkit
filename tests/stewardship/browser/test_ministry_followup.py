@@ -597,7 +597,7 @@ def test_each_stage_shows_its_decision_on_the_icons(page, component_origin):
     chosen = icon_named(page, accepted, "Accept")
     assert chosen.get_attribute("aria-pressed") == "true"
     assert chosen.get_attribute("title") == (
-        "Accepted. To change it, choose Back to review."
+        "Accepted; choose Back to review to change it"
     )
     visible(icon_named(page, accepted, "Send"))
     visible(icon_named(page, accepted, "Mark"))

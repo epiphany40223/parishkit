@@ -33,7 +33,6 @@ FILTER_FORMS = {
     "limitations-report.html",
     "logs.html",
     "ministries.html",
-    "ministry-followup.html",
     "ministry-roster.html",
     "timeline.html",
 }

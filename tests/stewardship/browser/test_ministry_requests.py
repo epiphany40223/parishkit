@@ -162,7 +162,8 @@ def test_the_worklist_has_no_totals_or_chart(page, component_origin):
                 const table = document.querySelector("#table");
                 let node = filters.nextElementSibling, found = [];
                 while (node && node !== table) {
-                    found.push(node.tagName);
+                    // The reserved notice line sits there (R38 finding 10).
+                    if (!node.matches(".worklist-notice")) found.push(node.tagName);
                     node = node.nextElementSibling;
                 }
                 return found;
