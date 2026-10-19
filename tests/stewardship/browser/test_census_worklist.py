@@ -170,7 +170,10 @@ def test_a_stale_decision_is_announced_as_such(page, component_origin):
     page.locator("#census-decide-dialog").get_by_role("button", name="Record").click()
     has_text(page.locator("#census-notice"), STALE_NOTICE)
     has_text(
-        page.get_by_role("status").filter(has_text="someone else first"), STALE_NOTICE
+        page.get_by_role("status").filter(
+            has_text="Not recorded: someone else changed"
+        ),
+        STALE_NOTICE,
     )
 
 
