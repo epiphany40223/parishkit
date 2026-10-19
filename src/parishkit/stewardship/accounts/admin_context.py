@@ -104,10 +104,7 @@ def portal_chrome(request):
     match = getattr(request, "resolver_match", None)
     placed = admin_navigation.placement(request)
     sections, breadcrumbs = admin_navigation.build(match, items, placed)
-    open_counts = _open_counts(request, actor, items, campaign)
-    for section in sections:
-        for entry in section["items"]:
-            entry["count"] = open_counts.get(entry["name"]) if entry["url"] else None
+    attach_counts(sections, _open_counts(request, actor, items, campaign))
     return {
         "admin_chrome": {
             "admin": admin,
@@ -414,13 +411,17 @@ def _find_family(actor, items, campaign):
 
 
 # Menu entries that show how many open items their queue holds (#585,
-# #1590, #1660).
+# #1590; Limitations since R39 finding 10).
 COUNTED = frozenset(
-    {"census_changes", "information_queue", "ministry_report", "ministry_roster"}
+    {"census_changes", "information_queue", "ministry_report", "limitations_report"}
 )
-# Campaign states in which Roster changes to enter's count is read: past
-# go-live (active, closed or archived). A draft or a scheduled campaign has
-# no resolved live request to enter yet, so its menu pays nothing for it.
+# The count of Ministry requests' To enter by hand Stage, by this key: Home's
+# Next steps show it (home_steps), the menu never does, since Ministry
+# requests' menu count is its own (R39 finding 2).
+ENTRY_COUNT = "ministry_entry"
+# Campaign states in which that count is read: past go-live (active, closed
+# or archived). A draft or a scheduled campaign has no resolved live request
+# to enter yet, so its Home pays nothing for it.
 ROSTER_STATES = frozenset({"active", "closed", "archived"})
 # Every count in one statement, each only when asked for (NULL otherwise).
 # Census changes reads its rows grouped by the columns its status depends on
@@ -428,10 +429,14 @@ ROSTER_STATES = frozenset({"active", "closed", "archived"})
 # or Conflict (census_changes.open_count), so the stage rules live in one
 # place. ``{census}`` is that query, filled in when the
 # statement runs, since the report module is imported lazily.
-# Additional information counts current requests not yet marked "Follow-up
-# completed" (its default view lists completed ones too). Ministry requests
+# Additional information counts the requests at its worklist's default To
+# review stage (#1685): current, follow-up neither needed nor completed, and
+# not ignored by the latest Staff revision (whose review decision says so,
+# or, saved before migration 0126, left follow-up not needed;
+# responses.information.staff_ignored). Ministry requests
 # (the follow-up queue, #1133) runs the page's own selection with its
-# default (Unresolved) filters and no rows, and takes its total, so the
+# default filters (Stage To review: the open states; the stream has no
+# Conflict stage yet) and no rows, and takes its total, so the
 # count applies every filter the page
 # does: the Ministry module, a promoted and uncompacted source, the
 # campaign's Ministries (plus removed ones with a current request), the
@@ -442,30 +447,74 @@ ROSTER_STATES = frozenset({"active", "closed", "archived"})
 # shows. When the page would say the Ministry follow-up is turned off or
 # unavailable, or the viewer has no Ministry in scope, the count is NULL and
 # no number shows.
-# Roster changes to enter (#1660) runs the same selection as its page
-# (ministry_roster_views.roster_rows: resolved requests, every revision and
-# every Member, all rows) and counts, in SQL, the rows its default Not yet
-# entered view lists: the page's eligibility (workflows.roster.eligible: an
-# outcome in ROSTER_OUTCOMES that no ParishSoft resolution source settled
-# and no refresh check Confirmed, #1689) and no current Entered in
-# ParishSoft mark (the newest tick row, as workflows.roster.roster_marks
-# reads it). Counting here rather than through
-# the page's Python keeps the menu at one statement; a database test holds
+# Ministry requests' To enter by hand Stage (ENTRY_COUNT, which replaced
+# Roster changes to enter's count, #1660) runs the selection its roster
+# rows come from (ministry_worklist.read_rows for Staff: resolved requests,
+# every revision and every Member, all rows) and counts, in SQL, the rows
+# that Stage lists: the eligibility (workflows.roster.eligible: an outcome
+# in ROSTER_OUTCOMES that no ParishSoft resolution source settled and no
+# refresh check Confirmed, #1689) and no current Entered in ParishSoft mark
+# (the newest tick row, as workflows.roster.roster_marks reads it).
+# Counting here rather than through
+# the page's Python keeps the chrome at one statement; a database test holds
 # the count equal to the page's rows. Its Ministries get the same Python
 # cross-check as Ministry requests' count.
+# Limitations (R39 finding 10) runs its page's own selection with the page's
+# default filters (stewardship_limitations_report_v2, every answer) and
+# counts the answers its default To review stage lists: no decision in
+# force, or Back to review (pipeline.cannot_participate_placement). An
+# unavailable report (no Family record or source) lists no answer, so it
+# counts nothing and no number shows. The page also lists each Family's
+# Cannot contribute financially answer at its Pledges stage (R39 finding
+# 11), for a viewer Pledges admits, so the count adds those at To review,
+# read through Pledges' own stage selection
+# (stewardship_pledge_review_states_v1) and the response's cannot_give flag.
+# The statement's columns, by name and in order (each aliased in the SQL).
+# Read the row through these names, never by position: a caller that adds
+# columns (My review work's counts, #1727, cross-joined after these) takes
+# its own from len(MENU_COLUMNS) on.
+MENU_COLUMNS = (
+    "information",
+    "ministry",
+    "ministries",
+    "census_groups",
+    "roster",
+    "roster_ministries",
+    "limitations",
+)
 OPEN_COUNTS = """
 SELECT
     CASE WHEN %(information)s THEN (
         SELECT count(*) FROM stewardship_additional_information i
         JOIN stewardship_submission s ON s.id=i.submission_id
         WHERE s.campaign_id=%(campaign)s AND s.mode='live'
-          AND i.disposition='current_actionable' AND i.followed_up_at IS NULL)
-    END,
-    f.total,
-    f.ministries,
-    CASE WHEN %(census)s THEN ({census}) END,
-    t.total,
-    t.ministries
+          AND i.disposition='current_actionable' AND i.followed_up_at IS NULL
+          AND NOT i.follow_up_needed
+          AND coalesce((SELECT coalesce(r.review_decision,'ignored')='none'
+              FROM stewardship_information_revision r WHERE r.item_id=i.id
+              ORDER BY r.expected_version DESC LIMIT 1),true))
+    END AS information,
+    f.total AS ministry,
+    f.ministries AS ministries,
+    CASE WHEN %(census)s THEN ({census}) END AS census_groups,
+    t.total AS roster,
+    t.ministries AS roster_ministries,
+    CASE WHEN %(limitations)s THEN (
+        SELECT count(*) FROM stewardship_limitations_report_v2(
+            %(campaign)s, %(limitation_filters)s::jsonb) v,
+        jsonb_array_elements(coalesce(v->'members','[]'::jsonb)
+            || coalesce(v->'families','[]'::jsonb)) a
+        WHERE NOT coalesce((a->>'in_force')::boolean, false)
+           OR coalesce(a->>'decision','none')='none')
+        + CASE WHEN %(pledges)s THEN (
+            SELECT count(*)
+            FROM stewardship_pledge_review_states_v1(%(campaign)s, NULL::uuid) p
+            JOIN stewardship_submission ps ON ps.id=p.submission_id
+            WHERE p.stage='to_review'
+              AND coalesce(ps.answers->'financial'->'cannot_give'='true'::jsonb,
+                  false))
+        ELSE 0 END
+    END AS limitations
 FROM (SELECT NULL) one
 LEFT JOIN LATERAL (
     SELECT CASE WHEN (v->>'authorized')::boolean THEN (v->>'total')::bigint END
@@ -503,6 +552,21 @@ LEFT JOIN LATERAL (
 """
 
 
+def attach_counts(sections, counts):
+    """Give each menu entry its open count, in place, only while it is a link.
+
+    Ministry requests also carries Home's To enter by hand count
+    (``entry_count``, ``ENTRY_COUNT``), which the menu never shows (R39
+    finding 2). Test fixtures that draw the chrome call this too, so they
+    attach the counts exactly as the chrome does.
+    """
+    for section in sections:
+        for entry in section["items"]:
+            entry["count"] = counts.get(entry["name"]) if entry["url"] else None
+            if entry["name"] == "ministry_report":
+                entry["entry_count"] = counts.get(ENTRY_COUNT) if entry["url"] else None
+
+
 def _open_counts(request, actor, items, campaign):
     """Open item counts for the menu's queue entries, by entry name (#585).
 
@@ -522,9 +586,15 @@ def _open_counts(request, actor, items, campaign):
     cached = getattr(request, "_stewardship_open_counts", None)
     if cached is not None:
         return cached
-    offered = {item.name for item in items if item.url and item.name in COUNTED}
+    # Pledges is not counted, but whether the menu offers it says whether
+    # the Limitations count includes its Cannot contribute answers.
+    offered = {
+        item.name
+        for item in items
+        if item.url and item.name in COUNTED | {"pledges_to_enter"}
+    }
     counts = {}
-    if offered:
+    if offered & COUNTED:
         # Inside a view's transaction the statement gets a savepoint, so a
         # failure rolls back only the count. Outside one (autocommit), the
         # statement is its own transaction and a failure leaves nothing
@@ -544,6 +614,7 @@ def _open_counts(request, actor, items, campaign):
 def _read_open_counts(offered, actor, campaign):
     """Run ``OPEN_COUNTS`` for the ``offered`` entries; see ``_open_counts``."""
     from parishkit.stewardship.reports.census_changes import OPEN_GROUPS, open_count
+    from parishkit.stewardship.reports.limitations import LimitationsQuery
     from parishkit.stewardship.reports.ministry_followup import (
         FollowupQuery,
         in_scope,
@@ -555,12 +626,12 @@ def _read_open_counts(offered, actor, campaign):
     # the page's own capability again keeps the count from ever reaching
     # anyone else, whatever the caller passes.
     census = "census_changes" in offered and allows(actor, Capability.VIEW_CENSUS)
-    # Likewise Roster changes to enter, whose page admits only Administrators
-    # and Staff (can_tick), and only past go-live (ROSTER_STATES).
+    # Likewise the To enter by hand count, which only Administrators and
+    # Staff see (can_tick), and only past go-live (ROSTER_STATES).
     roster = (
-        "ministry_roster" in offered
+        "ministry_report" in offered
         and can_tick(actor)
-        and campaign.state in ROSTER_STATES
+        and getattr(campaign, "state", None) in ROSTER_STATES
     )
     with connection.cursor() as cursor:
         cursor.execute(
@@ -570,9 +641,17 @@ def _read_open_counts(offered, actor, campaign):
                 "information": "information_queue" in offered,
                 "ministry": "ministry_report" in offered,
                 "roster": roster,
+                # The page admits CAMPAIGN_REPORT; checked again here, as
+                # for Census changes.
+                "limitations": "limitations_report" in offered
+                and allows(actor, Capability.CAMPAIGN_REPORT),
+                "limitation_filters": json.dumps(LimitationsQuery().form_values()),
+                # Pledges' own admission (FINANCIAL_DETAIL), checked again.
+                "pledges": "pledges_to_enter" in offered
+                and allows(actor, Capability.FINANCIAL_DETAIL),
                 "campaign": campaign.pk,
                 "filters": selection_filters(FollowupQuery()),
-                # The page's own selection (roster_rows, via _ticked).
+                # The roster rows' own selection (read_rows for Staff).
                 "roster_filters": selection_filters(
                     FollowupQuery(state="resolved", history="all"), every_member=True
                 ),
@@ -580,14 +659,14 @@ def _read_open_counts(offered, actor, campaign):
                 "viewer": actor.identity,
             },
         )
-        (
-            information,
-            ministry,
-            ministries,
-            groups,
-            roster_count,
-            roster_ministries,
-        ) = cursor.fetchone()
+        row = dict(zip(MENU_COLUMNS, cursor.fetchone(), strict=True))
+    information, ministry, ministries = (
+        row["information"],
+        row["ministry"],
+        row["ministries"],
+    )
+    groups, roster_count = row["census_groups"], row["roster"]
+    roster_ministries, limitations = row["roster_ministries"], row["limitations"]
     # A count naming a Ministry outside Python's view of the actor would be
     # refused by the page (in_scope), so it gets no count either.
     if ministry is not None and not in_scope(actor, True, ministries):
@@ -606,7 +685,8 @@ def _read_open_counts(offered, actor, campaign):
             ("census_changes", census_count),
             ("information_queue", information),
             ("ministry_report", ministry),
-            ("ministry_roster", roster_count),
+            (ENTRY_COUNT, roster_count),
+            ("limitations_report", limitations),
         )
         if count is not None
     }

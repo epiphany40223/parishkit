@@ -17,21 +17,46 @@ from django.db import IntegrityError
 from django.utils.html import format_html
 
 from parishkit.stewardship.accounts.policy import Capability, allows
+from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.pipeline import (
     Action,
     Stage,
     Stream,
     allowed_actions,
+    census_addition_placement,
     census_by_hand,
     census_placement,
+    may_add,
 )
+from parishkit.stewardship.responses.capabilities import capability
+from parishkit.stewardship.responses.census import (
+    ADDRESS_LIMITS,
+    blank_address,
+    country_choices,
+)
+from parishkit.stewardship.responses.census_additions import (
+    ADD_FIELDS,
+    ADDED_PREFIX,
+    FAMILY_ADD_FIELDS,
+    AddRefusal,
+    add_census_change,
+    parse_add,
+    resolve_census_additions,
+)
+from parishkit.stewardship.responses.census_resolution import ReopenCovered
 from parishkit.stewardship.responses.census_review import (
+    FIELDS,
     BulkStale,
     decide_census_changes,
+    edit_limit,
 )
-from parishkit.stewardship.responses.comparison import ADDRESS_COMPONENTS
-from parishkit.stewardship.responses.models import ProposedChange
+from parishkit.stewardship.responses.comparison import ADDRESS_COMPONENTS, ValueKind
+from parishkit.stewardship.responses.models import (
+    CensusAddition,
+    CensusAdditionResolution,
+    ProposedChange,
+)
 from parishkit.stewardship.responses.refresh_checks import (
     FINAL_EXECUTIONS,
     check_states,
@@ -101,6 +126,9 @@ def _withheld(row):
         withheld |= {Action.ACCEPT, Action.EDIT}
     if row["placement"].stage is Stage.ENTERED_INCORRECTLY:
         withheld |= {Action.BACK_TO_REVIEW, Action.ENTERED_BY_HAND}
+    if row.get("covered"):
+        # An open addition of the field stands in for it (#1710).
+        withheld.add(Action.BACK_TO_REVIEW)
     return withheld
 
 
@@ -227,11 +255,94 @@ def worklist_page(result, query, table, action, *, mutable, paging=None):
         },
         filters_template="stewardship/census-worklist-filters.html",
         editor_template="stewardship/census-worklist-value.html",
+        add_template="stewardship/census-worklist-add.html",
         export_template="stewardship/census-worklist-export.html",
         address=page_address(action, link_pairs(query, paging)),
     )
     worklist.stage_choices.insert(-1, history_choice(counts))
+    replacements = result.get("replacements", {})
+    for row in worklist.rows:
+        _added_words(row, replacements)
+    if any(row.get("added") for row in worklist.rows):
+        # A ticked added change's Back to review withdraws it.
+        for choice in worklist.bulk:
+            if choice["value"] == Action.BACK_TO_REVIEW.value:
+                choice["body"] = f"{choice['body']} {BULK_WITHDRAW}"
     return worklist, table
+
+
+# An added change's Back to review withdraws it (spec, "Reviewed stage").
+WITHDRAW_TITLE = "Withdraw {name}?"
+BULK_WITHDRAW = "A ticked change the parish added is withdrawn instead."
+OVERLAP = (
+    "The Family has an open change of this field too: decide that one, and "
+    "withdraw this one if it is no longer needed."
+)
+WITHDRAW_BODY = (
+    "The added change is withdrawn: nothing is entered in ParishSoft, and it "
+    "moves to History."
+)
+
+
+def _added_words(row, replacements):
+    """Word a parish-added row's Back to review, and every row's Add history.
+
+    An added change's Back to review withdraws it, so its dialog says so;
+    an ignored change the parish added another in place of names that one
+    under its stage ("Ignored. Added in its place: ..."), and an addition
+    made in place of one says so (#1710), as does one whose field the
+    Family has an open change of too.
+    """
+    parts = [row["decision_label"]] if row["decision_label"] else []
+    if row.get("added"):
+        for icon in row["icons"]:
+            if icon["action"] == Action.BACK_TO_REVIEW.value and not icon["selected"]:
+                icon["title_one"] = WITHDRAW_TITLE
+                icon["body"] = WITHDRAW_BODY
+        if row.get("in_place_of"):
+            parts.append("Added in place of an ignored change.")
+        if row.get("overlap"):
+            parts.append(OVERLAP)
+    elif row["id"] in replacements:
+        parts.append(f"Added in its place: {'; '.join(replacements[row['id']])}")
+    row["decision_label"] = " ".join(parts)
+
+
+def add_fields():
+    """What the Add dialog draws (#1710; ``census-worklist-add.html``).
+
+    ``fields`` is each field an Add may be for, in ``ADD_FIELDS`` order,
+    with its label and its value control: a date, its census choices,
+    text no longer than the field takes (as Edit limits it, by the handling
+    registry's handling), or a Family address's parts. ``address`` is the
+    shared address editor's parts, limits and countries, and
+    ``address_fields`` the choice value that shows it (data-show-when).
+    """
+    fields = []
+    for name in ADD_FIELDS:
+        if name in FAMILY_ADD_FIELDS:
+            fields.append({"name": name, "label": LABELS[name], "kind": "address"})
+            continue
+        definition = FIELDS[name]
+        handling = capability("member", name).handling.value
+        fields.append(
+            {
+                "name": name,
+                "label": LABELS[name],
+                "kind": "date" if definition.kind is ValueKind.DATE else "text",
+                "choices": [choice for choice in definition.choices if choice],
+                "maxlength": edit_limit(name, handling),
+            }
+        )
+    return {
+        "fields": fields,
+        "address_fields": "|".join(FAMILY_ADD_FIELDS),
+        "address": {
+            "parts": blank_address(),
+            "limits": dict(ADDRESS_LIMITS),
+            "countries": country_choices(),
+        },
+    }
 
 
 def notice_name(proposal):
@@ -249,6 +360,24 @@ def notice_name(proposal):
     )
     label = LABELS.get(proposal.field, proposal.field)
     return f"{label} for {who} in Family DUID {proposal.submission.family.family_duid}"
+
+
+def addition_name(addition):
+    """A parish-added change as a notice names it, as ``notice_name`` does."""
+    who = (
+        "the Family"
+        if addition.entity_kind == "family"
+        else f"Member DUID {addition.entity_key}"
+    )
+    label = LABELS.get(addition.field, addition.field)
+    return f"{label} for {who} in Family DUID {addition.family.family_duid}"
+
+
+# The worklist decisions an added change takes: its own later steps.
+ADDITION_STEPS = {
+    Action.ENTERED_BY_HAND: "entered",
+    Action.BACK_TO_REVIEW: "withdrawn",
+}
 
 
 def _value(fields, field):
@@ -274,19 +403,48 @@ class CensusDecisions:
     """The census stream's worklist decisions, one campaign's (``DecisionService``).
 
     ``decide`` checks that every chosen change is one of this campaign's live
-    changes (otherwise it is denied, as an unknown one is), records the
-    decision through ``census_review.decide_census_changes`` all or none,
-    and returns the notice the page shows. A change someone else changed
-    first is ``StaleDecision``, named when the service knows which.
+    changes or parish-added ones (otherwise it is denied, as an unknown one
+    is), records the decision through ``census_review.decide_census_changes``
+    and ``census_additions`` all or none, and returns the notice the page
+    shows. Add records a new addition (``census_additions.
+    add_census_change``). A change someone else changed first is
+    ``StaleDecision``, named when the service knows which.
     """
 
     def __init__(self, store, campaign_id):
         self.store = store
         self.campaign_id = campaign_id
 
-    def _proposals(self, decision):
+    @staticmethod
+    def _split(versions):
+        """The chosen items as (proposals, additions), each id to version."""
+        proposals, additions = {}, {}
+        for key, version in versions.items():
+            if key.startswith(ADDED_PREFIX):
+                additions[UUID(key.removeprefix(ADDED_PREFIX))] = version
+            else:
+                proposals[UUID(key)] = version
+        return proposals, additions
+
+    def _additions(self, ids):
+        """The chosen additions, by id, each this campaign's; and the resolved ones."""
+        found = {
+            addition.pk: addition
+            for addition in CensusAddition.objects.select_related("family").filter(
+                pk__in=list(ids), family__campaign_id=self.campaign_id
+            )
+        }
+        if len(found) != len(ids):
+            raise PermissionError("A census change is unavailable.")
+        resolved = set(
+            CensusAdditionResolution.objects.filter(
+                addition_id__in=list(ids)
+            ).values_list("addition_id", flat=True)
+        )
+        return found, resolved
+
+    def _proposals(self, ids):
         """The chosen changes, by id, each this campaign's live change."""
-        ids = {UUID(key): version for key, version in decision.versions.items()}
         found = {
             proposal.pk: proposal
             for proposal in ProposedChange.objects.select_related("submission__family")
@@ -296,10 +454,21 @@ class CensusDecisions:
         }
         if len(found) != len(ids):
             raise PermissionError("A census change is unavailable.")
-        return ids, found
+        return found
 
     @staticmethod
-    def _offered(principal, action, versions, proposals):
+    def _roles(principal):
+        """The reader's census roles: Staff, and an Administrator's too."""
+        return frozenset(
+            role
+            for role, capability in (
+                ("staff", Capability.MANUAL_CENSUS),
+                ("administrator", Capability.PUBLISH_CENSUS),
+            )
+            if allows(principal, capability)
+        )
+
+    def _offered(self, principal, action, versions, proposals, added=()):
         """Refuse an action a chosen change's stage does not offer this reader.
 
         The services and their guards allow some decisions the worklist does
@@ -308,16 +477,10 @@ class CensusDecisions:
         page's own offer (``pipeline.allowed_actions``) is checked here, as
         the ``DecisionService`` contract asks. A change whose version moved
         since the page was drawn is left to the service, which answers with
-        the stale notice rather than a refusal.
+        the stale notice rather than a refusal. ``added`` are the open
+        additions' placements, which offer only their own later steps.
         """
-        roles = frozenset(
-            role
-            for role, capability in (
-                ("staff", Capability.MANUAL_CENSUS),
-                ("administrator", Capability.PUBLISH_CENSUS),
-            )
-            if allows(principal, capability)
-        )
+        roles = self._roles(principal)
         # A final change is placed by its latest refresh check (#1689), as
         # the page placed it.
         checks = check_states(
@@ -327,52 +490,120 @@ class CensusDecisions:
                 if proposal.execution in FINAL_EXECUTIONS
             ]
         )
-        for pk, proposal in proposals.items():
-            if proposal.version != versions[pk]:
-                continue
-            check = checks.get(str(pk))
-            stage = census_placement(
-                decision=proposal.decision,
-                execution=proposal.execution,
-                handling=proposal.handling,
-                entity_kind=proposal.entity_kind,
-                admin_value_set=proposal.admin_value_set,
-                check=check.outcome if check else None,
-            ).stage
-            offered = allowed_actions(
-                Stream.CENSUS,
-                stage,
-                roles,
-                by_hand=census_by_hand(proposal.handling, proposal.entity_kind),
+        stages = [
+            (
+                census_placement(
+                    decision=proposal.decision,
+                    execution=proposal.execution,
+                    handling=proposal.handling,
+                    entity_kind=proposal.entity_kind,
+                    admin_value_set=proposal.admin_value_set,
+                    check=checks[str(pk)].outcome if str(pk) in checks else None,
+                ).stage,
+                census_by_hand(proposal.handling, proposal.entity_kind),
             )
+            for pk, proposal in proposals.items()
+            if proposal.version == versions[pk]
+        ] + [(placement.stage, True) for placement in added]
+        for stage, by_hand in stages:
+            offered = allowed_actions(Stream.CENSUS, stage, roles, by_hand=by_hand)
             if action not in offered:
                 raise ValueError("This census change does not offer that action now.")
 
+    def _add(self, principal, decision):
+        """Record a parish-added change (#1710); the notice the page shows."""
+        if decision.versions:
+            raise ValueError("Add names no item.")
+        if not may_add(Stream.CENSUS, self._roles(principal)):
+            raise PermissionError("Census Add is unavailable.")
+        add = parse_add(decision.fields)
+        addition, created = add_census_change(
+            self.store,
+            principal.identity,
+            self.campaign_id,
+            add,
+            note=decision.note,
+            request_key=decision.key,
+        )
+        name = addition_name(addition)
+        return f"{name} added." if created else f"{name} was already added."
+
     def decide(self, principal, decision):
-        """Record ``decision`` for ``principal``; the notice the page shows."""
+        """Record ``decision`` for ``principal``; the notice the page shows.
+
+        Add records a new addition. Any other decision may cover proposals
+        and additions together (a bulk Entered by hand or Back to review):
+        each is recorded by its own service in one work transaction, all or
+        none. An addition takes only Entered by hand and Back to review,
+        which withdraws it.
+        """
         if decision.action is Action.ADD:
-            # Census Add is its own slice (#1710); the page offers no Add.
-            raise ValueError("Census changes take no Add yet.")
-        versions, proposals = self._proposals(decision)
-        self._offered(principal, decision.action, versions, proposals)
+            return self._add(principal, decision)
+        proposal_ids, addition_ids = self._split(decision.versions)
+        proposals = self._proposals(proposal_ids)
+        additions, resolved = self._additions(addition_ids)
+        self._offered(
+            principal,
+            decision.action,
+            proposal_ids,
+            proposals,
+            added=[
+                census_addition_placement("open")
+                for pk in additions
+                if pk not in resolved and addition_ids[pk] == 1
+            ],
+        )
         value = None
         if decision.action is Action.EDIT:
+            if additions or len(proposals) != 1:
+                raise ValueError("An edit names one Family's change.")
             (proposal,) = proposals.values()
             value = _value(decision.fields, proposal.field)
         elif decision.fields:
             raise ValueError("Only Edit sends a value.")
+        if additions and decision.action not in ADDITION_STEPS:
+            raise ValueError("An added change takes no such decision.")
         try:
-            recorded = decide_census_changes(
-                self.store,
-                principal.identity,
-                decision.action.value,
-                versions,
-                note=decision.note,
-                request_key=decision.key,
-                bulk=decision.bulk,
-                value=value,
-            )
+            with work_transaction():
+                recorded = []
+                if proposals:
+                    recorded += decide_census_changes(
+                        self.store,
+                        principal.identity,
+                        decision.action.value,
+                        proposal_ids,
+                        note=decision.note,
+                        request_key=decision.key,
+                        bulk=decision.bulk,
+                        value=value,
+                    )
+                if additions:
+                    recorded += resolve_census_additions(
+                        self.store,
+                        principal.identity,
+                        self.campaign_id,
+                        addition_ids,
+                        ADDITION_STEPS[decision.action],
+                        note=decision.note,
+                        request_key=decision.key,
+                        bulk=decision.bulk,
+                    )
+        except ReopenCovered:
+            # Checked under the work order, so no Add slips in between; the
+            # page withholds the icon, but a page drawn before the Add, or
+            # the bulk bar, still posts it (#1710).
+            raise AddRefusal(
+                "reopen_added",
+                "A change the parish added for this field is still open, so this "
+                "ignored change cannot go back to review.",
+                field_ids=("bulk_note" if decision.bulk else "note",),
+                fix="Withdraw the added change first, then send this one back.",
+            ) from None
         except BulkStale as error:
+            if error.proposal_id in additions:
+                raise StaleDecision(
+                    addition_name(additions[error.proposal_id])
+                ) from None
             raise StaleDecision(notice_name(proposals[error.proposal_id])) from None
         except IntegrityError as error:
             # A racing write normally surfaces as a stale version, under the
@@ -387,6 +618,11 @@ class CensusDecisions:
         words = WORDS[decision.action].done
         if len(recorded) > 1:
             return f"{len(recorded):,} changes {words}"
+        if additions:
+            (addition,) = additions.values()
+            if decision.action is Action.BACK_TO_REVIEW:
+                return f"{addition_name(addition)} withdrawn."
+            return f"{addition_name(addition)} {words}"
         (proposal,) = proposals.values()
         if decision.action is Action.EDIT and not recorded[0].admin_value_set:
             return f"{notice_name(proposal)} {EDIT_MATCHED}"

@@ -10,13 +10,16 @@ the review worklist component with its decision interface
 (`components/review-worklist.html`, `web/review_worklist.py`,
 [#1681](https://github.com/epiphany40223/parishkit/issues/1681)), which
 Census changes uses
-([#1683](https://github.com/epiphany40223/parishkit/issues/1683); its Add is
-deferred, below), and Ministry requests on it, with Edit, Staff Add and
-the "Family asked again" case
-([#1684](https://github.com/epiphany40223/parishkit/issues/1684);
+([#1683](https://github.com/epiphany40223/parishkit/issues/1683), with its
+Add from [#1710](https://github.com/epiphany40223/parishkit/issues/1710),
+below), as do the financial stream
+([Pledges](../reports/spec.md#pledges),
+[#1686](https://github.com/epiphany40223/parishkit/issues/1686)) and
+Ministry requests, with Edit, Staff Add and the "Family asked again"
+case ([#1684](https://github.com/epiphany40223/parishkit/issues/1684);
 [follow-up workflows](../admin-portal/spec.md#follow-up-workflows)), and
-the refresh re-evaluation of both, with the cases it leaves for later
-([#1689](https://github.com/epiphany40223/parishkit/issues/1689);
+the refresh re-evaluation of census and Ministry, with the cases it leaves
+for later ([#1689](https://github.com/epiphany40223/parishkit/issues/1689);
 [as built](#refresh-checks)). Every Staff
 and Ministry leader part ships during the current campaign. The
 Family-facing view of reviewed changes
@@ -44,7 +47,7 @@ It links to the stream specs rather than restating them:
 - Ministry: [Follow-up records](../data/spec.md#follow-up-records),
   [Ministry change summary](../reports/spec.md#ministry-change-summary),
   [Follow-up workflows](../admin-portal/spec.md#follow-up-workflows) and
-  [Roster changes to enter](../admin-portal/spec.md#roster-changes-to-enter);
+  [roster entry on Ministry requests](../admin-portal/spec.md#roster-entry-on-ministry-requests);
 - financial: [Financial stewardship detail](../reports/spec.md#financial-stewardship-detail);
 - cannot participate: [Limitations](../reports/spec.md#limitations);
 - free text: [Additional information](../reports/spec.md#additional-information).
@@ -188,7 +191,10 @@ Details the table cannot hold:
   Family said.
 - An Add on the census stream is checked by the same rules as a Family's
   answer for that field (validation, handling registry) and gets the same
-  Automatic or By hand handling.
+  Automatic or By hand handling. Until the update run is rebuilt
+  ([#1688](https://github.com/epiphany40223/parishkit/issues/1688)), every
+  added census change is To enter by hand
+  ([Census Add](../reports/spec.md#census-add)).
 - Every action is enforced on the server and in the database where the
   stream's rules are enforced today, never only by hiding a button.
 
@@ -496,7 +502,7 @@ The rules, in order:
 4. **Entity gone.** The Member or Family left the baseline (inactive,
    deceased, moved): the item keeps its stage and gains the shared
    [Not in ParishSoft](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
-   badge, as Roster changes to enter does today.
+   badge, as Ministry requests' roster rows do today.
 
 For a Ministry request, R, A and C are the Member's roster state for that
 Ministry (in or not in), so rule 3 cannot apply: a join is Confirmed when
@@ -611,7 +617,7 @@ introduce its own word for a shared stage.
 | Ready to update | accepted, the API can write it | "To do" for an approved Automatic row |
 | Updating | in a running update | "Being published" |
 | Updated in ParishSoft | written and read back | "Published" |
-| To enter by hand | accepted, the API cannot write it | "To do" for a By hand row; "Not yet" on Roster changes to enter |
+| To enter by hand | accepted, the API cannot write it | "To do" for a By hand row; "Not yet" on the retired Roster changes to enter |
 | Entered by hand | a person recorded entering it | "Entered by hand", "Entered in ParishSoft: Yes" |
 | Entered incorrectly | ParishSoft shows a different value after Entered by hand | new |
 | Not seen in ParishSoft | Entered by hand, but ParishSoft still shows the old value after two refreshes (a flag, not a stage) | new |
@@ -658,11 +664,12 @@ accepts and marks it in one step, and forward migration 0128 (provisional
 number) widens the review guard for it
 ([Automatic census review](../reports/spec.md#automatic-census-review)).
 Census **Add** was cut from that slice (7th on the
-[cut list](#risks-and-what-to-cut-first)): a change with no Family answer
-behind it needs either a table of its own or a wider Family-submit guard, so
-it has an issue of its own
-([#1710](https://github.com/epiphany40223/parishkit/issues/1710)); Staff use
-Open form meanwhile.
+[cut list](#risks-and-what-to-cut-first)) and built in
+[#1710](https://github.com/epiphany40223/parishkit/issues/1710): a change
+with no Family answer behind it is a row of its own tables (forward
+migration 0129, provisional number), not a proposal, so the Family submit
+path and its guards are unchanged, and it is To enter by hand until #1688
+([Census Add](../reports/spec.md#census-add)).
 
 ### Ministry stream
 
@@ -670,7 +677,8 @@ Stored state: `MinistryRequest` workflow (`new`, `in_progress`,
 `resolved`, `closed_no_response`, …) and outcome (`joined`,
 `leave_confirmed`, `declined`, `no_response`, `duplicate`, `other`), then
 the Entered in ParishSoft tick on
-[Roster changes to enter](../admin-portal/spec.md#roster-changes-to-enter),
+Ministry requests' Stage To enter by hand
+([roster entry](../admin-portal/spec.md#roster-entry-on-ministry-requests)),
 then reconciliation resolving a request whose roster state is current.
 The mapping onto stages is the
 [existing state to stage](#existing-state-to-stage) table. A decided request is
@@ -691,18 +699,52 @@ stream detail.
 
 ### Financial stream
 
-Stored state: none beyond the Family's live response; the
+Stored state (since
+[#1686](https://github.com/epiphany40223/parishkit/issues/1686)): the
+Family's live response, and `stewardship_pledge_review`, one immutable row
+per decision on a Family's pledge (frozen migration 0127, provisional
+number): who, when, the note, the response it was made on, that response's
+pledge answer (annual pledge, frequency, cannot contribute and share
+methods), the decision (Accepted, Accepted (edited) with the reviewer's
+annual pledge and frequency, Ignored, or none after Back to review) and the
+Entered by hand mark. The
 [Financial stewardship detail](../reports/spec.md#financial-stewardship-detail)
-report lists every current pledge. Staff cannot edit a pledge today except
-by entering a whole new response through Open form (marked Entered by
-Staff).
+report still lists every current pledge, and
+[Pledges](../reports/spec.md#pledges) is the stream's
+worklist and manual report. Staff can still change a pledge through Open
+form (a whole new response marked Entered by Staff), and Edit (amount and
+frequency, decision 4) is the review's own correction.
 
-Gaps: the whole review stage, per pledge: Accept, **Edit** of the annual
-amount and the frequency (Families sometimes mistype the amount, and Staff
-fix it before entering it in ParishSoft; decision 4), Ignore, bulk Accept;
-a "Pledges to enter" report with Entered by hand; and confirmation.
+The item is one per Family: its current pledge answer. Its stage is derived
+from its latest row, by one SQL selection the page, the counts and the
+row guard share:
+
+- no row, a latest row with no decision (Back to review), or a pledge answer
+  changed since the latest row's response: **To review**;
+- Ignored: **Ignored**;
+- Accepted or Accepted (edited), not marked: **To enter by hand**;
+- marked Entered by hand: **Entered by hand**.
+
+"Changed" follows [rule 2 of the setting-off
+rule](#resubmission-while-the-setting-is-off): a live response that answers
+the financial questions after the decided one with a different pledge answer
+reopens the item, even if a later response returns to the decided answer.
+Pledge answers are compared as typed values: money exactly, and the share
+methods as a set with their Other text, as the Family form stores them (a
+form change that stored share methods differently would need the comparison
+changed with it). An unchanged resubmission keeps the decision at any stage
+(rule 1). A response without the financial questions changes no decision
+(rule 5), but the item is listed only while the Family's current response
+answers them, as on Financial stewardship detail: a Family that answers
+again while the financial section is switched off leaves the list until it
+answers the financial questions again, keeping its history. Rules 3 and 4
+need ParishSoft's upcoming-year pledge, which no read returns yet (#1704). An Entered by hand mark records ParishSoft's pledge for
+the upcoming year when a read gives it; until #1704 adds that read the mark
+records none, and #1704 reads such a mark against A, which is then no pledge.
 Pledges and funds are read-only in ParishSoft's API, so the stream never has
 Ready to update.
+
+Gaps after #1686: confirmation (below, #1704).
 
 **Pledge confirmation** (decision 5). ParishSoft's v2 `GET
 offering/pledge/list` returns each pledge with `familyID`, `fundID`,
@@ -731,25 +773,37 @@ Ministry leaders never see this stream.
 
 ### Cannot participate stream
 
-Stored state: none beyond the live response; the
-[Limitations](../reports/spec.md#limitations) report lists Members who cannot
-participate and Families who cannot attend. Baseline is empty, nothing goes
-to ParishSoft. Gap: per-answer items with To review → Accepted → To handle →
-Handled, so the office can record that it acted on each.
+Stored state: the live response, and one immutable review row per
+decision (`stewardship_limitation_review`,
+[#1685](https://github.com/epiphany40223/parishkit/issues/1685)); the
+[Limitations](../reports/spec.md#limitations) worklist lists Members who
+cannot participate and Families who cannot attend. Baseline is empty,
+nothing goes to ParishSoft. An item is one current answer (one Member's
+cannot-participate answer, one Family's cannot-attend answer), read from
+the Family's effective live response as the report always read it, so the
+Family submit path stores nothing new. Its decision is the latest review row
+for that answer while every later live response still gives the answer:
+none, or Back to review → To review; Accepted → To handle; Ignored →
+Ignored; Handled → Handled. A response that answers the other way
+withdraws the item, and giving it again later is a new item, To review; one
+that leaves the answer out changes nothing
+([rule 1 to 5](#resubmission-while-the-setting-is-off)).
 
 ### Additional information stream
 
 Stored state: `AdditionalInformationItem` disposition and the
 `follow_up_needed` / `followed_up_at` workflow with Staff notes
-([Follow-up records](../data/spec.md#follow-up-records)). Mapping: current
-actionable and follow-up not needed (the default) → To review, unless a
-Staff edit set it not needed, which is Ignored (a
-[one-time migration](#existing-state-to-stage) records this, because the
-default cannot be told from a Staff choice); follow-up needed → To handle;
-followed up → Handled; superseded / withdrawn → history. Gap: closest to the pipeline already, but
-per item only (no selection column or bulk action today); it needs the
-shared vocabulary, the shared table with bulk Accept / Handled, and its
-two booleans expressed as one stage.
+([Follow-up records](../data/spec.md#follow-up-records)), and each Staff
+revision's review decision (`accepted`, `ignored` or `none`, from schema
+migration 0126,
+[#1685](https://github.com/epiphany40223/parishkit/issues/1685)). Mapping:
+followed up → Handled; follow-up needed → To handle; current actionable and
+not needed → Ignored when the latest revision says so, else To review (the
+[existing state](#existing-state-to-stage) rule for revisions saved before
+0126); superseded / withdrawn → history. The
+[Additional information](../reports/spec.md#additional-information)
+worklist expresses the two booleans as one stage, with bulk Accept,
+Ignore, Back to review and Handled.
 
 ## Role views
 
@@ -784,8 +838,8 @@ export below it. Its parts:
    stream's own filters after it.
 2. The selection bar and table. Columns: the stream's identity columns in
    the shared [column order](../ui-conventions/spec.md#table-column-order),
-   Baseline (where a stream has one), Family's answer, Reviewer's value,
-   ParishSoft now (on Conflict, Entered incorrectly and Not seen rows),
+   Baseline (where a stream has one), Family's answer, Reviewer's value
+   (where a stream has Edit), ParishSoft now (on Conflict, Entered incorrectly and Not seen rows),
    Stage, Submitted, Last decision (who, when, note), Actions.
 3. The shared export pane below the table, as on every report
    ([#1679](https://github.com/epiphany40223/parishkit/issues/1679)).
@@ -814,7 +868,7 @@ a box). Each takes the optional note in the shared confirmation dialog.
 A row's decision is shown on its action icons, not only in the Stage
 column: Accept, Ignore and Entered by hand / Handled follow the
 [selected state](../ui-conventions/spec.md#row-actions-and-confirmation) rule, and Back to review is the row's undo.
-Ministry requests and Roster changes to enter use it too.
+Ministry requests uses it too.
 
 ### Bulk actions
 
@@ -860,9 +914,25 @@ Every stream has a **To enter by hand** (or To handle) report: the
 worklist filtered to that stage, with Entered by hand / Handled as its row
 and bulk action, exported through the shared export component in CSV, XLSX
 and PDF. The same report has Stage choices for Entered incorrectly and Not
-seen in ParishSoft. Roster changes to enter is the Ministry stream's report
-today and becomes the shared component's first user; Census changes'
-*By hand* view and a new financial "Pledges to enter" report follow.
+seen in ParishSoft (once [#1689](https://github.com/epiphany40223/parishkit/issues/1689)
+lands; until then, To enter by hand and Entered by hand). The report is the
+stream's own review worklist at that Stage, never a page of its own (the
+Administrator, R39 finding 2, 2026-10-19), and its dialog takes no note
+for a mark that records none (`web/review_worklist.build`'s `silent`).
+Each stream's report, as it lands:
+
+- **Ministry:** Ministry requests at its To enter by hand Stage, with its
+  export carrying the roster-entry columns
+  ([roster entry](../admin-portal/spec.md#roster-entry-on-ministry-requests);
+  Roster changes to enter, the first such report,
+  [#1687](https://github.com/epiphany40223/parishkit/issues/1687), was folded
+  into it).
+- **Census:** Census changes' worklist at its To enter by hand Stage, with
+  its export ([#1683](https://github.com/epiphany40223/parishkit/issues/1683)).
+- **Financial:** [Pledges](../reports/spec.md#pledges) at its To enter by
+  hand Stage ([#1686](https://github.com/epiphany40223/parishkit/issues/1686)).
+- **Cannot participate and Additional information:** their To handle
+  view, with Handled ([#1685](https://github.com/epiphany40223/parishkit/issues/1685)).
 
 ## What cannot be automated
 
@@ -1149,19 +1219,22 @@ that is done safely.
 | Additional information | `current_actionable`, followed up | Handled |
 | Additional information | `current_actionable`, follow-up not needed, not followed up | To review, unless a Staff edit set it (below) |
 | Additional information | `superseded`, `withdrawn` | history |
-| Financial, cannot participate | the live answer only | To review |
+| Financial | the live answer, no `stewardship_pledge_review` row yet | To review |
+| Cannot participate | the live answer only | To review |
 
-One state needs a one-time migration. `follow_up_needed` defaults to false,
-so "Not needed" cannot be told from "never looked at" by the item alone,
-and mapping every such item to Ignored would mark unread text as reviewed.
-A forward migration in
-[#1685](https://github.com/epiphany40223/parishkit/issues/1685) fills a new,
-nullable decision column with Ignored only for items whose audited edit
-history shows a Staff member setting follow-up to not needed; every other
-such item is To review. It writes no existing column, records one audit
-event with only the count, and is reversible: clearing the new column
-returns every item to today's reading, since the original fields are
-untouched.
+One state needed a decision. `follow_up_needed` defaults to false, so
+"Not needed" cannot be told from "never looked at" by the item alone, and
+mapping every such item to Ignored would mark unread text as reviewed.
+[#1685](https://github.com/epiphany40223/parishkit/issues/1685) adds a new,
+nullable decision column to each Staff revision, which every revision from
+then on states; a current item whose latest revision is older (the column
+empty) and left follow-up not needed reads as Ignored, since a Staff member
+chose that, and an item with no revision is To review. The rule is read,
+not written, as the derived values below are: storing it on the item would
+have to advance every such item's version (the response guard requires it)
+and storing it on the old revisions would rewrite immutable history, so the
+migration changes no existing row, needs no audit count and has nothing to
+reverse.
 
 No other state needs a migration. Two derived values for items closed
 before their slice ships are read, not stored:
@@ -1264,10 +1337,11 @@ Cut first if time runs short, in this order:
 4. Entered incorrectly and Not seen in #1689 (today's reconciliation still
    confirms census and Ministry);
 5. the Limitations half of #1685 (its report stays as it is);
-6. the pledge Edit in #1686 (keep Accept and the Pledges to enter
+6. the pledge Edit in #1686 (keep Accept and the Pledges
    report; Staff correct a pledge through Open form, as today);
 7. census Add in #1683 (Staff use Open form); cut from #1683 and moved to
-   [#1710](https://github.com/epiphany40223/parishkit/issues/1710).
+   [#1710](https://github.com/epiphany40223/parishkit/issues/1710), which
+   built it.
 
 Never cut: #1691, #1681, #1690, #1683, #1684 and #1687, which are what
 Staff and Ministry leaders use.

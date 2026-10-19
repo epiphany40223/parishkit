@@ -519,7 +519,7 @@ def test_members_no_longer_in_parishsoft_are_one_status_choice():
     of any status (#1217)."""
     default = json.loads(selection_filters(FollowupQuery()))
     assert (default["state"], default["presence"]) == ("unresolved", "current")
-    # Roster changes to enter asks for every Member (#1217).
+    # The roster rows ask for every Member (#1217).
     roster = json.loads(selection_filters(FollowupQuery(), every_member=True))
     assert roster["presence"] == "any"
     query = FollowupQuery.parse({"state": NOT_IN_SOURCE})

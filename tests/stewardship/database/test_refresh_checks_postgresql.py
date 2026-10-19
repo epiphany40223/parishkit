@@ -21,7 +21,6 @@ from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.pipeline import Decision, Stage
 from parishkit.stewardship.reports.census_changes import census_rows
-from parishkit.stewardship.reports.ministry_roster_views import roster_rows
 from parishkit.stewardship.reports.ministry_worklist import (
     WorklistQuery,
     chosen,
@@ -277,18 +276,17 @@ def test_an_accepted_request_is_confirmed_and_cannot_go_back(response_service):
     )
 
     def to_enter():
-        """Roster changes to enter's Not yet entered rows and menu count."""
-        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-            rows, _ = roster_rows(campaign.pk, staff, "todo")
-            every, _ = roster_rows(campaign.pk, staff, "all")
-        return len(rows), roster_count(staff, campaign), every
+        """Ministry requests' To enter by hand rows (where Roster changes to
+        enter was folded, R39 finding 2) and Home's count of them."""
+        rows = view(harness, staff).values()
+        todo = sum(row["stage"] == Stage.TO_ENTER_BY_HAND.value for row in rows)
+        return todo, roster_count(staff, campaign)
 
-    assert to_enter()[:2] == (1, 1)
+    assert to_enter() == (1, 1)
     refresh(harness, joins=(9,))
-    # Already in ParishSoft: nothing left to enter, still listed under All.
-    todo, count, every = to_enter()
-    assert (todo, count) == (0, 0)
-    assert [row["confirmed"] for row in every] == [True]
+    # Already in ParishSoft: nothing left to enter; Every stage lists it as
+    # Confirmed (below).
+    assert to_enter() == (0, 0)
     join.refresh_from_db()
     assert (join.state, join.resolution_source_id) == ("resolved", None)
     assert checks(request=join) == ["confirmed"]
