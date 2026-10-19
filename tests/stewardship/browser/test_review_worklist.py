@@ -313,3 +313,29 @@ def test_apply_and_clear_sit_after_the_last_filter(page, component_origin, width
         )
         assert abs(actions["x"] - start) <= 2
     assert page.evaluate("document.documentElement.scrollWidth") <= width
+
+
+@pytest.mark.parametrize("width", [390, 700, 1280])
+def test_the_notice_line_sits_under_the_filters(page, component_origin, width):
+    """The answer to the reader's own decision sits between the filters and
+    the table on one reserved line, the same height empty or filled, so the
+    table never moves; nothing reserves room above the filters (R38 finding
+    10)."""
+    page.set_viewport_size({"width": width, "height": 900})
+    measure = """() => {
+        const box = (selector) =>
+            document.querySelector(selector).getBoundingClientRect();
+        const heading = box("main h1"), form = box("#table-filters");
+        const notice = box("#worklist-notice"), table = box("#table");
+        return {gap: form.top - heading.bottom, formBottom: form.bottom,
+                top: notice.top, height: notice.height, table: table.top};
+    }"""
+    page.goto(component_origin + PATH)
+    empty = page.evaluate(measure)
+    page.goto(component_origin + ACCEPTED)
+    has_text(page.locator("#worklist-notice"), ACCEPTED_NOTICE)
+    filled = page.evaluate(measure)
+    for shown in (empty, filled):
+        assert shown["formBottom"] <= shown["top"] < shown["table"]
+        assert shown["gap"] <= 40
+    assert filled["height"] == empty["height"] and filled["table"] == empty["table"]

@@ -663,6 +663,11 @@ input[data-time-entry=list] { max-width: 24rem; }
    never moves the table under the pointer. */
 .action-status { min-height: 3.2em; min-height: 2lh; margin-block: .5rem; font-weight: 600; }
 .action-status > p { margin: 0; }
+/* A review worklist's notice (#1681) sits between its filters and its
+   table and is one line, kept while empty (R38 finding 10): it answers the
+   reader's own last decision, so it needs no second line, and its margins
+   are the gap the table would have under the filters anyway. */
+.action-status.worklist-notice { min-height: 1.6em; min-height: 1lh; margin-block: 0 .5rem; }
 /* A status line that wraps keeps the lines it can take (#757): two, or
    three on a phone, where a long sentence in a wide font needs a third. Its
    emptying then never moves the buttons below it. */
@@ -1806,7 +1811,7 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
    wraps Clear under Apply and adds a row; the pair is never split here
    unless the page itself is narrower than both. On a phone each field
    takes the whole row. The reserved hint takes its own row. */
-.worklist-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .5rem 1rem; margin-block: 1rem; }
+.worklist-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .5rem 1rem; margin-block: .5rem; }
 .worklist-filters label { margin: 0 0 .25rem; font-size: .925rem; }
 .worklist-filters > div:not(.filter-actions) { flex: 1 1 14rem; max-width: 22rem; margin: 0; }
 .worklist-filters > div > :is(input, select) { max-width: none; }

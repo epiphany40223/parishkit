@@ -5,13 +5,14 @@
   of rows, a POST table posting to worklist.action) and `notice` (the
   answer to the last decision, or none). Its parts, in order:
 
-  - the notice line, reserved while empty so a notice never moves the
-    table;
   - the filters, always open (UX conventions, "Admin tables": a worklist
     has no Filters disclosure), Stage first with its counts, then the
     stream's own (worklist.filters_template), then Apply filters and Clear
     filters (components/filter-actions.html) right after the last field,
     on its row when it has room;
+  - the notice line, the answer to the reader's own last decision, between
+    the filters and the table: one line, reserved while empty so a notice
+    never moves the table (UX conventions, "Admin tables", R38 finding 10);
   - the table region: the selection bar (the bulk buttons, which wait
     until every ticked row offers their action, data-confirm-kind; Add, for
     readers allowed to add there), the table in the shared column order and
@@ -27,14 +28,14 @@
   the page itself with the page's view, and the page is redrawn from the
   answer (answer_page), so nothing reloads; focus returns to the same
   action's icon in the redrawn row (data-row-action).
-{% endcomment %}{% with w=worklist %}<div id="{{ w.prefix }}-notice" class="action-status" tabindex="-1" data-table-sync>{% if notice %}<p data-confirm-announce>{{ notice }}</p>{% endif %}</div>
-<form id="table-filters" class="worklist-filters" data-table-sync method="post" action="{{ w.action }}" data-require-complete data-missing-hint="{% translate 'Correct the filters to apply them.' %}">{% csrf_token %}
+{% endcomment %}{% with w=worklist %}<form id="table-filters" class="worklist-filters" data-table-sync method="post" action="{{ w.action }}" data-require-complete data-missing-hint="{% translate 'Correct the filters to apply them.' %}">{% csrf_token %}
 {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
 <div><label for="{{ w.prefix }}-stage">{% translate "Stage" %}</label><select id="{{ w.prefix }}-stage" name="stage">{% for value, label in w.stage_choices %}<option value="{{ value }}"{% if w.stage == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
 {% if w.filters_template %}{% include w.filters_template %}{% endif %}
 {% with apply_hint=w.prefix|add:"-filter-hint" %}{% include "stewardship/components/filter-actions.html" with apply_hint=apply_hint %}
 <p class="help" id="{{ apply_hint }}" data-complete-hint hidden></p>{% endwith %}
 </form>
+<div id="{{ w.prefix }}-notice" class="action-status worklist-notice" tabindex="-1" data-table-sync>{% if notice %}<p data-confirm-announce>{{ notice }}</p>{% endif %}</div>
 <div id="{{ table.anchor }}" data-table-region>
 {% include "stewardship/table-navigator.html" with table=table label=w.pages_label %}
 {% if w.selectable %}<div data-select-table data-missing-hint="{% blocktranslate with items=w.items %}Tick {{ items }} on this page to decide them together.{% endblocktranslate %}" data-kind-hint="{% blocktranslate with items=w.items %}Not every ticked row offers that action. Tick {{ items }} at the same stage, or use each row's own icons.{% endblocktranslate %}">{% endif %}

@@ -3607,7 +3607,11 @@ growing from 14rem, and Apply filters with [Clear filters](#clear-filters)
 follow the last field: on the same row when it has room, else at the
 start of the next, side by side unless the page is narrower than both;
 on a phone each field takes the whole row. No line sits between the last
-field and the buttons (R38). A table's create action (the review worklist's
+field and the buttons (R38). The answer to the reader's own last decision
+(a review worklist's notice) sits under the filters, just above the table,
+on one reserved line that is kept while empty, so a notice appearing never
+moves the table (no layout shift), and nothing else reserves room above the
+filters (R38). A table's create action (the review worklist's
 **Add**) sits in its selection bar, shown only to readers allowed to add
 there ([#1680](https://github.com/epiphany40223/parishkit/issues/1680)).
 
