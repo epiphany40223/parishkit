@@ -554,11 +554,6 @@ ROLES = ("administrator", "staff", "ministry_leader")
 REPORTS = [
     "census_changes",
     "ministry_report",
-    "ministry_roster",
-    "information_queue",
-    "limitations_report",
-    "census_changes",
-    "ministry_report",
     "pledges_to_enter",
     "information_queue",
     "limitations_report",
