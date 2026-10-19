@@ -30,10 +30,7 @@ EMPTY = "/roster-none"
 ROWS = 30
 MARKED_NOTICE = "Member 29 — Food pantry marked entered by hand."
 BULK_NOTICE = "2 changes marked entered by hand."
-STALE_NOTICE = (
-    "Member 27 — Food pantry was changed by someone else first, so nothing "
-    "was recorded. The list shows its current state."
-)
+STALE_NOTICE = "Member 27 — Food pantry: not recorded, changed by someone else."
 WHEN = datetime(2054, 10, 5, 12, tzinfo=UTC)
 
 

@@ -250,7 +250,7 @@ def test_pages_list_tick_and_download_the_roster_changes(
         # The same row's form again (its page drawn before) is now stale.
         response, body = search(browser, route, mark_form(join, 1))
         assert response.status_code == 200
-        assert b"was changed by someone else first" in body
+        assert b": not recorded, changed by someone else." in body
         assert MinistryRosterEntry.objects.filter(request=join).count() == 1
         # The request page keeps its own tick: a stale one is a 409 there,
         # and the list's old return is gone.
@@ -590,12 +590,15 @@ def test_bulk_marks_several_changes_all_or_none(response_service, google):
         # The list showed join at sequence 2; someone cleared it since.
         response, body = search(browser, route, bulk_form(f"{join.pk}:2"))
         assert response.status_code == 200
-        assert b"was changed by someone else first, so nothing was recorded" in body
+        assert b": not recorded, changed by someone else." in body
         # Leave is already marked, so the whole post records nothing.
         response, body = search(
             browser, route, bulk_form(f"{join.pk}:3", f"{leave.pk}:2")
         )
-        assert response.status_code == 200 and b"nothing was recorded" in body
+        assert (
+            response.status_code == 200
+            and b"not recorded, changed by someone else" in body
+        )
         for bad in (
             bulk_form(f"{join.pk}:3", bulk="accept"),
             bulk_form(f"{join.pk}:3", bulk_note="Typed"),
@@ -664,7 +667,7 @@ def test_staff_bulk_mark_a_gone_members_change_as_a_single_tick_does(
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = search(browser, ROUTE, bulk_form(f"{join.pk}:2"))
     assert response.status_code == 200
-    assert b"was changed by someone else first" in body
+    assert b": not recorded, changed by someone else." in body
     # The notice names the row as the list does.
-    assert b"\xe2\x80\x94 Food pantry was changed by someone else first" in body
+    assert b"\xe2\x80\x94 Food pantry: not recorded, changed by someone else." in body
     assert MinistryRosterEntry.objects.filter(request=join).count() == 2
