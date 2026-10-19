@@ -107,7 +107,10 @@ STAGE_CHOICES = (
 )
 # The history line of a change a Family's same answer reopened over an
 # accepted ParishSoft value (the review pipeline's resubmission rule, #1683).
-REOPENED = "Reopened: ParishSoft had changed since this was accepted."
+REOPENED = (
+    "Reopened: the Family answered again, so the earlier Accept over"
+    " ParishSoft's changed value no longer counts."
+)
 # A terminal execution is the outcome, whatever the decision says.
 TERMINAL = {
     "published": "published",

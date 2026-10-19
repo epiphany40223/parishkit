@@ -2303,8 +2303,9 @@ publication then meets a conflict). A Family's later same answer does not
 carry the accepted base either
 ([resubmission](../review-pipeline/spec.md#resubmission-while-the-setting-is-off)):
 the change comes back as a *Conflict* that shows the earlier Accepted as
-held, not in force, with the history line "Reopened: ParishSoft had changed
-since this was accepted".
+held, not in force, with the history line "Reopened: the Family answered
+again, so the earlier Accept over ParishSoft's changed value no longer
+counts".
 
 **Bulk.** Accept, Ignore, Back to review and Entered by hand sit in the bulk
 bar ([bulk actions](../review-pipeline/spec.md#bulk-actions)). Every row

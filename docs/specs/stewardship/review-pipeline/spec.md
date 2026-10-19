@@ -339,8 +339,9 @@ slice closes each, with a test of today's behaviour first:
   row; the successor silently becomes unreviewed. Reopening is right (the
   Family answered again against the original baseline), but it must not be
   silent: the item returns as **Conflict**, keeping the earlier decision
-  visible but not in force, and history records "Reopened: ParishSoft had
-  changed since this was accepted"
+  visible but not in force, and history records "Reopened: the Family
+  answered again, so the earlier Accept over ParishSoft's changed value no
+  longer counts"
   ([#1683](https://github.com/epiphany40223/parishkit/issues/1683)).
 - **Ministry, already decided.** Today's form offers only undecided
   requests as choices and otherwise shows the roster, so an Accepted join

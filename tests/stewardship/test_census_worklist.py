@@ -203,7 +203,10 @@ def test_decisions_in_force_show_on_the_icons_and_the_last_decision():
     reopened = worklist.rows[1]
     assert reopened["decision_label"] == "Earlier: Accepted, not in force."
     assert reopened["decided_by"] == "Family"
-    assert reopened["note"].startswith("Reopened: ParishSoft had changed")
+    assert reopened["note"] == (
+        "Reopened: the Family answered again, so the earlier Accept over"
+        " ParishSoft's changed value no longer counts."
+    )
 
 
 def test_no_action_while_other_campaign_work_holds_the_campaign():
