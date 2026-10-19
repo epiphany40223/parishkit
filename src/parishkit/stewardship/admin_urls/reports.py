@@ -1,4 +1,4 @@
-"""Responses and reports group URLs: every report page and its form actions.
+"""Review work and Reports and queries URLs: every report page and its form actions.
 
 Pages end in ``/`` and name no campaign: reports show the current campaign,
 so each route hands its unchanged view the current campaign's id
