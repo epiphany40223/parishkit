@@ -18,11 +18,6 @@ from django.urls import reverse
 from parishkit.stewardship.accounts.integration_credentials import CredentialSummary
 from parishkit.stewardship.accounts.integration_forms import IntegrationForm
 from parishkit.stewardship.campaigns.domain import Percentage
-from parishkit.stewardship.jobs.send_progress_views import (
-    GIVE_UP_MILLISECONDS,
-    POLL_MILLISECONDS,
-    _announcement,
-)
 from parishkit.stewardship.jobs.task_wording import phase_words
 from parishkit.stewardship.jobs.views import EVENT_SORTING
 from parishkit.stewardship.source.data_age import Connection
@@ -32,15 +27,15 @@ from parishkit.stewardship.web.tables import window_table
 
 from .automation_components import canonical
 from .family_test_components import family_tests_page
-from .send_progress_components import _send
+from .send_progress_components import _send, queue_values
 
 REQUEST, RUNNING = UUID(int=700), UUID(int=703)
 # A configuration change still being applied when its page opens, so the
 # page watches it from the start (#1568 moved these from the retired Key
 # replacement status page).
 CHANGE_RUNNING = reverse("admin:configuration_request", args=[RUNNING])
-PROGRESS = reverse("admin:family_email_progress")
-# The passive status the progress page polls while a send runs.
+PROGRESS = reverse("admin:mail_queue")
+# The passive status the Mail queue polls while a send runs.
 PROGRESS_STATUS = "/live-progress-status"
 FAMILY_TESTS = reverse("admin:campaign_mail_families", args=[UUID(int=702)])
 # The same page while a Family test is on its way, so it watches itself
@@ -127,25 +122,12 @@ def components(context, admin):
     now = context["server_now"]
     page = context | {"admin_chrome": admin}
 
-    def progress(template="family-email-progress", **counts):
-        """Family email progress for a running send with these counts, which
+    def progress(template="mail-queue", **counts):
+        """The Mail queue for a running Family send with these counts, which
         the page watches through PROGRESS_STATUS."""
-        send = _send(now, **counts)
         return render_to_string(
             f"stewardship/{template}.html",
-            page
-            | {
-                "status_url": PROGRESS_STATUS,
-                "campaign": SimpleNamespace(pk=UUID(int=413)),
-                "testing": False,
-                "paused": False,
-                "send": send,
-                "upcoming": False,
-                "follow": True,
-                "announcement": _announcement(send),
-                "poll_interval": POLL_MILLISECONDS,
-                "give_up": GIVE_UP_MILLISECONDS,
-            },
+            page | queue_values(_send(now, **counts)) | {"status_url": PROGRESS_STATUS},
         )
 
     def family_tests(items, pending=False):
@@ -360,9 +342,7 @@ def components(context, admin):
         "/live-running-applied": change("applied", RUNNING),
         PROGRESS: progress(),
         "/live-progress-later": progress(sent=900, remaining=180),
-        PROGRESS_STATUS: progress(
-            "family-email-progress-status", sent=900, remaining=180
-        ),
+        PROGRESS_STATUS: progress("mail-queue-status", sent=900, remaining=180),
         FAMILY_TESTS: family_tests([]),
         FAMILY_TESTS_PENDING: family_tests([], pending=True),
         "/live-family-tests-later": family_tests(tested),

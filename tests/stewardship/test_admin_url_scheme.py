@@ -248,7 +248,7 @@ SLASHLESS_EXPECTED = {
         "/admin/campaign/production/cancellation/"
     ),
     "/admin/mail/controls": "/admin/mail/controls/",
-    "/admin/mail/family-progress": "/admin/mail/family-progress/",
+    "/admin/mail/queue": "/admin/mail/queue/",
     "/admin/mail/family-history": "/admin/mail/family-history/",
     "/admin/mail/sent": "/admin/mail/sent/",
     f"/admin/mail/sent/{T}": f"/admin/mail/sent/{T}/",
@@ -318,6 +318,10 @@ OLD_ADDRESSES = (
     "/admin/mail/outgoing/",
     f"/admin/mail/outgoing/{T}/",
     f"/admin/mail/outgoing/{T}/resolution/",
+    # Family email progress, replaced by Mail queue (#1562), and its fragment.
+    "/admin/mail/family-progress/",
+    "/admin/mail/family-progress",
+    "/admin/mail/family-progress/status/",
     f"/admin/deliveries/{T}/resolve",
     "/admin/deliveries/family-sends",
     "/admin/family-portal",

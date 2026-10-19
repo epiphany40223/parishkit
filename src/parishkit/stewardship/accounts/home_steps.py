@@ -38,7 +38,7 @@ _WORK = (
     "ministry_report",
 )
 _ACTIVE = {
-    "administrator": (*_WORK, "family_email_progress", "mail_problems"),
+    "administrator": (*_WORK, "mail_queue", "mail_problems"),
     "staff": _WORK,
     "ministry_leader": ("ministry_report",),
 }

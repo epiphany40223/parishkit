@@ -508,6 +508,10 @@ hr { border: 0; border-top: 1px solid var(--border); margin-block: 2rem; }
   .stat-tiles:has(> [data-stat]:nth-child(5):last-child) { grid-template-columns: repeat(auto-fit, minmax(max(clamp(12.5rem, (65.5rem - 100%) * 100000, (100% - 1.5rem) / 3), min(100%, (39rem - 100%) * 100000)), 1fr)); }
 }
 .stat-detail { color: var(--muted); font-size: .875rem; }
+/* Mail queue (#1562): the other mode's line keeps one line's height while empty, so the
+   table below never moves when it appears (no layout shift); a kind's zero counts are muted. */
+.mail-queue-other { min-height: 1.6em; min-height: 1lh; margin-block: .5rem 0; }
+.mail-queue-zero { color: var(--muted); }
 /* An unknown value's "—" carries its reason in a toggletip beside it (#1540), its "i" at the
    size it has elsewhere. The 1.75rem button is centred in the value's 2.1rem line from its top,
    so it never makes the line taller: a value that becomes unknown in place moves nothing. */

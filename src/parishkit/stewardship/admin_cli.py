@@ -33,8 +33,9 @@ The session commands (``login start``, ``login wait``, ``logout``,
 status commands (``status``, ``task list``, ``task show``, ``send
 progress``, ``send history``, ``schedule show``, ``go-live readiness`` and
 ``go-live progress``) follow (PR 3), built on the read models of
-``admin_reads``. ``task show``, ``send progress`` and ``go-live progress``
-take ``--watch``. The schedule change commands (``schedule preview`` and
+``admin_reads``; ``mail queue`` replaced ``send progress`` (#1562).
+``task show``, ``mail queue`` and ``go-live progress`` take ``--watch``.
+The schedule change commands (``schedule preview`` and
 ``schedule confirm``, in ``admin_changes``) and ``config request show``
 (with ``--watch``) follow (PR 4), then ``task retry`` and the delivery
 commands (PR 9, in ``admin_operations``), ``logs list`` and ``logs
@@ -770,11 +771,11 @@ def task_show(args, preamble, runtime, context):
     )
 
 
-def send_progress(args, preamble, runtime, context):
-    """The Family email send in progress, or the most recent one."""
-    from .admin_reads import read_send_progress
+def mail_queue(args, preamble, runtime, context):
+    """Every email waiting to go out, and the Family send in progress (#1562)."""
+    from .admin_reads import read_mail_queue
 
-    return read_send_progress(context["caller"], runtime, audit=context["audit"])
+    return read_mail_queue(context["caller"], runtime, audit=context["audit"])
 
 
 def send_controls(args, preamble, runtime, context):
@@ -4842,9 +4843,9 @@ def _read_specs():
     from .admin_reads import (
         GoLiveProgress,
         GoLiveReadiness,
+        MailQueueRead,
         ScheduleShow,
         SendHistory,
-        SendProgressRead,
         Status,
         TaskList,
         TaskShow,
@@ -4895,12 +4896,12 @@ def _read_specs():
             watch_subject="task_id",
         ),
         CommandSpec(
-            "send progress",
-            "Show the Family email send in progress, or the latest one.",
-            send_progress,
+            "mail queue",
+            "Show every email waiting to go out, and the Family send in progress.",
+            mail_queue,
             "read_only",
             False,
-            SendProgressRead.field_names(),
+            MailQueueRead.field_names(),
             3,
             options=(_watch_options,),
             audit_event="delivery_viewed",

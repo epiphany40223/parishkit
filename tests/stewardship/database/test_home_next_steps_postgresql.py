@@ -156,7 +156,7 @@ def test_active_campaign_steps_counts_and_today(response_service, google):
         "Roster changes to enter",
         "Additional information",
         "Ministry requests",
-        "Family email progress",
+        "Mail queue",
         "Sent mail",
     ]
     # No request is resolved yet, so nothing waits to be entered (#1590).
