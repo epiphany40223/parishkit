@@ -519,7 +519,8 @@ Edited, and an Ignored census change ParishSoft now matches stays Ignored
 (its row says "ParishSoft now matches the Family's answer"). An item whose
 row is final (a census change Entered by hand or Updated in ParishSoft) or
 decided (a Ministry request a person accepted or ignored) gets a **refresh
-check** instead: an immutable record, written in the promotion transaction,
+check** instead (a census change a later Family response replaced does not:
+it is history, below): an immutable record, written in the promotion transaction,
 of the outcome (Confirmed, unchanged, Entered incorrectly, or ParishSoft now
 matching an Ignored request), what ParishSoft held, and whether the refresh
 was full. A new check is written only when the outcome changes (or when an

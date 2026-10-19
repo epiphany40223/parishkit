@@ -299,7 +299,9 @@ class CensusDecisions:
             if allows(principal, capability)
         )
         # A final change is placed by its latest refresh check at its
-        # current version (#1689, #1737), as the page placed it.
+        # current version (#1689, #1737). A change a later response replaced
+        # is placed so too here; its fixes are refused by the service
+        # (``refresh_checks.replaced``), as the page offers none.
         final = {
             pk: proposal
             for pk, proposal in proposals.items()
