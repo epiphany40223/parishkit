@@ -4756,12 +4756,13 @@
     // A review answer's typed field (data-review-require, the Confirm
     // Production dialog's "Type Production to confirm", #1585) is gated
     // while it is edited, and Enter in it is Apply, never a native submit of
-    // the Apply form it names: Apply always posts from acceptReview.
+    // the Apply form it names: Apply always posts from acceptReview. The
+    // Enter that commits an input method's composition is not Apply.
     dialog.addEventListener("input", (event) => {
       if (event.target instanceof Element && event.target.matches("[data-review-require]")) gateReview(dialog);
     });
     dialog.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter" || !(event.target instanceof Element)
+      if (event.key !== "Enter" || event.isComposing || !(event.target instanceof Element)
         || !event.target.matches("[data-review-require]")) return;
       event.preventDefault();
       const accept = dialog.querySelector("[data-confirm-accept]");

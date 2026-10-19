@@ -119,7 +119,7 @@ def _context(shown):
         "stage": shown,
         "campaign": shown.request.campaign if shown.request else None,
         "wizard": go_live_check.bar(
-            "started" if shown.started else "idle",
+            go_live_check.bar_state(shown),
             current="prepare",
             prepared=shown.state == "ready",
         ),

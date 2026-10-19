@@ -256,6 +256,13 @@ def check_state(problems, target, verified):
     return "passed" if verified is True else "unchecked"
 
 
+def bar_state(shown):
+    """The step bar's ``state`` for a Prepare or Confirm Production read."""
+    if shown.state == "confirmed":
+        return "confirmed"
+    return "started" if shown.started else "idle"
+
+
 def bar(state, *, current="check", prepared=False):
     """The Go live step bar, as a ``setup_wizard.Wizard``, on step ``current``.
 
@@ -263,9 +270,15 @@ def bar(state, *, current="check", prepared=False):
     saying why. Once go-live has started (``state`` "started"), Check is
     completed and Prepare opens; once the Family links are ready
     (``prepared``) Prepare is completed too and Confirm Production opens.
-    Activation waits for the confirmation.
+    Activation waits for the confirmation. Once Production is confirmed
+    (``state`` "confirmed", drawn by Prepare and Confirm Production), the
+    first three steps are completed and Activation, in progress, opens
+    Production activation; Check, an unavailable menu page then, has no
+    link.
     """
-    started = state == "started"
+    confirmed = state == "confirmed"
+    started = state == "started" or confirmed
+    prepared = prepared or confirmed
     first = _("Not available yet: Start go-live on the Check step first.")
     reasons = {"prepare": first, "confirm": first, "activate": first}
     if started:
@@ -273,18 +286,19 @@ def bar(state, *, current="check", prepared=False):
             "confirm": _("Not available yet: the Family links are not prepared yet."),
             "activate": _("Not available yet: Confirm Production first."),
         }
-    done = {"check": started, "prepare": started and prepared}
+    done = {"check": started, "prepare": started and prepared, "confirm": confirmed}
     urls = {
-        "check": reverse("admin:go_live"),
+        "check": None if confirmed else reverse("admin:go_live"),
         "prepare": reverse("admin:go_live_prepare") if started else None,
         "confirm": reverse("admin:go_live_confirm") if started and prepared else None,
+        "activate": reverse("admin:production_progress") if confirmed else None,
     }
     steps = []
     for number, (key, label) in enumerate(STEPS, start=1):
         url = urls.get(key)
         if done.get(key):
             state_name, status = "done", _("Completed")
-        elif url and key == "prepare":
+        elif url and key in {"prepare", "activate"}:
             state_name, status = "todo", _("In progress")
         elif url:
             state_name, status = "todo", _("Not done yet")

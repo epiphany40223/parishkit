@@ -53,6 +53,7 @@ _FIELDS = {"review": set(), "confirm": {"review", "typed"}}
 _REFUSALS = {
     "typed": 400,
     "changed": 409,
+    "due": 409,
     "target": 409,
     "closed": 409,
     "hold_ended": 409,
@@ -127,7 +128,7 @@ def _context(shown):
         "stage": shown.prepare,
         "campaign": shown.request.campaign if shown.request else None,
         "wizard": go_live_check.bar(
-            "started" if shown.started else "idle",
+            go_live_check.bar_state(shown),
             current="confirm",
             prepared=shown.state in {"ready", "problems"},
         ),
@@ -153,9 +154,9 @@ def _review(request, service, campaign_id):
     """The dialog's Review: the preview to confirm, or a refusal.
 
     It asks for no recent sign-in (#1547). The binding names the
-    request, the prepared links, the preview's inputs digest and target
-    and a fresh request key, signed without a time: Apply compares it with
-    the preview it builds again.
+    request, the prepared links, the preview's inputs digest, target and
+    shown counts and a fresh request key, signed without a time: Apply
+    compares it with the preview it builds again.
     """
     actor = principal(request, service)
     shown = go_live_confirm.read(request, service, campaign_id)
@@ -169,6 +170,7 @@ def _review(request, service, campaign_id):
             "preparation": str(shown.prepare.prepared.pk),
             "digest": readiness.digest,
             "target": readiness.target_state,
+            "counts": confirmation_commands.preview_counts(shown.preview),
             "key": str(uuid4()),
         }
     )
@@ -186,6 +188,7 @@ def _binding(token):
         "preparation",
         "digest",
         "target",
+        "counts",
         "key",
     }:
         raise signing.BadSignature("Invalid Production confirmation review.")
@@ -199,9 +202,9 @@ def _apply(request, service, campaign_id):
     resend of an Apply that already confirmed opens Production activation
     (its request key made it happen once); the typed word must be there
     (else a 400 inside the dialog); the step must still be ready and on
-    the same links; the public web
-    address check runs again; the preview is built again, and its inputs
-    digest and target must match the Review's. Only then is the
+    the same links; the public web address check runs again; the preview
+    is built again, and its inputs digest, target and counts must match
+    the Review's. Only then is the
     confirmation token minted, from that preview, and Production confirmed
     by its owner, which re-checks everything under the final locks. A
     confirmation or stop that won a race is said in the dialog.
@@ -243,6 +246,11 @@ def _apply(request, service, campaign_id):
         return _answer(request, service, {"refused": "target"})
     if readiness.digest != binding["digest"] or token is None:
         return _answer(request, service, {"refused": "changed"})
+    # The counts shown depend on the preview's instant, not only on its
+    # inputs: a send that fell due since the Review changes them under the
+    # same digest, and the Administrator confirms only the counts shown.
+    if confirmation_commands.preview_counts(preview) != binding["counts"]:
+        return _answer(request, service, {"refused": "due"})
     try:
         confirmation_commands.confirm(
             request, service, campaign_id, row.pk, prepared.pk, token=token, typed=typed

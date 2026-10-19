@@ -16,6 +16,7 @@ answers the dialog's fragment or a redirect.
 
 # ruff: noqa: F811 -- imported fixture dependencies are injected by pytest name.
 
+from dataclasses import replace
 from datetime import timedelta
 from time import time
 from types import SimpleNamespace
@@ -26,6 +27,7 @@ from django.db.models import F
 from django.urls import reverse
 
 from parishkit.stewardship.accounts import confirmation_commands, go_live_commands
+from parishkit.stewardship.accounts.go_live_confirm_views import SALT
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import database_now, issue_admin
 from parishkit.stewardship.campaigns.confirmation_models import ProductionConfirmation
@@ -37,6 +39,7 @@ from parishkit.stewardship.campaigns.go_live_sequencing import (
 from parishkit.stewardship.campaigns.production_models import (
     ProductionTransitionRequest,
 )
+from parishkit.stewardship.campaigns.schedule_models import ScheduleDefinition
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.source.refresh_models import SourceRefreshCommand
 from parishkit.stewardship.source.snapshot_models import SourceSnapshot
@@ -306,6 +309,8 @@ def test_review_then_apply_mints_the_token_at_apply(confirmable, monkeypatch):
     assert confirm.state == "confirmed" and not confirm.confirmed_by_other
     assert b"Production is confirmed." in page.content
     assert b"Open Production activation" in page.content
+    assert b"3 of 4 steps completed" in page.content
+    assert b"Start go-live on the Check step first" not in page.content
 
 
 def test_apply_runs_the_public_web_address_check_again(confirmable, monkeypatch):
@@ -336,6 +341,104 @@ def test_apply_refuses_a_preview_whose_inputs_changed(confirmable):
     assert not ProductionConfirmation.objects.exists()
     assert apply(browser, binding(review(browser))).status_code == 303
     assert ProductionConfirmation.objects.count() == 1
+
+
+def test_a_send_falling_due_after_the_review_refuses_apply(confirmable, monkeypatch):
+    """A send fell due between Review and Apply: the counts shown are not
+    the ones Apply would confirm, so it is refused as "due", naming it.
+
+    The preview's inputs digest does not cover time: only the counts, which
+    the Review binding signs, tell. Moving the campaign clock past the
+    initial invitation (in 2054) would also end the attempt's hold, so the
+    preview's instant alone moves there, as it would have once that time
+    came. A new Review shows the updated count, and its Apply confirms it.
+    """
+    from parishkit.stewardship.accounts import confirmation_preview
+
+    browser = confirmable[0]
+    token = binding(review(browser))
+    due = ScheduleDefinition.objects.get(kind="initial").current_revision.due_at
+    original = confirmation_preview.family_impact
+
+    def later(campaign, *, cutoff):
+        """Family impact as of just after the initial invitation fell due."""
+        return original(campaign, cutoff=max(cutoff, due + timedelta(seconds=1)))
+
+    monkeypatch.setattr(confirmation_preview, "family_impact", later)
+    refused = apply(browser, token)
+    assert refused.status_code == 409
+    assert b'data-go-live-confirm-refused="due"' in refused.content
+    assert b"Emails fell due since this preview" in refused.content
+    assert not ProductionConfirmation.objects.exists()
+    assert SystemConfiguration.objects.get().mode == "testing"
+    again = review(browser)
+    assert again.status_code == 200
+    counts = signing.Signer(salt=SALT).unsign_object(binding(again))["counts"]
+    assert counts["family_messages"] == 1
+    assert apply(browser, binding(again)).status_code == 303
+    assert ProductionConfirmation.objects.get().preview_counts == counts
+
+
+def readiness_at(monkeypatch, instant):
+    """Re-check readiness as of ``instant``, a campaign date in 2054.
+
+    Readiness reads the campaign clock from its work scope; moving that
+    instant alone stands for the time passing. The attempt's hold, and the
+    preview's deadline that it bounds, are still judged by the real clock:
+    the fixture campaign starts in 2054, and a real start or end can pass
+    while a hold still runs.
+    """
+    from parishkit.stewardship.accounts import (
+        confirmation_preview,
+        confirmation_readiness,
+    )
+
+    scope, source = confirmation_readiness._scope, confirmation_readiness.go_live_source
+    monkeypatch.setattr(
+        confirmation_readiness,
+        "_scope",
+        lambda campaign_id: replace(scope(campaign_id), instant=instant),
+    )
+    monkeypatch.setattr(
+        confirmation_readiness,
+        "go_live_source",
+        lambda readiness, transition, _: source(readiness, transition, database_now()),
+    )
+    deadline = confirmation_preview.confirmation_deadline
+    monkeypatch.setattr(
+        confirmation_preview,
+        "confirmation_deadline",
+        lambda **values: deadline(**values | {"observed_at": database_now()}),
+    )
+
+
+def test_apply_refuses_once_the_campaign_closed(confirmable, monkeypatch):
+    """The campaign ended between Review and Apply: refused, nothing confirmed."""
+    browser, _, _, preparation = confirmable
+    token = binding(review(browser))
+    interval = preparation.transition.campaign.active_configuration
+    readiness_at(monkeypatch, interval.ends_at + timedelta(minutes=1))
+    refused = apply(browser, token)
+    assert refused.status_code == 409
+    assert b'data-go-live-confirm-refused="closed"' in refused.content
+    assert not ProductionConfirmation.objects.exists()
+    assert SystemConfiguration.objects.get().mode == "testing"
+
+
+def test_apply_refuses_once_the_campaign_start_passed(confirmable, monkeypatch):
+    """The campaign start passed between Review and Apply: confirming would
+    now make it active at once, not schedule it, so Apply is refused as
+    "target", and a new Review asks to go live now."""
+    browser, _, _, preparation = confirmable
+    first = review(browser)
+    assert b"Schedule the campaign?" in first.content
+    interval = preparation.transition.campaign.active_configuration
+    readiness_at(monkeypatch, interval.starts_at + timedelta(minutes=1))
+    refused = apply(browser, binding(first))
+    assert refused.status_code == 409
+    assert b'data-go-live-confirm-refused="target"' in refused.content
+    assert not ProductionConfirmation.objects.exists()
+    assert b"Go live now?" in review(browser).content
 
 
 def test_a_stop_after_the_review_refuses_apply(confirmable):
