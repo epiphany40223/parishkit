@@ -1747,7 +1747,8 @@ Apply rather than widening the page, and its two buttons have a narrower
 inline padding than other buttons, so that side by side they fit one
 Filters panel cell even with wider fonts. In Sent mail's and the
 Timeline's filter bars the pair takes the room beside the filters first,
-up to both buttons side by side, and the filters grow from what is left.
+up to both buttons side by side, and the filters grow from what is left,
+never narrower than their own label line.
 Clear filters puts every filter back to the page's default in one step and
 shows the result in place. No filter form names its apply button otherwise
 (the Ministries list's Filter, Background work's Show tasks, Refused

@@ -1164,6 +1164,13 @@ details.filter-panel[data-filter-panel] > form:not(.filter-bar) > fieldset > div
    Linux's wider fonts, and the first rows still start on the screen. */
 .filter-bar.mail-filters { max-width: none; column-gap: .75rem; }
 .filter-bar.mail-filters > div { flex: 1 1 6.5rem; min-width: 6.5rem; }
+/* A field whose label row carries an "i" button (Recipient) is never
+   narrower than that row: at 1280 px the action pair takes the room left
+   beside the filters, the filters shrink to their minimum, and with
+   Linux's wider fonts "Recipient", the gap and the button (about 113 px)
+   no longer fit 6.5rem, so the button wrapped and pushed that field's
+   control below the others'. */
+.filter-bar.mail-filters > div:not(.short):has(> .label-row) { min-width: 7.5rem; }
 /* From and Through are wide enough for the empty "mm/dd/yyyy" placeholder
    beside the calendar button, with Linux's wider fonts too. They drop the
    desktop short-field rule's end margin: the bar's gap spaces them, and
