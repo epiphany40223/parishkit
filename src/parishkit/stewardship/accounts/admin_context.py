@@ -424,9 +424,9 @@ COUNTED = frozenset(
 ROSTER_STATES = frozenset({"active", "closed", "archived"})
 # Every count in one statement, each only when asked for (NULL otherwise).
 # Census changes reads its rows grouped by the columns its status depends on
-# (census_changes.OPEN_GROUPS); Python then keeps the groups the page's
-# default Work to do view lists (census_changes.open_count), so the status
-# rules live in one place. ``{census}`` is that query, filled in when the
+# (census_changes.OPEN_GROUPS); Python then keeps the groups at To review
+# or Conflict (census_changes.open_count), so the stage rules live in one
+# place. ``{census}`` is that query, filled in when the
 # statement runs, since the report module is imported lazily.
 # Additional information counts current requests not yet marked "Follow-up
 # completed" (its default view lists completed ones too). Ministry requests
@@ -590,8 +590,9 @@ def _read_open_counts(offered, actor, campaign):
         ministry = None
     if roster_count is not None and not in_scope(actor, True, roster_ministries):
         roster_count = None
-    # Census changes opens on its To review stage for everyone who may read
-    # it (#1683), so the count is that stage's (census_changes.open_count).
+    # Census changes counts its To review and Conflict stages for everyone
+    # who may read it (census_changes.open_count; Administrator decision,
+    # 2026-10-18).
     census_count = None if groups is None else open_count(json.loads(groups))
     # An entry not asked for, or a Ministry follow-up the page would show as
     # off or unavailable, reads NULL and gets no count.

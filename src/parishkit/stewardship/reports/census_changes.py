@@ -348,7 +348,7 @@ COLUMNS = (
 # ROWS's rows, by the four columns ``status`` reads, each group with its
 # size, as JSON text. Its FROM and WHERE are ROWS's without the joins that
 # only name a row (they are LEFT joins, so they never add or drop one), so
-# ``open_count`` keeps exactly the rows the page's default view lists.
+# ``open_count`` places exactly the rows the page places.
 # Takes ``%(campaign)s``.
 OPEN_GROUPS = """
 SELECT coalesce(jsonb_agg(jsonb_build_array(
@@ -365,15 +365,21 @@ FROM (
 """
 
 
+# The stages the menu and Home count (``open_count``).
+OPEN_STAGES = frozenset({Stage.TO_REVIEW, Stage.CONFLICT})
+
+
 def open_count(groups):
-    """The rows of the page's default view, To review, from ``OPEN_GROUPS``.
+    """The rows waiting on a reviewer, To review and Conflict, from ``OPEN_GROUPS``.
 
     ``groups`` is the decoded JSON: ``[handling, entity_kind, decision,
-    execution, count]`` lists. The worklist opens on its To review stage
-    (#1683), so the menu counts the groups ``census_placement`` puts there,
-    the mapping the page itself places rows with, so the count cannot drift
-    from what the link opens. An edited value never changes a stage, so the
-    groups need not carry it.
+    execution, count]`` lists. The menu and Home count the groups
+    ``census_placement`` puts at To review or Conflict, for every role that
+    may read the page (Administrator decision, 2026-10-18). It is the
+    mapping the page itself places rows with, so the count cannot drift
+    from the page's stages. Ready to update is not counted: Publish to
+    ParishSoft and the manual-entry report own it. An edited value never
+    changes a stage, so the groups need not carry it.
     """
     return sum(
         count
@@ -385,7 +391,7 @@ def open_count(groups):
             entity_kind=entity_kind,
             admin_value_set=False,
         ).stage
-        is Stage.TO_REVIEW
+        in OPEN_STAGES
     )
 
 

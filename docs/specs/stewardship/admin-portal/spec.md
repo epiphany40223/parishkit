@@ -702,9 +702,10 @@ Notes on the groups:
   Ministry requests and Roster changes to enter show their open counts
   ([#585](https://github.com/epiphany40223/parishkit/issues/585),
   [#1590](https://github.com/epiphany40223/parishkit/issues/1590)): for
-  Census changes, the rows of its default Work to do view (To do and
-  Conflict, plus To review for an Administrator, who decides automatic
-  changes), counted from the page's own rows with its own status rules; for
+  Census changes, the rows at its To review and Conflict stages, the same
+  for Administrators and Staff (Administrator decision, 2026-10-18; Ready
+  to update is left to Publish to ParishSoft and the manual-entry report),
+  placed with the page's own stage rules; for
   Additional information, the current requests not yet marked "Follow-up
   completed" (its default view also lists completed ones); for Ministry
   requests, the total of its queue's default Unresolved view, read through that
@@ -984,7 +985,8 @@ At campaign end the Staff work through four lists, so an active, paused,
 closed or archived campaign offers Administrators and Staff each of them
 with its count ([#1590](https://github.com/epiphany40223/parishkit/issues/1590)),
 and each count is the menu's, the number of rows its link opens by
-default: Census changes as "N to do" (its Work to do view); Roster changes
+default: Census changes as "N to do" (its To review and Conflict rows, as
+the menu counts them); Roster changes
 to enter as "N not yet entered" (its Not yet entered view); Additional
 information and Ministry requests as "N open". Roster changes to enter is
 offered, and greyed with its reason, exactly as the viewer's menu entry is
@@ -6195,7 +6197,7 @@ role may not see left out:
 | 1 | Families the form cannot open | Families that cannot open the Family form because a Member's ParishSoft data has a value the form cannot accept | [Families the form cannot open](#system-health-page) | Administrator | `reports.source_form.blocked_families`, the System health sentence's own read, with its per-campaign and per-snapshot cache |
 | 2 | Refused email addresses | Unresolved refused addresses, and how many Families they belong to | [Refused addresses](#refused-addresses) | Administrator | `jobs.delivery_reads.unresolved_refusals()`, the set behind Sent mail's link-line count, counted in one query |
 | 3 | Families no mail can reach | Active parishioner Families with no deliverable email and no usable mailing address | The [active parishioner family directory](../reports/spec.md#active-parishioner-family-directory) with its "Can't be reached by email or mail" preset | Administrator, Staff | `accounts.admin_dashboard.unreachable_families`, Home's count, which is the directory's own "neither" selection |
-| 4 | Census and roster changes to enter | Census changes in the [Census changes](../reports/spec.md#pending-census-changes) default view for the viewer (To do and Conflict, plus To review for an Administrator); later, roster changes to enter | Census changes; later, *Roster changes to enter* | Administrator, Staff | `reports.census_changes.census_changes` with the page's default query; later, the roster filter's own read |
+| 4 | Census and roster changes to enter | Census changes at the [Census changes](../reports/spec.md#pending-census-changes) To review and Conflict stages, the same for every role; later, roster changes to enter | Census changes; later, *Roster changes to enter* | Administrator, Staff | `reports.census_changes.census_changes` with the page's default query; later, the roster filter's own read |
 
 Notes on the sections:
 

@@ -25,6 +25,9 @@ from parishkit.stewardship.workflows.roster import can_tick
 from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
 from .test_census_changes_postgresql import ADMIN, LEADER, STAFF, submit_live, worklist
+from .test_census_conflict_postgresql import conflicted
+from .test_census_pipeline_review_postgresql import decide, prepared
+from .test_census_review_postgresql import fresh
 from .test_ministry_exports_postgresql import leader
 from .test_ministry_followup_postgresql import _menu_count, edit, member_gone
 from .test_ministry_reports_postgresql import actor
@@ -66,9 +69,9 @@ def steps(body):
 
 
 def test_census_count_is_the_pages_default_rows_by_role(response_service):
-    """Staff and an Administrator count the worklist's default stage, To
-    review (#1683); a Ministry leader, whom the page refuses, gets no count
-    even when asked."""
+    """Staff and an Administrator count the worklist's To review and Conflict
+    stages (Administrator decision, 2026-10-18); a Ministry leader, whom the
+    page refuses, gets no count even when asked."""
     harness = response_service
     start(harness)
     harness = activate_response_service(harness)
@@ -82,11 +85,43 @@ def test_census_count_is_the_pages_default_rows_by_role(response_service):
     assert census_count(harness, LEADER) is None
 
 
+def test_census_count_is_to_review_and_conflict_only(response_service):
+    """The count follows each change's stage: a Conflict still counts, an
+    accepted change (To enter by hand or Ready to update) no longer does,
+    for Staff and an Administrator alike (Administrator decision,
+    2026-10-18)."""
+    harness, _, staff, rows = prepared(response_service)
+
+    def counts():
+        """The menu's count for each role, held equal to the page's stages."""
+        shown = {census_count(harness, principal) for principal in (STAFF, ADMIN)}
+        assert len(shown) == 1
+        listed = sum(
+            len(worklist(harness, ADMIN, stage=stage)["rows"])
+            for stage in ("to_review", "conflict")
+        )
+        assert shown == {listed}
+        return listed
+
+    # Four changes, all To review.
+    assert counts() == 4
+    # A Conflict still waits on a reviewer.
+    conflicted(rows["first_name"])
+    assert counts() == 4
+    # Accepting the By hand prefix moves it to To enter by hand.
+    decide(harness, staff, [rows["prefix"]], "accept")
+    assert counts() == 3
+    # Accepting the Conflict moves it to Ready to update, which Publish to
+    # ParishSoft owns.
+    decide(harness, staff, [fresh(rows["first_name"])], "accept")
+    assert counts() == 2
+
+
 def test_home_and_menu_show_the_census_count_for_an_administrator(
     response_service, google
 ):
     """Signed in, the menu and Home's Next steps carry the same Census
-    changes count as the page's default view, as "N to do"."""
+    changes count, To review and Conflict, as "N to do"."""
     harness = response_service
     start(harness)
     harness = activate_response_service(harness)
