@@ -4,8 +4,6 @@ The long filter and export forms of the report pages start collapsed, so a
 report's first data is on a laptop's first screen (#227); an applied filter
 is never hidden, because the panel then renders open and its summary counts
 the filters in use. The Family directory's panel is open by default (#227).
-Census changes, a worklist, has an always-open Filters box instead (#1682,
-``test_census_layout``); its open box is measured here with the others.
 """
 
 import pytest
@@ -110,10 +108,11 @@ def test_in_place_apply_updates_the_count_and_keeps_the_panel(page, component_or
     assert page.evaluate(MARKED) == "kept"
 
 
-# The first data each report page shows (the Family directory and Census
-# changes show their filters open, so they are not here): Additional
-# information's matching count, and the summary of Financial stewardship and
-# Limitations, which sits above their filters.
+# The first data each report page shows (the Family directory opens Filters by
+# default, so it is not here): Additional information's matching count, and
+# the summary of Financial stewardship and Limitations, which sits above
+# their filters. Census changes is a worklist since #1683: its filters are
+# always open, with no panel.
 FIRST_DATA = {
     "/information-unfiltered": "#information-matching",
     "/financial-unfiltered": ".stat-tiles",
@@ -175,9 +174,8 @@ def test_limitations_show_choice_is_not_clipped(page, component_origin, width):
 
 
 # The filtered fixtures arrive with their panel open (an applied filter is
-# never hidden), and Census changes' box is always open, so each report's
-# open filter form can be measured directly.
-OPEN_PANELS = sorted({*FILTERED, "/census-changes-automatic-filtered"})
+# never hidden), so each report's open filter form can be measured directly.
+OPEN_PANELS = sorted(FILTERED)
 # The most each open panel may take on a laptop once its filters share the
 # rows of a grid (#1411). With one field per row, as before, Additional
 # information's took about 690 px and Financial stewardship's about 1,460;
@@ -185,7 +183,6 @@ OPEN_PANELS = sorted({*FILTERED, "/census-changes-automatic-filtered"})
 # limits leave room for wider fonts. The Family directory keeps its filter
 # bar, so it is not here.
 OPEN_PANEL_HEIGHT = {
-    "/census-changes-automatic-filtered": 340,
     "/information": 420,
     "/financial-report": 700,
 }

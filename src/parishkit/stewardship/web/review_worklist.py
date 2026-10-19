@@ -221,7 +221,9 @@ def _selected_title(action, placement, undo):
     return f"{state} To change it, choose Back to review." if undo else state
 
 
-def row_icons(stream, placement, roles, *, name, leads=False, by_hand=False):
+def row_icons(
+    stream, placement, roles, *, name, leads=False, by_hand=False, withheld=()
+):
     """One row's action icons for one reader, in ``ROW_ORDER``.
 
     Each is offered (an icon that opens its dialog, ``aria-pressed`` false
@@ -229,10 +231,13 @@ def row_icons(stream, placement, roles, *, name, leads=False, by_hand=False):
     in force: filled, ``aria-pressed`` true and unavailable, since choosing
     it again is no undo; Back to review is). An action the reader's role
     does not allow is left out, selected or not (UX conventions, "By role").
+    ``withheld`` are actions this one item cannot take whatever its stage
+    (a census field no value can be typed for has no Edit); they are left
+    out too, as the stream's service refuses them.
     """
     offered = allowed_actions(
         stream, placement.stage, roles, leads=leads, by_hand=by_hand
-    )
+    ) - frozenset(Action(action) for action in withheld)
     allowed = role_actions(stream, roles, leads=leads)
     selected = selected_actions(placement) & allowed
     undo = Action.BACK_TO_REVIEW in offered
@@ -331,6 +336,29 @@ class Column:
     numeric: bool = False
 
 
+HELD = "Earlier: {decision}, not in force."
+FAILED = "The last update failed."
+
+
+def decision_label(placement):
+    """The line under a row's stage: the decision behind it, worded.
+
+    The decision is shown only when the stage's word does not already say
+    it (Ignored, Accepted (edited)). A Conflict keeps an earlier decision
+    visible but not in force (spec, "Baseline refresh re-evaluation"), and
+    a change whose last update failed says so, since its stage alone
+    (Ready to update) reads as if nothing happened.
+    """
+    parts = []
+    if placement.decision and placement.decision.label != placement.stage.label:
+        parts.append(f"{placement.decision.label}.")
+    if placement.held_decision:
+        parts.append(HELD.format(decision=placement.held_decision.label))
+    if placement.failed:
+        parts.append(FAILED)
+    return " ".join(parts)
+
+
 def _decorate(stream, row, roles, prefix, columns):
     """Give one row what its cells, box and icons need.
 
@@ -349,6 +377,7 @@ def _decorate(stream, row, roles, prefix, columns):
         name=name,
         leads=row.get("leads", False),
         by_hand=row.get("by_hand", False),
+        withheld=row.get("withheld", ()),
     )
     key = uuid4()
     reopen = placement.stage is Stage.IGNORED
@@ -380,10 +409,7 @@ def _decorate(stream, row, roles, prefix, columns):
     row["identity"] = [(row.get(column.key, ""), column) for column in columns]
     row["stage_label"] = placement.stage.label
     row["stage_look"] = STAGE_LOOK.get(placement.stage, "")
-    decision = placement.decision.label if placement.decision else ""
-    # The decision is shown beside the stage only when the stage's word
-    # does not already say it (Ready to update, Accepted (edited)).
-    row["decision_label"] = "" if decision == row["stage_label"] else decision
+    row["decision_label"] = decision_label(placement)
     row["edit_form"] = f"{prefix}-edit-{row['id']}"
     row["edit_dialog"] = f"{prefix}-edit-dialog-{row['id']}"
     row["edit_hint"] = f"{prefix}-edit-hint-{row['id']}"
@@ -530,13 +556,13 @@ def build(
     ``submitted_at`` and the last decision (``decided_by``, ``decided_at``,
     ``note``); ``items`` is the plural the bulk dialogs count ("changes")
     and ``caption`` the table's name; optionally ``leads`` (the reader
-    leads its Ministry),
-    ``by_hand`` (a By hand census change) and ``not_seen`` (the Not seen in
-    ParishSoft flag). ``roles`` is the reader's role set. ``stage`` is the
-    Stage filter's value and ``fields`` the stream's other filters, posted
-    by every form. ``templates``
-    takes the stream's ``filters_template``, ``editor_template``,
-    ``add_template`` and ``export_template``.
+    leads its Ministry), ``by_hand`` (a By hand census change),
+    ``not_seen`` (the Not seen in ParishSoft flag) and ``withheld``
+    (actions this item cannot take). ``roles`` is the reader's role set.
+    ``stage`` is the Stage filter's value and ``fields`` the stream's other
+    filters, posted by every form. ``templates`` takes the stream's
+    ``filters_template``, ``editor_template``, ``add_template`` and
+    ``export_template``.
     """
     stream = Stream(stream)
     columns = tuple(columns)

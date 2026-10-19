@@ -2847,10 +2847,12 @@ are `denied` before the note is read, then runs exactly as `census resolve`
 does (the same admission, command scope, campaign check, Live-change lookup
 and key handling) but calls the page's
 `census_review.review_census_change`. Every rule is therefore the page's, in
-Python and in its SQL guard: an Automatic change only, open only (`pending`,
-`conflict` or `failed`; never `queued` for publication nor final), a
-decision different from the current one, and no Approve of a Conflict; any
-of them is `invalid`. The service records `census_change_updated`, and the
+Python and in its SQL guard: a census change the worklist lists (since
+[#1683](https://github.com/epiphany40223/parishkit/issues/1683), By hand
+ones too), open only (`pending`, `conflict` or `failed`; never `queued` for
+publication nor final), a decision different from the current one, a note
+to send an ignored change back to review, and no Approve of a Conflict
+(`census resolve-conflict` decides one); any of them is `invalid`. The service records `census_change_updated`, and the
 command `admin_cmd_census_review` in the same transaction, only for a new
 key. A changed version or the racing second review is `stale_version`. It
 prints the review's ids, decision, version and time and the change's state,

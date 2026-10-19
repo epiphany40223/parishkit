@@ -2078,131 +2078,96 @@ its dates and capture times use the browser's zone, sent unasked
 
 ## Pending census changes
 
-**Access:** Admin and Staff; never Ministry leaders. Staff edits only
-manual-resolution state; Admin has the full review/publication controls.
+**Access:** Admin and Staff; never Ministry leaders. Staff and
+Administrators review every census change and record what was entered by
+hand; only an Administrator starts an update run
+([role-specific actions](../review-pipeline/spec.md#role-specific-actions)).
 
 The page is **Census changes** under Responses and reports
 ([#528](https://github.com/epiphany40223/parishkit/issues/528)): the
-worklist of every census change Families reported that someone must carry
-into ParishSoft, by hand or by
+census stream's [review worklist](../review-pipeline/spec.md#review-worklist)
+([#1683](https://github.com/epiphany40223/parishkit/issues/1683)), listing
+every census change Families reported, from review to the moment it reaches
+ParishSoft, by hand or by
 [publication](../data/spec.md#review-and-publication). It reads the existing
 [proposed-change rows](../data/spec.md#proposed-changes) (one per atomic
-Family request) and the handling registry there that classifies each field;
-it adds no state of its own. Testing responses are excluded, as in the other
-reports. Pledges, share methods and Ministry rosters are not census
+Family request) and the handling registry there that classifies each field,
+and derives each row's stage from its stored decision and execution
+([existing state to stage](../review-pipeline/spec.md#existing-state-to-stage));
+it stores no stage of its own. Testing responses are excluded, as in the
+other reports. Pledges, share methods and Ministry rosters are not census
 changes; the
 [data workflow](../data/spec.md#review-and-publication) says where they go.
+The page's shared parts (the Stage filter, the row icons and their selected
+state, the bulk bar, the dialogs and their notes) are the review worklist's;
+this section says only what is particular to census changes. Its words are
+the [pipeline vocabulary](../review-pipeline/spec.md#pipeline-vocabulary):
+*Approve* and *To do* are no longer used on the page.
 
 ### Census change rows
 
-Rows are grouped by Family, one row per change. The columns follow the
-Admin table [column order](../admin-portal/spec.md#table-column-order):
-Family (surname, then heads, as on the
+One row per change. The columns follow the shared
+[column order](../ui-conventions/spec.md#table-column-order): Family (the row
+header: surname, then heads, as on the
 [active parishioner family directory](#active-parishioner-family-directory);
-the search, sort and downloads use the same name), Family DUID (sortable),
-then:
+the search, sort and downloads use the same name, and a Family the data no
+longer has shows the
+[Not in ParishSoft](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
+badge), Family DUID, then:
 
 - **Who**: the Member, "New Member" with the proposed Member's name, or the
   Family for its household fields (home and mailing address, email opt-out).
-- **Member DUID**, in its own column beside Who and sortable: the Member's
-  ParishSoft DUID, "New Member" for a Member added on the form, and blank
-  for a household change. Rows without a DUID follow the Members on the
-  first click.
+- **Member DUID**, beside Who: the Member's ParishSoft DUID, "New Member"
+  for a Member added on the form, and blank for a household change. Rows
+  without a DUID follow the Members on the first click.
 - **What changed**: the field's plain label (Mobile phone, Home address,
-  Moved to another household, Deceased, New Member, and so on).
-- **Values**: one cell listing, each under its own small label,
-  **ParishSoft now**, on a Conflict **When the Family answered** (the value
-  the Family saw), **Family's answer**, and **Edited value** (only when an
-  Administrator edited the proposed value). ParishSoft now shows a muted
-  *(not read)* where no verified ParishSoft read exists for the field (today
-  every Family household field), so a Family address never shows a
-  ParishSoft value or a conflict, and is never mistaken for an empty
-  ParishSoft field. Values appear in full: Admin and Staff need them to type
-  into ParishSoft, and every view and download is audited. A blank value
-  that was read shows a muted *(blank)*, so it is never an empty line; this
-  includes When the Family answered where ParishSoft was empty then. The
-  downloads leave both cases as an empty cell. A blank Family's answer
-  means the Family removed the value: Staff remove it in ParishSoft, or
-  Ignore the row to keep it. A birth date the Family gave as Unknown shows
-  *Unknown*.
+  No longer in this household, Deceased, New Member, and so on).
 - **How it reaches ParishSoft**: *Automatic* for a field the
   [handling registry](../data/spec.md#proposed-changes) marks API-writable,
   *By hand* for every other row. A Family address, a death date, a gender,
   and any answer that removes a recorded value are *By hand*, because
   ParishSoft's API cannot carry them (see the
   [handling registry](../data/spec.md#proposed-changes) and the
-  [data workflow](../data/spec.md#review-and-publication)). A deceased
-  Member has two rows, *Deceased* and *Death date*: Staff enter them in
-  ParishSoft together and mark both entered.
-- **Status**, derived from the row's decision and execution as below.
-- **Submitted**, in browser-local time.
-- **Last recorded**: one cell listing, each under its own small label, **By**,
-  **At** and **Note** (the files' Recorded by, Recorded at and Note): the
-  latest *Entered in ParishSoft*, *Ignore* or *Reopen* on the row
-  ([manual census resolution](#manual-census-resolution)), or *Approve*,
-  *Ignore*, *Back to To review*, *Save value* or *Clear edit* on an Automatic row
-  ([automatic census review](#automatic-census-review)): the person's
-  sign-in address, the time in the parish's compact date format and
-  browser-local time, and the note they left. Blank until someone records
-  one.
-- **Actions**, last: the row's action icons
-  ([manual census resolution](#manual-census-resolution),
-  [automatic census review](#automatic-census-review)), only those the row
-  allows the reader, two to a line.
+  [data workflow](../data/spec.md#review-and-publication)). A deceased Member
+  has two rows, *Deceased* and *Death date*: Staff enter them in ParishSoft
+  together and mark both entered.
+- the worklist's shared columns: **Baseline** (ParishSoft's value when the
+  Family answered; blank where no verified ParishSoft read exists for the
+  field, today every Family household field), **Family's answer**,
+  **Reviewer's value** (an Edit's value), **ParishSoft now** (on Conflict
+  rows only), **Stage** (with the decision behind it, an earlier decision a
+  Conflict holds but that is not in force, and a failed update), **Submitted**
+  and **Last decision** (who, when and the note of the latest review or
+  mark), then the row's action icons. Values appear in full: Staff need them
+  to type into ParishSoft, and every view and download is audited. A blank
+  Family's answer means the Family removed the value: remove it in
+  ParishSoft, or Ignore the row to keep it. A birth date the Family gave as
+  Unknown shows *Unknown*.
 
-The two labelled cells keep the table readable
-([#1472](https://github.com/epiphany40223/parishkit/issues/1472)): with a
-column each for these six values, every column was squeezed into a strip of
-single letters. The table follows the shared
-[table fit](../ui-conventions/spec.md#table-fit-and-row-height) rules: no
-column narrower than its longest word, the labelled values at a readable
-minimum width, and, where the table is wider than the page (a phone, or a
-laptop beside the Admin menu with long values), it scrolls sideways inside
-its own box while the Actions column stays in view at its end. A stacked
-card layout on a phone was considered and not taken: it would drop the
-sortable headings and the table's reading order for screen readers, and
-staff enter census changes into ParishSoft at a desktop.
+Family, Family DUID, Who, Member DUID, What changed and How it reaches
+ParishSoft sort the table; Stage is chosen with the Stage filter.
 
-A terminal execution decides the status first, since it is the outcome
-whatever the decision says: *published* is **Published**,
-*resolved_upstream* is **Already in ParishSoft**, *resolved_external* is
-**Entered by hand**, and *superseded* or *cancelled* rows appear, as
-**Superseded** and **Cancelled**, only with *Include history*. Otherwise an *ignored* decision is **Ignored**. Otherwise
-the execution decides: *queued* is **Being published**, *conflict* is
-**Conflict** (ParishSoft changed since the Family answered, shown as the
-conflict detail below), and *failed* is **To do** (a failed publication).
-A *pending* row is **To review** when it is an *unreviewed* automatic
-change, waiting for an Administrator's decision, and **To do** otherwise
-(manual work not yet entered, or an approved automatic change not yet
-published).
-
-Conflict detail shows baseline, current upstream, Family submitted, and
-Admin-edited proposed values. It never resolves by silent last-write-wins.
+A *Conflict* means ParishSoft changed after the Family answered: ParishSoft
+now differs from the Baseline. It never resolves by silent last-write-wins:
+the reviewer decides again against ParishSoft's current value
+([below](#automatic-census-review)).
 
 ### Census change filters and downloads
 
-The default shows *To do* and *Conflict*, and, for an Administrator, *To
-review* as well. The page is laid out as a worklist
-([#1682](https://github.com/epiphany40223/parishkit/issues/1682)): the
-heading and help, then the filters, always open (a plain titled box, not a
-disclosure, still titled with how many filters are applied), then the table,
-then the download below the table, also always shown. There is no summary
-above the table; the counts by status are in the Status filter's choices
-instead, each choice followed by how many changes it lists, whatever the
-other filters (history only with *Include history*), for example "To do
-(12)", and *Work to do* and *Every status* count what they list. The
-choices are redrawn with every in-place answer, so the counts follow each
-recorded action, and a count reaching 0 keeps its choice, so nothing on the
-page moves ([no layout shift](../ui-conventions/spec.md#no-layout-shift)).
-These are this page's departures from the closed Filters panel and export
-disclosure of the shared
-[page layout](../ui-conventions/spec.md#page-help) rule (an Administrator
-decision, 2026-10-18). Filters are status (with *Include history*), how the change
-reaches ParishSoft (with *Hide automatic changes* for staff working by
-hand), kind of change (contact details, moved, deceased, new Member), a
-Family name or DUID search, and submitted date. Sorting, paging and filters
-act [in place](../ui-conventions/spec.md#in-place-controls). The filtered list
-downloads as CSV, XLSX or PDF, every format with the page's values
+The filters sit above the table, always open, as on every
+[worklist](../ui-conventions/spec.md#admin-tables): **Stage** first, with
+each stage's count (To review by default; Conflict, Ready to update,
+Updating, To enter by hand, Entered by hand, Updated in ParishSoft,
+Confirmed, Ignored, History for superseded and cancelled rows, and Every
+stage, which counts everything but History), then a Family name or DUID
+search, how the change reaches ParishSoft (Automatic and by hand, Automatic
+only, By hand only), kind of change (contact details, moved, deceased, new
+Member) and submitted date. The page has no summary: the counts are the
+Stage filter's. Sorting, paging and filters act
+[in place](../ui-conventions/spec.md#in-place-controls).
+
+The filtered list downloads, from the pane below the table, as CSV, XLSX or
+PDF, every format with the page's values
 ([downloaded files](../ui-conventions/spec.md#downloaded-files)), audited with
 a count like the other report downloads. The PDF is the shared table, its
 Submitted time in the parish's date format; CSV and XLSX give it in ISO 8601.
@@ -2212,215 +2177,188 @@ number of changes and the privacy line
 ([#926](https://github.com/epiphany40223/parishkit/issues/926)); like the
 PDF, it does not list the filters. `pk-admin export census` writes these
 same files through the same writer.
-The files have the page's columns in the page's order, each labelled value
-of Values and Last recorded in a column of its own: Family, ParishSoft
-status (the page's
+The files' columns are: Family, ParishSoft status (the page's
 [Not in ParishSoft](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
 badge in a column of its own, with Family blank, for a Family the data no
 longer has; blank otherwise), Family DUID, Who, Member DUID worded as on
-the page (the DUID, "New Member", or blank for a household change), What changed, ParishSoft now, Family's answer, Edited
-value, How it reaches ParishSoft, Status, Submitted, then Recorded by,
-Recorded at and Note
+the page (the DUID, "New Member", or blank for a household change), What
+changed, ParishSoft now, Family's answer, Reviewer's value, How it reaches
+ParishSoft, Stage (the page's stage word), Submitted, then Recorded by,
+Recorded at and Note, the latest review or mark
 ([#932](https://github.com/epiphany40223/parishkit/issues/932),
-[#528](https://github.com/epiphany40223/parishkit/issues/528)). Member DUID
-used to be the files' last column; a spreadsheet that reads the columns by
-position needs updating, as since #1216 does one that reads Family DUID or a
-later column by position. The page's Actions column has no file column.
-Fifteen columns share the PDF's one landscape table, so its Submitted and
-Recorded at times keep the date on one line and the time on the next.
+[#528](https://github.com/epiphany40223/parishkit/issues/528)). Until
+[#1683](https://github.com/epiphany40223/parishkit/issues/1683) the Stage and
+Reviewer's value columns were Status (with the words *To do*, *Published*
+and so on) and Edited value; a spreadsheet that reads them by heading needs
+updating. The page's Actions column has no file column. Fifteen columns
+share the PDF's one landscape table, so its Submitted and Recorded at times
+keep the date on one line and the time on the next. The downloads move to
+the shared export component with
+[#1687](https://github.com/epiphany40223/parishkit/issues/1687).
 
-The read-only page and its downloads are enough for staff to apply every
-change by hand if publication is not ready; that is why it comes first.
+The page and its downloads are enough for Staff to apply every change by hand
+if publication is not ready.
 
 ### Manual census resolution
 
-On *By hand* rows in *To do* or *Conflict*, Staff and Admin may mark
-**Entered in ParishSoft** (execution *resolved_external*) or **Ignore**
-(decision *ignored*), each with an optional note, acting
-[in place](../ui-conventions/spec.md#in-place-controls). A
-*Conflict* row shows its conflict detail beside the controls, so the person
-checks ParishSoft before ticking it. *Entered in ParishSoft* is final, as
-every resolved outcome is: a mistaken tick is corrected in ParishSoft, and a
-later Family answer creates new rows. An Administrator may reopen an
-*Ignored* row (decision back to *unreviewed*) with a note saying why, which
-is required. Who, when and the note are kept as history. Automatic rows are
-view-only for Staff; an Administrator reviews them as the
-[next section](#automatic-census-review) says, and publication follows the
-[data workflow](../data/spec.md#review-and-publication).
-
-The controls are icon buttons in the row's last column, on the shared
-[row-action pattern](../ui-conventions/spec.md#row-actions-and-confirmation)
-([#879](https://github.com/epiphany40223/parishkit/issues/879)): **Mark … entered in ParishSoft** (a check mark) and **Ignore …**
-(an eye struck through); on an *Ignored* row, for an Administrator,
-**Reopen …** (an arrow turning back). Each is named for its row by what
-changed and whose, with a matching tooltip, and opens the page's
-confirmation dialog naming the row, which holds the note: optional, and
-required for Reopen, whose Confirm waits for it. Entered in ParishSoft says
-it cannot be undone, and its Confirm is the destructive one; Ignore and
-Reopen record with an ordinary Confirm. The dialog posts the row's fields
-with the page's own filters and table choices to the page itself, so the
-answer is the same page, redrawn in place, with a notice naming the row by
-what changed and its DUIDs; that notice is what the page announces, and its
-two lines are kept while empty, so it never moves the table
-([no layout shift](../ui-conventions/spec.md#no-layout-shift)). Focus
-returns to the row's first action, or to the notice when the row has left
-the list. A row someone else changed first is left as it is, and the notice
-says so. While other campaign work holds the campaign (a restore review, or
-a cleanup, purge or go-live step), the page offers no row actions and says
-why; the list and its downloads still read.
+A By hand change is reviewed like any other
+([decision 2](../review-pipeline/spec.md#decisions)): **Accept** moves it
+from *To review* to *To enter by hand*, and **Entered by hand** (a check in
+a box) records that someone typed it into ParishSoft (execution
+*resolved_external*). On a *To review* By hand row, Entered by hand accepts
+and marks it in one step, so Staff working through a list are not slowed
+down. Before #1683 these rows were *To do* and went straight to Entered in
+ParishSoft or Ignore; the page's help says that they are now To review. A
+Conflict By hand row is accepted first, then entered. Entered by hand is
+final, as every resolved outcome is: a mistaken mark is corrected in
+ParishSoft, and a later different Family answer creates a new row (the same
+answer again keeps the entered change,
+[resubmission](../review-pipeline/spec.md#resubmission-while-the-setting-is-off)).
+Its dialog says it
+is final and to check ParishSoft first. Who, when and the note are kept as
+history.
 
 Before #528 the web role could change a proposal only after a later Family
-response, to *superseded*, *cancelled* or *resolved_upstream*, so the tick,
-Ignore and reopen ship with forward migration 0060, following the
+response, to *superseded*, *cancelled* or *resolved_upstream*, so marking
+shipped with forward migration 0060, following the
 [post-launch schema policy](../operations/spec.md#post-launch-schema-policy).
-Each tick, Ignore and reopen is one immutable resolution row (who, when, the
-note), which the database pairs with the proposal's result and a
-`census_change_updated` audit event naming only the versions. The web role
-may set *resolved_external* or change a proposal's decision only with such a
-row, and the row's own guard checks the actor (an Administrator for reopen),
-the campaign, the proposal's version and its starting state again.
+Each mark is one immutable resolution row (who, when, the note), which the
+database pairs with the proposal's result and a `census_change_updated`
+audit event naming only the versions. The web role may set
+*resolved_external* only with such a row, and the row's own guard checks the
+actor, the campaign, the proposal's version and its starting state again (a
+By hand change, pending or in conflict, not ignored). The page records
+Ignore and Back to review as reviews (below); the resolution row's
+*ignored* and *reopened* actions remain for `pk-admin census resolve`.
 
 Since Family addresses are not yet written by publication (see the
-[data workflow](../data/spec.md#review-and-publication)), an address entered
-in ParishSoft stays *To do* until it is ticked.
+[data workflow](../data/spec.md#review-and-publication)), an address
+entered in ParishSoft stays *To enter by hand* until it is marked.
 
 ### Automatic census review
 
-Publication writes only Automatic changes an Administrator approved (see the
-[data workflow](../data/spec.md#review-and-publication)). On an Automatic row
-an Administrator may record **Approve** (decision *approved*; the row becomes
-*To do* until it is published), **Ignore** (decision *ignored*, leaving
-ParishSoft as it is) or **Back to To review** (decision *unreviewed*), each
-with an optional note
-([#528](https://github.com/epiphany40223/parishkit/issues/528), ADM-09).
-Each is offered only while it would change the decision, and only while the
-change is open: *pending*, *conflict* or *failed*, never while it is
-*queued* for publication or once it has a final outcome. A *Conflict* row
-may be ignored or sent back, but not approved directly, since publication
-blocks an approved conflict until it is resolved (Use the Family's value
-anyway, below). A review can be changed again until
-publication of the change starts, and each one changes the proposal's
-version, so a publication plan that included it no longer matches. Staff
-see Automatic rows but never review them.
+Every census change is reviewed on the worklist by Staff or an Administrator
+([decision 1](../review-pipeline/spec.md#decisions)), with the row's icons
+or the bulk bar, each decision with an optional note, acting
+[in place](../ui-conventions/spec.md#in-place-controls):
 
-The controls are the row's icons, as for
-[manual resolution](#manual-census-resolution): **Approve …** (a check
-mark), **Ignore …** and **Send … back to To review** (an arrow turning
-back), only those the row allows. Each opens the page's decisions dialog,
-which names the row and holds an optional note; a review is reversible, so
-its Confirm is an ordinary one. The answer is the same page, redrawn in
-place, with the notice naming the row; a row someone else changed first is
-left as it is, and the notice says so. While other campaign work holds the
-campaign, no review is offered. On the command line,
-`pk-admin census review` records the same review through the same service
-([admin automation](../admin-automation/spec.md#reports-and-exports)).
+- **Accept** (a check mark): decision *approved*. An Automatic change
+  becomes *Ready to update*, waiting for an Administrator's update run
+  ([Publish to ParishSoft](#publish-to-parishsoft)); a By hand change
+  becomes *To enter by hand*. On a *Conflict*, Accept is decided against
+  ParishSoft's current value: it is today's "use the Family's value anyway"
+  ([#528](https://github.com/epiphany40223/parishkit/issues/528), ADM-09.03).
+  The review records ParishSoft's current value, and the ParishSoft
+  snapshot it came from, as the *accepted base*, and the change becomes
+  *pending*. Publication then merges against the accepted base instead of
+  the Family's baseline ([data workflow](../data/spec.md#review-and-publication)),
+  so it writes the Family's answer (or the reviewer's value) only while
+  ParishSoft still has the value the reviewer saw. The Family's baseline is
+  never changed. Accept on a Conflict whose ParishSoft value is unknown (a
+  change ParishSoft could not be read for) is not offered; it waits for a
+  refresh.
+- **Edit** (a pencil): Accept with a value, the reviewer's value that is
+  carried forward instead of the Family's answer, shown as *Accepted
+  (edited)* ([#528](https://github.com/epiphany40223/parishkit/issues/528),
+  ADM-09.04). The Family's answer is never changed and stays in its column
+  beside it. It is offered for every field a value can be typed for: a
+  Member's names, prefix, suffix, birth date, gender, marital status,
+  email, phones, language and death date, and a Family's home and mailing
+  address. Moved, deceased, the email opt-out and a New Member are Accept
+  or Ignore only. The editor starts with the value carried forward now (the
+  reviewer's value, else the Family's answer): a date field no later than
+  the campaign's today for a birth or death date, the census choices for
+  Gender and Marital status, an address's own parts (street, second line,
+  city, state or region, postal code, country) checked as the Family form
+  checks them, and otherwise text no longer than the field takes (for an
+  Automatic change, no longer than ParishSoft's request schema takes:
+  First name 30 characters, Email address 150, a phone 25). The value is
+  read as the Family form reads its own answer (a phone must be a whole
+  number, email addresses are checked and joined, a required name cannot
+  be blank), and an Automatic change's must fit ParishSoft's request schema
+  as publication will send it; Gender is held to its census choices only,
+  since its ParishSoft encoding is not settled yet. A value the server
+  refuses is answered with the reason at the field in the dialog, and the
+  field is marked in error until it is edited
+  ([field errors](../ui-conventions/spec.md#field-errors-and-live-checks));
+  nothing is recorded. A blank value is refused: Ignore leaves ParishSoft as
+  it is. A value equal to the Family's answer is a plain Accept, so
+  Reviewer's value never repeats it. On a Conflict, Edit accepts against
+  ParishSoft's current value as Accept does. Edit is per change only, never
+  part of bulk review.
+- **Ignore** (an eye struck through): decision *ignored*, leaving ParishSoft
+  as it is.
+- **Back to review** (an arrow turning back): decision *unreviewed*, on an
+  accepted change not yet in its update or entered, or on an ignored one.
+  Reopening an ignored change says why: the note is required. Back to review
+  on a change accepted over a Conflict puts it back to *Conflict*, and the
+  accepted base no longer counts, so no later Accept can publish over
+  ParishSoft's value without deciding the Conflict again. A reviewer's
+  value is kept (a later Accept keeps it too) until the next Edit.
 
-A *Conflict* means ParishSoft changed after the Family answered: *ParishSoft
-now* differs from what they saw. Besides Ignore (keep ParishSoft's value),
-the row offers **Use the Family's value anyway** (a check mark in a circle)
-([#528](https://github.com/epiphany40223/parishkit/issues/528), ADM-09.03),
-worded **Use the edited value anyway** while an Edit value is set. It
-approves the change over ParishSoft's current value: the review records that
-value, and the ParishSoft snapshot it came from, as the *accepted base*,
-and the change becomes *pending* (*To do*). Publication then merges against
-the accepted base instead of the Family's baseline
-([data workflow](../data/spec.md#review-and-publication)), so it writes the
-Family's answer (or the edited value) only while ParishSoft still has the
-value the Administrator saw. The Family's baseline is never changed. Its
-dialog's text, which describes the dialog, says this, and the dialog holds
-the optional note. It is offered only to an Administrator, on
-an Automatic *Conflict* whose ParishSoft value is known (a change ParishSoft
-could not be read for waits for a refresh), whatever its decision. Its
-Confirm is an ordinary one, since it can be undone: a later **Send … back to To review** or **Ignore**
-(one by one or in bulk) puts the change back to *Conflict*, and the accepted
-base no longer counts, so no later Approve, one by one or in bulk, can
-publish over ParishSoft's value until Use the Family's value anyway is
-chosen again. A later Edit value keeps the resolution. The answer is the
-page, refreshed in place, with the notice ("… approved over ParishSoft's
-current value."). If a refresh brings a new ParishSoft value first, the
+Each is offered only while the change's stage allows it
+([individual actions](../review-pipeline/spec.md#individual-actions)): never
+while it is *queued* for publication (Updating) or once it has a final
+outcome. Each review changes the proposal's version, so a publication plan
+that included it no longer matches and must be confirmed again with the
+review in view. If a refresh brings a new ParishSoft value first, the
 accepted base no longer counts either: an open change's approval goes back
 to *To review* and the change is compared with the Family's baseline again
 (a change already queued for publication keeps its approval, and its
 publication then meets a conflict). A Family's later same answer does not
-carry the accepted base, so its approval goes back to *To review* too. It is
-per change only, never part of bulk review. On the command line it is
-`pk-admin census resolve-conflict`, through the same service
-([admin automation](../admin-automation/spec.md#reports-and-exports)).
+carry the accepted base either
+([resubmission](../review-pipeline/spec.md#resubmission-while-the-setting-is-off)):
+the change comes back as a *Conflict* that shows the earlier Accepted as
+held, not in force, with the history line "Reopened: the Family answered
+again, so the earlier Accept over ParishSoft's changed value no longer
+counts".
 
-An Automatic row also has **Edit value** (a pencil)
-([#528](https://github.com/epiphany40223/parishkit/issues/528), ADM-09.04):
-the value publication writes instead of the Family's answer. The Family's
-answer is never changed and stays in its column, with the edit in *Edited
-value* beside it. The field starts with the value publication would write
-now (the edit, else the Family's answer): a date field no later than the
-campaign's today for a birth date, and otherwise text no longer than ParishSoft's request schema takes for the
-field (First name 30 characters, Email address 150, a phone 25). **Save
-value** is unavailable until the value differs from the one shown, with its
-reason in a reserved line ([prerequisite
-gates](../ui-conventions/spec.md#prerequisite-gates)); **Clear edit** (an
-eraser) is a row icon of its own, offered only while an edit is set. Edit
-value opens a dialog of its own holding the value, its help, the optional
-note and Save value; Clear edit opens the decisions' dialog with its note.
-Both record with an ordinary Confirm, being reversible, and the answer is
-the page, redrawn in place, with the notice naming the row. The value is read as the Family form reads its
-own answer (a phone must be a whole number, email addresses are checked and
-joined, a required name cannot be blank) and must fit ParishSoft's request
-schema as publication will send it. Save value is also
-unavailable, with its reason, while the browser can tell the value is not
-allowed (blank, too long, or a date after today). A value the server refuses
-is answered with the reason at the field in the dialog, and the field is
-marked in error, and Save value waits, until it is edited
-([field errors](../ui-conventions/spec.md#field-errors-and-live-checks));
-nothing is recorded. A blank value is refused: Ignore leaves ParishSoft as it
-is. A value equal to
-the Family's answer clears the edit, so Edited value never repeats it.
-Edit value is offered on the rows a review is (Automatic, open, an
-Administrator's, while no other campaign work holds the campaign), a
-Conflict included. It keeps the decision, so an approved change stays
-approved, whoever edits it; its new version means a publication plan that
-included the change must be confirmed again, with the edited value in view.
-It is per change only, never part of bulk review. On the command line it
-is `pk-admin census edit`, through the same service
-([admin automation](../admin-automation/spec.md#reports-and-exports)).
+**Bulk.** Accept, Ignore, Back to review and Entered by hand sit in the bulk
+bar ([bulk actions](../review-pipeline/spec.md#bulk-actions)). Every row
+with a bulk-eligible action has a box, By hand rows included, and a button
+is available only while every ticked row offers it. The dialog names the
+exact count ("Accept 3 changes?") and takes one optional note, recorded on
+each change (required when a ticked ignored change is sent back to review).
+The selection covers the rows on the page shown, at most 100. A page
+showing more rows offers no boxes and says to show fewer. Each change is
+recorded exactly as its own icon would record it (its own review or
+resolution row, version and audit event), all or none, in one work
+transaction with the chosen changes locked in primary-key order, each
+against the version its row showed. A change someone else updated first
+leaves every chosen change as it is, and the notice names it. Each change's
+request key is derived from one key per drawn page, so a repeated post
+records nothing more. Bulk review adds no audit action of its own.
 
-An Administrator may also give several Automatic changes one decision at
-once, with the shared selection column, bulk bar and confirmation dialog
-([row actions and confirmation](../ui-conventions/spec.md#row-actions-and-confirmation)):
-**Approve**, **Ignore** and **Back to To review** above the table. Only a
-row offering a review decision has a box, and the box lists the decisions
-its icons offer. A button is available only while every ticked row offers its
-decision. The dialog names the exact count ("Approve 3 changes?") and takes
-one optional note, recorded on each change. The selection covers the rows on
-the page shown, as every Admin table's does, and at most 250, the largest
-page. A page showing more rows (All) offers no boxes and says to show fewer.
-Each change is reviewed exactly as its own icon would review it (its own
-review row, version and audit event; queued and final changes refused), all
-or none, in one work transaction, each against the version its row showed.
-A change someone else updated first leaves every chosen change as it is,
-and the notice names it. The dialog posts with the page's filters and table
-choices, so the answer is the same page, redrawn in place, with a notice
-counting the changes ("3 changes approved."). Each change's request key is
-derived from one key per drawn page, so a repeated post records nothing
-more. Bulk review adds no schema and no audit action of its own.
+While other campaign work holds the campaign (a restore review, or a
+cleanup, purge or go-live step), the page offers no row or bulk actions and
+says why; the list and its downloads still read. On the command line,
+`pk-admin census review`, `census edit`, `census resolve-conflict` and
+`census resolve` record reviews and marks through the same services
+([admin automation](../admin-automation/spec.md#reports-and-exports)); they
+keep their earlier words until
+[#1688](https://github.com/epiphany40223/parishkit/issues/1688) renames them.
 
 Each review is one immutable review row (who, when, the note and the
 resulting decision and edit fields), added by forward migration 0096 under
 the [post-launch schema policy](../operations/spec.md#post-launch-schema-policy).
 The database pairs it with the proposal's result at the next version and a
 `census_change_updated` audit event naming only the versions. The web role
-may change an Automatic proposal's decision only with such a row, and the
-row's own guard checks again that the actor is a current Administrator, the
-campaign admits changes, the version is current, the change is Automatic and
-open, and the decision changes. The row records the whole resulting review
-state. Forward migration 0107 widens that guard for Edit value: a review
-row is exactly one of a decision (the edit fields stay) and an edit (the
-decision stays). It also adds an edit guard on the proposal: the web role
-may change the edit fields only as a review row at the current version
-records them, whatever else it updates. An edit's value must have its field's shape (a
-phone record for a phone, text otherwise, at most 1,024 bytes), must not be
-blank and must differ from the Family's answer, as the census compares
-values; clearing needs an edit to be set. The value's full rules stay in the
-service.
+may change a proposal's decision only with such a row, and the row's own
+guard checks again that the actor may review, the campaign admits changes,
+the version is current, the change is open, and the decision or the edit
+changes. Migrations 0107 and 0108 added the edit and the accepted base.
+Forward migration 0131 (provisional number,
+[#1683](https://github.com/epiphany40223/parishkit/issues/1683)) widens the
+guard for the pipeline: a current Staff member or Administrator; any census
+change the worklist lists, By hand ones included; a decision and an edit
+together when the decision is Accept (Edit is Accept with a value), also
+with an accepted base on a Conflict; and a required note to send an ignored
+change back to review. An edit's value must have its field's shape (a phone
+record for a phone, an address of its six parts with a street line for an
+address, text otherwise, at most 1,024 bytes), must not be blank and must
+differ from the Family's answer, as the census compares values; moved,
+deceased, the email opt-out and a New Member take no edit. Clearing needs an
+edit to be set. The value's full rules stay in the service.
 
 ### Publish to ParishSoft
 
@@ -2460,8 +2398,7 @@ setting is off:
 - Census changes shows **Publish to ParishSoft** unavailable, with its
   reason in a reserved line beside it ([prerequisite
   gates](../ui-conventions/spec.md#prerequisite-gates)): "Publishing to
-  ParishSoft is switched off. Enter Automatic changes by hand from this
-  list."
+  ParishSoft is switched off. Type Ready to update changes in by hand."
 - The page itself, opened by its address, says the same in its page help and
   offers no button. Nothing is queued, read or written, and every post to
   it is refused (`publication_off`).

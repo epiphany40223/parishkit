@@ -754,8 +754,11 @@ CLOSURE_ALTERED = {
 # entry comes after 0094's: 0094's file, run again for the limitations
 # report, puts that selection back without the counts first.
 # 0101 (#528) replaces the task-type maps 0077's file brings back.
-# 0107 (#528, ADM-09.04) replaces the review guard 0096's file brings back
-# with the one that also admits an edited value.
+# 0107 (#528, ADM-09.04) replaced the review guard 0096's file brings back
+# with the one that also admits an edited value, and 0108's file (run by
+# ``CLOSURE_ALTERED``) with the accepted base; 0131 (#1683) replaces it last,
+# for the review pipeline, and creates nothing, so its file runs again
+# whenever the guard lacks its phrase.
 # 0110 (#558) replaces the baseline financial selection that 0094's file,
 # run again above for the limitations report, puts back without the
 # browser-zone days, so its entry comes after 0094's.
@@ -804,8 +807,8 @@ CLOSURE_REPLACED = {
         (("stewardship_responses", "0007_publication_tasks"), "census_publication"),
     ),
     "public.stewardship_proposal_review_guard_v1()": (
-        ("stewardship_responses", "0008_proposal_review_edit"),
-        "OR decided=edited",
+        ("stewardship_responses", "0013_census_pipeline_review"),
+        "OR (decided AND edited AND NEW.decision<>'approved')",
     ),
     "public.stewardship_response_derived_guard_v1()": (
         ("stewardship_responses", "0010_upstream_at_check"),
