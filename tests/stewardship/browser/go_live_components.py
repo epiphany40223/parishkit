@@ -7,7 +7,12 @@ from uuid import UUID
 from django.template.loader import render_to_string
 from django.urls import reverse
 
-from parishkit.stewardship.accounts import go_live_check, go_live_confirm_views, stages
+from parishkit.stewardship.accounts import (
+    confirmation_views,
+    go_live_check,
+    go_live_confirm_views,
+    stages,
+)
 from parishkit.stewardship.accounts.go_live_check import Progress
 from parishkit.stewardship.accounts.go_live_confirm import Confirm
 from parishkit.stewardship.accounts.go_live_prepare import STAGES, Prepare
@@ -23,9 +28,18 @@ PRODUCTION = reverse("admin:production_progress")
 # Go live's Confirm Production step (#1585 slice 4), where Prepare's
 # Continue leads once the links are ready and where its dialog posts.
 CONFIRM = reverse("admin:go_live_confirm")
-# Where the fixture server's redirect after Retry failed mail preparation
+# Where the fixture server's redirect after Production activation's Retry
 # lands: a stand-in for the page once the retry has run, at the same path.
 PRODUCTION_RETRIED = PRODUCTION + "?retried=1"
+# Production activation's Cancel go-live dialog answers (#1585 slice 5).
+CANCEL_INVENTORY = {
+    "occurrences": 1234,
+    "cancellable": 1200,
+    "messages": 1200,
+    "failed": 34,
+    "delivered": 0,
+    "blocking": 0,
+}
 
 # Rows as content_views.resave_recommended builds them; the long subject
 # checks wrapping at phone width.
@@ -94,103 +108,117 @@ def components(context, admin):
         "inventory": [("submissions", 1234)],
         "origin_verified": True,
     }
-    production = {
-        "campaign": campaign,
-        "receipt": Value(created_at=context["server_now"]),
-        "demand": Value(
-            phase="families",
-            groups_completed=1234,
-            items_completed=5678,
-            failure_code="recovery_required",
-        ),
-        "task": Value(state="failed", updated_at=context["server_now"]),
-        "complete": False,
-        "control": "synthetic-retry",
-        "outcomes": [
-            {
-                "label": "Family message candidates",
-                "preview": 5000,
-                "actual": 4800,
-                "difference": -200,
-            }
-        ],
-    }
-    # A later version of Production activation, for its Refresh to bring in
-    # place: the mail prepared once go-live can no longer be cancelled.
-    finished = Value(state="succeeded", updated_at=context["server_now"])
-    produced = production | {
-        "demand": Value(
-            phase="done", groups_completed=2000, items_completed=9000, failure_code=""
-        ),
-        "task": finished,
-        "complete": True,
-        "control": None,
-        "withdrawal_available": False,
-    }
-    pages = {
-        path: (
-            "text/html",
-            render_to_string(template, context | {"admin_chrome": admin} | values),
-        )
-        for path, template, values in (
-            (
-                PRODUCTION,
-                "stewardship/production-progress.html",
-                production | {"withdrawal_available": True},
-            ),
-            (
-                "/production-progress-fresh",
-                "stewardship/production-progress.html",
-                produced,
-            ),
-            (
-                PRODUCTION_RETRIED,
-                "stewardship/production-progress.html",
-                produced,
-            ),
-            (
-                "/production-progress",
-                "stewardship/production-progress.html",
-                production,
-            ),
-            (
-                "/production-scheduled",
-                "stewardship/production-progress.html",
-                production
-                | {
-                    "campaign": Value(**(vars(campaign) | {"state": "scheduled"})),
-                    "demand": None,
-                    "withdrawal_available": True,
-                },
-            ),
-            (
-                "/production-withdrawal",
-                "stewardship/production-withdrawal.html",
-                {
-                    "campaign": campaign,
-                    "available": True,
-                    "preview": {
-                        "reason": "Correct the schedule",
-                        "inventory": {
-                            "occurrences": 1234,
-                            "cancellable": 1200,
-                            "messages": 1200,
-                            "failed": 34,
-                            "delivered": 0,
-                            "blocking": 0,
-                        },
-                    },
-                    "withdrawal_token": "synthetic-withdrawal",
-                },
-            ),
-        )
-    }
+    pages = production_pages(context, admin, campaign)
     return (
         pages
         | check_pages(context, admin, ready)
         | prepare_pages(context, admin)
         | confirm_pages(context, admin)
     )
+
+
+def production_shown(context, campaign, state, **values):
+    """``confirmation_progress.progress``'s read for a page ``state``.
+
+    ``preparing``, ``retrying``, ``failed`` and ``prepared`` are a direct
+    activation's initial mail preparation; ``scheduled``, ``started`` and
+    ``closed`` have none. ``values`` replace the read's own.
+    """
+    now = context["server_now"]
+    direct = state in {"preparing", "retrying", "failed", "prepared"}
+    task = {"failed": "failed", "prepared": "succeeded"}.get(state, "running")
+    shown = {
+        "campaign": Value(
+            **(
+                vars(campaign)
+                | {
+                    "state": "active" if direct or state == "started" else state,
+                    "delivery_paused": False,
+                }
+            )
+        ),
+        "receipt": Value(created_at=now),
+        "demand": Value(
+            phase="families" if state != "prepared" else "done",
+            groups_completed=1234,
+            items_completed=5678 if state != "prepared" else 9000,
+            failure_code="recovery_required" if state in {"retrying", "failed"} else "",
+        )
+        if direct
+        else None,
+        "task": Value(state=task, updated_at=now) if direct else None,
+        "complete": state == "prepared",
+        "control": "synthetic-retry" if state == "failed" else None,
+        "outcomes": [
+            {
+                "label": "Family message candidates",
+                "preview": 5000,
+                "actual": 4800 if state != "prepared" else 5000,
+                "difference": -200 if state != "prepared" else 0,
+                "complete": state == "prepared",
+            }
+        ]
+        if direct
+        else [],
+        "withdrawal_available": state == "scheduled",
+    }
+    return shown | values
+
+
+def production_pages(context, admin, campaign):
+    """Production activation in its states (#1585 slice 5), by path.
+
+    Each page's context is the view's own (``confirmation_views._context``).
+    PRODUCTION, the real address its forms post to, is a failed preparation
+    with Retry; the scheduled pages offer (or not) Cancel go-live, whose
+    dialog's answers follow.
+    """
+    paused = production_shown(context, campaign, "scheduled")
+    paused["campaign"].delivery_paused = True
+    states = (
+        (PRODUCTION, production_shown(context, campaign, "failed")),
+        (PRODUCTION_RETRIED, production_shown(context, campaign, "prepared")),
+        ("/production-preparing", production_shown(context, campaign, "preparing")),
+        # The longest step bar: all four Go live steps, Activation current.
+        ("/go-live-steps", production_shown(context, campaign, "preparing")),
+        ("/production-retrying", production_shown(context, campaign, "retrying")),
+        ("/production-prepared", production_shown(context, campaign, "prepared")),
+        ("/production-scheduled", production_shown(context, campaign, "scheduled")),
+        ("/production-scheduled-paused", paused | {"withdrawal_available": False}),
+        ("/production-started", production_shown(context, campaign, "started")),
+        ("/production-closed", production_shown(context, campaign, "closed")),
+    )
+    pages = {
+        path: (
+            "text/html",
+            render_to_string(
+                "stewardship/production-progress.html",
+                context | {"admin_chrome": admin} | confirmation_views._context(shown),
+            ),
+        )
+        for path, shown in states
+    }
+    for path, values in (
+        (
+            "/production-cancel-review",
+            {"review": "synthetic-cancel", "inventory": CANCEL_INVENTORY},
+        ),
+        (
+            "/production-cancel-review-blocking",
+            {"refused": "blocking", "inventory": CANCEL_INVENTORY | {"blocking": 2}},
+        ),
+        ("/production-cancel-review-no-reason", {"refused": "no_reason"}),
+        ("/production-cancel-review-started", {"refused": "started"}),
+        ("/production-cancel-review-changed", {"refused": "changed"}),
+    ):
+        pages[path] = (
+            "text/html",
+            render_to_string(
+                "stewardship/production-cancel-review.html",
+                values | {"check_url": GO_LIVE, "reason_max": 2000},
+            ),
+        )
+    return pages
 
 
 def check(context, state, stage=None, **values):
@@ -395,6 +423,14 @@ def actions():
             "review": (200, None, "/go-live-confirm-review"),
             "confirm": (303, PRODUCTION, ""),
         },
+        # Production activation (#1585 slice 5): Retry redirects back to it
+        # (a stand-in once the retry has run); Cancel go-live's Review answers
+        # its dialog, and its Apply with a reason opens Check.
+        PRODUCTION: {
+            "retry": (303, PRODUCTION_RETRIED, ""),
+            "review_cancel": (200, None, "/production-cancel-review"),
+            "cancel": (303, GO_LIVE, ""),
+        },
     }
 
 
@@ -413,15 +449,11 @@ def action_answer(path, body, responses):
     # As the view: Apply needs the typed word, spaces around it ignored.
     if path == CONFIRM and action == "confirm" and typed.strip() != "Production":
         status, location, page = 400, None, "/go-live-confirm-review-typed"
+    # As the view: Cancel go-live's Apply needs a reason of more than spaces.
+    reason = fields.get("reason", [""])[0]
+    if path == PRODUCTION and action == "cancel" and not reason.strip():
+        status, location, page = 400, None, "/production-cancel-review-no-reason"
     return status, location, responses[page][1] if page else ""
-
-
-def posts():
-    """The fixture server's answer to Retry failed mail preparation (#519 PR
-    7c-3): the view's Post/Redirect/Get redirect back to Production activation,
-    which a route cannot fulfil on every engine, landing on a stand-in for the
-    page once the retry has run."""
-    return {PRODUCTION: (303, PRODUCTION_RETRIED, "")}
 
 
 def prepare_stage(state, reason=None, index=0, current="active", **values):

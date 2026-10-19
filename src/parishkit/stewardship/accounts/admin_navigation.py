@@ -183,14 +183,10 @@ PAGES = {
     # and its trail is the group, then Go live, never one crumb per step.
     "go_live_prepare": Page("campaign", _("Go live"), step_of="go_live"),
     "go_live_confirm": Page("campaign", _("Go live"), step_of="go_live"),
-    # A menu entry of its own, available once Production is confirmed.
+    # A menu entry of its own, available once Production is confirmed: the
+    # Go live page's Activation step, whose Cancel go-live (formerly Withdraw
+    # from Production) is a review dialog there (#1585 slice 5).
     "production_progress": Page("campaign", _("Production activation")),
-    # Cancel go-live (formerly Withdraw from Production) is offered only on
-    # Production activation, so its trail runs through that page. The name
-    # avoids a clash with the after-archive Return to Testing (decision 9).
-    "production_withdrawal": Page(
-        "campaign", _("Cancel go-live"), "production_progress"
-    ),
     # Mail and Family portal
     "delivery_control": Page("mail", _("Pause and resume mail")),
     # Watching a launch or reminder send (#413): a sidebar entry of its own,
@@ -810,15 +806,6 @@ FLOWS = {
         ("choose", _("Choose Families")),
         ("review", _("Review")),
         ("send", _("Send and follow")),
-    ),
-    # Going live: the Go live page's four steps (go_live_check.STEPS), shown
-    # by Production activation until #1585 slice 5 gives it the Go live
-    # step bar.
-    "go_live": (
-        ("check", _("Check")),
-        ("prepare", _("Prepare")),
-        ("confirm", _("Confirm Production")),
-        ("activate", _("Activation")),
     ),
     # A report export: request it from a report, wait for it, download it.
     "export": (

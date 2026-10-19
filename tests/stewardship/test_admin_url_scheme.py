@@ -239,9 +239,6 @@ SLASHLESS_EXPECTED = {
     "/admin/campaign/go-live/preparing": "/admin/campaign/go-live/preparing/",
     "/admin/campaign/go-live/confirmation": "/admin/campaign/go-live/confirmation/",
     "/admin/campaign/production": "/admin/campaign/production/",
-    "/admin/campaign/production/cancellation": (
-        "/admin/campaign/production/cancellation/"
-    ),
     "/admin/mail/controls": "/admin/mail/controls/",
     "/admin/mail/family-progress": "/admin/mail/family-progress/",
     "/admin/mail/family-history": "/admin/mail/family-history/",
@@ -468,7 +465,8 @@ def test_the_go_live_chain_names_no_campaign():
 
     No step names a request or a preparation either (#1585 slices 3 and
     4): the retired Testing cleanup, Prepare Family links and old Confirm
-    Production addresses are gone, with no redirect.
+    Production addresses are gone, with no redirect, as is the Cancel
+    go-live page (slice 5), now a dialog on Production activation.
     """
     assert reverse("admin:go_live") == "/admin/campaign/go-live/"
     assert reverse("admin:go_live_prepare") == "/admin/campaign/go-live/preparing/"
@@ -478,17 +476,20 @@ def test_the_go_live_chain_names_no_campaign():
             reverse(f"admin:{retired}", args=[TASK])
     with pytest.raises(NoReverseMatch):
         reverse("admin:production_confirmation", args=[TASK, TASK])
+    with pytest.raises(NoReverseMatch):
+        reverse("admin:production_withdrawal")
     for path in (
         f"/admin/campaign/go-live/cleanup/{TASK}/",
         f"/admin/campaign/go-live/cleanup/{TASK}/links/",
         f"/admin/campaign/go-live/cleanup/{TASK}",
         f"/admin/campaign/go-live/cleanup/{TASK}/links/{TASK}/confirmation/",
         f"/admin/campaign/go-live/cleanup/{TASK}/links/{TASK}/confirmation",
+        "/admin/campaign/production/cancellation/",
+        "/admin/campaign/production/cancellation",
     ):
         with pytest.raises(Resolver404):
             resolve(path)
-    withdrawal = reverse("admin:production_withdrawal")
-    assert withdrawal.startswith(reverse("admin:production_progress"))
+    assert reverse("admin:production_progress") == "/admin/campaign/production/"
 
 
 @pytest.mark.parametrize(

@@ -63,7 +63,13 @@ def _inventory(campaign_id):
 
 
 def page(request, service, campaign_id):
-    """Passive history/status cannot create a command or extend session activity."""
+    """Whether Cancel go-live is available now, and the withdrawal if one exists.
+
+    Passive: it creates no command and does not extend session activity.
+    It still finds the latest confirmation once a withdrawal has made the
+    campaign a Testing draft again, so Production activation's Cancel
+    go-live dialog can say who cancelled it.
+    """
     with work_transaction():
         _, runtime, confirmation = _current(request, service, campaign_id, passive=True)
         campaign = confirmation.request.campaign
@@ -76,8 +82,31 @@ def page(request, service, campaign_id):
         }
 
 
-def preview(request, service, campaign_id, *, reason, acknowledged):
-    """Bind one reason, irreversible-cleanup acknowledgement and current work set."""
+def review(request, service, campaign_id):
+    """What Production activation's Cancel go-live dialog shows: its counts.
+
+    Returns ``(actor, confirmation, inventory)`` for the current campaign's
+    latest confirmation, read under the common work lock: the same
+    count-only projection ``preview`` binds. Raises ``StaleRecordError``
+    when Cancel go-live is not available now (the campaign started, live
+    delivery is paused, or it was already cancelled). It records nothing.
+    """
+    with work_transaction():
+        actor, runtime, confirmation = _current(request, service, campaign_id)
+        if not available(confirmation.request.campaign, runtime, _now()):
+            raise StaleRecordError(
+                "Withdrawal is available only before the campaign starts."
+            )
+        return actor, confirmation, _inventory(campaign_id)
+
+
+def preview(request, service, campaign_id, *, reason, acknowledged, key=None):
+    """Bind one reason, irreversible-cleanup acknowledgement and current work set.
+
+    ``key`` is the request key to bind (a fresh one when None): Production
+    activation's Cancel go-live dialog passes its Review's, so a resend of
+    its Apply finds the cancellation it already made.
+    """
     if type(reason) is not str or not reason.strip() or len(reason) > 2000:
         raise ValueError("Enter a withdrawal reason of at most 2,000 characters.")
     if acknowledged is not True:
@@ -94,7 +123,7 @@ def preview(request, service, campaign_id, *, reason, acknowledged):
             "actor": str(actor.identity),
             "campaign": str(campaign_id),
             "confirmation": str(confirmation.pk),
-            "key": str(uuid4()),
+            "key": str(key or uuid4()),
             "campaign_version": campaign.version,
             "runtime_version": runtime.version,
             "observed": now.isoformat(),
