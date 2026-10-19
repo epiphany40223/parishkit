@@ -28,7 +28,8 @@
 --   stewardship_ministry_request_guard_v1        admits a parish-added
 --       insert (a current Staff member or Administrator, the Family's
 --       latest live response, a Member it lists, a campaign Ministry, no
---       current request carrying that Member and Ministry forward); lets a closed
+--       current request of that Member holding that Ministry, as its own or
+--       its Edit's); lets a closed
 --       request's projection go back to In progress, or an added one to
 --       cancelled, only through Staff follow-up's paired revision; pairs the
 --       Edit's Ministry too; the Family replacement branch still needs an
@@ -41,7 +42,8 @@
 --       withdraw (never on a refresh-resolved or ticked request, a note to
 --       reopen an ignored one); Edit (another campaign Ministry the actor
 --       may also follow up, which no other current request of the Member
---       carries forward); a decision note of at most 2,000 characters.
+--       holds, as its own or its Edit's); a decision note of at most 2,000
+--       characters.
 --   stewardship_ministry_revision_effect_v1      the projection check
 --       includes the Edit's Ministry.
 --   stewardship_ministry_followup_v1             a request is in scope by
@@ -142,8 +144,10 @@ BEGIN
                WHERE history.family_id=response.family_id AND history.campaign_id=response.campaign_id
                  AND history.mode='live' AND current_request.entity_kind=NEW.entity_kind
                  AND current_request.entity_key=NEW.entity_key
-                 AND coalesce(current_request.reviewed_ministry_duid,
-                     current_request.ministry_duid)=NEW.ministry_duid
+                 -- A request holds its Family's Ministry and its Edit's:
+                 -- Back to review can return it to the first.
+                 AND NEW.ministry_duid IN (current_request.ministry_duid,
+                     current_request.reviewed_ministry_duid)
                  AND current_request.state NOT IN ('cancelled','superseded'))
            OR NEW.version<>1 OR NEW.state<>'new' OR NEW.assignee_id IS NOT NULL
            OR NEW.superseded_by_id IS NOT NULL OR NEW.outcome IS NOT NULL
@@ -395,8 +399,8 @@ BEGIN
                  AND history.campaign_id=own.campaign_id AND history.mode='live'
                  AND other.entity_kind=target.entity_kind
                  AND other.entity_key=target.entity_key
-                 AND coalesce(other.reviewed_ministry_duid,other.ministry_duid)
-                     =NEW.reviewed_ministry_duid
+                 AND NEW.reviewed_ministry_duid IN (other.ministry_duid,
+                     other.reviewed_ministry_duid)
                  AND other.state NOT IN ('cancelled','superseded'))))
     THEN RAISE EXCEPTION 'Ministry follow-up change is not valid for this request'
         USING ERRCODE='23514'; END IF;

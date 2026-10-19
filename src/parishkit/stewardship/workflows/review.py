@@ -63,11 +63,25 @@ from .followup import (
     bulk_key_for,
     write_revision,
 )
-from .models import ACCEPTED_OUTCOMES, MinistryRequest, MinistryRosterEntry
+from .models import (
+    ACCEPTED_OUTCOMES,
+    MinistryRequest,
+    MinistryRosterEntry,
+    MinistryWorkflowRevision,
+)
 
 # What Accept records for each kind of request, and what Ignore records.
 ACCEPT_OUTCOME = {"join": "joined", "leave": "leave_confirmed"}
 IGNORE_OUTCOME = "declined"
+# What a replayed decision must ask the same (its revision's own fields);
+# notes and contacts recorded since may differ.
+REPLAYED = (
+    "expected_version",
+    "state",
+    "outcome",
+    "reviewed_ministry_duid",
+    "decision_note",
+)
 MAX_NOTE = 2000
 
 
@@ -198,7 +212,26 @@ class MinistryDecisions:
         with correlation(bound_correlation()), work_transaction():
             principal = current_principal(self.store, actor)
             roles = reader_roles(principal)
-            targets = _targets(self.store, actor, versions)
+            try:
+                targets = _targets(self.store, actor, versions)
+            except PermissionError:
+                # A replay, or a post outdated by someone else's decision,
+                # can find the reader no longer leads the request's current
+                # Ministry (a Back to review returns an edited request to
+                # the Family's): that is a change since the page, not a
+                # denial. Only for a reader who could have seen each request
+                # (one of its Ministries, an Edit's included), so a request
+                # never in their scope still reads as unknown.
+                found = list(MinistryRequest.objects.filter(pk__in=versions))
+                if len(found) != len(versions) or not all(
+                    _ever_led(principal, row) for row in found
+                ):
+                    raise
+                if self._replayed(actor, decision, versions):
+                    return self._notice(decision, list(versions))
+                if any(versions[row.pk] != row.version for row in found):
+                    raise StaleRecordError("A Ministry request changed.") from None
+                raise
             if any(t.submission.campaign_id != self.campaign_id for t in targets):
                 raise PermissionError("A Ministry request is unavailable.")
             system = _system()
@@ -236,6 +269,20 @@ class MinistryDecisions:
                 )
         return self._notice(decision, targets)
 
+    def _replayed(self, actor, decision, versions):
+        """Whether this actor already recorded every request of ``decision``."""
+        keys = [
+            bulk_key_for(decision.key, request) if decision.bulk else decision.key
+            for request in versions
+        ]
+        written = (
+            MinistryRosterEntry
+            if decision.action is Action.ENTERED_BY_HAND
+            else MinistryWorkflowRevision
+        )
+        found = written.objects.filter(actor_id=actor, request_key__in=keys)
+        return found.count() == len(versions)
+
     def _one(self, principal, roles, target, version, key, decision, notes, system):
         """Record ``decision`` on one locked request; 1 if written, 0 on replay.
 
@@ -261,8 +308,10 @@ class MinistryDecisions:
             # A replay: the revision this key wrote, compared with what the
             # post asks, before any rule about the request as it is now
             # (which that revision itself changed).
+            # Notes and contacts recorded since may differ; the decision
+            # itself must not.
             intent = self._intent(previous.request, version, decision, notes)
-            if any(getattr(previous, name) != value for name, value in intent.items()):
+            if any(getattr(previous, name) != intent[name] for name in REPLAYED):
                 raise ValueError("This request key is already bound.")
             return 0
         if target.version != version or action not in offered:
@@ -356,10 +405,13 @@ class MinistryDecisions:
         return 1
 
     def _notice(self, decision, targets):
-        """What the page announces: the request's name, or how many."""
+        """What the page announces: the request's name, or how many.
+
+        ``targets`` are the requests, or their ids for a replay.
+        """
         done = WORDS[decision.action].done
         if len(targets) == 1:
-            name = self.namer(targets[0].pk) or "The request"
+            name = self.namer(getattr(targets[0], "pk", targets[0])) or "The request"
             return f"{name} {done}"
         return f"{len(targets)} requests {done}"
 
@@ -393,6 +445,9 @@ class MinistryDecisions:
                 .first()
             )
             if previous is not None:
+                same = (previous.entity_key, previous.ministry_duid, previous.action)
+                if same != (member, ministry, kind):
+                    raise ValueError("This request key is already bound.")
                 return f"{self.namer(previous.pk) or 'The request'} was already added."
             response = _latest_response(self.campaign_id, member)
             _still_listed(response, member)
@@ -455,13 +510,24 @@ class MinistryDecisions:
         return f"{self.namer(request.pk) or 'The request'} added."
 
 
+def _ever_led(principal, request):
+    """Whether the reader leads the request's Ministry or any Edit's it had."""
+    ministries = {request.ministry_duid} | set(
+        request.revisions.exclude(reviewed_ministry_duid=None).values_list(
+            "reviewed_ministry_duid", flat=True
+        )
+    )
+    return any(leads(principal, ministry) for ministry in ministries)
+
+
 def _current_request(target, ministry, exclude=None):
     """Whether the Member already has a current request for ``ministry``.
 
-    Current means not cancelled or replaced; its Ministry is the one it
-    carries forward (an Edit's, else the Family's), so an Edit or an Add
-    never leaves two requests about one Member and Ministry (#1684). The
-    migration's guards check the same.
+    Current means not cancelled or replaced. A request counts for both the
+    Family's Ministry and its Edit's (Back to review returns it to the
+    first), so an Edit, an Add or a Back to review never leaves two
+    requests about one Member and Ministry (#1684). The migration's guards
+    check the same.
     """
     found = MinistryRequest.objects.filter(
         submission__family_id=target.submission.family_id,
@@ -472,9 +538,10 @@ def _current_request(target, ministry, exclude=None):
     ).exclude(state__in=("cancelled", "superseded"))
     if exclude is not None:
         found = found.exclude(pk=exclude)
+    # A request holds both the Family's Ministry and its Edit's, since Back
+    # to review can return it to the first.
     return found.filter(
-        Q(reviewed_ministry_duid=ministry)
-        | Q(reviewed_ministry_duid__isnull=True, ministry_duid=ministry)
+        Q(reviewed_ministry_duid=ministry) | Q(ministry_duid=ministry)
     ).exists()
 
 

@@ -1829,7 +1829,11 @@ into another Ministry is in the scope of both Ministries' leaders
 ([follow-up workflows](../admin-portal/spec.md#follow-up-workflows)). By
 Ministry and the packet's choices read the Ministry report selection with
 its own cross-check, so a reader needs both scopes, which the same roles
-hold; they still count and list each request under the Family's Ministry.
+hold; they still count and list each request under the Family's Ministry,
+while the worklist's Ministry filter also finds an edited request under its
+Edit's Ministry, so after an Edit a count link can show one request more
+or less than its count ([#1718](https://github.com/epiphany40223/parishkit/issues/1718)
+tracks counting by the Edit).
 The page's view audit is
 the queue's `ministry_followup_viewed`; it no longer records
 `ministry_report_viewed`, which the host `report ministry` command still

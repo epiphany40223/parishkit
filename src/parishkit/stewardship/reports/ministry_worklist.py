@@ -353,6 +353,16 @@ def _request_words(row):
     return "Leave"
 
 
+def reviewer_value(row):
+    """The Ministry a request carries forward in place of the Family's
+    answer: an Edit's, or one the parish added (#1684); else blank. The
+    page and Export these requests share it."""
+    kind = "Join" if row["action"] == "join" else "Leave"
+    if row.get("reviewed_ministry_name"):
+        return f"{kind} {row['reviewed_ministry_name']}"
+    return f"{kind} {row['ministry_name']}" if row.get("parish_added") else ""
+
+
 def _member_cell(row, token):
     """The Member cell: the request page's link, with the ParishSoft badge.
 
@@ -478,8 +488,6 @@ def decorate(rows, result, principal, *, token, every, decisions=None, asked=Non
         current = row.get("reviewed_ministry_duid") or row["ministry_duid"]
         reader_leads = leads(principal, current)
         decided_by, decided_at, note = decisions.get(key, ("", None, ""))
-        reviewed = row.get("reviewed_ministry_name")
-        kind = "Join" if row["action"] == "join" else "Leave"
         decorated.append(
             {
                 "id": key,
@@ -499,11 +507,7 @@ def decorate(rows, result, principal, *, token, every, decisions=None, asked=Non
                 else "None recorded",
                 "baseline": "",
                 "family_answer": "" if row.get("parish_added") else _request_words(row),
-                "reviewer_value": f"{kind} {reviewed}"
-                if reviewed
-                else (
-                    f"{kind} {row['ministry_name']}" if row.get("parish_added") else ""
-                ),
+                "reviewer_value": reviewer_value(row),
                 "parishsoft_now": "",
                 "submitted_at": row["submitted_at"],
                 "decided_by": decided_by,

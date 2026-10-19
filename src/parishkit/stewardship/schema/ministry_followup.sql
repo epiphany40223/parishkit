@@ -100,8 +100,8 @@ BEGIN
                  AND history.campaign_id=own.campaign_id AND history.mode='live'
                  AND other.entity_kind=target.entity_kind
                  AND other.entity_key=target.entity_key
-                 AND coalesce(other.reviewed_ministry_duid,other.ministry_duid)
-                     =NEW.reviewed_ministry_duid
+                 AND NEW.reviewed_ministry_duid IN (other.ministry_duid,
+                     other.reviewed_ministry_duid)
                  AND other.state NOT IN ('cancelled','superseded'))))
     THEN RAISE EXCEPTION 'Ministry follow-up change is not valid for this request'
         USING ERRCODE='23514'; END IF;

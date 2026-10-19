@@ -64,7 +64,7 @@ from .ministry_contacts import request_contacts
 from .ministry_documents import MinistryDocument, new_member_labels
 from .ministry_followup import EXPORT_PDF_LIMIT, STATES, FollowupQuery, followup_page
 from .ministry_followup_views import _error, _principal
-from .ministry_worklist import WorklistQuery, chosen, place, read_rows
+from .ministry_worklist import WorklistQuery, chosen, place, read_rows, reviewer_value
 from .read_admission import admit_report_read
 
 FORMATS = {
@@ -166,15 +166,6 @@ def _contact_values(details, action):
     )
 
 
-def _reviewer_value(row):
-    """The Ministry a request carries forward in place of the Family's
-    answer: an Edit's, or one the parish added (#1684); else blank."""
-    kind = "Join" if row["action"] == "join" else "Leave"
-    if row.get("reviewed_ministry_name"):
-        return f"{kind} {row['reviewed_ministry_name']}"
-    return f"{kind} {row['ministry_name']}" if row.get("parish_added") else ""
-
-
 def queue_document(result, contacts, query, *, parish_name, requested_at, zone):
     """The file's one detached document: report details and one row a request.
 
@@ -219,7 +210,7 @@ def queue_document(result, contacts, query, *, parish_name, requested_at, zone):
                 # them to this reader.
                 row["stage_label"],
                 row["decision_label"],
-                _reviewer_value(row),
+                reviewer_value(row),
                 instant(row["last_contact_at"]) or NO_CONTACT,
             )
             + _contact_values(details, row["action"])

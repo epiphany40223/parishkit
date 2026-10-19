@@ -206,12 +206,38 @@ def test_edit_moves_the_request_into_another_leaders_scope(response_service):
     assert edited["stage"] == "accepted"
     assert edited["stage_label"] == "Accepted (edited)"
     assert str(join.pk) in view(harness, pantry)
+    # The edited request still holds Food pantry, so no second request
+    # about it can be added (Back to review would return it there).
+    added = {
+        "value_member": ["3"],
+        "value_ministry": ["9"],
+        "value_action": ["join"],
+        "value_in_place_of": [""],
+    }
+    with pytest.raises(DecisionRefusal) as refused:
+        decide(harness, staff, "add", fields=added)
+    assert refused.value.code == "add_exists"
     # The Food pantry leader may no longer decide it; Ministry 4's may.
     with pytest.raises(PermissionError):
         decide(harness, pantry, "back_to_review", join)
-    decide(harness, fours, "back_to_review", join)
+    key = uuid4()
+    decide(harness, fours, "back_to_review", join, key=key)
     assert (join.state, join.reviewed_ministry_duid) == ("in_progress", None)
     assert str(join.pk) not in view(harness, fours)
+    # Back with Food pantry, the request is outside the Ministry 4 leader's
+    # scope; their retry of the same post is a replay, not a denial, and a
+    # second, outdated post from them is stale.
+    count = MinistryWorkflowRevision.objects.count()
+    join.version -= 1
+    decide(harness, fours, "back_to_review", join, key=key)
+    join.version -= 1
+    with pytest.raises(StaleDecision):
+        decide(harness, fours, "accept", join)
+    # On the request's current version, it is simply not theirs any more.
+    join.refresh_from_db()
+    with pytest.raises(PermissionError):
+        decide(harness, fours, "accept", join)
+    assert MinistryWorkflowRevision.objects.count() == count
 
 
 def test_a_leader_edits_only_into_a_ministry_they_lead(response_service):

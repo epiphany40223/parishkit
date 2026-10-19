@@ -6508,10 +6508,11 @@ campaign that lists the Member; Add attaches the request to that Family's
 latest response. Add is refused, in plain words in its dialog, for a DUID
 no Family response lists or ParishSoft's data no longer lists as a current
 Member of that Family, a DUID two Families' responses list, a Member who
-already has a current request carrying that Ministry forward (use that
-request's own icons instead), and a Member and Ministry added on that
-response before and withdrawn. An Edit into a Ministry the Member already
-has a current request for is refused the same way. Ministry leaders never Add: a leader who sees
+already has a current request holding that Ministry, as its own or its
+Edit's (use that request's own icons instead; Back to review can return an
+edited request to its own Ministry), and a Member and Ministry added on
+that response before and withdrawn. An Edit into a Ministry another current
+request of the Member holds is refused the same way. Ministry leaders never Add: a leader who sees
 a mistaken request ignores it with a note, and Staff add the right one.
 
 **Bulk decisions**: the selection bar offers Accept, Ignore, Back to review
@@ -6533,7 +6534,10 @@ yet in the roster, or an ignored one, shows unticked, and leaving it
 unticked is not a withdrawal. When the Family ticks the same action for the
 same Member and Ministry again, no second request is made: the decided
 request keeps its decision, and its row says "Family asked again" with the
-date, so a reviewer can choose Back to review.
+date, so a reviewer can choose Back to review. The match is by the
+Family's own Ministry: after an Edit from Choir to Adult Choir, a Family
+that ticks Adult Choir gets a new request to review, which the reviewer
+ignores as a duplicate if it is one.
 
 While other campaign work holds edits, the worklist draws no row action,
 box, bulk bar or Add, and the page's locked notice says why; the rows stay
