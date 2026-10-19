@@ -166,6 +166,20 @@ def _upcoming(snapshot_id, campaign_id, duids):
         return dict(cursor.fetchall())
 
 
+def _cursor(snapshot_id):
+    """A snapshot's stored cursor, read afresh.
+
+    Only the cursor: web reads no other snapshot column (as ``giving_proof``
+    does), and a caller's snapshot object may predate its finished cursor
+    (the quick update's check is handed the staging snapshot).
+    """
+    return (
+        SourceSnapshot.objects.filter(pk=snapshot_id)
+        .values_list("cursor", flat=True)
+        .first()
+    )
+
+
 def _decided(campaign_id):
     """The campaign's decided pledges in force (``Decided``), one statement."""
     with connection.cursor() as cursor:
@@ -195,7 +209,10 @@ def pledge_checks(snapshot, corpus, campaign_id, full, start):
     nothing, as do the repeats ``refresh_checks.owed`` leaves out.
     """
     definition = _definition(campaign_id)
-    if definition is None or giving_observation(snapshot.cursor, definition) is None:
+    if (
+        definition is None
+        or giving_observation(_cursor(snapshot.pk), definition) is None
+    ):
         return
     items = [
         item
@@ -260,13 +277,7 @@ def marked_pledge(campaign_id, family_duid):
     )
     if definition is None or snapshot_id is None:
         return None
-    # Only the cursor: web reads no other snapshot column (as giving_proof).
-    cursor = (
-        SourceSnapshot.objects.filter(pk=snapshot_id)
-        .values_list("cursor", flat=True)
-        .first()
-    )
-    if giving_observation(cursor, definition) is None:
+    if giving_observation(_cursor(snapshot_id), definition) is None:
         return None
     amount = _upcoming(snapshot_id, campaign_id, {family_duid}).get(family_duid)
     if amount is None or abs(Decimal(amount)) >= MARK_LIMIT:

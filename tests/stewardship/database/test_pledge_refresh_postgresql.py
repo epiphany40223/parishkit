@@ -436,3 +436,30 @@ def test_the_migration_check_refuses_the_old_pledge_review_guard(response_servic
         transaction.set_rollback(True)
     with connection.cursor() as cursor:
         cursor.execute(block)
+
+
+def test_the_quick_update_check_agrees_with_what_promotion_writes(response_service):
+    """``refresh_checks_current`` answers False exactly while a promotion of
+    the same snapshot would write a pledge check, and True once it has."""
+    from parishkit.stewardship.campaigns.work_locks import work_transaction
+    from parishkit.stewardship.responses.refresh_checks import (
+        refresh_checks_current,
+    )
+    from parishkit.stewardship.source.families import PreparedPromotion
+
+    harness, submission = accepted(response_service, marked=False)
+    snapshot, claim = giving(harness, ANSWER)
+
+    def current(value):
+        """The check for ``value``'s own corpus."""
+        corpus = PreparedPromotion.of(value).corpus
+        with work_transaction():
+            return refresh_checks_current(
+                value, corpus, campaign_id=harness.campaign.pk
+            )
+
+    assert not current(snapshot)
+    promote(snapshot, claim, harness.campaign, harness.rings)
+    snapshot.refresh_from_db()
+    assert checks() == [("confirmed", Decimal(ANSWER))]
+    assert current(snapshot)
