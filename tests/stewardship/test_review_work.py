@@ -106,7 +106,7 @@ def test_tally_sums_groups_and_skips_report_only():
 def test_staff_panels_in_order_with_every_stage_counted():
     """Every stream Staff may open, in the spec's order, each stage counted
     (a stage with no items reads 0); Ministry To review is the menu's count
-    and its To enter by hand opens Roster changes to enter."""
+    and its To enter by hand opens Ministry requests at that Stage."""
     review = staff_counts(
         census={"to_review": 4, "conflict": 1, "ignored": 9},
         ministry={"to_enter_by_hand": 2, "entered_by_hand": 7},
@@ -132,7 +132,7 @@ def test_staff_panels_in_order_with_every_stage_counted():
         ("To review", "/ministry_report/", None, 5, "requests"),
         (
             "To enter by hand",
-            "/admin/reports/ministries/follow-up/roster/",
+            "/ministry_report/?stage=to_enter_by_hand",
             None,
             2,
             "requests",

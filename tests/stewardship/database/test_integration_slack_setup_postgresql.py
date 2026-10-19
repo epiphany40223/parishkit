@@ -2,6 +2,7 @@
 
 import re
 from dataclasses import replace
+from html import escape
 from types import MappingProxyType
 from uuid import UUID, uuid4
 
@@ -15,6 +16,7 @@ from parishkit.stewardship.accounts.credential_installation import CredentialIns
 from parishkit.stewardship.accounts.cryptography import Key
 from parishkit.stewardship.accounts.handoff_discovery import publish_handoff
 from parishkit.stewardship.accounts.integration_credentials import selection_key
+from parishkit.stewardship.accounts.integration_forms import KEY_RULES
 from parishkit.stewardship.accounts.key_files import file_fingerprint
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.accounts.secret_models import SecretReplacementRequest
@@ -184,16 +186,13 @@ def test_slack_is_set_up_removed_and_set_up_again(slack):
     remove_slack(slack)
     # The old key cannot bring Slack back without a newly pasted, checked
     # token (#338 review): its selection is refused and not offered.
-    select = f"/admin/system/key-changes/{row.pk}/selection/"
     count = ConfigurationChangeRequest.objects.count()
-    assert browser.get(select).status_code == 409
+    assert post(browser, URL, {"action": "finish"}).status_code == 409
     assert ConfigurationChangeRequest.objects.count() == count
-    status = browser.get(f"/admin/system/key-changes/{row.pk}/").content
-    assert select.encode() not in status
-    # Removed: no leftover "installed" line or dead Finish switching link.
+    # Removed: no leftover "installed" line or dead Finish switching button.
     page = browser.get(URL).content
     assert b"Slack is not set up" in page
-    assert b"/select" not in page and b"switching to it did not" not in page
+    assert b'value="finish"' not in page and b"switching to it did not" not in page
     assert b"Key updated." not in page
     # Set it up again, with a new token and channel.
     again = add_slack(slack, AGAIN, channel="C0456DEF")
@@ -243,13 +242,15 @@ def test_a_failed_slack_add_can_finish_switching(slack):
     assert result.state == "failed" and result.failure_code == "stale_base"
     page = browser.get(URL).content
     assert b"Slack alerts are not sent" in page
-    select = f"/admin/system/key-changes/{row.pk}/selection/"
-    assert select.encode() in page
-    status = browser.get(f"/admin/system/key-changes/{row.pk}/").content
-    assert select.encode() in status
-    preview = hidden(browser.get(select), "preview")
+    # Finish switching opens the page's review dialog (#1568).
+    assert b'<input type="hidden" name="action" value="finish">' in page
+    preview = hidden(post(browser, URL, {"action": "finish"}), "preview")
     with identity("pk_stewardship_web"):
-        response = post(browser, select, {"action": "confirm", "preview": preview})
+        response = post(
+            browser,
+            URL,
+            {"action": "confirm", "preview": preview, "request_id": str(row.pk)},
+        )
     assert response.status_code == 302, response.content
     finish = response["Location"].rstrip("/").rsplit("/", 1)[-1]
     assert apply(slack, finish).state == "applied"
@@ -318,7 +319,10 @@ def test_a_refused_slack_set_up_keeps_its_token_required(slack):
     html = response.content.decode()
     (field,) = re.findall(r'<input[^>]*name="candidate"[^>]*>', html)
     assert " required" in field
-    assert 'data-missing-hint="Paste the Slack bot token to set up Slack."' in field
+    # The token has a format rule (#1577): its message is the missing hint and
+    # the empty-field words moved to data-empty-hint.
+    assert 'data-empty-hint="Paste the Slack bot token to set up Slack."' in field
+    assert f'data-missing-hint="{escape(KEY_RULES["slack"].message)}"' in field
     assert TOKEN.decode() not in html
     assert re.search(r'data-error-summary.*?<a href="#id_channel_id">', html, re.S)
     assert not SecretReplacementRequest.objects.exists()

@@ -249,9 +249,10 @@ PAGES = {
     # once a page of its own, was merged into it.
     "ministry_report": Page("review", _("Ministry requests")),
     "ministry_followup_item": Page("review", _("Follow-up request"), "ministry_report"),
-    # Resolved Ministry joins and leaves to enter in ParishSoft by hand (#528),
-    # a menu entry of its own with its count (#1660).
-    "ministry_roster": Page("review", _("Roster changes to enter")),
+    # The financial stream's review worklist and manual report (#1686), a
+    # menu entry of its own in Review work, in the Administrator's order
+    # (R39 finding 1).
+    "pledges_to_enter": Page("review", _("Pledges")),
     "family_directory": Page("reports", _("Active parishioner family directory")),
     # One Family's summary and timeline (#477; the Timeline since #1570),
     # opened from every Family name the shared family_link tag draws.
@@ -307,21 +308,6 @@ PAGES = {
     "source_form": Page("system", _("Families the form cannot open"), "system_health"),
     "integrations": Page("system", _("Integrations")),
     "integration_settings": Page("system", _("Integration"), "integrations"),
-    # A key's status and its Finish switching page sit under the integration
-    # the key belongs to; their views supply the target the routes lack. The
-    # status is readable only by the Administrator who saved the key, so
-    # Finish switching (open to every Administrator) never runs through it.
-    # Finish switching is a one-time review, so a switch's status page
-    # names it but returns to the integration.
-    "credential_status": Page(
-        "system", _("Key replacement status"), "integration_settings"
-    ),
-    "select_credential": Page(
-        "system",
-        _("Finish switching to the new key"),
-        "integration_settings",
-        linkable=False,
-    ),
     "background": Page("system", _("Background work")),
     "background_task_page": Page("system", _("Background task"), "background"),
     "logs": Page("system", _("System logs")),
@@ -537,10 +523,7 @@ MENU = (
     # Review work, in the Administrator's order (R39 finding 1).
     Entry("census_changes", Capability.VIEW_CENSUS, CENSUS),
     Entry("ministry_report", Capability.MINISTRY_REPORT, MINISTRY, scoped=True),
-    # Administrators and Staff only: unscoped MINISTRY_FOLLOWUP is the
-    # page's own check (workflows.roster.can_tick), which a Ministry leader,
-    # holding it only for their Ministries, never passes (#1660).
-    Entry("ministry_roster", Capability.MINISTRY_FOLLOWUP, MINISTRY),
+    Entry("pledges_to_enter", Capability.FINANCIAL_DETAIL, FINANCIAL),
     Entry("information_queue", Capability.ADDITIONAL_FOLLOWUP, _downloaded(_campaign)),
     Entry("limitations_report", Capability.CAMPAIGN_REPORT, MINISTRY),
     # Reports and queries
@@ -721,6 +704,9 @@ NON_PAGES = frozenset(
         "branding_asset",
         # The Campaign comparison's download form (#1018), a POST.
         "campaign_comparison_export",
+        # The figures status the Response dashboard and Campaign comparison
+        # poll (#1586), a fragment.
+        "response_dashboard_status",
         # A Campaign setup step's Continue (#1404), a POST that redirects.
         "campaign_step_continue",
         "content_plain_text",
@@ -749,7 +735,6 @@ NON_PAGES = frozenset(
         "past_campaign_archive",
         "financial_export",
         "information_export",
-        "information_update",
         "integration_status",
         "login",
         "logout",
@@ -759,11 +744,9 @@ NON_PAGES = frozenset(
         "maintenance",
         "ministry_followup_export",
         "ministry_followup_update",
-        "ministry_followup_bulk",
         "ministry_followup_roster",
-        "ministry_roster_export",
-        "ministry_roster_bulk",
         "ministry_packet",
+        "pledges_to_enter_export",
         # The ParishSoft refresh schedule editor's live check (#632), a
         # fragment the settings page reads.
         "refresh_schedule_check",

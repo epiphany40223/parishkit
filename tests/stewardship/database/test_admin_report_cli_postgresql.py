@@ -134,6 +134,7 @@ def test_participation_responses_information_and_the_list(http_scenario, cli):  
         "report participation": True,
         "report comparison": True,
         "report financial": False,
+        "report pledges": False,
         "report limitations": False,
         "report census": True,
         "report information": True,
@@ -419,7 +420,13 @@ def test_ministry_summary_and_request_counts(response_service, google, cli):
     )
     code, document = run("report", "limitations")
     assert code == 0, document
-    assert set(document["result"]) == {"campaign_id", "cannot_serve", "cannot_attend"}
+    assert set(document["result"]) == {
+        "campaign_id",
+        "cannot_serve",
+        "cannot_attend",
+        "stage",
+        "stages",
+    }
 
 
 def harness_admin(run):

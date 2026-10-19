@@ -611,6 +611,9 @@ input:is([type=date], [type=time], [type=datetime-local], [type=month]) { max-wi
 input[type=number] { max-width: 10rem; }
 input:is([type=email], [type=url], [type=tel]) { max-width: 34rem; }
 input:is([type=text], [type=search], [type=password], :not([type])) { max-width: 40rem; }
+/* An address or link typed in a text box that asks for an email or URL
+   keyboard (a shared format rule's field, #1577) is as wide as those types. */
+input:is([inputmode=email], [inputmode=url]) { max-width: 34rem; }
 /* A typed time of day (#631) is as short as a native time control; a list of
    times is medium. Its reading (ui-v1.js) sits under the box in the help
    style, and in the error style while the entry cannot be read; a visually
@@ -672,6 +675,15 @@ input[data-time-entry=list] { max-width: 24rem; }
    never moves the table under the pointer. */
 .action-status { min-height: 3.2em; min-height: 2lh; margin-block: .5rem; font-weight: 600; }
 .action-status > p { margin: 0; }
+/* A review worklist's notice (#1681) sits between its filters and its
+   table and is one line, kept while empty (R38 finding 10): it answers the
+   reader's own last decision, so it needs no second line, and its margins
+   are the gap the table would have under the filters anyway. */
+.action-status.worklist-notice { min-height: 1.6em; min-height: 1lh; margin-block: 0 .5rem; }
+/* On a phone a notice naming its item can wrap (Linux's wider fonts wrap
+   it at 390 px), so the line keeps two lines there, still with no margin
+   above it. */
+@media (max-width: 40rem) { .action-status.worklist-notice { min-height: 3.2em; min-height: 2lh; } }
 /* A status line that wraps keeps the lines it can take (#757): two, or
    three on a phone, where a long sentence in a wide font needs a third. Its
    emptying then never moves the buttons below it. */
@@ -789,6 +801,40 @@ button[aria-disabled=true], .button[aria-disabled=true], input[type=submit][aria
    spinner and the form ignores repeat clicks until the next page loads. With
    reduced motion the spinner stays still (see the rule at the end). */
 button.is-busy[aria-disabled=true], .button.is-busy[aria-disabled=true], input[type=submit].is-busy[aria-disabled=true] { background: var(--muted); border-color: var(--muted); color: var(--paper); }
+/* Apply filters and Clear filters (components/filter-actions.html, #1651)
+   are placed by ui-conventions "Clear filters"' three steps (#1776):
+   beside the fields' last row side by side, else stacked there if that
+   row keeps its height, else side by side on a row of their own. ui-v1.js
+   tries the steps in order and marks the one that fits on the pair
+   (data-filter-place); these rules draw each. Before the script runs (and
+   in a flex filter bar it is the same answer) the pair never shrinks or
+   wraps inside itself, so the bar keeps it beside the last field when both
+   buttons fit there and otherwise moves it, whole, to a new line. It is
+   never wider than its line, so on a screen too narrow for both buttons
+   Clear wraps under Apply instead of pushing the page sideways. Both
+   buttons have a smaller inline padding than other buttons (.75rem, not
+   1.25rem), so side by side they fit one 14rem-and-up Filters panel cell
+   (about 288 px at 1280 px) with Linux's wider fonts too. While Clear has
+   nothing to do it is greyed but focusable (aria-disabled,
+   data-clear-unavailable, ui-v1.js), and its reason is a floating tip like
+   an unavailable control's, so its state never moves anything (no layout
+   shift). The pair's own rules name the form's id, so they outrank a
+   page's rules for its filter-bar cells (Sent mail's grow from 6.5rem),
+   which would otherwise size the pair as one more field. */
+.filter-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .5rem; vertical-align: bottom; max-width: 100%; }
+#table-filters .filter-actions { flex: 0 0 auto; align-self: end; min-width: 0; margin: 0; }
+.filter-actions button { margin: 0; white-space: nowrap; padding-inline: .75rem; }
+/* Step 1 in a Filters panel's grid whose cells are too narrow for both
+   buttons side by side: two of the last row's empty cells. */
+#table-filters .filter-actions[data-filter-wide] { grid-column: span 2; }
+/* Step 2: Clear under Apply, both as wide as the wider, in the same cell. */
+#table-filters .filter-actions[data-filter-place=stacked] { flex-direction: column; align-items: stretch; }
+/* Step 3: a row of the form's own, at its foot: a full line of a filter
+   bar, every column of a Filters panel's grid, or a block line of its own
+   in a form with neither (Roster changes' one select). */
+#table-filters .filter-actions[data-filter-place=row] { display: flex; width: max-content; flex-basis: 100%; grid-column: 1 / -1; justify-self: start; }
+.filter-clear { position: relative; display: inline-block; }
+button[data-clear-unavailable][aria-disabled=true], button[data-clear-unavailable][aria-disabled=true]:not(:disabled):hover { cursor: not-allowed; opacity: .55; background: var(--paper); color: var(--accent); box-shadow: none; }
 button.is-busy::after, .button.is-busy::after { content: ""; display: inline-block; width: .85em; height: .85em; margin-inline-start: .5em; vertical-align: -.1em; border: 2px solid currentColor; border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
 @keyframes busy-spin { to { transform: rotate(360deg); } }
 /* Live status regions (live-status-v1.js, live-running.html): a still-running
@@ -1259,13 +1305,26 @@ section.filter-panel > h2 { margin: 0; padding-block: .6rem; font-size: 1rem; li
 .filter-bar > div.fit { flex: 0 1 auto; }
 /* Sent mail's five filters share one row beside the Admin menu at desktop
    width (#1562): each grows from a short basis instead of starting at
-   its widest choice. */
-.filter-bar.mail-filters > div { flex: 1 1 7.5rem; min-width: 6.5rem; }
+   its widest choice. The bar takes the page's width, not the 60rem form
+   cap, with a slightly smaller gap, so that on a 1366 px laptop Apply
+   filters and Clear filters (#1651) fit beside the five filters even with
+   Linux's wider fonts, and the first rows still start on the screen. */
+.filter-bar.mail-filters { max-width: none; column-gap: .75rem; }
+.filter-bar.mail-filters > div { flex: 1 1 6.5rem; min-width: 6.5rem; }
+/* A field whose label row carries an "i" button (Recipient) is never
+   narrower than that row: when the filters shrink toward their minimum to
+   leave Apply filters and Clear filters room beside them, "Recipient", the
+   gap and the button (about 113 px with Linux's wider fonts) no longer fit
+   6.5rem, so the button wrapped and pushed that field's control below the
+   others'. */
+.filter-bar.mail-filters > div:not(.short):has(> .label-row) { min-width: 7.5rem; }
 /* From and Through are wide enough for the empty "mm/dd/yyyy" placeholder
    beside the calendar button, with Linux's wider fonts too. They drop the
    desktop short-field rule's end margin: the bar's gap spaces them, and
-   that margin kept Apply off the row at 1280 px with those fonts. */
-.filter-bar.mail-filters > div.short { flex: 0 1 10rem; min-width: 10rem; margin-inline-end: 0; }
+   that margin kept Apply off the row at 1280 px with those fonts. The
+   Timeline's From and Through (#1570) are sized the same way, so its Kind,
+   days, Apply filters and Clear filters (#1651) share one row at 1280 px. */
+.filter-bar:is(.mail-filters, .timeline-filters) > div.short { flex: 0 1 10rem; min-width: 10rem; margin-inline-end: 0; }
 .filter-bar.mail-filters > div > :is(input, select) { width: 100%; }
 /* Every label sits on one line of the toggletip's height, and the fields
    line up at their tops, so Recipient's label (with its toggletip) and the
@@ -1741,7 +1800,7 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
 .table-actions { white-space: nowrap; }
 .table-actions .icon-button { margin: 0 .5rem 0 0; }
 .table-actions .icon-button:last-child { margin-inline-end: 0; }
-/* A row action that posts in place (Roster changes to enter's tick) sits in
+/* A row action that posts in place (a worklist's Entered by hand) sits in
    its own form, inline, so it lines up as a lone button does. */
 .table-actions form { display: inline; margin: 0; }
 /* A fixed square, not a minimum: a link (Edit) and a <button> (Delete) must
@@ -1765,16 +1824,25 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
    Warning looks with their icon (UX conventions, "Status indicators"). */
 .stage-chip { display: inline-flex; align-items: center; gap: .3rem; padding: .1rem .55rem; border: 1px solid var(--border); border-radius: 999px; background: var(--paper-soft); color: var(--ink); font-size: .8125rem; font-weight: 600; white-space: nowrap; }
 .stage-chip:is(.status-error, .status-warning) { border-color: var(--status-line); background: var(--status-bg); color: var(--status-ink); }
-/* A worklist's filters are always open (no Filters disclosure), laid out as
-   the Filters panel's grid: one column on a phone, 14rem columns from
-   40rem, Apply in the next cell and the reserved hint on its own row. */
-.worklist-filters { display: grid; grid-template-columns: minmax(0, 1fr); gap: .5rem 1rem; align-items: end; margin-block: 1rem; }
+/* A worklist's filters are always open (no Filters disclosure), in rows
+   that wrap: each field cell is 13rem and does not grow, so the room left
+   at a row's end is kept for the buttons. Apply filters and Clear filters
+   (.filter-actions) are placed by the shared three-step rule like every
+   filter form's (#table-filters rules above, ui-conventions "Clear
+   filters"). A wrapping row, not the Filters panel's equal grid columns,
+   because a grid cell can be narrower than the pair with Linux's or
+   WebKit's wider fonts. On a phone each field takes the whole row. The
+   reserved hint takes its own row. */
+.worklist-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .5rem 1rem; margin-block: .5rem; }
 .worklist-filters label { margin: 0 0 .25rem; font-size: .925rem; }
-.worklist-filters > div { margin: 0; }
+.worklist-filters > div:not(.filter-actions) { flex: 0 1 13rem; margin: 0; }
 .worklist-filters > div > :is(input, select) { max-width: none; }
-.worklist-filters > :is(p, [data-complete-hint]) { grid-column: 1 / -1; margin: 0; }
-.worklist-filters > button { justify-self: start; margin: 0; }
-@media (min-width: 40rem) { .worklist-filters { grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); } }
+.worklist-filters > :is(p, [data-complete-hint]) { flex-basis: 100%; margin: 0; }
+/* A worklist filter whose choices are long phrases (Limitations' Show,
+   #1685) takes two field cells and their gap, so its chosen text reads
+   whole; on a phone it takes the whole row like every field (below). */
+.worklist-filters > div.wide { flex-basis: 27rem; }
+@media (max-width: 40rem) { .worklist-filters > div:not(.filter-actions) { flex-basis: 100%; } }
 .button-danger { background: var(--error-border); border-color: var(--error-border); color: var(--paper); }
 .button-danger:not(:disabled):hover { background: var(--error-ink); border-color: var(--error-ink); }
 .confirm-dialog { margin: 12vh auto auto; width: min(34rem, calc(100vw - 2rem)); padding: 1.25rem 1.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--paper); color: var(--ink); box-shadow: var(--shadow); }
@@ -1847,6 +1915,48 @@ fieldset.editor-mode > legend { float: none; width: auto; margin: 0; padding: 0;
 .segmented-choice-options form { display: contents; }
 .segmented-choice-options button { border: 0; border-radius: 0; background: none; box-shadow: none; line-height: inherit; }
 .segmented-choice-options button:not(:disabled):hover:not([aria-current=page]) { background: none; border-color: var(--accent); color: var(--accent); box-shadow: none; }
+/* Tabs (ui-conventions "Tabs", #1712; components/tabs.html): a row of tabs
+   above one panel area, the chosen tab filled in the accent colour (a
+   selected state, independent of any primary button, #1713). Every tab is
+   bold and the same size whether chosen or not, so choosing one changes
+   only colours and moves nothing (no layout shift). The row never wraps
+   and never widens the page: on a narrow screen it scrolls sideways inside
+   its own box (min-width: 0 lets it shrink inside a flex or grid parent).
+   The colours are theme tokens, so the row follows the dark scheme. */
+.tabs { min-width: 0; margin-block: 0 1rem; }
+.tabs-list { display: flex; gap: .25rem; min-width: 0; max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; border-bottom: var(--button-border-width) solid var(--accent); }
+.tabs-tab { flex: none; display: inline-flex; align-items: center; gap: .4rem; min-height: var(--button-min-height); padding: .5rem 1.1rem; border: var(--button-border-width) solid transparent; border-bottom: 0; border-radius: var(--radius-small) var(--radius-small) 0 0; color: var(--accent); font-weight: 650; text-decoration: none; white-space: nowrap; }
+.tabs-tab[href]:hover { background: var(--accent-soft); color: var(--accent-strong); }
+.tabs-tab[aria-selected=true], .tabs-tab[aria-selected=true]:hover { background: var(--accent); border-color: var(--accent); color: var(--paper); }
+.tabs-tab:focus-visible { outline: 3px solid var(--focus); outline-offset: -6px; }
+/* The ring sits inside the tab, so on the chosen (accent) tab it is drawn
+   in --paper, which keeps 3:1 on --accent in both schemes, as on a
+   binary choice's chosen segment. */
+.tabs-tab[aria-selected=true]:focus-visible { outline-color: var(--paper); }
+.tabs-tab[aria-disabled=true] { color: var(--unavailable); cursor: not-allowed; }
+.tabs-count { display: inline-block; min-width: 1.5em; padding: 0 .4em; border-radius: 999px; background: var(--accent-soft); color: var(--accent-strong); font-size: .85em; text-align: center; }
+.tabs-tab[aria-selected=true] .tabs-count { background: var(--paper); color: var(--accent); }
+.tabs-tab[aria-disabled=true] .tabs-count { background: var(--paper-soft); color: var(--unavailable); }
+/* The panel area is a flow root, so its panels' margins count in the
+   height ui-v1.js holds when a shorter panel replaces a taller one. */
+.tabs-panels { display: flow-root; }
+.tabs-panel { padding-top: 1rem; }
+.tabs-panel:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+@media (forced-colors: active) {
+  .tabs-tab[aria-selected=true] { forced-color-adjust: none; background: Highlight; border-color: Highlight; color: HighlightText; }
+  .tabs-tab[aria-selected=true] .tabs-count { background: HighlightText; color: Highlight; }
+}
+/* A review-pipeline stage's chip (the Family hub's census tabs, #1678): a
+   plain badge, or for a needs-correction stage (Entered incorrectly) the
+   Error look with its icon (UX conventions, "Status indicators"). The same
+   rule as the review worklist's Stage column (#1683); whichever of the two
+   lands second keeps one copy. */
+.stage-chip { display: inline-flex; align-items: center; gap: .3rem; padding: .1rem .55rem; border: 1px solid var(--border); border-radius: 999px; background: var(--paper-soft); color: var(--ink); font-size: .8125rem; font-weight: 600; white-space: nowrap; }
+.stage-chip:is(.status-error, .status-warning) { border-color: var(--status-line); background: var(--status-bg); color: var(--status-ink); }
+/* The hub's Show unchanged disclosure: its table opens below the toggle,
+   which stays put (no layout shift above it). */
+details.hub-unchanged { margin-block: 1rem; }
+details.hub-unchanged > .table-scroll { margin-top: .5rem; }
 /* The Basic panel is a <fieldset> so one disabled attribute keeps its
    controls unsent while Advanced is shown; it draws no box of its own. */
 fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0; background: none; }

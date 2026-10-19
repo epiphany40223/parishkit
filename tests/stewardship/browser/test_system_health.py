@@ -37,6 +37,7 @@ from .system_health_components import (
     HEALTHY,
     MAIL,
     PAGE,
+    RECHECK,
     STALE,
     STALE_STATUS,
     STATUS,
@@ -2190,10 +2191,154 @@ def test_a_page_load_tiles_toggletip_moves_no_row(page, component_origin):
     button = band.locator(".toggletip-button")
     button.click()
     bubble = band.locator(".toggletip-bubble")
-    expect(bubble).to_contain_text("checked when the page opens")
+    expect(bubble).to_contain_text("checked about every 5 minutes")
+    expect(bubble).not_to_contain_text("Reload")
     expect(button).to_have_attribute("aria-expanded", "true")
     assert same_place(page.evaluate(TOPS), tops)
     assert same_place(band.bounding_box()["height"], height)
+
+
+# The page-load tiles' slow recheck (#1790): the status reads, and how to
+# hide or show the tab (a test cannot hide a real one).
+SLOW = "slow=1"
+SHOWN = """(hidden) => {
+    Object.defineProperty(document, 'visibilityState',
+        {configurable: true, get: () => hidden ? 'hidden' : 'visible'});
+    document.dispatchEvent(new Event('visibilitychange'));
+}"""
+
+
+def _status_reads(page):
+    """Every status read the page sends, as a growing list of URLs."""
+    reads = []
+    page.on(
+        "request",
+        lambda request: (
+            reads.append(request.url) if f"{RECHECK}/status" in request.url else None
+        ),
+    )
+    return reads
+
+
+def test_the_page_load_tiles_recheck_by_themselves_every_five_minutes(
+    page, component_origin
+):
+    """Ordinary polls echo the page-load tiles' states; the first poll after
+    5 minutes asks for a recheck (slow=1), whose answer changes the tile's
+    words, icon and the overall line in place, without opening the tile or
+    reloading the page. Later polls echo the new state, and the next
+    recheck waits another 5 minutes."""
+    page.clock.install()
+    reads = _status_reads(page)
+    page.goto(component_origin + RECHECK)
+    _away(page)
+    kept = _not_reloaded(page)
+    expect(_word(page, "resave")).to_have_text("Working")
+    expect(page.locator(LINE)).to_have_text("All working")
+    tops = page.evaluate(TOPS)
+    checked = page.locator("time[data-live-checked]")
+    first = checked.get_attribute("datetime")
+    page.clock.fast_forward(11_000)
+    expect(checked).not_to_have_attribute("datetime", first)
+    assert reads and not any(SLOW in url for url in reads)
+    # Five minutes on, the next poll rechecks and the tile follows it.
+    page.clock.fast_forward(5 * 60 * 1000)
+    expect(_word(page, "resave")).to_have_text("Error")
+    expect(_said(page, "resave")).to_contain_text("1 email cannot be sent")
+    expect(page.locator(LINE)).to_contain_text("1 error")
+    assert sum(SLOW in url for url in reads) == 1
+    expect(_band(page, "resave")).to_be_hidden()
+    _toggle(page, "resave").click()
+    expect(_band(page, "resave").locator('[data-problem="resave"]')).to_have_attribute(
+        "data-severity", "error"
+    )
+    # Later polls echo the fresh state and ask for no recheck.
+    _away(page)
+    count = len(reads)
+    stamp = checked.get_attribute("datetime")
+    page.clock.fast_forward(11_000)
+    expect(checked).not_to_have_attribute("datetime", stamp)
+    later = reads[count:]
+    assert later and all("loaded=resave%3Aerror" in url for url in later)
+    assert not any(SLOW in url for url in later)
+    expect(_word(page, "resave")).to_have_text("Error")
+    expect(_band(page, "resave")).to_be_visible()
+    assert same_place(page.evaluate(TOPS)[:5], tops[:5])
+    assert kept()
+
+
+def test_a_hidden_tab_does_not_recheck_until_it_is_shown(page, component_origin):
+    """While the tab is hidden nothing is read, however long; once it is
+    shown again the page catches up at once, with the recheck that is due."""
+    page.clock.install()
+    reads = _status_reads(page)
+    page.goto(component_origin + RECHECK)
+    _away(page)
+    page.evaluate(SHOWN, True)
+    page.clock.fast_forward(6 * 60 * 1000)
+    page.evaluate("() => true")  # One round trip after the clock jump.
+    assert reads == []
+    page.evaluate(SHOWN, False)
+    expect(_word(page, "resave")).to_have_text("Error")
+    assert len(reads) == 1 and SLOW in reads[0]
+
+
+def test_a_failed_recheck_is_asked_for_again_on_the_next_poll(page, component_origin):
+    """A recheck answered 503 does not count: the next poll asks again,
+    not 5 minutes later, and that answer brings the tile up to date."""
+    page.clock.install()
+    reads = _status_reads(page)
+    refused = []
+
+    def once(route):
+        """Answer the first recheck 503, then let the server answer."""
+        if refused:
+            route.fallback()
+        else:
+            refused.append(route.request.url)
+            route.fulfill(status=503, body="")
+
+    page.route(f"**{RECHECK}/status?slow=1", once)
+    page.goto(component_origin + RECHECK)
+    _away(page)
+    page.clock.fast_forward(5 * 60 * 1000 + 1000)
+    for _ in range(50):  # Round trips until the refused recheck was sent.
+        if refused:
+            break
+        page.evaluate("() => true")
+    assert refused
+    expect(_word(page, "resave")).to_have_text("Working")
+    # The next poll asks again. (Tick until it is sent: the refused answer
+    # schedules it only once the page has read that answer.)
+    after = len(reads)
+    for _ in range(5):
+        page.clock.fast_forward(11_000)
+        page.evaluate("() => true")
+        if len(reads) > after:
+            break
+    expect(_word(page, "resave")).to_have_text("Error")
+    assert len(refused) == 1
+    assert SLOW in reads[after]
+
+
+def test_a_held_page_load_panel_catches_up_on_a_later_poll(page, component_origin):
+    """While the pointer is over the grid the recheck's panel copy waits
+    (the summary row follows at once); once the pointer leaves, the next
+    ordinary poll, which carries no copy, applies the recheck's."""
+    page.clock.install()
+    page.goto(component_origin + RECHECK)
+    _toggle(page, "resave").click()
+    band = _band(page, "resave")
+    expect(band).to_be_visible()
+    band.hover()
+    page.clock.fast_forward(5 * 60 * 1000 + 1000)
+    expect(_word(page, "resave")).to_have_text("Error")
+    expect(band.locator('[data-problem="resave"]')).to_have_count(0)
+    _away(page)
+    page.clock.fast_forward(11_000)
+    expect(band.locator('[data-problem="resave"]')).to_have_attribute(
+        "data-severity", "error"
+    )
 
 
 def _polls(page, count=2):

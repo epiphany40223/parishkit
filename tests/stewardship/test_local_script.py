@@ -777,6 +777,10 @@ def test_the_simple_commands_reach_the_vm_half(tmp_path):
     assert vm_commands(calls) == ["sign-in a@example.test"]
     _, calls, _ = run_local(tmp_path / "finish", "finish-setup")
     assert vm_commands(calls) == ["finish-setup"]
+    _, calls, _ = run_local(
+        tmp_path / "fake", "fake-parishsoft", "member", "500010", "email=x@example.test"
+    )
+    assert vm_commands(calls) == ["fake-parishsoft member 500010 email=x@example.test"]
     result, calls, _ = run_local(tmp_path / "seed", "seed", "--response-scale", "4")
     assert vm_commands(calls) == ["seed 4"]
     assert (tmp_path / "seed" / "home" / ".parishkit-local" / "seed.log").exists()
@@ -888,6 +892,18 @@ case "$*" in
             echo "{\"Service\":\"$s\",$fields,\"ExitCode\":$code}"
         done ;;
     *" run --rm -T "*) echo '{"ok": true}' ;;
+    *" fake-parishsoft-edit show"*) echo "SHOWN" ;;
+    *" fake-parishsoft-edit "*)
+        # The edit command reads the fake's document and prints the new one;
+        # FAKE_EDIT_FAIL refuses the edit as the real command would.
+        [ -z "$FAKE_EDIT_FAIL" ] || { echo "ERROR: There is no Member 1" >&2; exit 2; }
+        # FAKE_EDIT_EMPTY answers as `--help` does: exit 0 and no document.
+        [ -z "$FAKE_EDIT_EMPTY" ] || exit 0
+        echo '{"seed": 7, "edited": true}' ;;
+    *" local-seed --step pledge-period "*)
+        # FAKE_PERIOD_FAIL: the step refuses (no campaign collecting pledges).
+        [ -z "$FAKE_PERIOD_FAIL" ] || { echo "seed step refused" >&2; exit 2; }
+        echo '{"fund": 301, "start": "2027-01-01"}' ;;
     *" ps -q postgres") [ -n "$FAKE_NO_POSTGRES" ] || echo pgcontainer ;;
     *" local-spike --profile local "*)
         # One shard's document; FAKE_SHARD_FAIL makes shard 1 fail.
@@ -1190,6 +1206,8 @@ def test_a_failed_dependency_start_is_reported_with_its_limit(tmp_path):
         ("snapshot", "testing", "0", "1", "8"),
         ("snapshot-restore", "seeded", "/x/host.sh"),
         ("seed-testing", "/x/host.sh"),
+        ("fake-parishsoft", "member", "500010", "email=x@example.test"),
+        ("fake-parishsoft", "refresh"),
     ],
 )
 def test_every_destructive_or_deployment_command_needs_the_marker(tmp_path, args):
@@ -2698,3 +2716,230 @@ def test_a_failed_data_switch_names_the_whole_restore_that_recovers(tmp_path):
     assert not any(" up --detach" in c for c in calls[stop:])
     assert "FAILED: the switch to the testing snapshot (exit 23)" in output
     assert "'reset testing'" in output and "reset NAME" not in output
+
+
+# ---------------------------------------------------------------------------
+# Changing the fake ParishSoft's data and refreshing it (#1780).
+
+
+def fake_parishsoft_root(root, etc, snapshots):
+    """A set-up root with web's rendering and the fake's configuration file."""
+    frozen_wizard(root, etc, snapshots)
+    (root / "run" / "local" / "fake-parishsoft.json").write_text('{"seed": 7}\n')
+    (root / "config" / "services" / "worker.yaml").write_text(
+        json.dumps({"deployment": {"profile": "local"}})
+    )
+
+
+def test_a_fake_parishsoft_edit_rewrites_the_file_and_recreates_only_the_fake(
+    tmp_path,
+):
+    """The image checks the edit; the new document replaces the file, then only
+    the fake ParishSoft is recreated, since a container keeps its old inode."""
+    calls, output, root = run_vm(
+        tmp_path,
+        "fake-parishsoft",
+        "member",
+        "500010",
+        "email=x@example.test",
+        prepare=fake_parishsoft_root,
+    )
+    edit = first(calls, "fake-parishsoft-edit member 500010 email=x@example.test")
+    assert calls[edit].startswith("run --rm --init --network none ")
+    assert " -i " in calls[edit] and IMAGE in calls[edit]
+    recreate = first(calls, "up --detach --no-deps --force-recreate fake-parishsoft")
+    assert recreate > edit
+    file = root / "run" / "local" / "fake-parishsoft.json"
+    assert json.loads(file.read_text()) == {"seed": 7, "edited": True}
+    # The Compose selection, which can refuse, runs before the edit and write.
+    assert first(calls, "compose ls --all --format json") < edit
+    assert "fake-parishsoft refresh" in output
+
+
+def test_a_refused_fake_parishsoft_edit_changes_nothing(tmp_path):
+    """The image's refusal is shown; the file and the running fake are kept."""
+    calls, output, root = run_vm(
+        tmp_path,
+        "fake-parishsoft",
+        "member",
+        "1",
+        "email=x@example.test",
+        status=2,
+        prepare=fake_parishsoft_root,
+        env={"FAKE_EDIT_FAIL": "1"},
+    )
+    assert "There is no Member 1" in output
+    file = root / "run" / "local" / "fake-parishsoft.json"
+    assert file.read_text() == '{"seed": 7}\n'
+    assert not any("--force-recreate" in call for call in calls)
+
+
+def test_fake_parishsoft_show_prints_and_writes_nothing(tmp_path):
+    """show is read-only: no file write and no recreate."""
+    calls, output, root = run_vm(
+        tmp_path, "fake-parishsoft", "show", prepare=fake_parishsoft_root
+    )
+    assert "SHOWN" in output
+    assert (root / "run" / "local" / "fake-parishsoft.json").read_text() == (
+        '{"seed": 7}\n'
+    )
+    assert not any("--force-recreate" in call for call in calls)
+
+
+def test_fake_parishsoft_refresh_runs_the_seeder_refresh_step_under_web(tmp_path):
+    """The Admin's full refresh runs as the seeder's refresh step, one-off web."""
+    calls, output, _ = run_vm(
+        tmp_path,
+        "fake-parishsoft",
+        "refresh",
+        prepare=fake_parishsoft_root,
+        env={"FAKE_COMPLETED": "t"},
+    )
+    step = calls[first(calls, "local-seed --step refresh ")]
+    assert "--network parishkit-local_backend" in step
+    assert "--admin-email a@example.test" in step
+    assert "Full ParishSoft refresh finished" in output
+    # Refused before setup is complete.
+    calls, output, _ = run_vm(
+        tmp_path / "early",
+        "fake-parishsoft",
+        "refresh",
+        status=1,
+        prepare=fake_parishsoft_root,
+    )
+    assert "has not completed" in output
+    assert not any("local-seed" in call for call in calls)
+
+
+@pytest.mark.parametrize("args", [("refresh",), ("member", "500010", "suffix=Jr.")])
+def test_fake_parishsoft_refuses_a_deployment_reading_the_real_parishsoft(
+    tmp_path, args
+):
+    """After deploy --parishsoft real nothing runs: no edit, no refresh."""
+
+    def real(root, etc, snapshots):
+        fake_parishsoft_root(root, etc, snapshots)
+        url = "https://ps-fs-external-api-prod.azurewebsites.net/api/v2"
+        (root / "config" / "services" / "worker.yaml").write_text(
+            json.dumps({"deployment": {"parishsoft_base_url": url}})
+        )
+
+    calls, output, _ = run_vm(
+        tmp_path,
+        "fake-parishsoft",
+        *args,
+        status=1,
+        prepare=real,
+        env={"FAKE_COMPLETED": "t"},
+    )
+    assert "reads the real ParishSoft" in output
+    assert calls == []
+
+
+def test_fake_parishsoft_refuses_without_the_fake_configuration(tmp_path):
+    """A root without the fake's file is refused before any Docker call."""
+    calls, output, _ = run_vm(
+        tmp_path, "fake-parishsoft", "show", status=1, prepare=frozen_wizard
+    )
+    assert "No fake ParishSoft configuration" in output
+    assert calls == []
+
+
+def test_a_pledge_edit_defaults_to_the_campaigns_fund_and_period(tmp_path):
+    """Without fund= and start= the campaign's own are read, then passed on."""
+    calls, _, _ = run_vm(
+        tmp_path,
+        "fake-parishsoft",
+        "pledge",
+        "100003",
+        "1800",
+        prepare=fake_parishsoft_root,
+        env={"FAKE_COMPLETED": "t"},
+    )
+    lookup = first(calls, "local-seed --step pledge-period ")
+    edit = first(
+        calls, "fake-parishsoft-edit pledge 100003 1800 fund=301 start=2027-01-01"
+    )
+    assert lookup < edit
+    # Both given: no lookup.
+    calls, _, _ = run_vm(
+        tmp_path / "given",
+        "fake-parishsoft",
+        "pledge",
+        "100003",
+        "1800",
+        "fund=300",
+        "start=2026-01-01",
+        prepare=fake_parishsoft_root,
+        env={"FAKE_COMPLETED": "t"},
+    )
+    assert not any("pledge-period" in call for call in calls)
+    # Before setup there is no campaign to read: refused, nothing written.
+    calls, output, root = run_vm(
+        tmp_path / "early",
+        "fake-parishsoft",
+        "pledge",
+        "100003",
+        "1800",
+        status=1,
+        prepare=fake_parishsoft_root,
+    )
+    assert "give fund= and start=" in output
+    assert not any("fake-parishsoft-edit" in call for call in calls)
+    # The step itself refuses: the command stops with that advice.
+    calls, output, root = run_vm(
+        tmp_path / "nopledges",
+        "fake-parishsoft",
+        "pledge",
+        "100003",
+        "1800",
+        status=1,
+        prepare=fake_parishsoft_root,
+        env={"FAKE_COMPLETED": "t", "FAKE_PERIOD_FAIL": "1"},
+    )
+    assert "Could not read the campaign's pledge fund" in output
+    assert not any("fake-parishsoft-edit" in call for call in calls)
+    assert (root / "run" / "local" / "fake-parishsoft.json").read_text() == (
+        '{"seed": 7}\n'
+    )
+
+
+@pytest.mark.parametrize("args", [(), ("--help",), ("-h",), ("help",)])
+def test_fake_parishsoft_without_a_command_is_refused(tmp_path, args):
+    """Help words never reach the edit command, so the file is never emptied."""
+    calls, output, root = run_vm(
+        tmp_path, "fake-parishsoft", *args, status=1, prepare=fake_parishsoft_root
+    )
+    assert "fake-parishsoft needs a command" in output
+    assert not any("fake-parishsoft-edit" in call for call in calls)
+
+
+def test_an_answer_that_is_not_a_document_is_never_written(tmp_path):
+    """An empty or non-document answer leaves the file and the fake alone."""
+    calls, output, root = run_vm(
+        tmp_path,
+        "fake-parishsoft",
+        "undo",
+        status=1,
+        prepare=fake_parishsoft_root,
+        env={"FAKE_EDIT_EMPTY": "1"},
+    )
+    assert "did not answer with a configuration document" in output
+    assert (root / "run" / "local" / "fake-parishsoft.json").read_text() == (
+        '{"seed": 7}\n'
+    )
+    assert not any("--force-recreate" in call for call in calls)
+
+
+def test_an_unreadable_service_document_fails_the_guard_closed(tmp_path):
+    """A service document jq cannot read counts as possibly the real ParishSoft."""
+
+    def unreadable(root, etc, snapshots):
+        fake_parishsoft_root(root, etc, snapshots)
+        (root / "config" / "services" / "web.yaml").write_text("not: [json\n")
+
+    calls, output, _ = run_vm(
+        tmp_path, "fake-parishsoft", "show", status=1, prepare=unreadable
+    )
+    assert "reads the real ParishSoft" in output
+    assert calls == []

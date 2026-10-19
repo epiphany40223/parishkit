@@ -8,7 +8,10 @@ from uuid import UUID
 from django.template.loader import render_to_string
 from django.utils.http import urlencode
 
-from parishkit.stewardship.accounts.system_health_views import POLL_MILLISECONDS
+from parishkit.stewardship.accounts.system_health_views import (
+    POLL_MILLISECONDS,
+    RECHECK_MILLISECONDS,
+)
 from parishkit.stewardship.mail_halt_clear import (
     ClearPreview,
     ClearState,
@@ -173,6 +176,14 @@ TILE_PAGES = "/system-health-tiles-"
 ACCEPT_OFFERED = "/system-health-accept-offered"
 ACCEPT_OFFERED_STATUS = "/system-health-accept-offered/status"
 TROUBLED_STATUS = canonical(f"{STATUS}?{urlencode({'loaded': loaded_query(LOADED)})}")
+# The page-load tiles' slow recheck (#1790): a page whose tiles are all
+# Working asks for it every RECHECK_MILLISECONDS. Its ordinary polls echo
+# the page's states; the recheck (?slow=1) finds an email that cannot be
+# sent, so Pages and emails to re-save turns Error, and its answer names the
+# address with that state, whose ordinary polls echo it in turn.
+RECHECK = "/system-health-recheck"
+RECHECK_STATUS = f"{RECHECK}/status"
+RECHECK_LOADED = f"{RECHECK_STATUS}?{urlencode({'loaded': loaded_query(LOADED)})}"
 
 
 def _row(now, service, process="main", *, age=0, **values):
@@ -567,6 +578,9 @@ def components(context, admin):
                 # Content to re-save (#838) on the troubled page; none on
                 # the healthy one.
                 "resave": resave,
+                # As an ordinary poll answers (#1790): no copies of the
+                # page-load tiles, which only the view's own reads draw.
+                "loaded_echoed": True,
             }
             | extra
         )
@@ -669,6 +683,20 @@ def components(context, admin):
         values(False, refused=True) | {"status_url": ACCEPT_OFFERED_STATUS}
     )
     extra[ACCEPT_OFFERED_STATUS] = status(values(False, refused=True))
+    # The slow recheck (#1790): the page and the recheck draw the page-load
+    # tiles' copies from their own reads; ordinary polls echo the states.
+    slow = {"recheck_interval": RECHECK_MILLISECONDS}
+    found = values(False, loaded=LOADED) | slow
+    found |= {"resave": list(RESAVE), "resave_tile": resave_tile(list(RESAVE))}
+    extra[RECHECK] = page(
+        values(False, status_url=RECHECK_STATUS, loaded_echoed=False) | slow
+    )
+    extra[RECHECK_STATUS] = status(values(False) | slow)
+    for asked in (f"{RECHECK_STATUS}?slow=1", f"{RECHECK_LOADED}&slow=1"):
+        extra[canonical(asked)] = status(
+            found | {"status_url": RECHECK_LOADED, "loaded_echoed": False}
+        )
+    extra[RECHECK_LOADED] = status(found)
     return extra | {
         PAGE: (
             "text/html",

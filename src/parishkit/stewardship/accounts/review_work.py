@@ -553,9 +553,9 @@ def panels(chrome, review):
 def _stage_cards(view, item, counts):
     """A Staff member's cards for one stream: one per stage in ``counts``.
 
-    Ministry To enter by hand is Roster changes to enter, the Staff list
-    that is opened from Ministry requests, so it follows that entry, and
-    census Ready to update is Publish to ParishSoft, the update run's page,
+    Ministry To enter by hand opens Ministry requests at that Stage, where
+    Roster changes to enter was folded (R39 finding 2), and census Ready to
+    update is Publish to ParishSoft, the update run's page,
     which is opened from Census changes. A stream in ``STAGE_LINKED`` links
     its page filtered to each stage.
     """
@@ -565,7 +565,7 @@ def _stage_cards(view, item, counts):
             continue
         url = item.url
         if url and view.stream is Stream.MINISTRY and stage is Stage.TO_ENTER_BY_HAND:
-            url = reverse("admin:ministry_roster")
+            url = f"{url}?stage={stage.value}"
         elif url and stage is Stage.READY_TO_UPDATE:
             url = reverse("admin:census_publication")
         elif url and view.stream in STAGE_LINKED:

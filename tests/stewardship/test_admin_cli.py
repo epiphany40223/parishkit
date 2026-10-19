@@ -210,6 +210,10 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "export comparison",
         # The campaign archive workbook (#1018 part (a)).
         "export archive",
+        # Pledges' counts, download and decisions (#1733).
+        "report pledges",
+        "export pledges",
+        "pledges decide",
     }
     # The users commands (#952), in the users group (PR 11): the reads of
     # slice 2, the changes of slice 5 and the leaders import of slice 6.
@@ -235,6 +239,10 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "followup information-update",
         # The queue's Export these requests (PR 11c).
         "followup export",
+        # The Additional information and Limitations worklists (#1735).
+        "information list",
+        "information decide",
+        "limitations decide",
     }
     # Past campaigns' archive import (#1018), listed with the reports.
     reports |= {"history list", "history preview", "history confirm", "history remove"}
@@ -311,6 +319,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
                 "export limitations",
                 "export roster",
                 "followup export",
+                "export pledges",
             }
         ), name
         if name in acknowledged:
@@ -659,7 +668,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
     ]
     # The Limitations download (PR 8h): a full-scope session, as every
     # export; the page's own event (kept from Talents and limitations); the
-    # page's Show menu, no search; the page's three formats.
+    # page's Show menu and Stage, no search; the page's three formats and
+    # the command's JSON Lines (#1735).
     limitations = entries["export limitations"]
     assert limitations["scope"] == "full" and not limitations["changes_state"]
     assert limitations["audit_event"] == "talents_report_exported"
@@ -667,11 +677,22 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert not limitations["fresh_gated"]
     assert not limitations["request_key"] and not limitations["expected_version"]
     options = {option["name"]: option for option in limitations["options"]}
-    assert options["--format"]["choices"] == ["csv", "xlsx", "pdf"]
+    assert options["--format"]["choices"] == ["csv", "xlsx", "pdf", "jsonl"]
     assert options["--show"]["choices"] == ["any", "cannot_serve", "cannot_attend"]
+    assert options["--stage"]["choices"] == [
+        "to_review",
+        "to_handle",
+        "ignored",
+        "handled",
+        "all",
+    ]
     assert "--search" not in options and "--campaign" not in options
-    assert limitations["result_fields"] == census["result_fields"]
-    # The Roster changes to enter download (PR 8g): the same, with the
+    assert limitations["result_fields"] == [
+        "campaign_id",
+        "stage",
+        *census["result_fields"][1:],
+    ]
+    # The roster list's download (PR 8g): the same, with the
     # page's own event and report roster's Show and Ministry choices.
     roster = entries["export roster"]
     assert roster["scope"] == "full" and not roster["changes_state"]
@@ -735,6 +756,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "report ministry": "ministry_report_viewed",
         "report roster": "roster_changes_viewed",
         "report census": "census_changes_viewed",
+        "report pledges": "pledges_to_enter_viewed",
         "report source-form": "source_form_viewed",
         "report data-to-fix": "data_to_fix_viewed",
     }
@@ -875,6 +897,62 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert conflict["result_fields"] == review["result_fields"]
     options = {option["name"]: option for option in edit["options"]}
     assert {"--value", "--clear"} <= set(options)
+    # information decide and limitations decide (#1735): keyed, full scope,
+    # not fresh-gated; they prompt, but only for Handled, which is final.
+    # Each chosen item carries its own version, so there is no
+    # --expected-version.
+    for name in ("information decide", "limitations decide"):
+        decide = entries[name]
+        assert decide["scope"] == "full" and decide["changes_state"], name
+        assert decide["request_key"] and not decide["expected_version"], name
+        assert decide["prompts"] and not decide["fresh_gated"], name
+        assert decide["audit_event"] == f"admin_cmd_{name.split()[0]}_decide"
+        assert decide["result_fields"] == ["created", "request_key", "decisions"]
+        options = {option["name"]: option for option in decide["options"]}
+        assert options["--action"]["choices"] == [
+            "accept",
+            "ignore",
+            "back_to_review",
+            "handled",
+        ]
+        assert options["--action"]["required"] and options["--item"]["required"]
+        assert not options["--note"]["required"]
+    # information list: a passive read with the page's view event.
+    listing = entries["information list"]
+    assert listing["scope"] == "read_only" and not listing["changes_state"]
+    assert listing["audit_event"] == "information_viewed"
+    options = {option["name"]: option for option in listing["options"]}
+    assert options["--stage"]["choices"] == [
+        "to_review",
+        "to_handle",
+        "ignored",
+        "handled",
+        "history",
+        "all",
+    ]
+    assert "--search" not in options
+    # pledges decide (#1733): keyed, full scope, not fresh-gated; it
+    # prompts, but only for Entered by hand, which is final. Each chosen
+    # pledge carries its own version, so there is no --expected-version.
+    pledges = entries["pledges decide"]
+    assert pledges["scope"] == "full" and pledges["changes_state"]
+    assert pledges["request_key"] and not pledges["expected_version"]
+    assert pledges["prompts"] and not pledges["fresh_gated"]
+    assert pledges["audit_event"] == "admin_cmd_pledges_decide"
+    assert pledges["result_fields"] == ["created", "request_key", "decisions"]
+    options = {option["name"]: option for option in pledges["options"]}
+    assert options["--action"]["choices"] == [
+        "accept",
+        "edit",
+        "ignore",
+        "back_to_review",
+        "entered_by_hand",
+    ]
+    assert options["--action"]["required"] and options["--item"]["required"]
+    assert not options["--amount"]["required"] and not options["--note"]["required"]
+    export = entries["export pledges"]
+    assert export["scope"] == "full" and not export["changes_state"]
+    assert export["audit_event"] == "pledges_to_enter_exported"
 
 
 def test_every_state_change_has_a_registered_described_event():
@@ -962,6 +1040,11 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_followup_roster_entered",
         "admin_cmd_followup_roster_bulk",
         "admin_cmd_followup_information_update",
+        # The worklists' decisions (#1735).
+        "admin_cmd_information_decide",
+        "admin_cmd_limitations_decide",
+        # Pledges' decisions (#1733).
+        "admin_cmd_pledges_decide",
     ]
     for event in events:
         assert Action(event) and event in DESCRIPTIONS, event

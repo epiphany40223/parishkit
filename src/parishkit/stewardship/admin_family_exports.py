@@ -253,12 +253,37 @@ def export_archive(caller, service, *, request_key, context):
     )
 
 
+def stage_filters(pairs, stage):
+    """``--filter`` pairs as form fields, with the worklist ``stage``'s own.
+
+    The worklist's export pane posts each Stage as the follow-up filters it
+    stands for (``information_worklist.EXPORT_FILTERS``, #1735), so the
+    stage and a ``--filter`` for one of those together are ``invalid``.
+    """
+    from .reports.information_worklist import EXPORT_FILTERS
+
+    values = filter_values(pairs)
+    if stage is None:
+        return values
+    names = ("disposition", "needed", "completed")
+    if stage not in EXPORT_FILTERS or any(name in values for name in names):
+        raise ValueError(
+            "--stage replaces the disposition, needed and completed filters."
+        )
+    # The pane posts the table's order too, by name unless the table was
+    # sorted (``WorklistQuery.export_values``).
+    return (
+        {"sort": "name"} | values | dict(zip(names, EXPORT_FILTERS[stage], strict=True))
+    )
+
+
 def export_information(
-    caller, service, *, filters, history, fmt, zone, request_key, context
+    caller, service, *, filters, history, fmt, zone, request_key, context, stage=None
 ):
     """``export information``: the information queue's export form.
 
-    ``history`` is the form's "include workflow history" choice. The
+    ``history`` is the form's "include workflow history" choice and
+    ``stage`` the worklist's Stage the export pane posts (#1735). The
     capability is ``ADDITIONAL_FOLLOWUP``, as the page's.
     """
     from .audit.schemas import Action
@@ -284,7 +309,9 @@ def export_information(
         service,
         principal=_principal,
         action=Action.ADMIN_CMD_EXPORT_INFORMATION,
-        parse=lambda actor, campaign_id: InformationQuery.parse(filter_values(filters)),
+        parse=lambda actor, campaign_id: InformationQuery.parse(
+            stage_filters(filters, stage)
+        ),
         create=create,
         request_key=request_key,
         context=context,
