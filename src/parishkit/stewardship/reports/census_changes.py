@@ -709,7 +709,7 @@ def shape(row):
     # value now (the change's own stored value is frozen at its mark), and
     # whether an Entered by hand change is still not seen there.
     check = row.get("check")
-    if check is not None and check.observed and row["entity_kind"] == "member":
+    if check is not None and check.observed:
         shown["parishsoft_read"] = bool(check.observed.get("available"))
         shown["parishsoft_now"] = display(check.observed.get("value"))
     shown["not_seen"] = bool(

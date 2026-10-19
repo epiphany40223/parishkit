@@ -15,7 +15,10 @@ checks"):
   before an identical quick update skips promotion, #630);
 - ``check_states`` reads the latest check of each item for the pages, which
   derive the stage from it (``pipeline.census_placement`` and
-  ``ministry_placement``) and the Not seen in ParishSoft flag.
+  ``ministry_placement``) and the Not seen in ParishSoft flag;
+- ``census_source`` reads a census change's value from the promoted data:
+  a Member contact field as reconciliation does, and a Member's move or
+  death and the Family's email opt-out each its own way (#1738).
 
 The comparison is ``pipeline.refresh_outcome`` with each stream's canonical
 comparison: the census compare rules (``comparison.canonical_value``) and a
@@ -23,7 +26,8 @@ Member's roster state for the Ministry carried forward. A check is written
 only when its outcome changes, or, for an item marked Entered by hand, once
 per full refresh until Not seen is reached, so a quiet refresh writes
 nothing. A Confirmed item is never checked again; an item whose Member or
-Ministry left the data gets no check (rule 4: it keeps its stage).
+Ministry left the data gets no check (rule 4: it keeps its stage), except a
+move, which leaving the Family is the evidence of.
 """
 
 from dataclasses import dataclass
@@ -45,22 +49,29 @@ from parishkit.stewardship.workflows.models import (
     RefreshCheckStart,
 )
 
+from .census import FAMILY_FIELDS
 from .comparison import canonical_value
 from .inputs import MEMBER_FIELDS, MemberSourceUnavailable, member_field_value
+from .member_requests import REQUEST_FIELDS
 from .merge import KnownValue
 from .models import ProposedChange
 
 # The census executions a refresh check is for: final in the census guard.
 FINAL_EXECUTIONS = ("published", "resolved_external")
-# Member fields the Member contact read carries. Moved and deceased need
-# their own reading of the data (Family membership, the deceased flag), so
-# they stay final when Entered by hand until #1738.
+# The confirmable Member fields: the ones the Member contact read carries,
+# and a move and a death, each read its own way (``census_source``, #1738).
+DEFINITIONS = {field.name: field for field in (*MEMBER_FIELDS, *REQUEST_FIELDS)}
 CHECKED_FIELDS = frozenset(
-    field.name
-    for field in MEMBER_FIELDS
-    if CENSUS_CONFIRMABLE.get(("member", field.name))
-    and field.name not in {"moved_household", "deceased_status"}
+    name for name in DEFINITIONS if CENSUS_CONFIRMABLE.get(("member", name))
 )
+# The Family field a refresh confirms: the email opt-out, against the
+# Family's sendNoMail flag (Administrator, 2026-10-18, #1680). The
+# addresses wait for #1688's smoke test (#1749).
+CHECKED_FAMILY_FIELDS = frozenset({"email_opt_out"})
+# A yes-or-no request (moved, deceased) and an opt-out whose baseline was
+# never read have no third value to be wrong at: never Entered incorrectly.
+NO_THIRD_VALUE = frozenset({"moved_household", "deceased_status", "email_opt_out"})
+FAMILY_KINDS = {field.name: field.kind for field in FAMILY_FIELDS}
 # The stored outcome of each comparison result. A published change found
 # back at A or at a third value would be a Conflict, which a final change
 # cannot take yet (#1738), so it records nothing.
@@ -208,22 +219,76 @@ def _owed(stored, state, *, full, marked, moved=False):
     )
 
 
+def census_source(row, corpus):
+    """ParishSoft's value for census change ``row`` in ``corpus``, or None.
+
+    ``row`` is annotated with its Family's ``family_duid``. None means the
+    data gives no evidence either way, so the change gets no check (rule
+    4: it keeps its stage). Migration 0141's
+    ``stewardship_refresh_census_source_v1`` reads the same, and the check's
+    guard requires it:
+
+    - a Member contact field (and a death date) only while the Member is
+      an active, living Member of the change's Family (a death date
+      whatever their status), as reconciliation reads it;
+    - a move: True unless the data lists the Member as an active Member of
+      the Family (not in the data, in another Family, or inactive all read
+      True); none for a Member marked deceased, which is not a move;
+    - a death: whether the data marks the Member deceased, only while it
+      lists them in the Family;
+    - the Family's email opt-out: its ``sendNoMail`` flag while the Family
+      is active.
+    """
+    if row.entity_kind == "family":
+        family = corpus["family"].get(str(row.family_duid))
+        if (
+            row.field not in CHECKED_FAMILY_FIELDS
+            or row.entity_key != str(row.family_duid)
+            or family is None
+            or family.get("active") is not True
+            or type(family.get("sendNoMail")) is not bool
+        ):
+            return None
+        return KnownValue(True, family["sendNoMail"])
+    member = corpus["member"].get(row.entity_key)
+    in_family = member is not None and member["family_key"] == str(row.family_duid)
+    if row.field == "moved_household":
+        if member is not None and member["deceased"]:
+            return None
+        return KnownValue(True, not (in_family and member["active"]))
+    if row.field == "deceased_status":
+        return KnownValue(True, bool(member["deceased"])) if in_family else None
+    if not in_family or (
+        row.field != "death_date" and (not member["active"] or member["deceased"])
+    ):
+        return None
+    try:
+        current = member_field_value(
+            member,
+            corpus["contact"].get("member:" + row.entity_key),
+            DEFINITIONS[row.field],
+        )
+    except MemberSourceUnavailable:
+        # Not evidence of anything: reconciliation records the unusable
+        # value for the open changes; a final one simply waits.
+        return None
+    return current if current.available else None
+
+
 def _census_checks(snapshot, corpus, campaign_id, full, start):
     """Yield the census checks this promotion owes, unsaved.
 
     For every live census change Entered by hand or Updated in ParishSoft of
-    a field the Member contact read carries, whose Member is still an
-    active, living Member of its Family (a death date excepted, as in
-    reconciliation). The value recorded at the mark is the change's stored
-    ParishSoft value, which the mark froze.
+    a confirmable Member field or the Family's email opt-out for which the
+    data gives evidence (``census_source``). The value recorded at the mark
+    is the change's stored ParishSoft value, which the mark froze.
     """
-    definitions = {field.name: field for field in MEMBER_FIELDS}
     rows = ProposedChange.objects.filter(
+        Q(entity_kind="member", field__in=CHECKED_FIELDS)
+        | Q(entity_kind="family", field__in=CHECKED_FAMILY_FIELDS),
         submission__campaign_id=campaign_id,
         submission__mode="live",
         execution__in=FINAL_EXECUTIONS,
-        entity_kind="member",
-        field__in=CHECKED_FIELDS,
     ).annotate(family_duid=F("submission__family__family_duid"))
     rows = list(rows)
     states = (
@@ -239,22 +304,14 @@ def _census_checks(snapshot, corpus, campaign_id, full, start):
         state = states.get(str(row.pk), CheckState(not_seen_after=threshold))
         if state.outcome == "confirmed":
             continue
-        member = corpus["member"].get(row.entity_key)
-        if member is None or member["family_key"] != str(row.family_duid):
+        current = census_source(row, corpus)
+        if current is None:
             continue
-        if row.field != "death_date" and (not member["active"] or member["deceased"]):
-            continue
-        field = definitions[row.field]
-        try:
-            current = member_field_value(
-                member, corpus["contact"].get("member:" + row.entity_key), field
-            )
-        except MemberSourceUnavailable:
-            # Not evidence of anything: reconciliation records the unusable
-            # value for the open changes; a final one simply waits.
-            continue
-        if not current.available:
-            continue
+        kind = (
+            FAMILY_KINDS[row.field]
+            if row.entity_kind == "family"
+            else DEFINITIONS[row.field].kind
+        )
         entered = row.execution == "resolved_external"
         stage = (
             (
@@ -266,12 +323,15 @@ def _census_checks(snapshot, corpus, campaign_id, full, start):
             else Stage.UPDATED
         )
         carried = row.admin_value if row.admin_value_set else row.submitted_value
-        same = _census_same(field.kind)
+        same = _census_same(kind)
         # The value recorded at the mark; one ParishSoft could not report
         # then is no evidence the entry went wrong, so the refresh's own
-        # value stands in for it (unchanged, never Entered incorrectly).
+        # value stands in for it (unchanged, never Entered incorrectly), as
+        # it does for a field with no third value to be wrong at.
         marked = (
-            KnownValue(True, row.current_value) if row.current_available else current
+            KnownValue(True, row.current_value)
+            if row.current_available and row.field not in NO_THIRD_VALUE
+            else current
         )
         result = refresh_outcome(
             stage,
