@@ -69,7 +69,13 @@ checks need no database:
   are its addresses with ``?month=``, each the same page (the script reads
   the month). Its table, Every email by date (#1656), opens on the upcoming
   emails in sending order; ``CALENDAR_VIEWS`` are its other Show and sort
-  addresses, each with a month, as the page's links send them.
+  addresses, each with a month, as the page's links send them. Its Move…
+  (#1521) posts to the send's Edit page (the real address the view's own
+  ``edit_url`` gives): Reminder 1's answers with Edit's review, whose Apply
+  posts to ``APPLY`` (Applied at once), after which the calendar redraws in
+  place from its own address; Reminder 2's answers 400 with the entry page
+  drawn again with the send date refused (``DATE_REFUSAL``), as Edit
+  answers a day outside the campaign.
 - Edit's Delete (#1656): ``EDIT`` posts it to ``EDIT_DELETE``, answered with
   the review of removing Reminder 1; ``EDIT_SERIES`` to ``SERIES_DELETE``,
   answered with the review of deleting its whole series; ``EDIT_INITIAL``
@@ -92,6 +98,7 @@ from uuid import uuid4
 from django import forms
 from django.http import QueryDict
 from django.template.loader import render_to_string
+from django.urls import reverse
 
 from parishkit.stewardship.accounts import schedule_email
 from parishkit.stewardship.accounts.campaign_mail import NOT_OPEN as CLOSED
@@ -331,6 +338,10 @@ def _calendar(values, owner, emails, rows, address=CALENDAR):
         "weekdays": WEEK,
         "list_url": LIST,
         "add_url": NEW,
+        # Move… (#1521): the version it posts, and where its review's Apply
+        # confirms.
+        "base_digest": "a" * 64,
+        "apply_url": APPLY,
     } | sends_view(sends, parameters, NOW, CALENDAR)
     return (
         "text/html",
@@ -945,6 +956,17 @@ def components(context, admin):
                 ),
             ),
             f"{EDIT}/review": (200, None, edit_review),
+            # The calendar's Move… of each reminder (#1521), at its Edit page.
+            reverse("admin:schedule_edit", args=[reminders[0]["id"]]): (
+                200,
+                None,
+                edit_review,
+            ),
+            reverse("admin:schedule_edit", args=[reminders[1]["id"]]): (
+                400,
+                None,
+                _invalid(values, owner, emails, rows),
+            ),
             f"{EDIT_SERIES}/review": (200, None, series_review),
             f"{EDIT_PASSED}/review": (200, None, edit_review),
             APPLY_PASSED: (

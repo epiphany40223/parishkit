@@ -5284,9 +5284,14 @@
   // a field named "action" shadows.
   const formUrl = (form) => new URL(form.getAttribute("action") || "", document.baseURI).href;
   // A form that names its pane's own reserved status line (Campaign images'
-  // slots, data-review-outcome) shows a refused Review there (#1410).
-  const paneLine = (form) => (form.dataset.reviewOutcome
-    ? document.getElementById(form.dataset.reviewOutcome) : null);
+  // slots, data-review-outcome) shows a refused Review there (#1410). A
+  // form inside a dialog of its own (the Campaign calendar's Move…, #1521)
+  // names its refusal line with data-review-refused instead, so a refusal
+  // stays in its dialog while Apply's status goes to the page's line.
+  const paneLine = (form) => {
+    const id = form.dataset.reviewRefused || form.dataset.reviewOutcome;
+    return id ? document.getElementById(id) : null;
+  };
   // A refusal written to a pane's line goes once it no longer applies: on
   // an edit of a form naming the line, when a Review from the pane is
   // accepted, or when the line takes another refusal. The pane's forms

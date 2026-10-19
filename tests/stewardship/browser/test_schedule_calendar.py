@@ -1,4 +1,4 @@
-"""The Campaign calendar (#469), its Add on a day (#1521) and its month view.
+"""The Campaign calendar (#469), its Add on a day and Move… (#1521) and its month view.
 
 The page script draws the table of sends as one month at a time, with
 Previous month and Next month limited to the campaign's months (#1656),
@@ -15,6 +15,11 @@ Each campaign day's (+) Add opens New scheduled email with that send date
 (``ADD_ON``, October 12), whose Cancel and Apply return to the calendar's
 October (``CALENDAR_OCTOBER``). Without a clock the browser's today (2026) is
 outside the campaign, so the calendar opens on its first month, October.
+
+Each reminder has a Move… button (and drags, on a fine pointer) that opens
+the Move dialog; its Review posts to the reminder's Edit page, which answers
+with Edit's review for Reminder 1 and a refused send date for Reminder 2
+(schedule_list_components).
 """
 
 import re
@@ -28,6 +33,7 @@ from .schedule_list_components import (
     APPLY,
     CALENDAR,
     CALENDAR_OCTOBER,
+    DATE_REFUSAL,
     EDIT_SERIES,
     LIST,
     MONTHS,
@@ -39,13 +45,15 @@ from .test_schedule_list import (
     ADD,
     APPLIED_LINE,
     FOCUSED,
+    REVIEW_DIALOG,
     choose,
     email_for,
     near,
+    posted,
     review,
     watch,
 )
-from .waits import eventually, same_place, visible
+from .waits import eventually, focused, has_class, hidden, same_place, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -656,3 +664,254 @@ def test_the_aria_disabled_exclusion_leaves_class_hovers_alone(page, component_o
         )[0]
         == "rgba(0, 0, 0, 0)"
     )
+
+
+# The Move dialog (#1521) and the page script's mark of a dragged send.
+MOVE_DIALOG = "#calendar-move"
+
+
+def move_button(page, day, name):
+    """October ``day``'s Move… for the send ``name``, as a screen reader hears it."""
+    return cell(page, day).get_by_role("button", name=f"Move {name}…")
+
+
+def is_open(page, selector):
+    """Whether the dialog ``selector`` names is open."""
+    return page.locator(selector).evaluate("node => node.open")
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_move_reviews_in_its_dialog_and_applies_in_place(
+    page, component_origin, axe_source, width
+):
+    """Move… on Reminder 1, a new date, Review, then Apply (#1521).
+
+    Only the reminders have Move… (not the sent invitation, not a digest),
+    each a named icon at least 24px square. The dialog says the send's time
+    and that only its date changes; Review the move waits for another date.
+    Review posts the move to the reminder's Edit page, whose review opens
+    over the Move dialog; its Cancel returns there. Apply redraws the list of
+    sends and the grid in place (no reload, the same month, nothing above it
+    moved), closes the Move dialog, and the calendar's status line says what
+    was applied and takes focus.
+    """
+    page.set_viewport_size({"width": width, "height": 900})
+    at_now(page)
+    page.goto(component_origin + CALENDAR)
+    failures = watch(page)
+    assert page.locator("table.calendar-month button.calendar-move").count() == 2
+    assert cell(page, 1).locator("button.calendar-move").count() == 0
+    assert cell(page, 12).locator("button.calendar-move").count() == 0
+    button = move_button(page, 10, "Reminder 1")
+    assert button.get_attribute("title") == "Move Reminder 1…"
+    assert button.locator("svg[aria-hidden=true]").count() == 1
+    box = button.bounding_box()
+    assert box["width"] >= 24 and box["height"] >= 24
+    heading = page_place(page.locator("#calendar-months-title"))
+    page.evaluate("document.getElementById('calendar-source').dataset.old = 'yes'")
+    button.click()
+    dialog = page.locator(MOVE_DIALOG)
+    visible(dialog)
+    assert dialog.locator("h2").inner_text() == "Move Reminder 1…"
+    what = dialog.locator("#calendar-move-what").inner_text()
+    assert what.startswith("Reminder 1 sends at 6:00 AM with the email “")
+    assert "keeps the same time of day in this computer’s time zone" in what
+    date = dialog.locator('[name="schedule-date"]')
+    assert date.input_value() == "2054-10-10"
+    assert page.evaluate(FOCUSED) == "id_schedule-date"
+    submit = dialog.get_by_role("button", name="Review the move")
+    assert submit.is_disabled()
+    visible(dialog.get_by_text("Choose another date to review the move."))
+    box = dialog.bounding_box()
+    assert box["x"] >= 0 and box["x"] + box["width"] <= width
+    assert axe_violations(page, axe_source) == []
+    date.fill("2054-10-14")
+    assert not submit.is_disabled()
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        submit.click()
+    shown = page.locator(REVIEW_DIALOG)
+    visible(shown)
+    assert sent.value.url.startswith(component_origin + "/admin/campaign/schedules/")
+    fields = posted(sent.value)
+    fields.pop("csrfmiddlewaretoken", None)
+    assert fields == {
+        "action": ["preview"],
+        "move": ["yes"],
+        "base_digest": ["a" * 64],
+        "zone": ["America/Los_Angeles"],
+        "schedule-date": ["2054-10-14"],
+    }
+    assert is_open(page, MOVE_DIALOG)
+    # The review's Cancel returns to the Move dialog, as it was.
+    shown.get_by_role("button", name="Cancel").click()
+    hidden(shown)
+    assert is_open(page, MOVE_DIALOG)
+    assert date.input_value() == "2054-10-14"
+    # Focus returns to Review the move once the review dialog has closed.
+    focused(submit)
+    submit.click()
+    visible(shown)
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        shown.get_by_role("button", name="Apply").click()
+    assert sent.value.url.endswith(APPLY)
+    eventually(page, "document.getElementById('schedules-outcome').textContent !== ''")
+    line = page.locator("#schedules-outcome")
+    assert line.inner_text().startswith("Scheduled email changed. ")
+    assert APPLIED_LINE.search(line.inner_text())
+    assert page.evaluate(FOCUSED) == "schedules-outcome"
+    assert not is_open(page, MOVE_DIALOG)
+    assert not is_open(page, REVIEW_DIALOG)
+    # Redrawn in place from the fresh page: a new list, the same month.
+    assert (
+        page.evaluate("document.getElementById('calendar-source').dataset.old") is None
+    )
+    assert page.locator("table.calendar-month caption").inner_text() == "October 2054"
+    assert page.locator("table.calendar-month button.calendar-move").count() == 2
+    assert page.evaluate("window.notReloaded === true")
+    assert same_place(page_place(page.locator("#calendar-months-title")), heading)
+    # A second move from the redrawn page posts the fresh form's version and
+    # zone, and its gate starts again from that send's day.
+    move_button(page, 20, "Reminder 2").click()
+    dialog = page.locator(MOVE_DIALOG)
+    visible(dialog)
+    submit = dialog.get_by_role("button", name="Review the move")
+    assert submit.is_disabled()
+    dialog.locator('[name="schedule-date"]').fill("2054-10-22")
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        submit.click()
+    fields = posted(sent.value)
+    assert fields["base_digest"] == ["a" * 64]
+    assert fields["zone"] == ["America/Los_Angeles"]
+    assert fields["schedule-date"] == ["2054-10-22"]
+    assert not failures
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_a_refused_move_is_said_in_the_dialog(page, component_origin, width):
+    """Reminder 2's Edit refuses the date (#1521): the Move dialog stays open,
+    its reserved line says why and describes the date field, nothing moves
+    and no review dialog opens. Escape closes it, focus back on Move…, and
+    the next Move… starts clean. The line is after the buttons, so a
+    refusal moves neither of them, on a phone too."""
+    page.set_viewport_size({"width": width, "height": 900})
+    at_now(page)
+    page.goto(component_origin + CALENDAR)
+    failures = watch(page)
+    button = move_button(page, 20, "Reminder 2")
+    button.click()
+    dialog = page.locator(MOVE_DIALOG)
+    visible(dialog)
+    assert dialog.locator("h2").inner_text() == "Move Reminder 2…"
+    date = dialog.locator('[name="schedule-date"]')
+    assert date.input_value() == "2054-10-20"
+    date.fill("2054-11-15")
+    submit = dialog.get_by_role("button", name="Review the move")
+    before = submit.bounding_box()["y"]
+    submit.click()
+    refusal = dialog.locator("#calendar-move-refusal")
+    eventually(
+        page, "document.getElementById('calendar-move-refusal').textContent !== ''"
+    )
+    assert DATE_REFUSAL in refusal.inner_text()
+    assert date.get_attribute("aria-invalid") == "true"
+    assert "calendar-move-refusal" in date.get_attribute("aria-describedby")
+    assert submit.bounding_box()["y"] == before
+    assert is_open(page, MOVE_DIALOG)
+    assert not is_open(page, REVIEW_DIALOG)
+    assert page.locator("[data-error-summary]").count() == 0
+    page.keyboard.press("Escape")
+    assert not is_open(page, MOVE_DIALOG)
+    focused(button)
+    move_button(page, 10, "Reminder 1").click()
+    visible(dialog)
+    assert refusal.inner_text() == ""
+    assert date.get_attribute("aria-invalid") == "false"
+    assert date.input_value() == "2054-10-10"
+    assert not failures
+
+
+def test_a_keyboard_reaches_move_and_cancels_it(page, component_origin):
+    """Tab goes from a reminder's link to its Move…, Enter opens the dialog
+    on the date field, and Cancel closes it with focus back on Move…."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    at_now(page)
+    page.goto(component_origin + CALENDAR)
+    failures = watch(page)
+    cell(page, 10).get_by_role("link", name="6:00 AM Reminder 1").focus()
+    tab_to_next(page)
+    assert page.evaluate("document.activeElement.getAttribute('aria-label')") == (
+        "Move Reminder 1…"
+    )
+    page.keyboard.press("Enter")
+    visible(page.locator(MOVE_DIALOG))
+    assert page.evaluate(FOCUSED) == "id_schedule-date"
+    page.locator(MOVE_DIALOG).get_by_role("button", name="Cancel").click()
+    assert not is_open(page, MOVE_DIALOG)
+    focused(move_button(page, 10, "Reminder 1"))
+    assert page.evaluate("window.notReloaded === true")
+    assert not failures
+
+
+def centre(locator):
+    """The middle of ``locator`` in the window, for the mouse."""
+    box = locator.bounding_box()
+    return box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+
+
+def test_dragging_a_send_onto_a_day_opens_move_with_that_day(page, component_origin):
+    """A drag (#1521) outlines the day under the pointer and moves nothing;
+    the drop opens the Move dialog with that day, and changes nothing until
+    Apply. Escape cancels a drag, a drop on the send's own day does nothing,
+    and a plain click still follows the link. The window is tall enough to
+    show the whole month, since the mouse moves in window coordinates."""
+    page.set_viewport_size({"width": 1280, "height": 1600})
+    at_now(page)
+    page.goto(component_origin + CALENDAR)
+    failures = watch(page)
+    page.locator("table.calendar-month").scroll_into_view_if_needed()
+    link = cell(page, 10).get_by_role("link", name="6:00 AM Reminder 1")
+    target = cell(page, 14)
+    place = page_place(target)
+    page.mouse.move(*centre(link))
+    page.mouse.down()
+    page.mouse.move(*centre(target), steps=8)
+    has_class(target, "calendar-drop-target")
+    has_class(cell(page, 10).locator("li.calendar-movable"), "calendar-dragging")
+    assert same_place(page_place(target), place)
+    page.mouse.up()
+    dialog = page.locator(MOVE_DIALOG)
+    visible(dialog)
+    assert dialog.locator('[name="schedule-date"]').input_value() == "2054-10-14"
+    assert not dialog.get_by_role("button", name="Review the move").is_disabled()
+    assert page.url.endswith(CALENDAR)
+    assert "calendar-drop-target" not in (target.get_attribute("class") or "")
+    dialog.get_by_role("button", name="Cancel").click()
+    assert not is_open(page, MOVE_DIALOG)
+    # The drop changed nothing: Reminder 1 is still on October 10.
+    visible(cell(page, 10).get_by_role("link", name="6:00 AM Reminder 1"))
+    # Escape cancels a drag: no dialog, no outline, no navigation.
+    page.mouse.move(*centre(link))
+    page.mouse.down()
+    page.mouse.move(*centre(cell(page, 15)), steps=8)
+    has_class(cell(page, 15), "calendar-drop-target")
+    page.keyboard.press("Escape")
+    # Released back over the link, the click that ends the drag still
+    # does not follow it.
+    page.mouse.move(*centre(link), steps=4)
+    page.mouse.up()
+    assert not is_open(page, MOVE_DIALOG)
+    assert page.url.endswith(CALENDAR)
+    assert page.locator(".calendar-drop-target, .calendar-dragging").count() == 0
+    # Dropped back on its own day: nothing either.
+    page.mouse.move(*centre(link))
+    page.mouse.down()
+    page.mouse.move(*centre(cell(page, 11)), steps=8)
+    page.mouse.move(*centre(cell(page, 10)), steps=8)
+    page.mouse.up()
+    assert not is_open(page, MOVE_DIALOG)
+    assert page.evaluate("window.notReloaded === true")
+    assert page.url.endswith(CALENDAR)
+    assert not failures
+    # A click without a drag follows the link.
+    with page.expect_navigation():
+        link.click()

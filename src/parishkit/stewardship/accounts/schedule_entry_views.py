@@ -49,7 +49,7 @@ even from an old link.
 
 import json
 import re
-from datetime import date
+from datetime import date, time
 from uuid import UUID
 
 from django import forms
@@ -70,6 +70,7 @@ from parishkit.stewardship.campaigns.work_locks import (
     work_transaction,
 )
 from parishkit.stewardship.storage import StaleRecordError
+from parishkit.stewardship.time_entry import canonical
 from parishkit.stewardship.wall_clock import weekday_choices
 from parishkit.stewardship.web.admin_forms import AdminForm
 from parishkit.stewardship.web.contracts import filters
@@ -226,6 +227,39 @@ ADD_ON = "date"
 # Edit's one address parameter (#1656): the Campaign calendar month
 # (``2054-11``) it was opened from, which its Cancel and Apply return to.
 FROM_CALENDAR = "calendar"
+# The Campaign calendar's Move… (#1521) posts to Edit with ``move=yes``,
+# the new send date, the browser's zone and the configuration version only;
+# Edit fills in the rest of its form from the saved schedule (``_moved``).
+MOVE = "move"
+MOVE_FIELDS = {
+    "action",
+    "csrfmiddlewaretoken",
+    "base_digest",
+    ZONE,
+    MOVE,
+    f"{ENTRY}-date",
+}
+# Why a send the calendar offers no Move… for is refused anyway (an old
+# page or a crafted request): a digest is one repeating schedule, and a
+# missed send's time has passed.
+NOT_MOVABLE = _(
+    "This scheduled email can't be moved from the calendar: it repeats, or its "
+    "send time has passed without sending."
+)
+# Edit's line when "This reminder only" takes a reminder off the dates its
+# series' rule gives (#1521), which ``series_schema.upkeep`` then applies.
+LEAVES_SERIES = _(
+    "This reminder leaves its series (%(rule)s), since the series does not "
+    "send on its new day."
+)
+# A calendar move whose kept time falls in the hour the campaign's clocks
+# repeat on the new day (#1521): the Move dialog has only a date, so the
+# refusal says what it can do there, at the date.
+MOVE_REPEATED_HOUR = _(
+    "On this day the send time falls in the hour that repeats when clocks fall "
+    "back in the campaign's time zone, so it can't be saved exactly. Choose "
+    "another day, or change the time on its Edit page."
+)
 # A year and month as the calendar's addresses name one (``?month=``).
 YEAR_MONTH = re.compile(r"\d{4}-(0[1-9]|1[0-2])")
 # Edit's Delete (#1656): which reminders of a series' reminder it removes,
@@ -700,7 +734,7 @@ def _fields(new):
     if new:
         names.update(f"repeat-{name}" for name in REPEAT_FIELDS)
     else:
-        names.add(SCOPE)
+        names.update({SCOPE, MOVE})
     return names
 
 
@@ -1029,6 +1063,61 @@ def _edit_notes(outcome, cut_date, clock, changed_email):
     return notes
 
 
+def _leaves_series(record, entries):
+    """Edit's review line when this reminder leaves its series (#1521).
+
+    ``record`` is the reminder's series (``_series_of``) and ``entries``
+    the one changed schedule of a "This reminder only" Edit. The line is
+    there when its new campaign-local date is not one its series' rule
+    gives, the same test ``series_schema.upkeep`` takes it out by.
+    """
+    if record is None or not entries or not entries[0].get("date"):
+        return []
+    rule = record["values"]["rule"]
+    if entries[0]["date"] in expand(rule)["dates"]:
+        return []
+    return [LEAVES_SERIES % {"rule": rule_text(rule)}]
+
+
+def _moved(posted, schedule, saved, campaign, now):
+    """The Campaign calendar's Move… (#1521) as Edit's own form would post it.
+
+    ``posted`` holds only ``MOVE_FIELDS``: the new send date in the
+    browser's zone. The send time is the saved one in that zone (so 9:00 AM
+    stays 9:00 AM on the new day), the email is the saved one (a digest's
+    comparison never applies: a digest does not move), and ``drawn_at`` is
+    the saved send's moment, as a freshly drawn Edit page would post them;
+    Edit then reviews it exactly as if the Administrator had changed only
+    the date there. A send the calendar
+    offers no Move… for (a digest, a missed send) is refused. A blank or
+    unknown zone keeps the campaign-local time, so Edit's own zone refusal
+    answers it.
+    """
+    values = campaign.active_configuration.values
+    row = next(
+        row
+        for row in schedule_rows(saved, values, work_summary(campaign.pk), now)
+        if row.id == schedule["id"]
+    )
+    if not row.movable:
+        raise UserFacingDenied(
+            NOT_MOVABLE, fix=_("Open its Edit page to change it instead.")
+        )
+    drawn = schedule_local.instant(schedule["values"], values["timezone"], now)
+    try:
+        clock = schedule_local.in_browser(
+            schedule["values"], posted.get(ZONE, ""), values["timezone"], now
+        )
+    except UnknownZone:
+        clock = time.fromisoformat(schedule["values"]["time"])
+    moved = posted.copy()
+    del moved[MOVE]
+    moved[f"{ENTRY}-time"] = canonical(clock)
+    moved[f"{ENTRY}-template_version"] = schedule["values"]["template_version"]
+    moved[f"{ENTRY}-drawn_at"] = drawn.isoformat()
+    return moved
+
+
 def _series_notes(reviewed):
     """The review's line on a repeat New remembers as a series (#469)."""
     return [
@@ -1215,6 +1304,14 @@ def _entry(request, campaign_id, schedule_id=None):
     if action == "confirm":
         # No sources: an unknown action value, not an unexpected field.
         raise unexpected_fields()
+    # The calendar's Move… (#1521): only its own few fields, as a preview.
+    moving = action is not None and MOVE in request.POST
+    if moving and (
+        action != "preview"
+        or request.POST.get(MOVE) != "yes"
+        or set(request.POST) - MOVE_FIELDS
+    ):
+        raise unexpected_fields(request.POST, allowed=MOVE_FIELDS)
     key = direct_key(request.POST) if action == "save" else None
     # A repeat of a direct save is answered with its first change's status
     # before the form is checked again (#1486).
@@ -1233,6 +1330,8 @@ def _entry(request, campaign_id, schedule_id=None):
         if not new:
             read_only = _changeable(saved, campaign, {str(schedule_id)})
             schedule = next(row for row in saved if row["id"] == str(schedule_id))
+        if moving:
+            posted = _moved(posted, schedule, saved, campaign, now)
         record = _series_of(state[0], campaign, schedule)
         refusals = (
             scope_refusals(record, saved, schedule, campaign, read_only, now)
@@ -1331,8 +1430,13 @@ def _entry(request, campaign_id, schedule_id=None):
             )
             return _entry_page(request, context, status=400)
         except schedule_local.RepeatedHour:
+            # A move has only its date to change (#1521).
             entry.add_error(
-                "time", forms.ValidationError(REPEATED_HOUR, code="repeated_hour")
+                "date" if moving else "time",
+                forms.ValidationError(
+                    MOVE_REPEATED_HOUR if moving else REPEATED_HOUR,
+                    code="repeated_hour",
+                ),
             )
             return _entry_page(request, context, status=400)
         except ValueError:
@@ -1455,7 +1559,10 @@ def _entry(request, campaign_id, schedule_id=None):
                 reviewed = reviewed | {"email": _sample(service, campaign, added)}
         if key is None:
             reviewed = reviewed | {
-                "series_notes": _series_notes(reviewed) if notes is None else notes
+                "series_notes": _series_notes(reviewed)
+                + (_leaves_series(record, entries) if chosen == "this" else [])
+                if notes is None
+                else notes
             }
             # The review dialog's fragment, never a page: its Apply confirms
             # on Dates and mail schedules (the form's dialog names it), and

@@ -109,6 +109,15 @@ class ScheduleRow:
         return self.kind in DIGESTS
 
     @property
+    def movable(self):
+        """Whether the Campaign calendar offers Move… for this send (#1521).
+
+        Only a dated Family send that has not run and whose time has not
+        passed without sending: a digest is one repeating schedule.
+        """
+        return not self.read_only and not self.digest and self.status != "missed"
+
+    @property
     def last_send(self):
         """Whether a Family send has results to summarize and link to."""
         return not self.digest and bool(self.delivered or self.failed)
