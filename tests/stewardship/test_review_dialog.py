@@ -104,6 +104,8 @@ def test_the_row_action_dialog_is_unchanged():
 DIALOG_PAGES = {
     "system-health-backup-button.html": "system-health.html",
     "system-health-debug-button.html": "system-health.html",
+    # Finish switching on an integration's status line (#1568).
+    "integration-summary.html": "integration-settings.html",
 }
 
 
@@ -514,7 +516,8 @@ def test_apply_may_post_another_action_and_a_drawn_refusal_is_shown():
     script = (TEMPLATES.parents[1] / "static/stewardship/ui-v1.js").read_text()
     assert '.querySelector("[data-review-refusal]")' in script
     assert "refusalMarkup(answer.text)\n        || refusalText(" in script
-    assert script.count("refusalMarkup(answer.text)") == 2
+    # Review, Apply and a key confirmation's Apply (#1568).
+    assert script.count("refusalMarkup(answer.text)") == 3
     # Redrawn from Apply's answer itself, without reading the page again.
     assert 'data-review-redraw="body"' in dialog(redraw_body=True)
     assert 'dialog.dataset.reviewRedraw === "body"' in script
@@ -700,11 +703,11 @@ def test_parish_settings_is_a_compact_review():
 
 def test_the_page_reads_a_pasted_key_as_the_server_does():
     """ui-v1.js's SERVER_SPACE, which decides whether an integration's key
-    field holds a key (data-review-native, #750), is exactly the set of
+    field holds a key (data-review-key, #750, #1568), is exactly the set of
     characters Python's str.strip() removes (str.isspace): the server and
-    the key field's cleaning use str.strip(), so the page submits natively
-    exactly when the server takes the key-save path. JavaScript's own trim()
-    differs (U+FEFF, U+0085, U+001C-U+001F)."""
+    the key field's cleaning use str.strip(), so the page reviews the key's
+    confirmation exactly when the server takes the key-save path. JavaScript's
+    own trim() differs (U+FEFF, U+0085, U+001C-U+001F)."""
     script = (TEMPLATES.parents[1] / "static/stewardship/ui-v1.js").read_text()
     (body,) = re.findall(r"const SERVER_SPACE = /\^\[(.+?)\]\*\$/;", script)
     space = re.compile(f"[{body}]")
@@ -712,3 +715,78 @@ def test_the_page_reads_a_pasted_key_as_the_server_does():
         character = chr(code)
         assert bool(space.fullmatch(character)) == character.isspace(), hex(code)
     assert "\N{ZERO WIDTH NO-BREAK SPACE}".strip() and not "\x85".strip()
+
+
+def _key_confirmation(target, **values):
+    """An integration's key confirmation (#1568), as the dialog receives it."""
+    from html import unescape
+
+    return unescape(
+        render_to_string(
+            "stewardship/integration-review.html",
+            {"kind": "key", "target": target, "label": target, "changes": []} | values,
+        )
+    )
+
+
+def test_a_pasted_key_is_a_confirmation_without_any_field():
+    """Save with a key pasted asks its own question and says what happens
+    next; it has no hidden field (no preview: Apply posts the form itself),
+    and only ParishSoft's and Slack's sentences name the key's last
+    characters, which the page script fills in from the field (#1568)."""
+    for target, question, tail in (
+        ("parishsoft", "Replace the ParishSoft key?", True),
+        ("google_workspace", "Replace the Google Workspace key?", False),
+        ("slack", "Replace the Slack bot token?", True),
+    ):
+        text = _key_confirmation(target)
+        assert f'data-review-title="{question}"' in text
+        assert "data-review-key " in text and "<input" not in text
+        assert ("{tail}" in text) is tail
+        assert "This usually takes a minute." in text
+    setup = _key_confirmation("slack", setup=True)
+    assert 'data-review-title="Set up Slack?"' in setup
+    assert "Slack is set up once the check passes" in setup
+    script = (TEMPLATES.parents[1] / "static/stewardship/ui-v1.js").read_text()
+    # The key is left out of the Review, and Apply posts the form itself.
+    assert "data.delete(form.dataset.reviewKey);" in script
+    assert 'data.append("key_review", "yes");' in script
+    assert "new URLSearchParams(new FormData(form))" in script
+    assert "reviewNative" not in script
+
+
+def test_finish_switching_is_a_confirmation_carrying_its_key_change():
+    """Finish switching's confirmation (#1568) says the integration is
+    stopped, lists the settings saved with the key and carries the signed
+    preview and the key change's id that Apply posts."""
+    from html import unescape
+
+    text = unescape(
+        render_to_string(
+            "stewardship/integration-review.html",
+            {
+                "kind": "finish",
+                "target": "parishsoft",
+                "label": "ParishSoft",
+                "changes": [
+                    {
+                        "label": "Expected ParishSoft organization ID",
+                        "before": "12345",
+                        "after": "54321",
+                    }
+                ],
+                "preview": "signed",
+                "request_id": "0b9e1c4e-8a8e-4f43-9a51-3f6c1d2e7a10",
+            },
+        )
+    )
+    assert 'data-review-title="Finish switching to the new key?"' in text
+    assert "ParishSoft is stopped until you finish switching" in text
+    assert "Settings saved with the new key" in text
+    assert re.findall(r'<input type="hidden" name="(\w+)"', text) == [
+        "preview",
+        "request_id",
+    ]
+    summary = (TEMPLATES / "integration-summary.html").read_text()
+    assert 'data-review-region="integration-editor"' in summary
+    assert "key-changes" not in summary and "Key replacement status" not in summary

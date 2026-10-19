@@ -8,7 +8,7 @@
   <div><label for="ministry-query">{% translate "Search by name" %}</label>
   <input id="ministry-query" name="q" value="{{ query }}" maxlength="200"></div>
   {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
-  {% button type="submit" %}{% translate "Filter" %}{% endbutton %}
+  {% include "stewardship/components/filter-actions.html" %}
 </form>
 {% translate "Ministry pages" as navigator_label %}
 <div id="{{ table.anchor }}" data-table-region>

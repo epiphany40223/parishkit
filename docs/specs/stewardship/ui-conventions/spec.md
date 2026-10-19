@@ -56,6 +56,7 @@ when it lands.
   [review dialog](#review-dialog),
   [conditional fields](#conditional-fields),
   [binary choices](#binary-choices),
+  [Clear filters](#clear-filters),
   [Basic and Advanced modes](#basic-and-advanced-modes),
   [single-campaign interim](#single-campaign-interim),
   [addresses and legacy URLs](#addresses-and-legacy-urls),
@@ -1466,12 +1467,12 @@ the campaign wizard in #1404 PR 4).
   enctype is `multipart/form-data` (an upload editor's file), otherwise
   URL-encoded. A form's other submit button marked `data-review-skip`
   (Off-site backups' Test access) is no Review: it takes the form's other
-  way. A form marked `data-review-native="<field>"` submits natively,
-  without the dialog, while that field holds a value: an integration's
-  pasted new key, whose slow install is followed on the page (a recorded
-  exception, below). Until the answer arrives the form is inert and marked
-  busy, and Review changes says it is working, so nothing can be edited
-  while the review is being prepared.
+  way. A form marked `data-review-key="<field>"` holds a secret: while that
+  field holds a value (an integration's pasted new key), Review posts the
+  form without it, so the server reviews everything else and never receives
+  the key until Apply (a recorded exception, below). Until the answer
+  arrives the form is inert and marked busy, and Review changes says it is
+  working, so nothing can be edited while the review is being prepared.
 - **Field errors stay on the form.** A Review refused for the values in the
   form (a required field, a value out of range) does not open the dialog: the
   form shows its error summary and marks each field, as the
@@ -1620,11 +1621,23 @@ Recorded exceptions (Administrator decision, 2026-10-11):
 - **The setup wizard** keeps its stepwise Next and Back, with its own review
   step ([Bootstrap and first-Admin
   wizard](../admin-portal/spec.md#bootstrap-and-first-admin-wizard)).
-- **Integrations' slow key install** shows its status inside the
-  Integrations page while the key is installed, not in a dialog or on a
-  second page ([#456](https://github.com/epiphany40223/parishkit/issues/456)):
-  Save with a new key pasted submits natively (`data-review-native`).
-  Integrations' other changes use the dialog.
+- **Integrations' slow key install** shows its progress inside the
+  integration's page while the key is checked and installed, not in the
+  dialog or on a second page
+  ([#456](https://github.com/epiphany40223/parishkit/issues/456)). The key
+  change itself is reviewed in the dialog like any other change
+  ([#1568](https://github.com/epiphany40223/parishkit/issues/1568), narrowing
+  this exception): Save with a key pasted opens a confirmation that names
+  the key only by its last characters, which the browser reads from the
+  field (the server never draws any part of a key). Apply then posts the
+  page's own form, key included, without a page load, instead of a signed
+  preview, since sealing the key at Review would make Review a write; the
+  dialog closes as soon as the key is staged (a second or two), and the
+  page's status line follows the check and install in place, then redraws
+  the page in place when they finish. **Finish switching to the new key**
+  is a confirmation in the same dialog. A key's check takes about a minute,
+  which is why its progress stays on the page: the page can be left and
+  the check carries on.
 
 Going live uses the dialog for each of its consequential actions: **Start
 go-live** and **Confirm Production** (full reviews, Confirm Production with
@@ -1657,8 +1670,9 @@ same issue. The
 [integration settings pages](../admin-portal/spec.md#parish-and-integration-configuration)
 use the dialog too (#750): an ordinary settings edit is a compact review, a
 refresh schedule change keeps its full review, and setting up Off-site
-backups by its folder, removing Slack and turning off off-site copies are
-confirmations; the Backup encryption key change still uses its separate
+backups by its folder, removing Slack, turning off off-site copies, a key
+change and Finish switching to the new key are confirmations (#1568); the
+Backup encryption key change still uses its separate
 Review page. The in-place review panel of #532 is retired
 ([#1429](https://github.com/epiphany40223/parishkit/issues/1429),
 [in-place controls](#in-place-controls)); the other editors use separate
@@ -1797,6 +1811,101 @@ Testing rehearsal.
   and has no menu for that choice, and its view no longer hands the
   template the choice's options. Any other menu built from a loop is
   checked in review.
+
+### Clear filters
+
+**Rule.** Every Admin filter form (a page's `form#table-filters`, in a
+filter bar or a Filters panel) ends with two buttons side by side: **Apply
+filters**, then **Clear filters** directly after it (in a Filters panel
+both share Apply's grid cell, Clear wrapping under Apply where that cell is
+too narrow, so no row is added; in a filter bar whose filters leave too
+little room beside them, such as Sent mail's at 1280 px, Clear likewise
+wraps under Apply in the same item, Apply staying on the fields' row).
+The pair is never wider than its line, so on a phone Clear wraps under
+Apply rather than widening the page, and its two buttons have a narrower
+inline padding than other buttons, so that side by side they fit one
+Filters panel cell even with wider fonts. In Sent mail's and the
+Timeline's filter bars the pair takes the room beside the filters first,
+up to both buttons side by side, and the filters grow from what is left,
+never narrower than their own label line.
+Clear filters puts every filter back to the page's default in one step and
+shows the result in place. No filter form names its apply button otherwise
+(the Ministries list's Filter, Background work's Show tasks, Refused
+addresses' Show refusals, Roster changes' Apply and the Timeline's Show
+lines became Apply filters, #1651). **Why.** Clearing each field by hand,
+or editing the address, is slow and easy to get wrong; a reload or a link
+to the bare page would lose the reader's sort, rows per page and view
+choices (Administrator, pk-local review,
+[#1651](https://github.com/epiphany40223/parishkit/issues/1651)). **Shared
+code.** `components/filter-actions.html` (both buttons),
+`data-clear-filters` and `data-filter` in `ui-v1.js`, the unavailable tip
+in `admin-menu-v1.js`; `test_clear_filters.py` (the guard) and the browser
+tests of the pages it names. **Precedent.** #1651.
+
+- **Defaults are the server's.** Clear filters sends the filter form without
+  its filters, so the server answers with the page's own unfiltered view,
+  and the form then shows that answer's values: Census changes' Status goes
+  back to its open changes and System logs' Show boxes to their first-visit
+  ticks, not to blank fields. Every visible filter field is reset, including
+  one inside a closed disclosure (System logs' "Filter by identifier"), and
+  so is every hidden field that carries a filter, marked `data-filter`
+  (System logs' submitted-form mark, the family directory's kept Campaign
+  mail can reach, Sent mail's one-send view). A private filter, kept out
+  of addresses, is cleared from the form too, so no later request sends it.
+- **What it keeps.** The table's sort and rows per page, the browser's time
+  zone and any view choice the form carries as a hidden field (a
+  [segmented pair](#binary-choices)'s chosen view, such as Production or
+  Testing) are kept. The list starts again at its first page, as after
+  Apply.
+- **A data view is not a filter.** A choice that switches the data shown
+  between Production and Testing is a view, not a filter: Clear filters
+  keeps it. The family directory's Responses shown and Sent mail's
+  Production or Testing are segmented pairs, so their filter forms carry
+  the choice as a kept hidden field; such a choice drawn as a visible
+  control in a filter form is kept too, and is then marked `data-view`.
+  Roster changes' Show, also a segmented pair, is kept the same way.
+  (Coordinator default on
+  [#1651](https://github.com/epiphany40223/parishkit/issues/1651); the
+  Administrator can override it.)
+- **In place.** Clearing works as applying filters does
+  ([Admin tables](#admin-tables), #484): every table region, count, summary
+  and Filters panel count is refreshed without a reload or a scroll jump,
+  the address follows the answer as after Apply (a GET page's becomes the
+  cleared view's; a POST page keeps its own or shows the link the answer
+  draws), one request runs at a time, and a filter the server had refused
+  loses its mark. The Filters panel stays open. The live region
+  says "Filters cleared." and then the rows now shown.
+- **Focus.** Focus stays on Clear filters, which is then unavailable.
+  What is announced is the live region's "Filters cleared." and the rows
+  now shown; the unavailable reason's tip is not shown or announced at
+  that moment, but on the next hover, keyboard focus or tap.
+- **Unavailable.** Clear filters is unavailable while it has nothing to do:
+  every filter field shows the page's default and the list shown uses the
+  defaults too. It is then greyed (`aria-disabled`), stays in the tab order
+  and keeps its size and place ([no layout shift](#no-layout-shift)), and
+  its reason, "Every filter already shows its default.", is a tip shown on
+  hover, keyboard focus or tap and announced as its description, like
+  other unavailable in-page controls ([navigation rule
+  10](#navigation-rules)). It becomes available as soon as any filter
+  field changes. The page knows its defaults when it was opened with no
+  filter in its address, or after a Clear; a page opened already filtered
+  (a count link, a cross-link, a bookmark) keeps Clear filters available
+  until then. A POST report shown at its plain address is taken as its
+  default view, as a reload shows it.
+- **Never held by a filter's error.** A filter field the browser or server
+  refuses (a half-typed date, a malformed identifier) never holds Clear
+  filters: it is the quickest way out of that state.
+- **Not this pattern.** A box that applies itself when ticked, with no apply
+  button (Automation access's Include ended sessions), a segmented pair
+  (each segment applies at once), and Campaign comparison's Compare on day,
+  which has no unfiltered view.
+- **Guard.** A template test fails when an Admin template's filter form
+  does not draw its buttons through the shared component, draws another
+  submit button, or has a hidden field that is neither kept state (the
+  table's sort and size, the zone, a listed view choice) nor marked
+  `data-filter`, or a visible Production or Testing choice (`name="mode"`)
+  not marked `data-view`. It finds every filter form and field whatever
+  its attribute order, in every Admin template and subdirectory.
 
 ### Basic and Advanced modes
 
@@ -2315,8 +2424,8 @@ report whose filter form is longer than a row puts it in a "Filters" panel (the
 `filterpanel` template tag): a native disclosure that starts closed and renders
 open whenever the shown results use any filter other than the page's default,
 so an applied filter is never hidden. Open, a long form is a compact grid of
-its fields, each label tight above its box and Apply beside the last field
-when the row has room, in one column on a phone (#1411); the Family
+its fields, each label tight above its box and Apply and
+[Clear filters](#clear-filters) beside the last field when the row has room, in one column on a phone (#1411); the Family
 directory's short fields keep their filter bar. The Family directory and
 Census changes are the two exceptions to the closed start: the Family
 directory's Filters panel is open by default (an Administrator decision, #227),
