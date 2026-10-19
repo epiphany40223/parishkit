@@ -2726,14 +2726,14 @@ def census_resolve(args, preamble, runtime, context):
 def census_review(args, preamble, runtime, context):
     """Review an Automatic census change, as its row's actions do (#528).
 
-    Approve (``approved``), Ignore (``ignored``) or Back to To review
-    (``unreviewed``). Without ``--request-key`` a new key is made and
+    Accept (``accepted``, stored as ``approved``), Ignore (``ignored``) or
+    Back to To review (``unreviewed``). Without ``--request-key`` a new key is made and
     written to standard error before anything is done. Every review can be
     changed again until publication of the change starts, so, as on the
     page, it asks nothing.
     """
     from .accounts.policy import Capability
-    from .admin_census import review_census
+    from .admin_census import review_census, stored_decision
     from .responses.census_resolution import MAX_NOTE
 
     # The role first (#1341): an Administrator's, so Staff are denied before
@@ -2748,7 +2748,7 @@ def census_review(args, preamble, runtime, context):
         context["caller"],
         runtime,
         args.proposal_id,
-        decision=args.decision,
+        decision=stored_decision(args.decision),
         expected_version=args.expected_version,
         note=note,
         request_key=key,
@@ -4423,10 +4423,11 @@ def _census_resolve_options(parser):
     _request_key_option(parser)
 
 
-# An Administrator's review decisions (``responses.models.REVIEW_DECISIONS``),
-# spelled out because the parser is built before Django is set up; a test
-# keeps them equal.
-CENSUS_DECISIONS = ("approved", "ignored", "unreviewed")
+# An Administrator's review decisions (``responses.models.REVIEW_DECISIONS``)
+# in the review pipeline's words (decision 7, #1755: Accept, never Approve;
+# ``admin_census.DECISION_WORDS``), spelled out because the parser is built
+# before Django is set up; a test keeps them equal.
+CENSUS_DECISIONS = ("accepted", "ignored", "unreviewed")
 
 
 def _census_review_options(parser):
@@ -4436,7 +4437,7 @@ def _census_review_options(parser):
         "--decision",
         required=True,
         choices=CENSUS_DECISIONS,
-        help="approved (Approve), ignored (Ignore) or unreviewed (Back to To review)",
+        help="accepted (Accept), ignored (Ignore) or unreviewed (Back to To review)",
     )
     parser.add_argument(
         "--expected-version",
@@ -6609,7 +6610,7 @@ def _report_specs():
         # it asks nothing.
         CommandSpec(
             "census resolve-conflict",
-            "Approve an automatic census conflict over ParishSoft's value.",
+            "Accept an automatic census conflict over ParishSoft's value.",
             census_resolve_conflict,
             "full",
             True,

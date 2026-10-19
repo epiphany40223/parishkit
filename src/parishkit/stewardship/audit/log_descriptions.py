@@ -244,7 +244,7 @@ DESCRIPTIONS = {
     ),
     "admin_cmd_census_review": _(
         "An automation session reviewed an automatic census change "
-        "(approved, ignored or sent back to To review), as the row's "
+        "(accepted, ignored or sent back to To review), as the row's "
         "actions on the Census changes page do."
     ),
     "admin_cmd_followup_update": _(
@@ -261,7 +261,7 @@ DESCRIPTIONS = {
         "changes page's Edit value does."
     ),
     "admin_cmd_census_resolve_conflict": _(
-        "An automation session approved an automatic census change over "
+        "An automation session accepted an automatic census change over "
         "ParishSoft's current value, as the Census changes page's Use the "
         "Family's value anyway does."
     ),

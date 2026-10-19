@@ -206,12 +206,13 @@ def test_an_administrator_resolves_a_conflict_and_review_undoes_it(
     assert code == 0, document
     result = document["result"]
     name.refresh_from_db()
-    assert result["created"] and result["review"]["decision"] == "approved"
+    # The command line's word for the stored approved (decision 7, #1755).
+    assert result["created"] and result["review"]["decision"] == "accepted"
     assert result["review"]["proposal_id"] == str(name.pk)
     assert result["proposal"] == {
         "id": str(name.pk),
         "version": name.version,
-        "decision": "approved",
+        "decision": "accepted",
         "execution": "pending",
     }
     assert "Checked" not in str(document) and "Parish value" not in str(document)

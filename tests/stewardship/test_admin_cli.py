@@ -852,7 +852,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert review["arguments"] == ["PROPOSAL_ID"]
     assert review["result_fields"] == ["created", "request_key", "review", "proposal"]
     options = {option["name"]: option for option in review["options"]}
-    assert options["--decision"]["choices"] == ["approved", "ignored", "unreviewed"]
+    assert options["--decision"]["choices"] == ["accepted", "ignored", "unreviewed"]
     assert options["--decision"]["required"]
     assert options["--expected-version"]["required"]
     assert not options["--note"]["required"]
