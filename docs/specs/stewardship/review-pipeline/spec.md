@@ -14,7 +14,10 @@ Census changes uses
 deferred, below), and Ministry requests on it, with Edit, Staff Add and
 the "Family asked again" case
 ([#1684](https://github.com/epiphany40223/parishkit/issues/1684);
-[follow-up workflows](../admin-portal/spec.md#follow-up-workflows)). Every Staff
+[follow-up workflows](../admin-portal/spec.md#follow-up-workflows)), and
+the refresh re-evaluation of both, with the cases it leaves for later
+([#1689](https://github.com/epiphany40223/parishkit/issues/1689);
+[as built](#refresh-checks)). Every Staff
 and Ministry leader part ships during the current campaign. The
 Family-facing view of reviewed changes
 ([#1705](https://github.com/epiphany40223/parishkit/issues/1705)) comes
@@ -503,6 +506,53 @@ Every equality uses the stream's canonical comparison (the census compare
 rules, money in its typed form, the roster state), never a raw string
 compare, so a formatting difference ParishSoft introduces is neither a
 conflict nor an incorrect entry.
+
+### Refresh checks
+
+How [#1689](https://github.com/epiphany40223/parishkit/issues/1689) builds
+these rules. An item still open (a census change To review, Conflict, Ready,
+To enter by hand or Ignored; a Ministry request To review) keeps today's
+[refresh reconciliation](../data/spec.md#parishsoft-refresh-reconciliation),
+which already stores ParishSoft's value or resolves the request, with two
+corrections: a census change's C is the reviewer's value when it was
+Edited, and an Ignored census change ParishSoft now matches stays Ignored
+(its row says "ParishSoft now matches the Family's answer"). An item whose
+row is final (a census change Entered by hand or Updated in ParishSoft) or
+decided (a Ministry request a person accepted or ignored) gets a **refresh
+check** instead: an immutable record, written in the promotion transaction,
+of the outcome (Confirmed, unchanged, Entered incorrectly, or ParishSoft now
+matching an Ignored request), what ParishSoft held, and whether the refresh
+was full. A new check is written only when the outcome changes, and an
+unchanged one only on a full refresh, until Not seen is reached. The stage
+is derived from the item's latest check, never stored on the item, and a
+Confirmed item is not checked again. A Ministry request Confirmed this way
+cannot go back to review (its revision guard refuses it), as one a refresh
+resolved cannot today.
+
+The value recorded at a census Entered by hand mark is the change's stored
+ParishSoft value, which the mark freezes (for a mark made before #1689 too;
+normally it equals A). Not seen in ParishSoft counts the unchanged full
+refresh checks written after the mark and after the start that migration
+0136 (provisional number) records once, with an audit event, on a row of
+its own; the threshold (default two) is kept on that row, and deleting the
+row turns the flag off. The Stage filter has a Not seen in ParishSoft
+choice (Staff), counted beside the stages it is a flag of.
+
+Left for later, each in its own issue:
+
+- Entered incorrectly's two fixes
+  ([#1737](https://github.com/epiphany40223/parishkit/issues/1737)): the
+  stage is shown, with ParishSoft now beside the reviewer's value, but offers
+  no action yet; correcting ParishSoft to the reviewer's value confirms it on
+  the next refresh.
+- [#1738](https://github.com/epiphany40223/parishkit/issues/1738): rule 4
+  for open census changes (a refresh still cancels a change whose Member
+  left the Family, until the update run refuses such a Member); an Updated
+  in ParishSoft change found back at A or at a third value (publication is
+  switched off until [#1688](https://github.com/epiphany40223/parishkit/issues/1688));
+  and confirming the census fields the Member contact read does not carry
+  (moved, deceased, a New Member, the Family's email opt-out and address),
+  which stay final when Entered by hand.
 
 ### What is confirmable
 
@@ -1073,12 +1123,12 @@ that is done safely.
 | Census | `approved` + `pending`, `api` / `manual` | Ready to update / To enter by hand; Accepted (edited) when an edited value is set |
 | Census | `approved` + `failed` | Ready to update, with the failure shown |
 | Census | `queued` / `published` | Updating / Updated in ParishSoft |
-| Census | `resolved_external` / `resolved_upstream` | Entered by hand / Confirmed |
+| Census | `resolved_external` / `resolved_upstream` | Entered by hand (Confirmed or Entered incorrectly by its latest [refresh check](#refresh-checks)) / Confirmed |
 | Census | `ignored` (any open execution) | Ignored |
 | Census | `superseded`, `cancelled` | history |
 | Ministry | `new`, `assigned`, `in_progress` | To review |
 | Ministry | `resolved` + `joined` or `leave_confirmed`, not ticked / ticked | To enter by hand / Entered by hand |
-| Ministry | resolved by refresh reconciliation (roster current) | Confirmed |
+| Ministry | resolved by refresh reconciliation (roster current), or accepted and Confirmed by its latest [refresh check](#refresh-checks) | Confirmed |
 | Ministry | `resolved` + `declined` (join declined, or "Stayed in the Ministry"), `duplicate`, `other`; `closed_no_response` | Ignored, with the original outcome kept as the decision's label (so "Other" and "No response" still read as such) |
 | Ministry | `cancelled`, `superseded` | history |
 | Additional information | `current_actionable`, follow-up needed, not followed up | To handle |

@@ -2039,7 +2039,10 @@ Snapshot promotion performs these effects transactionally:
   applying provider-suppression records;
 - resolve proposals that now match upstream;
 - mark three-way conflicts;
-- resolve Ministry requests whose requested roster state is now current.
+- resolve Ministry requests whose requested roster state is now current;
+- re-evaluate final census changes and decided Ministry requests against
+  the new data, recording a refresh check for each whose outcome changed
+  ([refresh checks](../review-pipeline/spec.md#refresh-checks)).
 
 Promotion plans no mail itself. A Family that becomes active, eligible or
 deliverable changes its row's planning columns, which the
