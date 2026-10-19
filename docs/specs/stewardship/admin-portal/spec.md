@@ -708,7 +708,8 @@ Notes on the groups:
   enter roster changes from, is an entry of its own beside Ministry requests
   ([#1660](https://github.com/epiphany40223/parishkit/issues/1660)), for
   Administrators and Staff only. Census changes, Additional information,
-  Ministry requests and Roster changes to enter show their open counts
+  Ministry requests, Roster changes to enter and Limitations show their open
+  counts
   ([#585](https://github.com/epiphany40223/parishkit/issues/585),
   [#1590](https://github.com/epiphany40223/parishkit/issues/1590)): for
   Census changes, the rows of its default Work to do view (To do and
@@ -724,7 +725,9 @@ Notes on the groups:
   with its eligibility (a person resolved the request as Joined or Left) and
   each row's current Entered in ParishSoft mark, only once the campaign is
   past go-live (active, closed or archived; a draft has no resolved request
-  to enter). All four ride on one statement. Each is a plain number after the entry's
+  to enter); for Limitations, the answers at the worklist's default To
+  review stage, read through that page's own selection with its default
+  filters (R39 finding 10). All five ride on one statement. Each is a plain number after the entry's
   name that screen readers announce as "(N open)". No number shows at zero,
   nor on a greyed-out entry. The counts are read when a page loads, never
   updated in place, so a number never appears or disappears under the

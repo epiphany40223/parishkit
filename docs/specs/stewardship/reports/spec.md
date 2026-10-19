@@ -2919,8 +2919,11 @@ with both counts), with times in the browser's zone
 Stage filter too. Each table has the columns Member, Member DUID, Family,
 ParishSoft status, Family DUID, Cannot participate in ministries, Latest
 response and Stage for Members, and Family, ParishSoft status, Family DUID,
-Latest response and Stage for Families (every listed Family cannot attend,
-so no column repeats it). ParishSoft status splits out the page's
+Limitation, Latest response and Stage for Families. Limitation names the
+Family's limitation in the page's words, "Cannot attend Mass or prayer
+services", so a reader of the Families sheet sees what each row is about as
+the Members sheet's Cannot participate in ministries column says it (R39
+finding 11). ParishSoft status splits out the page's
 [badge](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
 for a Family the data no longer has, whose Family cell is then blank
 (#1216); the report reads no activity, so it marks no inactive Family. Every format carries these columns and rows
