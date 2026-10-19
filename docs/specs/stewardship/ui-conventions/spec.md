@@ -3603,7 +3603,7 @@ A **worklist** (a table a reader works through, such as the review
 pipeline's [review worklist](../review-pipeline/spec.md#review-worklist)) has its filters
 always open, never behind a disclosure, above the table, and its export
 buttons below the table. Its filters sit in rows that wrap, each field
-growing from 14rem (on a phone, the whole row), and its Apply filters and
+13rem wide (on a phone, the whole row), and its Apply filters and
 Clear filters follow the last field as every filter form's do
 ([Clear filters](#clear-filters)), with no line between that field and
 them (R38). Its view is in its address, so a reload re-renders the same
