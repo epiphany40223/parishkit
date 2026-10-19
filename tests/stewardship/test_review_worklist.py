@@ -438,3 +438,13 @@ def test_every_icon_tooltip_is_one_phrase_without_a_full_stop():
     for tip in tips:
         assert tip == tip.strip() and not tip.endswith((".", "?", "!", ":")), tip
         assert not any(mark in tip for mark in (". ", "? ", "! ")), tip
+
+
+def test_page_address_carries_only_the_choices_given():
+    """The view's own address keeps the non-empty link-safe choices, in
+    order, and is the plain address for the default view (R38 finding 6)."""
+    assert worklist.page_address("/w", []) == "/w"
+    assert worklist.page_address("/w", [("stage", ""), ("sort", None)]) == "/w"
+    assert worklist.page_address("/w", [("stage", "ignored"), ("kind", "a b")]) == (
+        "/w?stage=ignored&kind=a+b"
+    )

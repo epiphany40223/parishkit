@@ -436,6 +436,10 @@ class Worklist:
     editor_template: object = "stewardship/components/review-worklist-value.html"
     add_template: object = None
     export_template: object = None
+    # The view's own address (``page_address``), which ui-v1.js puts in the
+    # address bar after each in-place answer, so a reload shows the same
+    # view; empty for a stream that keeps none.
+    address: str = ""
 
     max_bulk = MAX_BULK
 
@@ -523,6 +527,7 @@ def build(
     caption="Review worklist",
     baseline=True,
     fields=None,
+    address="",
     **templates,
 ):
     """The ``worklist`` for one reader of one page of ``stream``'s rows.
@@ -537,9 +542,10 @@ def build(
     ``by_hand`` (a By hand census change) and ``not_seen`` (the Not seen in
     ParishSoft flag). ``roles`` is the reader's role set. ``stage`` is the
     Stage filter's value and ``fields`` the stream's other filters, posted
-    by every form. ``templates``
-    takes the stream's ``filters_template``, ``editor_template``,
-    ``add_template`` and ``export_template``.
+    by every form. ``address`` is the view's own address
+    (``page_address``). ``templates`` takes the stream's
+    ``filters_template``, ``editor_template``, ``add_template`` and
+    ``export_template``.
     """
     stream = Stream(stream)
     columns = tuple(columns)
@@ -561,8 +567,24 @@ def build(
         baseline=baseline,
         shows_now=any(row["shows_now"] for row in decorated),
         bulk_too_many=len(decorated) > MAX_BULK,
+        address=address,
         **templates,
     )
+
+
+def page_address(action, pairs):
+    """A worklist view's own address, for the address bar (R38 finding 6).
+
+    ``pairs`` are the ``(name, value)`` choices a link may carry: the Stage,
+    the stream's closed filters and the table's sort, size and page, never
+    a private value such as a name search, which stays in POST bodies (UX
+    conventions, "Admin tables"). Empty values are left out, so the default
+    view is the page's plain address. After every in-place answer ui-v1.js
+    puts it in the address bar (``a[data-page-address]``), and the stream's
+    view draws the same view from it on a reload.
+    """
+    kept = [(name, value) for name, value in pairs if value not in ("", None)]
+    return f"{action}?{urlencode(kept)}" if kept else action
 
 
 # --- The decision POST ------------------------------------------------------

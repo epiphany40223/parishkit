@@ -15,7 +15,7 @@ from datetime import UTC, datetime, timedelta
 from django.template import engines
 
 from parishkit.stewardship.pipeline import Decision, Placement, Stage
-from parishkit.stewardship.web.review_worklist import Column, build
+from parishkit.stewardship.web.review_worklist import Column, build, page_address
 from parishkit.stewardship.web.tables import paginate
 
 PATH = "/review-worklist"
@@ -24,6 +24,10 @@ LEADER = "/review-worklist-leader"
 ACCEPTED = "/review-worklist-accepted"
 BULKED = "/review-worklist-bulked"
 REOPENED = "/review-worklist-reopened"
+# The answer to Apply with Stage Ignored, and the address it names, which a
+# reload then loads (R38 finding 6).
+FILTERED = "/review-worklist-filtered"
+FILTERED_ADDRESS = PATH + "?stage=ignored"
 ACCEPTED_NOTICE = "Mobile phone for Member 00 accepted."
 BULK_NOTICE = "2 changes accepted."
 REOPENED_NOTICE = "Mobile phone for Member 04 sent back to review."
@@ -89,14 +93,24 @@ def _row(index, stage, decision=None, by_hand=False, not_seen=False, held=None):
     }
 
 
-def _page(context, admin, rows, roles, stream="census", notice=None, path=PATH):
-    """Render the host page with ``rows`` for a reader holding ``roles``."""
-    table = paginate(rows, {"size": "25"}, carry=[("stage", "all")])
+def _page(
+    context,
+    admin,
+    rows,
+    roles,
+    stream="census",
+    notice=None,
+    path=PATH,
+    stage="all",
+):
+    """Render the host page with ``rows`` for a reader holding ``roles``,
+    at Stage ``stage``, naming its own address as a stream's view does."""
+    table = paginate(rows, {"size": "25"}, carry=[("stage", stage)])
     table = replace(table, method="post", action=path)
     counts = {}
     for row in rows:
-        stage = row["placement"].stage.value
-        counts[stage] = counts.get(stage, 0) + 1
+        at = row["placement"].stage.value
+        counts[at] = counts.get(at, 0) + 1
     counts.setdefault("not_seen", sum(row.get("not_seen", False) for row in rows))
     worklist = build(
         stream,
@@ -105,13 +119,14 @@ def _page(context, admin, rows, roles, stream="census", notice=None, path=PATH):
         prefix="worklist",
         action=path,
         columns=COLUMNS,
-        stage="all",
+        stage=stage,
         counts=counts,
         stages=[Stage.TO_REVIEW, Stage.CONFLICT, Stage.IGNORED, Stage.ENTERED_BY_HAND],
         items="changes",
         caption="Changes to review",
         filters_template=FILTERS,
         add_template=ADD,
+        address=page_address(path, [("stage", "" if stage == "all" else stage)]),
     )
     return (
         "text/html",
@@ -154,6 +169,7 @@ def components(context, admin):
     both = accepted | {1: (Stage.TO_ENTER_BY_HAND, Decision.ACCEPTED)}
     reopened = {4: (Stage.TO_REVIEW, None)}
     staff = {"staff"}
+    ignored = [row for row in staff_rows() if row["placement"].stage is Stage.IGNORED]
     return {
         PATH: _page(context, admin, staff_rows(), staff),
         ACCEPTED: _page(
@@ -163,6 +179,8 @@ def components(context, admin):
         REOPENED: _page(
             context, admin, staff_rows(reopened), staff, notice=REOPENED_NOTICE
         ),
+        FILTERED: _page(context, admin, ignored, staff, stage="ignored"),
+        FILTERED_ADDRESS: _page(context, admin, ignored, staff, stage="ignored"),
         LEADER: _page(
             context,
             admin,

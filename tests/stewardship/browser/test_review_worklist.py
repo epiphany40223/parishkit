@@ -14,6 +14,8 @@ from .review_worklist_components import (
     ACCEPTED_NOTICE,
     BULK_NOTICE,
     BULKED,
+    FILTERED,
+    FILTERED_ADDRESS,
     LEADER,
     PATH,
     REOPENED,
@@ -339,3 +341,21 @@ def test_the_notice_line_sits_under_the_filters(page, component_origin, width):
         assert shown["formBottom"] <= shown["top"] < shown["table"]
         assert shown["gap"] <= 40
     assert filled["height"] == empty["height"] and filled["table"] == empty["table"]
+
+
+def test_a_reload_keeps_the_applied_filters(page, component_origin):
+    """Apply puts the view's own address in the address bar, so a reload
+    draws the same view; the plain address stays the default view (R38
+    finding 6)."""
+    page.goto(component_origin + PATH)
+    sent = posts_to(page, component_origin, FILTERED)
+    page.select_option("#worklist-stage", "ignored")
+    page.get_by_role("button", name="Apply filters").click()
+    page.wait_for_url(component_origin + FILTERED_ADDRESS)
+    assert "stage=ignored" in sent[-1]
+    page.reload()
+    assert page.url == component_origin + FILTERED_ADDRESS
+    assert page.locator("#worklist-stage").input_value() == "ignored"
+    assert [node.get_attribute("id") for node in page.locator(ROWS).all()] == [
+        "worklist-row-4"
+    ]

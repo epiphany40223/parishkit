@@ -12,7 +12,10 @@
     on its row when it has room;
   - the notice line, the answer to the reader's own last decision, between
     the filters and the table: one line, reserved while empty so a notice
-    never moves the table (UX conventions, "Admin tables", R38 finding 10);
+    never moves the table (UX conventions, "Admin tables", R38 finding 10).
+    It also holds the view's own address (worklist.address, hidden
+    a[data-page-address]), which ui-v1.js puts in the address bar after
+    every in-place answer, so a reload shows the same view (R38 finding 6);
   - the table region: the selection bar (the bulk buttons, which wait
     until every ticked row offers their action, data-confirm-kind; Add, for
     readers allowed to add there), the table in the shared column order and
@@ -35,7 +38,7 @@
 {% with apply_hint=w.prefix|add:"-filter-hint" %}{% include "stewardship/components/filter-actions.html" with apply_hint=apply_hint %}
 <p class="help" id="{{ apply_hint }}" data-complete-hint hidden></p>{% endwith %}
 </form>
-<div id="{{ w.prefix }}-notice" class="action-status worklist-notice" tabindex="-1" data-table-sync>{% if notice %}<p data-confirm-announce>{{ notice }}</p>{% endif %}</div>
+<div id="{{ w.prefix }}-notice" class="action-status worklist-notice" tabindex="-1" data-table-sync>{% if w.address %}<a href="{{ w.address }}" data-page-address hidden></a>{% endif %}{% if notice %}<p data-confirm-announce>{{ notice }}</p>{% endif %}</div>
 <div id="{{ table.anchor }}" data-table-region>
 {% include "stewardship/table-navigator.html" with table=table label=w.pages_label %}
 {% if w.selectable %}<div data-select-table data-missing-hint="{% blocktranslate with items=w.items %}Tick {{ items }} on this page to decide them together.{% endblocktranslate %}" data-kind-hint="{% blocktranslate with items=w.items %}Not every ticked row offers that action. Tick {{ items }} at the same stage, or use each row's own icons.{% endblocktranslate %}">{% endif %}

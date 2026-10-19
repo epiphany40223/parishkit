@@ -3606,7 +3606,13 @@ buttons below the table. Its filters sit in rows that wrap, each field
 growing from 14rem (on a phone, the whole row), and its Apply filters and
 Clear filters follow the last field as every filter form's do
 ([Clear filters](#clear-filters)), with no line between that field and
-them (R38). The answer to the reader's own last decision
+them (R38). Its view is in its address, so a reload re-renders the same
+view: after every in-place answer the address bar shows the page's own
+address with the Stage, the closed filters and the table's sort, size and
+page (`a[data-page-address]`), and the page draws that view from it. A
+private value (a name search) never reaches the address, as on the
+[POST reports](#admin-tables), so a reload clears only it (R38). The
+answer to the reader's own last decision
 (a review worklist's notice) sits under the filters, just above the table,
 on one reserved line that is kept while empty, so a notice appearing never
 moves the table (no layout shift), and nothing else reserves room above the
