@@ -3591,6 +3591,37 @@
       update();
     });
   };
+  // Question-led choices (the Mail message page's resolution question,
+  // #1563). An element marked data-choice-panel="name=value" is the part of
+  // a question shown while the radio button group "name" has that value
+  // ("name=" while none is chosen yet). The group is found in the panel's
+  // nearest [data-choice-scope], and is in no form, so choosing an answer
+  // sends nothing: each answer is its own form, and only the chosen one is
+  // ever visible. A panel not chosen is hidden by visibility (ui-v1.css,
+  // [data-choice-hidden]) and made inert, never removed from the layout:
+  // every panel of a question shares one reserved grid cell (.choice-slot),
+  // so choosing, or changing, an answer never moves the button or what
+  // follows (#736). Applied again on pageshow, for a browser that restores
+  // a ticked radio button from history, and after an in-place swap.
+  let choiceUpdates = []; // {node, update} for each data-choice-panel
+  const wireChoices = (root) => {
+    within(root, "[data-choice-panel]").forEach((panel) => {
+      const [name, value] = panel.dataset.choicePanel.split("=");
+      const scope = panel.closest("[data-choice-scope]") || document;
+      const radios = [...scope.querySelectorAll("input[type=radio]")]
+        .filter((radio) => radio.name === name);
+      const update = () => {
+        if (!panel.isConnected) return;
+        const chosen = radios.find((radio) => radio.checked);
+        const shown = value === "" ? !chosen : chosen?.value === value;
+        panel.toggleAttribute("data-choice-hidden", !shown);
+        panel.inert = !shown;
+      };
+      radios.forEach((radio) => radio.addEventListener("change", update));
+      choiceUpdates.push({node: panel, update});
+      update();
+    });
+  };
   // A field marked data-locked-when="name=value" (or "name!=value") stays
   // where it is but is locked while the rule holds: it shows its
   // data-locked-value, disabled, so locking moves nothing. The field's own
@@ -4041,12 +4072,14 @@
   const wireConditional = (root) => {
     wireMaxBytes(root);
     showWhenUpdates = showWhenUpdates.filter(({node}) => node.isConnected);
+    choiceUpdates = choiceUpdates.filter(({node}) => node.isConnected);
     lockedUpdates = lockedUpdates.filter(({node}) => node.isConnected);
     completeForms = completeForms.filter((form) => form.isConnected);
     notFutureChecks = notFutureChecks.filter(({date}) => date.isConnected);
     patternChecks = patternChecks.filter(({field}) => field.isConnected);
     liveChecks = liveChecks.filter(({form}) => form.isConnected);
     wireShowWhen(root);
+    wireChoices(root);
     wireLockedWhen(root);
     wireNotBefore(root);
     wirePattern(root);
@@ -4067,6 +4100,7 @@
   });
   window.addEventListener("pageshow", () => {
     showWhenUpdates.forEach(({update}) => update());
+    choiceUpdates.forEach(({update}) => update());
     lockedUpdates.forEach(({update}) => update());
     document.querySelectorAll("input[data-not-before]").forEach(checkNotBefore);
     patternChecks.forEach(({check}) => check());

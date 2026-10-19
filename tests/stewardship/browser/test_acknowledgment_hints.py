@@ -129,14 +129,21 @@ def test_cancel_go_live_waits_for_a_real_reason_and_the_tick(page, component_ori
 
 
 def test_delivery_evidence_notes_need_more_than_spaces(page, component_origin):
-    """Each resolution waits for a note; a resend also for its tick."""
+    """Each answer waits for a note; a resend also for its tick. The hint's
+    line is reserved, so it only empties when the answer is ready (#1563)."""
+
+    def answered(button, hint):
+        """The button is available and its reserved hint line is empty."""
+        assert button.is_enabled()
+        assert hint.text_content() == ""
+
     page.goto(component_origin + "/delivery")
-    form = page.locator("form").filter(
-        has=page.locator('[name="action"][value="resend"]')
-    )
+    for name in ("It was not sent", "Yes"):
+        page.get_by_role("radio", name=name, exact=True).check()
+    form = page.locator("#answer-resend")
     button = form.get_by_role("button")
     hint = form.locator("[data-complete-hint]")
-    note = "Enter why you are doing this."
+    note = "Enter the note."
     waits_with(button, hint, note)
     follows(button, hint)
     form.locator("textarea").fill("  \n ")
@@ -144,14 +151,13 @@ def test_delivery_evidence_notes_need_more_than_spaces(page, component_origin):
     form.locator("textarea").fill("Confirmed with the Family")
     waits_with(button, hint, "Tick the box to accept the duplicate risk.")
     form.get_by_role("checkbox").check()
-    ready(button, hint)
-    # Another resolution on the page waits for its own note only.
-    other = page.locator("form").filter(
-        has=page.locator('[name="action"][value="accept"]')
-    )
+    answered(button, hint)
+    # Another answer waits for its own note only.
+    page.get_by_role("radio", name="It was sent", exact=True).check()
+    other = page.locator("#answer-sent")
     waits_with(other.get_by_role("button"), other.locator("[data-complete-hint]"), note)
     other.locator("textarea").fill("Provider log shows acceptance")
-    ready(other.get_by_role("button"), other.locator("[data-complete-hint]"))
+    answered(other.get_by_role("button"), other.locator("[data-complete-hint]"))
 
 
 def test_refusal_removal_needs_a_note_and_the_tick(page, component_origin):

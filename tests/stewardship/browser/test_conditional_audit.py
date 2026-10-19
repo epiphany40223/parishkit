@@ -281,8 +281,14 @@ def test_rename_waits_for_a_new_valid_name(page, component_origin):
     ("path", "button", "reason"),
     [
         ("/weekly-manual-no-schedule", "Queue new manual report", "manual-no-schedule"),
-        ("/delivery-held", "Confirm delivery using external evidence", "delivery-held"),
-        ("/delivery-held", "Authorize potentially duplicate resend", "delivery-held"),
+        # The resolution question's answers are radio buttons (#1563).
+        ("/delivery-held", ("radio", "It was sent"), "reason-found-held"),
+        ("/delivery-held", ("radio", "It was not sent"), "reason-found-held"),
+        (
+            "/delivery-failed-responded",
+            ("radio", "Yes"),
+            "reason-retry-family_responded",
+        ),
         (
             "/delivery-refusal-busy",
             "Clear verified refusal",
@@ -310,7 +316,8 @@ def test_known_refusals_are_shown_unavailable_with_why(
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
     page.goto(component_origin + path)
-    controls = page.get_by_role("button", name=button, exact=True)
+    role, name = button if isinstance(button, tuple) else ("button", button)
+    controls = page.get_by_role(role, name=name, exact=True)
     assert controls.count() >= 1
     page.evaluate(RESTORE)
     for index in range(controls.count()):
