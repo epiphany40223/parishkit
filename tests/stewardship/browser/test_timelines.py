@@ -332,8 +332,9 @@ def test_staff_get_no_export_form(page, component_origin):
 
 def test_the_hub_strip_and_tabs_frame_the_timeline(page, component_origin):
     """The header strip names the last portal action; the Timeline tab is
-    chosen and the tabs not built yet say "Coming soon" and do nothing (#1678).
-    The census tabs (slice 2) are tested in test_hub_census.py.
+    chosen and every other tab is available, with no panel fetched until it
+    is chosen (#1678). The content tabs are tested in test_hub_census.py and
+    test_hub_streams.py.
     """
     errors = watch(page)
     requests = []
@@ -355,14 +356,9 @@ def test_the_hub_strip_and_tabs_frame_the_timeline(page, component_origin):
     loaded = len(requests)
     for name in ("Financial", "Cannot participate and Additional"):
         other = tablist.get_by_role("tab", name=name)
-        has_attribute(other, "aria-disabled", "true")
-        other.focus()
-        tip = page.locator("#" + other.get_attribute("aria-describedby"))
-        visible(tip)
-        assert tip.text_content() == "Coming soon"
-        page.keyboard.press("Enter")
-        other.click(force=True)
-    page.wait_for_timeout(300)
+        has_attribute(other, "aria-selected", "false")
+        assert other.get_attribute("aria-disabled") is None
+    assert tablist.locator('[aria-disabled="true"]').count() == 0
     has_attribute(timeline, "aria-selected", "true")
     assert page.evaluate(MARKED) == "kept"
     assert page.url == component_origin + ADMIN and len(requests) == loaded

@@ -9,10 +9,11 @@ an ordinary page request and the swapped-in region is the real template
 output, plus Staff's reduced view and pages whose Open form is unavailable.
 Every page is the Family hub (#1678) of a campaign with census, Financial and
 Ministry stewardship: the header strip, then the Timeline tab, the Family tab
-and one tab per Member (slice 2, from the census unit test's response), and
-the two content tabs not built yet, drawn unavailable ("Coming soon"). The
-fixtures also serve the hub at each census tab's own address, which a tab's
-first choice fetches.
+and one tab per Member (slice 2, from the census unit test's response, each
+with its Ministry joins and leaves from slice 4), the Financial tab (slice
+3) and the Cannot participate and Additional information tab (slice 4), all
+from the ``hub_streams`` unit test's values. The fixtures also serve the hub
+at each content tab's own address, which a tab's first choice fetches.
 """
 
 from datetime import timedelta
@@ -22,6 +23,11 @@ from uuid import UUID
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.reports.hub_census import shape
+from parishkit.stewardship.reports.hub_streams import (
+    financial_tab,
+    ministry_rows,
+    other_tab,
+)
 from parishkit.stewardship.reports.timeline_views import (
     TimelineQuery,
     page_context,
@@ -31,6 +37,14 @@ from parishkit.stewardship.reports.timelines import Timeline
 from parishkit.stewardship.web.dates import using
 
 from ..test_hub_census import ANSWERS, NAMES, ROWS
+from ..test_hub_streams import (
+    ITEM,
+    METADATA,
+    NAMES_BY_DUID,
+    REQUESTS,
+    other,
+    shaped_pledge,
+)
 from ..test_response_metrics import START
 from ..test_timelines import CAMPAIGN, FAMILY, IDENTITY, TIMELINE
 from .automation_components import canonical
@@ -86,7 +100,30 @@ HUB = ("family", "members", "financial", "other")
 CENSUS = shape(ANSWERS, NAMES, ROWS)
 # The census tabs' own addresses, as each tab's link carries them.
 CENSUS_TABS = ("family", "member-1", "member-2", "member-7")
-TAB = {key: ADMIN + "?tab=" + key for key in CENSUS_TABS}
+TAB = {key: ADMIN + "?tab=" + key for key in (*CENSUS_TABS, "financial", "other")}
+# Each content tab's own stream, as ``hub_reads`` gives it for that tab:
+# Member 1 has Ministry requests, the other Member tabs none.
+STREAMS = {
+    "member-1": {"hub_ministry": ministry_rows(REQUESTS, NAMES_BY_DUID)},
+    "member-2": {"hub_ministry": ()},
+    "member-7": {"hub_ministry": ()},
+    "financial": {"hub_financial": financial_tab(shaped_pledge(), METADATA)},
+    "other": {
+        "hub_other": other_tab(
+            other(
+                cannot_attend=True,
+                item=ITEM,
+                text="Please call about the choir",
+                disposition="current_actionable",
+                follow_up_needed=True,
+                followed_up=False,
+            ),
+            CENSUS.members,
+            ministry=True,
+            information=True,
+        )
+    },
+}
 # The export form's values, as the view's ``export_context`` gives them.
 EXPORT = {
     "url": "/timeline-export",
@@ -145,7 +182,10 @@ def components(context, admin):
         ),
     }
     pages |= {
-        path: (TIMELINE, {"full": True, "parameters": {"tab": key}})
+        path: (
+            TIMELINE,
+            {"full": True, "parameters": {"tab": key}} | STREAMS.get(key, {}),
+        )
         for key, path in TAB.items()
     }
     responses = {}
@@ -157,6 +197,7 @@ def components(context, admin):
                 "export": EXPORT,
                 "sections": HUB,
                 "census": CENSUS,
+                "ministry": True,
             } | options
             responses[path] = ("text/html", render(context, admin, timeline, **options))
     return responses
