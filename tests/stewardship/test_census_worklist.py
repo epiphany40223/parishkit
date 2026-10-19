@@ -2,12 +2,16 @@
 
 import re
 from html import unescape
-from uuid import UUID
 
 import pytest
 from django.template.loader import render_to_string
 
-from parishkit.stewardship.pipeline import Action, Decision, Stage
+from parishkit.stewardship.pipeline import (
+    Decision,
+    Placement,
+    Stage,
+    census_addition_placement,
+)
 from parishkit.stewardship.reports.census_change_views import SORTING
 from parishkit.stewardship.reports.census_changes import (
     CensusQuery,
@@ -17,11 +21,12 @@ from parishkit.stewardship.reports.census_changes import (
     shape,
 )
 from parishkit.stewardship.reports.census_worklist import (
-    CensusDecisions,
     _value,
+    add_fields,
     worklist_page,
 )
-from parishkit.stewardship.web.review_worklist import WorklistDecision
+from parishkit.stewardship.responses.census_additions import AddRefusal, parse_add
+from parishkit.stewardship.responses.comparison import ADDRESS_COMPONENTS
 from parishkit.stewardship.web.tables import paginate
 
 from .test_census_changes import SUBMITTED, row
@@ -331,13 +336,74 @@ def test_the_edit_value_is_read_from_the_editors_fields():
             _value(fields, field)
 
 
-def test_census_takes_no_add_yet():
-    """Census Add is its own slice (#1710): the page offers none, and a
-    posted one is refused before anything is read."""
-    decision = WorklistDecision(
-        Action.ADD, {}, "", UUID("00000000-0000-0000-0000-000000000001")
+def test_staff_get_add_while_the_campaign_admits_changes():
+    """Staff get Add in the selection bar, with its dialog: What changed
+    first, a value control per field and the ignored changes to add in
+    place of; none while other campaign work holds the campaign (#1710)."""
+    extra = {"add_fields": add_fields(), "add_replaceable": [("7", "Prefix for X")]}
+    worklist, html = page([shaped()], **extra)
+    assert worklist.add and 'id="census-add-dialog"' in html
+    assert html.index('name="value_field"') < html.index('name="value_family"')
+    assert 'name="value_birth_date" type="date"' in html
+    assert 'name="value_line1"' in html and '<option value="7">Prefix for X' in html
+    assert 'data-show-when="value_field=home_address|mailing_address"' in html
+    worklist, html = page([shaped()], mutable=False, **extra)
+    assert not worklist.add and "census-add-dialog" not in html
+
+
+def add_post(**changes):
+    """The Add dialog's fields for a Member's nickname, with ``changes``."""
+    fields = {
+        "value_field": ["nickname"],
+        "value_family": ["1001"],
+        "value_member": ["101"],
+        "value_nickname": ["Bo"],
+        "value_in_place_of": [""],
+    }
+    return {key: value for key, value in (fields | changes).items() if value}
+
+
+def test_parse_add_reads_only_the_chosen_fields_controls():
+    """A Member field sends its Member and value; a Family address its parts;
+    a stray or missing control is a malformed form, a bad DUID or field a
+    refusal at its field."""
+    found = parse_add(add_post())
+    assert (found["family_duid"], found["member_duid"], found["value"]) == (
+        1001,
+        101,
+        "Bo",
     )
+    parts = {f"value_{part}": [""] for part in ADDRESS_COMPONENTS}
+    address = parse_add(
+        {"value_field": ["home_address"], "value_family": ["1001"]}
+        | {"value_in_place_of": [""]}
+        | parts
+    )
+    assert address["entity_kind"] == "family" and address["member_duid"] is None
+    for broken in (
+        add_post(value_line1=[""]),
+        add_post(value_member=None),
+        add_post(value_nickname=["Bo", "Bob"]),
+    ):
+        with pytest.raises(ValueError):
+            parse_add(broken)
+    for changes, code in (
+        ({"value_field": ["moved_household"]}, "add_field"),
+        ({"value_family": ["0"]}, "add_family"),
+        ({"value_member": ["New"]}, "add_member"),
+    ):
+        with pytest.raises(AddRefusal) as refused:
+            parse_add(add_post(**changes))
+        assert refused.value.code == code
+
+
+def test_an_addition_is_added_to_enter_by_hand_until_its_step():
+    """Open, an addition is To enter by hand, Added by the parish; entered,
+    Entered by hand; withdrawn, History (#1710)."""
+    assert census_addition_placement("open") == Placement(
+        Stage.TO_ENTER_BY_HAND, Decision.ADDED
+    )
+    assert census_addition_placement("entered").stage is Stage.ENTERED_BY_HAND
+    assert census_addition_placement("withdrawn") == Placement(Stage.HISTORY)
     with pytest.raises(ValueError):
-        CensusDecisions(None, None).decide(None, decision)
-    worklist, _ = page([shaped()])
-    assert not worklist.add
+        census_addition_placement("ignored")
