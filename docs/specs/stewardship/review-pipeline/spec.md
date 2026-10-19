@@ -720,8 +720,9 @@ selection the page, the counts and the row guard share:
 
 - no row, a latest row with no decision (Back to review), or a pledge answer
   changed since the latest row's response: **To review**, or **Confirmed**
-  ("Already in ParishSoft", no reviewer) or **Conflict** when a refresh
-  found so;
+  ("Already in ParishSoft", no reviewer; the
+  [page's](../reports/spec.md#pledges-to-enter) words at $0.00 differ) or
+  **Conflict** when a refresh found so;
 - Ignored: **Ignored**;
 - Accepted or Accepted (edited), not marked: **To enter by hand**, or
   **Confirmed** or **Conflict** (keeping the decision visible but not in

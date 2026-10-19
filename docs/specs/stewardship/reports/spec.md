@@ -2811,8 +2811,9 @@ section is the page.
   ([#1737](https://github.com/epiphany40223/parishkit/issues/1737)) or a
   Confirmed one; a Confirmed row with no decision says "Already in
   ParishSoft." under its stage, or "Nothing to enter: ParishSoft holds no
-  pledge." when both the Family's answer and ParishSoft are $0.00. An Ignored row ParishSoft now matches says
-  "ParishSoft now matches the Family's answer" under its stage. The bulk bar offers Accept, Ignore, Back
+  pledge." when both the Family's answer and ParishSoft are $0.00. An
+  Ignored row ParishSoft now matches says "ParishSoft now matches the
+  Family's answer" under its stage. The bulk bar offers Accept, Ignore, Back
   to review and Entered by hand, so the Administrator's flow ("a handful of
   manual edits ... and then bulk approve all the financial pledges") is a few
   Edits, then select all and Accept, then Stage To enter by hand, export, type

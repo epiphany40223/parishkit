@@ -715,10 +715,10 @@ def _stage_line(row, decision):
     """The line under a row's Stage, as safe HTML (or "").
 
     The decision the stage word does not already say (Accepted (edited)),
-    that a Confirmed pledge with no decision was already in ParishSoft
-    (#1747), who marked an entered pledge and when, and, for a pledge the
-    Family changed after its last decision, that the decision is no longer
-    in force.
+    that a Confirmed pledge with no decision was already in ParishSoft, or
+    at $0.00 that there is nothing to enter (#1747), who marked an entered
+    pledge and when, and, for a pledge the Family changed after its last
+    decision, that the decision is no longer in force.
     """
     parts = [format_html("{}", decision)] if decision else []
     found = row["placement"]
