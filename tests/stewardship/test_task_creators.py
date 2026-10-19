@@ -110,7 +110,7 @@ SITES = {
         "production_cleanup", WEB, {"accounts/go_live_progress.py"}
     ),
     "campaigns/production_storage.py::begin_transition": site(
-        # cleanup_requests.begin_cleanup, from the go-live cleanup page.
+        # cleanup_requests.begin_cleanup, from the Go live page's Start go-live.
         "production_cleanup",
         WEB,
         {"campaigns/cleanup_requests.py"},

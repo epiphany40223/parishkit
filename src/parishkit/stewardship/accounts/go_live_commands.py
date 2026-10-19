@@ -88,7 +88,7 @@ def _load(request, preview_token):
     """Check the preview's signature and five-minute lifetime.
 
     An expired preview is the plain "This preview is out of date" refusal
-    linking back to the readiness page, not a generic invalid value.
+    linking back to the Check step, not a generic invalid value.
     """
     return load_preview(
         preview_token,

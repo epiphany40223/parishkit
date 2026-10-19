@@ -210,7 +210,7 @@ def retry(request, service, campaign_id, *, token):
             pk=UUID(binding["task"]), root_id=demand.task_root_id
         )
         if task.version != binding["version"]:
-            raise StaleRecordError("Preparation changed; refresh before retrying.")
+            raise StaleRecordError("Preparation changed since the step was read.")
 
         def admit(action, status):
             """An identical retry replay also requires current authority and scope."""
@@ -233,5 +233,5 @@ def retry(request, service, campaign_id, *, token):
             )
         except TaskRetryConflict:
             raise StaleRecordError(
-                "Preparation changed; refresh before retrying."
+                "Preparation changed since the step was read."
             ) from None
