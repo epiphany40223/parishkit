@@ -222,7 +222,7 @@ def test_migration_check_refuses_each_earlier_or_weakened_body():
         ),
     ]
     with transaction.atomic(), connection.cursor() as cursor:
-        # 0148 (#1762) has since reworded some of these bodies' refusals, so
+        # 0124 (#1762) has since reworded some of these bodies' refusals, so
         # 0114's own bodies go back first (rolled back below).
         for name in replaced_names():
             cursor.execute(statement(text, name))

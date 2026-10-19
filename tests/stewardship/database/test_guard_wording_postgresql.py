@@ -1,6 +1,6 @@
-"""Migration 0148 rewords the guards' sign-in refusals (#1762).
+"""Migration 0124 rewords the guards' sign-in refusals (#1762).
 
-0148 (``schema/migrations/0148_guard_wording.sql``) replaces twelve guard
+0124 (``schema/migrations/0124_guard_wording.sql``) replaces twelve guard
 bodies, each its latest earlier copy with only words changed: ten refusals
 that still said a write "requires fresh ... authentication" now name the
 live session they check (no guard has checked a sign-in's age since #1547),
@@ -22,10 +22,10 @@ from parishkit.stewardship.system_health import SIGNED_OUT_REFUSAL
 
 ROOT = Path(__file__).resolve().parents[3]
 MIGRATIONS = ROOT / "src/parishkit/stewardship/schema/migrations"
-FROZEN_PATH = MIGRATIONS / "0148_guard_wording.sql"
+FROZEN_PATH = MIGRATIONS / "0124_guard_wording.sql"
 FROZEN = FROZEN_PATH.read_text(encoding="utf-8")
 
-# Each refusal's words before 0148, and after.
+# Each refusal's words before 0124, and after.
 REWORDED = {
     "A backup request requires fresh Administrator authentication": (
         "A backup request requires a live Administrator session"
@@ -58,7 +58,7 @@ REWORDED = {
         "A restore decision requires a live Administrator session"
     ),
 }
-# Each reworded comment's words before 0148, and after.
+# Each reworded comment's words before 0124, and after.
 COMMENTS = {
     "    -- Settling a held email is an Administrator's decision made within five\n"
     "    -- minutes of a Google sign-in (migration 0017, #537).\n": (
@@ -116,19 +116,19 @@ def body(replacement):
 
 
 def replaced_names():
-    """The functions 0148 replaces, in file order."""
+    """The functions 0124 replaces, in file order."""
     return re.findall(r"^CREATE OR REPLACE FUNCTION public\.(\w+)\(", FROZEN, re.M)
 
 
 def earlier(replacement):
-    """A 0148 statement with its old words put back."""
+    """A 0124 statement with its old words put back."""
     for before, after in (*REWORDED.items(), *COMMENTS.items()):
         replacement = replacement.replace(after, before)
     return replacement
 
 
 def previous_copy(name):
-    """The function's latest frozen copy before 0148, or None."""
+    """The function's latest frozen copy before 0124, or None."""
     found = None
     for path in sorted(MIGRATIONS.glob("*.sql")):
         if path.name >= FROZEN_PATH.name:
@@ -138,7 +138,7 @@ def previous_copy(name):
 
 
 def test_migration_rewords_these_twelve_guards():
-    """0148 names the guards with the old words, each once."""
+    """0124 names the guards with the old words, each once."""
     assert sorted(replaced_names()) == sorted(
         [
             "stewardship_backup_request_guard_v1",
@@ -227,7 +227,7 @@ def test_the_file_runs_on_the_earlier_bodies_and_again():
 
 @pytest.mark.django_db(transaction=True)
 def test_migration_check_refuses_each_earlier_or_weakened_install():
-    """0148's check passes as installed and refuses each regression."""
+    """0124's check passes as installed and refuses each regression."""
     # Both captures: attributes, then enabled triggers.
     capture = FROZEN[
         FROZEN.index("SELECT set_config(") : FROZEN.index("\n\n-- stewardship_backup")
@@ -305,11 +305,11 @@ def test_migration_check_refuses_each_earlier_or_weakened_install():
         for change, message in changes:
             # The change is named on failure, so a passing regression is found.
             with (
-                pytest.raises(DatabaseError, match=f"Migration 0148.*{message}"),
+                pytest.raises(DatabaseError, match=f"Migration 0124.*{message}"),
                 transaction.atomic(),
             ):
                 cursor.execute(change)
                 cursor.execute(check)
-                pytest.fail(f"0148's check admitted: {change[:120]}")
+                pytest.fail(f"0124's check admitted: {change[:120]}")
         cursor.execute(check)
         transaction.set_rollback(True)

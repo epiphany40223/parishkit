@@ -1,4 +1,4 @@
--- Frozen forward migration file 0148 (the repository-wide file sequence):
+-- Frozen forward migration file 0124 (the repository-wide file sequence):
 -- the guards' refusals stop asking for "fresh ... authentication" (#1762).
 -- This file is installed by the Django migration that names it in
 -- FROZEN_SQL and must never change once released;
@@ -15,7 +15,7 @@
 -- full-scope automation session). Python matches the new words
 -- (system_health.SIGNED_OUT_REFUSAL). Four comments that still described a
 -- sign-in age or a step-up sign-in moving authenticated_at (which #1550,
--- 0147, made immutable) are reworded too. Each body below is its latest
+-- 0123, made immutable) are reworded too. Each body below is its latest
 -- earlier copy with only that text changed; no rule changes, and no row
 -- changes, so no Admin session or Family credential ends.
 --
@@ -33,7 +33,7 @@ SET LOCAL search_path = public;
 -- Each function's owner, grants, rights and configuration before the
 -- replacement, compared in the DO block (a transaction-local setting: the
 -- migration login has no TEMP privilege).
-SELECT set_config('stewardship.migration_0148_attributes', (
+SELECT set_config('stewardship.migration_0124_attributes', (
     SELECT string_agg(p.proname||'='||coalesce(p.proacl::text,'default')||'|'||p.prosecdef::text||'|'||coalesce(array_to_string(p.proconfig,','),'')||'|'||p.prolang::text||'|'||p.proowner::regrole::text, ';' ORDER BY p.proname)
     FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
     WHERE n.nspname='public' AND p.proname IN (
@@ -53,7 +53,7 @@ SELECT set_config('stewardship.migration_0148_attributes', (
 
 -- How many enabled triggers each function serves before the replacement
 -- (the sealed intake check guards two tables), compared in the DO block.
-SELECT set_config('stewardship.migration_0148_triggers', (
+SELECT set_config('stewardship.migration_0124_triggers', (
     SELECT string_agg(p.proname||'='||(SELECT count(*) FROM pg_trigger t WHERE t.tgfoid=p.oid AND t.tgenabled<>'D')::text, ';' ORDER BY p.proname)
     FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
     WHERE n.nspname='public' AND p.proname IN (
@@ -1013,16 +1013,16 @@ BEGIN
               AND p.proconfig=ARRAY['search_path=pg_catalog, public, pg_temp']
               AND l.lanname='plpgsql'
               AND p.prosrc NOT LIKE '%step-up%')<>1 THEN
-            RAISE EXCEPTION 'Migration 0148: % is not installed as declared', wanted.name;
+            RAISE EXCEPTION 'Migration 0124: % is not installed as declared', wanted.name;
         END IF;
     END LOOP;
     -- No installed function still raises the old words.
     IF EXISTS (SELECT 1 FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.prosrc ~ 'requires fresh [^'']*authentication') THEN
-        RAISE EXCEPTION 'Migration 0148: a function still asks for fresh authentication';
+        RAISE EXCEPTION 'Migration 0124: a function still asks for fresh authentication';
     END IF;
     -- Owner, rights, search_path, language and grants are as before.
-    IF current_setting('stewardship.migration_0148_attributes', true) IS DISTINCT FROM (
+    IF current_setting('stewardship.migration_0124_attributes', true) IS DISTINCT FROM (
            SELECT string_agg(p.proname||'='||coalesce(p.proacl::text,'default')||'|'||p.prosecdef::text||'|'||coalesce(array_to_string(p.proconfig,','),'')||'|'||p.prolang::text||'|'||p.proowner::regrole::text, ';' ORDER BY p.proname)
            FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
            WHERE n.nspname='public' AND p.proname IN (
@@ -1038,7 +1038,7 @@ BEGIN
                'stewardship_setup_install_binding_v1',
                'stewardship_setup_secret_audit_v1',
                'stewardship_source_drop_acceptance_guard_v1')) THEN
-        RAISE EXCEPTION 'Migration 0148: a replaced function changed its rights, configuration or grants';
+        RAISE EXCEPTION 'Migration 0124: a replaced function changed its rights, configuration or grants';
     END IF;
     -- Every one is a trigger function that still guards every table it
     -- guarded, with each of its triggers still enabled.
@@ -1058,7 +1058,7 @@ BEGIN
             'stewardship_source_drop_acceptance_guard_v1')
           AND (p.prorettype<>'trigger'::regtype
                OR NOT EXISTS (SELECT 1 FROM pg_trigger t WHERE t.tgfoid=p.oid AND t.tgenabled<>'D')))
-       OR current_setting('stewardship.migration_0148_triggers', true) IS DISTINCT FROM (
+       OR current_setting('stewardship.migration_0124_triggers', true) IS DISTINCT FROM (
            SELECT string_agg(p.proname||'='||(SELECT count(*) FROM pg_trigger t WHERE t.tgfoid=p.oid AND t.tgenabled<>'D')::text, ';' ORDER BY p.proname)
            FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
            WHERE n.nspname='public' AND p.proname IN (
@@ -1074,7 +1074,7 @@ BEGIN
                'stewardship_setup_install_binding_v1',
                'stewardship_setup_secret_audit_v1',
                'stewardship_source_drop_acceptance_guard_v1')) THEN
-        RAISE EXCEPTION 'Migration 0148: a replaced guard no longer has its trigger';
+        RAISE EXCEPTION 'Migration 0124: a replaced guard no longer has its trigger';
     END IF;
 END
 $check$;

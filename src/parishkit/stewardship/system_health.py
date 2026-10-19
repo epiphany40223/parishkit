@@ -2408,7 +2408,7 @@ class DebugOffRefused(ActionRefused):
     """The database refused to set the debug-off switch (see ``ActionRefused``)."""
 
 
-# The guards' words (0148, #1762) for a session that is no longer live at
+# The guards' words (0124, #1762) for a session that is no longer live at
 # the write; since #1547 they no longer check its age.
 SIGNED_OUT_REFUSAL = "requires a live Administrator session"
 

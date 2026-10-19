@@ -1050,7 +1050,7 @@ def test_the_frozen_file_replaces_the_previous_bodies_and_checks_them():
             return cursor.fetchall()
 
     with transaction.atomic():
-        # 0148 (#1762) has since reworded the decision guard's refusal, so
+        # 0124 (#1762) has since reworded the decision guard's refusal, so
         # 0048's own body goes back first (rolled back below).
         with connection.cursor() as cursor:
             cursor.execute(definition(text, "stewardship_restore_resolution_v1"))
