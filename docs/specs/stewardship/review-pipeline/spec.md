@@ -10,7 +10,7 @@ the review worklist component with its decision interface
 (`components/review-worklist.html`, `web/review_worklist.py`,
 [#1681](https://github.com/epiphany40223/parishkit/issues/1681)), and the
 financial stream on it
-([Pledges to enter](../reports/spec.md#pledges-to-enter),
+([Pledges](../reports/spec.md#pledges),
 [#1686](https://github.com/epiphany40223/parishkit/issues/1686)). Every Staff
 and Ministry leader part ships during the current campaign. The
 Family-facing view of reviewed changes
@@ -620,7 +620,7 @@ annual pledge and frequency, Ignored, or none after Back to review) and the
 Entered by hand mark. The
 [Financial stewardship detail](../reports/spec.md#financial-stewardship-detail)
 report still lists every current pledge, and
-[Pledges to enter](../reports/spec.md#pledges-to-enter) is the stream's
+[Pledges](../reports/spec.md#pledges) is the stream's
 worklist and manual report. Staff can still change a pledge through Open
 form (a whole new response marked Entered by Staff), and Edit (amount and
 frequency, decision 4) is the review's own correction.
@@ -826,7 +826,7 @@ and bulk action, exported through the shared export component in CSV, XLSX
 and PDF. The same report has Stage choices for Entered incorrectly and Not
 seen in ParishSoft. Roster changes to enter is the Ministry stream's report
 today and becomes the shared component's first user; Census changes'
-*By hand* view and a new financial "Pledges to enter" report follow.
+*By hand* view and a new financial "Pledges" report follow.
 
 ## What cannot be automated
 
@@ -1231,7 +1231,7 @@ Cut first if time runs short, in this order:
 4. Entered incorrectly and Not seen in #1689 (today's reconciliation still
    confirms census and Ministry);
 5. the Limitations half of #1685 (its report stays as it is);
-6. the pledge Edit in #1686 (keep Accept and the Pledges to enter
+6. the pledge Edit in #1686 (keep Accept and the Pledges
    report; Staff correct a pledge through Open form, as today);
 7. census Add in #1683 (Staff use Open form).
 

@@ -263,7 +263,7 @@ sections:
     "Publish audit and logs": [ADM-09, BG-09]
     "Publish page delivery": [ADM-09, DAT-09]
     "Financial stewardship detail": [RPT-08]
-    "Pledges to enter": [RPT-08]
+    "Pledges": [RPT-08]
     "Limitations": [RPT-04]
     "System logs": [RPT-09]
     "Daily email report parity": [RPT-09]

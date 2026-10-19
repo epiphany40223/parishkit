@@ -2842,17 +2842,19 @@ of order at its Through date or At most, with both ends marked. Its access
 audit ends denied.
 
 This report stays the financial stream's statistics page. Reviewing each
-pledge and entering it in ParishSoft is on [Pledges to enter](#pledges-to-enter).
+pledge and entering it in ParishSoft is on [Pledges](#pledges).
 
-### Pledges to enter
+### Pledges
 
 **Access:** Admin and Staff only; no Ministry leader sees it.
 
-**Pledges to enter** (`/admin/reports/financial/pledges/`,
+**Pledges** (`/admin/reports/financial/pledges/`,
 [#1686](https://github.com/epiphany40223/parishkit/issues/1686)) is the
 financial stream's [review worklist](../review-pipeline/spec.md#review-worklist)
 and its [manual handling report](../review-pipeline/spec.md#manual-handling-reports)
-in one page, a menu entry of its own after Financial stewardship. The stream's
+in one page, a menu entry of its own in Review work after Ministry requests.
+It was "Pledges to enter" until the Administrator renamed it (R39 finding 3,
+2026-10-19); its address is unchanged. The stream's
 stages, decisions and resubmission rule are the
 [Financial stream](../review-pipeline/spec.md#financial-stream)'s; this
 section is the page.
@@ -2936,6 +2938,21 @@ participate in any ministries" or "Cannot attend Mass or prayer
 services"), Stage, Submitted (the response's time), Last decision and the
 row's actions. There is no Baseline (ParishSoft holds none of these
 answers) and no Reviewer's value (no Edit). Testing responses are excluded.
+
+A Family's **Cannot contribute financially** answer (the `cannot_give` flag
+on its $0 pledge) is listed here too, as a Family row whose answer reads
+"Cannot contribute financially" (R39 finding 11, the Administrator,
+2026-10-19), so every limitation a Family gave is on one page. It is not a
+Limitations item: it is decided once, on [Pledges](#pledges), so its Stage
+is its Pledges stage, its Last decision is Pledges' last decision, it has
+no box and no action icons, and its Actions cell is a "Decided in Pledges"
+link that opens Pledges at that stage. It is listed for viewers who may
+open Pledges (Administrators and Staff) while the campaign has the
+financial module, only while Show is everything (the Show choices name the
+two Limitations answers only) and matching the search as Pledges' search
+does. Its stage counts in the Stage choice whose value it shares (To
+review, Ignored); a pledge To enter by hand or Entered by hand is listed
+under every stage only.
 Talents that older responses recorded are never shown: no talent column,
 count or filter appears on the page or in the downloads, and no Member is
 listed only for such talents.
@@ -2985,9 +3002,11 @@ with both counts), with times in the browser's zone
 Stage filter too. Each table has the columns Member, Member DUID, Family,
 ParishSoft status, Family DUID, Cannot participate in ministries, Latest
 response and Stage for Members, and Family, ParishSoft status, Family DUID,
-Limitation, Latest response and Stage for Families. Limitation names the
-Family's limitation in the page's words, "Cannot attend Mass or prayer
-services", so a reader of the Families sheet sees what each row is about as
+Limitation, Latest response and Stage for Families, whose rows include the
+Cannot contribute financially answers the table lists, each with its
+Pledges stage. Limitation names the Family's limitation in the page's
+words, "Cannot attend Mass or prayer services" or "Cannot contribute
+financially", so a reader of the Families sheet sees what each row is about as
 the Members sheet's Cannot participate in ministries column says it (R39
 finding 11). ParishSoft status splits out the page's
 [badge](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
