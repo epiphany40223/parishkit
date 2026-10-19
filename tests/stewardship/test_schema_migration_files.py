@@ -405,6 +405,9 @@ FROZEN = {
     "0136_refresh_checks.sql": (
         "8b516b20ea34a8546225c1ecf9108f36a8e7d647c4544e9d62d40a258fbab810"
     ),
+    "0140_entered_incorrectly_fixes.sql": (
+        "c875cf6b93c7b473f2e78b3fc4775d8765e1e55cb56d3dd8c9c435c5c5a2a4f5"
+    ),
     "0141_census_refresh_sources.sql": (
         "9537e9417f513ddba109d1e21f21b4578fdc21b8cdb11d2cb3dfe2ca00286947"
     ),

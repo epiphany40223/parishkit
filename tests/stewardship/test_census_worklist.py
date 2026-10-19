@@ -22,7 +22,11 @@ from parishkit.stewardship.reports.census_worklist import (
     worklist_page,
 )
 from parishkit.stewardship.responses.refresh_checks import CheckState
-from parishkit.stewardship.web.review_worklist import WorklistDecision
+from parishkit.stewardship.web.review_worklist import (
+    INCORRECT_BODIES,
+    WORDS,
+    WorklistDecision,
+)
 from parishkit.stewardship.web.tables import paginate
 
 from .test_census_changes import SUBMITTED, row
@@ -346,7 +350,7 @@ def test_census_takes_no_add_yet():
 
 def test_refresh_checks_place_final_changes_and_flag_not_seen():
     """A final change's latest refresh check (#1689): Entered incorrectly
-    shows ParishSoft's value and offers no action yet (#1737); Not seen in
+    shows ParishSoft's value and offers its two fixes (#1737); Not seen in
     ParishSoft is a chip and a Stage choice of its own; an Ignored change
     ParishSoft now matches says so under its stage."""
     entered = {
@@ -367,8 +371,25 @@ def test_refresh_checks_place_final_changes_and_flag_not_seen():
     worklist, html = page(rows, stage="all")
     by_id = {row["id"]: row for row in worklist.rows}
     assert by_id["wrong"]["stage_label"] == "Entered incorrectly"
-    # Only the decision in force is drawn (selected); nothing is offered.
-    assert all(icon["selected"] for icon in by_id["wrong"]["icons"])
+    # The decision in force is drawn selected, and the two fixes beside it:
+    # Back to review, and the mark made again, worded so (#1737).
+    icons = {icon["action"]: icon for icon in by_id["wrong"]["icons"]}
+    assert list(icons) == ["accept", "back_to_review", "entered_by_hand"]
+    assert icons["accept"]["selected"]
+    again = icons["entered_by_hand"]
+    assert not again["selected"]
+    assert again["label"] == f"Mark {by_id['wrong']['name']} entered by hand again"
+    assert again["title_one"] == "Mark {name} entered by hand again?"
+    assert again["done"] == "{name} marked entered by hand again."
+    assert again["body"] == INCORRECT_BODIES[Action.ENTERED_BY_HAND]
+    back = icons["back_to_review"]
+    assert back["body"] == INCORRECT_BODIES[Action.BACK_TO_REVIEW]
+    assert (
+        back["choice"] == ""
+        and back["title_one"] == WORDS[Action.BACK_TO_REVIEW].title_one
+    )
+    # Both are bulk kinds of the row's box.
+    assert by_id["wrong"]["kinds"] == "back_to_review entered_by_hand"
     assert by_id["wrong"]["shows_now"]
     assert by_id["wrong"]["parishsoft_now"] == "III"
     assert by_id["unseen"]["stage_label"] == "Entered by hand"

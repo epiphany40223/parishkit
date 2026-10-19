@@ -943,6 +943,12 @@ def runtime_grants(role, *, target=None):
             tables["stewardship_refresh_check"] = {"SELECT", "INSERT"}
             tables["stewardship_refresh_check_start"] = {"SELECT"}
             tables.setdefault("stewardship_ministry_roster_entry", set()).add("SELECT")
+            # A census change a later response of the Family replaced gets
+            # no check (#1737): promotion and the check's guard compare the
+            # responses' places in the Family's order.
+            columns.setdefault("stewardship_submission", {}).setdefault(
+                "SELECT", set()
+            ).update({"family_version", "mode"})
             add_service_status_housekeeping_grants(tables, columns)
         else:
             add_service_status_writer_grants(tables, columns)

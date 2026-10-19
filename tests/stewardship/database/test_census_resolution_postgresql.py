@@ -240,8 +240,10 @@ def old_guard():
     )
     assert branch, "the resolution branch is in the baseline"
     old = body.replace(branch[0], "                IF NEW.execution NOT IN", 1)
+    # The branch's closing parentheses: since 0140 (#1737) two more, for the
+    # Entered by hand alternative the removed branch opens.
     old = old.replace(
-        "successor.submission_id=later.id))\n                   ))\n",
+        "successor.submission_id=later.id))\n                   ))))\n",
         "successor.submission_id=later.id))\n                   )\n",
         1,
     )
