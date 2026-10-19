@@ -2,10 +2,11 @@
 
 A form with a required acknowledgment box keeps its button unavailable, and
 a hint after the button (named by its aria-describedby) says to tick the box.
-Cancel go-live, Mail delivery and delivery refusal use the complete gate
-instead: a reason or note of only spaces is still empty, as the server
-trims it. (Confirm Production's typed word is gated inside its review
-dialog: test_go_live_confirm.py.) Each hint sits after its button, so a line coming or
+Mail delivery and delivery refusal use the complete gate instead: a note
+of only spaces is still empty, as the server trims it. (Confirm
+Production's typed word and Cancel go-live's reason are gated inside their
+review dialogs: test_go_live_confirm.py and test_production_activation.py.)
+Each hint sits after its button, so a line coming or
 going never moves the control just used, or the button. Every state is
 worked out again on pageshow and for a form an in-place swap brings in.
 """
@@ -99,32 +100,6 @@ def test_a_swapped_in_form_is_gated(page, component_origin):
     waits_with(go, hint, TICK)
     page.locator("#swapped input").check()
     ready(go, hint)
-
-
-def test_cancel_go_live_waits_for_a_real_reason_and_the_tick(page, component_origin):
-    """A reason of only spaces is empty, as the server trims it."""
-    page.goto(component_origin + "/production-withdrawal")
-    preview = page.get_by_role("button", name="Preview cancellation")
-    hint = page.locator("#withdrawal-complete-hint")
-    reason = page.locator("#withdrawal-reason")
-    box = page.locator("input[name=acknowledged]")
-    # Only the complete gate's hint is shown, never a second line.
-    assert page.locator("[data-acknowledgment-hint]").count() == 0
-    reason.fill("   ")
-    waits_with(preview, hint, "Enter the reason for cancelling go-live.")
-    follows(preview, hint)
-    reason.fill("Correct the schedule")
-    waits_with(
-        preview,
-        hint,
-        "Tick the box to confirm that deleted Testing data cannot be restored.",
-    )
-    where = (spot(box), spot(preview))
-    box.check()
-    ready(preview, hint)
-    assert (spot(box), spot(preview)) == where
-    restore(reason, "node => { node.value = '  '; }")
-    waits_with(preview, hint, "Enter the reason for cancelling go-live.")
 
 
 def test_delivery_evidence_notes_need_more_than_spaces(page, component_origin):

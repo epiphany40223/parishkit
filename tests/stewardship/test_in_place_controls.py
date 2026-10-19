@@ -822,51 +822,27 @@ def test_parish_settings_review_in_the_dialog():
     assert "data-review-answer" in review and "data-review-preview" in review
 
 
-def test_go_live_and_production_refreshes_are_in_place():
-    """The go-live and Production pages' Refresh links, once plain reloads
-    (``href=""``), re-read the page in place (#519 PR 7b-2): each names its
-    page's real address and a region there as its fragment, and says what it
-    did. Production activation gains a region of its own. The Go live
-    page's Check, Prepare and Confirm Production steps have no Refresh link:
-    they update themselves (#1585, #1586)."""
-    check = (TEMPLATES / "go-live-check.html").read_text()
-    assert 'data-in-place="refresh"' not in check
-    assert '{% translate "Refresh' not in check
-    assert 'data-live-status="go-live-check" data-live-pending' in check
-    prepare = (TEMPLATES / "go-live-prepare.html").read_text()
-    assert 'data-in-place="refresh"' not in prepare
-    # Its one "Refresh" control is Refresh and prepare again, a command.
-    assert not re.search(r'<a [^>]*>{% translate "Refresh', prepare)
-    assert 'data-live-status="go-live-prepare"' in prepare
-    confirm = (TEMPLATES / "go-live-confirm.html").read_text()
-    assert 'data-in-place="refresh"' not in confirm
-    assert not re.search(r'<a [^>]*>{% translate "Refresh', confirm)
-    assert 'data-live-status="go-live-confirm"' in confirm
-    for name, region, words, message in (
-        (
-            "production-progress.html",
-            "production-status",
-            "Refresh Production progress",
-            "Progress refreshed.",
-        ),
+def test_go_live_pages_have_no_refresh_link():
+    """The Go live page's steps, Check, Prepare, Confirm Production and
+    Production activation (#1585 slice 5), have no Refresh link: they update
+    themselves (#1586). Production activation's Cancel go-live sits in its
+    self-updating region, so a start that passed takes it away."""
+    for name, region in (
+        ("go-live-check.html", "go-live-check"),
+        ("go-live-prepare.html", "go-live-prepare"),
+        ("go-live-confirm.html", "go-live-confirm"),
+        ("production-progress.html", "production-status"),
     ):
         text = (TEMPLATES / name).read_text()
-        assert 'href=""' not in text, name
-        link = re.search(rf'<a [^>]*>{{% translate "{words}" %}}</a>', text).group(0)
-        assert 'href="{% url ' in link, name
-        assert f'#{region}"' in link and 'data-in-place="refresh"' in link, name
-        assert f"data-in-place-message=\"{{% translate '{message}' %}}\"" in link
-        assert names_region(text, region), name
-
-
-def test_go_live_refresh_regions_that_come_and_go():
-    """Regions a Refresh can fill or empty are drawn even when empty:
-    Production activation's Cancel go-live."""
+        assert 'data-in-place="refresh"' not in text, name
+        # Prepare's one "Refresh" control is Refresh and prepare again, a
+        # command; the others have none.
+        assert not re.search(r'<a [^>]*>{% translate "Refresh', text), name
+        assert f'data-live-status="{region}"' in text, name
     production = (TEMPLATES / "production-progress.html").read_text()
-    assert (
-        '<div id="production-withdrawal" data-in-place-region>'
-        "{% if withdrawal_available %}"
-    ) in production
+    region = production.index('<div id="production-status" data-in-place-region')
+    assert region < production.index('value="review_cancel"')
+    assert 'id="production-withdrawal"' not in production
 
 
 def test_hosted_file_upload_is_in_place():
@@ -893,11 +869,9 @@ def test_hosted_file_upload_is_in_place():
     assert "data-in-place-focus" in UploadForm().fields["file"].widget.attrs
 
 
-# Page-refresh controls the go-live redesign removes (#1586 slice 2), kept
-# here until then (#1585) so a new one elsewhere still fails.
-GO_LIVE_REFRESH = {
-    "production-progress.html": {"Refresh Production progress"},
-}
+# Page-refresh controls the go-live redesign removes (#1586 slice 2): none
+# is left since #1585 slice 5, so any new one fails.
+GO_LIVE_REFRESH = {}
 # Wording of a control that re-reads the page's own state.
 REREAD_WORDING = re.compile(
     r"^(?:Refresh|Reload|Re-read|Check for updates|Check again|Check status|"

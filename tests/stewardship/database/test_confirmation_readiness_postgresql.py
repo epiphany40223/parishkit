@@ -43,7 +43,7 @@ from parishkit.stewardship.storage import StaleRecordError
 
 from . import test_setup_preparation_postgresql as setup_inputs
 from .auth_builders import unguarded
-from .preview_builders import assert_out_of_date, previews_aged
+from .preview_builders import previews_aged
 from .test_activation_views_postgresql import (  # noqa: F401
     bootstrapped,
     config_role,
@@ -51,7 +51,7 @@ from .test_activation_views_postgresql import (  # noqa: F401
     ready_links,
     setup_service,
 )
-from .test_admin_navigation_postgresql import GO_LIVE, flow_steps
+from .test_admin_navigation_postgresql import flow_steps
 from .test_background_grants_postgresql import task_login
 from .test_setup_mail_views_postgresql import web_login
 from .test_setup_views_postgresql import post
@@ -245,7 +245,11 @@ def test_confirmation_atomically_activates_and_replays(request, monkeypatch, act
         assert page.status_code == 200, page.content
         assert page["Cache-Control"] == "no-store"
         assert (b"Campaign active" if active else b"Campaign scheduled") in page.content
-        assert flow_steps(page.content) == (GO_LIVE, "Activation")
+        # The Go live step bar only while a direct activation's initial
+        # mail is being prepared (#1585 slice 5); no numbered flow list.
+        assert flow_steps(page.content) is None
+        assert (b"Step 4 of 4:" in page.content) == active
+        assert b"Refresh Production progress" not in page.content
         assert progress_href in browser.get(settings_path).content
     campaign.refresh_from_db()
     preparation.transition.refresh_from_db()
@@ -266,17 +270,26 @@ def test_confirmation_atomically_activates_and_replays(request, monkeypatch, act
             )
         with web_login():
             page = browser.get(progress_path)
-            assert b"Preparing initial campaign mail" in page.content
-            retry = {"control": page.context["control"]}
+            assert b"Preparing initial campaign mail failed" in page.content
+            retry = {"action": "retry", "control": page.context["control"]}
             assert retry["control"]
-            competing = {"control": browser.get(progress_path).context["control"]}
+            # Signed without a time: every read of one failure draws the
+            # same control, so the self-updating region stays unchanged.
+            assert browser.get(progress_path).context["control"] == retry["control"]
             runs = TaskRun.objects.filter(root_id=demand.task_root_id).count()
+            forged = retry | {"control": retry["control"] + "x"}
+            assert post(browser, progress_path, forged).status_code == 400
+            # No page age reaches the Administrator: the owner's own
+            # 5-minute control is minted at the click (#1585 slice 5).
             with previews_aged(monkeypatch):
-                assert_out_of_date(post(browser, progress_path, retry), progress_path)
-            assert TaskRun.objects.filter(root_id=demand.task_root_id).count() == runs
-            assert post(browser, progress_path, retry).status_code == 302
-            assert post(browser, progress_path, retry).status_code == 302
-            assert post(browser, progress_path, competing).status_code == 409
+                response = post(browser, progress_path, retry)
+            assert response.status_code == 303, response.content
+            assert response["Location"] == progress_path
+            count = TaskRun.objects.filter(root_id=demand.task_root_id).count()
+            assert count == runs + 1
+            # A resend after the retry no longer names the failure shown: no-op.
+            assert post(browser, progress_path, retry).status_code == 303
+            assert TaskRun.objects.filter(root_id=demand.task_root_id).count() == count
             assert not browser.get(progress_path).context["complete"]
         # Current eligibility can change after confirmation. Freeze the group's
         # actual result, not a later recomputation against mutable Family data.

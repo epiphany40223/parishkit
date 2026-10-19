@@ -220,11 +220,10 @@ LEDGER = {
     ),
     # The Confirm Production step (#1585 slice 4).
     "go_live_confirm": pending("PR 12", "go-live confirm-preview", "go-live confirm"),
-    # The page's "Retry failed mail preparation" control comes in PR 12.
+    # The page's mail preparation Retry and its Cancel go-live dialog
+    # (#1585 slice 5; go-live withdraw-preview, go-live withdraw) come in
+    # PR 12.
     "production_progress": command("go-live progress", owed="PR 12"),
-    "production_withdrawal": pending(
-        "PR 12", "go-live withdraw-preview", "go-live withdraw"
-    ),
     # Family email history and Pause and resume mail.
     "family_email_progress": command("send progress"),
     "family_email_progress_status": command("send progress"),

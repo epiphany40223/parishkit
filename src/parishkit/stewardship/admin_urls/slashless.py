@@ -65,7 +65,6 @@ SLASHLESS = (
     ("campaign/go-live/preparing", "go_live_prepare"),
     ("campaign/go-live/confirmation", "go_live_confirm"),
     ("campaign/production", "production_progress"),
-    ("campaign/production/cancellation", "production_withdrawal"),
     ("reports", "reports"),
     ("reports/responses", "response_dashboard"),
     ("reports/comparison", "campaign_comparison"),

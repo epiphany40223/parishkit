@@ -121,7 +121,6 @@ from .followup_components import POSTS as FOLLOWUP_POSTS
 from .followup_components import components as followup_components
 from .go_live_components import action_answer as go_live_action
 from .go_live_components import components as go_live_components
-from .go_live_components import posts as go_live_posts
 from .go_live_families_components import components as go_live_families_components
 from .held_emails_components import components as held_emails_components
 from .home_overview_components import components as home_overview_components
@@ -2113,34 +2112,6 @@ def component_origin():
             },
         ),
         (
-            "/go-live-steps",
-            "production-progress",
-            {
-                "campaign": {
-                    "pk": uuid4(),
-                    "state": "scheduled",
-                    "active_configuration": {"name": "Sample campaign"},
-                },
-                "receipt": {"created_at": NOW},
-                "demand": None,
-                # The last of the four go-live steps, the longest indicator.
-                "admin_chrome": admin
-                | {
-                    "breadcrumbs": [
-                        {"label": "Home", "url": "/home"},
-                        {"label": "Campaign setup", "url": "/campaign-settings"},
-                        {"label": "Production activation", "url": None},
-                    ],
-                    "flow_steps": [
-                        {"label": "Check", "state": "done"},
-                        {"label": "Prepare", "state": "done"},
-                        {"label": "Confirm Production", "state": "done"},
-                        {"label": "Activation", "state": "current"},
-                    ],
-                },
-            },
-        ),
-        (
             "/background",
             "background",
             background | {"table": background_table(PageWindow(1, 50), True)},
@@ -2328,7 +2299,6 @@ def component_origin():
         | open_form_posts(context, admin)
         | family_test_posts(context, admin)
         | upload_defaults_posts()
-        | go_live_posts()
         | PAST_CAMPAIGN_POSTS
         | {
             f"{IN_PLACE_FORM}/refuse": (400, None, responses["/in-place-refused"][1]),

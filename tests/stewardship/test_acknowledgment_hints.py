@@ -49,21 +49,42 @@ def hint_follows(html, button_label, hint_id):
     )
 
 
-def test_cancel_go_live_waits_for_a_reason_and_its_tick():
-    """The reason and the tick each carry the hint the gate shows."""
-    html = render_to_string(
-        "stewardship/production-withdrawal.html",
-        {"campaign": CAMPAIGN, "available": True},
+def cancel_review():
+    """Render the Cancel go-live dialog's review, with its reason field."""
+    inventory = dict.fromkeys(
+        ("occurrences", "cancellable", "messages", "failed", "delivered", "blocking"),
+        0,
     )
-    form = tag(html, r'<form method="post" data-require-complete>')
-    assert form
-    reason = tag(html, r'<textarea id="withdrawal-reason"[^>]*>')
-    assert "required" in reason
+    return render_to_string(
+        "stewardship/production-cancel-review.html",
+        {"review": "synthetic", "inventory": inventory, "reason_max": 2000},
+    )
+
+
+def test_cancel_go_live_waits_for_a_reason():
+    """The reason holds Apply in the Cancel go-live dialog, and posts with Apply.
+
+    As the typed Production word (below), the review dialog's gate
+    (data-review-require, ui-v1.js) reads the field's hint; the field names
+    the dialog's Apply form. Apply is the acknowledgement that deleted
+    Testing data cannot be restored, so there is no tick box (#1585 slice 5).
+    """
+    html = cancel_review()
+    reason = tag(html, r'<input id="production-cancel-reason"[^>]*>')
+    assert "data-review-require" in reason
+    assert 'form="production-cancel-review-apply"' in reason
+    assert 'name="reason"' in reason and "required" in reason
+    assert 'maxlength="2000"' in reason
     assert 'data-missing-hint="Enter the reason for cancelling go-live."' in reason
-    box = tag(html, r'<input type="checkbox" name="acknowledged"[^>]*>')
-    assert "data-acknowledgment" in box
-    assert 'data-missing-hint="Tick the box to confirm' in box
-    hint_follows(html, "Preview cancellation", "withdrawal-complete-hint")
+    assert 'name="review" value="synthetic" data-review-preview' in html
+    assert 'type="checkbox"' not in html
+
+
+@pytest.mark.parametrize("reason", ["Fix dates", " x ", "\tWrong start", "", "   "])
+def test_the_reason_pattern_accepts_what_the_server_accepts(reason):
+    """A reason of only spaces is empty, as the server's ``strip()`` says."""
+    (pattern,) = re.findall(r'pattern="([^"]+)"', cancel_review())
+    assert bool(re.fullmatch(pattern, reason)) == bool(reason.strip())
 
 
 def test_delivery_resolutions_wait_for_a_note():

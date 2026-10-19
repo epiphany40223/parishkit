@@ -485,20 +485,14 @@ def test_change_origins_need_a_session():
     assert navigation.change_origin(request, uuid4()) is None
 
 
-def test_go_live_steps_run_from_check_to_activation():
-    """Going live shows the Go live page's four steps, named as its step bar
-    names them (no retired page); earlier ones are done, none are links."""
-    shown = navigation.steps(navigation.Placement(flow="go_live", step="confirm"))
-    assert [(str(item["label"]), item["state"]) for item in shown] == [
-        ("Check", "done"),
-        ("Prepare", "done"),
-        ("Confirm Production", "current"),
-        ("Activation", "upcoming"),
-    ]
-    html = render_to_string(
-        "stewardship/admin-flow-steps.html", {"admin_chrome": {"flow_steps": shown}}
-    )
-    assert "<a " not in html and html.count("<li") == 4
+def test_going_live_draws_only_its_own_step_bar():
+    """Going live has no numbered flow list: every Go live step, Production
+    activation included (#1585 slice 5), draws the Go live step bar instead,
+    whose last step is Activation."""
+    from parishkit.stewardship.accounts.go_live_check import STEPS
+
+    assert "go_live" not in navigation.FLOWS
+    assert [str(label) for _key, label in STEPS][-1] == "Activation"
 
 
 @pytest.mark.parametrize("offered", [True, False])
@@ -533,8 +527,8 @@ def test_an_error_page_shows_no_step_or_placed_trail():
     from parishkit.stewardship.web.error_pages import ERROR_PAGE_ATTRIBUTE
 
     request = SimpleNamespace()
-    navigation.place(request, flow="go_live", step="confirm")
-    assert navigation.placement(request).step == "confirm"
+    navigation.place(request, flow="export", step="prepare")
+    assert navigation.placement(request).step == "prepare"
     setattr(request, ERROR_PAGE_ATTRIBUTE, True)
     assert navigation.placement(request) is None
 

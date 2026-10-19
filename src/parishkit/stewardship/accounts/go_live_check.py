@@ -40,6 +40,7 @@ from parishkit.stewardship.campaigns.production_models import (
     ProductionCleanupCancellation,
     ProductionTransitionRequest,
 )
+from parishkit.stewardship.campaigns.withdrawal_models import ProductionWithdrawal
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun
 
@@ -72,7 +73,9 @@ class Progress:
     progress; ``retry`` the signed Retry stopping go-live control, and
     ``failed`` the failed disposal it retries as ``(preparation, task)``.
     ``stopped_by_other`` is set when another Administrator than the viewer
-    stopped it, for the line that says so (#1585).
+    stopped it, for the line that says so (#1585). ``cancelled_at`` is when
+    Cancel go-live returned the campaign to a Testing draft after Production
+    was confirmed, for Check's "Go-live cancelled at" line (#1585 slice 5).
     """
 
     state: str
@@ -85,6 +88,7 @@ class Progress:
     failed: tuple | None = None
     stopped_at: datetime | None = None
     stopped_by_other: bool = False
+    cancelled_at: datetime | None = None
 
     @property
     def in_progress_url(self):
@@ -156,7 +160,8 @@ def progress(request, service, campaign_id):
     Read under the common work lock with a passive principal, so a page read
     never extends the sign-in's idle time. A stopped request whose stop has
     finished is "idle" with ``stopped_at``, for the "Go-live stopped at"
-    line above the readiness checks.
+    line above the readiness checks; a confirmed one that Cancel go-live
+    withdrew is "idle" with ``cancelled_at``, for "Go-live cancelled at".
     """
     with work_transaction():
         actor = principal(request, service, passive=True)
@@ -166,10 +171,18 @@ def progress(request, service, campaign_id):
             .order_by("-created_at", "-id")
             .first()
         )
-        if row is None or row.state == "activated":
-            # Nothing started, or a go-live that was cancelled after
-            # Production was confirmed: Check starts again from readiness.
+        if row is None:
             return Progress("idle")
+        if row.state == "activated":
+            # A go-live that was cancelled after Production was confirmed
+            # (Check is open only while the campaign is a draft again):
+            # Check starts again from readiness and says when.
+            withdrawal = ProductionWithdrawal.objects.filter(
+                confirmation__request=row
+            ).first()
+            return Progress(
+                "idle", cancelled_at=withdrawal.created_at if withdrawal else None
+            )
         stop = ProductionCleanupCancellation.objects.filter(request=row).first()
         stopping = stop is not None
         # The line "Another Administrator stopped go-live." (#1585).
