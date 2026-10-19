@@ -392,3 +392,80 @@ def test_denial_and_unavailable_inputs_never_become_an_empty_report(monkeypatch)
         substitute(monkeypatch, answer)
         with pytest.raises(ReadUnavailable):
             page()
+
+
+def test_page_address_keeps_only_the_closed_choices():
+    """The address bar names the view's closed choices, never a private one.
+
+    A reload keeps Family status, Pledge amount, Frequency, Share method, the
+    sort and the rows per page (UX conventions, "Reload on a POST report",
+    #1586); the search, the dates, the pledge range and the page number stay
+    in the POST body, and every default is left out.
+    """
+    from parishkit.stewardship.reports.financial_views import page_address
+
+    route = "/admin/reports/financial/"
+    assert page_address(route, FinancialQuery(), 50) == route
+    query = FinancialQuery.parse(
+        {
+            "search": "Private name",
+            "active": "inactive",
+            "amount": "nonzero",
+            "frequency": "monthly",
+            "share": ONLINE,
+            "sort": "pledge_desc",
+            "first_start": "2055-01-01",
+            "zone": "America/New_York",
+            "pledge_min": "100",
+            "pledge_max": "500",
+            "page": "3",
+        }
+    )
+    assert page_address(route, query, 100) == (
+        f"{route}?active=inactive&amount=nonzero&frequency=monthly"
+        f"&share={ONLINE}&sort=pledge_desc&size=100"
+    )
+    assert page_address(route, FinancialQuery(share="none"), 25) == (
+        f"{route}?share=none&size=25"
+    )
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "search=Private",
+        "pledge_min=100",
+        "first_start=2055-01-01",
+        "zone=America/New_York",
+        "page=2",
+        "extra=x",
+    ],
+)
+def test_a_get_carries_only_the_page_address_fields(rf, query):
+    """A GET with any field the page's own address never carries is refused."""
+    from parishkit.stewardship.reports.financial_views import _parameters
+
+    with pytest.raises(ValueError):
+        _parameters(rf.get("/admin/reports/financial/?amount=zero&" + query))
+
+
+def test_a_get_draws_the_view_its_address_names(rf):
+    """The page's own address parses into the same view a POST drew."""
+    from parishkit.stewardship.reports.financial_views import _parameters
+
+    parameters = _parameters(
+        rf.get(f"/?active=active&frequency=weekly&share={ONLINE}&sort=pledge&size=25")
+    )
+    assert parameters.pop("size") == ["25"]
+    query = FinancialQuery.parse(parameters)
+    assert (query.active, query.frequency, query.share, query.sort) == (
+        "active",
+        "weekly",
+        ONLINE,
+        "pledge",
+    )
+    # A POST still carries its private filters, without its CSRF token.
+    posted = _parameters(rf.post("/", {"search": "Name", "csrfmiddlewaretoken": "t"}))
+    assert dict(posted) == {"search": ["Name"]}
+    with pytest.raises(ValueError):
+        _parameters(rf.post("/?amount=zero", {"search": "Name"}))

@@ -642,6 +642,30 @@ def _save(request, service, configuration, actor, target):
     """
     form = _form(target, request.POST, stored=_optional(configuration, target))
     credential = InlineCredentialForm(target, request.POST)
+    refused = [
+        error
+        for error in (
+            credential.errors.as_data().get("candidate", [])
+            if form.is_valid() and not credential.is_valid()
+            else []
+        )
+        if error.code == "invalid_credential"
+    ]
+    if refused:
+        # A pasted key its rule refuses (#1577) is refused at the key field,
+        # in the rule's words; the key is never drawn again. Any other
+        # refusal of the key (a forged oversized post) is drawn as before.
+        error = refused[0]
+        return _page(
+            request,
+            configuration,
+            target,
+            form=form,
+            credential=_refused_key(
+                configuration, request, target, error.message, code=error.code
+            ),
+            status=400,
+        )
     if not (form.is_valid() and credential.is_valid()):
         return _refused_entries(request, configuration, target, form)
     intent = key_intent(configuration, actor, target, form, credential)

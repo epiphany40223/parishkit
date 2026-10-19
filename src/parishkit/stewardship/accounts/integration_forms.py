@@ -4,7 +4,15 @@ from django import forms
 from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.web.admin_forms import AdminForm
-from parishkit.stewardship.web.field_rules import SPACE, FieldRule, RuleField
+from parishkit.stewardship.web.field_rules import (
+    EMAIL,
+    SPACE,
+    EmailRuleField,
+    FieldRule,
+    RuleField,
+    apply,
+    char_class,
+)
 from parishkit.stewardship.web.sender_name_field import SenderNameField
 
 from . import field_tips, setup_help
@@ -42,6 +50,52 @@ SLACK_CHANNEL = FieldRule(
     message=MISSING_HINTS["channel_id"],
     code="invalid",
 )
+
+# A pasted API key or bot token as its installer reads one
+# (source.credentials, integration_candidates.slack_candidate): 1 to 4096
+# printable ASCII characters, so no spaces inside. The key fields strip the
+# spaces around a pasted one first, so only spaces is no key (blank keeps
+# the saved one, or the required rule asks for one). Checked by the browser
+# and the server alike (#1577), in the setup step's words for a key it
+# can't use.
+_KEY_TEXT = rf"[{SPACE}]*({char_class(((0x21, 0x7E),))}{{1,4096}}[{SPACE}]*)?"
+KEY_RULES = {
+    "parishsoft": FieldRule(
+        name="parishsoft_key",
+        pattern=_KEY_TEXT,
+        message=_(
+            "This does not look like a ParishSoft API key. Paste the key exactly "
+            "as ParishSoft provided it, on one line with no spaces."
+        ),
+        code="invalid_credential",
+    ),
+    "slack": FieldRule(
+        name="slack_token",
+        pattern=_KEY_TEXT,
+        message=_(
+            "This does not look like a Slack bot token. Paste the Bot User OAuth "
+            "Token, which starts with xoxb-, on one line with no spaces."
+        ),
+        code="invalid_credential",
+    ),
+}
+
+
+def rule_key(field, target, empty=None):
+    """Give a single-line key field its target's rule, if it has one.
+
+    ``empty`` is what the complete gate says while a required key is empty;
+    a target without a rule (the Google service-account JSON) keeps it as
+    the field's hint. Returns the rule, or None.
+    """
+    rule = KEY_RULES.get(target)
+    if rule is None:
+        if empty:
+            field.widget.attrs["data-missing-hint"] = empty
+        return None
+    apply(field, rule.worded(rule.message, empty=empty))
+    return rule
+
 
 # What the browser checks of an off-site folder link (#1330), leniently: a
 # bare folder ID or any https link on drive.google.com, as folder_id_from_url
@@ -114,12 +168,16 @@ class IntegrationForm(AdminForm):
                 self.data if self.is_bound else None, stored=stored or {}
             )
         elif target == "google_workspace":
-            self.fields["delegated_email"] = forms.EmailField(
-                label=_("Delegated mailbox"), max_length=254
+            self.fields["delegated_email"] = EmailRuleField(
+                EMAIL.worded(MISSING_HINTS["delegated_email"]),
+                label=_("Delegated mailbox"),
+                max_length=254,
             )
         elif target == "email":
-            self.fields["sender"] = forms.EmailField(
-                label=_("From address"), max_length=254
+            self.fields["sender"] = EmailRuleField(
+                EMAIL.worded(MISSING_HINTS["sender"]),
+                label=_("From address"),
+                max_length=254,
             )
             self.fields["sender_name"] = SenderNameField(
                 help_text=_(
@@ -127,8 +185,10 @@ class IntegrationForm(AdminForm):
                     "Parish name."
                 )
             )
-            self.fields["reply_to"] = forms.EmailField(
-                label=_("Reply-to address"), max_length=254
+            self.fields["reply_to"] = EmailRuleField(
+                EMAIL.worded(MISSING_HINTS["reply_to"]),
+                label=_("Reply-to address"),
+                max_length=254,
             )
         elif target == "slack":
             self.fields["channel_id"] = RuleField(
@@ -367,9 +427,9 @@ class InlineCredentialForm(AdminForm):
                 else SecretInput(target)
             ),
         )
-        if missing:
-            # The complete gate's hint names what Save is waiting for.
-            self.fields["candidate"].widget.attrs["data-missing-hint"] = missing
+        # The complete gate's hint names what Save is waiting for: the
+        # missing key, or the key rule's words for one it can't use (#1577).
+        self.key_rule = rule_key(self.fields["candidate"], target, missing)
         self.order_fields(["candidate", "intent"])
         field_tips.shorten(
             self,
@@ -377,3 +437,10 @@ class InlineCredentialForm(AdminForm):
             if required
             else {"candidate": _("Leave blank to keep the current key.")},
         )
+
+    def clean_candidate(self):
+        """A pasted key follows its rule (#1577); blank keeps the current key."""
+        value = self.cleaned_data["candidate"]
+        if value and self.key_rule is not None:
+            self.key_rule.check(value)
+        return value
