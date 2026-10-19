@@ -299,7 +299,11 @@ def _respond(request, campaign_id, *, export, render):
             result = limitations_report(campaign_id, query, principal)
             if current_snapshot() == before:
                 snapshot = before
-            count = len(result["members"]) + len(result["families"])
+            count = (
+                len(result["members"])
+                + len(result["families"])
+                + len(result.get("contributions", []))
+            )
             return iter((render(result, query, extra),))
 
         response = campaign_response(

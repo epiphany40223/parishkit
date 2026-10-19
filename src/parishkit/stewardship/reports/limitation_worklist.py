@@ -103,7 +103,12 @@ class WorklistQuery:
 
 
 def answer_rows(result):
-    """One row per answer, Members' first, each with its worklist item id."""
+    """One row per answer, Members' first, each with its worklist item id.
+
+    The Families' Cannot contribute financially answers (R39 finding 11)
+    follow, each with an id of its own that no Limitations decision takes
+    (its Pledges item), since it is decided on Pledges.
+    """
     rows = []
     for row in result["members"] + result["families"]:
         rows.append(
@@ -112,6 +117,8 @@ def answer_rows(result):
                 "id": answer_id(row["family_duid"], row["kind"], row["member_key"]),
             }
         )
+    for row in result.get("contributions", []):
+        rows.append(row | {"id": f"pledge-{row['pledge_item']}"})
     return rows
 
 
@@ -131,7 +138,7 @@ def at_stage(rows, stage):
 
 def answer_name(row):
     """How the icons, dialogs and the table name one answer."""
-    if row["kind"] == "family":
+    if row["kind"] in ("family", "cannot_give"):
         who = row["family_name"] or f"Family DUID {row['family_duid']}"
         return f"the answer of {who}"
     return f"the answer of {row['member_name']}"
@@ -189,6 +196,13 @@ def worklist_rows(rows):
                 "decided_by": (row["decided_by"] or "") if current else "",
                 "decided_at": row["decided_at"] if current else None,
                 "note": (row["note"] or "") if current else "",
+                # A Cannot contribute financially row is decided on Pledges:
+                # no box and no icons, only a link there (R39 finding 11).
+                "elsewhere": (
+                    {"label": "Decided in Pledges", "url": row["pledges_url"]}
+                    if row["kind"] == "cannot_give"
+                    else None
+                ),
             }
         )
     return found

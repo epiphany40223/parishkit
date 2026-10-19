@@ -44,6 +44,9 @@ ANSWERS = {
     "member": "Cannot participate in any ministries",
     "proposed_member": "Cannot participate in any ministries",
     "family": "Cannot attend Mass or prayer services",
+    # A Family's cannot_give flag on its $0 pledge (R39 finding 11): listed
+    # beside the Limitations answers, but decided on Pledges.
+    "cannot_give": "Cannot contribute financially",
 }
 # Each download table has its page table's columns, names and order (#932,
 # #966): the Members table leads with the Member and Member DUID, as on the
@@ -136,7 +139,59 @@ def limitations_report(campaign_id, query, principal):
     # (#932), from the snapshot SQL read; the page and its downloads share it.
     source = result["metadata"]["source_id"]
     name_rows(source, result["members"] + result["families"])
-    return shape_result(result)
+    result = shape_result(result)
+    result["contributions"] = contributions(campaign_id, query, principal)
+    return result
+
+
+def contributions(campaign_id, query, principal):
+    """The Families that cannot contribute financially, as Limitations rows.
+
+    R39 finding 11: a Family's Cannot contribute financially answer (the
+    ``cannot_give`` flag on its $0 pledge) is listed with the Limitations
+    answers, but it is decided once, on Pledges, so each row carries its
+    Pledges item, stage (``placement``) and last decision, and a link to
+    Pledges at that stage (``pledges_url``) instead of any action. Read
+    through Pledges' own rows (``pledge_review_views.pledge_rows``) with
+    the same search, only for a viewer Pledges admits, only while Show is
+    everything (its choices name the two Limitations answers), and none
+    while the campaign has no financial module or its read is unavailable.
+    """
+    from django.urls import reverse
+
+    from .pledge_review_views import pledge_rows
+
+    if query.show != "any" or not allows(principal, Capability.FINANCIAL_DETAIL):
+        return []
+    try:
+        rows, _metadata = pledge_rows(campaign_id, principal, query.search)
+    except (PermissionError, ReadUnavailable):
+        return []
+    found = []
+    for row in rows:
+        if not row["cannot_give"]:
+            continue
+        item = row["item"]
+        in_force = item.in_force
+        found.append(
+            {
+                "kind": "cannot_give",
+                "member_key": "",
+                "family_name": row["family_name"],
+                "family_duid": row["family_duid"],
+                "submitted_at": row["submitted_at"],
+                "pledge_item": str(item.submission_id),
+                "version": item.sequence,
+                "placement": row["placement"],
+                "in_force": in_force,
+                "decided_by": row["decided_by"] if in_force else "",
+                "decided_at": row["decided_at"] if in_force else None,
+                "note": row["note"] if in_force else "",
+                "pledges_url": reverse("admin:pledges_to_enter")
+                + f"?stage={row['stage']}",
+            }
+        )
+    return found
 
 
 def shape_result(result):
@@ -173,6 +228,7 @@ def at_stage(result, stage):
     return result | {
         "members": members,
         "families": families,
+        "contributions": kept(result.get("contributions", [])),
         "summary": {"cannot_serve": len(members), "cannot_attend": len(families)},
     }
 
@@ -217,6 +273,8 @@ def export_tables(result, zone, *, time_text=iso_time):
         )
         for row in result["members"]
     ]
+    # Each Family's Cannot contribute financially answer follows the
+    # cannot-attend ones, with its Pledges stage (R39 finding 11).
     families = [
         (
             *_family(row),
@@ -225,7 +283,7 @@ def export_tables(result, zone, *, time_text=iso_time):
             instant(row["submitted_at"]),
             row["placement"].stage.label,
         )
-        for row in result["families"]
+        for row in result["families"] + result.get("contributions", [])
     ]
     return members, families
 

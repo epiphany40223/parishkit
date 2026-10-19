@@ -466,7 +466,11 @@ ROSTER_STATES = frozenset({"active", "closed", "archived"})
 # counts the answers its default To review stage lists: no decision in
 # force, or Back to review (pipeline.cannot_participate_placement). An
 # unavailable report (no Family record or source) lists no answer, so it
-# counts nothing and no number shows.
+# counts nothing and no number shows. The page also lists each Family's
+# Cannot contribute financially answer at its Pledges stage (R39 finding
+# 11), for a viewer Pledges admits, so the count adds those at To review,
+# read through Pledges' own stage selection
+# (stewardship_pledge_review_states_v1) and the response's cannot_give flag.
 OPEN_COUNTS = """
 SELECT
     CASE WHEN %(information)s THEN (
@@ -491,6 +495,14 @@ SELECT
             || coalesce(v->'families','[]'::jsonb)) a
         WHERE NOT coalesce((a->>'in_force')::boolean, false)
            OR coalesce(a->>'decision','none')='none')
+        + CASE WHEN %(pledges)s THEN (
+            SELECT count(*)
+            FROM stewardship_pledge_review_states_v1(%(campaign)s, NULL::uuid) p
+            JOIN stewardship_submission ps ON ps.id=p.submission_id
+            WHERE p.stage='to_review'
+              AND coalesce(ps.answers->'financial'->'cannot_give'='true'::jsonb,
+                  false))
+        ELSE 0 END
     END
 FROM (SELECT NULL) one
 LEFT JOIN LATERAL (
@@ -545,9 +557,15 @@ def _open_counts(request, actor, items, campaign):
     cached = getattr(request, "_stewardship_open_counts", None)
     if cached is not None:
         return cached
-    offered = {item.name for item in items if item.url and item.name in COUNTED}
+    # Pledges is not counted, but whether the menu offers it says whether
+    # the Limitations count includes its Cannot contribute answers.
+    offered = {
+        item.name
+        for item in items
+        if item.url and item.name in COUNTED | {"pledges_to_enter"}
+    }
     counts = {}
-    if offered:
+    if offered & COUNTED:
         # Inside a view's transaction the statement gets a savepoint, so a
         # failure rolls back only the count. Outside one (autocommit), the
         # statement is its own transaction and a failure leaves nothing
@@ -599,6 +617,9 @@ def _read_open_counts(offered, actor, campaign):
                 "limitations": "limitations_report" in offered
                 and allows(actor, Capability.CAMPAIGN_REPORT),
                 "limitation_filters": json.dumps(LimitationsQuery().form_values()),
+                # Pledges' own admission (FINANCIAL_DETAIL), checked again.
+                "pledges": "pledges_to_enter" in offered
+                and allows(actor, Capability.FINANCIAL_DETAIL),
                 "campaign": campaign.pk,
                 "filters": selection_filters(FollowupQuery()),
                 # The page's own selection (roster_rows, via _ticked).

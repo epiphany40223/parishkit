@@ -1289,6 +1289,11 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
             assert statements[0]["roster_outcomes"] == ["joined", "leave_confirmed"]
             # Limitations runs its page's selection with the page's defaults.
             assert statements[0]["limitations"] is (role != "ministry_leader")
+            # With Pledges in the menu, Limitations' count adds the Cannot
+            # contribute answers at To review (R39 finding 11).
+            assert statements[0]["pledges"] is any(
+                item.name == "pledges_to_enter" and item.url for item in items
+            )
             assert json.loads(statements[0]["limitation_filters"]) == {
                 "search": "",
                 "show": "any",
