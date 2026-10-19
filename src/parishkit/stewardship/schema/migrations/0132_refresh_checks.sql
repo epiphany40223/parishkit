@@ -10,8 +10,8 @@
 -- A census change Entered by hand or Updated in ParishSoft is final in its
 -- guard, and a Ministry request a person decided changes only by review, so
 -- neither row can carry what a refresh found. Additive only, as the spec's
--- "Data integrity" requires during the campaign; no existing row or
--- function changes:
+-- "Data integrity" requires during the campaign; no existing row
+-- changes, and one function changes:
 --   * stewardship_refresh_check (new, migration-owned): one immutable row
 --     per refresh and item, with the outcome (confirmed, unchanged, entered
 --     incorrectly, or ParishSoft now matching an ignored request), the
@@ -35,6 +35,10 @@
 --     refreshes (default two). Its guard keeps the
 --     start immutable and stamps it on any later insert; deleting the row
 --     turns the flag off. No runtime login may write it.
+--   * stewardship_bootstrap_empty_database (replaced): a fresh install's
+--     initial bootstrap refuses any application table that holds a row, so
+--     it leaves out the start row's table, seeded here, as it does the
+--     download policy's; nothing else in it changes.
 -- The file ends with a DO block that refuses to commit unless all of this
 -- is installed. Reversing needs its own forward migration.
 SET LOCAL check_function_bodies = false;
@@ -178,6 +182,76 @@ BEGIN
 END
 $start$;
 
+-- The initial bootstrap's emptiness check admits the start row above.
+CREATE OR REPLACE FUNCTION public.stewardship_bootstrap_empty_database() RETURNS trigger
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'pg_catalog', 'public', 'pg_temp'
+    AS $$
+DECLARE relation record; occupied boolean;
+BEGIN
+    IF NEW.validation_schema NOT IN ('bootstrap-policy-v1', 'bootstrap-users-v10')
+       OR NEW.predecessor_id IS NOT NULL THEN
+        RETURN NEW;
+    END IF;
+    -- Framework migration/permission metadata, the guarded initial download
+    -- policy and the refresh checks' start (#1689) are seeded by migrations,
+    -- not evidence of an existing campaign.
+    -- All current and future application tables must otherwise be empty.
+    FOR relation IN
+        SELECT n.nspname, c.relname, c.relrowsecurity FROM pg_class c
+        JOIN pg_namespace n ON n.oid=c.relnamespace
+        WHERE n.nspname !~ '^pg_' AND n.nspname <> 'information_schema'
+          AND c.relkind IN ('r','p','f')
+          AND NOT (n.nspname='public' AND c.relname IN (
+              'django_migrations','django_content_type','auth_permission',
+              'stewardship_download_policy', 'stewardship_refresh_check_start'))
+        ORDER BY n.nspname, c.relname
+    LOOP
+        IF relation.relrowsecurity AND NOT (relation.nspname='public'
+            AND relation.relname IN ('stewardship_secret_request',
+                'stewardship_sealed_credential_staging',
+                'stewardship_credential_consumer_ack', 'stewardship_public_credential_handoff', 'stewardship_provider_context', 'stewardship_setup_sealed_credential', 'stewardship_setup_draft_section')) THEN
+            RAISE EXCEPTION 'Initial bootstrap requires reviewed row-security admission'
+                USING ERRCODE='23514';
+        END IF;
+
+        IF relation.nspname='public'
+           AND relation.relname='stewardship_source_lease' THEN
+            IF EXISTS (SELECT 1 FROM public.stewardship_source_lease
+                WHERE (singleton AND version=1 AND actor_id IS NULL
+                    AND created_at=updated_at AND owner_id IS NULL
+                    AND task_fence=0 AND worker_id IS NULL AND fence=0 AND phase='idle'
+                    AND acquired_at IS NULL AND heartbeat_at IS NULL
+                    AND expires_at IS NULL AND external_deadline IS NULL)
+                    IS NOT TRUE) THEN
+                RAISE EXCEPTION 'Initial bootstrap cannot adopt used source ownership'
+                    USING ERRCODE='23514';
+            END IF;
+            CONTINUE;
+        END IF;
+        IF relation.nspname='public'
+           AND relation.relname='stewardship_source_current' THEN
+            IF EXISTS (SELECT 1 FROM public.stewardship_source_current
+                WHERE (singleton AND version=1 AND actor_id IS NULL
+                    AND created_at=updated_at AND snapshot_id IS NULL
+                    AND generation=0 AND organization_id IS NULL) IS NOT TRUE) THEN
+                RAISE EXCEPTION 'Initial bootstrap cannot adopt a used source pointer'
+                    USING ERRCODE='23514';
+            END IF;
+            CONTINUE;
+        END IF;
+        EXECUTE format('SELECT EXISTS(SELECT 1 FROM %I.%I)',
+                       relation.nspname, relation.relname) INTO occupied;
+        IF occupied THEN
+            RAISE EXCEPTION 'Initial bootstrap requires an empty application database'
+                USING ERRCODE='23514';
+        END IF;
+    END LOOP;
+    RETURN NEW;
+END $$;
+ALTER FUNCTION public.stewardship_bootstrap_empty_database() SECURITY DEFINER;
+REVOKE ALL ON FUNCTION public.stewardship_bootstrap_empty_database() FROM PUBLIC;
+
 DO $check$
 BEGIN
     IF (SELECT count(*) FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid
@@ -221,5 +295,15 @@ BEGIN
             WHERE event_type='refresh_checks_started'))
     THEN
         RAISE EXCEPTION 'The refresh check start is not recorded';
+    END IF;
+    IF NOT EXISTS(SELECT 1 FROM pg_proc
+            WHERE oid='public.stewardship_bootstrap_empty_database()'::regprocedure
+              AND prosecdef
+              AND proconfig=ARRAY['search_path=pg_catalog, public, pg_temp']
+              AND prosrc LIKE '%''stewardship_download_policy'', ''stewardship_refresh_check_start''%')
+       OR has_function_privilege('public',
+            'public.stewardship_bootstrap_empty_database()', 'EXECUTE')
+    THEN
+        RAISE EXCEPTION 'The initial bootstrap check does not admit the refresh check start';
     END IF;
 END $check$;
