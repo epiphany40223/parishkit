@@ -4098,9 +4098,9 @@ later check fails or the Admin cancels. Cancellation before activation releases
 the gate and leaves the campaign in Testing with whatever cleanup completed.
 
 From `cleanup_complete`, once the inactive Family links are prepared on
-current ParishSoft data (today by the Administrator on the Family links page;
-with the Go live page, by
-[go-live sequencing](../background-processing/spec.md#go-live-sequencing)),
+current ParishSoft data (by
+[go-live sequencing](../background-processing/spec.md#go-live-sequencing),
+which the [Go live page](#go-live-page)'s Prepare step shows),
 typed confirmation invokes a short final transaction. Under the request, campaign, and global locks it
 recomputes readiness and compares its commit instant with the resolved half-open
 campaign interval. Test-mailing and terminal-delivery requirements are checked
@@ -4212,11 +4212,9 @@ gate.
 > [go-live sequencing](../background-processing/spec.md#go-live-sequencing)
 > runs, and the Testing cleanup and Family links pages retire; 4, the
 > Confirm Production step; 5, the Activation step and the Cancel go-live
-> dialog; 6, the runbooks. Slices 2 to 5 have landed. Until slice 6
-> lands, the
+> dialog; 6, the
 > [launch runbook](../../../guides/stewardship-launch-runbooks.md#production-activation)
-> still describes the retired pages (its Testing cleanup, Family links,
-> Confirm Production and Cancel go-live passages change with slice 6).
+> and the command-line parity map. All six slices have landed.
 > Slice 2 renamed the page from Go-live readiness to Go live in the
 > [page-name table](#page-names-and-placement) and in the code together;
 > the other rows change with the slices that retire their pages. The page

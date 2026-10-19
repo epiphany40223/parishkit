@@ -9,6 +9,14 @@ control behavior and acceptance. The
 [automated delivery cycle](../plans/stewardship/overall.md#automated-phase-delivery-cycle)
 controls reviews, exact-head checks and protected delivery.
 
+> **Historical.** This guide records how the server side was built and
+> reviewed. The Confirm Production page it describes, with its five-minute
+> preview, was replaced by the Confirm Production dialog of the four-step
+> [Go live page](../specs/stewardship/admin-portal/spec.md#go-live-page)
+> ([#1585](https://github.com/epiphany40223/parishkit/issues/1585)), which
+> reuses the old page's server-side owners. The operator's procedure is the launch
+> runbooks' [Production activation](stewardship-launch-runbooks.md#production-activation).
+
 ## Increment boundary
 
 Deliver current post-cleanup readiness and exact impact, freshly authenticated
