@@ -188,10 +188,15 @@ def recover_publication(status):
     the overlap check would refuse a new plan for the same changes. Its
     retry reads before every PUT and recognizes a PUT that already landed,
     so it never writes twice. It completes once no entity is unfinished,
-    and after ``MAX_RUNS`` it is failed, for an explicit rerun.
+    and after ``MAX_RUNS`` it is failed, for an explicit rerun. A run that
+    crashed after finishing every entity but before asking for its final
+    refresh (``refresh_owed``) is retried instead, within the same bound:
+    the retry writes nothing and asks for it.
     """
     _abandoned(status)
     if not unfinished([status.domain_request_id]):
+        if status.attempt < MAX_RUNS and refresh_owed(status.domain_request_id):
+            return RecoveryPlan("recovery_retry", RETRY_SECONDS)
         return RecoveryPlan("recovery_complete")
     if status.attempt < MAX_RUNS:
         return RecoveryPlan("recovery_retry", RETRY_SECONDS)
@@ -394,9 +399,6 @@ def _execute_publication(execution, *, enabled, gateway):
         except (PublicationDisabled, PublicationRefused) as error:
             _refuse(execution, _refusal(error))
             return
-        # The Members already updated before this run (by a run that crashed
-        # after its writes, say), so the final refresh follows this run's own.
-        before = _updated(plan_id)
         source = gateway(execution)
         try:
             publish_plan(execution, plan_id, source, enabled=enabled)
@@ -408,18 +410,41 @@ def _execute_publication(execution, *, enabled, gateway):
             source.close()
         # Also after a refusal partway: the Members written before it still
         # need ParishSoft's copy refreshed.
-        _request_final_refresh(execution, plan_id, before)
+        _request_final_refresh(execution, plan_id)
         if refusal is not None:
             _refuse(execution, refusal)
             return
         execution.transition("complete")
 
 
-def _updated(plan_id):
-    """How many of the plan's Members have been updated (``published``)."""
-    return PublicationOutcome.objects.filter(
-        entity__plan_id=plan_id, result="published"
-    ).count()
+def refresh_owed(plan_id):
+    """Whether the plan updated a Member after its runs' last final refresh.
+
+    True when its newest ``published`` outcome is newer than every final
+    refresh command its runs recorded (or none was recorded), so a run
+    that crashed after its writes, before asking, is still owed one by its
+    retry, and a run that updated nobody new asks for nothing.
+    """
+    updated = (
+        PublicationOutcome.objects.filter(entity__plan_id=plan_id, result="published")
+        .order_by("-created_at")
+        .values_list("created_at", flat=True)
+        .first()
+    )
+    if updated is None:
+        return False
+    runs = TaskRun.objects.filter(
+        task_type=PUBLICATION_TASK_TYPE, domain_request_id=plan_id
+    ).values_list("pk", flat=True)
+    asked = (
+        SourceRefreshCommand.objects.filter(
+            pk__in=[final_refresh_command(run_id) for run_id in runs]
+        )
+        .order_by("-created_at")
+        .values_list("created_at", flat=True)
+        .first()
+    )
+    return asked is None or asked < updated
 
 
 # Names each run's final refresh command (``final_refresh_command``).
@@ -429,16 +454,16 @@ _FINAL_REFRESH = "census-update-final-refresh-v1"
 def final_refresh_command(run_id):
     """The command id of the final refresh one update run requests.
 
-    Derived from the run's task id (each recovery retry or Run again is a
-    task row of its own), so one run row asks, and audits, once however
-    often it is executed, a later run of the same plan asks only if it
-    updates a Member itself, and the page finds a plan's refreshes from
-    its runs without any state of its own.
+    Derived from the run's task id, so one task row (its recovery retries
+    run on the same row) asks, and audits, once however often it is
+    executed; Run again is a row of its own, which asks only if a refresh
+    is owed again (``refresh_owed``); and the page finds a plan's
+    refreshes from its runs without any state of its own.
     """
     return uuid5(run_id, _FINAL_REFRESH)
 
 
-def _request_final_refresh(execution, plan_id, before):
+def _request_final_refresh(execution, plan_id):
     """Request one full refresh after a run that updated a Member.
 
     The reports spec's "Confirming and running" and the data workflow: once
@@ -448,15 +473,15 @@ def _request_final_refresh(execution, plan_id, before):
     the plan, under the run's correlation id, and records
     ``census_publication_refresh_requested`` so System logs says it followed
     an update. That refresh's checks then move each written change to
-    Confirmed (#1689). ``before`` is how many of the plan's Members were
-    updated when the run started (``_updated``): only a run that updated
-    one itself asks, including a retry that finds a crashed run's write
-    landed and records it. It is best effort: when the request is refused
-    (no promoted data, other campaign work holding refreshes, the
-    configured organization missing) the run's outcome stands, a WARNING
-    is logged, and the next scheduled refresh catches up; an unexpected
-    error (an invariant, a malformed binding) is logged at ERROR, the run's
-    outcome still standing.
+    Confirmed (#1689). It asks only while one is owed (``refresh_owed``):
+    a Member was updated after the plan's last final refresh, by this run
+    or by a crashed attempt of it. It is best effort: when the request is
+    refused (no promoted data, other campaign work holding refreshes, the
+    configured organization missing, or the run no longer admitted, a
+    ``TaskNotAdmitted``) the run's outcome stands, a WARNING is logged, and
+    the next scheduled refresh catches up; an unexpected error (an
+    invariant, a malformed binding) is logged at ERROR, the run's outcome
+    still standing.
     """
     command_id = final_refresh_command(execution.claim.run_id)
     run_id = execution.claim.run_id
@@ -471,7 +496,7 @@ def _request_final_refresh(execution, plan_id, before):
             if SourceRefreshCommand.objects.filter(pk=command_id).exists():
                 # A replay of a run that already asked: asked and audited once.
                 return
-            if _updated(plan_id) <= before:
+            if not refresh_owed(plan_id):
                 return
             actor_id = PublicationConfirmation.objects.values_list(
                 "actor_id", flat=True

@@ -27,6 +27,7 @@ Viewing records ``census_publication_viewed`` with the number of plan rows;
 the dialog's posts record what their services record.
 """
 
+import logging
 from uuid import UUID, uuid4
 
 from django.core.exceptions import ObjectDoesNotExist
@@ -427,15 +428,40 @@ def _update_step(request, service, principal, campaign_id):
         # Switched off between the page's check and the service's.
         raise publication.OFF.refusal() from None
     except DatabaseError as error:
-        refusal = publication.confirm_refusal(error)
+        refusal = publication.confirm_refusal(error, plan)
         if refusal is error:
-            # Not a refusal: an outage, answered as one (503, logged).
+            # Not a refusal: an outage, logged here and answered as one (503).
+            emit_failure(error, level=logging.ERROR, name_class=True)
             raise
         raise refusal from None
+    except (PermissionError, StorageInvariantError):
+        # The services' own admission refused what the page's checks passed
+        # a moment before (a race): said as the page would now say it.
+        raise _raced(request, service, plan) from None
     except ValueError:
         # The key is bound to another intent: a stale dialog.
         raise publication.CHANGED.refusal() from None
     return {"update": {"started": True}}
+
+
+def _raced(request, service, plan):
+    """The refusal for a service refusing what the page's checks passed.
+
+    The Administrator is checked again first, so a lost role is still a
+    denial; otherwise the plan's region is worked out again and its reason
+    given: an unfinished run, the campaign held, Testing mode, every Member
+    finished, or, failing a better word, that something changed.
+    """
+    _principal(request, service.store, read_only=True)
+    run = publication.latest_run(plan)
+    offer = publication.offer(plan, confirmation_counts(plan.pk), run=run)
+    if offer.gate is not None:
+        return offer.gate.refusal()
+    if run is not None and run.state in NONTERMINAL_STATES:
+        return publication.RUNNING.refusal()
+    if run is not None and offer.kind is None:
+        return publication.FINISHED.refusal()
+    return publication.CHANGED.refusal()
 
 
 def _rerun_step(request, service, principal, campaign_id):
@@ -469,6 +495,7 @@ def _rerun_step(request, service, principal, campaign_id):
                 "preview": True,
                 "plan": plan,
                 "title": publication.rerun_question(offer.unfinished),
+                "closing": publication.past_window(plan),
                 "key": uuid4(),
             }
         }
@@ -484,6 +511,11 @@ def _rerun_step(request, service, principal, campaign_id):
     except PublicationDisabled:
         # Switched off between the page's check and the service's.
         raise publication.OFF.refusal() from None
+    except (PermissionError, StorageInvariantError):
+        # Another Administrator's Run again, or the run's last Member
+        # finished, between the page's check and the service's
+        # (``TaskRetryConflict`` is a StorageInvariantError).
+        raise _raced(request, service, plan) from None
     return {"rerun": {"started": True}}
 
 

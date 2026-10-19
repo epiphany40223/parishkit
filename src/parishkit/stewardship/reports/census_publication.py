@@ -40,6 +40,7 @@ from parishkit.stewardship.responses.accepted_base import with_accepted_base
 from parishkit.stewardship.responses.models import ProposedChange
 from parishkit.stewardship.responses.publication import Outcome
 from parishkit.stewardship.responses.publication_models import (
+    PublicationConfirmation,
     PublicationField,
     PublicationOutcome,
     PublicationPlan,
@@ -49,12 +50,16 @@ from parishkit.stewardship.responses.publication_plans import (
     unlisted_changes,
 )
 from parishkit.stewardship.responses.publication_tasks import (
+    PREFLIGHT_TASK_TYPE,
     PUBLICATION_TASK_TYPE,
     approved_changes,
     final_refresh_command,
     publication_running,
 )
-from parishkit.stewardship.responses.publication_worker import unfinished
+from parishkit.stewardship.responses.publication_worker import (
+    EXECUTION_WINDOW,
+    unfinished,
+)
 from parishkit.stewardship.source.refresh_models import SourceRefreshCommand
 from parishkit.stewardship.web.refusals import UserFacingUnavailable
 from parishkit.stewardship.web.tables import Sorting
@@ -192,9 +197,13 @@ OVERLAP = Gate(
 STOPPED = Gate(
     "publication_stopped",
     _(
-        "An update stopped before it finished. Choose Run again under the "
-        "newest check first."
+        "An update stopped before it finished. Run again, under the newest "
+        "check, must finish it first."
     ),
+)
+CHECKING = Gate(
+    "publication_checking",
+    _("ParishSoft is being checked again. Wait for that check to finish."),
 )
 FINISHED = Gate(
     "publication_finished",
@@ -299,6 +308,18 @@ def newest_plan_check(campaign_id, plan_id):
     return plan
 
 
+def checking():
+    """Whether a Check ParishSoft is queued or running.
+
+    Its plan will be the newest when it ends, so confirming the current one
+    meanwhile could leave a stopped run's Run again superseded by it: Update
+    waits for the check instead.
+    """
+    return TaskRun.objects.filter(
+        task_type=PREFLIGHT_TASK_TYPE, state__in=NONTERMINAL_STATES
+    ).exists()
+
+
 def latest_run(plan):
     """The plan's latest run task (its retries share one root), or None."""
     return (
@@ -313,6 +334,18 @@ def latest_run(plan):
 def production():
     """Whether the system is in Production mode now."""
     return SystemConfiguration.objects.filter(mode="production").exists()
+
+
+def past_window(plan):
+    """Whether the plan's confirmation is past the worker's execution window.
+
+    A run then only reads back and closes its unfinished Members, writing
+    nothing (``publication_worker.EXECUTION_WINDOW``), so Run again's
+    confirmation says so rather than promising writes.
+    """
+    return PublicationConfirmation.objects.filter(
+        plan=plan, created_at__lte=timezone.now() - EXECUTION_WINDOW
+    ).exists()
 
 
 def _expired(plan):
@@ -340,8 +373,9 @@ def offer(plan, counts, *, run):
     A plan from Testing mode offers neither (its line says nothing is
     written). Before its confirmation, Update is offered, unavailable while
     the plan writes nothing, the system is in Testing mode, a run is
-    unfinished, other campaign work holds the campaign or the plan is an
-    hour old. After it, the run's status shows instead; Run again is offered
+    unfinished or a check is under way, other campaign work holds the
+    campaign, or the plan is an hour old. After it, the run's status shows
+    instead; Run again is offered
     only once the run's task failed (refused partway, or stopped after its
     recovery limit; ``rerun_publication`` retries only a failed task) and a
     Member has no final outcome, unavailable in Testing mode or while other
@@ -357,6 +391,7 @@ def offer(plan, counts, *, run):
             (NOTHING_TO_WRITE, lambda: not counts["write_entities"]),
             (TESTING, lambda: not production()),
             (RUNNING, lambda: publication_running(plan.campaign_id)),
+            (CHECKING, checking),
             (HELD_CAMPAIGN, lambda: _held(plan.campaign_id)),
             (EXPIRED, lambda: _expired(plan)),
         ):
@@ -376,13 +411,14 @@ def offer(plan, counts, *, run):
     return Offer("rerun", gate, left)
 
 
-def confirm_refusal(error):
+def confirm_refusal(error, plan):
     """The page's refusal for a database error from confirming a plan.
 
     The confirmation's SQL guard (migration 0114) words each refusal: a
     sign-in that is no longer live (SQLSTATE 42501, a denial), another
     confirmed plan still writing these changes (23505 with the guard's own
-    words), and a plan that is too old or changed since the check (23514).
+    words), and a plan that is too old, a campaign no longer admitted, or a
+    change since the check (23514), told apart by checking ``plan`` again.
     Another 23505 is the plan's one confirmation, made first by another
     Administrator: the plan changed. Anything else (a lost connection, a
     timeout, a serialization failure) is not a refusal and is returned
@@ -395,6 +431,11 @@ def confirm_refusal(error):
         return PermissionError("Update ParishSoft needs a live sign-in.")
     if state == "23505" and "still writing" in str(error):
         return OVERLAP.refusal()
+    if state == "23514":
+        if _held(plan.campaign_id):
+            return HELD_CAMPAIGN.refusal()
+        if _expired(plan):
+            return EXPIRED.refusal()
     if state in {"23505", "23514"}:
         return CHANGED.refusal()
     return error

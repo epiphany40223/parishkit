@@ -379,10 +379,11 @@ def test_update_gates_apply_in_order(monkeypatch):
 
     from django.utils import timezone
 
-    state = {"production": True, "running": False, "held": False}
+    state = {"production": True, "running": False, "held": False, "checking": False}
     monkeypatch.setattr(publication, "production", lambda: state["production"])
     monkeypatch.setattr(publication, "publication_running", lambda _: state["running"])
     monkeypatch.setattr(publication, "_held", lambda _: state["held"])
+    monkeypatch.setattr(publication, "checking", lambda: state["checking"])
     counts = {"write_entities": 1, "write_fields": 1, "blocked_entities": 0}
     fresh = SimpleNamespace(
         pk="plan", campaign_id="c", testing=False, created_at=timezone.now()
@@ -397,6 +398,9 @@ def test_update_gates_apply_in_order(monkeypatch):
     assert publication.offer(old, counts, run=None).gate is publication.EXPIRED
     state["held"] = True
     assert publication.offer(old, counts, run=None).gate is publication.HELD_CAMPAIGN
+    # A check under way will make a newer plan: Update waits for it.
+    state["checking"] = True
+    assert publication.offer(old, counts, run=None).gate is publication.CHECKING
     state["running"] = True
     assert publication.offer(old, counts, run=None).gate is publication.RUNNING
     state["production"] = False
@@ -493,9 +497,13 @@ def test_newest_plan_check_refuses_an_older_plan(monkeypatch):
         (None, "connection lost", "outage"),
     ],
 )
-def test_a_refused_confirmation_is_worded_by_its_sqlstate(sqlstate, message, expected):
+def test_a_refused_confirmation_is_worded_by_its_sqlstate(
+    monkeypatch, sqlstate, message, expected
+):
     """The confirmation guard's refusals become the page's codes; a sign-in
     no longer live is a denial, and any other error is not a refusal."""
+    monkeypatch.setattr(publication, "_held", lambda _: False)
+    monkeypatch.setattr(publication, "_expired", lambda _: False)
     from django.db import DatabaseError
 
     class Driver(Exception):
@@ -505,7 +513,8 @@ def test_a_refused_confirmation_is_worded_by_its_sqlstate(sqlstate, message, exp
     cause.sqlstate = sqlstate
     error = DatabaseError(message)
     error.__cause__ = cause
-    refusal = publication.confirm_refusal(error)
+    plan = SimpleNamespace(campaign_id="c")
+    refusal = publication.confirm_refusal(error, plan)
     if expected == "denied":
         assert type(refusal) is PermissionError
     elif expected == "outage":
@@ -661,3 +670,52 @@ def test_review_answers_carry_the_plan_counts_and_key():
         "stewardship/update-parishsoft-review.html", {"update": {"started": True}}
     )
     assert "Update started." in started and "data-live-status" not in started
+
+
+@pytest.mark.parametrize(
+    ("held", "expired", "expected"),
+    [
+        (True, False, "publication_campaign_held"),
+        (False, True, "publication_plan_expired"),
+        (False, False, "publication_plan_changed"),
+    ],
+)
+def test_a_constraint_refusal_says_which_rule(monkeypatch, held, expected, expired):
+    """The guard's 23514 covers a held campaign, an old plan and a change;
+    the page tells them apart by checking the plan again."""
+    from django.db import DatabaseError
+
+    class Driver(Exception):
+        """The driver's error, which carries the SQLSTATE."""
+
+    monkeypatch.setattr(publication, "_held", lambda _: held)
+    monkeypatch.setattr(publication, "_expired", lambda _: expired)
+    cause = Driver()
+    cause.sqlstate = "23514"
+    error = DatabaseError("refused")
+    error.__cause__ = cause
+    refusal = publication.confirm_refusal(error, SimpleNamespace(campaign_id="c"))
+    assert refusal.reason == expected
+
+
+def test_run_again_past_the_window_promises_no_writes():
+    """A plan confirmed more than a day ago is only read back and closed,
+    and Run again's confirmation says so."""
+    from django.template.loader import render_to_string
+
+    values = {
+        "preview": True,
+        "plan": SimpleNamespace(pk="plan-id"),
+        "title": publication.rerun_question(1),
+        "key": "k",
+    }
+    closing = render_to_string(
+        "stewardship/update-parishsoft-review.html",
+        {"rerun": values | {"closing": True}},
+    )
+    assert "nothing more is written" in closing and "before anything" not in closing
+    writing = render_to_string(
+        "stewardship/update-parishsoft-review.html",
+        {"rerun": values | {"closing": False}},
+    )
+    assert "before anything is written" in writing

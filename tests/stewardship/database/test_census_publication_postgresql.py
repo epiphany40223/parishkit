@@ -10,6 +10,7 @@ unless a test turns the web's setting on.
 """
 
 import json
+import logging
 import re
 from datetime import timedelta
 from uuid import uuid4
@@ -443,3 +444,74 @@ def test_run_again_retries_a_run_that_did_not_finish(
     response, body, _ = review(browser, plan, RETRIES)
     assert response.status_code == 409
     assert refusal(body) == "Every Member in this check is finished."
+
+
+def test_service_races_are_worded_as_the_page_would(
+    world,  # noqa: F811
+    google,
+    settings,
+    monkeypatch,
+):
+    """A service refusing what the page's checks passed a moment before is
+    answered with the page's reason."""
+    from parishkit.stewardship.reports import census_publication_views as views
+
+    settings.STEWARDSHIP_PARISHSOFT_PUBLICATION = True
+    plan = world.planned(uuid4())
+    _, run = world.confirm(plan)
+    owner("UPDATE stewardship_system_configuration SET mode='testing'")
+    assert world.execute(run.run_id)
+    owner("UPDATE stewardship_system_configuration SET mode='production'")
+    browser, login = signed_in()
+    assert login.status_code == 302
+    _, _, fields = review(browser, plan, RETRIES)
+
+    def finished(*args, **options):
+        """Another Administrator's Run again finished every Member first."""
+        world.rerun(plan)
+        raise PermissionError("Every change in this plan is finished.")
+
+    monkeypatch.setattr(views, "rerun_publication", finished)
+    response, body = apply(browser, fields, RETRIES)
+    assert response.status_code == 409
+    assert refusal(body) == "An update is running. Wait for it to finish."
+
+
+def test_an_outage_at_apply_is_a_logged_503(
+    world,  # noqa: F811
+    google,
+    settings,
+    monkeypatch,
+):
+    """A database outage at Apply is answered as the outage it is, logged
+    at ERROR, never as "Something changed"."""
+    from django.db import DatabaseError
+
+    from parishkit.stewardship.reports import census_publication_views as views
+
+    settings.STEWARDSHIP_PARISHSOFT_PUBLICATION = True
+    plan = world.planned(uuid4())
+    browser, login = signed_in()
+    assert login.status_code == 302
+
+    class Driver(Exception):
+        """The driver's error, which carries the SQLSTATE."""
+
+    def outage(*args, **options):
+        """The database connection is lost at the confirmation."""
+        cause = Driver()
+        cause.sqlstate = "08006"
+        error = DatabaseError("connection lost")
+        error.__cause__ = cause
+        raise error
+
+    logged = []
+    monkeypatch.setattr(views, "confirm_and_publish", outage)
+    monkeypatch.setattr(
+        views, "emit_failure", lambda error, **options: logged.append(options)
+    )
+    _, _, fields = review(browser, plan)
+    response, _ = apply(browser, fields)
+    assert response.status_code == 503
+    assert logged[0]["level"] == logging.ERROR
+    assert not PublicationConfirmation.objects.exists()

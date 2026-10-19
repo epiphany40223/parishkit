@@ -2469,7 +2469,8 @@ plan is Ready to update, no update run is queued or running, and no update
 stopped before finishing its Members; otherwise its reserved line says why
 ("No changes are Ready to update. Accept changes on Census changes first.",
 "An update is running. Wait for it to finish." or "An update stopped
-before it finished. Choose Run again under the newest check first."). A
+before it finished. Run again, under the newest check, must finish it
+first."). A
 newer check would otherwise strand the stopped plan: its Run again would be
 refused as superseded, and the newer plan's confirmation refused while the
 stopped plan's writes may still be queued. These gates are the page's (and
@@ -2549,8 +2550,9 @@ unfinished plan. A repeated Apply returns the same run.
 
 The button is unavailable, with its reason in its reserved line, when the
 plan writes nothing, in Testing mode, while a run is queued or running,
-while other campaign work holds the campaign, once the plan is confirmed
-(its run's status shows instead), and once the plan is an hour old ("This
+while a Check ParishSoft is queued or running (its plan will be the
+newest), while other campaign work holds the campaign, once the plan is
+confirmed (its run's status shows instead), and once the plan is an hour old ("This
 check is more than an hour old. Check ParishSoft again."); the page script
 re-checks the age on `pageshow`. A newer plan made in another tab or by
 another Administrator makes Apply refuse the older one
@@ -2601,6 +2603,9 @@ each Member again before writing and never repeats a write that landed. It
 asks first in the shared review dialog as a confirmation ("Try the 2
 Members this run did not finish?"), without a new sign-in, since the plan
 was confirmed already and the data workflow bounds its execution window.
+Once that window (a day) has passed, a run writes nothing more and only
+reads back and closes the Members it did not finish, and the dialog says
+so instead.
 After a run that completed, the page offers Check ParishSoft instead. The
 plan's region never offers Update and Run again together.
 
@@ -2620,7 +2625,10 @@ description says the refresh followed an update, so nobody mistakes it for
 a click on Refresh now. If the request fails (no promoted data, other
 campaign work holding refreshes, the configured organization missing), the
 run's outcome stands, a WARNING is logged, and the next scheduled refresh
-catches up.
+catches up. A refresh is asked for only while one is owed (a Member was
+updated after the plan's last final refresh), so a run that crashed after
+its writes but before asking is retried by recovery for it, writing
+nothing again, and a run that updated nobody new asks for nothing.
 
 #### Update refusals and errors
 
@@ -2644,11 +2652,16 @@ refusals](../operations/spec.md#admin-input-refusals)), never with a value.
 | `publication_plan_superseded` | A newer plan exists | A newer check exists. Review it first. |
 | `publication_overlap` | A change is still being written by another plan | Some of these changes are still being written. Wait for that update to finish. |
 | `publication_finished` | Run again with nothing unfinished | Every Member in this check is finished. |
-| `publication_stopped` | Check ParishSoft while an update stopped before finishing | An update stopped before it finished. Choose Run again under the newest check first. |
+| `publication_stopped` | Check ParishSoft while an update stopped before finishing | An update stopped before it finished. Run again, under the newest check, must finish it first. |
+| `publication_checking` | Update while a Check ParishSoft is queued or running | ParishSoft is being checked again. Wait for that check to finish. |
 
 A database error at Apply that is not one of the confirmation guard's
 refusals (a lost connection, a timeout) is not shown as "Something
-changed": it is answered as the outage it is, and logged.
+changed": it is answered as the outage it is, and logged. The guard's own
+refusal of a held campaign or an hour-old plan is told apart from a change
+by checking the plan again, and a service refusing what the page's checks
+passed a moment before (another Administrator's Run again) is answered
+with the reason the page would now draw.
 
 A check or run that fails in the background is not a refusal: the page shows
 the task's failure in its status region, as a refresh's does, and the

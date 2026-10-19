@@ -771,3 +771,31 @@ def test_a_run_refused_after_writing_still_refreshes(world, monkeypatch):
     (command,) = final_refreshes()
     assert command.pk == tasks.final_refresh_command(run.run_id)
     assert audited("census_publication_switched_off") == [(None, run.run_id, "failed")]
+
+
+def test_a_crash_before_the_final_refresh_is_retried_for_it(world, monkeypatch):
+    """A run that crashed after updating its Member but before asking for
+    the final refresh is retried by recovery although nothing is left to
+    write, and the retry asks once, writing nothing again (#1688)."""
+    plan = world.planned(uuid4())
+    _, run = world.confirm(plan)
+    real = tasks._request_final_refresh
+
+    def crash(*args, **options):
+        """The worker dies between the writes and the refresh."""
+        raise Crash
+
+    monkeypatch.setattr(tasks, "_request_final_refresh", crash)
+    with pytest.raises(Crash):
+        world.execute(run.run_id)
+    monkeypatch.setattr(tasks, "_request_final_refresh", real)
+    assert proposal(world.first) == "published" and not final_refreshes().exists()
+    assert tasks.refresh_owed(plan.pk)
+    due(run)
+    assert world.recover(run.run_id) and state(run) == "retry_wait"
+    due(run)
+    assert world.execute(run.run_id) and state(run) == "succeeded"
+    assert len(world.gateway.writes) == 1
+    (command,) = final_refreshes()
+    assert command.pk == tasks.final_refresh_command(run.run_id)
+    assert not tasks.refresh_owed(plan.pk)

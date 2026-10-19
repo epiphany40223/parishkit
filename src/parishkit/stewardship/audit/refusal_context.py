@@ -110,6 +110,7 @@ REASONS = frozenset(
         "publication_overlap",
         "publication_finished",
         "publication_stopped",
+        "publication_checking",
         "unclassified",
         "usage",
         "configuration",

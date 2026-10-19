@@ -30,7 +30,7 @@
 <input type="hidden" name="request_key" value="{{ update.key }}" data-review-preview>
 </div>{% endwith %}
 {% elif rerun.preview %}<div data-review-answer data-review-done="{% translate 'Run again started.' %}" data-review-title="{{ rerun.title }}" data-review-describedby="rerun-review-summary">
-<p id="rerun-review-summary">{% translate "Each of these Members is read from ParishSoft again before anything is written, and a write that already landed is never repeated. Members this check already finished are left as they are." %}</p>
+<p id="rerun-review-summary">{% if rerun.closing %}{% translate "This update was confirmed more than a day ago, so nothing more is written: Run again reads these Members back from ParishSoft and closes them, and a new Check ParishSoft plans their changes again." %}{% else %}{% translate "Each of these Members is read from ParishSoft again before anything is written, and a write that already landed is never repeated. Members this check already finished are left as they are." %}{% endif %}</p>
 <input type="hidden" name="plan" value="{{ rerun.plan.pk }}">
 <input type="hidden" name="command_key" value="{{ rerun.key }}" data-review-preview>
 </div>
