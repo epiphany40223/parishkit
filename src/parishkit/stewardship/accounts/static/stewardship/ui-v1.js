@@ -2411,6 +2411,103 @@
       window.addEventListener("pageshow", () => gateClear(form));
     }
   }
+  // Where a filter form's Apply filters and Clear filters sit
+  // (ui-conventions "Clear filters", #1776): the first of three steps that
+  // fits, to take the least vertical space above the table. 1 "beside":
+  // side by side on the fields' last row; 2 "stacked": Clear under Apply on
+  // that row; 3 "row": side by side on a row of their own. A step fits when
+  // the fields' last row keeps its place and height and the pair stays
+  // inside it, both buttons on one line for step 1. CSS cannot tell
+  // whether a stacked pair would make the row taller, nor place the pair in
+  // a Filters panel's grid by that test, so the pair is measured: first on
+  // its own row, which shows the fields' last row without it (every field
+  // before the pair whose box overlaps the last one's line), then in each
+  // step in turn. Only the pair's data-filter-place (and, in a grid, its
+  // data-filter-wide) changes, before the browser paints, so nothing is
+  // seen to move.
+  const FILTER_PAIR = "form#table-filters .filter-actions";
+  const shown = (node) => node.getClientRects().length > 0;
+  const placeFilterPair = (pair) => {
+    // A closed Filters panel draws nothing to measure; the panel's toggle
+    // (below) places the pair when it opens.
+    if (!shown(pair)) return;
+    // The fields before the pair, in its own box (the form, a filter bar
+    // or Logs' row): a hint, note or message line is not a field.
+    const fields = [];
+    for (let node = pair.previousElementSibling; node; node = node.previousElementSibling) {
+      if (shown(node) && !node.matches("p, [data-complete-hint], .field-error-line, .zone-note")) fields.push(node);
+    }
+    pair.dataset.filterPlace = "row";
+    pair.removeAttribute("data-filter-wide");
+    if (!fields.length) return;
+    // The fields' last row: the last field's line, widened to every field
+    // whose box shares it (a taller field beside it sets the row's height).
+    const band = () => {
+      const last = fields[0].getBoundingClientRect();
+      const row = fields.map((node) => node.getBoundingClientRect())
+        .filter((box) => box.top < last.bottom - 1 && box.bottom > last.top + 1);
+      return {top: Math.min(...row.map((box) => box.top)), bottom: Math.max(...row.map((box) => box.bottom))};
+    };
+    const alone = band();
+    const fits = (oneLine) => {
+      const now = band();
+      const box = pair.getBoundingClientRect();
+      const [apply, clear] = pair.querySelectorAll(":scope > button, :scope > .filter-clear");
+      return Math.abs(now.top - alone.top) < 1 && Math.abs(now.bottom - alone.bottom) < 1
+        && box.top >= alone.top - 1 && box.bottom <= alone.bottom + 1
+        && pair.scrollWidth <= pair.clientWidth + 1
+        && (!oneLine || !apply || !clear
+          || Math.abs(apply.getBoundingClientRect().top - clear.getBoundingClientRect().top) < 1);
+    };
+    // In a Filters panel's grid, side by side may need two of the last
+    // row's empty cells: one cell (14rem and up) holds both buttons only
+    // from about 288 px, as at 1280 px.
+    pair.dataset.filterPlace = "beside";
+    if (fits(true)) return;
+    const grid = getComputedStyle(pair.parentElement);
+    if (grid.display === "grid" && grid.gridTemplateColumns.trim().split(/\s+/).length > 1) {
+      pair.setAttribute("data-filter-wide", "");
+      if (fits(true)) return;
+      pair.removeAttribute("data-filter-wide");
+    }
+    pair.dataset.filterPlace = "stacked";
+    if (fits(false)) return;
+    pair.dataset.filterPlace = "row";
+  };
+  {
+    // Each pair is placed at load, once web fonts have loaded (their widths
+    // decide what fits), when the window's width changes, when a Filters
+    // panel opens (a closed one draws nothing to measure) and after an
+    // in-place swap that redraws a form. Window resize and the panel's
+    // toggle, not a ResizeObserver on the form: the placement changes the
+    // form's height, and an observer that changes layout under itself makes
+    // WebKit report a "ResizeObserver loop" error, which tests treat as a
+    // script error. Resizes are taken once a frame.
+    const placeAll = (root = document) => {
+      const pairs = root.matches?.(FILTER_PAIR) ? [root] : [...root.querySelectorAll(FILTER_PAIR)];
+      pairs.forEach(placeFilterPair);
+    };
+    placeAll();
+    document.fonts?.ready.then(() => placeAll());
+    let width = window.innerWidth;
+    let pending = false;
+    window.addEventListener("resize", () => {
+      if (pending || window.innerWidth === width) return;
+      pending = true;
+      requestAnimationFrame(() => {
+        pending = false;
+        width = window.innerWidth;
+        placeAll();
+      });
+    });
+    // toggle does not bubble, so it is caught on the way down.
+    document.addEventListener("toggle", (event) => {
+      if (event.target instanceof HTMLDetailsElement && event.target.open) placeAll(event.target);
+    }, true);
+    document.addEventListener("parishkit:swap", (event) => {
+      if (event.target instanceof Element) placeAll(event.target);
+    });
+  }
   // An in-place review (Sent mail's bulk review, #382; Past campaigns'
   // import, #1018) shows what its form's last Review would change, in an
   // element marked data-review-of="<form id>", with Apply. Editing that form again makes

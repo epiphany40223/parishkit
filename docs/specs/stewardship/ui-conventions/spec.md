@@ -1828,19 +1828,38 @@ Testing rehearsal.
 ### Clear filters
 
 **Rule.** Every Admin filter form (a page's `form#table-filters`, in a
-filter bar or a Filters panel) ends with two buttons side by side: **Apply
-filters**, then **Clear filters** directly after it (in a Filters panel
-both share Apply's grid cell, Clear wrapping under Apply where that cell is
-too narrow, so no row is added; in a filter bar whose filters leave too
-little room beside them, such as Sent mail's at 1280 px, Clear likewise
-wraps under Apply in the same item, Apply staying on the fields' row).
-The pair is never wider than its line, so on a phone Clear wraps under
-Apply rather than widening the page, and its two buttons have a narrower
-inline padding than other buttons, so that side by side they fit one
-Filters panel cell even with wider fonts. In Sent mail's and the
-Timeline's filter bars the pair takes the room beside the filters first,
-up to both buttons side by side, and the filters grow from what is left,
-never narrower than their own label line.
+filter bar or a Filters panel) ends with two buttons: **Apply filters**,
+then **Clear filters**. They are placed to take the least vertical space
+above the table, by the first of these steps that fits:
+
+1. **Beside the fields, side by side.** If Apply and Clear side by side
+   fit on the fields' last row without adding a row, they sit there, side
+   by side (in a Filters panel's grid, in one empty cell of that row, or
+   in two when one is too narrow for both).
+2. **Beside the fields, stacked.** Otherwise, if Clear under Apply fits on
+   that same row without making it taller, they sit there stacked.
+3. **A row of their own.** Otherwise they sit side by side on a new row
+   at the bottom of the form.
+
+"Fits" means the fields' last row keeps its place and height and the pair
+stays inside it; the fields may narrow, but never below their own label
+line. The same steps apply in a filter bar (the bar's last line) and in a
+Filters panel's grid (the grid's last row), at every width, so on a phone
+the pair usually takes its own row. The two buttons have a narrower inline
+padding than other buttons, so side by side they fit one Filters panel cell
+even with wider fonts, and the pair is never wider than its line: on a
+screen too narrow for both, Clear wraps under Apply rather than widening
+the page. **Why.** The Administrator asked for the least vertical space
+above tables on every filter form, with one placement rule rather than
+each page's own (pk-local review R38, 2026-10-19,
+[#1776](https://github.com/epiphany40223/parishkit/issues/1776)).
+**Shared code.** `ui-v1.js` tries the steps in order (the pair's
+`data-filter-place`: `beside`, `stacked` or `row`) and tries them again
+when the window's width changes, when a Filters panel opens, when web
+fonts finish loading and after an in-place swap;
+`test_filter_actions_place.py` checks the placement on the pages it
+names, in each engine and at phone, tablet and laptop widths.
+
 Clear filters puts every filter back to the page's default in one step and
 shows the result in place. No filter form names its apply button otherwise
 (the Ministries list's Filter, Background work's Show tasks, Refused
@@ -2438,8 +2457,8 @@ report whose filter form is longer than a row puts it in a "Filters" panel (the
 `filterpanel` template tag): a native disclosure that starts closed and renders
 open whenever the shown results use any filter other than the page's default,
 so an applied filter is never hidden. Open, a long form is a compact grid of
-its fields, each label tight above its box and Apply and
-[Clear filters](#clear-filters) beside the last field when the row has room, in one column on a phone (#1411); the Family
+its fields, each label tight above its box, with Apply and
+[Clear filters](#clear-filters) placed by that section's three steps, in one column on a phone (#1411); the Family
 directory's short fields keep their filter bar. The Family directory and
 Census changes are the two exceptions to the closed start: the Family
 directory's Filters panel is open by default (an Administrator decision, #227),
