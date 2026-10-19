@@ -257,6 +257,30 @@ def test_a_staff_file_carries_the_roster_entry_columns():
     assert joined["Replaced by a later response"] == joined["Entered by"] == ""
 
 
+def test_a_leader_file_blanks_the_roster_entry_cells_the_rows_carry():
+    """A Ministry leader's file (``roster=False``) leaves every roster-entry
+    cell blank even when its rows carry the values (R39 review): Family,
+    Family DUID, Replaced by a later response, Entered by and Entered at."""
+    built = document(
+        family_name="Gone, Old and Ann",
+        family_duid=4321,
+        latest=False,
+        roster_entered=True,
+        roster_by="staff@example.org",
+        roster_at=datetime(2054, 10, 9, 15, 0, tzinfo=UTC),
+    )
+    bare = dict(zip(HEADINGS, built.rows[2], strict=True))
+    assert bare["Stage"] == "To enter by hand"
+    for name in (
+        "Family",
+        "Family DUID",
+        "Replaced by a later response",
+        "Entered by",
+        "Entered at",
+    ):
+        assert bare[name] == "", name
+
+
 def test_the_file_names_its_scope_and_privacy_but_no_internal_reference():
     """Report details carry the filters and privacy line, never ids."""
     built = document()
@@ -675,7 +699,7 @@ def test_the_file_reads_the_queues_own_selection(monkeypatch):
     Members no longer in ParishSoft must stay out of the file (Administrator,
     2026-10-13). The queue's selection leaves them out by default (#1217), so
     the export must read it exactly as the queue does: never with
-    ``every_member``, which Roster changes to enter alone uses to list them.
+    ``every_member``, which only the roster rows use to list them.
     """
     calls = []
 

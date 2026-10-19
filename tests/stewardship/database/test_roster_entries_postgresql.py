@@ -289,17 +289,22 @@ def test_a_leader_never_sees_the_tick_nor_the_list(response_service, google):
         assert b'<span class="status-word">Accepted</span>' in body
 
     hidden(False)
+    # A forged single-row Entered by hand is refused, and records nothing.
+    assert search(browser, queue, mark_form(join))[0].status_code == 403
+    assert not MinistryRosterEntry.objects.filter(request=join).exists()
     tick(harness, admin, join, True)
     hidden(True)
-    assert get(browser, "/admin/reports/ministries/follow-up/roster/")[
-        0
-    ].status_code in {403, 404}
+    # The retired Roster changes to enter address is gone (no redirect).
+    assert (
+        get(browser, "/admin/reports/ministries/follow-up/roster/")[0].status_code
+        == 404
+    )
     response, _ = search(
         browser,
         f"/admin/reports/ministries/follow-up/{join.pk}/roster/",
         {"sequence": "2", "entered": "no", "request_key": str(uuid4())},
     )
-    assert response.status_code in {403, 404}
+    assert response.status_code == 403
     assert MinistryRosterEntry.objects.filter(request=join).count() == 1
     # The Administrator still sees the mark, its form and the queue line;
     # leader() pointed the one synthetic Google account at the leader.
@@ -512,6 +517,19 @@ def test_a_change_for_a_member_no_longer_in_parishsoft_stays_listed(
     assert MinistryRosterEntry.objects.filter(request=join, entered=True).exists()
 
 
+def test_a_leader_cannot_mark_a_gone_members_change(response_service, google):
+    """The roster work of a Member no longer in ParishSoft stays Staff's: a
+    Ministry leader's forged Entered by hand on it, single or bulk, is
+    refused (``can_tick``) and records nothing."""
+    harness, _, join, _ = resolved(response_service)
+    member_gone(harness, "moved")
+    browser, _, _, _ = leader(harness, google)
+    assert search(browser, ROUTE, mark_form(join))[0].status_code == 403
+    item = f"{join.pk}:{join.version}"
+    assert search(browser, ROUTE, bulk_form(item))[0].status_code == 403
+    assert not MinistryRosterEntry.objects.exists()
+
+
 def test_bulk_marks_several_changes_all_or_none(response_service, google):
     """Ministry requests' bulk Entered by hand (#879, R39 finding 2): the page
     draws a box for each request at To enter by hand, and its dialog's post
@@ -567,7 +585,7 @@ def test_bulk_marks_several_changes_all_or_none(response_service, google):
         assert entries() == before
     leader_browser, _, _, _ = leader(harness, google)
     refused, _ = search(leader_browser, route, bulk_form(join_item))
-    assert refused.status_code in {403, 404}
+    assert refused.status_code == 403
     assert entries() == before
 
 
