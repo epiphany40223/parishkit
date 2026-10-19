@@ -864,7 +864,11 @@ the [in-place controls](#in-place-controls); no other mechanism.
   instead of stopping, so a page left open never goes quiet while it still
   says "running". Reads pause while the tab is hidden, and the page catches
   up at once when it is shown again (`visibilitychange`) or comes back from
-  the back/forward cache (`pageshow`).
+  the back/forward cache (`pageshow`). A part of a status that is costly to
+  check is rechecked by the same passive status read at a slower pace
+  (`data-live-slow-every`), never by a timed re-read of an audited page:
+  System health's page-load tiles, about every 5 minutes
+  ([admin portal](../admin-portal/spec.md#overall-status-line), #1790).
 - **The reader keeps their place.** An update never moves focus or scroll
   and never replaces a control the reader is editing. For a page's
   periodic re-read, a control is being edited while it is inside a region
@@ -3287,6 +3291,30 @@ learned once. **Shared code.**
   (`tests/stewardship/fixtures/dst_cases.json`) pin the server and the page
   script to the same instants
   ([#1129](https://github.com/epiphany40223/parishkit/issues/1129)).
+- **Send dates inside the campaign.** A mail send date and time typed in
+  the browser's zone are checked as they are typed against the campaign
+  dates, by the server's own rule: the moment they stand for (read by the
+  daylight-saving rule above) must fall on a campaign day, in the
+  campaign's zone, from its start date to its end date. A date-only `min`
+  and `max` would be looser or stricter than the server on the edge days,
+  so the date control carries neither. Where the page edits the campaign
+  dates or time zone, the dates and zone being proposed are the ones
+  judged; a saved send posted with the date and time the page showed keeps
+  its saved day, as the server keeps it. While a send date is outside
+  them the form's button waits, with the server's words as its reason;
+  once typing pauses or focus leaves the field, the words show in the
+  date's reserved error line (so nothing moves), the date is marked
+  invalid, and a closed editor holding such a send opens, as a refused
+  Review opens it, so a date still being typed opens nothing. Dates or a
+  zone the page cannot read yet judge nothing, and while the server
+  refuses the proposed dates themselves (an unconfirmed financial overlap)
+  it judges the schedules against the saved ones; the server stays the
+  authority. **Shared code.**
+  `schedule_forms.send_window_attrs` (`data-send-window`) and the page
+  script's `ParishSendWindow.judge` (`data-window-gated`); the cases in
+  `tests/stewardship/fixtures/schedule_window_cases.json` run through the
+  server's schedule forms and every browser engine
+  ([#1787](https://github.com/epiphany40223/parishkit/issues/1787)).
 - **Preview.** Before Review, an editor shows the schedule's next
   occurrences in plain words, each with its weekday and date, in the
   browser's zone only, as every review does
