@@ -402,7 +402,9 @@ def _decorate(stream, row, roles, prefix, columns):
     row's own value editor) with its own title, words and fields, so one
     dialog serves every row. Back to review on an Ignored item carries the
     ``reopen`` choice, which makes the dialog's note required (ui-v1.js
-    data-confirm-choice).
+    data-confirm-choice). A row whose Entered by hand asks for fields of its
+    own (``entered_template``: a census New Member's ParishSoft Member ID,
+    #1749) opens a dialog of its own for it, drawn per row as Edit's is.
     """
     placement = row["placement"]
     name = row["name"]
@@ -417,6 +419,7 @@ def _decorate(stream, row, roles, prefix, columns):
     )
     key = uuid4()
     reopen = placement.stage is Stage.IGNORED
+    own_entered = bool(row.get("entered_template"))
     for icon in icons:
         if icon["selected"]:
             continue
@@ -428,6 +431,8 @@ def _decorate(stream, row, roles, prefix, columns):
         icon["dialog"] = (
             f"{prefix}-edit-dialog-{row['id']}"
             if action is Action.EDIT
+            else f"{prefix}-entered-dialog-{row['id']}"
+            if action is Action.ENTERED_BY_HAND and own_entered
             else f"{prefix}-decide-dialog"
         )
         icon["title_one"] = words.title_one
@@ -451,11 +456,22 @@ def _decorate(stream, row, roles, prefix, columns):
     row["decision_label"] = decision_label(placement)
     if row.get("now_matches"):
         row["decision_label"] = f"{row['decision_label']} {NOW_MATCHES}".strip()
+    # A stream's own line about the row's stage (a census change a refresh
+    # put back in Conflict says why, #1749).
+    if row.get("stage_note"):
+        row["decision_label"] = f"{row['decision_label']} {row['stage_note']}".strip()
     row["edit_form"] = f"{prefix}-edit-{row['id']}"
     row["edit_dialog"] = f"{prefix}-edit-dialog-{row['id']}"
     row["edit_hint"] = f"{prefix}-edit-hint-{row['id']}"
     row["offers_edit"] = any(
         icon["action"] == Action.EDIT and not icon["selected"] for icon in icons
+    )
+    row["entered_form"] = f"{prefix}-entered-{row['id']}"
+    row["entered_dialog"] = f"{prefix}-entered-dialog-{row['id']}"
+    row["entered_hint"] = f"{prefix}-entered-hint-{row['id']}"
+    row["offers_entered"] = own_entered and any(
+        icon["action"] == Action.ENTERED_BY_HAND and not icon["selected"]
+        for icon in icons
     )
     # The ParishSoft now cell shows only where the value is in question.
     row["shows_now"] = placement.stage in (
@@ -599,8 +615,10 @@ def build(
     and ``caption`` the table's name; optionally ``leads`` (the reader
     leads its Ministry), ``by_hand`` (a By hand census change),
     ``not_seen`` (the Not seen in ParishSoft flag), ``now_matches``
-    (ParishSoft now holds an Ignored item's Family answer) and ``withheld``
-    (actions this item cannot take). ``roles`` is the reader's role set.
+    (ParishSoft now holds an Ignored item's Family answer), ``stage_note``
+    (the stream's own line under the stage), ``entered_template`` (the
+    fields its Entered by hand asks for, in a dialog of its own) and
+    ``withheld`` (actions this item cannot take). ``roles`` is the reader's role set.
     ``stage`` is the Stage filter's value and ``fields`` the stream's other
     filters, posted by every form. ``templates`` takes the stream's
     ``filters_template``, ``editor_template``, ``add_template`` and

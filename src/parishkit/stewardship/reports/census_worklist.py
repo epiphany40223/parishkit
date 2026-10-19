@@ -66,6 +66,18 @@ COLUMNS = (
 # the same version, which reads as the stale notice.
 UNIQUE_VIOLATION = "23505"
 EDIT_MATCHED = "accepted: the value matched the Family's answer."
+# The ParishSoft Member ID field of a New Member's Entered by hand dialog
+# (#1749), named as the worklist's editor fields are (``read_decision``).
+MEMBER_FIELD = "value_member"
+MEMBER_TEMPLATE = "stewardship/census-worklist-member.html"
+# The line under a row's stage (#1749): why a refresh put an Updated in
+# ParishSoft change back in Conflict, and the Member ID a New Member's
+# mark named.
+REFRESH_CONFLICT = {
+    "undone": "ParishSoft no longer holds the update.",
+    "changed": "ParishSoft changed after the update.",
+}
+MEMBER_ID = "ParishSoft Member ID {}."
 
 
 def _family(row):
@@ -126,6 +138,22 @@ def _last_decision(row):
     return "", None, ""
 
 
+def _stage_note(row):
+    """The census line under a row's stage (``REFRESH_CONFLICT``,
+    ``MEMBER_ID``), or empty."""
+    if row.get("refresh_conflict"):
+        return REFRESH_CONFLICT[row["refresh_conflict"]]
+    if row.get("resolution_member") and row.get("resolution_action") == "entered":
+        return MEMBER_ID.format(duid(row["resolution_member"]))
+    return ""
+
+
+def _new_member(row):
+    """Whether ``row`` is a New Member, whose Entered by hand asks for the
+    Member's ParishSoft Member ID (#1749)."""
+    return row["entity_kind"] == "proposed_member" and row["field"] == "new_member"
+
+
 def worklist_rows(rows):
     """The review worklist's rows for one page of shaped census rows.
 
@@ -154,6 +182,8 @@ def worklist_rows(rows):
                 "decided_by": decided_by or "",
                 "decided_at": decided_at,
                 "note": note or "",
+                "stage_note": _stage_note(row),
+                "entered_template": MEMBER_TEMPLATE if _new_member(row) else None,
             }
         )
     return found
@@ -352,10 +382,19 @@ class CensusDecisions:
             raise ValueError("Census changes take no Add yet.")
         versions, proposals = self._proposals(decision)
         self._offered(principal, decision.action, versions, proposals)
-        value = None
+        value = member = None
         if decision.action is Action.EDIT:
             (proposal,) = proposals.values()
             value = _value(decision.fields, proposal.field)
+        elif decision.action is Action.ENTERED_BY_HAND and decision.fields:
+            # A New Member's own Entered by hand dialog sends the ParishSoft
+            # Member ID, blank or not (#1749); the service checks it.
+            if (
+                set(decision.fields) != {MEMBER_FIELD}
+                or len(decision.fields[MEMBER_FIELD]) != 1
+            ):
+                raise ValueError("A Member ID is sent once.")
+            (member,) = decision.fields[MEMBER_FIELD]
         elif decision.fields:
             raise ValueError("Only Edit sends a value.")
         try:
@@ -368,6 +407,7 @@ class CensusDecisions:
                 request_key=decision.key,
                 bulk=decision.bulk,
                 value=value,
+                member=member,
             )
         except BulkStale as error:
             raise StaleDecision(notice_name(proposals[error.proposal_id])) from None

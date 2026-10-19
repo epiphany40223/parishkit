@@ -444,3 +444,37 @@ def test_a_withheld_action_is_left_out_of_one_row():
 def test_the_decision_line_words_held_and_failed_items(placement, expected):
     """The line under a row's stage (#1683)."""
     assert worklist.decision_label(placement) == expected
+
+
+def test_a_row_with_its_own_entered_fields_gets_its_own_dialog():
+    """A census New Member's Entered by hand asks for the ParishSoft Member
+    ID (#1749): its icon opens a dialog drawn for that row alone, holding the
+    stream's fields; the bulk bar still offers Entered by hand without them.
+    The stream's stage note joins the line under the stage."""
+    from django.template.loader import render_to_string
+
+    shown = rows()[:1]
+    shown[0] |= {
+        "entered_template": "stewardship/census-worklist-member.html",
+        "by_hand": True,
+        "stage_note": "ParishSoft Member ID 7.",
+    }
+    built = made(shown=shown)
+    (row,) = built.rows
+    entered = next(icon for icon in row["icons"] if icon["action"] == "entered_by_hand")
+    assert entered["dialog"] == "census-entered-dialog-0"
+    assert row["offers_entered"] and "entered_by_hand" in row["kinds"]
+    assert row["decision_label"] == "ParishSoft Member ID 7."
+    table = paginate(built.rows, {"size": "25"}, carry=[("stage", "all")])
+    html = render_to_string(
+        "stewardship/components/review-worklist.html",
+        {"worklist": built, "table": table, "csrf_token": "x"},
+    )
+    dialog = html.split('id="census-entered-0"')[1].split("</form>")[0]
+    assert 'id="census-entered-dialog-0"' in dialog
+    assert 'name="value_member"' in dialog and 'inputmode="numeric"' in dialog
+    assert "ParishSoft Member ID (optional)" in dialog
+    # Without the stream's fields, Entered by hand opens the shared dialog.
+    plain = made(shown=[rows()[0] | {"by_hand": True}]).rows[0]
+    assert not plain["offers_entered"]
+    assert {icon["dialog"] for icon in plain["icons"]} >= {"census-decide-dialog"}
