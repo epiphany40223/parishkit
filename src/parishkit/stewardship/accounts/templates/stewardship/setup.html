@@ -42,5 +42,5 @@
 {% endif %}
 <form method="post" action="{% url 'admin:logout' %}">{% csrf_token %}
 {% if draft and not expired %}<p>{% translate "Signing out ends this setup attempt and clears its temporary settings." %}</p>{% endif %}
-{% button type="submit" %}{% translate "Sign out" %}{% endbutton %}</form>
+{% comment %}Sign out sits beside Start setup or Cancel setup, so it is secondary (UX conventions, Button emphasis, #1713).{% endcomment %}{% button type="submit" variant="secondary" %}{% translate "Sign out" %}{% endbutton %}</form>
 {% endblock %}
