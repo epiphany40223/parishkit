@@ -481,4 +481,5 @@ def compare(document, projection, latest, number, *, status, current_year):
         last_year=last_year,
         latest_day=latest[0] if latest else None,
         checksums=tuple((a.campaign_year, a.checksum) for a in archives),
+        fact_set_id=document.fact_set_id if document is not None else None,
     )

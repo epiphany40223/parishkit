@@ -218,7 +218,9 @@ def test_mailing_columns_merge_postal_outreach_into_the_directory(
         # reachable by email, is not listed, whatever reach was asked for.
         # The select shows that reach, locked, but the page keeps the reach
         # the reader chose (sent in its hidden field and the export's query),
-        # so turning the mailing columns off brings it back.
+        # so turning the mailing columns off brings it back. That hidden
+        # field is marked data-filter, so Clear filters drops it with the
+        # other filters (#1651).
         def mailing(**values):
             """The page with mailing columns on and these filters."""
             return search(browser, route, {"mailing": "yes"} | values)
@@ -236,7 +238,7 @@ def test_mailing_columns_merge_postal_outreach_into_the_directory(
             assert b'aria-describedby="directory-reach-tip" disabled>' in body
             assert (
                 f'<input type="hidden" name="reach" value="{own}" '
-                'data-locked-own="directory-reach">'
+                'data-locked-own="directory-reach" data-filter>'
             ).encode() in body
             assert f'<input type="hidden" name="reach" value="{own}">'.encode() in body
             assert b'<input type="hidden" name="mailing" value="yes">' in body
@@ -249,7 +251,7 @@ def test_mailing_columns_merge_postal_outreach_into_the_directory(
         response, body = search(browser, route, {"reach": "email"})
         assert response.status_code == 200 and harness.code.encode() in body
         assert b'<option value="email" selected>' in body
-        assert b'data-locked-own="directory-reach" disabled>' in body
+        assert b'data-locked-own="directory-reach" data-filter disabled>' in body
         assert b'aria-describedby="directory-reach-tip">' in body
         assert b"Addressee" not in body and b"<td>1 Example Street<br>" not in body
         # The page is named for who it lists (#870), and the population

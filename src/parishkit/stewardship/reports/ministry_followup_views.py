@@ -524,7 +524,7 @@ def _page_response(
                 # a leader leads only Ministries the campaign asks about (#922).
                 campaign_marks=allows(principal, Capability.MINISTRY_FOLLOWUP),
                 # Export these requests (#1157): the applied view's filters,
-                # search and sort. The file is in the browser's zone (#1679).
+                # search and sort.
                 export_fields=query.form_values(),
                 export_pdf_limit=EXPORT_PDF_LIMIT,
             )
