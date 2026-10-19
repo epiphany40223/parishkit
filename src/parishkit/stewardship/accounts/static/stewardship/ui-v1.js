@@ -613,10 +613,12 @@
   // #1398).
   // refresh-schedule-v1.js holds the ParishSoft Save while its schedule has
   // problems (data-schedule-gated), alongside the change gate (#1330).
+  // The mail schedule pages hold theirs while a send date falls outside
+  // the campaign (data-window-gated, #1787).
   const GATE_MARKS = [
     "data-time-gated", "data-acknowledgment-gated", "data-complete-gated", "data-change-gated",
     "data-live-stale-gated", "data-schedule-gated", "data-download-ended-gated",
-    "data-save-spent-gated",
+    "data-save-spent-gated", "data-window-gated",
   ];
   const gated = (node) => GATE_MARKS.some((mark) => node.hasAttribute(mark));
   document.querySelectorAll("button[disabled], input[disabled]").forEach((node) => {
@@ -5085,7 +5087,8 @@
     // Each reserved error line takes the answer's messages. Its element
     // stays, since a page script may hold it (users-v2.js's Email line).
     // A form that reserves no line (Django draws a field's list only with
-    // an error: New and Edit scheduled email) gets the answer's list where
+    // an error: New and Edit scheduled email's fields other than the send
+    // date, whose line is reserved, #1787) gets the answer's list where
     // Django draws it, just before its control (<field id>_error; or before
     // the control's label, for a checkbox inside one).
     fresh.querySelectorAll(".errorlist[id]").forEach((list) => {
@@ -6230,8 +6233,10 @@
       const wanted = rules[kind.value] || [];
       row.querySelectorAll("[data-schedule-field]").forEach((group) => {
         if (!governed.has(group.dataset.scheduleField)) return;
+        // A reserved error line (the send date's, #1787) is drawn even
+        // when empty, hidden: only a shown message keeps its field.
         const show = wanted.includes(group.dataset.scheduleField)
-          || (firstLoad && group.querySelector(".errorlist") !== null);
+          || (firstLoad && group.querySelector(".errorlist:not([hidden])") !== null);
         group.hidden = !show;
         // A checkbox (the daily digest's comparison, #1018) is cleared by
         // unticking it: its value is what it posts when ticked.
@@ -6273,6 +6278,9 @@
   // its editor (data-schedule-past) never opens. An editor whose fields differ
   // from what the server drew (a value the browser restored on Back) is
   // opened again on pageshow, so a restored change is never posted unseen.
+  // Each editor's opener, for the send date's window check (#1787), which
+  // opens an editor holding a refused date as a refused Review would.
+  const scheduleEditorOpeners = new WeakMap();
   document.querySelectorAll("[data-schedule-table]").forEach((table) => {
     const form = table.closest("form");
     const editors = [];
@@ -6293,6 +6301,7 @@
         if (!event.target.closest("a, button, input, select, textarea")) open(true);
       });
       editors.push({editor, open});
+      scheduleEditorOpeners.set(editor, open);
     });
     const changed = (editor) => [...editor.querySelectorAll("input, select, textarea")]
       .some((control) => {
@@ -6539,6 +6548,193 @@
     // The browser can restore a typed date and a chosen scope on Back.
     window.addEventListener("pageshow", restore);
   });
+
+  // A send date inside the campaign (#1787). On New and Edit scheduled email
+  // and the date-change review, an initial invitation's or reminder's send
+  // date and time are typed in this browser's zone, and the server refuses
+  // one whose moment falls on no campaign day (ScheduleSet._field_errors,
+  // OUTSIDE_WINDOW). This is that rule, judged as the Admin types:
+  //   - The moment is the date and time read in this browser's zone by the
+  //     one daylight-saving rule (localMoment); its campaign day is the date
+  //     it shows in the campaign's zone, which must be from the start date
+  //     to the end date. Comparing days, not a date-only min and max, keeps
+  //     the edge days exact whatever the two zones are.
+  //   - The campaign dates and zone are the window fields where the page
+  //     edits them (the date-change review, so a proposed date or zone is
+  //     judged as the server judges it), else the form's data-window-start,
+  //     -end and -zone. Fields that cannot be read yet (an empty date, an
+  //     end before the start, a zone this browser does not know) judge
+  //     nothing: the window's own refusal comes first, and the server stays
+  //     the authority.
+  //   - A saved row posted with the date and time the page showed for it
+  //     (its data-saved-at moment) keeps its saved campaign-local date
+  //     (schedule_local.to_campaign), so that date (data-saved-date) is
+  //     judged then, never the shown one read again in a proposed zone.
+  //   - A row with no date to judge (a digest, a deleted row, a Repeat that
+  //     replaces the date, a greyed series date) or no readable time (its
+  //     own refusal holds the button) is left alone.
+  //   - While the window fields hold dates the server's window rules
+  //     refuse for another reason (an unconfirmed financial overlap, a live
+  //     end already past), the server judges the schedules against the
+  //     saved dates (build_preview) and this check against the typed ones;
+  //     both agree once the window itself is accepted.
+  // A refused date holds the form's buttons at once (data-window-gated),
+  // named by the server's words (data-window-message, its {window} the
+  // dates as window_text writes them); once typing pauses or focus leaves,
+  // the words show in the date's reserved error line, the date is marked
+  // invalid, and a refused row in a closed or read-only editor of the
+  // date-change review is opened, as the server's refusal opens it. The
+  // shared case table
+  // (tests/stewardship/fixtures/schedule_window_cases.json) pins judge to
+  // the server's formset in every engine.
+  const zoneDays = new Map(); // one Intl formatter per campaign zone
+  const campaignDay = (moment, zone) => {
+    let format = zoneDays.get(zone);
+    if (!format) {
+      try {
+        format = new Intl.DateTimeFormat("en-US", {timeZone: zone, year: "numeric",
+          month: "2-digit", day: "2-digit", numberingSystem: "latn"});
+      } catch { return null; } // A zone this browser does not know.
+      zoneDays.set(zone, format);
+    }
+    const part = Object.fromEntries(format.formatToParts(new Date(moment))
+      .map(({type, value}) => [type, value]));
+    return `${part.year.padStart(4, "0")}-${part.month}-${part.day}`;
+  };
+  const ISO_DAY = /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/;
+  // true inside, false outside, null when there is nothing to judge.
+  // ``time`` is canonical (canonicalTime); the rest are the strings above.
+  const judgeSendWindow = ({date, time, start, end, zone, savedDate, savedAt}) => {
+    if (![date, start, end].every((day) => ISO_DAY.test(day || "")) || !time || !zone
+      || start > end) return null;
+    const shown = savedAt && savedDate ? localParts(Date.parse(savedAt)) : null;
+    const day = shown && shown.date === date && shown.time === time
+      ? savedDate : campaignDay(localMoment(date, time), zone);
+    return day === null ? null : start <= day && day <= end;
+  };
+  // Shared with the browser tests, which run the case table through it.
+  window.ParishSendWindow = Object.freeze({judge: judgeSendWindow});
+  const SEND_DATES = "input[data-send-window]";
+  const windowRefused = new WeakSet(); // dates whose validity this check set
+  const windowShown = new WeakSet(); // dates whose line shows its words
+  const windowHints = new WeakMap(); // form -> its visually hidden reason
+  const windowTimers = new WeakMap(); // form -> its pending pause timer
+  const sendWindow = (form) => {
+    const value = (name, key) => {
+      const field = form.elements.namedItem(`window-${name}`);
+      return field instanceof HTMLElement ? field.value : form.dataset[key] || "";
+    };
+    return {start: value("start_date", "windowStart"), end: value("end_date", "windowEnd"),
+      zone: value("timezone", "windowZone")};
+  };
+  // Set one date's refusal ("" for none). Its validity, which the gate
+  // reads, follows at once. Its words, mark and description change only
+  // with ``show`` (typing paused, focus left, or the page loaded), except
+  // that a refusal that no longer applies goes at once: a half-typed date
+  // or time ("2054-10-0" on the way to "2054-10-28") flashes nothing and
+  // announces nothing, as the time entry waits for a pause.
+  const markSendDate = (date, message, show) => {
+    if (!message && !windowRefused.has(date) && !windowShown.has(date)) return;
+    date.setCustomValidity(message);
+    if (message) windowRefused.add(date);
+    else windowRefused.delete(date);
+    if (message && !show) return;
+    date.setAttribute("aria-invalid", String(Boolean(message)));
+    if (message) windowShown.add(date);
+    else windowShown.delete(date);
+    const line = date.id && document.getElementById(`${date.id}_error`);
+    if (!line) return;
+    const ids = (date.getAttribute("aria-describedby") || "").split(/\s+/)
+      .filter((id) => id && id !== line.id);
+    if (message) ids.push(line.id);
+    if (ids.length) date.setAttribute("aria-describedby", ids.join(" "));
+    else date.removeAttribute("aria-describedby");
+    // Unchanged words stay untouched, so a screen reader hears them once.
+    const item = line.querySelector("li") || line.appendChild(document.createElement("li"));
+    if (line.hidden === !message && item.textContent === message) return;
+    line.hidden = !message;
+    item.textContent = message;
+  };
+  // Hold the form's buttons while any date stands refused, named by a
+  // visually hidden line with the first refusal's words (the field's own
+  // line shows them), as the time-entry gate does.
+  const gateSendWindow = (form) => {
+    const refused = [...form.querySelectorAll(SEND_DATES)].find((date) => windowRefused.has(date));
+    const buttons = [...form.elements].filter((node) => isSubmit(node) && !node.formNoValidate);
+    let hint = windowHints.get(form);
+    if (!hint && refused && buttons.length) {
+      hint = document.createElement("span");
+      hint.className = "visually-hidden";
+      hint.id = `${form.id || "schedule"}-window-hint`;
+      const last = buttons[buttons.length - 1];
+      (last.parentElement === form ? last : last.parentElement).after(hint);
+      windowHints.set(form, hint);
+    }
+    if (hint) hint.textContent = refused ? refused.validationMessage : "";
+    buttons.forEach((node) => {
+      const described = (node.getAttribute("aria-describedby") || "").split(/\s+/)
+        .filter((id) => id && id !== hint?.id);
+      if (refused) {
+        holdButton(node, "data-window-gated");
+        described.push(hint.id);
+      } else {
+        releaseButton(node, "data-window-gated");
+      }
+      if (described.length) node.setAttribute("aria-describedby", described.join(" "));
+      else node.removeAttribute("aria-describedby");
+    });
+  };
+  // Judge every send date of ``form`` and gate its buttons. With ``show``
+  // the refusals are also shown, and an editor holding one is opened; a
+  // value still being typed opens nothing (an end date passing through
+  // October 2 on its way to October 28 would open every later editor).
+  const checkSendWindows = (form, show = true) => {
+    const dates = [...form.querySelectorAll(SEND_DATES)];
+    if (!dates.length) return;
+    window.clearTimeout(windowTimers.get(form));
+    const {start, end, zone} = sendWindow(form);
+    const words = `${window.ParishDates?.date(start) ?? start} – ${
+      window.ParishDates?.date(end) ?? end}`;
+    dates.forEach((date) => {
+      const row = date.closest("[data-schedule-row]");
+      const time = row?.querySelector('[data-schedule-field="time"] input');
+      const reading = time ? readTimeEntry(time) : {error: "empty"};
+      const skipped = !row || date.disabled || date.closest("[data-schedule-field]")?.hidden
+        || row.querySelector('[name$="-DELETE"]')?.checked || reading.error;
+      const inside = skipped ? null : judgeSendWindow({date: date.value,
+        time: canonicalTime(reading.value), start, end, zone,
+        savedDate: date.dataset.savedDate, savedAt: date.dataset.savedAt});
+      markSendDate(date, inside === false
+        ? (date.dataset.windowMessage || "").replace("{window}", words) : "", show);
+      if (show && inside === false && row.hidden) {
+        const open = scheduleEditorOpeners.get(row);
+        if (open) open(false);
+        else if (row.hasAttribute("data-schedule-past")) row.hidden = false;
+      }
+    });
+    gateSendWindow(form);
+    if (!show) windowTimers.set(form, window.setTimeout(() => checkSendWindows(form), TIME_PAUSE));
+  };
+  const sendWindowForms = () => new Set([...document.querySelectorAll(SEND_DATES)]
+    .map((date) => date.form).filter(Boolean));
+  const sendWindowForm = (event) => {
+    const form = event.target instanceof Element ? event.target.closest("form") : null;
+    return form?.querySelector(SEND_DATES) ? form : null;
+  };
+  // Any edit in such a form may move a verdict: a date or time, a window
+  // field, a mail type, Delete or Repeat. Typing is judged at once (the
+  // gate) and shown after a pause or once focus leaves the field; a
+  // removed new row is shown at once.
+  ["input", "change"].forEach((type) => document.addEventListener(type, (event) => {
+    const form = sendWindowForm(event);
+    if (form) checkSendWindows(form, false);
+  }));
+  ["focusout", "schedules-changed"].forEach((type) => document.addEventListener(type, (event) => {
+    const form = sendWindowForm(event);
+    if (form) checkSendWindows(form);
+  }));
+  window.addEventListener("pageshow", () => sendWindowForms().forEach((form) => checkSendWindows(form)));
+  sendWindowForms().forEach((form) => checkSendWindows(form));
 
   // Plain multi-select lists: say how many items are chosen, since a long list
   // (a parish may have hundreds of Ministries) hides most of its selection.
