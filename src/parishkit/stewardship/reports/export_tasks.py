@@ -33,11 +33,13 @@ from .export_models import (
     ExportCancellation,
     ExportPublication,
     ExportRequest,
+    ParticipationExportSnapshot,
 )
 from .export_services import TASK_TYPE, admit_campaign, authorize
 from .export_window import window
 from .models import CampaignDailyFactSet, CampaignFactPin
 from .participation import participation_csv
+from .participation_summary import ParticipationSummary
 
 
 def bound_request(status):
@@ -262,11 +264,26 @@ def load_document(request, *, general=None, store=None):
         .select_related("request")
         .first()
     )
+    # The page's Summary, frozen with the request (#1557). A latest-data
+    # handoff, and a request made before migration 0146, has none and
+    # carries its daily rows only.
+    captured = (
+        ParticipationExportSnapshot.objects.filter(request=request)
+        .values_list("document", flat=True)
+        .first()
+    )
+    if captured == {}:
+        raise StorageInvariantError("Export summary capture was discarded.")
     return participation_document(
         facts,
         parish_name=request.configuration.parish.name,
         browser_timezone=request.browser_timezone,
         requested_at=original.request.created_at if original else request.created_at,
+        summary=(
+            ParticipationSummary.from_document(captured)
+            if captured is not None
+            else None
+        ),
     )
 
 

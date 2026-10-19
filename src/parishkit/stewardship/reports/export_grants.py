@@ -27,6 +27,15 @@ def add_export_grants(tables, columns, *, role):
             )
         if role == "web":
             tables[snapshot].add("INSERT")
+    # The Response dashboard's Summary capture (migration 0146, #1557): the
+    # web captures it and the worker renders it; the request table's deferred
+    # check reads it on every request either makes. The discard clears it as
+    # the schema owner, so no other role reads it.
+    summary = "stewardship_participation_export_snapshot"
+    if role in {"web", "worker"}:
+        tables.setdefault(summary, set()).add("SELECT")
+    if role == "web":
+        tables[summary].add("INSERT")
     if role == "web":
         # Staff directories expose only the selected source's known address.
         # No address mutation, source pin, token or private-key grant is added.

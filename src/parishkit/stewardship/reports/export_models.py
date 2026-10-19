@@ -455,6 +455,39 @@ class ExportRequest(ImmutableRecord):
         ]
 
 
+class ParticipationExportSnapshot(ImmutableRecord):
+    """The Response dashboard's Summary, frozen when its export is requested.
+
+    The page reads the statistics and the funnel in Python, so the web
+    captures that same read (``participation_summary.capture``) into
+    ``document`` in the request's own transaction, and SQL checks
+    everything around it (frozen migration 0146, #1557): one capture per
+    participation request, by its requester, from the web, before any
+    attempt, and the document's closed shape. Unlike the other captures it
+    names its request (the request is made first), and a deferred check
+    requires one on every participation request but a latest-data handoff.
+    """
+
+    request = models.OneToOneField(
+        ExportRequest, on_delete=models.PROTECT, related_name="summary_snapshot"
+    )
+    campaign = models.ForeignKey(
+        "stewardship_campaigns.Campaign", on_delete=models.PROTECT, db_index=False
+    )
+    actor_id = models.UUIDField(editable=False)
+    correlation_id = models.UUIDField(editable=False)
+    document = models.JSONField()
+
+    class Meta:
+        db_table = "stewardship_participation_export_snapshot"
+        indexes = [
+            models.Index(
+                fields=("correlation_id",), name="participation_export_correl"
+            ),
+            models.Index(fields=("campaign",), name="participation_export_campaign"),
+        ]
+
+
 class ExportAttempt(ImmutableRecord):
     """An artifact UUID allocated before rendering, bound to an exact worker claim."""
 

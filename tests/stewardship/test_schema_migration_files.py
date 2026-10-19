@@ -399,6 +399,11 @@ FROZEN = {
     "0122_automatic_report_views.sql": (
         "b686ede20806893936ee416bd3829cc65adfa6e6857f4b7ad02233177b4744ae"
     ),
+    # Provisional number (#1557): renumbered when the file sequence is
+    # assigned.
+    "0146_participation_export_summary.sql": (
+        "60837d98ae70a281d58ee5328c456cc803018a8add6dfe9ca882aef77ea762c2"
+    ),
 }
 
 

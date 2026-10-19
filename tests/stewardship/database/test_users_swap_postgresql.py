@@ -421,6 +421,10 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # 0122 (#1620) creates nothing: it replaces the safe context in place again,
 # after 0109, with the automatic view key, so ``CLOSURE_REPLACED_ONLY`` now
 # names 0122's replacement, whose body keeps 0109's keys.
+# 0146 (#1557) creates the participation Summary capture table (in
+# CLOSURE_TABLES) with its guard and the request table's deferred check
+# (``CLOSURE_CREATED``), and replaces 0109's discard in place, which 0109's
+# file brings back older, so ``CLOSURE_OLD_BODIES`` puts 0146's back.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -682,6 +686,18 @@ CLOSURE_CREATED = {
         ),
         ("stewardship_jobs", "0035_leader_emails"),
     ),
+    # 0146 (#1557) creates the participation Summary capture table (in
+    # CLOSURE_TABLES) with its guard and the request table's deferred check;
+    # all go, so its file installs whole again, after 0109's, whose discard
+    # it replaces (``CLOSURE_OLD_BODIES`` puts it back after 0109's file
+    # runs again on its own).
+    **dict.fromkeys(
+        (
+            "public.stewardship_participation_export_capture_v1()",
+            "public.stewardship_participation_export_summary_v1()",
+        ),
+        ("stewardship_reports", "0032_participation_summary"),
+    ),
 }
 
 
@@ -853,6 +869,13 @@ CLOSURE_REPLACED_LAST = {
 CLOSURE_OLD_BODIES = {
     ("stewardship_accounts", "0022_drop_ministry_activity"): (
         "stewardship_ministry_activity"
+    ),
+    # 0146 (#1557) replaces 0109's discard, which 0109's file (its routines
+    # in CLOSURE_CREATED and runtime_grants.CLOSURE_FUNCTIONS) brings back
+    # without the participation capture; only that older body goes straight
+    # from the capture loop to the pins.
+    ("stewardship_reports", "0032_participation_summary"): (
+        "END LOOP;\n    DELETE FROM stewardship_fact_pin"
     ),
 }
 
