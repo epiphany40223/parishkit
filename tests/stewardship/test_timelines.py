@@ -676,7 +676,7 @@ def test_last_portal_action_ignores_what_an_email_reader_makes():
 
 
 def test_hub_tabs_follow_the_campaign_modules():
-    """Timeline, Family, the Members, then the tabs not built yet (#1678)."""
+    """Timeline, Family, the Members, Financial, then the last tab (#1678)."""
     from parishkit.stewardship.reports.hub_census import HubCensus, Subject
     from parishkit.stewardship.reports.timeline_views import hub_sections, hub_tabs
 
@@ -702,7 +702,7 @@ def test_hub_tabs_follow_the_campaign_modules():
         ("family", "Family", ""),
         ("member-1", "Adams, Ann", ""),
         ("member-2", "Adams, Bo", ""),
-        ("other", "Cannot participate and Additional information", "Coming soon"),
+        ("other", "Additional", ""),
     ]
     assert tabs.selected == "timeline" and tabs.tabs[0].href == path + "?tab=timeline"
     assert hub_tabs(path, {"tab": "member-2"}, ("members",), census).selected == (
@@ -712,11 +712,13 @@ def test_hub_tabs_follow_the_campaign_modules():
     tabs = hub_tabs(path, {"tab": "family"}, ("family", "members"))
     assert [tab.key for tab in tabs.tabs] == ["timeline", "family"]
     assert tabs.selected == "family"
-    # Without census, Member tabs wait for Ministry's slice: named, unavailable.
+    # Without census, Member tabs are available too: their panels show
+    # Ministry joins and leaves (slice 4). No hub tab is "Coming soon".
     ministry = HubCensus(members=members, census=False)
-    tabs = hub_tabs(path, {"tab": "member-1"}, ("members", "other"), ministry)
-    assert [str(tab.unavailable) for tab in tabs.tabs[1:3]] == ["Coming soon"] * 2
-    # An unavailable or unknown tab in the address opens the Timeline tab.
+    tabs = hub_tabs(path, {"tab": "member-1"}, ("members", "financial"), ministry)
+    assert [tab.unavailable for tab in tabs.tabs] == [""] * 4
+    assert tabs.selected == "member-1" and tabs.tabs[3].key == "financial"
+    # A tab that is not drawn, or an unknown one, opens the Timeline tab.
     for asked in ("member-1", "family", "nonsense"):
         assert hub_tabs(path, {"tab": asked}, ("other",)).selected == "timeline"
 
@@ -739,20 +741,24 @@ def test_the_page_is_a_hub_with_the_timeline_tab():
         f'href="/admin/reports/families/{FAMILY}/?tab=timeline'
         '#family-tabs-panel-timeline"'
     ) in page
-    assert page.count('aria-disabled="true" tabindex="-1"') == 2
-    for label in ("Financial", "Cannot participate and Additional"):
-        assert f">{label}" in page, label
-    assert page.count('role="tooltip">Coming soon</span>') == 2
+    # Every tab is built: none is unavailable, and only the chosen one's
+    # panel is drawn.
+    assert 'aria-disabled="true"' not in page and "Coming soon" not in page
+    for key in ("financial", "other"):
+        assert f'id="family-tabs-panel-{key}"' in page, key
+    for label in ("Financial", "Additional"):
+        assert f">{label}</a>" in page, label
     # A campaign without any content tab: Timeline alone.
     page = render(TIMELINE)
-    assert "Coming soon" not in page and page.count('role="tab"') == 1
+    assert page.count('role="tab"') == 1
     # Staff get the tabs, the summary and the Last portal action
     # (Administrator decision, 2026-10-18), from the portal lines alone.
     portal = tuple(line for line in TIMELINE.events if line.portal)
     page = render(
         Timeline(TIMELINE.summary, portal), full=False, sections=("financial",)
     )
-    assert 'id="family-tabs-panel-timeline"' in page and "Coming soon" in page
+    assert 'id="family-tabs-panel-timeline"' in page
+    assert 'id="family-tabs-tab-financial"' in page
     assert (
         "Last portal action: "
         f'Submitted a response, <time datetime="{SECOND.at.isoformat()}"'

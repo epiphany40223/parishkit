@@ -28,9 +28,10 @@ The page is the Family's information hub (#1678, admin-portal spec "Family
 information hub"): a header strip, then the shared tabs (``web/tabs.py``).
 The Timeline tab holds everything above. The Family tab and one tab per
 Member (slice 2) show the Family's census answers against their baseline,
-with each change's review-pipeline stage (``hub_census``); the other tabs
-come in later slices and are drawn unavailable ("Coming soon") until then
-(``hub_tabs``).
+with each change's review-pipeline stage (``hub_census``); the Member tabs
+also show Ministry joins and leaves, and the Financial and the Cannot
+participate and Additional information tabs their streams (slices 3 and 4,
+``hub_streams``), each read only while its tab is chosen (``hub_reads``).
 """
 
 from dataclasses import dataclass, replace
@@ -79,6 +80,7 @@ from parishkit.stewardship.web.tabs import Tab, tab_set
 
 from .export_views import SAFE_FAILURES
 from .hub_census import HubCensus, read_hub_census
+from .hub_streams import read_hub_financial, read_hub_other, read_member_ministry
 from .read_admission import admit_report_read
 from .response_metrics import ResponseScope
 from .timelines import KINDS, REACH, TIMELINE_SORTING, narrow, read_timeline
@@ -86,19 +88,21 @@ from .timelines import KINDS, REACH, TIMELINE_SORTING, narrow, read_timeline
 # The days a From or Through filter accepts, as on Census changes.
 EARLIEST, LATEST = date(2000, 1, 1), date(2999, 12, 31)
 # The hub's content sections, in tab order (#1678). "members" stands for
-# the Member tabs, one per Member (``hub_census``). The Family and Member
-# tabs are built (slice 2); the tabs not built yet (slices 3 and 4), with
-# their labels, are drawn unavailable with COMING_SOON while they apply to
-# the campaign (``hub_sections``).
+# the Member tabs, one per Member (``hub_census``); "other" is the Cannot
+# participate and Additional information tab (``hub_sections``).
 SECTIONS = ("family", "members", "financial", "other")
-COMING = (
-    ("financial", _("Financial")),
-    ("other", _("Cannot participate and Additional information")),
-)
-COMING_SOON = _("Coming soon")
 # The Family and Member tabs' one panel template; the context's
 # ``hub_subject`` is the chosen tab's subject.
 CENSUS_PANEL = "stewardship/hub-census-panel.html"
+# The last two tabs, with their labels and panels (slices 3 and 4).
+STREAM_TABS = (
+    ("financial", _("Financial"), "stewardship/hub-financial-panel.html"),
+    (
+        "other",
+        _("Additional"),
+        "stewardship/hub-other-panel.html",
+    ),
+)
 
 
 @dataclass(frozen=True)
@@ -282,11 +286,10 @@ def hub_tabs(page_url, parameters, sections, census=None):
     ``hub_sections`` keys that apply and ``census`` the ``HubCensus`` read
     for them (None reads as no response yet). The Family tab is drawn
     whenever census applies, saying so when the Family has no census
-    answers; each Member tab is named by its Member, and is unavailable
-    ("Coming soon") in a campaign without census, whose Member tabs show
-    Ministry joins and leaves from a later slice. Each tab not built yet is
-    drawn unavailable with the reason "Coming soon". A tab's link carries
-    nothing but ``tab``: the Timeline's filters are its panel's own.
+    answers; each Member tab is named by its Member (its census fields, its
+    Ministry joins and leaves, or both). Every tab is built, so none is
+    unavailable. A tab's link carries nothing but ``tab``: the Timeline's
+    filters are its panel's own.
     """
     census = census or HubCensus()
     tabs = [Tab("timeline", _("Timeline"), template="stewardship/timeline-panel.html")]
@@ -295,16 +298,55 @@ def hub_tabs(page_url, parameters, sections, census=None):
     if "members" in sections:
         tabs += [
             Tab(member.key, member.label, template=CENSUS_PANEL)
-            if census.census
-            else Tab(member.key, member.label, unavailable=COMING_SOON)
             for member in census.members
         ]
     tabs += [
-        Tab(key, label, unavailable=COMING_SOON)
-        for key, label in COMING
+        Tab(key, label, template=template)
+        for key, label, template in STREAM_TABS
         if key in sections
     ]
     return tab_set(page_url, parameters, tabs)
+
+
+def hub_reads(campaign, family, census, chosen, *, principal, parish_name):
+    """The chosen tab's stream, read only while that tab is chosen.
+
+    ``census`` is the page's ``HubCensus`` and ``chosen`` the address's
+    ``tab``. Returns the extra context: ``hub_ministry`` (the chosen Member
+    tab's Ministry rows, in a campaign with Ministry stewardship),
+    ``hub_financial`` (``HubFinancial``) or ``hub_other`` (``HubOther``),
+    each None when its tab is not the chosen one. A tab whose stream the
+    reader's role may not see reads nothing (both hub roles may, today).
+    """
+    values = campaign.active_configuration.values
+    sections = hub_sections(values)
+    modules = set(values.get("modules", ()))
+    reads = {"hub_ministry": None, "hub_financial": None, "hub_other": None}
+    subject = census.subject(chosen) if chosen.startswith("member-") else None
+    # A Member of a Family with no response has no requests to read; a
+    # pre-census response's Members (No census answers yet) keep theirs.
+    if subject is not None and subject.mark != "unsubmitted" and "ministry" in modules:
+        reads["hub_ministry"] = read_member_ministry(
+            campaign.pk, family.pk, subject.entity
+        )
+    if (
+        chosen == "financial"
+        and "financial" in sections
+        and allows(principal, Capability.FINANCIAL_DETAIL)
+    ):
+        reads["hub_financial"] = read_hub_financial(
+            campaign, family.family_duid, parish_name=parish_name
+        )
+    if chosen == "other" and "other" in sections:
+        reads["hub_other"] = read_hub_other(
+            campaign.pk,
+            family.pk,
+            census.members,
+            ministry="ministry" in modules,
+            information=bool(values.get("additional_information"))
+            and allows(principal, Capability.ADDITIONAL_FOLLOWUP),
+        )
+    return reads
 
 
 def page_context(campaign, family_id, identity, timeline, as_of, **options):
@@ -321,8 +363,12 @@ def page_context(campaign, family_id, identity, timeline, as_of, **options):
     timeline table's validated ``sort`` and ``size``, ``export``, the
     export form's values (``export_context``), shown only on the full view,
     and for the hub's tabs (``hub_tabs``) ``parameters``, the address's,
-    ``sections``, the content tabs that apply (``hub_sections``), and
-    ``census``, the Family and Member tabs' ``HubCensus``.
+    ``sections``, the content tabs that apply (``hub_sections``),
+    ``census``, the Family and Member tabs' ``HubCensus``, and the chosen
+    tab's stream (``hub_reads``): ``hub_ministry``, ``hub_financial`` and
+    ``hub_other``, and ``ministry`` and ``information``, whether the
+    campaign has Ministry stewardship (its Member tabs list Ministry joins
+    and leaves) and Additional information (the last tab shows it).
     """
     full = options.get("full", False)
     query = options.get("query") or TimelineQuery()
@@ -357,7 +403,21 @@ def page_context(campaign, family_id, identity, timeline, as_of, **options):
         # one drawn.
         "hub_subject": census.subject(tabs.selected),
         "census_tabs": "family" in options.get("sections", ()),
+        # Which of the other content tabs the About panel explains.
+        "financial_tab": "financial" in options.get("sections", ()),
+        "other_tab": "other" in options.get("sections", ()),
+        "information_tab": options.get("information", False),
+        "ministry_tabs": options.get("ministry", False),
         "census_url": reverse("admin:census_changes"),
+        # The chosen tab's stream (``hub_reads``), None on every other tab.
+        "hub_ministry": options.get("hub_ministry"),
+        "hub_financial": options.get("hub_financial"),
+        "hub_other": options.get("hub_other"),
+        # Where each stream is handled, linked from its panel.
+        "ministry_url": reverse("admin:ministry_report"),
+        "financial_url": reverse("admin:financial_report"),
+        "limitations_url": reverse("admin:limitations_report"),
+        "information_url": reverse("admin:information_queue"),
         "table": table,
         "query": query,
         "kinds": KINDS,
@@ -532,7 +592,9 @@ def timeline(request, campaign_id, family_id):
             codes = allows(principal, Capability.FAMILY_CODES)
             # Read once: the runtime mode attributes sign-ins and decides
             # whether a live code would be accepted now.
-            system = SystemConfiguration.objects.get()
+            system = SystemConfiguration.objects.select_related(
+                "active_configuration__parish"
+            ).get()
             testing_codes = system.mode == "testing"
             # Production records only (#1570): the Testing view was removed.
             records = read_timeline(
@@ -549,6 +611,15 @@ def timeline(request, campaign_id, family_id):
                 census = read_hub_census(
                     campaign_id, family.pk, census="family" in sections
                 )
+            # The chosen tab's other stream (slices 3 and 4), if any.
+            streams = hub_reads(
+                campaign,
+                family,
+                census or HubCensus(),
+                request.GET.get(TAB, ""),
+                principal=principal,
+                parish_name=system.active_configuration.parish.name,
+            )
             # The chosen-Family test page is Administrator only (CONFIGURE).
             test_url = None
             if codes and testing_codes and allows(principal, Capability.CONFIGURE):
@@ -575,6 +646,12 @@ def timeline(request, campaign_id, family_id):
                 parameters=request.GET,
                 sections=sections,
                 census=census,
+                ministry="ministry"
+                in campaign.active_configuration.values.get("modules", ()),
+                information=bool(
+                    campaign.active_configuration.values.get("additional_information")
+                ),
+                **streams,
             )
             page = render_to_string(
                 "stewardship/timeline.html", context, request=request

@@ -175,7 +175,8 @@ class FieldRow:
     page words "(not read)". ``reviewer`` is the Reviewer's value, "" when
     no reviewer set one. ``placement`` is the change's ``Placement`` (None
     for a report-only one); ``changed`` is False for an unchanged field,
-    whose one value is ``answer``.
+    whose one value is ``answer``. ``note`` is any words shown after the
+    stage chip (a decided Ministry request's outcome, ``hub_streams``).
     """
 
     label: str
@@ -185,6 +186,7 @@ class FieldRow:
     baseline_read: bool = True
     reviewer: str = ""
     placement: object = None
+    note: str = ""
 
     @property
     def stage_label(self):
@@ -209,10 +211,11 @@ class Subject:
     ``key`` is the tab's key, ``label`` its name, ``mark`` a ``MARKS`` key
     ("" for a current Member or the Family) and ``rows`` its fields in form
     order. A Member the Family added has ``addition``, the stage of the
-    addition itself, and its rows are the Family's answers. ``duid`` is a
-    ParishSoft Member's DUID, shown beside the panel's heading; None for the
-    Family (the heading shows the page's Family DUID) and for a Member the
-    Family added, who has none yet.
+    addition itself, and its rows are the Family's answers. ``entity`` is a
+    Member's ``(entity_kind, entity_key)`` as its change rows and Ministry
+    requests name it (``("member", DUID)`` or ``("proposed_member",
+    local id)``); it never enters the address. ``duid`` (a ParishSoft
+    Member's DUID, from ``entity``) is shown beside the panel's heading.
     """
 
     key: str
@@ -220,7 +223,15 @@ class Subject:
     rows: tuple = ()
     mark: str = ""
     addition: FieldRow | None = None
-    duid: int | None = None
+    entity: tuple = ()
+
+    @property
+    def duid(self):
+        """A ParishSoft Member's DUID for the heading; None for the Family
+        (the heading shows the page's Family DUID) and for a Member the
+        Family added, who has none yet."""
+        kind, key = self.entity or ("", "")
+        return int(key) if kind == "member" else None
 
     @property
     def changed(self):
@@ -260,8 +271,8 @@ class HubCensus:
     ``family`` is the Family tab's subject (None before any census
     response) and ``members`` the Member tabs' subjects in tab order.
     ``census`` is whether census is part of the campaign: without it the
-    Member tabs are only named (Ministry stewardship's, drawn unavailable
-    until that slice), and they hold no rows.
+    Member tabs hold no census rows, only their names and entities (their
+    panels show Ministry joins and leaves, ``hub_streams``).
     """
 
     family: Subject | None = None
@@ -335,7 +346,7 @@ def unsubmitted(roster, *, family=None, census=True, responded=False):
                 f"member-{place}",
                 member_label(None, [first, last]),
                 mark=mark,
-                duid=int(key),
+                entity=("member", key),
             )
             for place, (key, first, last) in enumerate(roster, 1)
         ),
@@ -468,7 +479,7 @@ def shape(answers, names, rows, *, census=True):
                 mark,
                 field_rows(fields, answer or {}, mine) if census else (),
                 None,
-                int(key),
+                ("member", key),
             )
         )
     added = []
@@ -484,13 +495,21 @@ def shape(answers, names, rows, *, census=True):
             )
             for field in MEMBER_FIELDS
         )
-        added.append((member_label(answer, None), "new", values, addition, None))
+        added.append(
+            (
+                member_label(answer, None),
+                "new",
+                values,
+                addition,
+                ("proposed_member", key),
+            )
+        )
     subjects += sorted(added, key=lambda item: item[0].casefold())
     return HubCensus(
         family,
         tuple(
-            Subject(f"member-{place}", label, fields, mark, addition, duid)
-            for place, (label, mark, fields, addition, duid) in enumerate(subjects, 1)
+            Subject(f"member-{place}", label, fields, mark, addition, entity)
+            for place, (label, mark, fields, addition, entity) in enumerate(subjects, 1)
         ),
         census,
     )
