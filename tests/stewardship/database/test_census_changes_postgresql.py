@@ -197,14 +197,15 @@ def test_native_page_and_downloads(response_service, google, settings):
         assert b"Requested" in body and b"How it reaches ParishSoft" in body
         table = list(csv.reader(io.StringIO(body.decode())))
         # The page's order (#932): ParishSoft status after Family (#1216),
-        # Member DUID right after Who, then Submitted and the latest
-        # resolution's three columns (#528).
+        # the Member's (#1752) and Member DUID right after Who, then
+        # Submitted and the latest resolution's three columns (#528).
         assert table[0][:2] == ["Family", "ParishSoft status"]
-        assert table[0][3:5] == ["Who", "Member DUID"]
-        assert table[0][11:] == ["Submitted", "Recorded by", "Recorded at", "Note"]
-        assert any(values[4] == "3" for values in table[1:])
-        # Every Family is current: no status to mark.
+        assert table[0][3:6] == ["Who", "Member's ParishSoft status", "Member DUID"]
+        assert table[0][12:] == ["Submitted", "Recorded by", "Recorded at", "Note"]
+        assert any(values[5] == "3" for values in table[1:])
+        # Every Family and Member is current: no status to mark.
         assert {values[1] for values in table[1:]} == {""}
+        assert {values[4] for values in table[1:]} == {""}
         response, body = search(
             browser, export, {"format": "xlsx", "timezone": "UTC", "stage": "all"}
         )
@@ -236,7 +237,7 @@ def test_native_page_and_downloads(response_service, google, settings):
         ]
         # One column set and the same rows in both files (#966).
         assert sheet == table
-        assert "Requested" in [values[7] for values in sheet[1:]]
+        assert "Requested" in [values[8] for values in sheet[1:]]
         response, body = search(
             browser, export, {"format": "pdf", "timezone": "UTC", "stage": "all"}
         )
