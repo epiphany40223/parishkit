@@ -84,9 +84,14 @@ def _ipv6():
     return "(" + "|".join(alternatives) + ")"
 
 
+# A bracketed IPv6 address; Django's IPv6 check also refuses one of more
+# than 39 characters (MAX_IPV6_ADDRESS_LENGTH), such as six full groups
+# before an IPv4 address.
+_IPV6_LITERAL = rf"\[(?=[0-9A-Fa-f:.]{{1,39}}\]){_ipv6()}\]"
+
 HOST = (
     r"(?![^\/?#:]{254})"
-    rf"({_IPV4}|\[{_ipv6()}\]|[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt]|"
+    rf"({_IPV4}|{_IPV6_LITERAL}|[Ll][Oo][Cc][Aa][Ll][Hh][Oo][Ss][Tt]|"
     rf"{_LABEL}(\.{_LABEL})*\."
     rf"([{_LETTER}][{_LETTER}\-]{{0,61}}[{_LETTER}]|[Xx][Nn]--[A-Za-z0-9]{{1,59}})\.?)"
     r"(:[0-9]{1,5})?"

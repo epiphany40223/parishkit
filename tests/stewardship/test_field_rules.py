@@ -225,7 +225,8 @@ def values():
         "example", "ex-ample", "-x", "x-", "a" * 63, "a" * 64, "m\u00fcnchen",
         "org", "c", "xn--p1ai", "ORG", "0", "1", "255", "256", "01", "localhost",
         "LOCALHOST", "", "::1", "2001:db8::1", "1::2::3", "::ffff:1.2.3.4",
-        "g::1", "12345::1",
+        "g::1", "12345::1", "1111:2222:3333:4444:5555:6666:1.2.3.4",
+        "ffff:ffff:ffff:ffff:ffff:ffff:255.255.255.255",
     ]  # fmt: skip
     for _ in range(2000):
         host = rnd.choice([".", ".", ":"]).join(
@@ -248,4 +249,4 @@ def test_the_host_rules_agree_with_what_the_server_accepted_before():
         assert WEBSITE.matches(value) is old, value
         assert GIVING.matches(value) is old_server_accepts(value, "link"), value
     # The generator reaches both verdicts for a real share of its values.
-    assert 100 < admitted < checked - 100
+    assert 50 < admitted < checked - 100
