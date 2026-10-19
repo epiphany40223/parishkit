@@ -908,9 +908,28 @@ the [in-place controls](#in-place-controls); no other mechanism.
   other step, no blank or expired state), keeps the sort, filters, page
   and other choices the address carries, and resumes updating if work is
   still pending.
+- **Reload on a POST report.** A report whose filters are private POST
+  state ([admin tables](#admin-tables)) still names its view in the address:
+  after each in-place answer it accepts, the address bar shows the view's
+  own address, which the answer draws as an `a[data-page-address]` link:
+  the page with its closed, non-identifying filters and its sort. Search
+  text, Family or person identifiers and amounts never enter it (the
+  [reports](../reports/spec.md#shared-report-behavior) URL rule), and neither
+  does a page number, since the private filters the list was numbered with
+  are dropped. So a reload keeps the closed choices, clears only the private
+  ones and shows the first page. The page's GET accepts its own address and
+  refuses private values in a query (400). Each page's own spec names what
+  its address carries: the Active parishioner family directory shows its
+  bare page while a search or code is applied, since its presets alone would
+  be a different list; Sent mail and System logs also carry the rows per
+  page and their days; Financial stewardship carries the rows per
+  page.
+  The directory, Sent mail, System logs and Financial stewardship do this
+  ([#1586](https://github.com/epiphany40223/parishkit/issues/1586)).
 - **Go-live pages.** Go-live readiness, Testing cleanup, Prepare Family
   links and Production activation still have their Refresh links until the
-  go-live redesign applies this rule there (#1586 slice 2).
+  go-live redesign applies this rule there
+  ([#1585](https://github.com/epiphany40223/parishkit/issues/1585)).
 
 ### No layout shift
 
@@ -3549,7 +3568,8 @@ scroll position, rows still shown keep their selection, focus returns to the
 chosen heading or control, the heading's `aria-sort` and a polite live region
 announce the new order or the rows now shown, and a GET table's choice
 replaces the address so reload, bookmarks and returning to the page keep it; a
-POST table's address never changes. Applying a page's filters works the same
+POST table's address shows only its view's closed choices
+([reload on a POST report](#pages-that-update-themselves)). Applying a page's filters works the same
 way (#484): the filter form is sent as it would have been (a GET query, or a
 CSRF POST body), every table region is replaced, and so are the counts,
 summaries and filter-dependent panels outside the tables (a report's matching
