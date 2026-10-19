@@ -228,28 +228,24 @@ def test_roster_count_ignores_the_request_a_resubmission_adds(response_service):
     assert counts() == (1, 1)
 
 
-def test_staff_home_lists_the_campaign_end_work_with_counts(response_service, google):
-    """Staff see the four work lists after the Response dashboard, each with
-    the count of the rows its link opens; a leader sees only Ministry
-    requests with its open count."""
+def test_staff_landing_lists_the_campaign_end_work_with_counts(
+    response_service, google
+):
+    """Staff land on My review work (#1690), whose Ministry cards count the
+    rows their links open: To review is Ministry requests' menu count, and To
+    enter by hand is Roster changes to enter's, linking that list (#1660)."""
     harness, _, _, _ = resolved(response_service)
     browser, _, _, _ = leader(harness, google, roles=("staff",))
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = read(browser, "/admin/")
     assert response.status_code == 200
     listed = steps(body)
-    assert [re.sub(r" \d.*", "", step) for step in listed] == [
-        "Census changes",
-        "Roster changes to enter",
-        "Additional information",
-        "Ministry requests",
-    ]
-    assert "Roster changes to enter 1 not yet entered" in listed
-    # The step's number is the menu entry's own (#1660).
-    assert _menu_count(body, "Roster changes to enter") == 1
     # The harness's leave request is still open; its join was resolved.
-    assert "Ministry requests 1 open" in listed
+    assert "To review 1 requests" in listed
     assert _menu_count(body, "Ministry requests") == 1
+    assert "To enter by hand 1 requests" in listed
+    # The card's number is the menu entry's own (#1660).
+    assert _menu_count(body, "Roster changes to enter") == 1
     assert f'href="{ROSTER_URL}"' in body.decode()
 
 
@@ -272,9 +268,11 @@ def test_roster_page_is_its_own_menu_entry(response_service, google):
 def test_count_database_error_leaves_the_link_without_a_number(
     response_service, google, monkeypatch, caplog
 ):
-    """A database error in the menu's counts statement does not fail Home:
-    the Roster step still links to the list with no number, and the failure
-    is logged at WARNING as report_shaping_failed."""
+    """A database error in the menu's counts statement does not fail Staff's
+    landing (My review work, #1690): the menu's entries show no number, so
+    neither does the Ministry To review card, which is the menu's count; the
+    Roster list stays linked, and the failure is logged at WARNING as
+    report_shaping_failed."""
     harness, _, _, _ = resolved(response_service)
     browser, _, _, _ = leader(harness, google, roles=("staff",))
     # Fail the statement the way a lost connection or bad SQL would.
@@ -285,7 +283,8 @@ def test_count_database_error_leaves_the_link_without_a_number(
     ):
         response, body = read(browser, "/admin/")
     assert response.status_code == 200
-    assert "Roster changes to enter" in steps(body)
+    assert "To review" in steps(body)
+    assert _menu_count(body, "Ministry requests") is None
     assert _menu_count(body, "Roster changes to enter") is None
     assert f'href="{ROSTER_URL}"' in body.decode()
     (warning,) = [
