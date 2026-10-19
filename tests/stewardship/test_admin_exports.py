@@ -182,7 +182,7 @@ def test_every_export_command_has_a_golden_document():
         "export census",
         # The Limitations download (#463).
         "export limitations",
-        # The Roster changes to enter download (#463).
+        # The roster list's download (#463).
         "export roster",
         # The Pledges download (#1733).
         "export pledges",

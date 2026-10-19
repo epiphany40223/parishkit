@@ -165,8 +165,6 @@ from .report_components import components as report_components
 from .response_dashboard_components import components as dashboard_components
 from .restore_review_components import components as restore_review_components
 from .review_worklist_components import components as review_worklist_components
-from .roster_components import POSTS as ROSTER_POSTS
-from .roster_components import components as roster_components
 from .schedule_list_components import POSTS as SCHEDULE_LIST_POSTS
 from .schedule_list_components import components as schedule_list_components
 from .security_components import POSTS as SECURITY_POSTS
@@ -2236,7 +2234,6 @@ def component_origin():
     responses.update(source_form_components(context, admin))
     responses.update(data_to_fix_components(context, admin))
     responses.update(go_live_families_components(context, admin))
-    responses.update(roster_components(context, admin))
     responses.update(review_worklist_components(context, admin))
     responses.update(pledges_components(context, admin))
     responses.update(financial_components(context, admin))
@@ -2307,7 +2304,6 @@ def component_origin():
         | AUTOMATION_POSTS
         | SIGNED_IN_POSTS
         | FOLLOWUP_POSTS
-        | ROSTER_POSTS
         | PUBLICATION_POSTS
         | INFORMATION_POSTS
         | FIND_FAMILY_POSTS

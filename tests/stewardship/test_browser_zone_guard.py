@@ -111,9 +111,7 @@ SERVER_INSTANTS = {
     # Export stamps ("Downloaded …") in the zone the reader chose.
     "reports/census_changes.py": "export in the chosen zone",
     "reports/limitations.py": "export in the chosen zone",
-    # The roster export stamp is in the chosen zone; resolved_on() names a
-    # stale bulk row's day in the browser zone the dialog posts (the page's
-    # duplicate-row labels are localized by date-format-v1.js, #558).
+    # The roster export stamp is in the chosen zone.
     "reports/ministry_roster_views.py": "export in the chosen zone",
     # Pledges' PDF (#1686), in the zone the download names.
     "reports/pledge_review_views.py": "export in the chosen zone",

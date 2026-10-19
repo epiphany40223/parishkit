@@ -3509,8 +3509,8 @@ unknown email `not_available`, and a key used with another intent `invalid`.
 | `ministry_followup_bulk` | `followup bulk` (PR 11a; see below), the queue's bulk outcome ([#1131](https://github.com/epiphany40223/parishkit/issues/1131)), through the same `workflows.followup` service |
 | `information_update` | Retired by [#1685](https://github.com/epiphany40223/parishkit/issues/1685): the request page has no Save, and decisions are made on the Additional information worklist. `followup information-update ITEM_ID` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11b; see below) stays, through the same `responses.information` service, until #1688 renames the commands; the worklist's own decisions are `information decide` ([#1735](https://github.com/epiphany40223/parishkit/issues/1735)) |
 | `ministry_followup_export` | The queue's Export these requests ([#1157](https://github.com/epiphany40223/parishkit/issues/1157)), the follow-up queue's filtered set with each Member's contact details: `followup export [FILTERS] [--format F] [--timezone Z]` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11c; see below), the page's download through the page's own writer (`ministry_followup_exports.export_body`) |
-| `ministry_followup_roster`, `ministry_roster_bulk` | A resolved join or leave's Entered in ParishSoft tick ([#528](https://github.com/epiphany40223/parishkit/issues/528)), one at a time or several from Roster changes to enter ([#879](https://github.com/epiphany40223/parishkit/issues/879)): `followup roster-entered REQUEST_ID --set\|--clear` and `followup roster-bulk` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11b; see below), through the same `workflows.roster` service |
-| `ministry_roster`, `ministry_roster_export` | Roster changes to enter ([#528](https://github.com/epiphany40223/parishkit/issues/528)): `report roster`, counts ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the rows through `export roster [--show S] [--ministry DUID] [--format F] [--timezone Z]` (PR 8g, [#463](https://github.com/epiphany40223/parishkit/issues/463)), the page's download through the page's own writer (`ministry_roster_views.export_body`) |
+| `ministry_followup_roster` | A resolved join or leave's Entered in ParishSoft tick ([#528](https://github.com/epiphany40223/parishkit/issues/528)), one at a time or several from Ministry requests' To enter by hand Stage ([#879](https://github.com/epiphany40223/parishkit/issues/879); Roster changes to enter, where they were, was folded into Ministry requests in R39): `followup roster-entered REQUEST_ID --set\|--clear` and `followup roster-bulk` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11b; see below), through the same `workflows.roster` service |
+| `ministry_report` (roster rows) | Ministry requests' To enter by hand and Entered by hand Stages, which replaced Roster changes to enter (R39): `report roster`, counts, and its Entered by hand marks through `followup roster-bulk` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the rows through `export roster [--show S] [--ministry DUID] [--format F] [--timezone Z]` (PR 8g, [#463](https://github.com/epiphany40223/parishkit/issues/463)), written by `ministry_roster_views.export_body`, the retired page's writer |
 
 The users commands (#952) call the same service functions as the
 [Users page](../admin-portal/spec.md#portal-user-management), with its
@@ -3725,8 +3725,8 @@ lists them.
 `followup roster-entered`, `followup roster-bulk`, `followup
 information-show` and `followup information-update`
 ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11b) are
-a resolved request's Entered in ParishSoft tick, Roster changes to enter's
-bulk mark, and an Additional information item's page and Save, through the
+a resolved request's Entered in ParishSoft tick, the roster list's bulk
+mark (Ministry requests' To enter by hand Stage since R39), and an Additional information item's page and Save, through the
 pages' own pieces.
 
 - **Roster tick.** `followup roster-entered REQUEST_ID --set|--clear
@@ -3824,8 +3824,9 @@ activity as the download's post does, and reads through the shared report
 read and `roster_rows` with `report roster`'s Show and Ministry choices.
 `--format` and `--timezone` are checked by the page's own
 `ministry_roster_views.export_choice` and written by the page's own
-`ministry_roster_views.export_body` (both of which the page now calls), so
-its files are the page's. A Ministry DUID, format or time zone the page
+`ministry_roster_views.export_body` (the writer of the retired Roster changes
+to enter page, folded into Ministry requests in R39), so its files are
+the retired page's. A Ministry DUID, format or time zone the page
 refuses is `invalid`, reported after the session recheck. It records the
 page's `roster_changes_exported` with the rows in the file, and no
 `admin_cmd_*` event; the row's Entered in ParishSoft tick is `followup

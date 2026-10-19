@@ -43,14 +43,6 @@ EMPTY_PAGES = {
     "/limitations-report-none-searched": (
         "Nothing is at this stage. Choose another Stage",
     ),
-    "/roster-none": ("No roster changes to enter. A change is listed here",),
-    "/roster-none-ministry": (
-        "No roster changes to enter for this Ministry. Set Ministry to",
-    ),
-    "/roster-none-all": ("No roster changes yet. A change is listed here",),
-    "/roster-none-all-ministry": (
-        "No roster changes for this Ministry. Set Ministry to",
-    ),
     "/source-form-none": ("Every Family that can use the portal can open the form,",),
 }
 # The Filters panel beside each empty table with one (#227): its summary and

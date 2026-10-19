@@ -40,7 +40,6 @@ from ..reports import (
     ministry_export_views,
     ministry_followup_exports,
     ministry_followup_views,
-    ministry_roster_views,
     pledge_review_views,
     timeline_views,
     weekly_manual_views,
@@ -160,29 +159,13 @@ patterns = [
         "ministry_followup_update",
     ),
     # The Entered in ParishSoft tick of a resolved join or leave (#528) is a
-    # POST to its request's roster/, and Roster changes to enter, the list
-    # staff work from, sits beside the queue with its downloads under it.
+    # POST to its request's roster/. Staff mark them from Ministry requests'
+    # To enter by hand Stage: Roster changes to enter, the list once here,
+    # was folded into it with no redirect (R39 finding 2).
     _page(
         "reports/ministries/follow-up/<uuid:request_id>/roster/",
         ministry_followup_views.roster,
         "ministry_followup_roster",
-    ),
-    _page(
-        "reports/ministries/follow-up/roster/",
-        ministry_roster_views.page,
-        "ministry_roster",
-    ),
-    _page(
-        "reports/ministries/follow-up/roster/exports/",
-        ministry_roster_views.export,
-        "ministry_roster_export",
-    ),
-    # The list's bulk Mark entered in ParishSoft (#879), posted by its
-    # confirmation dialog.
-    _page(
-        "reports/ministries/follow-up/roster/marks/",
-        ministry_roster_views.bulk,
-        "ministry_roster_bulk",
     ),
     # The directory's fixed actions before its Family pages; a Family is a
     # UUID, so "exports" or "search" can never be taken for one (a unit test
