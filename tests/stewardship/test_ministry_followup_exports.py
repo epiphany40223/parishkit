@@ -31,6 +31,7 @@ from parishkit.stewardship.reports.ministry_followup_exports import (
     _choices,
     queue_document,
 )
+from parishkit.stewardship.reports.ministry_worklist import WorklistQuery
 from parishkit.stewardship.web.tables import report_table
 
 from .test_ministry_table_columns import ministry_page
@@ -261,6 +262,21 @@ def test_request_history_notes_that_values_are_current():
     assert "Request history" not in labels("current")
     note = labels("all")["Request history"]
     assert "not from when each version was submitted" in note
+
+
+def test_the_worklist_view_exports_without_a_history_choice():
+    """Export these requests posts the worklist's view, which has no history
+    choice: the file is built (no AttributeError, which answered 500) and
+    has no Request history note."""
+    built = queue_document(
+        result([]),
+        {},
+        WorklistQuery(),
+        parish_name="P",
+        requested_at=SUBMITTED,
+        zone=CHICAGO,
+    )
+    assert "Request history" not in dict(built.metadata)
 
 
 def test_two_new_members_with_one_name_are_numbered():
