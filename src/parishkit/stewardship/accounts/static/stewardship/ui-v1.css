@@ -1817,20 +1817,18 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
 .stage-chip:is(.status-error, .status-warning) { border-color: var(--status-line); background: var(--status-bg); color: var(--status-ink); }
 /* A worklist's filters are always open (no Filters disclosure), in rows
    that wrap: each field cell is 13rem and does not grow, so the room left
-   at a row's end is kept for the buttons, and Apply filters with Clear
-   filters (.filter-actions) follow the last field, on its row when the row
-   has room, else at the start of the next (R38 finding 9). A wrapping row,
-   not the Filters panel's equal grid columns, because a grid cell can be
-   narrower than the pair with Linux's or WebKit's wider fonts, which then
-   wraps Clear under Apply and adds a row; the pair is never split here
-   unless the page itself is narrower than both. On a phone each field
-   takes the whole row. The reserved hint takes its own row. */
+   at a row's end is kept for the buttons. Apply filters and Clear filters
+   (.filter-actions) are placed by the shared three-step rule like every
+   filter form's (#table-filters rules above, ui-conventions "Clear
+   filters"). A wrapping row, not the Filters panel's equal grid columns,
+   because a grid cell can be narrower than the pair with Linux's or
+   WebKit's wider fonts. On a phone each field takes the whole row. The
+   reserved hint takes its own row. */
 .worklist-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .5rem 1rem; margin-block: .5rem; }
 .worklist-filters label { margin: 0 0 .25rem; font-size: .925rem; }
 .worklist-filters > div:not(.filter-actions) { flex: 0 1 13rem; margin: 0; }
 .worklist-filters > div > :is(input, select) { max-width: none; }
 .worklist-filters > :is(p, [data-complete-hint]) { flex-basis: 100%; margin: 0; }
-.worklist-filters > .filter-actions { flex: 0 1 auto; min-width: 0; margin: 0; }
 @media (max-width: 40rem) { .worklist-filters > div:not(.filter-actions) { flex-basis: 100%; } }
 .button-danger { background: var(--error-border); border-color: var(--error-border); color: var(--paper); }
 .button-danger:not(:disabled):hover { background: var(--error-ink); border-color: var(--error-ink); }

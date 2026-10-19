@@ -9,14 +9,16 @@ out, then tries each step on the pair, and checks that the step the page
 chose is the first that keeps every field's line and the form's height,
 so no row is added while an earlier step fits. Census changes and
 Financial stewardship are Filters panel grids (Pledges to enter shares the
-grid), the Family directory a filter bar in a panel, and Sent mail and the
-Timeline one-row filter bars. Run in the Linux Playwright image too: its
+grid), the Family directory a filter bar in a panel, Sent mail and the
+Timeline one-row filter bars, and the review worklist (#1681) wrapping
+rows of fixed-width fields. Run in the Linux Playwright image too: its
 DejaVu fonts are wider (Sent mail's bar did not fit at 1280 px there, t32).
 """
 
 import pytest
 
 from .census_components import AUTOMATIC
+from .review_worklist_components import PATH as WORKLIST
 from .timeline_components import ADMIN as TIMELINE
 from .waits import eventually
 
@@ -30,6 +32,7 @@ PAGES = [
     "/family-directory",
     "/deliveries-names",
     TIMELINE,
+    WORKLIST,
 ]
 WIDTHS = [390, 768, 1280, 1440]
 STEPS = ("beside", "stacked", "row")
