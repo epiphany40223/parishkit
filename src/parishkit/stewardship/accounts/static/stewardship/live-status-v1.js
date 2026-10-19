@@ -119,6 +119,25 @@
 // and coming times worded against today (time[data-time-day]) in mirror
 // targets outside the region are kept up to date as the region's are.
 //
+// A region marked [data-live-slow-every="<ms>"] has a part that is costly to
+// check (System health's two page-load tiles, #1790): its status read does
+// not compute that part, but echoes what the address says. The first check
+// after that long since watching began, or since the last such check that
+// was answered, adds slow=1 to the address, and that answer checks the part
+// again. A hidden tab makes no check at all, so it never asks; the first
+// check once it is shown asks if the time has passed. A slow answer may
+// carry a new data-live-url (the address with the fresh results), which
+// later checks read: the region's address is read at each check, and a
+// fresh region without one keeps the address it has. Its copies of the
+// costly part are template[data-live-mirror] elements marked
+// data-live-mirror-lasting: they are taken out of the region (the page's
+// when watching starts, each answer's as it arrives), so they never count
+// as a change to it, and the last such copy stays in effect through the
+// checks that carry none, so a target held back while the reader points at
+// it or uses it still catches up. A slow answer's copies and address are
+// taken even while the reader holds the region's swap, so a held answer
+// never makes the next checks ask again.
+//
 // An in-place refresh (ui-v1.js, #519) can replace the region itself, such
 // as when Dismiss on an integration's settings page swaps in the page's
 // fresh status. The old region's watcher then stops (its page-wide
@@ -174,6 +193,11 @@
   // The copy each mirror target last took (see mirror()), kept across a
   // restart's new watcher, so a target that was held still catches up.
   const mirrored = new WeakMap();
+  // Each region's lasting mirror copies by name (data-live-mirror-lasting),
+  // and when its last slow check (data-live-slow-every) was answered, both
+  // kept across a restart's new watcher.
+  const lastingCopies = new WeakMap();
+  const slowChecked = new WeakMap();
   // Each region's way to check again at once (data-live-recheck).
   const restarts = new WeakMap();
   // The regions that said they are not current (data-live-not-current),
@@ -204,11 +228,37 @@
     const signal = listening.signal;
 
     const name = region.getAttribute("data-live-status");
-    // A page whose own view counts as activity names a passive status URL to
-    // read instead (same-origin paths only); otherwise it re-reads itself.
-    const own = region.getAttribute("data-live-url");
-    const source = own && own.startsWith("/") && !own.startsWith("//")
-      ? own : window.location.href;
+    // A costly part's slow pace (see the header), and the copies of it that
+    // stay in effect between slow checks.
+    const slowEvery = Number(region.getAttribute("data-live-slow-every"));
+    if (!slowChecked.has(region)) slowChecked.set(region, Date.now());
+    if (!lastingCopies.has(region)) lastingCopies.set(region, new Map());
+    const lasting = lastingCopies.get(region);
+
+    function takeLasting(node) {
+      // Move ``node``'s lasting copies into ``lasting`` (see the header).
+      node.querySelectorAll("template[data-live-mirror-lasting]").forEach((source) => {
+        lasting.set(source.getAttribute("data-live-mirror"), document.importNode(source, true));
+        source.remove();
+      });
+    }
+    takeLasting(region);
+
+    function address() {
+      // The address to read now, and whether it asks for a slow check. A
+      // page whose own view counts as activity names a passive status URL
+      // to read instead (same-origin paths only); otherwise it re-reads
+      // itself. It is read each time, because a slow answer can change it.
+      const own = region.getAttribute("data-live-url");
+      const base = own && own.startsWith("/") && !own.startsWith("//")
+        ? own : window.location.href;
+      if (!(slowEvery > 0) || Date.now() - slowChecked.get(region) < slowEvery) {
+        return { url: base, slow: false };
+      }
+      const url = new URL(base, window.location.href);
+      url.searchParams.set("slow", "1");
+      return { url: url.pathname + url.search, slow: true };
+    }
     // When watching started, or (for a region with its own limit) when it
     // last brought new content.
     let started = Date.now();
@@ -514,8 +564,14 @@
       //
       // A target inside a kept element (data-live-keep) is the reader's, not
       // the status, so it is mirrored too, as one outside the region is.
+      //
+      // The lasting copies (data-live-mirror-lasting) are kept outside the
+      // region and used alongside its own (see the header).
+      const sources = new Map(lasting);
       region.querySelectorAll("template[data-live-mirror]").forEach((source) => {
-        const mirrorName = source.getAttribute("data-live-mirror");
+        sources.set(source.getAttribute("data-live-mirror"), source);
+      });
+      sources.forEach((source, mirrorName) => {
         const html = source.innerHTML;
         document.querySelectorAll("[data-live-mirror-target]").forEach((target) => {
           if (target.getAttribute("data-live-mirror-target") !== mirrorName) return;
@@ -564,7 +620,7 @@
     // the first poll would replace an unchanged button, and a click landing
     // just then (WebKit) could be lost with the old button. A target an
     // earlier watcher of this page already filled keeps what it took.
-    region.querySelectorAll("template[data-live-mirror]").forEach((source) => {
+    [...region.querySelectorAll("template[data-live-mirror]"), ...lasting.values()].forEach((source) => {
       const mirrorName = source.getAttribute("data-live-mirror");
       document.querySelectorAll("[data-live-mirror-target]").forEach((target) => {
         if (target.getAttribute("data-live-mirror-target") === mirrorName
@@ -697,6 +753,7 @@
       if (stopped || gone() || inFlight || document.visibilityState !== "visible") return;
       inFlight = true;
       asked = Date.now();
+      const { url: source, slow } = address();
       try {
         const response = await fetch(source, {
           credentials: "same-origin",
@@ -751,6 +808,15 @@
         if (!fresh) throw new Error("status region missing");
         failures = 0;
         say("");
+        // A slow answer's lasting copies and address are taken at once,
+        // even while the swap below is held, and the slow check counts from
+        // when it was sent (see the header).
+        takeLasting(fresh);
+        if (slow) {
+          const own = fresh.getAttribute("data-live-url");
+          if (own) region.setAttribute("data-live-url", own);
+          slowChecked.set(region, asked);
+        }
         if (busy()) {
           // Wait for the Admin; check again later without replacing their
           // input. "Last checked" stays put: the region was not brought up
