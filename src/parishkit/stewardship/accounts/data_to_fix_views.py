@@ -99,8 +99,9 @@ SECTIONS = (
     ),
     # Refused addresses: the delivery views' admission (BACKGROUND_WORK).
     Section("refused_addresses", Capability.BACKGROUND_WORK, "delivery_refusals"),
-    # Families no mail can reach: Home's count, which is the directory's
-    # "neither" reach selection; the directory needs a campaign.
+    # Families no mail can reach: the directory's "neither" reach
+    # selection (Home no longer shows it, #1673); the directory needs a
+    # campaign.
     Section(
         "unreachable_families",
         Capability.FAMILY_CODES,
@@ -187,7 +188,7 @@ def _refused_addresses(principal, campaign_id):
 
 
 def _unreachable_families(principal, campaign_id):
-    """Home's count of Families with no deliverable email and no mailing address."""
+    """This page's count of Families with no deliverable email and no address."""
     from parishkit.stewardship.reports.read_admission import admit_report_read
 
     from .admin_dashboard import unreachable_families
