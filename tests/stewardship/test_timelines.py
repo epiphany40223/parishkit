@@ -676,36 +676,54 @@ def test_last_portal_action_ignores_what_an_email_reader_makes():
 
 
 def test_hub_tabs_follow_the_campaign_modules():
-    """Timeline first; each content tab that applies is unavailable for now."""
+    """Timeline, Family, the Members, then the tabs not built yet (#1678)."""
+    from parishkit.stewardship.reports.hub_census import HubCensus, Subject
     from parishkit.stewardship.reports.timeline_views import hub_sections, hub_tabs
 
     assert hub_sections({"modules": ["census", "financial", "ministry"]}) == (
         "family",
+        "members",
         "financial",
         "other",
     )
     assert hub_sections({"modules": ["financial"]}) == ("financial",)
     assert hub_sections({"modules": ["census"], "additional_information": True}) == (
         "family",
+        "members",
         "other",
     )
-    assert hub_sections({"modules": ["ministry"]}) == ("other",)
+    assert hub_sections({"modules": ["ministry"]}) == ("members", "other")
     path = reverse("admin:timeline", args=[FAMILY])
-    tabs = hub_tabs(path, {}, ("family", "other"))
-    assert [(tab.key, str(tab.unavailable)) for tab in tabs.tabs] == [
-        ("timeline", ""),
-        ("family", "Coming soon"),
-        ("other", "Coming soon"),
+    members = (Subject("member-1", "Adams, Ann"), Subject("member-2", "Adams, Bo"))
+    census = HubCensus(Subject("family", "Family"), members)
+    tabs = hub_tabs(path, {}, ("family", "members", "other"), census)
+    assert [(tab.key, str(tab.label), str(tab.unavailable)) for tab in tabs.tabs] == [
+        ("timeline", "Timeline", ""),
+        ("family", "Family", ""),
+        ("member-1", "Adams, Ann", ""),
+        ("member-2", "Adams, Bo", ""),
+        ("other", "Cannot participate and Additional information", "Coming soon"),
     ]
     assert tabs.selected == "timeline" and tabs.tabs[0].href == path + "?tab=timeline"
+    assert hub_tabs(path, {"tab": "member-2"}, ("members",), census).selected == (
+        "member-2"
+    )
+    # Before any response the Family tab is still drawn, with no Member tabs.
+    tabs = hub_tabs(path, {"tab": "family"}, ("family", "members"))
+    assert [tab.key for tab in tabs.tabs] == ["timeline", "family"]
+    assert tabs.selected == "family"
+    # Without census, Member tabs wait for Ministry's slice: named, unavailable.
+    ministry = HubCensus(members=members, census=False)
+    tabs = hub_tabs(path, {"tab": "member-1"}, ("members", "other"), ministry)
+    assert [str(tab.unavailable) for tab in tabs.tabs[1:3]] == ["Coming soon"] * 2
     # An unavailable or unknown tab in the address opens the Timeline tab.
-    for asked in ("family", "member-1", "nonsense"):
-        assert hub_tabs(path, {"tab": asked}, ("family",)).selected == "timeline"
+    for asked in ("member-1", "family", "nonsense"):
+        assert hub_tabs(path, {"tab": asked}, ("other",)).selected == "timeline"
 
 
 def test_the_page_is_a_hub_with_the_timeline_tab():
     """The header strip sits above the tabs; the Timeline panel holds the rest."""
-    page = render(TIMELINE, sections=("family", "financial", "other"))
+    page = render(TIMELINE, sections=("financial", "other"))
     strip = page.index("Last portal action:")
     row = page.index('role="tablist" aria-label="Family information"')
     assert page.index("<h1>") < strip < row
@@ -721,22 +739,24 @@ def test_the_page_is_a_hub_with_the_timeline_tab():
         f'href="/admin/reports/families/{FAMILY}/?tab=timeline'
         '#family-tabs-panel-timeline"'
     ) in page
-    assert page.count('aria-disabled="true" tabindex="-1"') == 3
-    for label in ("Family", "Financial", "Cannot participate and Additional"):
+    assert page.count('aria-disabled="true" tabindex="-1"') == 2
+    for label in ("Financial", "Cannot participate and Additional"):
         assert f">{label}" in page, label
-    assert page.count('role="tooltip">Coming soon</span>') == 3
+    assert page.count('role="tooltip">Coming soon</span>') == 2
     # A campaign without any content tab: Timeline alone.
     page = render(TIMELINE)
     assert "Coming soon" not in page and page.count('role="tab"') == 1
     # Staff get the tabs, the summary and the Last portal action
     # (Administrator decision, 2026-10-18), from the portal lines alone.
     portal = tuple(line for line in TIMELINE.events if line.portal)
-    page = render(Timeline(TIMELINE.summary, portal), full=False, sections=("family",))
+    page = render(
+        Timeline(TIMELINE.summary, portal), full=False, sections=("financial",)
+    )
     assert 'id="family-tabs-panel-timeline"' in page and "Coming soon" in page
     assert (
         "Last portal action: "
         f'Submitted a response, <time datetime="{SECOND.at.isoformat()}"'
     ) in page
     assert 'id="table-filters"' not in page
-    page = render(Timeline(TIMELINE.summary), full=False, sections=("family",))
+    page = render(Timeline(TIMELINE.summary), full=False, sections=("financial",))
     assert "Last portal action: None recorded</p>" in page

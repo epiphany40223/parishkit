@@ -8,8 +8,11 @@ sorted-query form the fixture server also matches), so the script's fetch is
 an ordinary page request and the swapped-in region is the real template
 output, plus Staff's reduced view and pages whose Open form is unavailable.
 Every page is the Family hub (#1678) of a campaign with census, Financial and
-Ministry stewardship: the header strip, then the Timeline tab and the three
-content tabs not built yet, drawn unavailable ("Coming soon").
+Ministry stewardship: the header strip, then the Timeline tab, the Family tab
+and one tab per Member (slice 2, from the census unit test's response), and
+the two content tabs not built yet, drawn unavailable ("Coming soon"). The
+fixtures also serve the hub at each census tab's own address, which a tab's
+first choice fetches.
 """
 
 from datetime import timedelta
@@ -18,6 +21,7 @@ from uuid import UUID
 
 from django.template.loader import render_to_string
 
+from parishkit.stewardship.reports.hub_census import shape
 from parishkit.stewardship.reports.timeline_views import (
     TimelineQuery,
     page_context,
@@ -26,6 +30,7 @@ from parishkit.stewardship.reports.timeline_views import (
 from parishkit.stewardship.reports.timelines import Timeline
 from parishkit.stewardship.web.dates import using
 
+from ..test_hub_census import ANSWERS, NAMES, ROWS
 from ..test_response_metrics import START
 from ..test_timelines import CAMPAIGN, FAMILY, IDENTITY, TIMELINE
 from .automation_components import canonical
@@ -75,8 +80,13 @@ UNAVAILABLE = "/timeline-unavailable"
 # campaign work holds exports: Open form and the export buttons are
 # unavailable, each named by its reason (#1331).
 LOCKED = "/timeline-locked"
-# The hub's content tabs for a campaign with every module (#1678).
-HUB = ("family", "financial", "other")
+# The hub's content sections for a campaign with every module (#1678), and
+# its census tabs, from the census unit test's response.
+HUB = ("family", "members", "financial", "other")
+CENSUS = shape(ANSWERS, NAMES, ROWS)
+# The census tabs' own addresses, as each tab's link carries them.
+CENSUS_TABS = ("family", "member-1", "member-2", "member-7")
+TAB = {key: ADMIN + "?tab=" + key for key in CENSUS_TABS}
 # The export form's values, as the view's ``export_context`` gives them.
 EXPORT = {
     "url": "/timeline-export",
@@ -134,10 +144,19 @@ def components(context, admin):
             {"full": True, "eligible": False, "export": EXPORT | {"mutable": False}},
         ),
     }
+    pages |= {
+        path: (TIMELINE, {"full": True, "parameters": {"tab": key}})
+        for key, path in TAB.items()
+    }
     responses = {}
     with using("us_long"):
         for path, (timeline, options) in pages.items():
             # Administrators and Staff both may see Family codes.
-            options = {"show_codes": True, "export": EXPORT, "sections": HUB} | options
+            options = {
+                "show_codes": True,
+                "export": EXPORT,
+                "sections": HUB,
+                "census": CENSUS,
+            } | options
             responses[path] = ("text/html", render(context, admin, timeline, **options))
     return responses
