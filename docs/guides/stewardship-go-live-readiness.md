@@ -69,7 +69,11 @@ verifies tenant and selected campaign/fund window, and uses the configured
 source-staleness threshold (default 30 minutes) from the full load's start.
 A newer delta does not extend that deadline. Missing or stale evidence requires
 a new full refresh before cleanup can begin. This is distinct from routine
-nightly full-refresh scheduling.
+nightly full-refresh scheduling. Since
+[#1812](https://github.com/epiphany40223/parishkit/issues/1812), stale
+evidence no longer blocks the Go live page's Check or Start go-live, which
+queues the go-live's own full refresh; only cleanup started without one (the
+local seeding tool) still needs a fresh full refresh.
 
 Focused validation so far: 20 pure impact cases (including a 5,000-Family stream),
 three PostgreSQL Family-reader cases (including page boundaries and actual web

@@ -184,11 +184,17 @@ def start_cleanup(
             raise StaleRecordError("Review current readiness and inventory again.")
         _load(request, preview_token)
         instant = database_now()
+        # With an attempt, a stale full refresh is waived (#1812): attempt 1
+        # queues the go-live's own full refresh in this transaction, and
+        # every check after Start requires that one. Without one (the local
+        # seeding tool, which confirms at once) the full refresh must still
+        # be younger than ``source_stale_seconds``.
         if (
-            inputs.source.expires_at is None
-            or instant >= inputs.source.expires_at
-            or instant >= inputs.campaign.active_configuration.ends_at
-        ):
+            not attempt
+            and (
+                inputs.source.expires_at is None or instant >= inputs.source.expires_at
+            )
+        ) or instant >= inputs.campaign.active_configuration.ends_at:
             raise StaleRecordError(
                 "Source readiness or the campaign interval expired during preview."
             )
