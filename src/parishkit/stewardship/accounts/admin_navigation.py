@@ -823,12 +823,12 @@ FLOWS = {
         ("review", _("Review")),
         ("send", _("Send and follow")),
     ),
-    # Going live: check readiness, clean up Testing data, prepare Family
-    # links, confirm Production, then follow its activation.
+    # Going live: the Go live page's four steps (go_live_check.STEPS), shown
+    # by Confirm Production and Production activation until #1585's later
+    # slices give them the Go live step bar.
     "go_live": (
-        ("readiness", _("Check readiness")),
-        ("cleanup", _("Testing cleanup")),
-        ("links", _("Family links")),
+        ("check", _("Check")),
+        ("prepare", _("Prepare")),
         ("confirm", _("Confirm Production")),
         ("activate", _("Activation")),
     ),

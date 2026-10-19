@@ -1328,10 +1328,11 @@ Ministries), Campaign settings, New user and Edit user
 (whose review and Apply are in the
 [review dialog](../ui-conventions/spec.md#review-dialog), so the page
 stays at Make changes) and every change's status
-page; going live's pages after Check (Testing cleanup, Family links, Confirm
-Production and Activation, numbered from Check readiness, until #1585's later
-slices give them the [Go live page](#go-live-page)'s step bar; Check shows
-only that bar, and Testing submissions none); sending to chosen Families (Choose Families, Review,
+page; going live's pages after Prepare (Confirm Production and Production
+activation, numbered as the [Go live page](#go-live-page)'s four steps,
+Check, Prepare, Confirm Production and Activation, until #1585's later
+slices give them its step bar; Check and Prepare show only that bar, and
+Testing submissions none); sending to chosen Families (Choose Families, Review,
 Send and follow); and report exports (Choose report, Prepare file, Download).
 Campaign settings with nothing open to change (a closed campaign's) is not
 in a flow. Import Ministry

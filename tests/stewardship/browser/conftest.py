@@ -2123,7 +2123,7 @@ def component_origin():
                 },
                 "receipt": {"created_at": NOW},
                 "demand": None,
-                # The last of the five go-live steps, the longest indicator.
+                # The last of the four go-live steps, the longest indicator.
                 "admin_chrome": admin
                 | {
                     "breadcrumbs": [
@@ -2132,9 +2132,8 @@ def component_origin():
                         {"label": "Production activation", "url": None},
                     ],
                     "flow_steps": [
-                        {"label": "Check readiness", "state": "done"},
-                        {"label": "Testing cleanup", "state": "done"},
-                        {"label": "Family links", "state": "done"},
+                        {"label": "Check", "state": "done"},
+                        {"label": "Prepare", "state": "done"},
                         {"label": "Confirm Production", "state": "done"},
                         {"label": "Activation", "state": "current"},
                     ],
