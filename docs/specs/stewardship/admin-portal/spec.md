@@ -4385,11 +4385,12 @@ outcome.
    - **No attempt.** A go-live started before this step existed has no
      attempt of its own; the primary is Refresh and prepare again.
    - **Go-live is no longer in progress** (stopped, here or by another
-     Administrator, or Production confirmed): the step bar shows Prepare
-     unavailable, the page says so and its primary opens Check (or
-     Production activation); a page that was watching the step opens it by
-     itself. Check then says "Another Administrator stopped go-live." when
-     the stop was another Administrator's, above "Go-live stopped at …".
+     Administrator): the step bar shows Prepare unavailable, the page says
+     so and its primary opens Check; a page that was watching the step
+     opens it by itself. Check then says "Another Administrator stopped
+     go-live." when the stop was another Administrator's, above "Go-live
+     stopped at …". Once Production is confirmed, the page shows the
+     confirmed state described after these steps instead.
    - **Controls without page age.** Retry, Refresh and prepare again and
      Stop go-live carry a control signed without a time that names exactly
      what the step shows (the failed task and its version, the attempt
@@ -4443,8 +4444,10 @@ outcome.
      ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)),
      and the server refuses Apply without it. A refusal (below) is shown
      inside the dialog, names the change and offers to review again. Apply
-     checks the typed word, runs the public web address check again, builds the preview
-     again and compares its inputs digest and target with the Review's;
+     checks the typed word, runs the public web address check again,
+     builds the preview again and compares its inputs digest, target and
+     shown counts with the Review's (the Review signs the counts it showed,
+     since a send that falls due changes them without changing any input);
      only then is the confirmation token minted and Production confirmed.
      A resend of an Apply that already confirmed opens Activation (its
      request key makes the confirmation happen once).
@@ -4471,9 +4474,17 @@ outcome.
      and resume mail and Sent mail. Apply returns the campaign to a
      Testing draft and opens Check with a status line.
 
-After Production is confirmed, the Check, Prepare and Confirm Production
-addresses are [unavailable menu pages](../ui-conventions/spec.md#unavailable-menu-pages)
-that point to Production activation, as Check does today.
+After Production is confirmed, the Check address is an
+[unavailable menu page](../ui-conventions/spec.md#unavailable-menu-pages)
+that points to Production activation. The Prepare and Confirm Production
+addresses instead show a confirmed state: "Production is confirmed." (or
+"Another Administrator already confirmed Production."), the line
+"Production activation shows how going live is proceeding.", and one
+primary, **Open Production activation**, which a page that was watching
+the step follows by itself; no other control. Their step bar shows Check,
+Prepare and Confirm Production completed ("3 of 4 steps completed") and
+Activation in progress, linked to Production activation; no step says to
+start go-live first.
 
 **Server checks instead of page age.** No step refuses a form for the time it
 has been open. The preview shown stays valid until something it shows
@@ -4487,6 +4498,9 @@ it and shows the updated step, never "Check this value.":
 
 - "ParishSoft data changed since this preview. Review the updated preview,
   then confirm." when the inputs digest differs;
+- "Emails fell due since this preview, so the counts changed. Review the
+  updated preview." when the inputs are the same but the counts shown
+  differ, because a mail schedule's send came due in between;
 - "The campaign start time has passed, so it will become active at once.
   Review the updated preview." when the target changes from `scheduled` to
   `active`;
