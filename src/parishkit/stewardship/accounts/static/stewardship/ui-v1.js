@@ -4833,9 +4833,13 @@
       return false;
     }
     onRecorded?.();
-    // Follow the change until it is applied (a passive status read).
+    // Follow the change until it is applied (a passive status read). A
+    // review dialog that leaves for the page Apply's answer redirected to
+    // (data-review-redraw="leave": Start go-live, #1585) follows nothing:
+    // that page follows its own work.
     const statusUrl = answer.response.url;
-    const {status, outcome} = await settleChange(statusUrl, changeStatus(answer.text));
+    const {status, outcome} = await settleChange(statusUrl,
+      dialog.dataset.reviewRedraw === "leave" ? null : changeStatus(answer.text));
     if (outcome === "waiting") {
       refuseConfirm(state, "The change is saved but not applied yet, so the list is unchanged for now.",
         {href: statusUrl, text: "See the change's status"});
@@ -5376,6 +5380,15 @@
     dialog.querySelector("[data-confirm-status]").textContent = dialog.dataset.applied || "Applied.";
     const text = [review.done, fillIn(dialog.dataset.appliedAt || "Applied at {time}.",
       {time: clockTime()})].filter(Boolean).join(" ");
+    // A dialog marked data-review-redraw="leave" (Start go-live, #1585)
+    // ends on the page Apply's answer redirected to, opened as a page: its
+    // address, not this one, is then the history entry a reload shows.
+    if (dialog.dataset.reviewRedraw === "leave" && sameOrigin(answer.response.url)) {
+      state.done = true;
+      dialog.close();
+      window.location.assign(answer.response.url);
+      return;
+    }
     const own = review.back && sameOrigin(review.back) ? review.back : "";
     const back = own || dialog.dataset.reviewReturn;
     const outcome = (own && review.backOutcome) || state.form.dataset.reviewOutcome || dialog.dataset.reviewOutcome || "";

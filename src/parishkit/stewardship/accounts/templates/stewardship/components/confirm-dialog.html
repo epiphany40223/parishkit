@@ -89,7 +89,11 @@
     itself, which then holds every region the change redraws, without
     reading the page again: System health's actions (#1356), whose page
     read is audited.
-{% endcomment %}{% if review %}<dialog id="{{ dialog_id }}" class="confirm-dialog review-dialog" aria-labelledby="{{ dialog_id }}-title"{% if describedby %} aria-describedby="{{ describedby }}"{% endif %} data-review-dialog data-confirm-fallback="{{ fallback }}" data-review-return="{{ return_url|default:'' }}"{% if redraw_answer %} data-review-redraw="answer"{% elif redraw_body %} data-review-redraw="body"{% endif %} data-review-outcome="{{ outcome_id }}" data-working="{% translate 'Applying…' %}" data-applied="{% translate 'Applied.' %}" data-applied-at="{% translate 'Applied at {time}.' %}">
+  - redraw_leave=True ends on the page Apply's answer redirected to, opened
+    as an ordinary page load, without following a change status first: the
+    Go live page's Start go-live (#1585), whose Apply opens the step in
+    progress, a page of its own that follows its own work.
+{% endcomment %}{% if review %}<dialog id="{{ dialog_id }}" class="confirm-dialog review-dialog" aria-labelledby="{{ dialog_id }}-title"{% if describedby %} aria-describedby="{{ describedby }}"{% endif %} data-review-dialog data-confirm-fallback="{{ fallback }}" data-review-return="{{ return_url|default:'' }}"{% if redraw_answer %} data-review-redraw="answer"{% elif redraw_body %} data-review-redraw="body"{% elif redraw_leave %} data-review-redraw="leave"{% endif %} data-review-outcome="{{ outcome_id }}" data-working="{% translate 'Applying…' %}" data-applied="{% translate 'Applied.' %}" data-applied-at="{% translate 'Applied at {time}.' %}">
 <h2 id="{{ dialog_id }}-title" tabindex="-1" data-review-title>{{ title }}</h2>
 <div class="dialog-body" tabindex="0" role="region" aria-labelledby="{{ dialog_id }}-title" data-review-body></div>
 <form method="post" action="{{ apply_url }}" data-review-apply>{% csrf_token %}<input type="hidden" name="action" value="{{ apply_action|default:'confirm' }}"></form>
