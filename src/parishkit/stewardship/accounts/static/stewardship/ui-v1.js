@@ -4347,6 +4347,10 @@
         return;
       }
       confirming = null;
+      // A key's confirmation names the key's last four characters: they
+      // go with the dialog however it closes (Apply, Cancel, Escape), so
+      // the key stays only in its field and Apply's one request (#1568).
+      if (state?.review?.key) dialog.querySelector("[data-review-body]")?.replaceChildren();
       if (!state || state.done) return;
       const back = state.opener.isConnected ? state.opener
         : document.getElementById(dialog.dataset.confirmFallback || "");
@@ -4791,6 +4795,10 @@
   // none, every region is redrawn from the form's region's data-refresh-url
   // (or, for a dialog marked data-review-redraw="answer", from the address
   // Apply's answer ended on).
+  // A form may name the region Apply redraws as its own in
+  // data-review-region (Finish switching on an integration's status line
+  // redraws the settings editor too, since the switch may change settings
+  // the form shows, #1568).
   // Either way the page's reserved status line then says what was applied
   // and when, and takes focus. That line is the one the form that opened
   // the dialog names with its own data-review-outcome, else the dialog's:
@@ -4801,14 +4809,36 @@
   // redraw, so the redraw never wipes it. Across a page change that line's text waits in sessionStorage,
   // for that address only and for a minute: it is the review's short
   // sentence and a time, never an answer, a value or a credential.
+  //
+  // A form marked data-review-key="<field>" holds a secret (an
+  // integration's new key, #1568; UX conventions, "Review dialog", its
+  // recorded exception). While that field holds a value, Review posts the
+  // form without it, with key_review=yes, so the server reviews everything
+  // else and never receives the key at Review. Its answer, marked
+  // data-review-key, is a confirmation with no signed preview: its
+  // [data-review-key-tail] sentence takes the key's last four characters,
+  // read here from the field ({tail}; the server never draws any part of a
+  // key), and Apply posts the page's own form, key included, to its own
+  // address (acceptKey). That answer is the page again: a refusal for a
+  // value (400, drawing the form) closes the dialog and marks the field,
+  // any other is shown in the dialog, and otherwise the dialog closes and
+  // the page's regions are redrawn from it, the form's own included. The
+  // key's slow check is then followed by the page's status line
+  // (live-status-v1.js), not the dialog.
+  //
   // A value made only of what Python's str.strip() removes (str.isspace:
   // U+0085 and U+001C-U+001F are, U+FEFF is not; JavaScript's trim() and \s
   // differ on all three). The server decides "a key was pasted" with
   // str.strip() (integration_views), and the key field's own cleaning strips
   // the same way, so the page and the server always take the same path for
-  // a pasted key (#750). test_review_dialog checks this class against
+  // a pasted key (#750, #1568). test_review_dialog checks this class against
   // str.isspace for every code point.
   const SERVER_SPACE = /^[\t-\r\x1c-\x20\x85\xa0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]*$/;
+  // The secret field a data-review-key form holds a value in, or null.
+  const keyField = (form) => {
+    const field = form.dataset.reviewKey && form.elements.namedItem(form.dataset.reviewKey);
+    return field && "value" in field && !SERVER_SPACE.test(field.value) ? field : null;
+  };
   const REVIEW_OUTCOME = "pk-review-outcome";
   const REVIEW_OUTCOME_MS = 60000;
   const REVIEW_UNREACHABLE = "The server could not be reached, so nothing was reviewed. Try again in a moment.";
@@ -5004,9 +5034,19 @@
       button.removeAttribute("data-recorded");
       button.classList.remove("is-busy");
     });
-    dialog.querySelector("[data-confirm-accept]").hidden = !token;
+    // A key's confirmation (data-review-key) has no preview: its Apply
+    // posts the form itself. Its sentence names the key by its last four
+    // characters, from the field, as text.
+    const key = Boolean(answer?.hasAttribute("data-review-key") && keyField(form));
+    if (key) {
+      const tail = keyField(form).value.trim().slice(-4);
+      dialog.querySelectorAll("[data-review-body] [data-review-key-tail]").forEach((line) => {
+        line.textContent = fillIn(line.dataset.reviewKeyTail, {tail});
+      });
+    }
+    dialog.querySelector("[data-confirm-accept]").hidden = !token && !key;
     confirming = {dialog, opener, form, busy: false, done: false,
-      review: {apply, done: answer?.getAttribute("data-review-done") || "",
+      review: {apply, key, done: answer?.getAttribute("data-review-done") || "",
         // An answer may name where Apply's applied change leads and that
         // page's status line (Create the campaign opens the next Campaign
         // setup step, #1404), in place of the dialog's own.
@@ -5024,6 +5064,11 @@
     // lost when Apply redraws the form's region: no "not kept" line then.
     editedSince.delete(form.id);
     const data = new FormData(form, submitter || undefined);
+    // A secret is never part of a Review (data-review-key, #1568).
+    if (keyField(form)) {
+      data.delete(form.dataset.reviewKey);
+      data.append("key_review", "yes");
+    }
     // A form that sends a file (Campaign images' and Parish logos' uploads)
     // posts multipart, as it would natively; any other posts its fields
     // URL-encoded.
@@ -5094,14 +5139,8 @@
       || !form.matches("form[data-review-open]")) return;
     // A submission that is no Review takes the form's other way: a button
     // marked data-review-skip (Off-site backups' Test access, which posts in
-    // place), or any submission while the field a form names in
-    // data-review-native holds a value (an integration's pasted new key,
-    // which submits natively: its slow install is followed on the page, the
-    // recorded exception of UX conventions "Review dialog", #456). A value
-    // holds something unless it is all SERVER_SPACE, as the server reads it.
+    // place). A pasted key is reviewed without it (data-review-key, above).
     if (event.submitter?.hasAttribute("data-review-skip")) return;
-    const native = form.dataset.reviewNative && form.elements.namedItem(form.dataset.reviewNative);
-    if (native && "value" in native && !SERVER_SPACE.test(native.value)) return;
     const dialog = document.getElementById(form.dataset.reviewOpen);
     if (!(dialog instanceof HTMLDialogElement) || !sameOrigin(formUrl(form))) return;
     event.preventDefault();
@@ -5109,8 +5148,57 @@
     if (reviewing.has(form)) return;
     prepareReview(form, dialog, event.submitter);
   }, true);
+  // The region a review's Apply redraws as its form's own: the one the form
+  // names in data-review-region, else the one it is in.
+  const reviewRegion = (form) => (form.dataset.reviewRegion
+    && document.getElementById(form.dataset.reviewRegion)) || form.closest(REGIONS);
+  // Apply of a key's confirmation (data-review-key, #1568): the page's own
+  // form, key included, posted once to its own address without a page
+  // load; the dialog cannot be dismissed until the answer. The key stays
+  // only in the form's field and this one request.
+  const acceptKey = async (state) => {
+    const {dialog, form, review} = state;
+    state.busy = true;
+    const accept = dialog.querySelector("[data-confirm-accept]");
+    accept.setAttribute("aria-disabled", "true");
+    dialog.querySelector("[data-confirm-cancel]").disabled = true;
+    dialog.querySelector("[data-confirm-error]").hidden = true;
+    dialog.querySelector("[data-confirm-status]").textContent = dialog.dataset.working || "Working…";
+    let answer;
+    try {
+      answer = await readPage(formUrl(form), {method: "POST", body: new URLSearchParams(new FormData(form))});
+    } catch {
+      // It may have reached the server: never send it again.
+      refuseConfirm(state, CONFIRM_UNREACHABLE);
+      return;
+    }
+    const parsed = new DOMParser().parseFromString(answer.text, "text/html");
+    if (answer.response.status === 400 && form.id && parsed.getElementById(form.id)) {
+      // Refused for a value: back to the form, which keeps what was typed.
+      state.done = true;
+      dialog.close();
+      showFieldErrors(form, parsed);
+      return;
+    }
+    if (!answer.response.ok || !sameOrigin(answer.response.url || formUrl(form))) {
+      const markup = refusalMarkup(answer.text);
+      refuseConfirm(state, markup || refusalText(answer.response.status, answer.text));
+      return;
+    }
+    // Staged: the answer is the page, its status line saying the key is
+    // being installed. Every region is redrawn from it, the form's own too.
+    state.done = true;
+    dialog.close();
+    redrawFrom(parsed, reviewRegion(form));
+    const outcome = form.dataset.reviewOutcome || dialog.dataset.reviewOutcome || "";
+    if (!showOutcome(outcome, review.done)) announce(review.done);
+  };
   const acceptReview = async (state) => {
     const {dialog, review} = state;
+    if (review.key) {
+      acceptKey(state);
+      return;
+    }
     const accept = dialog.querySelector("[data-confirm-accept]");
     const recorded = () => {
       // Recorded: Apply is done with, so it goes, keeping its space; the
@@ -5145,7 +5233,7 @@
     // A dialog marked data-review-redraw="body" is redrawn from Apply's
     // answer itself, which holds the regions it changed: System health,
     // whose own address records a page view each time it is read (#1356).
-    const region = state.form.closest(REGIONS);
+    const region = reviewRegion(state.form);
     const fromAnswer = dialog.dataset.reviewRedraw === "answer"
       && sameOrigin(answer.response.url) ? answer.response.url : "";
     const fresh = dialog.dataset.reviewRedraw === "body"

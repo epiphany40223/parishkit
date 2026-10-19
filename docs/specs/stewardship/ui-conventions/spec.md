@@ -1467,12 +1467,12 @@ the campaign wizard in #1404 PR 4).
   enctype is `multipart/form-data` (an upload editor's file), otherwise
   URL-encoded. A form's other submit button marked `data-review-skip`
   (Off-site backups' Test access) is no Review: it takes the form's other
-  way. A form marked `data-review-native="<field>"` submits natively,
-  without the dialog, while that field holds a value: an integration's
-  pasted new key, whose slow install is followed on the page (a recorded
-  exception, below). Until the answer arrives the form is inert and marked
-  busy, and Review changes says it is working, so nothing can be edited
-  while the review is being prepared.
+  way. A form marked `data-review-key="<field>"` holds a secret: while that
+  field holds a value (an integration's pasted new key), Review posts the
+  form without it, so the server reviews everything else and never receives
+  the key until Apply (a recorded exception, below). Until the answer
+  arrives the form is inert and marked busy, and Review changes says it is
+  working, so nothing can be edited while the review is being prepared.
 - **Field errors stay on the form.** A Review refused for the values in the
   form (a required field, a value out of range) does not open the dialog: the
   form shows its error summary and marks each field, as the
@@ -1621,11 +1621,23 @@ Recorded exceptions (Administrator decision, 2026-10-11):
 - **The setup wizard** keeps its stepwise Next and Back, with its own review
   step ([Bootstrap and first-Admin
   wizard](../admin-portal/spec.md#bootstrap-and-first-admin-wizard)).
-- **Integrations' slow key install** shows its status inside the
-  Integrations page while the key is installed, not in a dialog or on a
-  second page ([#456](https://github.com/epiphany40223/parishkit/issues/456)):
-  Save with a new key pasted submits natively (`data-review-native`).
-  Integrations' other changes use the dialog.
+- **Integrations' slow key install** shows its progress inside the
+  integration's page while the key is checked and installed, not in the
+  dialog or on a second page
+  ([#456](https://github.com/epiphany40223/parishkit/issues/456)). The key
+  change itself is reviewed in the dialog like any other change
+  ([#1568](https://github.com/epiphany40223/parishkit/issues/1568), narrowing
+  this exception): Save with a key pasted opens a confirmation that names
+  the key only by its last characters, which the browser reads from the
+  field (the server never draws any part of a key). Apply then posts the
+  page's own form, key included, without a page load, instead of a signed
+  preview, since sealing the key at Review would make Review a write; the
+  dialog closes as soon as the key is staged (a second or two), and the
+  page's status line follows the check and install in place, then redraws
+  the page in place when they finish. **Finish switching to the new key**
+  is a confirmation in the same dialog. A key's check takes about a minute,
+  which is why its progress stays on the page: the page can be left and
+  the check carries on.
 
 Going live uses the dialog for each of its consequential actions: **Start
 go-live** and **Confirm Production** (full reviews, Confirm Production with
@@ -1658,8 +1670,9 @@ same issue. The
 [integration settings pages](../admin-portal/spec.md#parish-and-integration-configuration)
 use the dialog too (#750): an ordinary settings edit is a compact review, a
 refresh schedule change keeps its full review, and setting up Off-site
-backups by its folder, removing Slack and turning off off-site copies are
-confirmations; the Backup encryption key change still uses its separate
+backups by its folder, removing Slack, turning off off-site copies, a key
+change and Finish switching to the new key are confirmations (#1568); the
+Backup encryption key change still uses its separate
 Review page. The in-place review panel of #532 is retired
 ([#1429](https://github.com/epiphany40223/parishkit/issues/1429),
 [in-place controls](#in-place-controls)); the other editors use separate

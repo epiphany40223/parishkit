@@ -1405,8 +1405,9 @@ wrapper's secret input
   [Integrations and credentials](#integrations-and-credentials).
   `integration key status --watch` follows staged, testing, installing and
   acknowledged progress, and `integration key finish-switching-preview`
-  and `integration key finish-switching` are the page's **Finish switching
-  to the new key** (`select_credential`), the confirmation prompting.
+  and `integration key finish-switching` are the settings page's **Finish
+  switching to the new key** confirmation (its review dialog, #1568), the
+  confirmation prompting.
   A failed or expired change leaves the old key installed, as on the
   page. Dismissing a finished change's line is `integration dismiss`; the
   status and Finish switching commands are described in
@@ -3677,9 +3678,9 @@ lists them.
 | `integrations`, `integration_settings`, `integration_status` | `integration list`, `integration show TARGET` and `integration status TARGET [--watch S]` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), the pages' reads (any session; no event, as the pages' reads record none; see below); `integration preview TARGET` and `integration confirm TARGET` for the settings page's non-secret Save and its Remove ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below); `integration backup-probe [--folder LINK]` for the Off-site backups page's Test access ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below); `integration preview parishsoft` takes the [refresh schedule](../background-processing/spec.md#refresh-schedule) with the page's validation, and `integration schedule-preview` prints the page's [seven-day preview](../admin-portal/spec.md#seven-day-preview) and [cost and freshness summary](../admin-portal/spec.md#cost-and-freshness-summary), for a saved or a proposed schedule ([#632](https://github.com/epiphany40223/parishkit/issues/632)) |
 | `refresh_schedule_check` | `integration schedule-preview [--refresh-schedule DOCUMENT\|-]` ([#632](https://github.com/epiphany40223/parishkit/issues/632)): the ParishSoft page's no-save live check of the refresh schedule editor's rows, with the same validation, preview and cost summary (any session; no event, as the check records none; see below) |
 | `dismiss_credential_result` | `integration dismiss TARGET --request-id ID` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
-| `credential_status` | `integration key status TARGET [--request-id ID] [--watch S]` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
+| Key change status, the settings page's status line (`integration_status`; the separate `credential_status` page is retired, #1568) | `integration key status TARGET [--request-id ID] [--watch S]` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
 | Key replacement through `integration_settings` | `integration key replace TARGET` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see [secret replacement](#secret-replacement) and below) |
-| `select_credential` | `integration key finish-switching-preview TARGET` and `integration key finish-switching TARGET` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
+| Finish switching through `integration_settings` (its review dialog; the separate `select_credential` page is retired, #1568) | `integration key finish-switching-preview TARGET` and `integration key finish-switching TARGET` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see below) |
 | Backup encryption key change, through `integration_settings` with proof of possession | `integration backup-key challenge`, `integration backup-key preview` and `integration backup-key confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463); see [secret replacement](#secret-replacement) and below) |
 
 The refresh schedule is given to `integration preview parishsoft` as
@@ -3819,8 +3820,9 @@ required integration not set up is `not_available`. It prints `target`,
 `request_id` and `dismissed`.
 
 `integration key status TARGET [--request-id ID] [--watch S]`
-(`parishsoft`, `google_workspace` or `slack`) is the **Key replacement
-status** page: any session of an Administrator reads it, and it records
+(`parishsoft`, `google_workspace` or `slack`) is the key change's status,
+which the settings page's status line shows (until #1568 it was the **Key
+replacement status** page): any session of an Administrator reads it, and it records
 nothing, as the page's read records nothing. As on the page, only the
 session Administrator's own key changes are read (`secret_request_status`),
 by default the latest for `TARGET`; another Administrator's, another
@@ -3832,7 +3834,8 @@ following the key change its first read found. As on the page, a change is
 no longer pending once the key is installed and acknowledged, even while
 its automatic switch is still queued; `integration status TARGET` shows
 whether that switch finished. `integration key finish-switching-preview
-TARGET` is the review on **Finish switching to the new key**: it needs a
+TARGET` is the review that **Finish switching to the new key** opens in
+the settings page's review dialog: it needs a
 full-scope session, as the page records activity, passes the page's
 fresh gate with it (a preview records no notice), and is offered only
 while the settings page's key change line is `unselected`; otherwise it is
