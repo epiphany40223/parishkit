@@ -130,6 +130,27 @@ def _campaign():
     return campaign_id
 
 
+def _repeat_or_newest(campaign_id, plan_id, repeated):
+    """The plan a write step acts on, and whether the step is a repeat.
+
+    ``repeated(plan)`` says whether the command's key already acted on the
+    plan. A repeat returns what that key recorded, so it is checked against
+    the current campaign's plan of that id only: a newer check made since
+    must not turn the recovery a request key is for (after exit 6, say)
+    into ``publication_plan_superseded``, and the services return the
+    recorded confirmation, run or retry without acting again. Anything else
+    is a new request, which acts only on the newest plan, through the
+    page's own check (``census_publication.newest_plan_check``).
+    """
+    from .reports import census_publication as publication
+    from .responses.publication_models import PublicationPlan
+
+    plan = PublicationPlan.objects.filter(pk=plan_id, campaign_id=campaign_id).first()
+    if plan is not None and repeated(plan):
+        return plan, True
+    return publication.newest_plan_check(campaign_id, plan_id), False
+
+
 def _task(status):
     """A task's id and state, as the command prints it."""
     return {"id": status.run_id, "state": status.state}
@@ -226,6 +247,7 @@ def update_check(caller, service, *, request_key, context):
     from .observability import current_correlation
     from .reports import census_publication as publication
     from .responses.publication_tasks import PREFLIGHT_TASK_TYPE, request_preflight
+    from .responses.publication_worker import PublicationDisabled
 
     actor = _admit_update(caller, service.store)
 
@@ -261,6 +283,9 @@ def update_check(caller, service, *, request_key, context):
             # admission, which runs again as the error leaves it.
             _admit_update(caller, service.store, final=True)
             raise publication.HELD_CAMPAIGN.refusal() from None
+        except PublicationDisabled:
+            # Switched off between the command's check and the service's.
+            raise publication.OFF.refusal() from None
         if not repeat:
             _command_event(caller, actor, Action.ADMIN_CMD_CENSUS_UPDATE_CHECK)
         model = UpdateCheck(
@@ -453,13 +478,13 @@ def _offered(plan, counts, *, kind):
 def update_preview(caller, service, plan_id, *, request_key):
     """What ``census update-confirm`` asks about: the newest plan and its counts.
 
-    The page's review step: the switch, the current campaign, the shared
-    newest-plan check and, unless the key already confirmed this plan (a
-    repeat), what the page offers. Returns ``(counts, lines)``: the counts
-    the confirmation will bind and the prompt's lines, the page's question
-    and sentences. Reads only; the command's admission comes first.
+    The page's review step: the switch, the current campaign and, unless
+    the key already confirmed this plan (a repeat, ``_repeat_or_newest``),
+    the shared newest-plan check and what the page offers. Returns
+    ``(counts, lines)``: the counts the confirmation will bind and the
+    prompt's lines, the page's question and sentences. Reads only; the
+    command's admission comes first.
     """
-    from .reports import census_publication as publication
     from .responses.publication_models import PublicationConfirmation
     from .responses.publication_plans import confirmation_counts
 
@@ -469,11 +494,14 @@ def update_preview(caller, service, plan_id, *, request_key):
         """The page's checks before its confirmation is drawn."""
         _switched_on()
         campaign_id = _campaign()
-        plan = publication.newest_plan_check(campaign_id, plan_id)
+        plan, replay = _repeat_or_newest(
+            campaign_id,
+            plan_id,
+            lambda plan: PublicationConfirmation.objects.filter(
+                actor_id=actor.identity, request_key=request_key, plan_id=plan.pk
+            ).exists(),
+        )
         counts = confirmation_counts(plan.pk)
-        replay = PublicationConfirmation.objects.filter(
-            actor_id=actor.identity, request_key=request_key, plan_id=plan.pk
-        ).exists()
         if not replay:
             _offered(plan, counts, kind="update")
         return counts, _update_lines(plan, counts)
@@ -530,10 +558,14 @@ def update_confirm(caller, service, plan_id, *, counts, request_key, context):
         """The page's Apply, with the command's event."""
         _switched_on()
         campaign_id = _campaign()
-        plan = checked["plan"] = publication.newest_plan_check(campaign_id, plan_id)
-        replay = PublicationConfirmation.objects.filter(
-            actor_id=actor.identity, request_key=request_key, plan_id=plan.pk
-        ).exists()
+        plan, replay = _repeat_or_newest(
+            campaign_id,
+            plan_id,
+            lambda plan: PublicationConfirmation.objects.filter(
+                actor_id=actor.identity, request_key=request_key, plan_id=plan.pk
+            ).exists(),
+        )
+        checked["plan"] = plan
         if not replay:
             now = confirmation_counts(plan.pk)
             _offered(plan, now, kind="update")
@@ -595,6 +627,10 @@ def update_confirm(caller, service, plan_id, *, counts, request_key, context):
             emit_failure(error, level=logging.ERROR, name_class=True)
             raise
         if isinstance(refusal, PermissionError):
+            # The guard found the sign-in no longer live: a session that
+            # ended meanwhile is exit 5 (session_ended), as every command's
+            # admission says, and only otherwise the page's denial.
+            _admit_update(caller, service.store, final=True)
             raise refusal from None
         raise _refused(refusal) from None
 
@@ -639,8 +675,10 @@ def rerun_preview(caller, service, plan_id, *, request_key):
         """The page's checks before its confirmation is drawn."""
         _switched_on()
         campaign_id = _campaign()
-        plan = publication.newest_plan_check(campaign_id, plan_id)
-        if _rerun_replay(plan, request_key):
+        plan, replay = _repeat_or_newest(
+            campaign_id, plan_id, lambda plan: _rerun_replay(plan, request_key)
+        )
+        if replay:
             return [
                 f"Run again for check {plan.pk} was already asked with this "
                 "request key; the same retry is returned."
@@ -691,8 +729,10 @@ def update_rerun(caller, service, plan_id, *, request_key, context):
         """The page's Run again, with the command's event."""
         _switched_on()
         campaign_id = _campaign()
-        plan = checked["plan"] = publication.newest_plan_check(campaign_id, plan_id)
-        replay = _rerun_replay(plan, request_key)
+        plan, replay = _repeat_or_newest(
+            campaign_id, plan_id, lambda plan: _rerun_replay(plan, request_key)
+        )
+        checked["plan"] = plan
         if not replay:
             _offered(plan, confirmation_counts(plan.pk), kind="rerun")
         try:

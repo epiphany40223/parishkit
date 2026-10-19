@@ -2471,8 +2471,9 @@ number of Members it would try, or takes `--yes`, and prints `created`,
 `--request-key` (a version 4 UUID) is made for you and written to standard
 error when left out. Repeating `update-check`, `update-confirm` or
 `update-rerun` with the same key returns the same check, run or retry
-(`created` false) and records nothing new; a key used for something else
-is exit 1 (`invalid`).
+(`created` false) and records nothing new, even after a newer check (so
+the key recovers an unknown outcome, exit 6); a key used for something
+else is exit 1 (`invalid`).
 
 ## Digests
 

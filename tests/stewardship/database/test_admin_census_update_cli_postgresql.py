@@ -17,9 +17,14 @@ from uuid import UUID, uuid4
 import pytest
 
 from parishkit.stewardship.accounts import automation_sessions as automation
+from parishkit.stewardship.accounts.automation_models import AutomationLogin
 from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.accounts.policy import current_principal
-from parishkit.stewardship.audit.models import AuditContext, AuditEvent
+from parishkit.stewardship.audit.models import (
+    AuditContext,
+    AuditEvent,
+    OperationalLog,
+)
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.reports import census_publication as publication
 from parishkit.stewardship.reports import census_publication_views
@@ -228,10 +233,15 @@ def test_check_plan_and_update_as_the_page_does(
     assert confirmed["confirmation"]["write_entities"] == 1
     (confirmation,) = PublicationConfirmation.objects.all()
     assert confirmed["confirmation"]["id"] == str(confirmation.pk)
-    # The command session's sign-in is the one the guard bound.
-    command_session = AuditEvent.objects.get(event_type=CONFIRM).subject_id
-    assert command_session is not None
-    assert confirmation.actor_id != world.admin
+    # The command session's own row and sign-in are what the guard bound:
+    # the confirmation names the command's portal session, whose automation
+    # login is the session the command event names.
+    automation_session = AuditEvent.objects.get(event_type=CONFIRM).subject_id
+    login = AutomationLogin.objects.get(portal_session_id=confirmation.session_id)
+    assert login.automation_session_id == automation_session
+    bound = PortalSession.objects.get(pk=confirmation.session_id)
+    assert confirmation.authenticated_at == bound.authenticated_at
+    assert confirmation.actor_id == bound.principal_id != world.admin
     (update,) = TaskRun.objects.filter(task_type=tasks.PUBLICATION_TASK_TYPE)
     assert confirmed["task"]["id"] == str(update.pk)
     assert (count(CONFIRM), count("census_publication_confirmed")) == (1, 1)
@@ -303,6 +313,104 @@ def test_update_refuses_what_the_page_would_not_offer(
     assert code == 1 and refused(document, "not_available", "publication_testing")
     assert not PublicationConfirmation.objects.exists()
     assert count(CONFIRM) == 0
+
+
+def test_keys_recover_and_never_act_twice(
+    world,  # noqa: F811
+    google,
+    settings,
+    update_cli,
+):
+    """A confirmation key repeated after a newer check returns its run (the
+    recovery a key is for); the same key for another plan is invalid; a
+    refusal's durable log entry has the page's reason."""
+    settings.STEWARDSHIP_PARISHSOFT_PUBLICATION = True
+    signed_in()
+    run = update_cli()
+    plan = world.planned(uuid4())
+    key = str(uuid4())
+    code, document, _ = run(
+        "census", "update-confirm", str(plan.pk), "--request-key", key, "--yes"
+    )
+    assert code == 0, document
+    task = document["result"]["task"]
+    assert world.execute(UUID(task["id"]))
+    newer = world.planned(uuid4())
+    code, document, _ = run(
+        "census", "update-confirm", str(plan.pk), "--request-key", key, "--yes"
+    )
+    assert code == 0 and not document["result"]["created"], document
+    assert document["result"]["task"]["id"] == task["id"]
+    # A new key for the older plan is still superseded, as on the page.
+    code, document, _ = run("census", "update-confirm", str(plan.pk), "--yes")
+    assert code == 1 and refused(
+        document, "stale_version", "publication_plan_superseded"
+    )
+    (entry,) = OperationalLog.objects.filter(event="admin_input_refused")
+    assert entry.context["reason"] == "publication_plan_superseded", entry.context
+    # The first key for the newer plan: bound to another plan, so invalid.
+    code, document, _ = run(
+        "census", "update-confirm", str(newer.pk), "--request-key", key, "--yes"
+    )
+    assert code == 1 and document["error"]["code"] == "invalid", document
+    assert PublicationConfirmation.objects.count() == 1
+    assert (count(CONFIRM), count("census_publication_confirmed")) == (1, 1)
+
+
+def test_an_outage_before_or_after_the_commit(
+    world,  # noqa: F811
+    google,
+    settings,
+    update_cli,
+    monkeypatch,
+):
+    """A database failure inside the transaction rolls everything back (exit
+    3, nothing recorded); one once the command's event may have committed is
+    exit 6 with the request key, never a refusal."""
+    import contextlib
+
+    from django.db import OperationalError
+
+    from parishkit.stewardship import admin_census_update
+    from parishkit.stewardship.jobs import task_retries
+
+    settings.STEWARDSHIP_PARISHSOFT_PUBLICATION = True
+    signed_in()
+    run = update_cli()
+    real_event = admin_census_update._command_event
+
+    def then_fail(*arguments):
+        """Write the event, then lose the database inside the transaction."""
+        real_event(*arguments)
+        raise OperationalError("lost")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(admin_census_update, "_command_event", then_fail)
+        code, document, _ = run("census", "update-check")
+        assert code == 3 and document["error"]["code"] == "unavailable", document
+    assert count(CHECK) == 0
+    assert not TaskRun.objects.filter(task_type=tasks.PREFLIGHT_TASK_TYPE).exists()
+
+    real_scope = task_retries.command_scope
+
+    @contextlib.contextmanager
+    def lost_after(*arguments, **options):
+        """The real scope, which commits, then a lost connection."""
+        with real_scope(*arguments, **options):
+            yield
+        raise OperationalError("lost after commit")
+
+    key = str(uuid4())
+    with monkeypatch.context() as patch:
+        patch.setattr(task_retries, "command_scope", lost_after)
+        code, document, _ = run("census", "update-check", "--request-key", key)
+    assert code == 6 and document["error"]["code"] == "outcome_unknown", document
+    assert document["error"]["request_id"] == key
+    assert count(CHECK) == 1
+    # The key recovers it: the same check, nothing new recorded.
+    code, document, _ = run("census", "update-check", "--request-key", key)
+    assert code == 0 and not document["result"]["created"], document
+    assert count(CHECK) == 1
 
 
 def test_counts_that_changed_after_the_question_are_refused(

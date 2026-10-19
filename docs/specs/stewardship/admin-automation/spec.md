@@ -987,6 +987,15 @@ success or failure, to standard error:
   [posted on #621](https://github.com/epiphany40223/parishkit/issues/621#issuecomment-6024219079),
   pending Administrator confirmation). Every later change of meaning needs
   `pk-admin/2`, except where an entry here records otherwise.
+- A documented exception: the census commands print the review decision
+  stored as `approved` as `accepted`, and `census review` takes `--decision
+  accepted` in its place, with no alias
+  ([decision 7](../review-pipeline/spec.md#decisions),
+  [#1755](https://github.com/epiphany40223/parishkit/issues/1755); see
+  [reports and exports](#reports-and-exports)). This is the one enumeration
+  given in the pipeline's words rather than its stored value, and it stayed
+  on `pk-admin/1`, with a changelog entry, because its only readers are
+  Administrator-run assistants.
 - A documented exception: `delivery list --sort` changed meaning in #931
   (the Family DUID token `recipient` became `duid`, `name` was added, and
   the default moved from `-created` to `-changed`) and stayed on
@@ -3133,7 +3142,10 @@ to write or every Member finished (`publication_nothing_approved`,
 other reason (the switch off, Testing mode, a held campaign, an update
 running, stopped or still writing these changes, a check under way) is
 `not_available`. A request key already used for something else is
-`invalid`. They print ids, versions, counts, outcomes and times, never a
+`invalid`. A repeat of a request key that already confirmed or retried
+the named plan returns what it recorded, even once a newer check exists,
+so a key recovers an unknown outcome (exit 6); a new key acts only on the
+newest plan. They print ids, versions, counts, outcomes and times, never a
 value, name or note; the values stay in `export census`.
 
 None of them takes `--watch`: a [watch](#watching-progress) is a passive
