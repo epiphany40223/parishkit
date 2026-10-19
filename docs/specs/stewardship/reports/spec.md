@@ -2334,9 +2334,9 @@ cleanup, purge or go-live step), the page offers no row or bulk actions and
 says why; the list and its downloads still read. On the command line,
 `pk-admin census review`, `census edit`, `census resolve-conflict` and
 `census resolve` record reviews and marks through the same services
-([admin automation](../admin-automation/spec.md#reports-and-exports)); they
-keep their earlier words until
-[#1755](https://github.com/epiphany40223/parishkit/issues/1755) renames them.
+([admin automation](../admin-automation/spec.md#reports-and-exports)), in
+the pipeline's words: `census review --decision accepted`
+([#1755](https://github.com/epiphany40223/parishkit/issues/1755)).
 
 Each review is one immutable review row (who, when, the note and the
 resulting decision and edit fields), added by forward migration 0096 under
@@ -2474,7 +2474,7 @@ first."). A
 newer check would otherwise strand the stopped plan: its Run again would be
 refused as superseded, and the newer plan's confirmation refused while the
 stopped plan's writes may still be queued. These gates are the page's (and
-the command line's,
+`census update-check`'s,
 [#1755](https://github.com/epiphany40223/parishkit/issues/1755)): the
 preflight service itself does not refuse a check during a run. It acts
 [in place](../ui-conventions/spec.md#in-place-controls), as Refresh now does
@@ -2559,7 +2559,7 @@ another Administrator makes Apply refuse the older one
 (`publication_plan_superseded`), so the Administrator always confirms the
 newest check they have seen. No SQL guard or service checks this: the
 page's view checks it in Python, through one shared helper the command line
-will use too ([#1755](https://github.com/epiphany40223/parishkit/issues/1755)),
+uses too ([#1755](https://github.com/epiphany40223/parishkit/issues/1755)),
 before calling `confirm_and_publish`, so both refuse an older plan the same
 way.
 
@@ -2701,9 +2701,9 @@ ambiguous write after a crash is CRITICAL
 
 On the command line the same steps are `pk-admin census update-check`,
 `update-plan`, `update-confirm` and `update-rerun`, through the same
-services ([admin automation](../admin-automation/spec.md#update-parishsoft-commands));
-they are specified, not built yet
-([#1755](https://github.com/epiphany40223/parishkit/issues/1755)).
+services and checks
+([admin automation](../admin-automation/spec.md#update-parishsoft-commands),
+[#1755](https://github.com/epiphany40223/parishkit/issues/1755)).
 
 #### Update page delivery
 
@@ -2717,8 +2717,9 @@ says, following the
 The page's read and check came next, then its confirmation and run, the
 final refresh and the activity group, with the rename
 ([#1688](https://github.com/epiphany40223/parishkit/issues/1688)); none of
-them changed the schema. The command line is
-[#1755](https://github.com/epiphany40223/parishkit/issues/1755). Every slice
+them changed the schema. The command line came last
+([#1755](https://github.com/epiphany40223/parishkit/issues/1755)), with no
+schema change either. Every slice
 ships with the update switched off.
 
 ## Financial stewardship detail

@@ -301,7 +301,8 @@ left switched off:
    updates" ([activity groups](../../specs/stewardship/admin-portal/spec.md#activity-groups));
    the rename updates every test that names the old label.
 4. **Command-line parity**: `pk-admin census update-check`,
-   `update-plan`, `update-confirm` and `update-rerun`
+   `update-plan`, `update-confirm` and `update-rerun`, with `census review
+   --decision accepted`
    ([#1755](https://github.com/epiphany40223/parishkit/issues/1755)).
 
 Slice 2 needs no schema, so it was delivered first.
