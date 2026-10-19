@@ -3,10 +3,11 @@
 The worklist's Edit can change a Family's home or mailing address. The
 service reads the edit as the Family form reads an address
 (``census_review.edited_address``, through ``census.validate_address``);
-frozen file 0138 makes the review guard hold it, in SQL too, to the rules
-the Family's answer meets (``stewardship_response_address_guard_v1``). These
-tests forge reviews with the service bypassed, and check that Python and
-SQL agree over one list of cases.
+the census address guard's frozen file makes the review guard hold it, in
+SQL too, to the rules the Family's answer meets
+(``stewardship_response_address_guard_v1``). These tests forge reviews with
+the service bypassed, and check that Python and SQL agree over one list of
+cases.
 """
 
 import json
@@ -195,10 +196,10 @@ def test_python_and_sql_agree_on_edited_addresses(response_service):
         edited_address(sized(1025))
 
 
-def test_do_block_refuses_0131s_guard_and_installs_its_own():
+def test_do_block_refuses_the_census_pipeline_guard_and_installs_its_own():
     """The file's closing check passes as installed and raises once the
-    guard is put back to 0131's body; on that state the file installs its
-    own body again, not SECURITY DEFINER."""
+    guard is put back to the census pipeline file's body; on that state the
+    file installs its own body again, not SECURITY DEFINER."""
     text = FROZEN.read_text(encoding="utf-8")
     check = text[text.index("DO $check$") :]
     earlier = _replaced(
