@@ -10,8 +10,9 @@ the review worklist component with its decision interface
 (`components/review-worklist.html`, `web/review_worklist.py`,
 [#1681](https://github.com/epiphany40223/parishkit/issues/1681)), which
 Census changes uses
-([#1683](https://github.com/epiphany40223/parishkit/issues/1683); its Add is
-deferred, below). Every Staff
+([#1683](https://github.com/epiphany40223/parishkit/issues/1683), with its
+Add from [#1710](https://github.com/epiphany40223/parishkit/issues/1710),
+below). Every Staff
 and Ministry leader part ships during the current campaign. The
 Family-facing view of reviewed changes
 ([#1705](https://github.com/epiphany40223/parishkit/issues/1705)) comes
@@ -182,7 +183,10 @@ Details the table cannot hold:
   Family said.
 - An Add on the census stream is checked by the same rules as a Family's
   answer for that field (validation, handling registry) and gets the same
-  Automatic or By hand handling.
+  Automatic or By hand handling. Until the update run is rebuilt
+  ([#1688](https://github.com/epiphany40223/parishkit/issues/1688)), every
+  added census change is To enter by hand
+  ([Census Add](../reports/spec.md#census-add)).
 - Every action is enforced on the server and in the database where the
   stream's rules are enforced today, never only by hiding a button.
 
@@ -591,11 +595,12 @@ accepts and marks it in one step, and forward migration 0131 (provisional
 number) widens the review guard for it
 ([Automatic census review](../reports/spec.md#automatic-census-review)).
 Census **Add** was cut from that slice (7th on the
-[cut list](#risks-and-what-to-cut-first)): a change with no Family answer
-behind it needs either a table of its own or a wider Family-submit guard, so
-it has an issue of its own
-([#1710](https://github.com/epiphany40223/parishkit/issues/1710)); Staff use
-Open form meanwhile.
+[cut list](#risks-and-what-to-cut-first)) and built in
+[#1710](https://github.com/epiphany40223/parishkit/issues/1710): a change
+with no Family answer behind it is a row of its own tables (forward
+migration 0137, provisional number), not a proposal, so the Family submit
+path and its guards are unchanged, and it is To enter by hand until #1688
+([Census Add](../reports/spec.md#census-add)).
 
 ### Ministry stream
 
@@ -1200,7 +1205,8 @@ Cut first if time runs short, in this order:
 6. the pledge Edit in #1686 (keep Accept and the Pledges to enter
    report; Staff correct a pledge through Open form, as today);
 7. census Add in #1683 (Staff use Open form); cut from #1683 and moved to
-   [#1710](https://github.com/epiphany40223/parishkit/issues/1710).
+   [#1710](https://github.com/epiphany40223/parishkit/issues/1710), which
+   built it.
 
 Never cut: #1691, #1681, #1690, #1683, #1684 and #1687, which are what
 Staff and Ministry leaders use.
