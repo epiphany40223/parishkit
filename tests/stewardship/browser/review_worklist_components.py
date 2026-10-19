@@ -18,7 +18,12 @@ from django.template import engines
 
 from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.pipeline import Decision, Placement, Stage
-from parishkit.stewardship.web.review_worklist import Column, build, page_address
+from parishkit.stewardship.web.review_worklist import (
+    STALE,
+    Column,
+    build,
+    page_address,
+)
 from parishkit.stewardship.web.tables import paginate
 
 PATH = "/review-worklist"
@@ -27,6 +32,9 @@ LEADER = "/review-worklist-leader"
 ACCEPTED = "/review-worklist-accepted"
 BULKED = "/review-worklist-bulked"
 REOPENED = "/review-worklist-reopened"
+# A decision another reader overtook, with a long item name: the longest
+# notice the line must hold (R38 finding 10).
+STALED = "/review-worklist-staled"
 # The answer to Apply with Stage Ignored, and the address it names, which a
 # reload then loads (R38 finding 6).
 FILTERED = "/review-worklist-filtered"
@@ -34,6 +42,7 @@ FILTERED_ADDRESS = PATH + "?stage=ignored"
 ACCEPTED_NOTICE = "Mobile phone for Member 00 accepted."
 BULK_NOTICE = "2 changes accepted."
 REOPENED_NOTICE = "Mobile phone for Member 04 sent back to review."
+STALE_NOTICE = STALE.format(name="Home address for Martin, Luke and Emily")
 
 # The host page: the stream's heading, then the shared component.
 HOST = engines["django"].from_string(
@@ -200,6 +209,7 @@ def components(context, admin):
         REOPENED: _page(
             context, admin, staff_rows(reopened), staff, notice=REOPENED_NOTICE
         ),
+        STALED: _page(context, admin, staff_rows(), staff, notice=STALE_NOTICE),
         FILTERED: _page(context, admin, ignored, staff, stage="ignored"),
         FILTERED_ADDRESS: _page(context, admin, ignored, staff, stage="ignored"),
         LEADER: _page(
