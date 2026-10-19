@@ -132,7 +132,7 @@ def test_a_row_decision_records_in_place(page, component_origin):
     icon(page, 0, "Accept").click()
     dialog = page.locator("#worklist-decide-dialog")
     has_text(dialog.locator("h2"), f"Accept {name(0)}?")
-    dialog.get_by_label("Note (required to reopen an ignored item)").fill("Fine")
+    dialog.get_by_label("Note (optional)").fill("Fine")
     dialog.get_by_role("button", name="Record").click()
     has_text(page.locator("#worklist-notice"), ACCEPTED_NOTICE)
     has_text(page.get_by_role("status").filter(has_text="accepted."), ACCEPTED_NOTICE)
@@ -196,6 +196,8 @@ def test_reopening_an_ignored_item_needs_a_note(page, component_origin):
     record = dialog.get_by_role("button", name="Record")
     row(page, 2).get_by_role("button", name=f"Send {name(2)} back to review").click()
     available(record)
+    # The note's label follows the action in place (R38 finding 3).
+    has_text(dialog.locator("label[for$=-note]"), "Note (optional)")
     dialog.get_by_role("button", name="Cancel").click()
     hidden(dialog)
     row(page, 4).get_by_role("button", name=f"Send {name(4)} back to review").click()
@@ -207,7 +209,7 @@ def test_reopening_an_ignored_item_needs_a_note(page, component_origin):
     has_text(
         dialog.locator("[data-complete-hint]"), "Say why this ignored item is reopened."
     )
-    dialog.get_by_label("Note (required to reopen an ignored item)").fill("Asked")
+    dialog.get_by_label("Note (required)").fill("Asked")
     available(record)
     record.click()
     has_text(page.locator("#worklist-notice"), REOPENED_NOTICE)

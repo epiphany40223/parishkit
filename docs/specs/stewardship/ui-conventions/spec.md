@@ -3654,8 +3654,12 @@ inventory on #879 lists.
   undo arrow). An action that carries a note opens the confirmation dialog
   instead, which holds the note, with an ordinary confirm button unless the
   action cannot be undone; so far only Census changes ([#879](https://github.com/epiphany40223/parishkit/issues/879)), whose
-  decisions take an optional note and Reopen a required one. A row shows
-  only the actions that apply to it; a row with none shows nothing there.
+  decisions take an optional note and Reopen a required one. A note field
+  shared by several actions is labelled by the action chosen: "Note
+  (optional)", and "Note (required)" only while that action needs one,
+  changing in place as the dialog opens (the review worklist, R38). A row
+  shows only the actions that apply to it; a row with none shows nothing
+  there.
 - **Selected state.** On a table whose row actions record a state (a
   review decision, a mark), the icon of the state in force is drawn
   **selected**: filled with that state's status colour, with the glyph in
