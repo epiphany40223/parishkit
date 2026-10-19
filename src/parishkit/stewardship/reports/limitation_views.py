@@ -14,6 +14,7 @@ from django.db import DatabaseError, transaction
 from django.http import HttpResponse
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils.translation import gettext as _
 from django.views.decorators.http import require_http_methods
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
@@ -35,6 +36,7 @@ from parishkit.stewardship.web.exports import (
 )
 from parishkit.stewardship.web.refusals import with_status_code
 from parishkit.stewardship.web.responses import campaign_response
+from parishkit.stewardship.web.stat_tiles import tile
 from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
 
 from .export_views import SAFE_FAILURES
@@ -104,6 +106,22 @@ def paging_values(parameters):
     for prefix, sorting in ((MEMBERS, MEMBER_SORTING), (FAMILIES, FAMILY_SORTING)):
         paginate([], values, prefix=prefix, sorting=sorting)
     return values
+
+
+def summary_tiles(summary):
+    """The Summary's two counts as stat tiles (ui-conventions, #1540)."""
+    return [
+        tile(
+            "cannot-serve",
+            _("Cannot participate in ministries"),
+            summary["cannot_serve"],
+        ),
+        tile(
+            "cannot-attend",
+            _("Families that cannot attend Mass"),
+            summary["cannot_attend"],
+        ),
+    ]
 
 
 def tables(result, query, paging, action):
@@ -237,10 +255,15 @@ def _respond(request, campaign_id, *, export, render):
                 extra["paging"] = paging_values(parameters)
             if export:
                 fmt = parameters.pop("format", [DEFAULT_EXPORT_FORMAT])
-                zone = parameters.pop("timezone", ["UTC"])
-                if len(fmt) != 1 or len(zone) != 1:
+                # The browser's zone, posted unasked, or an explicit
+                # timezone from an older tab (#1679).
+                chosen = parameters.pop("timezone", [None])
+                browser = parameters.pop("browser_timezone", [None])
+                if len(fmt) != 1 or len(chosen) != 1 or len(browser) != 1:
                     raise ValueError("Invalid Limitations export choice.")
-                extra = export_choice(fmt[0], zone[0])
+                extra = export_choice(
+                    fmt[0], dates.download_zone(chosen[0], browser[0])
+                )
             query = LimitationsQuery.parse(parameters)
         except ValueError:
             return _error(campaign_id, status=400)
@@ -379,10 +402,10 @@ def report(request, campaign_id):
             | {
                 "members_table": members,
                 "families_table": families,
+                "summary_tiles": summary_tiles(result["summary"]),
                 "campaign_id": campaign_id,
                 "query": query,
                 "query_fields": query.form_values(),
-                "export_timezones": sorted(timezone_names()),
             },
             request=request,
         ).encode()

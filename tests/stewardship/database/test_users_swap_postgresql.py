@@ -413,6 +413,30 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # and 0064's report selection in place, which 0094's rerun
 # (``CLOSURE_REPLACED``) brings back older, so ``CLOSURE_REPLACED`` runs
 # 0119's file after it.
+# 0121 (#1658) creates nothing: it replaces the
+# occurrence guard (0005's, before the closure), the digest slot check and
+# the weekly page proof (both the baseline's) in place. No closure file
+# installs any of them again, so their bodies survive the swap and nothing
+# is registered.
+# 0122 (#1620) creates nothing: it replaces the safe context in place again,
+# after 0109, with the automatic view key, so ``CLOSURE_REPLACED_ONLY`` now
+# names 0122's replacement, whose body keeps 0109's keys.
+# 0123 (#1550) creates nothing: it drops 0013's fresh-principal check (before
+# the closure, so no closure file makes it again; IF EXISTS lets the file run
+# again) and replaces the baseline's portal session guard in place, which no
+# closure file installs again, so nothing is registered.
+# 0124 (#1762) creates nothing: it rewords guards in place. Four of them
+# (0114's) and 0104's setup credential audit come back older from closure
+# files, so ``CLOSURE_REPLACED_ONLY`` runs 0124's replacements of those;
+# the rest (baseline guards no closure file installs again) survive.
+# 0125 (#1763) adds a request column (IF NOT EXISTS, so its file runs again)
+# and a definer check granted to web and three installers
+# (runtime_grants.CLOSURE_FUNCTIONS, so ``closure_functions_absent`` drops it
+# and installs the file whole again), drops 0114's ended-instant check (IF
+# EXISTS; 0114 is no longer in CLOSURE_FUNCTIONS, so nothing makes it
+# again) and replaces three bodies (0124's intake check, 0114's state guard,
+# the baseline's request guard) that no closure file installs again, so
+# nothing else is registered.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -895,11 +919,12 @@ CLOSURE_REPLACED_ONLY = {
         "'suffix','gender','marital_status'",
     ),
     # 0109 (#1398) widens 0106's safe context with the export report and
-    # format keys; the reruns above bring back 0106's, and 0109's discard
-    # table cannot be made twice, so its replacement statement runs alone.
+    # format keys, and 0122 (#1620) widens 0109's with the automatic view
+    # key; the reruns above bring back 0106's, so 0122's replacement, whose
+    # body holds both, runs alone (0109's discard table cannot be made twice).
     "stewardship_safe_context_v1": (
-        ("stewardship_reports", "0029_point_in_time_exports"),
-        "'report','format']",
+        ("stewardship_audit", "0006_automatic_report_views"),
+        "'automatic']",
     ),
     # 0109 also lets each capture trigger, the export history trigger and
     # the request guard admit the discard; the reruns of the files that made
@@ -930,14 +955,38 @@ CLOSURE_REPLACED_ONLY = {
     # (0062, 0078, 0080, 0087, 0088, 0090, 0104, and 0111/0112 once merged)
     # bring back older; its bodies all carry the issue number. It also
     # creates the ended-automation check, so it cannot run whole twice.
+    "stewardship_setup_secret_guard_v1": (
+        ("stewardship_accounts", "0027_no_sign_in_age"),
+        "(#1547)",
+    ),
+    # 0124 (#1762) rewords four of 0114's guards again, and 0104's setup
+    # credential audit (which 0104's rerun above brings back); each body is
+    # its latest earlier one with only the words changed, so its replacement
+    # runs alone, last, when the body lacks its new words.
     **{
-        name: (("stewardship_accounts", "0027_no_sign_in_age"), "(#1547)")
-        for name in (
-            "stewardship_backup_request_guard_v1",
-            "stewardship_debug_off_switch_guard_v1",
-            "stewardship_source_drop_acceptance_guard_v1",
-            "stewardship_publication_confirmation_guard_v1",
-            "stewardship_setup_secret_guard_v1",
+        name: (("stewardship_accounts", "0029_guard_wording"), phrase)
+        for name, phrase in (
+            (
+                "stewardship_backup_request_guard_v1",
+                "A backup request requires a live Administrator session",
+            ),
+            (
+                "stewardship_debug_off_switch_guard_v1",
+                "The debug-off switch requires a live Administrator session",
+            ),
+            (
+                "stewardship_source_drop_acceptance_guard_v1",
+                "Accepting a large ParishSoft change requires a live "
+                "Administrator session",
+            ),
+            (
+                "stewardship_publication_confirmation_guard_v1",
+                "Publishing to ParishSoft requires a live Administrator session",
+            ),
+            (
+                "stewardship_setup_secret_audit_v1",
+                "(the instant never changes in place, #1550)",
+            ),
         )
     },
 }

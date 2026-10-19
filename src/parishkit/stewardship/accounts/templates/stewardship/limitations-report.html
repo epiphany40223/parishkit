@@ -6,22 +6,12 @@
 <p>{% translate "Family DUID is the Family's ID number in ParishSoft, shown in its own column so you can sort or copy it." %}</p>{% endaboutpage %}
 <p><a href="{% url 'admin:response_dashboard' %}">{% translate "Response dashboard" %}</a></p>
 <div id="limitations-summary" data-table-sync><h2>{% translate "Summary" %}</h2>
-<dl>
-<dt>{% translate "Cannot participate in ministries" %}</dt><dd>{{ summary.cannot_serve|number }}</dd>
-<dt>{% translate "Families that cannot attend Mass" %}</dt><dd>{{ summary.cannot_attend|number }}</dd>
-</dl></div>
+{# The Summary's counts as stat tiles (ui-conventions "Stat tiles", #1540). #}{% include "stewardship/components/stat-tiles.html" with tiles=summary_tiles tiles_label=_("Summary") %}</div>
 {# Two short filters fit one row, so they need no Filters panel (#227). #}<form id="table-filters" data-table-sync method="post" action="{% url 'admin:limitations_report' %}" class="filter-bar">{% csrf_token %}
 <div><label for="limitations-search">{% translate "Search name or Family DUID" %}</label><input id="limitations-search" name="search" maxlength="200" value="{{ query.search }}"></div>
 <div class="fit"><label for="limitations-filter">{% translate "Show" %}</label><select id="limitations-filter" name="show"><option value="any">{% translate "Everything" %}</option><option value="cannot_serve"{% if query.show == 'cannot_serve' %} selected{% endif %}>{% translate "Cannot participate in ministries" %}</option><option value="cannot_attend"{% if query.show == 'cannot_attend' %} selected{% endif %}>{% translate "Families that cannot attend Mass" %}</option></select></div>
 {% for name, value in members_table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}{% for name, value in families_table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
-{% button type="submit" %}{% translate "Apply filters" %}{% endbutton %}</form>
-<details class="export-panel"><summary id="limitations-export-heading">{% translate "Download (CSV, XLSX or PDF)" %}</summary>
-<form id="table-export" data-table-sync method="post" action="{% url 'admin:limitations_export' %}">{% csrf_token %}
-{% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
-<label for="limitations-format">{% translate "Format" %}</label><select id="limitations-format" name="format">{% export_format_options "csv" "xlsx" "pdf" %}</select>
-<label for="limitations-timezone">{% translate "Timezone" %}</label><select id="limitations-timezone" name="timezone" data-information-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
-{% button type="submit" %}{% translate "Download with these filters" %}{% endbutton %}</form></details>
-<script src="{% static 'stewardship/information-export-v1.js' %}" defer></script>
+{% include "stewardship/components/filter-actions.html" %}</form>
 <h2>{% translate "Members who cannot participate in ministries" %}</h2>
 <div id="{{ members_table.anchor }}" data-table-region>
 {% translate "Member pages" as members_label %}{% include "stewardship/table-navigator.html" with table=members_table label=members_label %}
@@ -46,4 +36,8 @@
 {% empty %}<tr><td colspan="3">{% if query.search or query.show == 'cannot_serve' %}{% translate "No Families match these filters. Clear the Search name or Family DUID box, or set Show to “Everything”." %}{% else %}{% translate "No Family has said it cannot attend Mass or prayer services. A Family is listed here once its live response says so." %}{% endif %}</td></tr>{% endfor %}</tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=families_table label=families_label %}
 </div>
+{% comment %}The export (#1679, ui-conventions "Downloaded files"): one row of small export buttons (export_actions), each posting its format, below the table, in the browser's time zone; its form's hidden filters follow each in-place Apply, sort or page (data-table-sync).{% endcomment %}<div class="export-pane">
+<form id="table-export" data-table-sync method="post" action="{% url 'admin:limitations_export' %}">{% csrf_token %}
+{% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+{% export_actions "csv" "xlsx" "pdf" name="limitations" label=_("Export both tables") %}</form></div>
 {% endblock %}

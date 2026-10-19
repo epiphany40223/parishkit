@@ -233,8 +233,9 @@ PAGES = {
     "ministry_followup_item": Page(
         "reports", _("Follow-up request"), "ministry_report"
     ),
-    # Resolved Ministry joins and leaves to enter in ParishSoft by hand (#528).
-    "ministry_roster": Page("reports", _("Roster changes to enter"), "ministry_report"),
+    # Resolved Ministry joins and leaves to enter in ParishSoft by hand (#528),
+    # a menu entry of its own with its count (#1660).
+    "ministry_roster": Page("reports", _("Roster changes to enter")),
     "family_directory": Page("reports", _("Active parishioner family directory")),
     # One Family's summary and timeline (#477; the Timeline since #1570),
     # opened from every Family name the shared family_link tag draws.
@@ -290,21 +291,6 @@ PAGES = {
     "source_form": Page("system", _("Families the form cannot open"), "system_health"),
     "integrations": Page("system", _("Integrations")),
     "integration_settings": Page("system", _("Integration"), "integrations"),
-    # A key's status and its Finish switching page sit under the integration
-    # the key belongs to; their views supply the target the routes lack. The
-    # status is readable only by the Administrator who saved the key, so
-    # Finish switching (open to every Administrator) never runs through it.
-    # Finish switching is a one-time review, so a switch's status page
-    # names it but returns to the integration.
-    "credential_status": Page(
-        "system", _("Key replacement status"), "integration_settings"
-    ),
-    "select_credential": Page(
-        "system",
-        _("Finish switching to the new key"),
-        "integration_settings",
-        linkable=False,
-    ),
     "background": Page("system", _("Background work")),
     "background_task_page": Page("system", _("Background task"), "background"),
     "logs": Page("system", _("System logs")),
@@ -525,6 +511,10 @@ MENU = (
     Entry("census_changes", Capability.VIEW_CENSUS, CENSUS),
     Entry("information_queue", Capability.ADDITIONAL_FOLLOWUP, _downloaded(_campaign)),
     Entry("ministry_report", Capability.MINISTRY_REPORT, MINISTRY, scoped=True),
+    # Administrators and Staff only: unscoped MINISTRY_FOLLOWUP is the
+    # page's own check (workflows.roster.can_tick), which a Ministry leader,
+    # holding it only for their Ministries, never passes (#1660).
+    Entry("ministry_roster", Capability.MINISTRY_FOLLOWUP, MINISTRY),
     Entry("family_directory", Capability.FAMILY_CODES, _downloaded(_campaign)),
     # Staff see its daily reports; Send a weekly report now is on the page.
     Entry("emailed_reports", Capability.CAMPAIGN_REPORT),
@@ -699,6 +689,9 @@ NON_PAGES = frozenset(
         "branding_asset",
         # The Campaign comparison's download form (#1018), a POST.
         "campaign_comparison_export",
+        # The figures status the Response dashboard and Campaign comparison
+        # poll (#1586), a fragment.
+        "response_dashboard_status",
         # A Campaign setup step's Continue (#1404), a POST that redirects.
         "campaign_step_continue",
         "content_plain_text",

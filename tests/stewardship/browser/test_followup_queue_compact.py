@@ -34,7 +34,9 @@ FIELDS = (
     "#filter-state",
     "#filter-outcome",
 )
-CONTROLS = FIELDS + (f"{FILTERS} button[type=submit]",)
+# Apply filters, not the Clear filters beside it (#1651).
+APPLY = f"{FILTERS} button[type=submit]:not([data-clear-filters])"
+CONTROLS = FIELDS + (APPLY,)
 AXE = """async () => (await axe.run(document, {
     runOnly: {type: 'tag', values: ['wcag2a','wcag2aa','wcag21aa','wcag22aa']}
 })).violations.map(({id,impact}) => ({id,impact}))"""
@@ -100,7 +102,7 @@ def test_queue_is_compact_at_laptop_width(page, component_origin, axe_source):
     assert len(rows_of_fields) <= 2, tops
     # Apply filters ends the last row, its bottom level with the fields'.
     last = [box for box in fields if box["y"] >= rows_of_fields[-1] - 1]
-    apply = page.locator(f"{FILTERS} button[type=submit]").bounding_box()
+    apply = page.locator(APPLY).bounding_box()
     assert apply["x"] > max(box["x"] for box in last)
     assert abs((apply["y"] + apply["height"]) - (last[0]["y"] + last[0]["height"])) <= 1
     rows = page.evaluate(ROWS)

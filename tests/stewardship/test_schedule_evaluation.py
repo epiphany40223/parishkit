@@ -270,3 +270,63 @@ def test_invalid_schedule_uses_the_existing_configuration_contract():
     """The planner cannot silently repair an invitation outside campaign dates."""
     with pytest.raises(ConfigError):
         plan("initial", date="2054-09-30")
+
+
+def test_a_daily_digest_never_plans_its_skipped_sends():
+    """Skipped slots (#1658) leave every page, and the cursor still passes them."""
+    rule = plan(time="00:15:00", skip_dates=["2054-10-02", "2054-10-31"])
+    keys = [slot.key for slot in rule.page(through=FUTURE).slots]
+    assert len(keys) == 29
+    assert "2054-10-02" not in keys and "2054-10-31" not in keys
+    assert keys[:2] == ["2054-10-01", "2054-10-03"]
+    # A one-date page over the skipped day finds no slot but moves past it,
+    # as past a wholly skipped civil day, so planning never stalls there.
+    page = rule.page(through=FUTURE, after=date(2054, 10, 1), limit=1)
+    assert page.slots == () and page.cursor == date(2054, 10, 2)
+    assert not page.exhausted
+    # The next send after the skipped one's time is the following day's.
+    after = datetime(2054, 10, 2, 4, 16, tzinfo=UTC)
+    assert rule.next_slot(after=after).key == "2054-10-03"
+    assert plan(time="00:15:00").next_slot(after=after).key == "2054-10-02"
+
+
+def test_a_weekly_digest_never_plans_its_skipped_week():
+    """A skipped week leaves the weekly pages and its forecast (#1658)."""
+    weeks = [slot.key for slot in plan("weekly_digest").page(through=FUTURE).slots]
+    rule = plan("weekly_digest", skip_dates=[weeks[1]])
+    assert [slot.key for slot in rule.page(through=FUTURE).slots] == [
+        weeks[0],
+        *weeks[2:],
+    ]
+    first = rule.page(through=FUTURE, limit=1).slots[0]
+    assert rule.next_slot(after=first.due_at).key == weeks[2]
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        ["2054-10-03", "2054-10-02"],
+        ["2054-10-02", "2054-10-02"],
+        ["20541002"],
+        ["2054-10-02T00:00:00"],
+        "2054-10-02",
+        [None],
+        [(date(2054, 1, 1) + timedelta(days=n)).isoformat() for n in range(401)],
+    ],
+)
+def test_skip_dates_must_be_a_short_ascending_list_of_dates(value):
+    """One canonical form: distinct ISO dates, ascending, at most 400 (#1658)."""
+    with pytest.raises(ConfigError):
+        plan(skip_dates=value)
+
+
+def test_an_empty_skip_list_skips_nothing():
+    """Empty once a change dropped every skip (an update merges, #1658)."""
+    assert plan(skip_dates=[]).page(through=FUTURE, limit=1).slots
+
+
+@pytest.mark.parametrize("kind", ["initial", "reminder"])
+def test_family_mail_never_takes_skip_dates(kind):
+    """Only an Admin digest skips a send; Family mail refuses skip dates."""
+    with pytest.raises(ConfigError):
+        plan(kind, skip_dates=["2054-10-01"])

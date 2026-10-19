@@ -376,7 +376,7 @@ def page_context(campaign, family_id, identity, timeline, as_of, **options):
 
 
 def export_context(campaign_id, family_id):
-    """The export form's values: its address, key, time zones and availability."""
+    """The export form's values: its address, key and availability."""
     from uuid import uuid4
 
     from .export_services import admit_campaign
@@ -389,7 +389,6 @@ def export_context(campaign_id, family_id):
     return {
         "url": reverse("admin:timeline_export", args=[family_id]),
         "request_key": uuid4(),
-        "timezones": sorted(timezone_names()),
         "mutable": mutable,
     }
 
@@ -621,6 +620,8 @@ def export(request, campaign_id, family_id):
     """
     from uuid import UUID
 
+    from parishkit.stewardship.web.dates import parish_zone, unasked_zone
+
     from .export_services import ExportRequestBound
     from .export_ui import _redirect
     from .timeline_exports import create_timeline_export
@@ -632,10 +633,12 @@ def export(request, campaign_id, family_id):
             raise PermissionError("The timeline export is for Administrators.")
         parameters = request.POST.copy()
         parameters.pop("csrfmiddlewaretoken", None)
-        fields = {"format", "browser_timezone", "request_key"}
+        # The browser's zone is posted unasked, so it is optional and never
+        # refused: a missing or unknown one is the parish's (#1679).
+        fields = {"format", "request_key"}
         if (
             request.GET
-            or set(parameters) != fields
+            or set(parameters) - {"browser_timezone"} != fields
             or any(len(parameters.getlist(key)) != 1 for key in parameters)
         ):
             return private_response("Invalid timeline export.\n", status=400)
@@ -647,7 +650,8 @@ def export(request, campaign_id, family_id):
             family_id=family_id,
             mode="production",
             format=parameters["format"],
-            browser_timezone=parameters["browser_timezone"],
+            browser_timezone=unasked_zone(parameters.get("browser_timezone"), None)
+            or parish_zone(),
             request_key=UUID(parameters["request_key"]),
         )
         return _redirect(result.pk)

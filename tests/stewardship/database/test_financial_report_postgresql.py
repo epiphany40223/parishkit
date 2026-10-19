@@ -754,6 +754,32 @@ def test_native_page_filters_privately_and_denies_leaders(
         assert b"No matching pledges." in body and b"$1,234.50" not in body
         _, body = search(browser, route, {"pledge_min": "1234.50", "share": CHECK})
         assert name in body and b'value="1234.50"' in body
+        # The answer names its view's own address with only the closed
+        # choices (#1586): the pledge range stays private.
+        address = f"{route}?share={CHECK}".encode()
+        assert b'<a href="' + address + b'" data-page-address hidden>' in body
+        # A reload asks for that address by GET, which draws the same view.
+        response, body = get(browser, f"{route}?share={CHECK}&sort=pledge&size=25")
+        assert response.status_code == 200 and name in body
+        assert f'<option value="{CHECK}" selected>'.encode() in body
+        assert b'<option value="25" selected>' in body
+        assert b'aria-sort="ascending"' in body
+        response, body = get(browser, f"{route}?amount=zero")
+        assert response.status_code == 200 and name not in body
+        assert b"No matching pledges." in body
+        # Only those closed values: a private field, a page, a value outside
+        # its set or a repeated one is refused.
+        for query in (
+            "amount=zero&pledge_min=1",
+            "page=2",
+            "amount=some",
+            "size=250",
+            "amount=zero&amount=any",
+        ):
+            assert get(browser, f"{route}?{query}")[0].status_code == 400
+        # A POST's filters never mix with an address's: a query string on
+        # a CSRF POST is refused.
+        assert search(browser, f"{route}?amount=zero", {})[0].status_code == 400
         for invalid in ({"sort": "random"}, {"extra": "x"}):
             seen = len(refusals())
             response, body = search(browser, route, invalid)

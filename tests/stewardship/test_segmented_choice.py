@@ -224,7 +224,7 @@ def test_no_admin_template_draws_a_two_option_menu():
             continue
         for match in SELECT.finditer(text):
             body = match.group(2)
-            if re.search(r"\{%\s*(?:for|include|export_format_options)\b", body):
+            if re.search(r"\{%\s*(?:for|include)\b", body):
                 continue
             if len(OPTION.findall(body)) != 2:
                 continue

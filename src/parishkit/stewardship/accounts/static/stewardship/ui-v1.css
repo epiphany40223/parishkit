@@ -379,6 +379,57 @@ hr { border: 0; border-top: 1px solid var(--border); margin-block: 2rem; }
 /* A card inside a card is a flat inset rather than a second floating layer. */
 .panel .panel { background: var(--paper-soft); box-shadow: none; }
 .empty-state { text-align: center; background: transparent; border-style: dashed; border-color: var(--control-border); box-shadow: none; color: var(--muted); }
+/* Overview pages (ui-conventions "Overview pages", #1673). Home's Needs attention row: short
+   count lines side by side, wrapping onto more lines and stacking on a phone. */
+.home-alerts { display: flex; flex-wrap: wrap; gap: .5rem; list-style: none; margin: 0 0 .5rem; padding: 0; }
+:where(.admin-body) .home-alerts > li.notice { flex: 1 1 20rem; margin: 0; padding: .35rem .85rem; line-height: 1.4; }
+/* Home's panels, count lines and tiles are tighter than a form page's, so the overview fits a
+   laptop window (1366 x 768) without scrolling, with room to spare in Linux's wider fonts
+   (DejaVu Sans), where the count lines wrap onto more lines than in macOS's (#1673). */
+:where(.admin-body) .panel.home-panel { padding: .75rem 1.25rem; margin-block: .5rem; }
+.home-participation { margin-top: .4rem; }
+.home-participation .stat-tiles { margin-bottom: .5rem; }
+.home-participation .stat-tiles:last-child { margin-bottom: 0; }
+.home-participation .stat-tile { padding: .4rem .85rem; gap: .1rem; }
+.home-participation-foot { margin: 0; }
+/* The campaign panel's fact strip: one key/value row (label above value), wrapping. */
+.home-facts { display: flex; flex-wrap: wrap; gap: .5rem 2rem; margin: 0; }
+.home-facts > div { display: flex; flex-direction: column; }
+.home-facts dt { font-size: .85rem; font-weight: 600; color: var(--muted); }
+.home-facts dd { margin: 0; font-weight: 600; }
+/* A panel heading with its "See the page" link on the same line. */
+.home-panel-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .25rem 1rem; margin-bottom: .5rem; }
+.home-panel-head > h2, .home-panel-links { margin: 0; }
+.home-next-steps > h2 { margin-block: 0 .4rem; }
+/* Link cards (components/link-cards.html): a grid of cards, each one link whose text reads the
+   page's name, then its count large and what it means. Each card is two short lines, so a row
+   of three stays compact even in Linux's wider fonts (#1673): the name above what the count
+   means, and the count large at the end, spanning both lines. The DOM order (name, count,
+   meaning) is the order the link's name reads. 16rem columns put three cards on a row in a
+   laptop window, leaving each name room for one line. The start bar reinforces the count
+   (warning above zero, accent at zero); the words carry it. Hover and focus change only the
+   underline, never the size (no layout shift). */
+.link-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(16rem, 100%), 1fr)); gap: .5rem; list-style: none; margin: 0; padding: 0; }
+.link-card { border: 1px solid var(--border); border-inline-start-width: .35rem; border-radius: var(--radius-small); background: var(--paper-soft); }
+.link-card > a, .link-card.link-card-off { display: grid; grid-template-columns: 1fr auto; grid-template-areas: "label count" "note count"; align-items: center; column-gap: .75rem; box-sizing: border-box; height: 100%; padding: .35rem .85rem; }
+.link-card > a { text-decoration: none; }
+.link-card > a:hover .link-card-label, .link-card > a:focus-visible .link-card-label { text-decoration: underline; }
+.link-card-label { grid-area: label; font-weight: 600; }
+.link-card-count { grid-area: count; font-size: 1.5rem; font-weight: 650; line-height: 1.9rem; font-variant-numeric: tabular-nums; color: var(--ink); }
+.link-card-note { grid-area: note; font-size: .875rem; line-height: 1.35; color: var(--muted); }
+.link-card-attention { border-inline-start-color: var(--warning-border); }
+.link-card-clear { border-inline-start-color: var(--accent); }
+.link-card-off { color: var(--muted); }
+/* A card with a second, small link (#1576: Sent mail's other-mode count) puts it at the card's
+   end, beside the main link's count and divided from it, so the card stays two lines; on a
+   narrow card it wraps under the main link. Its padding and gaps are a little tighter than a
+   plain card's so both fit a third of a laptop window's row in Linux's DejaVu Sans. */
+.link-card-split { display: flex; flex-wrap: wrap; }
+.link-card-split > a:first-child { flex: 1 1 auto; height: auto; column-gap: .4rem; padding-inline-end: .5rem; }
+.link-card > a.link-card-other { display: flex; align-items: center; flex: 0 0 auto; padding: .35rem .5rem; border-inline-start: 1px solid var(--border); font-size: .8125rem; }
+.link-card > a.link-card-other:hover, .link-card > a.link-card-other:focus-visible { text-decoration: underline; }
+/* A card without a count leaves the count column empty, so it needs no gap beside it. */
+.link-card-off, .link-card > a:not(:has(> .link-card-count)) { column-gap: 0; }
 /* Stat tiles (ui-conventions "Stat tiles", #1540), drawn by components/stat-tiles.html: a row of
    cards, wrapping, each its label, value and up to two explanation lines; a row's tiles stretch
    to one height. */
@@ -551,6 +602,9 @@ input:is([type=date], [type=time], [type=datetime-local], [type=month]) { max-wi
 input[type=number] { max-width: 10rem; }
 input:is([type=email], [type=url], [type=tel]) { max-width: 34rem; }
 input:is([type=text], [type=search], [type=password], :not([type])) { max-width: 40rem; }
+/* An address or link typed in a text box that asks for an email or URL
+   keyboard (a shared format rule's field, #1577) is as wide as those types. */
+input:is([inputmode=email], [inputmode=url]) { max-width: 34rem; }
 /* A typed time of day (#631) is as short as a native time control; a list of
    times is medium. Its reading (ui-v1.js) sits under the box in the help
    style, and in the error style while the entry cannot be read; a visually
@@ -729,6 +783,40 @@ button[aria-disabled=true], .button[aria-disabled=true], input[type=submit][aria
    spinner and the form ignores repeat clicks until the next page loads. With
    reduced motion the spinner stays still (see the rule at the end). */
 button.is-busy[aria-disabled=true], .button.is-busy[aria-disabled=true], input[type=submit].is-busy[aria-disabled=true] { background: var(--muted); border-color: var(--muted); color: var(--paper); }
+/* Apply filters and Clear filters (components/filter-actions.html, #1651)
+   are placed by ui-conventions "Clear filters"' three steps (#1776):
+   beside the fields' last row side by side, else stacked there if that
+   row keeps its height, else side by side on a row of their own. ui-v1.js
+   tries the steps in order and marks the one that fits on the pair
+   (data-filter-place); these rules draw each. Before the script runs (and
+   in a flex filter bar it is the same answer) the pair never shrinks or
+   wraps inside itself, so the bar keeps it beside the last field when both
+   buttons fit there and otherwise moves it, whole, to a new line. It is
+   never wider than its line, so on a screen too narrow for both buttons
+   Clear wraps under Apply instead of pushing the page sideways. Both
+   buttons have a smaller inline padding than other buttons (.75rem, not
+   1.25rem), so side by side they fit one 14rem-and-up Filters panel cell
+   (about 288 px at 1280 px) with Linux's wider fonts too. While Clear has
+   nothing to do it is greyed but focusable (aria-disabled,
+   data-clear-unavailable, ui-v1.js), and its reason is a floating tip like
+   an unavailable control's, so its state never moves anything (no layout
+   shift). The pair's own rules name the form's id, so they outrank a
+   page's rules for its filter-bar cells (Sent mail's grow from 6.5rem),
+   which would otherwise size the pair as one more field. */
+.filter-actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .5rem; vertical-align: bottom; max-width: 100%; }
+#table-filters .filter-actions { flex: 0 0 auto; align-self: end; min-width: 0; margin: 0; }
+.filter-actions button { margin: 0; white-space: nowrap; padding-inline: .75rem; }
+/* Step 1 in a Filters panel's grid whose cells are too narrow for both
+   buttons side by side: two of the last row's empty cells. */
+#table-filters .filter-actions[data-filter-wide] { grid-column: span 2; }
+/* Step 2: Clear under Apply, both as wide as the wider, in the same cell. */
+#table-filters .filter-actions[data-filter-place=stacked] { flex-direction: column; align-items: stretch; }
+/* Step 3: a row of the form's own, at its foot: a full line of a filter
+   bar, every column of a Filters panel's grid, or a block line of its own
+   in a form with neither (Roster changes' one select). */
+#table-filters .filter-actions[data-filter-place=row] { display: flex; width: max-content; flex-basis: 100%; grid-column: 1 / -1; justify-self: start; }
+.filter-clear { position: relative; display: inline-block; }
+button[data-clear-unavailable][aria-disabled=true], button[data-clear-unavailable][aria-disabled=true]:not(:disabled):hover { cursor: not-allowed; opacity: .55; background: var(--paper); color: var(--accent); box-shadow: none; }
 button.is-busy::after, .button.is-busy::after { content: ""; display: inline-block; width: .85em; height: .85em; margin-inline-start: .5em; vertical-align: -.1em; border: 2px solid currentColor; border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
 @keyframes busy-spin { to { transform: rotate(360deg); } }
 /* Live status regions (live-status-v1.js, live-running.html): a still-running
@@ -1110,12 +1198,35 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
 .campaign-load-ghost::before { content: attr(data-label); }
 .button-large { font-size: 1.1rem; padding: .8rem 1.75rem; }
 .spinner { display: inline-block; width: 1em; height: 1em; margin-inline-end: .35em; vertical-align: -.15em; border: 2px solid var(--accent); border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
-/* An export panel collapsed below a report's filters. */
-details.export-panel > form { margin-top: .5rem; }
+/* Export actions (#1679, components/export-actions.html): one row of small
+   outlined buttons, one per format, smaller and quieter than the primary
+   green buttons, wrapping on a phone instead of widening the page. They are
+   2.25rem tall, past the 24px minimum target size with .5rem between them.
+   An export pane (.export-pane) is that row and, only while exporting is
+   unavailable (other campaign work under way), the line saying why.
+   System logs' "Times in" menu sits in the row at its own width. */
+.export-pane { margin-block: 1rem; }
+.export-pane > p, .export-pane > form > p { margin-block: .25rem; }
+.export-actions, .export-buttons, .export-zone { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+.export-actions { margin-block: .5rem; }
+.button-small { min-height: 2.25rem; margin: 0; padding: .3rem .8rem; font-size: .9rem; font-weight: 600; }
+.export-zone label { margin: 0; font-weight: 600; }
+/* The menu grows when ui-v1.js adds "Zone (this browser)"; as a flex item it
+   may shrink below that text, so a phone page never scrolls sideways. */
+.export-zone { min-width: 0; max-width: 100%; }
+.export-zone select { display: inline-block; flex: 0 1 auto; width: auto; min-width: 0; max-width: 100%; min-height: 2.25rem; padding-block: .25rem; }
+/* A slow export's waiting note (ui-v1.js) sits below the row, never in it. */
+.export-actions + .submit-wait { margin-top: 0; }
+/* A worklist's always-open Filters box (Census changes, #1682): the open
+   disclosure's box, its title a heading the size and place of a disclosure's
+   summary line, so the page reads as the other reports do with their panels
+   open. */
+section.filter-panel { border: 1px solid var(--border); border-radius: var(--radius-small); background: var(--paper); padding: 0 1rem 1rem; margin-block: 1rem; }
+section.filter-panel > h2 { margin: 0; padding-block: .6rem; font-size: 1rem; line-height: 1.5; }
 /* A report's Filters panel (#227, the filterpanel tag). At phone width its
    box gives up its side gutters and borders, so its filter bar keeps the
    full width it had before the panel and a label and its "i" keep one line. */
-@media (max-width: 40rem) { details.filter-panel { padding-inline: 0; border-inline: 0; border-radius: 0; } }
+@media (max-width: 40rem) { :is(details, section).filter-panel { padding-inline: 0; border-inline: 0; border-radius: 0; } }
 /* A long filter form in the panel is a grid (#1411), so it takes a few rows
    rather than one per field: one column on a phone, and from 40rem as many
    14rem columns as fit (two or three on a tablet, four on a laptop, where
@@ -1133,16 +1244,16 @@ details.export-panel > form { margin-top: .5rem; }
    directory's form keeps its filter bar (.filter-bar, below): its short
    fields already share rows, and in the grid's equal columns it measured
    taller. */
-details.filter-panel > form:not(.filter-bar) { display: grid; grid-template-columns: minmax(0, 1fr); gap: .5rem 1rem; align-items: end; margin-top: .25rem; }
-details.filter-panel > form:not(.filter-bar) label { margin: 0 0 .25rem; font-size: .925rem; }
-details.filter-panel > form:not(.filter-bar) > :is(p, [data-complete-hint]) { grid-column: 1 / -1; margin: 0; }
-details.filter-panel > form:not(.filter-bar) > button { justify-self: start; margin: 0; }
-details.filter-panel > form:not(.filter-bar) > fieldset { display: grid; grid-template-columns: minmax(0, 1fr); gap: .5rem 1rem; align-items: end; margin: 0; padding: .5rem .75rem .75rem; }
-details.filter-panel > form:not(.filter-bar) > fieldset > legend { grid-column: 1 / -1; margin: 0; font-size: .925rem; }
+:is(details, section).filter-panel > form:not(.filter-bar) { display: grid; grid-template-columns: minmax(0, 1fr); gap: .5rem 1rem; align-items: end; margin-top: .25rem; }
+:is(details, section).filter-panel > form:not(.filter-bar) label { margin: 0 0 .25rem; font-size: .925rem; }
+:is(details, section).filter-panel > form:not(.filter-bar) > :is(p, [data-complete-hint]) { grid-column: 1 / -1; margin: 0; }
+:is(details, section).filter-panel > form:not(.filter-bar) > button { justify-self: start; margin: 0; }
+:is(details, section).filter-panel > form:not(.filter-bar) > fieldset { display: grid; grid-template-columns: minmax(0, 1fr); gap: .5rem 1rem; align-items: end; margin: 0; padding: .5rem .75rem .75rem; }
+:is(details, section).filter-panel > form:not(.filter-bar) > fieldset > legend { grid-column: 1 / -1; margin: 0; font-size: .925rem; }
 /* A range's reserved message line (#1332) spans its fieldset after both
    ends, or the form after Apply when the range has no fieldset. */
-details.filter-panel > form:not(.filter-bar) > .field-error-line,
-details.filter-panel > form:not(.filter-bar) > fieldset > .field-error-line { grid-column: 1 / -1; margin: 0; }
+:is(details, section).filter-panel > form:not(.filter-bar) > .field-error-line,
+:is(details, section).filter-panel > form:not(.filter-bar) > fieldset > .field-error-line { grid-column: 1 / -1; margin: 0; }
 /* A range whose message line sits in its fieldset, apart from the gate's
    reserved hint row (Financial stewardship's dates and amounts, #1469):
    the hint, in the server's words, is held hidden while a line shows them,
@@ -1156,13 +1267,13 @@ details.filter-panel > form:not(.filter-bar) > fieldset > .field-error-line { gr
    narrower than the selects beside them and ragged against the row above.
    The attribute selector outranks that rule, so every cell fills its
    track and every box fills its cell. */
-details.filter-panel[data-filter-panel] > form:not(.filter-bar) > div,
-details.filter-panel[data-filter-panel] > form:not(.filter-bar) > fieldset > div { margin: 0; }
-details.filter-panel[data-filter-panel] > form:not(.filter-bar) > div > input,
-details.filter-panel[data-filter-panel] > form:not(.filter-bar) > fieldset > div > input { max-width: none; }
+:is(details, section).filter-panel[data-filter-panel] > form:not(.filter-bar) > div,
+:is(details, section).filter-panel[data-filter-panel] > form:not(.filter-bar) > fieldset > div { margin: 0; }
+:is(details, section).filter-panel[data-filter-panel] > form:not(.filter-bar) > div > input,
+:is(details, section).filter-panel[data-filter-panel] > form:not(.filter-bar) > fieldset > div > input { max-width: none; }
 @media (min-width: 40rem) {
-  details.filter-panel > form:not(.filter-bar) { grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); }
-  details.filter-panel > form:not(.filter-bar) > fieldset { grid-column: span 2; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  :is(details, section).filter-panel > form:not(.filter-bar) { grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); }
+  :is(details, section).filter-panel > form:not(.filter-bar) > fieldset { grid-column: span 2; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 /* Compact filter bars: short fields share one row on wider screens. */
 .filter-bar { display: flex; flex-wrap: wrap; align-items: end; gap: .5rem 1rem; }
@@ -1176,13 +1287,26 @@ details.filter-panel[data-filter-panel] > form:not(.filter-bar) > fieldset > div
 .filter-bar > div.fit { flex: 0 1 auto; }
 /* Sent mail's five filters share one row beside the Admin menu at desktop
    width (#1562): each grows from a short basis instead of starting at
-   its widest choice. */
-.filter-bar.mail-filters > div { flex: 1 1 7.5rem; min-width: 6.5rem; }
+   its widest choice. The bar takes the page's width, not the 60rem form
+   cap, with a slightly smaller gap, so that on a 1366 px laptop Apply
+   filters and Clear filters (#1651) fit beside the five filters even with
+   Linux's wider fonts, and the first rows still start on the screen. */
+.filter-bar.mail-filters { max-width: none; column-gap: .75rem; }
+.filter-bar.mail-filters > div { flex: 1 1 6.5rem; min-width: 6.5rem; }
+/* A field whose label row carries an "i" button (Recipient) is never
+   narrower than that row: when the filters shrink toward their minimum to
+   leave Apply filters and Clear filters room beside them, "Recipient", the
+   gap and the button (about 113 px with Linux's wider fonts) no longer fit
+   6.5rem, so the button wrapped and pushed that field's control below the
+   others'. */
+.filter-bar.mail-filters > div:not(.short):has(> .label-row) { min-width: 7.5rem; }
 /* From and Through are wide enough for the empty "mm/dd/yyyy" placeholder
    beside the calendar button, with Linux's wider fonts too. They drop the
    desktop short-field rule's end margin: the bar's gap spaces them, and
-   that margin kept Apply off the row at 1280 px with those fonts. */
-.filter-bar.mail-filters > div.short { flex: 0 1 10rem; min-width: 10rem; margin-inline-end: 0; }
+   that margin kept Apply off the row at 1280 px with those fonts. The
+   Timeline's From and Through (#1570) are sized the same way, so its Kind,
+   days, Apply filters and Clear filters (#1651) share one row at 1280 px. */
+.filter-bar:is(.mail-filters, .timeline-filters) > div.short { flex: 0 1 10rem; min-width: 10rem; margin-inline-end: 0; }
 .filter-bar.mail-filters > div > :is(input, select) { width: 100%; }
 /* Every label sits on one line of the toggletip's height, and the fields
    line up at their tops, so Recipient's label (with its toggletip) and the
@@ -1821,12 +1945,12 @@ fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0;
    and so would a report filter's range ends, refused in place (#1332),
    and a System logs filter field (#1332).
    A select is held at its minimum height and keeps the global 2px border. */
-:is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(details.filter-panel > form > div, details.filter-panel > form > fieldset > div, .log-filters .filter-bar > div) > input)[aria-invalid=true] { border-width: 1px; box-shadow: inset 0 0 0 1px var(--error-border); }
-:is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(details.filter-panel > form > div, details.filter-panel > form > fieldset > div, .log-filters .filter-bar > div) > input)[aria-invalid=true]:focus { box-shadow: inset 0 0 0 1px var(--error-border), 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+:is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(:is(details, section).filter-panel > form > div, :is(details, section).filter-panel > form > fieldset > div, .log-filters .filter-bar > div) > input)[aria-invalid=true] { border-width: 1px; box-shadow: inset 0 0 0 1px var(--error-border); }
+:is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(:is(details, section).filter-panel > form > div, :is(details, section).filter-panel > form > fieldset > div, .log-filters .filter-bar > div) > input)[aria-invalid=true]:focus { box-shadow: inset 0 0 0 1px var(--error-border), 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
 /* Forced colors draw no shadow: an outline inside the border marks it,
    except under keyboard focus, where the global 3px focus ring shows. */
 @media (forced-colors: active) {
-  :is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(details.filter-panel > form > div, details.filter-panel > form > fieldset > div, .log-filters .filter-bar > div) > input)[aria-invalid=true]:not(:focus-visible) { outline: 1px solid CanvasText; outline-offset: -2px; }
+  :is(.schedule-row-fields :is(input, select), .field-row input, .field-live > input, :where(.artwork-upload) input[type=file], :where(:is(details, section).filter-panel > form > div, :is(details, section).filter-panel > form > fieldset > div, .log-filters .filter-bar > div) > input)[aria-invalid=true]:not(:focus-visible) { outline: 1px solid CanvasText; outline-offset: -2px; }
 }
 .schedule-row-messages { padding-top: .5rem; min-height: calc(1lh + .5rem); }
 .schedule-row-messages > * { margin: 0; }

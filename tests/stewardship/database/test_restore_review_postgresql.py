@@ -446,7 +446,10 @@ def test_settling_needs_a_live_administrator_and_is_audited(auth_service, google
     current = administrator()
     with (
         task_login(ServiceRole.WEB, exact=True),
-        pytest.raises(DatabaseError, match="fresh Administrator"),
+        pytest.raises(
+            DatabaseError,
+            match="A restore decision requires a live Administrator session",
+        ),
     ):
         settle_held_email(
             hold_id=other.pk,
@@ -559,7 +562,10 @@ def test_release_reopens_the_site_and_keeps_unsettled_holds(auth_service, google
     )
     with (
         task_login(ServiceRole.WEB, exact=True),
-        pytest.raises(DatabaseError, match="fresh Administrator"),
+        pytest.raises(
+            DatabaseError,
+            match="A restore decision requires a live Administrator session",
+        ),
     ):
         settle_held_email(
             authenticated_at=current.authenticated_at - timedelta(minutes=10),
@@ -754,7 +760,10 @@ def test_release_needs_a_live_administrator(auth_service, google):
     with (
         campaign_clock(NOW),
         task_login(ServiceRole.WEB, exact=True),
-        pytest.raises(DatabaseError, match="fresh Administrator"),
+        pytest.raises(
+            DatabaseError,
+            match="A restore decision requires a live Administrator session",
+        ),
     ):
         release_review(
             request_id=uuid4(),
@@ -1040,24 +1049,30 @@ def test_the_frozen_file_replaces_the_previous_bodies_and_checks_them():
             )
             return cursor.fetchall()
 
-    current = installed()
-    for old, message in (
-        (guard, "decision guard is not the one"),
-        (live, "Family dispatch check is not the one"),
-    ):
-        with (
-            pytest.raises(DatabaseError, match=message),
-            transaction.atomic(),
-            connection.cursor() as cursor,
+    with transaction.atomic():
+        # 0124 (#1762) has since reworded the decision guard's refusal, so
+        # 0048's own body goes back first (rolled back below).
+        with connection.cursor() as cursor:
+            cursor.execute(definition(text, "stewardship_restore_resolution_v1"))
+        current = installed()
+        for old, message in (
+            (guard, "decision guard is not the one"),
+            (live, "Family dispatch check is not the one"),
         ):
-            cursor.execute(old)
-            cursor.execute(acl)
-            cursor.execute(check)
-    # The upgrade itself: the whole file over both previous bodies installs
-    # exactly the current ones, and its DO block passes.
-    with transaction.atomic(), connection.cursor() as cursor:
-        cursor.execute(guard)
-        cursor.execute(live)
-        assert installed() != current
-        cursor.execute(text)
-        assert installed() == current
+            with (
+                pytest.raises(DatabaseError, match=message),
+                transaction.atomic(),
+                connection.cursor() as cursor,
+            ):
+                cursor.execute(old)
+                cursor.execute(acl)
+                cursor.execute(check)
+        # The upgrade itself: the whole file over both previous bodies installs
+        # exactly the current ones, and its DO block passes.
+        with transaction.atomic(), connection.cursor() as cursor:
+            cursor.execute(guard)
+            cursor.execute(live)
+            assert installed() != current
+            cursor.execute(text)
+            assert installed() == current
+        transaction.set_rollback(True)

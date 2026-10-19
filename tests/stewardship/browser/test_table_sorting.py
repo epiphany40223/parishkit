@@ -113,7 +113,7 @@ def test_filter_form_follows_an_in_place_sort(page, component_origin):
     has_attribute(sort_heading(page, "name"), "aria-sort", "descending")
     assert sort.input_value() == "-name"
     with page.expect_request(lambda request: "q=" in request.url) as sent:
-        page.get_by_role("button", name="Filter").click()
+        page.get_by_role("button", name="Apply filters").click()
     assert "sort=-name" in sent.value.url
 
 
@@ -340,16 +340,13 @@ def test_export_choices_survive_a_sort_and_its_hidden_fields_follow(
     page, component_origin
 ):
     """Only table state is synchronised: an export form's hidden sort follows
-    the in-place re-sort while the reader's format and timezone, including
-    the browser zone a script added, stay as chosen."""
+    the in-place re-sort while the browser zone the script filled (#1679)
+    stays as it was."""
     page.goto(component_origin + "/information")
-    # The export starts closed (#227).
-    page.get_by_text("Export complete results").click()
     export = page.locator("#table-export")
-    export.locator("select[name=format]").select_option("xlsx")
-    zone = export.locator("select[data-information-timezone]")
+    zone = export.locator("input[name=browser_timezone]")
     chosen = zone.input_value()
-    options = zone.locator("option").count()
+    assert chosen == "America/Los_Angeles"
     assert export.locator("input[name=sort]").input_value() == "newest"
     fulfil_post_with(
         page,
@@ -360,9 +357,7 @@ def test_export_choices_survive_a_sort_and_its_hidden_fields_follow(
     page.get_by_role("button", name="Family (sort ascending)").click()
     has_attribute(sort_heading(page, "family"), "aria-sort", "ascending")
     assert export.locator("input[name=sort]").input_value() == "name"
-    assert export.locator("select[name=format]").input_value() == "xlsx"
     assert zone.input_value() == chosen
-    assert zone.locator("option").count() == options
 
 
 def test_packet_choices_keep_their_ticks_while_the_queue_is_resorted(
@@ -438,7 +433,7 @@ def test_get_filter_applies_in_place(page, component_origin):
     page.get_by_label("Search by name").fill("Lectors")
     offset = scroll_to_filters(page)
     with page.expect_request(lambda request: "q=Lectors" in request.url) as fetched:
-        page.get_by_role("button", name="Filter").click()
+        page.get_by_role("button", name="Apply filters").click()
     assert fetched.value.headers.get("x-requested-with") == "fetch"
     visible(page.get_by_text("Showing 1–1 of 1").first)
     assert ministry_names(page) == ["Lectors"]
@@ -450,7 +445,7 @@ def test_get_filter_applies_in_place(page, component_origin):
     assert bottom > 40
     assert abs(page.evaluate("window.scrollY") - min(offset, bottom)) < 40
     assert page.url == (component_origin + "/ministries?q=Lectors&size=50&sort=name")
-    assert page.evaluate("document.activeElement.textContent.trim()") == "Filter"
+    assert page.evaluate("document.activeElement.textContent.trim()") == "Apply filters"
     has_text(
         page.get_by_role("status").filter(has_text="Showing"),
         "Showing 1–1 of 1 · Page 1 of 1",
@@ -464,7 +459,7 @@ def test_filter_with_no_matches_shows_the_empty_table(page, component_origin):
     page.goto(component_origin + "/ministries")
     page.evaluate(MARK)
     page.get_by_label("Search by name").fill("Nothing")
-    page.get_by_role("button", name="Filter").click()
+    page.get_by_role("button", name="Apply filters").click()
     visible(page.get_by_text("No Ministries match these filters."))
     assert ministry_names(page) == []
     assert page.evaluate(MARKED) == "kept"
@@ -486,8 +481,7 @@ def test_post_filter_applies_in_place_with_csrf(page, component_origin):
     expect(chart).to_have_attribute("data-chart-state", "rendered")
     expect(chart.locator("svg tspan", has_text="20 out of 51 (39.2%)")).to_have_count(1)
     page.evaluate(MARK)
-    # The export starts closed (#227); its count is checked below.
-    page.get_by_text("Export complete results").click()
+    # The export row's count is checked below (#1679).
     page.get_by_label("Request history").select_option("withdrawn")
     offset = scroll_to_filters(page)
     fulfil_post_with(
@@ -510,7 +504,6 @@ def test_post_filter_applies_in_place_with_csrf(page, component_origin):
     chart = page.locator("[data-chart='information-followup-spec']")
     expect(chart).to_have_attribute("data-chart-state", "rendered")
     expect(chart.locator("svg tspan", has_text="1 out of 3 (33.3%)")).to_have_count(1)
-    visible(page.locator("#information-export-count", has_text="3 estimated matching"))
     export = page.locator("#table-export input[type=hidden][name=disposition]")
     assert export.input_value() == "withdrawn"
     assert page.evaluate(MARKED) == "kept"
@@ -542,13 +535,11 @@ def test_post_filter_with_no_matches_empties_the_counts(page, component_origin):
 
 def test_filter_that_adds_columns_and_notes_updates_them(page, component_origin):
     """Include mailing columns adds table columns, the unreachable-Families
-    notice and the export's mail-merge notes, all outside the table but the
-    columns; each follows the filter without a page load."""
+    notice (outside the table) and the export's mailing field; each follows
+    the filter without a page load."""
     page.goto(component_origin + "/family-directory")
     page.evaluate(MARK)
     assert page.locator("[data-unreachable-notice]").count() == 0
-    help_text = page.locator("#directory-export-mailing-help")
-    assert help_text.is_hidden()
     fulfil_post_with(
         page, "**/families/", component_origin, lambda request: "/postal-directory"
     )
@@ -559,9 +550,6 @@ def test_filter_that_adds_columns_and_notes_updates_them(page, component_origin)
     visible(page.locator("#table").get_by_role("columnheader", name="Addressee"))
     visible(page.locator("[data-unreachable-notice]"))
     assert page.locator("#table-export input[name=mailing]").input_value() == "yes"
-    assert help_text.get_attribute("hidden") is None
-    # The export panel is a closed disclosure, so its text is read, not seen.
-    assert "mail-merge file" in page.locator("#directory-export-columns").text_content()
     assert page.evaluate(MARKED) == "kept"
 
 
@@ -662,7 +650,7 @@ def test_limitations_filter_updates_both_tables_and_the_summary(page, component_
     ]
     members = page.locator("#members-table tbody th[scope=row]").all_inner_texts()
     assert len(members) == 1 and members[0].startswith("Amy")
-    summary = page.locator("#limitations-summary dd")
+    summary = page.locator("#limitations-summary .stat-value")
     assert summary.first.inner_text() == "1"
     assert page.evaluate(MARKED) == "kept"
 

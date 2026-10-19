@@ -22,7 +22,6 @@ from parishkit.stewardship.accounts.sessions import authenticated_admin
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
-from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
 from parishkit.stewardship.time_entry import (
     TimeEntryError,
@@ -42,6 +41,7 @@ from parishkit.stewardship.web.filter_errors import error_context, refused
 from parishkit.stewardship.web.refusals import Refusal, with_status_code
 from parishkit.stewardship.web.report_errors import report_unavailable
 from parishkit.stewardship.web.responses import campaign_response
+from parishkit.stewardship.web.stat_tiles import tile
 from parishkit.stewardship.web.tables import (
     PAGE_SIZES,
     paginate,
@@ -718,9 +718,8 @@ def _page_response(request, campaign_id, *, request_id=None, refusal=None, packe
                 bulk_actions=bulk_actions(),
                 bulk_kind_hints=BULK_KIND_HINTS,
                 # Export these requests (#1157): the applied queue view's
-                # filters, search and sort, and the time zone choices.
+                # filters, search and sort.
                 export_fields=query.form_values(),
-                export_timezones=sorted(timezone_names()),
                 export_pdf_limit=EXPORT_PDF_LIMIT,
             )
             if packet is not None:
@@ -779,6 +778,14 @@ COUNT_FILTERS = {
 }
 
 
+def totals_tiles(totals):
+    """The Totals panel's two stat tiles (ui-conventions "Stat tiles", #1540)."""
+    return [
+        tile("joining", _("Join requests"), totals["joining"]),
+        tile("leaving", _("Leave requests"), totals["leaving"]),
+    ]
+
+
 def count_links(principal, summary):
     """The addresses one By Ministry row's counts apply to the table (#1133).
 
@@ -817,6 +824,7 @@ def _overview(campaign_id, query, principal, result):
     return {
         "totals": totals,
         "followup_chart": ministry_followup(totals),
+        "totals_tiles": totals_tiles(totals),
         "by_ministry": summaries,
         # The "Not in ParishSoft data" and campaign marks, for Staff and
         # Administrators only (#1135).

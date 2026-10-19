@@ -1,7 +1,10 @@
 {% load i18n stewardship %}{% comment %}
   Families the form cannot open (#774), the Families the form cannot open
-  tile's details (#1214). Read on page load only, never by the poll, so it
-  has no polled copy. ``source_form_tile`` is system_health.source_form_tile's
+  tile's details (#1214). Read when the page opens and by the fragment's
+  slow recheck about every 5 minutes (#1790), never by an ordinary poll.
+  In the recheck (no Admin chrome) the list link is an ordinary link; it
+  is drawn only while Families are listed or the check could not run,
+  after ParishSoft data was downloaded, when the page's link is too. ``source_form_tile`` is system_health.source_form_tile's
   answer, which sets the tile's state too. While the tile is a Warning, the
   sentence is its problem item; otherwise a plain line. The list's link is
   drawn only while it has something to show (Families listed, or a check
