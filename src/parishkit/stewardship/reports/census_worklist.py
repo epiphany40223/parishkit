@@ -41,10 +41,10 @@ from parishkit.stewardship.responses.census_additions import (
     FAMILY_ADD_FIELDS,
     AddRefusal,
     add_census_change,
-    covering_additions,
     parse_add,
     resolve_census_additions,
 )
+from parishkit.stewardship.responses.census_resolution import ReopenCovered
 from parishkit.stewardship.responses.census_review import (
     FIELDS,
     BulkStale,
@@ -509,18 +509,6 @@ class CensusDecisions:
             raise ValueError("Only Edit sends a value.")
         if additions and decision.action not in ADDITION_STEPS:
             raise ValueError("An added change takes no such decision.")
-        if decision.action is Action.BACK_TO_REVIEW and covering_additions(
-            item for item in proposals.values() if item.decision == "ignored"
-        ):
-            # The page withholds the icon; a page drawn before the Add, or
-            # the bulk bar, still posts it (#1710).
-            raise AddRefusal(
-                "reopen_added",
-                "A change the parish added for this field is still open, so this "
-                "ignored change cannot go back to review. Withdraw the added "
-                "change first.",
-                field_ids=("bulk_note" if decision.bulk else "note",),
-            )
         try:
             with work_transaction():
                 recorded = []
@@ -546,6 +534,17 @@ class CensusDecisions:
                         request_key=decision.key,
                         bulk=decision.bulk,
                     )
+        except ReopenCovered:
+            # Checked under the work order, so no Add slips in between; the
+            # page withholds the icon, but a page drawn before the Add, or
+            # the bulk bar, still posts it (#1710).
+            raise AddRefusal(
+                "reopen_added",
+                "A change the parish added for this field is still open, so this "
+                "ignored change cannot go back to review.",
+                field_ids=("bulk_note" if decision.bulk else "note",),
+                fix="Withdraw the added change first, then send this one back.",
+            ) from None
         except BulkStale as error:
             if error.proposal_id in additions:
                 raise StaleDecision(

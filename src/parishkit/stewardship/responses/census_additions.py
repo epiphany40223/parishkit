@@ -72,14 +72,17 @@ OPEN_EXECUTIONS = ("pending", "conflict", "queued", "failed")
 class AddRefusal(InvalidEdit):
     """An Add the reader can correct, in plain words, with its closed code.
 
-    ``field_ids`` name the Add dialog's fields the reason is shown at; the
-    message is static and never holds a submitted value.
+    ``field_ids`` name the dialog's fields the reason is shown at, and
+    ``fix`` the next step; the message is static and never holds a
+    submitted value.
     """
 
-    def __init__(self, code, message, *, field_ids):
+    def __init__(self, code, message, *, field_ids, fix=None):
         super().__init__(message)
         self.code = code
         self.field_ids = tuple(field_ids)
+        # The next step the page states after the reason.
+        self.fix = fix or "Correct it, then choose Add again."
 
 
 def _one(fields, name):
@@ -319,8 +322,8 @@ def add_census_change(store, actor_id, campaign_id, add, *, note, request_key):
                 previous.entity_kind,
                 previous.entity_key,
                 previous.field,
-            ) or (add["in_place_of"] or None) != (
-                str(previous.in_place_of_id) if previous.in_place_of_id else None
+            ) or (UUID(add["in_place_of"]) if add["in_place_of"] else None) != (
+                previous.in_place_of_id
             ):
                 raise KeyRebound("This request key is already bound.")
             try:
@@ -357,27 +360,6 @@ def add_census_change(store, actor_id, campaign_id, add, *, note, request_key):
             context={"outcome": Outcome.CHANGED, "version": 1},
         )
         return addition, True
-
-
-def covering_additions(proposals):
-    """The ids of ``proposals`` that an open addition covers.
-
-    An open addition of the same Family, Member (or Family) and field. An
-    ignored change it covers is not reopened while it is open, so the
-    field never has two open changes, one Ready to update and the other To
-    enter by hand with another value (#1710).
-    """
-    covered = set()
-    for proposal in proposals:
-        if CensusAddition.objects.filter(
-            family_id=proposal.submission.family_id,
-            entity_kind=proposal.entity_kind,
-            entity_key=proposal.entity_key,
-            field=proposal.field,
-            resolution__isnull=True,
-        ).exists():
-            covered.add(proposal.pk)
-    return covered
 
 
 def resolve_census_additions(

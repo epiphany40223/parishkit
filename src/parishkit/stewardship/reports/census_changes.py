@@ -540,8 +540,8 @@ def link_additions(changes, added):
         key = _key(row)
         row["overlap"] = row["stage"] == Stage.TO_ENTER_BY_HAND.value and key in asked
     # An ignored change an open addition of its field covers is not sent
-    # back to review while it is open (``census_additions.
-    # covering_additions`` refuses it too), so the field never has two.
+    # back to review while it is open (``census_resolution.
+    # covered_by_addition`` refuses it too), so the field never has two.
     covering = {
         _key(row) for row in added if row["stage"] == Stage.TO_ENTER_BY_HAND.value
     }

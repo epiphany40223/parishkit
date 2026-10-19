@@ -231,18 +231,16 @@ def _edit_refusal(error):
     return validation_response(fields, refusal=Refusal(str(error), EDIT_REFUSED))
 
 
-ADD_REFUSED = "Correct it, then choose Add again."
-
-
 def _add_refusal(error):
-    """The page's answer to an Add the reader can correct (#1710).
+    """The page's answer to an Add, or a reopen, the reader can correct (#1710).
 
-    Its static reason, shown in the Add dialog at the fields it names
-    (``AddRefusal.field_ids``), with its closed code for the refusal log.
+    Its static reason and next step, shown in the dialog at the fields it
+    names (``AddRefusal.field_ids``), with its closed code for the refusal
+    log.
     """
     fields = [FieldError(ErrorCode.INVALID, name) for name in error.field_ids]
     return with_codes(
-        validation_response(fields, refusal=Refusal(str(error), ADD_REFUSED)),
+        validation_response(fields, refusal=Refusal(str(error), error.fix)),
         error.code,
     )
 

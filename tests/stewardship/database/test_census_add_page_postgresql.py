@@ -32,7 +32,12 @@ from parishkit.stewardship.web.review_worklist import StaleDecision, WorklistDec
 from parishkit.stewardship.web.tables import paginate
 
 from .test_background_grants_postgresql import task_login
-from .test_census_additions_postgresql import add, campaign_of, member_form
+from .test_census_additions_postgresql import (
+    add,
+    address_form,
+    campaign_of,
+    member_form,
+)
 from .test_census_pipeline_review_postgresql import decide, prepared, state
 from .test_census_resolution_postgresql import leader
 from .test_census_review_postgresql import fresh
@@ -281,3 +286,47 @@ def test_an_ignored_change_an_addition_covers_is_not_reopened(response_service):
         note="Family meant it",
     )
     assert state(ignored)[0] == "unreviewed"
+
+
+def test_a_refused_reopen_says_what_to_do_over_http(response_service, google):
+    """A posted Back to review of a covered ignored change is a 400 at the
+    note, saying to withdraw the added change first."""
+    from .test_census_worklist_page_postgresql import ROUTE, staff_browser
+    from .test_information_followup_postgresql import search
+
+    harness, _, staff, rows = prepared(response_service)
+    decide(harness, staff, [rows["first_name"]], "ignore")
+    ignored = fresh(rows["first_name"])
+    add(harness, staff, campaign_of(rows), member_form(rows, "first_name", "Rob"))
+    browser = staff_browser(google)
+    form = {
+        "stage": "all",
+        "decide": "back_to_review",
+        "item": str(ignored.pk),
+        "version": str(ignored.version),
+        "request_key": str(uuid4()),
+        "note": "Family meant it",
+    }
+    response, body = search(browser, ROUTE, form)
+    assert response.status_code == 400
+    refusal = json.loads(body)
+    assert [error["field_id"] for error in refusal["errors"]] == ["note"]
+    assert refusal["refusal"]["fix"].startswith("Withdraw the added change first")
+    assert state(ignored)[0] == "ignored"
+
+
+def test_the_commands_reopen_of_a_covered_change_is_refused(response_service):
+    """``pk-admin census resolve``'s reopen (an Administrator's) is refused
+    while an open addition covers the ignored change, as the page's is."""
+    from parishkit.stewardship.responses.census_resolution import ReopenCovered
+
+    from .test_census_resolution_postgresql import prepared as with_home
+    from .test_census_resolution_postgresql import resolve
+
+    harness, admin, staff, home, _ = with_home(response_service)
+    resolve(harness, staff, home, "ignored", note="Duplicate")
+    fields = address_form({"home": home}, "home_address", line1="5 New St")
+    add(harness, staff, home.submission.campaign_id, fields)
+    with pytest.raises(ReopenCovered):
+        resolve(harness, admin, fresh(home), "reopened", note="Not a duplicate")
+    assert state(home)[0] == "ignored"
