@@ -98,16 +98,22 @@ def test_moved_routes_follow_the_scheme(pattern):
 
 @pytest.mark.parametrize(
     "name",
-    sorted(name for name, page in navigation.PAGES.items() if page.section in MOVED),
+    sorted(
+        name
+        for name, page in navigation.PAGES.items()
+        if navigation.SECTION_PATHS.get(page.section) in MOVED
+    ),
 )
 def test_every_moved_page_reverses_under_its_group(name):
-    """Each page's URL is /admin/<group>/…/ for its menu group."""
+    """Each page's URL is /admin/<segment>/…/ for its menu group: Review work
+    shares Reports and queries' ``reports`` segment (R39 finding 4)."""
     arguments = {
         parameter: "parishsoft" if parameter == "target" else TASK
         for parameter in navigation.route_parameters()[name]
     }
     url = reverse(f"admin:{name}", kwargs=arguments)
-    assert url.startswith(f"/admin/{navigation.PAGES[name].section}/")
+    segment = navigation.SECTION_PATHS[navigation.PAGES[name].section]
+    assert url.startswith(f"/admin/{segment}/")
     assert url.endswith("/")
 
 
@@ -268,7 +274,8 @@ SLASHLESS_EXPECTED = {
     "/admin/users/sessions": "/admin/users/sessions/",
     "/admin/users/automation": "/admin/users/automation/",
     "/admin/users/automation/approval": "/admin/users/automation/approval/",
-    # Responses and reports pages without their trailing slash (NAV-11).
+    # Review work and Reports and queries pages without their trailing slash
+    # (NAV-11).
     "/admin/reports": "/admin/reports/",
     "/admin/reports/responses": "/admin/reports/responses/",
     "/admin/reports/comparison": "/admin/reports/comparison/",
