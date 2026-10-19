@@ -48,6 +48,7 @@ from parishkit.stewardship.accounts.sessions import (
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.jobs.models import NONTERMINAL_STATES, TaskRun
+from parishkit.stewardship.jobs.storage import TaskRetryConflict
 from parishkit.stewardship.jobs.views import (
     PUBLICATION_CHECK,
     UPDATE_RUN,
@@ -434,7 +435,7 @@ def _update_step(request, service, principal, campaign_id):
             emit_failure(error, level=logging.ERROR, name_class=True)
             raise
         raise refusal from None
-    except (PermissionError, StorageInvariantError):
+    except PermissionError:
         # The services' own admission refused what the page's checks passed
         # a moment before (a race): said as the page would now say it.
         raise _raced(request, service, plan) from None
@@ -511,10 +512,10 @@ def _rerun_step(request, service, principal, campaign_id):
     except PublicationDisabled:
         # Switched off between the page's check and the service's.
         raise publication.OFF.refusal() from None
-    except (PermissionError, StorageInvariantError):
+    except (PermissionError, TaskRetryConflict):
         # Another Administrator's Run again, or the run's last Member
-        # finished, between the page's check and the service's
-        # (``TaskRetryConflict`` is a StorageInvariantError).
+        # finished, between the page's check and the service's. Any other
+        # storage invariant is a programming error, answered as an outage.
         raise _raced(request, service, plan) from None
     return {"rerun": {"started": True}}
 

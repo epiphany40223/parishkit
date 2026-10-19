@@ -397,6 +397,13 @@ def _execute_publication(execution, *, enabled, gateway):
         try:
             check_publishable(plan_id, enabled=enabled)
         except (PublicationDisabled, PublicationRefused) as error:
+            if not unfinished([plan_id]):
+                # A retry only for a final refresh still owed (every Member
+                # finished, recover_publication), refused before it could
+                # ask: nothing is left to write, so the run is complete, not
+                # failed, and the next scheduled refresh catches up.
+                execution.transition("complete")
+                return
             _refuse(execution, _refusal(error))
             return
         source = gateway(execution)
@@ -495,6 +502,9 @@ def _request_final_refresh(execution, plan_id):
         with execution.effect():
             if SourceRefreshCommand.objects.filter(pk=command_id).exists():
                 # A replay of a run that already asked: asked and audited once.
+                # (A row refused partway after asking, crashed, and retried
+                # once switched on again asks no second time; the scheduled
+                # refresh then catches its later writes up.)
                 return
             if not refresh_owed(plan_id):
                 return
