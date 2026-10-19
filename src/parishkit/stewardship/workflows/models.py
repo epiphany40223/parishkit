@@ -301,3 +301,96 @@ class MinistryRosterEntry(ImmutableRecord):
                 name="ministry_roster_identity",
             ),
         ]
+
+
+# What one promoted refresh found for one item whose own row cannot carry
+# the outcome (#1689; review pipeline spec, "Refresh checks").
+REFRESH_OUTCOMES = (
+    "confirmed",
+    "unchanged",
+    "entered_incorrectly",
+    "ignored_now_matches",
+)
+
+
+class RefreshCheck(ImmutableRecord):
+    """One refresh's outcome for a final census change or a decided request.
+
+    A census change Entered by hand or Updated in ParishSoft is final in its
+    guard, and a Ministry request a person decided changes only by review,
+    so the baseline refresh re-evaluation records what each refresh found
+    here instead (#1689): the outcome, ParishSoft's value for a census
+    change (``observed``, ``{"available", "value"}``) and whether the
+    refresh was full. The item's stage is derived from its latest check.
+    Exactly one of ``proposal`` and ``request`` is set. Only the source
+    worker writes one, inside the promotion of ``snapshot_id`` and for the
+    item at ``item_version``; SQL checks each of these and keeps the rows
+    immutable (schema/migrations/0136_refresh_checks.sql).
+    """
+
+    snapshot_id = models.UUIDField()
+    full_refresh = models.BooleanField()
+    proposal = models.ForeignKey(
+        "stewardship_responses.ProposedChange",
+        on_delete=models.PROTECT,
+        null=True,
+        related_name="+",
+    )
+    request = models.ForeignKey(
+        MinistryRequest, on_delete=models.PROTECT, null=True, related_name="+"
+    )
+    item_version = models.PositiveBigIntegerField()
+    outcome = models.CharField(max_length=24)
+    observed = models.JSONField(null=True)
+
+    class Meta:
+        db_table = "stewardship_refresh_check"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("snapshot_id", "proposal"), name="refresh_check_proposal_once"
+            ),
+            models.UniqueConstraint(
+                fields=("snapshot_id", "request"), name="refresh_check_request_once"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(outcome__in=REFRESH_OUTCOMES),
+                name="refresh_check_outcome",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(proposal__isnull=False, request__isnull=True)
+                    | models.Q(proposal__isnull=True, request__isnull=False)
+                ),
+                name="refresh_check_one_item",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(actor_id__isnull=True, item_version__gte=1),
+                name="refresh_check_identity",
+            ),
+        ]
+
+
+class RefreshCheckStart(models.Model):
+    """When Not seen in ParishSoft starts counting, and after how many refreshes.
+
+    One row, written once by migration 0136, audited on an upgrade (#1689): Not
+    seen counts only the full refreshes recorded after ``started_at``, so
+    marks made before the release are not all flagged by its first refresh.
+    ``not_seen_after`` is the spec's configurable number of full refreshes
+    (default two). Deleting the row turns the flag off.
+    """
+
+    singleton = models.BooleanField(primary_key=True, default=True)
+    started_at = UTCDateTimeField()
+    not_seen_after = models.PositiveSmallIntegerField(default=2)
+
+    class Meta:
+        db_table = "stewardship_refresh_check_start"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(
+                    singleton=True, not_seen_after__gte=1, not_seen_after__lte=10
+                ),
+                name="refresh_check_start_one",
+            ),
+        ]

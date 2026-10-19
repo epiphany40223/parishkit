@@ -640,6 +640,13 @@ CLOSURE_TABLES = {
         ),
         ("stewardship_jobs", "0035_leader_emails"),
     ),
+    # The baseline refresh re-evaluation's checks and their start (0136,
+    # #1689, provisional number): the worker records checks in promotion,
+    # and web and the worker read both.
+    **dict.fromkeys(
+        ("stewardship_refresh_check", "stewardship_refresh_check_start"),
+        ("stewardship_workflows", "0004_refresh_checks"),
+    ),
 }
 
 
@@ -929,6 +936,13 @@ def runtime_grants(role, *, target=None):
             for table in PUBLICATION_WORKER_TABLES:
                 tables[table] = {"SELECT", "INSERT"}
             tables["stewardship_publication_confirmation"] = {"SELECT"}
+            # Refresh checks (#1689): promotion records one per final census
+            # change or decided Ministry request whose outcome changed, and
+            # reads the latest ones, the Not seen start and each request's
+            # Entered in ParishSoft tick. Its guard admits INSERT alone.
+            tables["stewardship_refresh_check"] = {"SELECT", "INSERT"}
+            tables["stewardship_refresh_check_start"] = {"SELECT"}
+            tables.setdefault("stewardship_ministry_roster_entry", set()).add("SELECT")
             add_service_status_housekeeping_grants(tables, columns)
         else:
             add_service_status_writer_grants(tables, columns)
