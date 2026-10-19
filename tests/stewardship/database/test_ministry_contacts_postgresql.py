@@ -178,7 +178,7 @@ def test_a_leaders_export_is_the_queue_view_in_their_scope(response_service, goo
         assert response.status_code == 200 and table(body) == []
         response, body = export(browser, format="xlsx", state="any")
         sheet = load_workbook(io.BytesIO(body))["Ministry requests"]
-        assert sheet["A1"].value == "Member" and sheet["C2"].value == "Food pantry"
+        assert sheet["A1"].value == "Member" and sheet["F2"].value == "Food pantry"
         response, body = export(browser, format="pdf", state="any")
         assert response.status_code == 200 and body.startswith(b"%PDF-")
         # The form grammar is closed, and a query string is refused.
@@ -292,9 +292,7 @@ def test_a_pdf_above_its_limit_is_refused_and_not_offered(
     browser, _, _, _ = leader(harness, google, roles=("staff",))
     queue = reverse("admin:ministry_report")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        response, body = search(
-            browser, queue, FollowupQuery(state="any").form_values()
-        )
+        response, body = search(browser, queue, {"stage": "all"})
         assert response.status_code == 200
         assert b'value="pdf" disabled data-server-disabled' in body
         assert b"The PDF is limited to 1 requests" in body

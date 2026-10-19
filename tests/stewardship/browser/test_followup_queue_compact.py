@@ -1,10 +1,12 @@
-"""The Ministry follow-up queue page is compact (#1064).
+"""Ministry requests' review worklist stays compact (#1064, #1684).
 
 Its five filters take two rows at laptop width and one row each at phone
-width; every row of a full page of requests is one line, or two where a
-long Ministry name wraps (#1136), with the long explanations kept to
-tooltips, screen-reader text and the request's own page; and applying the
-filters in place moves no filter control.
+width; a row to review with a short Ministry name is one line, and no row
+is taller than four (a decided row's stage and decision, a long Ministry
+name wrapping onto two, #1136), with the long explanations kept to
+tooltips, screen-reader text and the request's own page; the table
+scrolls sideways in its own box, never the page; and applying the filters
+in place moves no filter control.
 """
 
 import pytest
@@ -28,11 +30,11 @@ MAX_FILTER_HEIGHT = 220
 # Ministry name take two lines, about 67 px each.
 MAX_ROWS_HEIGHT = 1800
 FIELDS = (
+    "#requests-stage",
     "#followup-search",
     "#filter-ministry",
     "#filter-action",
-    "#filter-state",
-    "#filter-outcome",
+    "#filter-members",
 )
 # Apply filters, not the Clear filters beside it (#1651).
 APPLY = f"{FILTERS} button[type=submit]:not([data-clear-filters])"
@@ -45,8 +47,8 @@ AXE = """async () => (await axe.run(document, {
 # one-word "Join" in a join request's Request cell, whatever the engine's
 # font; a two-line row stays under three.
 ROWS = """() => {
-    const rows = [...document.querySelectorAll('#followup-table tbody tr')];
-    const cell = [...document.querySelectorAll('#followup-table tbody td')].find(
+    const rows = [...document.querySelectorAll('#table table tbody tr')];
+    const cell = [...document.querySelectorAll('#table table tbody td')].find(
         (td) => td.textContent.trim() === 'Join');
     const range = document.createRange();
     range.selectNodeContents(cell);
@@ -56,13 +58,14 @@ ROWS = """() => {
     return {
         heights: rows.map((row) => row.getBoundingClientRect().height),
         ministries: rows.map((row) => row.querySelector('.cell-clamp').textContent),
-        oneLine: padding + 2 * line,
-        twoLines: padding + 3 * line,
+        // One line beside the row's action icons, which are taller than text.
+        oneLine: padding + 3 * line,
+        twoLines: padding + 5 * line,
     };
 }"""
 # Each Ministry name's text and whether it is cut short (#1136).
 MINISTRY_NAMES = """() => [
-    ...document.querySelectorAll('#followup-table tbody .cell-clamp')
+    ...document.querySelectorAll('#table table tbody .cell-clamp')
 ].map((name) => [
         name.textContent,
         name.scrollHeight > name.clientHeight + 1
@@ -71,11 +74,14 @@ MINISTRY_NAMES = """() => [
 
 
 def short_rows(rows):
-    """The heights of the rows whose Ministry name is one short word."""
+    """The heights of the rows to review whose Ministry name is one short word
+    (every 7th row from the first is New, #1684's To review)."""
     return [
         height
-        for height, name in zip(rows["heights"], rows["ministries"], strict=True)
-        if name == "Choir"
+        for index, (height, name) in enumerate(
+            zip(rows["heights"], rows["ministries"], strict=True)
+        )
+        if name == "Choir" and index % 7 == 0
     ]
 
 
@@ -121,26 +127,29 @@ def test_queue_cells_hold_one_short_value(page, component_origin):
     explanations stay available as tooltips and screen-reader text."""
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + PAGE)
-    # The first cell is the bulk outcome selection box (#1131).
-    cells = page.locator("#followup-table tbody tr").nth(0).locator("th, td")
-    assert cells.nth(4).inner_text() == "Leave (cannot participate)"
-    marker = cells.nth(4).locator("span[title]")
+    # The first cell is the bulk selection box (#1131); the Family's answer
+    # follows Last contact (#1684).
+    cells = page.locator("#table table tbody tr").nth(0).locator("th, td")
+    assert cells.nth(5).inner_text() == "Leave (cannot participate)"
+    marker = cells.nth(5).locator("span[title]")
     assert marker.get_attribute("title") == (
         "Cannot participate in any ministries (physical limitations)"
     )
-    statuses = page.locator(
-        "#followup-table tbody tr td:nth-child(6)"
-    ).all_inner_texts()
-    assert "Resolved: Declined / no longer interested" in statuses
-    assert "Resolved: Joined the Ministry" in statuses
-    # A leave request resolved as declined reads Stayed (#1132).
-    assert "Resolved: Stayed in the Ministry" in statuses
-    # Closed: no response always records No response; it is not repeated.
-    assert "Closed: no response" in statuses
-    assert not any("No response" in text for text in statuses)
+    stages = [
+        " ".join(text.split())
+        for text in page.locator(
+            "#table table tbody tr td:nth-child(8)"
+        ).all_inner_texts()
+    ]
+    assert "Ignored Declined / no longer interested" in stages
+    assert "To enter by hand Accepted" in stages
+    # A leave request resolved as declined reads Stayed (#1132), and Closed:
+    # no response keeps its outcome as the Ignored decision's label.
+    assert "Ignored Stayed in the Ministry" in stages
+    assert "Ignored No response" in stages
     # The Ministry removed from the campaign (row 7) carries its badge,
     # whose words a screen reader hears in full.
-    removed = page.locator("#followup-table tbody tr").nth(6).locator("td").nth(2)
+    removed = page.locator("#table table tbody tr").nth(6).locator("td").nth(2)
     badge = removed.locator(".status-badge")
     # The tooltip is on the visible word, which screen readers skip, so the
     # sentence is announced once.
@@ -152,11 +161,7 @@ def test_queue_cells_hold_one_short_value(page, component_origin):
     )
     # Last contact uses the compact form: no "at" and no time zone name.
     contact = (
-        page.locator("#followup-table tbody tr")
-        .nth(1)
-        .locator("td")
-        .nth(5)
-        .inner_text()
+        page.locator("#table table tbody tr").nth(1).locator("td").nth(3).inner_text()
     )
     assert contact.startswith("Sep") and " at " not in contact
     assert not contact.endswith(("PDT", "PST"))
@@ -184,7 +189,7 @@ def test_queue_clipped_member_name_tip(page, component_origin):
 
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + PAGE)
-    link = page.locator("#followup-table tbody tr").nth(0).locator("th a")
+    link = page.locator("#table table tbody tr").nth(0).locator("th a")
     whole = "Member0 Bartholomew-Fitzgerald <Example>"
     assert link.text_content() == whole
     assert link.get_attribute("title") is None
@@ -204,7 +209,7 @@ def test_queue_clipped_name_tip_can_be_hovered(page, component_origin):
 
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + PAGE)
-    link = page.locator("#followup-table tbody tr").nth(0).locator("th a")
+    link = page.locator("#table table tbody tr").nth(0).locator("th a")
     link.hover()
     tip = page.locator(".admin-tip.is-shown")
     expect(tip).to_have_text("Member0 Bartholomew-Fitzgerald <Example>")
@@ -245,7 +250,7 @@ def test_queue_is_one_column_at_phone_width(page, component_origin, axe_source):
     rows = page.evaluate(ROWS)
     assert max(short_rows(rows)) < rows["oneLine"], rows
     assert max(rows["heights"]) < rows["twoLines"], rows
-    assert page.locator("#followup-table").evaluate(
+    assert page.locator("#table .table-scroll").evaluate(
         "e => e.scrollWidth > e.clientWidth"
     )
     page.evaluate(axe_source)
@@ -277,7 +282,7 @@ def test_queue_filters_stay_put_when_applied_in_place(page, component_origin):
     page.get_by_role("button", name="Apply filters").click()
     # A locator wait, not wait_for_function: the page's CSP refuses the eval
     # that wait_for_function re-polls with when the answer is not in yet.
-    expect(page.locator("#followup-table tbody tr")).to_have_count(1)
+    expect(page.locator("#table table tbody tr")).to_have_count(1)
     # Applied in place: a full page load would have lost the mark.
     assert page.evaluate("document.querySelector('h1').dataset.mark") == "kept"
     after = page.evaluate(layout)

@@ -281,13 +281,10 @@ def test_new_report_pages_refuse_or_explain_without_a_current_campaign(
         ("limitations_export", []),
         ("information_queue", []),
         ("information_export", []),
-        ("information_update", [item]),
         ("ministry_report", []),
         ("ministry_followup_export", []),
         ("ministry_packet", []),
         ("ministry_followup_update", [item]),
-        ("ministry_followup_bulk", []),
-        ("ministry_roster_bulk", []),
         ("family_directory_export", []),
         ("find_family", []),
     ):

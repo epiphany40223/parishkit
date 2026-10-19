@@ -235,7 +235,7 @@ def testing_families(request, campaign_id):
                     _("Testing submissions are only available before go-live."),
                     fix=_(
                         "Going live removes the Testing submissions. Live "
-                        "responses are under Responses and reports."
+                        "responses are under Review work and Reports and queries."
                     ),
                 )
             source = source_readiness(scope)
