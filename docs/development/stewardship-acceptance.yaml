@@ -484,6 +484,7 @@ sections:
     "Table fit and row height": [ADM-03]
     "Empty tables and lists": [ADM-03]
     "Downloaded files": [RPT-01]
+    "Downloads happen in place": [RPT-01, BG-08]
     "Point-in-time downloads": [RPT-01, BG-08]
     "Family portal": [FAM-08]
   campaign-history/spec.md:

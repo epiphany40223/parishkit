@@ -4403,9 +4403,9 @@ phone rather than widening the page. A format the download cannot
 take right now (Ministry requests' PDF above its row limit) is shown
 unavailable, named by a line below the row that says why; while other campaign work
 holds exports, every button is unavailable with its reason (#563). The
-in-place progress, waiting note and refusal behaviour of the old Download
-buttons is unchanged: the clicked button shows it is busy, the row's other
-buttons wait with it, and the waiting note appears below the row. On a page
+clicked button shows it is busy, the row's other buttons wait with it, and
+the file downloads in place, with any waiting note or refusal in the row's
+reserved status line ([downloads happen in place](#downloads-happen-in-place)). On a page
 with a table the row sits below the table, so the page's data starts higher.
 **No explanatory line.** Export buttons carry no explanatory line: no
 count ("Exports all 7 estimated matching Families, every page."), no scope
@@ -4494,12 +4494,77 @@ Limitations report (formerly Talents and limitations,
 [#970](https://github.com/epiphany40223/parishkit/issues/970)) offers all
 three formats; the guard checks its Members and Families tables in each.
 
+### Downloads happen in place
+
+**Rule.** Every Admin export downloads in place
+(Administrator decision, 2026-10-19,
+[#1778](https://github.com/epiphany40223/parishkit/issues/1778)). The
+clicked export button shows the busy spinner on itself, the row's other
+buttons wait with it, and the file downloads from the same page; no export
+opens a separate "prepare, then download" page. This holds for both kinds:
+
+- **Queued exports** (Response dashboard, Campaign comparison, Financial
+  stewardship, Additional information, the Ministry follow-up packet,
+  Family directory, a Family's Timeline and the campaign archive) freeze
+  their data and build the file in the background, as before. The page
+  posts the request in place and checks the export's status passively,
+  at the [live-status](#pages-that-update-themselves) pace (2 seconds,
+  backing off to 10, paused while the tab is hidden), and never extends
+  the sign-in. A check that gets no answer or a server failure is tried
+  again at that pace. When the file is ready it is downloaded in place,
+  and a download answered busy is tried again a few times rather than
+  starting a new export. After 30 minutes the page stops checking and
+  says the file is taking longer than usual.
+- **In-memory exports** (Limitations, Census changes, Ministry requests'
+  Export these requests, Roster changes to enter and System logs) answer
+  the request with the file, which is downloaded in place too. The
+  button stays busy until the file arrives, not for a fixed time.
+
+The export row's reserved status line, directly under the buttons, says
+everything else. It keeps two lines' height while empty (three on a
+phone), and it shows at most two sentences, so nothing moves
+([no layout shift](#no-layout-shift)):
+
+- After five seconds, that the export is still being worked on: a queued
+  export's server status, such as "Preparing your file…" or why it has
+  not started yet
+  ([#340](https://github.com/epiphany40223/parishkit/issues/340)), and
+  otherwise a "Still working…" note.
+- A refusal in plain language, in the server's own words where it gives
+  some: other campaign work holds exports, a reused form, exports
+  temporarily unavailable, a denial, the file could not be created, the
+  export was cancelled or ended before it was downloaded, the sign-in
+  ended, or no answer came (the export may still have been started).
+
+Each start renews the form's one-time request key, whatever its answer,
+so the next click is a new export. The server is unchanged: snapshot freezing, auditing, owner
+and capability checks, limits, download windows and one-use download
+grants work as before.
+
+The export status address (`/admin/reports/exports/<request>/`) stays as
+the passive status read the button uses. It is also the page for the two
+exports only the command line asks for: the latest-data export
+(`export exact create`) and the chosen-Family test names file. No Admin
+page sends the reader there ([point-in-time downloads](#point-in-time-downloads)).
+**Why.** A separate page took the reader away from the report for a file
+that is usually ready in seconds, and the in-memory exports already
+stayed in place; one behaviour for every export is simpler (Administrator,
+2026-10-19). **Shared code.** The export submit handler in `ui-v1.js`
+(any submit from an `.export-actions` row or a `form[data-export-in-place]`)
+and the status line that `components/export-actions.html` reserves
+(`data-export-status`). The browser test `test_export_in_place.py` clicks
+each kind of export and receives the file without leaving the page.
+**Precedent.** [#1778](https://github.com/epiphany40223/parishkit/issues/1778).
+
 ### Point-in-time downloads
 
 **Rule.** A download is a point-in-time copy of what the report shows when
 it is asked for; the portal keeps no copies and no history of earlier
 downloads, and no page lists them. A download made in the background (an
-export) has a status page only for its short life: it says the file is
+export) is asked for and downloaded in place from its report
+([downloads happen in place](#downloads-happen-in-place)). Its status page
+remains for its short life only for the exports the command line asks for
+and for an address opened directly: it says the file is
 being prepared, starts the download once when the file is ready, offers
 Cancel while preparing and Retry after a failed run (until the export
 ends), and says until when the file can be downloaded again, in
