@@ -752,10 +752,11 @@ class DecisionService(Protocol):
     def decide(self, principal, decision): ...
 
 
-STALE = (
-    "was changed by someone else first, so nothing was recorded. "
-    "The list shows its current state."
-)
+# Short, so a long item name still fits the notice's one reserved line on
+# a desktop (R38 finding 10); the list redrawn with it shows the item's
+# current state. The name leads, as in every other notice, because each
+# stream words its names to start a sentence ("The request from ...").
+STALE = "{name}: not recorded, changed by someone else."
 
 
 def record(service, principal, decision):
@@ -767,4 +768,4 @@ def record(service, principal, decision):
     try:
         return service.decide(principal, decision)
     except StaleDecision as error:
-        return f"{error.name or 'A chosen item'} {STALE}"
+        return STALE.format(name=error.name or "A chosen item")
