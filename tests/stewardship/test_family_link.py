@@ -126,9 +126,10 @@ FAMILY_NAME_PAGES = {
     "census-changes.html": "Census changes",
     "census-publication.html": "Publish to ParishSoft, newest check",
     "ministry-roster.html": "Roster changes to enter",
-    "limitations-report.html": "Limitations, both tables",
+    # The shared review worklist (#1681) draws Limitations' (#1685) names.
+    "components/review-worklist.html": "Review worklists' Family column",
     "presence.html": "Families on the form now",
-    "information.html": "Additional information request (queue: no link)",
+    "information.html": "Additional information request's heading",
     "weekly-digest.html": "Weekly report items",
     "delivery-refusals.html": "Refused addresses",
     "delivery-refusal.html": "Refused address",

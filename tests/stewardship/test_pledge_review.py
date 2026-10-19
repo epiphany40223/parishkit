@@ -1,4 +1,4 @@
-"""Pledges to enter without a database (#1686).
+"""Pledges without a database (#1686).
 
 The financial stream's stage mapping, the Edit value's checks, how a row's
 cells and files word a pledge, and which actions each stage offers on the

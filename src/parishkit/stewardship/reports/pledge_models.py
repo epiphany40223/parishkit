@@ -1,6 +1,6 @@
 """The financial stream's review history: one immutable row per decision (#1686).
 
-Pledges to enter (``reports.pledge_review``) is the financial stream's review
+Pledges (``reports.pledge_review``) is the financial stream's review
 worklist. Each Accept, Edit, Ignore, Back to review and Entered by hand on a
 Family's pledge is one ``PledgeReview`` row, and the Family's item is its
 current pledge answer with its latest row: no stage is stored (review

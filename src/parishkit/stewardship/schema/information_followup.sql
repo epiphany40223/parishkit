@@ -4,7 +4,7 @@ ALTER TABLE "stewardship_information_revision" ADD CONSTRAINT "stewardship_infor
 CREATE INDEX "stewardship_information_revision_correlation_id_1e5495e6" ON "stewardship_information_revision" ("correlation_id");
 CREATE INDEX "stewardship_information_revision_item_id_bc0eee5e" ON "stewardship_information_revision" ("item_id");
 
-CREATE FUNCTION stewardship_information_revision_guard_v1() RETURNS trigger
+CREATE FUNCTION public.stewardship_information_revision_guard_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE item stewardship_additional_information%ROWTYPE;
         prior stewardship_information_revision%ROWTYPE; campaign uuid;
@@ -15,16 +15,37 @@ BEGIN
     PERFORM pg_advisory_xact_lock(736220,1);
     SELECT * INTO item FROM stewardship_additional_information WHERE id=NEW.item_id FOR UPDATE;
     SELECT campaign_id INTO campaign FROM stewardship_submission WHERE id=item.submission_id AND mode='live';
+    -- Every revision states its review decision (#1685); a CHECK ties it to
+    -- the follow-up flags.
     IF item.id IS NULL OR campaign IS NULL
        OR NOT stewardship_export_authorized_v1(NEW.actor_id)
        OR NOT stewardship_export_admitted_v1(campaign,true)
        OR NEW.expected_version IS DISTINCT FROM item.version
        OR NEW.expected_version>=9223372036854775807 OR length(NEW.notes)>5000
        OR (item.followed_up_at IS NOT NULL AND NOT NEW.followed_up AND NOT NEW.confirm_clear)
+       OR NEW.review_decision IS NULL
     THEN RAISE EXCEPTION 'Staff follow-up change lacks current authority/version'
         USING ERRCODE='23514'; END IF;
     SELECT * INTO prior FROM stewardship_information_revision
         WHERE item_id=item.id ORDER BY expected_version DESC LIMIT 1;
+    -- An Ignored request (its latest revision ignored it, or, saved before
+    -- migration 0134, left follow-up not needed) leaves Ignored, whether
+    -- back to review or straight to follow-up, only with a new note saying
+    -- why, as the review pipeline requires: the request's earlier notes,
+    -- which a revision carries forward, are not one.
+    IF NEW.review_decision<>'ignored'
+       AND (btrim(NEW.notes)='' OR NEW.notes=prior.notes)
+       AND prior.id IS NOT NULL AND NOT item.follow_up_needed
+       AND item.followed_up_at IS NULL
+       AND coalesce(prior.review_decision,'ignored')='ignored'
+    THEN RAISE EXCEPTION 'Reopening an ignored request needs a note'
+        USING ERRCODE='23514'; END IF;
+    -- Only a request To review (or already Ignored) is ignored: one whose
+    -- follow-up is needed or done goes back to review first.
+    IF NEW.review_decision='ignored'
+       AND (item.follow_up_needed OR item.followed_up_at IS NOT NULL)
+    THEN RAISE EXCEPTION 'Only a request to review can be ignored'
+        USING ERRCODE='23514'; END IF;
     -- Attribution is database-owned. Notes-only edits preserve who completed the
     -- work and when; clearing removes the current projection, never old history.
     NEW.created_at:=statement_timestamp();

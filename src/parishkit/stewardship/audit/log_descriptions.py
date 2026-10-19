@@ -840,6 +840,10 @@ DESCRIPTIONS = {
     "weekly_digest_viewed": _("Someone opened a weekly report."),
     "information_viewed": _("Someone opened the information changes report."),
     "information_updated": _("Someone updated follow-up on an information change."),
+    "limitation_reviewed": _(
+        "Someone recorded a review decision on a cannot-participate or "
+        "cannot-attend answer."
+    ),
     "ministry_followup_viewed": _(
         "Someone opened Ministry requests (formerly Ministry follow-up) or one "
         "of its follow-up requests."
@@ -872,8 +876,8 @@ DESCRIPTIONS = {
     "roster_changes_exported": _(
         "Someone downloaded the Roster changes to enter list."
     ),
-    "pledges_to_enter_viewed": _("Someone opened the Pledges to enter list."),
-    "pledges_to_enter_exported": _("Someone downloaded the Pledges to enter list."),
+    "pledges_to_enter_viewed": _("Someone opened the Pledges list."),
+    "pledges_to_enter_exported": _("Someone downloaded the Pledges list."),
     "pledge_review_updated": _(
         "Someone accepted, edited, ignored or reopened a Family's pledge, or "
         "marked it entered in ParishSoft."

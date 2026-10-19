@@ -1,4 +1,4 @@
-"""Pledges to enter: the financial stream's review worklist and report (#1686).
+"""Pledges: the financial stream's review worklist and report (#1686).
 
 One row per Family's current pledge answer (the rows of Financial
 stewardship detail with no filter), drawn by the shared review worklist
@@ -7,7 +7,7 @@ review by default), then a Family search. Each row offers Accept, Edit (the
 annual pledge and frequency), Ignore, Back to review and Entered by hand as
 its stage allows (``pipeline``'s role table), one row or in bulk, recorded
 by ``pledge_review.PledgeDecisions``. Stage To enter by hand is the
-"Pledges to enter" list Staff type into ParishSoft from: the shared export
+"Pledges" list Staff type into ParishSoft from: the shared export
 buttons below the table download the applied Stage and search as CSV, XLSX
 or PDF (review pipeline spec, "Manual handling reports").
 
@@ -408,7 +408,7 @@ def pledges_xlsx(rows, zone):
     return table_workbook(
         HEADINGS,
         export_rows(rows, zone),
-        sheet_title="Pledges to enter",
+        sheet_title="Pledges",
         freeze_first_column=True,
     )
 
@@ -424,7 +424,7 @@ def pledges_pdf(rows, zone, *, parish, campaign, as_of):
 
     count = len(rows)
     frame = PdfFrame(
-        title="Pledges to enter",
+        title="Pledges",
         eyebrow=f"{parish} · {campaign}",
         stamp=f"Downloaded {dates.display_text(as_of.astimezone(zone))} ({zone.key})",
         details=(f"{count:,} {'pledge' if count == 1 else 'pledges'} in this file.",),
@@ -758,7 +758,7 @@ def page_context(rows, stage, extra, roles, *, mutable, notice):
         counts=counts,
         stages=STAGES,
         items="pledges",
-        caption="Pledges to enter",
+        caption="Pledges",
         baseline=False,
         fields={"search": extra["search"], "page": str(table.number)},
         filters_template="stewardship/pledges-filters.html",

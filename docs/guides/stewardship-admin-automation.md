@@ -3236,7 +3236,9 @@ The queue's **Export these requests** is `followup export`, see
 `followup roster-bulk` marks several at once, as **Roster changes to
 enter**'s bulk mark does. `followup information-show` reads one
 **Additional information** request's page with its follow-up history, and
-`followup information-update` is its **Save follow-up**. The read runs on a
+`followup information-update` sets its follow-up flags, which the page's
+review worklist now records as Accept, Handled and Back to review (issue
+1685; issue 1688 renames the commands). The read runs on a
 session of any scope and records the page's `information_viewed`; the
 changes need a full-scope session. Ministry leaders may not tick, and only
 Staff and Administrators follow up Additional information, as on the pages.
@@ -3280,7 +3282,12 @@ page keeps it as typed). Each one left out stays as it is, as the page's form op
 in. Clearing a completed follow-up (`--completed no`) needs
 `--confirm-clear`, the page's confirmation box; without it the command is
 exit 1 (`invalid`, naming `confirm_clear`). A version that is no longer
-current is exit 1 (`stale_version`).
+current is exit 1 (`stale_version`). The flags give the request its
+worklist stage: needed is To handle, completed is Handled, and setting both
+to no keeps a To review or Ignored request as it was, or sends a To handle
+or Handled one back to review; the command never ignores a request. An
+Ignored request leaves Ignored only with new `--notes` saying why (exit 1,
+`invalid`, naming `notes`, otherwise).
 
 Each change takes `--request-key`; without one it makes a key and prints it
 to standard error. A repeat with the key records nothing twice; the key

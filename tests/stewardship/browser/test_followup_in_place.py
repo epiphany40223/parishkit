@@ -1,10 +1,11 @@
-"""Save follow-up acts in place on both follow-up pages (#519 PR 2).
+"""Save follow-up acts in place on the Ministry follow-up page (#519 PR 2).
 
-The Ministry follow-up request page and the additional-information item page
-are served at their real addresses, and the fixture server answers each Save
-with a real Post/Redirect/Get redirect back to the page (followup_components
-and information_components). Each test sets a mark outside every region,
-which only a full page load could lose, as test_in_place.py does.
+The Ministry follow-up request page is served at its real address, and the
+fixture server answers each Save with a real Post/Redirect/Get redirect back
+to the page (followup_components). Each test sets a mark outside every
+region, which only a full page load could lose, as test_in_place.py does.
+An Additional information request has no Save since it moved to the review
+worklist (#1685), whose decisions test_information_followup.py covers.
 """
 
 from datetime import UTC, datetime, timedelta
@@ -15,9 +16,6 @@ from .followup_components import GATE_ITEM, GATE_UPDATE, RESOLVE_ITEM, RESOLVE_U
 from .followup_components import ITEM as FOLLOWUP_ITEM
 from .followup_components import SAVED as FOLLOWUP_SAVED
 from .followup_components import UPDATE as FOLLOWUP_UPDATE
-from .information_components import ITEM as INFORMATION_ITEM
-from .information_components import SAVED as INFORMATION_SAVED
-from .information_components import UPDATE as INFORMATION_UPDATE
 from .test_in_place import MARK, MARKED, VIEWPORT, count_requests, scroll_below
 from .waits import available, greyed, has_text, hidden, visible
 
@@ -26,7 +24,6 @@ pytestmark = pytest.mark.parametrize(
 )
 
 FOLLOWUP_SAVE = "#followup-save"
-INFORMATION_SAVE = "#information-save"
 FOCUSED_SAVE = (
     "document.activeElement.matches(selector) && document.activeElement.isConnected"
 )
@@ -590,60 +587,3 @@ def test_followup_conflict_is_shown_whole_and_sent_once(page, component_origin):
     has_text(page.locator("h1"), "Ministry requests unavailable")
     visible(page.get_by_text("This request changed. Nothing was saved.", exact=False))
     assert posts == [component_origin + FOLLOWUP_UPDATE]
-
-
-def test_information_save_is_in_place(page, component_origin):
-    """Save follow-up on an information item posts once, follows the
-    redirect back to the item and swaps the item panel and its history: no
-    reload, the reader's place kept, focus on the fresh Save button, the
-    save announced and the address set to the redirect's page."""
-    page.set_viewport_size(VIEWPORT)
-    page.goto(component_origin + INFORMATION_ITEM)
-    page.evaluate(MARK)
-    offset = scroll_below(page, INFORMATION_SAVE)
-    posts = count_requests(page, "POST", "/record/")
-    with page.expect_request(lambda request: request.method == "POST") as sent:
-        page.locator(INFORMATION_SAVE).dblclick()
-    # Completion stays ticked, so the reopen confirmation is not sent.
-    assert "confirm_clear" not in sent.value.post_data
-    assert "followed_up=yes" in sent.value.post_data
-    visible(page.get_by_role("heading", name="Version 3"))
-    assert page.get_by_label("Staff notes").input_value() == "Saved <note>"
-    assert page.evaluate(MARKED) == "kept"
-    assert abs(page.evaluate("window.scrollY") - offset) < 40
-    assert page.evaluate(
-        f"selector => ({FOCUSED_SAVE})", "#information-item button[type=submit]"
-    )
-    has_text(
-        page.get_by_role("status").filter(has_text="Follow-up saved."),
-        "Follow-up saved.",
-    )
-    assert page.url == component_origin + INFORMATION_SAVED + "#information-item"
-    assert posts == [component_origin + INFORMATION_UPDATE]
-
-
-def test_information_reopen_needs_the_confirmation(page, component_origin):
-    """The confirmation to reopen completed follow-up shows only once
-    "Follow-up completed" is unticked, and Save waits for it, saying why;
-    the same holds for the form a save swaps in. (Without it the server
-    refuses the save with its plain error page.)"""
-    page.goto(component_origin + INFORMATION_ITEM)
-    for stage in ("loaded", "swapped"):
-        completed = page.get_by_label("Follow-up completed")
-        confirm = page.get_by_label("If clearing completion", exact=False)
-        save = page.locator(INFORMATION_SAVE)
-        hint = page.locator("#information-save-hint")
-        hidden(confirm)
-        assert confirm.is_disabled() and save.is_enabled(), stage
-        completed.uncheck()
-        visible(confirm)
-        assert save.is_disabled(), stage
-        has_text(hint, "Tick the confirmation to reopen this follow-up.")
-        confirm.check()
-        assert save.is_enabled() and not hint.is_visible(), stage
-        completed.check()
-        hidden(confirm)
-        assert save.is_enabled(), stage
-        if stage == "loaded":
-            save.click()
-            visible(page.get_by_role("heading", name="Version 3"))
