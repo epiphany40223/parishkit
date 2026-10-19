@@ -226,6 +226,10 @@ def test_migration_check_refuses_each_earlier_or_weakened_body():
         # 0114's own bodies go back first (rolled back below).
         for name in replaced_names():
             cursor.execute(statement(text, name))
+        # 0152 (#1763) has since dropped the ended check, so it comes back
+        # too, as 0114 made it.
+        cursor.execute(statement(text, ENDED))
+        cursor.execute(f"REVOKE ALL ON FUNCTION {signature} FROM PUBLIC")
         cursor.execute(capture)
         cursor.execute(check)
         for change, message in changes:
