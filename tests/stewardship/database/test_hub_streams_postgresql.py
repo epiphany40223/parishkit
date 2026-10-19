@@ -38,7 +38,7 @@ from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
 from .test_financial_report_postgresql import pledge
 from .test_financial_source_postgresql import financial_source
-from .test_ministry_responses_postgresql import ministry_source
+from .test_ministry_responses_postgresql import ministry_source, start
 from .test_pipeline_postgresql import ministry
 from .test_report_workspace_postgresql import read as get
 from .test_response_http_postgresql import load_form
@@ -160,6 +160,26 @@ def test_member_ministry_rows_follow_the_ministry_mapping(response_service, goog
     for row in rows:
         assert row.note.startswith("Not in ParishSoft: Ministry requests lists")
         assert "Members no longer in ParishSoft" in row.note
+
+
+def test_a_member_of_a_family_with_no_response_reads_no_ministry(
+    response_service, google
+):
+    """R39 finding 8, Ministry stewardship without census: before the Family
+    answers, its Member's tab shows the No submission yet mark and nothing
+    else, and choosing it reads no Ministry request."""
+    start(response_service, census=False)
+    activate_response_service(response_service)
+    family_id = FamilyCampaign.objects.get(family_duid=1).pk
+    path = reverse("admin:timeline", args=[family_id])
+    client, login = signed_in()
+    assert login.status_code == 302
+    body, counts = page(client, f"{path}?tab=member-1")
+    assert counts == {"ministry": 0, "financial": 0, "other": 0}
+    drawn = body.split('id="family-tabs-panel-member-1"')[1]
+    assert '<span class="status-badge">No submission yet</span>' in drawn
+    assert "Ministry joins and leaves" not in drawn
+    assert "Open Ministry requests" not in drawn
 
 
 def test_the_financial_tab_reads_the_report_row(response_service, google):

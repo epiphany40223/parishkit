@@ -62,6 +62,16 @@ MARKS = {
             "They appear here once it does."
         ),
     ),
+    # The same, when the Family answered before census joined the campaign:
+    # it did submit, so the tab must not say it has not.
+    "unanswered": (
+        _("No census answers yet"),
+        _(
+            "The Family answered before the census questions were part of "
+            "this campaign, so this Member has no census answers yet. They "
+            "appear here once the Family answers again."
+        ),
+    ),
     # Drawn with the shared {% source_status "missing" %} mark.
     "missing": (
         _(NOT_IN_PARISHSOFT),
@@ -248,6 +258,11 @@ class Subject:
         """What the mark means for the tab's fields."""
         return MARKS[self.mark][1] if self.mark else ""
 
+    @property
+    def awaiting(self):
+        """Whether the tab is a ParishSoft Member with no census answers yet."""
+        return self.mark in {"unsubmitted", "unanswered"}
+
 
 @dataclass(frozen=True)
 class HubCensus:
@@ -273,12 +288,15 @@ class HubCensus:
 
 
 def read_hub_census(campaign_id, family_id, *, census):
-    """Read one Family's census tabs: one statement, two with ``census``.
+    """Read one Family's census tabs, in one to three statements.
 
-    The caller holds the page's read guard and has checked the reader. When
-    the response gives no Member tab (no live response yet, or none with
-    census answers), one more statement reads the Family's current
-    ParishSoft Members for No submission yet tabs (``unsubmitted``).
+    The caller holds the page's read guard and has checked the reader. The
+    first statement reads the latest live response; with ``census`` and a
+    response, a second reads its changes in force. When the response gives
+    no Member tab (no live response yet, or none with census answers), one
+    more statement reads the Family's current ParishSoft Members for
+    ``unsubmitted``'s tabs: two statements with no response, three with a
+    response that has no census answers.
     """
     parameters = {"family": family_id, "campaign": campaign_id}
     with connection.cursor() as cursor:
@@ -286,7 +304,7 @@ def read_hub_census(campaign_id, family_id, *, census):
         found = cursor.fetchone()
         if found is None:
             cursor.execute(ROSTER, parameters)
-            return unsubmitted(list(cursor), census=census)
+            return unsubmitted(list(cursor), census=census, responded=False)
         submission, answers, names = found
         rows = []
         if census:
@@ -304,24 +322,30 @@ def read_hub_census(campaign_id, family_id, *, census):
         return result
     with connection.cursor() as cursor:
         cursor.execute(ROSTER, parameters)
-        return unsubmitted(list(cursor), family=result.family, census=census)
+        return unsubmitted(
+            list(cursor), family=result.family, census=census, responded=True
+        )
 
 
-def unsubmitted(roster, *, family=None, census=True):
+def unsubmitted(roster, *, family=None, census=True, responded=False):
     """The hub's tabs for a Family whose response gives no Member tab.
 
     ``roster`` holds ``ROSTER``'s ``(DUID, first, last)`` rows. Each Member
-    gets a tab of its own, in DUID order and named from ParishSoft, marked
-    No submission yet and holding no fields; ``family`` is the Family tab's
-    subject, kept as the response gave it (None before any census answers).
+    gets a tab of its own, in DUID order and named from ParishSoft, holding
+    no fields. It is marked No submission yet when the Family has no live
+    response (``responded`` False), else No census answers yet: the Family
+    answered before census joined the campaign. ``family`` is the Family
+    tab's subject, kept as the response gave it (None before any census
+    answers).
     """
+    mark = "unanswered" if responded else "unsubmitted"
     return HubCensus(
         family,
         tuple(
             Subject(
                 f"member-{place}",
                 member_label(None, [first, last]),
-                mark="unsubmitted",
+                mark=mark,
                 entity=("member", key),
             )
             for place, (key, first, last) in enumerate(roster, 1)

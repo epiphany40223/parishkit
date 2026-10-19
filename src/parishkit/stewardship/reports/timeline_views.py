@@ -323,7 +323,8 @@ def hub_reads(campaign, family, census, chosen, *, principal, parish_name):
     modules = set(values.get("modules", ()))
     reads = {"hub_ministry": None, "hub_financial": None, "hub_other": None}
     subject = census.subject(chosen) if chosen.startswith("member-") else None
-    # A Member of a Family that has not answered yet has no requests to read.
+    # A Member of a Family with no response has no requests to read; a
+    # pre-census response's Members (No census answers yet) keep theirs.
     if subject is not None and subject.mark != "unsubmitted" and "ministry" in modules:
         reads["hub_ministry"] = read_member_ministry(
             campaign.pk, family.pk, subject.entity

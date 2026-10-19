@@ -384,3 +384,40 @@ def test_the_census_tabs_keep_each_members_entity():
         ("proposed_member", ADDED),
     ]
     assert HubCensus().subject("member-1") is None
+
+
+def test_only_a_member_with_no_response_skips_the_ministry_read(monkeypatch):
+    """A No submission yet tab reads no Ministry requests (the Family has no
+    response); a No census answers yet tab (a response from before census
+    joined) still reads its Member's requests."""
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.reports import timeline_views
+    from parishkit.stewardship.reports.hub_census import unsubmitted
+
+    calls = []
+    monkeypatch.setattr(
+        timeline_views,
+        "read_member_ministry",
+        lambda campaign_id, family_id, entity: calls.append(entity) or (),
+    )
+    campaign = SimpleNamespace(
+        pk=CAMPAIGN.pk,
+        active_configuration=SimpleNamespace(
+            values={"modules": ["census", "ministry"]}
+        ),
+    )
+    family = SimpleNamespace(pk=FAMILY, family_duid=1234)
+    roster = [("3", "Anne", "Adams")]
+    for responded, expected in ((False, []), (True, [("member", "3")])):
+        calls.clear()
+        reads = timeline_views.hub_reads(
+            campaign,
+            family,
+            unsubmitted(roster, responded=responded),
+            "member-1",
+            principal=None,
+            parish_name="",
+        )
+        assert calls == expected
+        assert (reads["hub_ministry"] is None) is (not responded)
