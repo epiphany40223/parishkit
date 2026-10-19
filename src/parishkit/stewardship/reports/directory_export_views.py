@@ -15,7 +15,7 @@ from parishkit.stewardship.web.dates import parish_zone, unasked_zone
 
 from .directories import DirectoryQuery, NoRehearsal
 from .directory_exports import create_directory_export
-from .directory_views import _error, _principal, export_asks_zone, mailing_option
+from .directory_views import _error, _principal, mailing_option
 from .export_services import ExportRequestBound
 from .export_ui import _redirect
 from .export_views import SAFE_FAILURES
@@ -26,8 +26,8 @@ def create(request, campaign_id):
     """Forms supply filters, never a result document, Family ID or retained input.
 
     The page's hidden ``mailing`` field chooses the mail-merge export.
-    ``browser_timezone`` is the asked zone when the file has response
-    columns (``export_asks_zone``), else the browser's, sent unasked.
+    ``browser_timezone`` is the browser's zone, sent unasked for every
+    file (#1679); a missing or unknown one is the parish's.
     """
     try:
         service = runtime()
@@ -51,14 +51,9 @@ def create(request, campaign_id):
         rehearsal = UUID(values["rehearsal"]) if "rehearsal" in values else None
         zone = parameters.pop("browser_timezone", [None])[0]
         query = DirectoryQuery.parse(parameters)
-        # Only a code list with response columns has times in its rows, so
-        # only that form asks for a zone, and the service checks the answer;
-        # any other file uses the browser's zone, posted silently, else the
-        # parish's (#1127).
-        if not export_asks_zone(query, postal):
-            zone = unasked_zone(zone, parish_zone())
-        elif zone is None:
-            raise ValueError("Invalid directory export fields.")
+        # No file asks for a zone, the code list with response columns
+        # included (#1679): the browser's, posted silently, else the parish's.
+        zone = unasked_zone(zone, parish_zone())
         result = create_directory_export(
             service.store,
             principal.identity,

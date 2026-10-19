@@ -36,7 +36,6 @@ from parishkit.stewardship.responses.information import (
     information_stage,
     latest_revision,
 )
-from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.contracts import (
     ErrorCode,
@@ -193,7 +192,6 @@ def _list_context(campaign_id, query, paging, principal):
         "query": query,
         "query_fields": query.form_values(),
         "export_fields": query.export_values(paging.get("sort", "")),
-        "export_timezones": sorted(timezone_names()),
         "mutable": mutable,
     }
 

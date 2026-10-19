@@ -11,7 +11,7 @@ are in test_secret_input.py.
 import pytest
 
 from .keyboard import tab_to_next
-from .waits import eventually, visible
+from .waits import eventually, hidden, recorded, visible
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "firefox", "webkit"], indirect=True
@@ -177,28 +177,50 @@ def test_leaving_or_returning_to_the_page_masks_it_again(page, component_origin,
 def test_the_posted_value_is_unchanged_and_the_field_is_masked_again(
     page, component_origin
 ):
-    """Revealed or not, Save posts the same body; the field is masked before
-    the request leaves and after Back; the complete gate still holds Save."""
+    """Revealed or not, Save's key confirmation applies the same body; the
+    field is masked before the request leaves and after Back; the complete
+    gate still holds Save. The key's Review is posted without the key, and
+    its Apply posts the form itself (#1568)."""
+    from django.template.loader import render_to_string
     from playwright.sync_api import expect
 
     posted = []
+    confirmation = render_to_string(
+        "stewardship/integration-review.html",
+        {"kind": "key", "target": "slack", "setup": True, "changes": []},
+    )
 
     def capture(route):
-        """Keep a posted body and answer it with a plain page; load the rest."""
+        """Answer the key's Review with its confirmation and keep Apply's
+        body, answered with a plain page; load the rest."""
         if route.request.method != "POST":
             route.continue_()
             return
-        posted.append(route.request.post_data)
+        body = route.request.post_data or ""
+        if "key_review=yes" in body:
+            assert "candidate" not in body
+            route.fulfill(status=200, content_type="text/html", body=confirmation)
+            return
+        posted.append(body)
         route.fulfill(status=200, content_type="text/html", body="<p>Saved</p>")
+
+    def apply():
+        """Save, then Apply in the key's confirmation, posted once."""
+        count = len(posted) + 1
+        save.click()
+        dialog = page.get_by_role("dialog", name="Set up Slack?")
+        visible(dialog)
+        dialog.get_by_role("button", name="Apply").click()
+        hidden(dialog)
+        recorded(page, posted, count)
 
     name = "Slack bot token"
     page.route("**/slack-saved", capture)
     page.goto(component_origin + "/slack-not-set-up")
     save = page.get_by_role("button", name="Save", exact=True)
     field, button = secret(page, name, name)
-    # The real form posts to its own URL, and Firefox replaces the history
-    # entry of a same-URL submission (no Back), where Chromium and WebKit add
-    # one. Posting to another URL gives every engine a page to go Back to.
+    # Review and Apply post to the form's own address; another URL is
+    # answered here without touching the page's own.
     field.evaluate("e => { e.form.action = '/slack-saved'; }")
     page.get_by_label("Slack channel ID").fill("C0123ABC")
     # The gate holds Save while the required token is empty or only spaces,
@@ -209,8 +231,9 @@ def test_the_posted_value_is_unchanged_and_the_field_is_masked_again(
     field.fill("xoxb-synthetic-1475")
     expect(save).to_be_enabled()
     shown(field, button, name, True)
-    save.click()
-    visible(page.get_by_text("Saved"))
+    apply()
+    # Leave the page and come Back: the field is masked again.
+    page.goto(component_origin + "/home")
     page.go_back()
     field, button = secret(page, name, name)
     shown(field, button, name, False)
@@ -219,8 +242,7 @@ def test_the_posted_value_is_unchanged_and_the_field_is_masked_again(
     # The same entry, never revealed, posts byte for byte the same body.
     page.get_by_label("Slack channel ID").fill("C0123ABC")
     field.fill("xoxb-synthetic-1475")
-    save.click()
-    visible(page.get_by_text("Saved"))
+    apply()
     assert len(posted) == 2 and posted[0] == posted[1]
     assert "candidate=xoxb-synthetic-1475" in posted[0]
 

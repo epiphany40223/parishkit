@@ -160,7 +160,7 @@ def test_reopening_an_ignored_request_needs_a_note(page, component_origin):
     dialog = page.locator("#information-decide-dialog")
     record = dialog.get_by_role("button", name="Record")
     assert record.get_attribute("aria-disabled") == "true" or record.is_disabled()
-    dialog.get_by_label("Note (required to reopen an ignored item)").fill("Misread")
+    dialog.get_by_label("Note (required)").fill("Misread")
     available(record)
     record.click()
     has_text(page.locator("#information-notice"), REOPENED_NOTICE)
@@ -195,20 +195,21 @@ def test_the_export_pane_posts_the_view_privately(page, component_origin):
     """The complete export, below the table, posts the worklist's view in its
     body: the Stage as its follow-up choices, never in an address."""
     page.goto(component_origin + "/information")
-    page.get_by_label("Export format", exact=True).select_option("xlsx")
-    page.get_by_label("Export timezone", exact=True).select_option("UTC")
+    # The export row (#1679) asks no zone: the browser's goes unasked.
+    assert page.get_by_label("Export timezone", exact=True).count() == 0
     page.get_by_label("Include complete Staff workflow history").check()
     page.route(
         "**" + reverse("admin:information_export"),
         lambda route: route.fulfill(body="Queued"),
     )
     with page.expect_request(lambda request: request.method == "POST") as sent:
-        page.get_by_role("button", name="Queue complete export").click()
+        page.get_by_role("button", name="Export XLSX").click()
     body = sent.value.post_data
     assert "disposition=current_actionable" in body
     assert "needed=no" in body and "completed=no" in body
     assert "format=xlsx" in body and "history=yes" in body
-    assert "browser_timezone=UTC" in body and "?" not in sent.value.url
+    assert "browser_timezone=America%2FLos_Angeles" in body
+    assert "?" not in sent.value.url
 
 
 def test_a_held_campaign_offers_no_decision(page, component_origin):
@@ -217,4 +218,4 @@ def test_a_held_campaign_offers_no_decision(page, component_origin):
     page.goto(component_origin + "/information-queue-gated")
     visible(page.get_by_text("Other campaign work", exact=False))
     assert page.locator("[data-row-action]").count() == 0
-    assert page.get_by_role("button", name="Queue complete export").is_disabled()
+    assert page.get_by_role("button", name="Export XLSX").is_disabled()

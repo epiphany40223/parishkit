@@ -37,10 +37,10 @@ FROZEN_SQL = (
 class Migration(migrations.Migration):
     dependencies = [
         # This app's previous migration, so the app keeps one leaf, and the
-        # migration that installs the previous frozen file (0121), so the
+        # migration that installs the previous frozen file (0124), so the
         # files apply in prefix order.
         ("stewardship_responses", "0012_gender_by_hand"),
-        ("stewardship_campaigns", "0014_digest_skip_dates"),
+        ("stewardship_accounts", "0029_guard_wording"),
     ]
 
     operations = [

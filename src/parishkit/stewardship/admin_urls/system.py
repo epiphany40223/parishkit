@@ -1,4 +1,8 @@
-"""System group URLs: integrations, key changes, background work and logs.
+"""System group URLs: integrations, background work and logs.
+
+A key change's status and Finish switching are on its integration's
+settings page (#1568); the former key change pages' addresses are gone,
+with no redirect.
 
 Pages end in ``/``; a page's form actions and status fragment sit under it
 as nouns. The JSON reads that scripts poll (``background/counts``,
@@ -9,7 +13,7 @@ are already in this scheme there.
 
 from django.urls import path
 
-from ..accounts import integration_selection_views, integration_views
+from ..accounts import integration_views
 from ..audit import log_views
 from ..jobs import delivery_views
 from ..jobs import views as job_views
@@ -40,16 +44,6 @@ patterns = [
         "system/integrations/<str:target>/dismissal/",
         integration_views.dismiss_credential_result,
         name="dismiss_credential_result",
-    ),
-    path(
-        "system/key-changes/<uuid:request_id>/",
-        integration_views.credential_status,
-        name="credential_status",
-    ),
-    path(
-        "system/key-changes/<uuid:request_id>/selection/",
-        integration_selection_views.select_credential,
-        name="select_credential",
     ),
     path("system/background/", job_views.background_page, name="background"),
     path(

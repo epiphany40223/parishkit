@@ -14,6 +14,9 @@ from .review_worklist_components import (
     ACCEPTED_NOTICE,
     BULK_NOTICE,
     BULKED,
+    FILTERED,
+    FILTERED_ADDRESS,
+    HUB,
     LEADER,
     PATH,
     REOPENED,
@@ -87,7 +90,7 @@ def test_icons_show_the_decision_in_force(page, component_origin, axe_source, wi
     assert chosen.get_attribute("aria-pressed") == "true"
     assert chosen.get_attribute("aria-disabled") == "true"
     assert chosen.get_attribute("title") == (
-        "Accepted. To change it, choose Back to review."
+        "Accepted; choose Back to review to change it"
     )
     visible(row(page, 2).get_by_role("button", name=f"Send {name(2)} back to review"))
     # Choosing it again is no undo: nothing opens and nothing is sent.
@@ -99,7 +102,7 @@ def test_icons_show_the_decision_in_force(page, component_origin, axe_source, wi
     assert chosen.evaluate(fill) != accept.evaluate(fill)
     # An edited item's Accept is selected and says so.
     assert (
-        icon(page, 3, "Accept").get_attribute("title").startswith("Accepted (edited).")
+        icon(page, 3, "Accept").get_attribute("title").startswith("Accepted (edited);")
     )
     assert icon(page, 4, "Ignore").get_attribute("aria-pressed") == "true"
     # Entered by hand: Accept and the mark selected, final; Not seen flagged.
@@ -132,7 +135,7 @@ def test_a_row_decision_records_in_place(page, component_origin):
     icon(page, 0, "Accept").click()
     dialog = page.locator("#worklist-decide-dialog")
     has_text(dialog.locator("h2"), f"Accept {name(0)}?")
-    dialog.get_by_label("Note (required to reopen an ignored item)").fill("Fine")
+    dialog.get_by_label("Note (optional)").fill("Fine")
     dialog.get_by_role("button", name="Record").click()
     has_text(page.locator("#worklist-notice"), ACCEPTED_NOTICE)
     has_text(page.get_by_role("status").filter(has_text="accepted."), ACCEPTED_NOTICE)
@@ -196,6 +199,8 @@ def test_reopening_an_ignored_item_needs_a_note(page, component_origin):
     record = dialog.get_by_role("button", name="Record")
     row(page, 2).get_by_role("button", name=f"Send {name(2)} back to review").click()
     available(record)
+    # The note's label follows the action in place (R38 finding 3).
+    has_text(dialog.locator("label[for$=-note]"), "Note (optional)")
     dialog.get_by_role("button", name="Cancel").click()
     hidden(dialog)
     row(page, 4).get_by_role("button", name=f"Send {name(4)} back to review").click()
@@ -207,7 +212,7 @@ def test_reopening_an_ignored_item_needs_a_note(page, component_origin):
     has_text(
         dialog.locator("[data-complete-hint]"), "Say why this ignored item is reopened."
     )
-    dialog.get_by_label("Note (required to reopen an ignored item)").fill("Asked")
+    dialog.get_by_label("Note (required)").fill("Asked")
     available(record)
     record.click()
     has_text(page.locator("#worklist-notice"), REOPENED_NOTICE)
@@ -238,8 +243,17 @@ def test_edit_and_add_open_the_value_editor(page, component_origin):
     has_text(editor.locator("h2"), f"Edit {name(0)}")
     value = editor.get_by_label("Reviewer's value")
     assert value.input_value() == "555-0000"
+    # Save waits until the value changes, saying why (R38 finding 4): the
+    # same value would record only a plain Accept.
+    save = editor.get_by_role("button", name="Save")
+    assert save.is_disabled()
+    has_text(
+        editor.locator("[data-complete-hint]"),
+        "Change the value to save it; Accept keeps it as it is.",
+    )
     value.fill("555-0199")
-    editor.get_by_role("button", name="Save").click()
+    available(save)
+    save.click()
     has_text(page.locator("#worklist-notice"), ACCEPTED_NOTICE)
     assert "decide=edit" in sent[-1] and "value=555-0199" in sent[-1]
     # The edit is drawn on the row's Accept, which takes focus.
@@ -281,3 +295,95 @@ def test_a_leader_sees_only_their_actions(page, component_origin):
         "Back to review",
     ]
     assert bar.get_by_role("button", name="Add").count() == 0
+
+
+@pytest.mark.parametrize("width", [390, 700, 1280])
+def test_apply_and_clear_sit_after_the_last_filter(page, component_origin, width):
+    """Apply filters and Clear filters take the cell right after the last
+    filter field: on its row when the row has room (R38 finding 9), else at
+    the start of the next, and the page never scrolls sideways."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + PATH)
+    form = page.locator("#table-filters")
+    apply = form.get_by_role("button", name="Apply filters")
+    clear = form.get_by_role("button", name="Clear filters")
+    visible(clear)
+    last = form.locator(":scope > div:not(.filter-actions)").last.bounding_box()
+    actions = form.locator(":scope > .filter-actions").bounding_box()
+    box = apply.bounding_box()
+    start = form.bounding_box()["x"]
+    if width == 1280:
+        # Beside the last field, Apply's bottom on its box's bottom.
+        assert actions["x"] >= last["x"] + last["width"]
+        assert abs((box["y"] + box["height"]) - (last["y"] + last["height"])) <= 2
+    else:
+        # No room on the row: the next row's first cell, nothing between.
+        assert (
+            last["y"] + last["height"]
+            <= actions["y"]
+            <= last["y"] + last["height"] + 20
+        )
+        assert abs(actions["x"] - start) <= 2
+    assert page.evaluate("document.documentElement.scrollWidth") <= width
+
+
+@pytest.mark.parametrize("width", [390, 700, 1280])
+def test_the_notice_line_sits_under_the_filters(page, component_origin, width):
+    """The answer to the reader's own decision sits between the filters and
+    the table on one reserved line, the same height empty or filled, so the
+    table never moves; nothing reserves room above the filters (R38 finding
+    10)."""
+    page.set_viewport_size({"width": width, "height": 900})
+    measure = """() => {
+        const box = (selector) =>
+            document.querySelector(selector).getBoundingClientRect();
+        const heading = box("main h1"), form = box("#table-filters");
+        const notice = box("#worklist-notice"), table = box("#table");
+        return {gap: form.top - heading.bottom, formBottom: form.bottom,
+                top: notice.top, height: notice.height, table: table.top};
+    }"""
+    page.goto(component_origin + PATH)
+    empty = page.evaluate(measure)
+    page.goto(component_origin + ACCEPTED)
+    has_text(page.locator("#worklist-notice"), ACCEPTED_NOTICE)
+    filled = page.evaluate(measure)
+    for shown in (empty, filled):
+        assert shown["formBottom"] <= shown["top"] < shown["table"]
+        assert shown["gap"] <= 40
+    assert filled["height"] == empty["height"] and filled["table"] == empty["table"]
+
+
+def test_a_reload_keeps_the_applied_filters(page, component_origin):
+    """Apply puts the view's own address in the address bar, so a reload
+    draws the same view; the plain address stays the default view (R38
+    finding 6)."""
+    page.goto(component_origin + PATH)
+    sent = posts_to(page, component_origin, FILTERED)
+    page.select_option("#worklist-stage", "ignored")
+    page.get_by_role("button", name="Apply filters").click()
+    page.wait_for_url(component_origin + FILTERED_ADDRESS)
+    assert "stage=ignored" in sent[-1]
+    page.reload()
+    assert page.url == component_origin + FILTERED_ADDRESS
+    assert page.locator("#worklist-stage").input_value() == "ignored"
+    assert [node.get_attribute("id") for node in page.locator(ROWS).all()] == [
+        "worklist-row-4"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("path", "hub"), [(PATH, True), (LEADER, False)], ids=["staff", "leader"]
+)
+def test_names_open_the_hub_and_items_their_page(page, component_origin, path, hub):
+    """A Member's name opens the Family hub for Staff and Administrators
+    and is plain text for a Ministry leader, who may not open it; the
+    item's cell opens its own page for every viewer (R38 finding 13)."""
+    page.goto(component_origin + path)
+    first = row(page, 0)
+    name = first.locator("th[scope=row]")
+    if hub:
+        assert name.locator("a").get_attribute("href") == HUB
+    else:
+        assert name.locator("a").count() == 0 and name.inner_text() == "Member 00"
+    item = first.locator("td a")
+    assert item.count() == 1 and item.get_attribute("href") == "/review-item/0"

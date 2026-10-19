@@ -44,6 +44,5 @@
 <p><a href="{% url 'admin:information_queue' %}">{% translate "Return to Additional information" %}</a></p>
 {% else %}
 {% include "stewardship/components/review-worklist.html" %}
-<script src="{% static 'stewardship/information-export-v1.js' %}" defer></script>
 {% endif %}
 {% endblock %}

@@ -212,16 +212,22 @@ def _respond(request, campaign_id, *, export, render):
             extra = {}
             if export:
                 fmt = parameters.pop("format", [DEFAULT_EXPORT_FORMAT])
-                zone = parameters.pop("timezone", ["UTC"])
+                # The browser's zone, posted unasked, or an explicit
+                # timezone from an older tab (#1679).
+                chosen = parameters.pop("timezone", [None])
+                browser = parameters.pop("browser_timezone", [None])
                 stage = parameters.pop("stage", [EVERY_STAGE])
                 if (
                     len(fmt) != 1
-                    or len(zone) != 1
+                    or len(chosen) != 1
+                    or len(browser) != 1
                     or len(stage) != 1
                     or stage[0] not in FILE_STAGES
                 ):
                     raise ValueError("Invalid Limitations export choice.")
-                extra = export_choice(fmt[0], zone[0]) | {"stage": stage[0]}
+                extra = export_choice(
+                    fmt[0], dates.download_zone(chosen[0], browser[0])
+                ) | {"stage": stage[0]}
                 query = LimitationsQuery.parse(parameters)
             else:
                 decision = read_decision(parameters)
@@ -399,7 +405,6 @@ def report(request, campaign_id):
                 "campaign_id": campaign_id,
                 "query": worklist_query,
                 "query_fields": worklist_query.form_values(),
-                "export_timezones": sorted(timezone_names()),
                 "notice": extra.get("notice"),
                 "mutable": mutable,
             },

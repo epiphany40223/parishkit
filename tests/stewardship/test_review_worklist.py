@@ -124,9 +124,7 @@ def test_selected_icons_are_named_and_filled():
     edited = Placement(Stage.READY_TO_UPDATE, Decision.ACCEPTED_EDITED)
     accept, back = row_icons("census", edited, STAFF, name="Phone for Pat")
     assert accept["label"] == "Accept Phone for Pat"
-    assert accept["title"] == (
-        "Accepted (edited). To change it, choose Back to review."
-    )
+    assert accept["title"] == "Accepted (edited); choose Back to review to change it"
     assert accept["css"] == "icon-button is-selected status-working"
     assert back["css"] == "icon-button" and back["label"] == (
         "Send Phone for Pat back to review"
@@ -134,8 +132,8 @@ def test_selected_icons_are_named_and_filled():
     # Once marked there is no undo, so the tooltip names none.
     marked = Placement(Stage.ENTERED_BY_HAND, Decision.ACCEPTED)
     assert [icon["title"] for icon in row_icons("census", marked, STAFF, name="x")] == [
-        "Accepted.",
-        "Entered by hand.",
+        "Accepted",
+        "Entered by hand",
     ]
     assert accept["focus"] == "accept"
     edit = row_icons("census", Placement(Stage.TO_REVIEW), STAFF, name="x")[1]
@@ -425,3 +423,78 @@ def test_record_words_a_race_as_the_notice():
     assert record(Service(StaleDecision()), "staff", decision).startswith(
         "A chosen item was changed"
     )
+
+
+def test_every_icon_tooltip_is_one_phrase_without_a_full_stop():
+    """Guard (UX conventions, "Row actions and confirmation"; R38 finding 5):
+    every tooltip a worklist icon can show, offered or selected, for every
+    stream, stage, decision and role, is one short phrase with no full stop
+    or other sentence end, as the portal's other icon tooltips are."""
+    readers = (STAFF, LEADER, {"administrator"}, {"staff", "administrator"})
+    tips = set()
+    for stream in (
+        "census",
+        "ministry",
+        "financial",
+        "cannot_participate",
+        "additional_information",
+    ):
+        for stage in Stage:
+            for decision in (None, *Decision):
+                for roles in readers:
+                    for by_hand in (False, True):
+                        icons = row_icons(
+                            stream,
+                            Placement(stage, decision),
+                            roles,
+                            name="Phone for Pat",
+                            leads=True,
+                            by_hand=by_hand,
+                        )
+                        tips |= {icon["title"] for icon in icons}
+                        tips |= {icon["label"] for icon in icons}
+    assert tips
+    for tip in tips:
+        assert tip == tip.strip() and not tip.endswith((".", "?", "!", ":")), tip
+        assert not any(mark in tip for mark in (". ", "? ", "! ")), tip
+
+
+def test_page_address_carries_only_the_choices_given():
+    """The view's own address keeps the non-empty link-safe choices, in
+    order, and is the plain address for the default view (R38 finding 6)."""
+    assert worklist.page_address("/w", []) == "/w"
+    assert worklist.page_address("/w", [("stage", ""), ("sort", None)]) == "/w"
+    assert worklist.page_address("/w", [("stage", "ignored"), ("kind", "a b")]) == (
+        "/w?stage=ignored&kind=a+b"
+    )
+
+
+def test_identity_cells_carry_their_item_page():
+    """A column with ``link`` gives its cell the row's item page; others
+    none (R38 finding 13)."""
+    columns = (Column("who", "Who", family=True), Column("what", "What", link="url"))
+    row = {
+        "id": "1",
+        "version": 1,
+        "name": "x",
+        "placement": Placement(Stage.TO_REVIEW),
+        "who": "Pat",
+        "what": "Phone",
+        "url": "/item/1",
+    }
+    worklist = build(
+        "census",
+        [row],
+        STAFF,
+        prefix="w",
+        action="/w",
+        columns=columns,
+        stage="all",
+        counts={},
+        stages=[],
+    )
+    (decorated,) = worklist.rows
+    assert [(value, href) for value, _column, href in decorated["identity"]] == [
+        ("Pat", ""),
+        ("Phone", "/item/1"),
+    ]
