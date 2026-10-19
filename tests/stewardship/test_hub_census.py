@@ -319,6 +319,20 @@ def test_before_any_response_every_member_has_a_marked_tab():
     assert '<span class="status-badge">No submission yet</span>' in panel
     assert "They appear here once it does." in panel
     assert "No changes" not in panel and "<table" not in panel
+    assert "Open Census changes" not in panel
+
+
+def test_a_response_from_before_census_marks_its_members_apart():
+    """A Family that answered before census joined did submit: its Members'
+    tabs say No census answers yet, not No submission yet."""
+    census = unsubmitted([("3", "Anne", "Adams")], responded=True)
+    (only,) = census.members
+    assert only.mark == "unanswered" and only.awaiting
+    page = render("member-1", census)
+    panel = page.split('id="family-tabs-panel-member-1"')[1]
+    assert '<span class="status-badge">No census answers yet</span>' in panel
+    assert "answered before the census questions" in panel
+    assert "not submitted" not in panel and "<table" not in panel
 
 
 def test_a_change_with_no_stage_is_shown_without_one(caplog):

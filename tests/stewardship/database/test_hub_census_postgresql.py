@@ -28,12 +28,11 @@ from ..census_factory import address, member
 from ..policy_factory import address as rule_address
 from .auth_builders import signed_in
 from .campaign_builders import change
-from .response_builders import activate_response_service, response_source
+from .response_builders import response_source
 from .test_background_grants_postgresql import task_login
 from .test_census_resolution_postgresql import prepared, resolve
 from .test_census_review_postgresql import review
 from .test_member_requests_postgresql import revisit, send
-from .test_ministry_responses_postgresql import start
 from .test_report_workspace_postgresql import read as get
 from .test_response_http_postgresql import answers_for, load_form
 from .test_runtime_auth_grants_postgresql import web_login
@@ -41,11 +40,12 @@ from .test_source_families_postgresql import prepare, promote
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
-# Text only the hub's two census statements hold (hub_census.SUBMISSION and
-# PROPOSALS), to count them among a page load's statements.
+# Text only the hub's census statements hold (hub_census.SUBMISSION,
+# PROPOSALS and ROSTER), to count them among a page load's statements.
 CENSUS_SQL = (
     "'proposed_members', s.answers->'proposed_members'",
     "FROM stewardship_proposed_change p\nJOIN stewardship_submission s",
+    "FROM stewardship_source_current c\nJOIN stewardship_family_campaign f",
 )
 
 
@@ -113,19 +113,45 @@ def test_fields_and_stages_follow_the_change_rows_in_force(response_service):
     assert census.family is None and census.members == () and statements == 2
 
 
-def test_before_a_response_each_member_has_a_marked_tab(response_service):
+def test_before_a_response_each_member_has_a_marked_tab(
+    live_response_service, auth_service, google
+):
     """R39 finding 8: before the Family answers, each of its active, living
     Members in the current ParishSoft data has a tab marked No submission
-    yet, named from ParishSoft, read as the restricted web login."""
-    start(response_service)
-    harness = activate_response_service(response_service)
+    yet, named from ParishSoft, read as the restricted web login; an
+    inactive or deceased Member has none. The page reads two census
+    statements (the response, then the Members) on every tab."""
+    harness = live_response_service
+    data = response_source()
+    base = data.members[3]
+    data.members[4] = {**base, "memberDUID": 4, "firstName": "Second"}
+    data.members[5] = {**base, "memberDUID": 5, "memberStatus": "Inactive"}
+    data.members[6] = {**base, "memberDUID": 6, "memberStatus": "Deceased"}
+    snapshot, claim = prepare(data)
+    with task_login(ServiceRole.WORKER, exact=True):
+        promote(snapshot, claim, harness.campaign, harness.rings)
     family_id = FamilyCampaign.objects.get(family_duid=1).pk
     census, statements = hub(harness, family_id)
     assert census.family is None and statements == 2
     assert [
         (item.key, item.label, item.mark, item.duid, item.rows)
         for item in census.members
-    ] == [("member-1", "Example, Member", "unsubmitted", 3, ())]
+    ] == [
+        ("member-1", "Example, Member", "unsubmitted", 3, ()),
+        ("member-2", "Example, Second", "unsubmitted", 4, ()),
+    ]
+    page = reverse("admin:timeline", args=[family_id])
+    admin, login = signed_in()
+    assert login.status_code == 302
+    response, body, timeline_statements = as_web(admin, page)
+    assert response.status_code == 200
+    assert 'data-tab="member-2"' in body and 'data-tab="member-3"' not in body
+    response, body, member_statements = as_web(admin, page + "?tab=member-1")
+    assert response.status_code == 200
+    panel = body.split('id="family-tabs-panel-member-1"')[1]
+    assert '<span class="status-badge">No submission yet</span>' in panel
+    assert "Open Census changes" not in panel
+    assert timeline_statements == member_statements == 2
 
 
 def test_a_second_response_keeps_each_change_once(live_response_service):
