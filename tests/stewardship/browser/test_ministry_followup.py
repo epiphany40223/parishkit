@@ -504,14 +504,17 @@ def test_followup_columns_follow_the_shared_order(page, component_origin):
     short = first.nth(3).locator(".cell-clamp")
     height = name.bounding_box()["height"]
     assert abs(height - 2 * short.bounding_box()["height"]) <= 2, height
-    assert name.get_attribute("tabindex") == "0"
-    # The short name in the first row fits, so it stays out of the tab order.
+    # The Ministry cell is the request's link (R38 finding 13), so the
+    # keyboard reaches a clipped name through it: neither name joins the tab
+    # order itself, and focus on the link shows the clipped one's tip.
+    assert name.get_attribute("tabindex") is None
     assert short.get_attribute("tabindex") is None
-    name.focus()
+    link = name.locator("xpath=ancestor::a[1]")
+    link.focus()
     expect(page.locator(".admin-tip.is-shown")).to_have_text(name.text_content())
-    # A resize keeps focus on the name and its tip shown beside it.
+    # A resize keeps focus on the link and the name's tip shown beside it.
     page.set_viewport_size({"width": 1100, "height": 900})
-    assert name.evaluate("e => document.activeElement === e")
+    assert link.evaluate("e => document.activeElement === e")
     expect(page.locator(".admin-tip.is-shown")).to_have_count(1)
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
 
