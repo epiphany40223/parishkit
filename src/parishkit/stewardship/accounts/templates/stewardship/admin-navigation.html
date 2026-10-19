@@ -31,6 +31,10 @@
   quiet when there is no work. The pill's title says what the number counts
   when a sighted user hovers over it.
 
+  Home is the first entry, except for Staff and Ministry leaders, whose
+  /admin/ is My review work: admin_context lists it first in Review work
+  instead (home_in_review), so it is not drawn twice.
+
   Sign out is a POST form (logout is CSRF-protected) styled as the last menu
   entry.
 {% endcomment %}<nav class="admin-sidebar" aria-label="{% translate 'Administration' %}">
@@ -39,8 +43,10 @@
     <ul class="admin-sections">
       {% if admin_chrome.setup_pending %}
       <li><a href="{{ admin_chrome.setup_url }}" aria-current="page">{% translate "Initial setup" %}</a></li>
-      {% else %}
+      {% elif not admin_chrome.home_in_review %}
       <li><a href="{{ admin_chrome.home_url }}"{% if admin_chrome.home_current %} aria-current="page"{% endif %}>{{ admin_chrome.home_label|default:_("Home") }}</a></li>
+      {% endif %}
+      {% if not admin_chrome.setup_pending %}
       {% for section in admin_chrome.sections %}
       <li class="admin-section{% if section.current %} is-current{% endif %}">
         <details class="admin-group" data-menu-group="{{ section.key }}"{% if section.current %} data-menu-current{% endif %} open>

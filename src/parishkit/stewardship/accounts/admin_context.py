@@ -117,13 +117,19 @@ def portal_chrome(request):
     for section in sections:
         for entry in section["items"]:
             entry["count"] = open_counts.get(entry["name"]) if entry["url"] else None
+    home_current = bool(breadcrumbs) and len(breadcrumbs) == 1
+    home_in_review = review_work.lands_here(actor) and _home_in_review(
+        sections, home_label, home_current
+    )
     return {
         "admin_chrome": {
             "admin": admin,
             "parish_name": parish.name if parish else None,
             "home_url": reverse("admin:index"),
             "home_label": home_label,
-            "home_current": bool(breadcrumbs) and len(breadcrumbs) == 1,
+            "home_current": home_current,
+            # My review work is Review work's first entry, not a top Home.
+            "home_in_review": home_in_review,
             "sections": sections,
             "breadcrumbs": breadcrumbs,
             # The viewer's menu entries by page and the reason-check state,
@@ -248,6 +254,35 @@ def request_downloaded(request):
         found = functools.cache(parishsoft_downloaded)
         request._stewardship_parishsoft_data = found
     return found
+
+
+def _home_in_review(sections, label, current):
+    """Put My review work first in the viewer's Review work group, in place.
+
+    Staff and Ministry leaders land on My review work at ``/admin/``
+    (#1690); the menu lists it as the first entry of Review work, beside
+    the worklists it counts, rather than as a Home entry above the groups
+    (admin-portal spec, "Menu groups"; R39 finding 4). On ``/admin/`` the
+    entry and its group are current, so the group stays open. Returns
+    whether the entry was placed: a viewer with no Review work group keeps
+    the top entry instead.
+    """
+    review = next((s for s in sections if s["key"] == "review"), None)
+    if review is None:
+        return False
+    review["items"].insert(
+        0,
+        {
+            "name": "index",
+            "url": reverse("admin:index"),
+            "label": label,
+            "reason": None,
+            "current": "page" if current else None,
+            "count": None,
+        },
+    )
+    review["current"] = review["current"] or current
+    return True
 
 
 def menu_state(campaign, configuration, parishsoft_data=None):

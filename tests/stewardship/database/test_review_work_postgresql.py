@@ -144,8 +144,14 @@ def test_staff_land_on_my_review_work_with_linked_counts(response_service, googl
         response, body = get(browser, "/admin/")
     assert response.status_code == 200
     assert b"<h1>My review work</h1>" in body
-    # One name: the menu's first link says what the heading says.
-    assert b'aria-current="page">My review work</a>' in body
+    # One name: the menu's entry says what the heading says, and it is the
+    # first entry of Review work, with no Home entry above the groups (R39
+    # finding 4).
+    group = re.search(rb'data-menu-group="review".*?</ul>', body, re.S).group(0)
+    first = re.search(rb"<li><a [^>]*>([^<]*)</a>", group)
+    assert first.group(1) == b"My review work"
+    assert b'aria-current="page">My review work</a>' in group
+    assert b">Home</a>" not in body
     # Home's own panels are gone (decision 8: nothing else is above it).
     assert b"data-next-steps" not in body and b"Family participation" not in body
     ministry = panel(body, "ministry")
@@ -183,6 +189,7 @@ def test_an_administrator_keeps_home(response_service, google):
     assert b"<h1>Home</h1>" in body and b"<h1>My review work</h1>" not in body
     assert b"data-review-work" in body and b'data-review-stream="ministry"' in body
     assert b'aria-current="page">Home</a>' in body
+    assert b">My review work</a>" not in body
     census = panel(body, "census")
     assert (
         b"/admin/reports/census/publication/",
