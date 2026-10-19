@@ -450,9 +450,14 @@ def census_rows(campaign_id):
             raise ReadUnavailable("Census change inputs are unavailable.")
         cursor.execute(ROWS, [NAME_NOT_RECORDED, campaign_id])
         rows = [dict(zip(COLUMNS, values, strict=True)) for values in cursor]
-    # The refresh checks (#1689) of the final changes, which place them.
+    # The refresh checks (#1689) of the final changes, which place them: only
+    # those at the change's current version, since a mark made again over
+    # Entered incorrectly moves it on and the checks before no longer count
+    # (#1737).
+    final = [row for row in rows if row["execution"] in FINAL_EXECUTIONS]
     checks = check_states(
-        proposals=[row["id"] for row in rows if row["execution"] in FINAL_EXECUTIONS]
+        proposals=[row["id"] for row in final],
+        versions={row["id"]: row["version"] for row in final},
     )
     for row in rows:
         # JSON values arrive as text (cast in ROWS), whatever the driver's

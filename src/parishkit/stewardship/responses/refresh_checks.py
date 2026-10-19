@@ -187,6 +187,50 @@ def _census_same(kind):
     return same
 
 
+def entered_incorrectly(proposal):
+    """Whether a census change is Entered incorrectly now (#1737).
+
+    Only a change Entered by hand can be, and only while its latest refresh
+    check at its current version says so: the two fixes (Entered by hand
+    again and Back to review) are offered and recorded then alone, as the
+    resolution guard (migration 0140, provisional number) also requires. One
+    query, for an entered change only.
+    """
+    if proposal.execution != "resolved_external":
+        return False
+    key = str(proposal.pk)
+    state = check_states(proposals=[proposal.pk], versions={key: proposal.version})
+    return key in state and state[key].outcome == "entered_incorrectly"
+
+
+def _remarked(rows):
+    """ParishSoft's value at each census change's latest mark made again, by id.
+
+    A final change's version moves only when it is marked Entered by hand
+    again over Entered incorrectly (#1737), and then by one. So a check at
+    the version before an entered change's current one means that mark was
+    made, and the latest such check's ParishSoft value is the value recorded
+    at it. The refresh check guard (migration 0140, provisional number)
+    reads it the same way. One query, when any change is entered.
+    """
+    wanted = {
+        (row.pk, row.version - 1)
+        for row in rows
+        if row.execution == "resolved_external"
+    }
+    if not wanted:
+        return {}
+    found = {}
+    for proposal, version, observed in (
+        RefreshCheck.objects.filter(proposal_id__in={pk for pk, _ in wanted})
+        .order_by("created_at", "id")
+        .values_list("proposal_id", "item_version", "observed")
+    ):
+        if (proposal, version) in wanted:
+            found[proposal] = observed
+    return found
+
+
 def _owed(stored, state, *, full, marked, moved=False):
     """Whether a check with outcome ``stored`` is owed for an item now.
 
@@ -215,7 +259,9 @@ def _census_checks(snapshot, corpus, campaign_id, full, start):
     a field the Member contact read carries, whose Member is still an
     active, living Member of its Family (a death date excepted, as in
     reconciliation). The value recorded at the mark is the change's stored
-    ParishSoft value, which the mark froze.
+    ParishSoft value, which the mark froze, or for a mark made again over
+    Entered incorrectly the ParishSoft value the check before it found
+    (``_remarked``, #1737).
     """
     definitions = {field.name: field for field in MEMBER_FIELDS}
     rows = ProposedChange.objects.filter(
@@ -226,6 +272,7 @@ def _census_checks(snapshot, corpus, campaign_id, full, start):
         field__in=CHECKED_FIELDS,
     ).annotate(family_duid=F("submission__family__family_duid"))
     rows = list(rows)
+    remarked = _remarked(rows)
     states = (
         check_states(
             proposals=[row.pk for row in rows],
@@ -267,12 +314,18 @@ def _census_checks(snapshot, corpus, campaign_id, full, start):
         )
         carried = row.admin_value if row.admin_value_set else row.submitted_value
         same = _census_same(field.kind)
-        # The value recorded at the mark; one ParishSoft could not report
-        # then is no evidence the entry went wrong, so the refresh's own
-        # value stands in for it (unchanged, never Entered incorrectly).
-        marked = (
-            KnownValue(True, row.current_value) if row.current_available else current
-        )
+        # The value recorded at the mark: ParishSoft's at a mark made again
+        # (#1737), else the change's own, which the first mark froze. One
+        # ParishSoft could not report then is no evidence the entry went
+        # wrong, so the refresh's own value stands in for it (unchanged,
+        # never Entered incorrectly).
+        again = remarked.get(row.pk)
+        if again is not None:
+            marked = KnownValue(True, again.get("value"))
+        elif row.current_available:
+            marked = KnownValue(True, row.current_value)
+        else:
+            marked = current
         result = refresh_outcome(
             stage,
             refreshed=current,

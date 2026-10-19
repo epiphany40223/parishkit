@@ -20,6 +20,7 @@ from parishkit.stewardship.reports.census_change_views import (
 from parishkit.stewardship.reports.census_changes import CensusQuery, select, shape
 from parishkit.stewardship.reports.census_worklist import worklist_page
 from parishkit.stewardship.responses.comparison import phone_record
+from parishkit.stewardship.responses.refresh_checks import CheckState
 from parishkit.stewardship.web.tables import paginate
 
 # The page's own path: what every heading, navigator, filter and dialog posts.
@@ -52,16 +53,30 @@ STALE_NOTICE = (
 )
 EDITED = "/census-changes-edited"
 EDITED_NOTICE = "Home address for the Family in Family DUID 1002 accepted (edited)."
+# Row 3 Entered incorrectly (#1737): a refresh found ParishSoft at a third
+# value, and the pages after each of its two fixes.
+INCORRECT = "/census-changes-incorrect"
+WRONG = "555-0199"
+REENTERED = "/census-changes-reentered"
+REENTERED_NOTICE = (
+    "Mobile phone for Member DUID 103 in Family DUID 1003 marked entered by hand again."
+)
+RETURNED = "/census-changes-returned"
+RETURNED_NOTICE = (
+    "Mobile phone for Member DUID 103 in Family DUID 1003 sent back to review."
+)
 
 
 def components(context, admin):
     """The page at each table choice and after each decision the tests take."""
     when = datetime(2054, 10, 5, 12, tzinfo=UTC)
 
-    def shaped(index, accepted=(), entered=()):
+    def shaped(index, accepted=(), entered=(), incorrect=()):
         """One shaped row: To review unless ``accepted`` (approved, one
-        version on) or ``entered`` (Entered by hand) holds its index."""
+        version on), ``entered`` (Entered by hand) or ``incorrect`` (Entered
+        by hand, then found at a third value) holds its index."""
         family = index == 2
+        entered = set(entered) | set(incorrect)
         return shape(
             {
                 "id": str(index),
@@ -92,6 +107,11 @@ def components(context, admin):
                 "resolution_at": None,
                 "resolution_by": None,
                 "reopened": False,
+                "check": CheckState(
+                    "entered_incorrectly", {"available": True, "value": WRONG}
+                )
+                if index in incorrect
+                else None,
             }
         )
 
@@ -143,6 +163,9 @@ def components(context, admin):
         BULKED: page(size, BULK_NOTICE, accepted={0, 1}),
         STALE: page(size, STALE_NOTICE),
         EDITED: page(size, EDITED_NOTICE, accepted={2}),
+        INCORRECT: page(size, incorrect={3}),
+        REENTERED: page(size, REENTERED_NOTICE, entered={3}),
+        RETURNED: page(size, RETURNED_NOTICE),
         # No changes at all, and none at the stage chosen.
         "/census-changes-none": page(size, rows=0),
         "/census-changes-none-stage": page(size, rows=0, stage="to_review"),

@@ -4912,7 +4912,13 @@ BEGIN
                 RAISE EXCEPTION 'Proposal execution differs from its derived merge state' USING ERRCODE='23514';
             END IF;
         ELSE
-            IF OLD.execution IN ('published','resolved_upstream','resolved_external','cancelled','superseded')
+            -- A final change never changes, except a change Entered by hand
+            -- that the web login reworks over Entered incorrectly (#1737):
+            -- the web branch below admits that only with its paired
+            -- resolution row, whose own guard requires the change's latest
+            -- refresh check to say Entered incorrectly.
+            IF (OLD.execution IN ('published','resolved_upstream','resolved_external','cancelled','superseded')
+                    AND NOT (OLD.execution='resolved_external' AND current_user='pk_stewardship_web'))
                 OR (to_jsonb(NEW)-ARRAY['current_available','current_value','current_source_id','admin_value_set','admin_value','decision','execution','superseded_by_id','version','updated_at'])
                     IS DISTINCT FROM (to_jsonb(OLD)-ARRAY['current_available','current_value','current_source_id','admin_value_set','admin_value','decision','execution','superseded_by_id','version','updated_at'])
             THEN
@@ -5032,7 +5038,10 @@ BEGIN
                 -- execution (entered) or the decision (ignored, reopened),
                 -- nothing else, and advances the version by one. Any other
                 -- web change must be a replacement by a later Family response,
-                -- which never changes the decision.
+                -- which never changes the decision. A change Entered by hand
+                -- takes only a resolution (#1737): Entered by hand again keeps
+                -- it entered, and Back to review (reopened) makes it pending
+                -- with no decision, open to reconciliation again.
                 IF NOT EXISTS (
                     SELECT 1 FROM public.stewardship_proposal_resolution r
                     WHERE r.proposal_id=OLD.id AND r.expected_version=OLD.version
@@ -5047,8 +5056,10 @@ BEGIN
                               AND NEW.decision=OLD.decision
                           WHEN 'ignored' THEN NEW.decision='ignored'
                               AND NEW.execution=OLD.execution
+                              AND OLD.execution<>'resolved_external'
                           WHEN 'reopened' THEN NEW.decision='unreviewed'
-                              AND NEW.execution=OLD.execution
+                              AND NEW.execution=(CASE WHEN OLD.execution='resolved_external'
+                                  THEN 'pending' ELSE OLD.execution END)
                           ELSE false END)
                    -- An Administrator's review of an Automatic change (#528,
                    -- ADM-09) is admitted the same way, only with its paired
@@ -5062,7 +5073,7 @@ BEGIN
                    -- (an active accepted base) away from approved undoes that,
                    -- putting it back to conflict; every other review keeps the
                    -- execution.
-                   AND NOT EXISTS (
+                   AND (OLD.execution='resolved_external' OR NOT EXISTS (
                     SELECT 1 FROM public.stewardship_proposal_review v
                     WHERE v.proposal_id=OLD.id AND v.expected_version=OLD.version
                       AND NEW.version=OLD.version+1
@@ -5114,7 +5125,7 @@ BEGIN
                          AND (NEW.execution <> 'superseded' OR EXISTS (
                              SELECT 1 FROM public.stewardship_proposed_change successor
                              WHERE successor.id=NEW.superseded_by_id AND successor.submission_id=later.id))
-                   ))
+                   )))
                 THEN
                     RAISE EXCEPTION 'Proposal replacement requires a new final Family response' USING ERRCODE='23514';
                 END IF;

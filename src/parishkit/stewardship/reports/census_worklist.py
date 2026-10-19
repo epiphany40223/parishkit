@@ -39,6 +39,7 @@ from parishkit.stewardship.responses.refresh_checks import (
 from parishkit.stewardship.source.source_status import source_status_label
 from parishkit.stewardship.web.presentation import duid
 from parishkit.stewardship.web.review_worklist import (
+    INCORRECT_WORDS,
     NOT_SEEN,
     WORDS,
     Column,
@@ -88,17 +89,13 @@ def _withheld(row):
     Edit for a field no value can be typed for (moved, deceased, the email
     opt-out, a New Member), and Accept and Edit on a Conflict whose
     ParishSoft value is unknown, which waits for a refresh: Accept on a
-    Conflict is decided against ParishSoft's current value. Entered
-    incorrectly's two fixes come with #1737; until then a refresh confirms
-    the change once ParishSoft holds the reviewer's value.
+    Conflict is decided against ParishSoft's current value.
     """
     withheld = set()
     if row["editor"] is None:
         withheld.add(Action.EDIT)
     if row["placement"].stage is Stage.CONFLICT and not row["resolvable"]:
         withheld |= {Action.ACCEPT, Action.EDIT}
-    if row["placement"].stage is Stage.ENTERED_INCORRECTLY:
-        withheld |= {Action.BACK_TO_REVIEW, Action.ENTERED_BY_HAND}
     return withheld
 
 
@@ -287,14 +284,16 @@ class CensusDecisions:
             )
             if allows(principal, capability)
         )
-        # A final change is placed by its latest refresh check (#1689), as
-        # the page placed it.
+        # A final change is placed by its latest refresh check at its
+        # current version (#1689, #1737), as the page placed it.
+        final = {
+            pk: proposal
+            for pk, proposal in proposals.items()
+            if proposal.execution in FINAL_EXECUTIONS
+        }
         checks = check_states(
-            proposals=[
-                pk
-                for pk, proposal in proposals.items()
-                if proposal.execution in FINAL_EXECUTIONS
-            ]
+            proposals=list(final),
+            versions={str(pk): proposal.version for pk, proposal in final.items()},
         )
         for pk, proposal in proposals.items():
             if proposal.version != versions[pk]:
@@ -357,6 +356,12 @@ class CensusDecisions:
         if len(recorded) > 1:
             return f"{len(recorded):,} changes {words}"
         (proposal,) = proposals.values()
+        if proposal.execution == "resolved_external" and decision.action in (
+            INCORRECT_WORDS
+        ):
+            # One of Entered incorrectly's fixes (#1737), worded as its icon
+            # was: ``proposal`` is the change as it was before.
+            words = INCORRECT_WORDS[decision.action].done
         if decision.action is Action.EDIT and not recorded[0].admin_value_set:
             return f"{notice_name(proposal)} {EDIT_MATCHED}"
         return f"{notice_name(proposal)} {words}"

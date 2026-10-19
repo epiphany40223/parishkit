@@ -21,7 +21,7 @@ What a reader is offered never decides what is allowed: each stream's
 service and its database guards refuse an action the reader may not take.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Protocol
 from urllib.parse import urlencode
 from uuid import UUID, uuid4
@@ -140,6 +140,18 @@ WORDS = {
     ),
 }
 
+# Entered incorrectly's two fixes (#1737), worded for that stage: the mark is
+# made again once ParishSoft is corrected. Back to review keeps its words;
+# its dialog says what follows (``INCORRECT_BODIES``).
+INCORRECT_WORDS = {
+    Action.ENTERED_BY_HAND: replace(
+        WORDS[Action.ENTERED_BY_HAND],
+        label="Mark {name} entered by hand again",
+        title_one="Mark {name} entered by hand again?",
+        done="marked entered by hand again.",
+    ),
+}
+
 # The status look (ui-v1.css .status-*) a selected icon is filled with: an
 # accepted decision or a mark in force is the Working look, Ignored (nothing
 # carried forward) the neutral one.
@@ -188,12 +200,32 @@ BODIES = {
     Action.HANDLED: "Record that this was handled. This is final.",
     Action.BACK_TO_REVIEW: "The item goes back to To review, to be decided again.",
 }
+# What an Entered incorrectly row's dialogs say (#1737): the two ways to fix
+# it, as the review pipeline spec names them.
+INCORRECT_BODIES = {
+    Action.ENTERED_BY_HAND: (
+        "Record that you corrected this in ParishSoft. Check ParishSoft first: "
+        "the next refresh checks it again."
+    ),
+    Action.BACK_TO_REVIEW: (
+        "The item goes back to To review. If ParishSoft's value is right, edit "
+        "the item to that value: the next refresh confirms it."
+    ),
+}
 REOPEN_BODY = "The ignored item goes back to To review. Say why it is reopened."
 REOPEN = "reopen"
 BULK_BODY = (
     "Each item is recorded as its own icon would record it. If someone "
     "else changed one of them first, nothing is recorded."
 )
+
+
+def words_for(action, stage):
+    """How ``action`` is worded on an item at ``stage``: its own words, or
+    Entered incorrectly's for the mark made again there (#1737)."""
+    if stage is Stage.ENTERED_INCORRECTLY:
+        return INCORRECT_WORDS.get(action, WORDS[action])
+    return WORDS[action]
 
 
 def selected_actions(placement):
@@ -249,7 +281,7 @@ def row_icons(
     for action in ROW_ORDER:
         if action not in offered and action not in selected:
             continue
-        words = WORDS[action]
+        words = words_for(action, placement.stage)
         on = action in selected
         icons.append(
             {
@@ -389,7 +421,7 @@ def _decorate(stream, row, roles, prefix, columns):
         if icon["selected"]:
             continue
         action = Action(icon["action"])
-        words = WORDS[action]
+        words = words_for(action, placement.stage)
         icon["post"] = urlencode(
             {"decide": action.value, "version": row["version"], "request_key": key}
         )
@@ -402,8 +434,11 @@ def _decorate(stream, row, roles, prefix, columns):
         icon["done"] = "{name} " + words.done
         back = action is Action.BACK_TO_REVIEW
         icon["choice"] = REOPEN if back and reopen else ""
+        bodies = (
+            INCORRECT_BODIES if placement.stage is Stage.ENTERED_INCORRECTLY else BODIES
+        )
         icon["body"] = (
-            REOPEN_BODY if icon["choice"] else BODIES.get(action, DECIDE_BODY)
+            REOPEN_BODY if icon["choice"] else bodies.get(action, DECIDE_BODY)
         )
     row["icons"] = icons
     kinds = [icon["action"] for icon in icons if not icon["selected"]]
