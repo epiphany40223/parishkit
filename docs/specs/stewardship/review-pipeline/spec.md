@@ -699,7 +699,11 @@ changes what each role lands on:
     Cannot participate are only To review until
     [#1686](https://github.com/epiphany40223/parishkit/issues/1686) and
     [#1685](https://github.com/epiphany40223/parishkit/issues/1685) store
-    their decisions. Entered incorrectly and Not seen in ParishSoft cards
+    their decisions. Until those slices move them (and Additional
+    information) onto the pipeline, their cards still show counts, every
+    current item counting as waiting, rather than no number
+    (Administrator decision, 2026-10-18); the page's About text says so.
+    Entered incorrectly and Not seen in ParishSoft cards
     come with [#1689](https://github.com/epiphany40223/parishkit/issues/1689),
     which first places an item there.
   - A leader's Ministry panel has one To review card per Ministry they
