@@ -450,3 +450,35 @@ def test_the_migration_check_refuses_the_earlier_guards(response_service):
             transaction.set_rollback(True)
     with connection.cursor() as cursor:
         cursor.execute(block)
+
+
+def test_the_migration_revokes_the_earlier_selection_from_the_worker(
+    response_service,
+):
+    """An environment that granted 0139's v1 to the worker loses it in 0142
+    (database-grants never revokes, and the worker refuses an undeclared
+    definer), and the DO block refuses to commit while the grant remains."""
+    new = (SCHEMA / "migrations/0142_pledge_conflicts.sql").read_text(encoding="utf-8")
+    revoke = new[new.index("DO $revoke$") : new.index("DO $check$")]
+    block = new[new.index("DO $check$") :]
+    v1 = "public.stewardship_pledge_refresh_items_v1(uuid, uuid)"
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(
+            "DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE "
+            "rolname='pk_stewardship_worker') THEN CREATE ROLE pk_stewardship_worker; "
+            "END IF; END $$"
+        )
+        cursor.execute(f"GRANT EXECUTE ON FUNCTION {v1} TO pk_stewardship_worker")
+        with (
+            pytest.raises(DatabaseError, match="earlier pledge selection"),
+            transaction.atomic(),
+        ):
+            cursor.execute(block)
+        cursor.execute(revoke)
+        cursor.execute(
+            "SELECT has_function_privilege('pk_stewardship_worker', %s, 'EXECUTE')",
+            [v1],
+        )
+        assert cursor.fetchone() == (False,)
+        cursor.execute(block)
+        transaction.set_rollback(True)

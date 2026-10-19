@@ -221,6 +221,11 @@ def test_a_confirmed_to_review_pledge_was_already_in_parishsoft():
         item("confirmed", review(), check="confirmed", base="to_enter_by_hand")
     )
     assert views.ALREADY not in str(views._stage_line(decided, ""))
+    # At $0.00 the words do not claim ParishSoft holds a pledge.
+    zero = shown(
+        item("confirmed", check="confirmed", observed="0.00", base="to_review")
+    )
+    assert str(views._stage_line(zero, "")) == views.NOTHING
 
 
 def test_the_stage_choices_list_conflict_after_to_review():

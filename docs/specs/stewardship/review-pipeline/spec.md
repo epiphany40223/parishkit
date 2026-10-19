@@ -935,7 +935,10 @@ all on the page and Accept; pledges work the same way.
 Every decision is checked against the item version the row showed, as
 census review and the Ministry follow-up forms already are; a row someone
 else (another reviewer, or the Family resubmitting) changed first is left as
-it is and the notice says so. Bulk decisions are all or none.
+it is and the notice says so. Bulk decisions are all or none. A pledge's
+version also advances with every refresh check of it
+([Financial stream](#financial-stream)), so a decision is never applied over
+a Confirmed or Conflict the reader was not shown.
 
 ## Update phase
 

@@ -198,6 +198,9 @@ CHANGED = "The Family changed its pledge after the last decision."
 # A To review pledge a refresh found in ParishSoft (refresh rule 1, #1747):
 # Confirmed with no reviewer.
 ALREADY = "Already in ParishSoft."
+# The same at $0.00: no pledge in ParishSoft and none answered, so the
+# words do not claim ParishSoft holds something.
+NOTHING = "Nothing to enter: ParishSoft holds no pledge."
 EDIT_REFUSED = "Correct the value, then save it again."
 # The worklist's default filters, as the Financial stewardship selection
 # takes them: every Family's current pledge.
@@ -719,9 +722,10 @@ def _stage_line(row, decision):
     """
     parts = [format_html("{}", decision)] if decision else []
     found = row["placement"]
-    if found.stage is Stage.CONFIRMED and found.decision is None:
-        parts.append(format_html("{}", ALREADY))
     item = row["item"]
+    if found.stage is Stage.CONFIRMED and found.decision is None:
+        nothing = item.observed is not None and item.observed == 0
+        parts.append(format_html("{}", NOTHING if nothing else ALREADY))
     if item.review and not item.in_force:
         parts.append(format_html("{}", CHANGED))
     by, at = mark(row)

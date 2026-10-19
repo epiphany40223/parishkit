@@ -121,9 +121,9 @@ $$;
 -- force, never a Confirmed one (it is not checked again), each with C (a To
 -- review pledge's current answer, else the Edit's annual pledge, else the
 -- answer decided on), the amount recorded at its mark (A when it recorded
--- none, as the spec reads it), A and its latest counting check. ``family_uuid`` or ``review_uuid`` limits it
--- to that item, whose campaign it finds; ``review_uuid`` only to a decided
--- item whose row it is.
+-- none, as the spec reads it), A and its latest counting check.
+-- ``family_uuid`` or ``review_uuid`` limits it to that item, whose campaign
+-- it finds; ``review_uuid`` only to a decided item whose row it is.
 CREATE FUNCTION public.stewardship_pledge_refresh_items_v2(
     campaign_uuid uuid, family_uuid uuid DEFAULT NULL, review_uuid uuid DEFAULT NULL)
 RETURNS TABLE(campaign_id uuid, family_id uuid, family_duid bigint,
@@ -406,7 +406,9 @@ BEGIN
               AND prosrc LIKE '%stewardship_pledge_review_states_v1(%'
               AND prosrc LIKE '%stewardship_pledge_open_check%'
               AND prosrc LIKE '%c.item_version=i.sequence%'
-              AND prosrc LIKE '%count(*) FROM stewardship_pledge_open_check%')
+              AND prosrc LIKE '%count(*) FROM stewardship_pledge_open_check%'
+              AND prosrc LIKE '%count(*) FROM stewardship_pledge_refresh_check%'
+              AND prosrc LIKE '%IS DISTINCT FROM stewardship_pledge_answer_v1(s.answers%')
     THEN
         RAISE EXCEPTION 'The pledge stage selection is not installed as declared';
     END IF;

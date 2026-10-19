@@ -2801,15 +2801,17 @@ section is the page.
   Conflict row offers Accept, Edit and Ignore (a Conflict's earlier decision
   reads "Earlier: Accepted, not in force." under its stage, and the decision
   taken on it records ParishSoft's amount as the pledge's new baseline; a
-  decision posted from a page drawn before a refresh found a Conflict, or
-  moved ParishSoft's amount under one, is refused as someone else's change
-  and the page is redrawn); an Ignored row Back to review, with a required
+  decision posted from a page drawn before any later refresh check of that
+  pledge, such as a Conflict found or ParishSoft's amount moving under one,
+  is refused as someone else's change and the page is redrawn); an Ignored
+  row Back to review, with a required
   note; a To enter by hand row Entered by hand and Back to review; an Entered by
   hand row nothing (the mark is final), and neither does an Entered
   incorrectly row until its fixes land
   ([#1737](https://github.com/epiphany40223/parishkit/issues/1737)) or a
   Confirmed one; a Confirmed row with no decision says "Already in
-  ParishSoft." under its stage. An Ignored row ParishSoft now matches says
+  ParishSoft." under its stage, or "Nothing to enter: ParishSoft holds no
+  pledge." when both the Family's answer and ParishSoft are $0.00. An Ignored row ParishSoft now matches says
   "ParishSoft now matches the Family's answer" under its stage. The bulk bar offers Accept, Ignore, Back
   to review and Entered by hand, so the Administrator's flow ("a handful of
   manual edits ... and then bulk approve all the financial pledges") is a few

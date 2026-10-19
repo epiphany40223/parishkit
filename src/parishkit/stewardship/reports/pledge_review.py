@@ -88,9 +88,9 @@ class Item:
     on the page and ``sequence`` its latest row's (0 with none); its version
     on the page is ``version_of(item)``. ``review`` is that latest row,
     ``in_force`` whether the Family's pledge answer is unchanged since it,
-    and ``stage`` the selection's own
-    stage, which ``placement`` must agree with. ``base_stage`` is the stage
-    its decision rows alone give (0135's), ``check`` the outcome of its
+    and ``stage`` the selection's own stage, which ``placement`` must agree
+    with. ``base_stage`` is the stage its decision rows alone give (0135's),
+    ``check`` the outcome of its
     latest refresh check that counts (None without one), ``observed``
     ParishSoft's amount that check found, and ``checks`` how many checks
     the Family's pledge has (#1747).
