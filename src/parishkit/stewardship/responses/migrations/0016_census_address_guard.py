@@ -24,9 +24,10 @@ FROZEN_SQL = (
 
 class Migration(migrations.Migration):
     dependencies = [
-        # This app's previous migration, which installs the previous frozen
-        # file that replaces this guard (0128), so the files apply in order.
-        ("stewardship_responses", "0014_census_pipeline_review"),
+        # This app's previous migration (census Add's, frozen file 0129), so
+        # the app keeps one leaf and the files apply in prefix order; it
+        # follows 0128, the file that last replaced this guard, in turn.
+        ("stewardship_responses", "0015_census_additions"),
     ]
 
     operations = [migrations.RunSQL(FROZEN_SQL.read_text(encoding="utf-8"))]

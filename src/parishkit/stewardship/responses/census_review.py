@@ -70,7 +70,13 @@ from parishkit.stewardship.web.tables import PAGE_SIZES
 from .accepted_base import has_active_base
 from .capabilities import Handling, capability
 from .census import InvalidHousehold, validate_address
-from .census_resolution import MAX_NOTE, KeyRebound, record_resolution
+from .census_resolution import (
+    MAX_NOTE,
+    KeyRebound,
+    ReopenCovered,
+    covered_by_addition,
+    record_resolution,
+)
 from .comparison import ADDRESS_COMPONENTS, ValueKind
 from .contact_schema import PUT_SCHEMA, sendable
 from .member_census import InvalidMemberValue, validate_member_value
@@ -424,6 +430,13 @@ def _record(
         # Reopening an ignored change says why (the review pipeline's
         # "Reviewed stage"); the SQL guard requires the same.
         raise ValueError("Sending an ignored census change back needs a note.")
+    if (
+        decision == "unreviewed"
+        and proposal.decision == "ignored"
+        and covered_by_addition(proposal)
+    ):
+        # An open parish addition stands in for it (#1710).
+        raise ReopenCovered("An open addition covers this census change.")
     # The row records the whole resulting review state: a decision keeps
     # the edit fields as the proposal has them, an edit keeps the decision.
     # A resolution accepts exactly the value and source the proposal holds

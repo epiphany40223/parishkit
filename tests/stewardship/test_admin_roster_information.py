@@ -251,15 +251,24 @@ def test_the_parser_s_limits_are_the_page_s():
 
 
 def test_the_ledger_covers_the_tick_its_bulk_and_information_follow_up():
-    """The tick, the bulk mark and an information item's page and Save are
-    covered (the queue's export is PR 11c's, test_admin_followup.py)."""
+    """The tick, the bulk mark, an information item's page and the
+    Additional information worklist, whose decisions took the retired item
+    Save's command (#1685), are covered (the queue's export is PR 11c's,
+    test_admin_followup.py)."""
+    assert "information_update" not in LEDGER
     for route, commands in (
         ("ministry_followup_roster", ("followup show", "followup roster-entered")),
         ("ministry_roster_bulk", ("report roster", "followup roster-bulk")),
         ("information_item", ("followup information-show",)),
         (
-            "information_update",
-            ("followup information-show", "followup information-update"),
+            "information_queue",
+            (
+                "report information",
+                "information list",
+                "information decide",
+                "followup information-show",
+                "followup information-update",
+            ),
         ),
     ):
         assert LEDGER[route].kind == "command", route
