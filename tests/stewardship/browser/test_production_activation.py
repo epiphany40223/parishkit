@@ -43,8 +43,7 @@ STATES = (
     ),
     (
         PRODUCTION,
-        "Campaign active. Preparing initial campaign mail failed after its "
-        "automatic retries.",
+        "Campaign active. Initial campaign mail failed.",
         True,
         "Retry",
         False,
@@ -137,16 +136,25 @@ def test_each_state_has_its_frame_and_at_most_one_primary(
     expect(page.locator("main")).to_contain_text("Items processed: 5,678.")
 
 
-def test_the_lines_under_the_boxes_never_move_the_row(page, component_origin):
-    """Every direct-activation state draws the same boxes and two lines, so
-    the action row stays where it was between them (no layout shift) on a
-    desktop width, where each line fits one row."""
-    page.set_viewport_size({"width": 1280, "height": 900})
-    tops = set()
-    for path in ("/production-preparing", "/production-retrying"):
+@pytest.mark.parametrize("width", [320, 1280])
+def test_a_change_of_state_moves_nothing_under_the_pointer(
+    page, component_origin, width
+):
+    """Every direct-activation state draws the same boxes, two lines with
+    reserved rows and an action row one button tall even when empty, so
+    the row and the link below it stay where they were when Retry goes away
+    or a state's line is longer (no layout shift). The step bar sits above
+    the self-updating region, so it never leaves mid-watch."""
+    page.set_viewport_size({"width": width, "height": 900})
+    rows, links = set(), set()
+    for path in (PRODUCTION, "/production-preparing", "/production-retrying"):
         page.goto(component_origin + path)
-        tops.add(round(page.locator("[data-production-actions]").bounding_box()["y"]))
-    assert len(tops) == 1
+        rows.add(round(page.locator("[data-production-actions]").bounding_box()["y"]))
+        link = page.get_by_role("link", name="Review Campaign settings")
+        links.add(round(link.bounding_box()["y"]))
+        assert page.locator("#production-status .setup-stepper").count() == 0
+    assert len(rows) == 1, rows
+    assert len(links) == 1, links
 
 
 def test_cancel_go_live_waits_for_a_reason_in_the_dialog(page, component_origin):
@@ -185,8 +193,13 @@ def test_cancel_go_live_waits_for_a_reason_in_the_dialog(page, component_origin)
     assert apply.is_enabled()
     expect(status).to_have_text("")
     assert apply.bounding_box() == where
+    # Enter in the field is Apply once it holds a reason, never before.
+    reason.fill("  ")
+    reason.press("Enter")
+    assert len(posts) == 1
+    reason.fill("Correct the schedule")
     with page.expect_navigation(url=component_origin + GO_LIVE):
-        apply.click()
+        reason.press("Enter")
     assert len(posts) == 2
     assert "action=cancel" in posts[1] and "review=synthetic-cancel" in posts[1]
     assert "reason=Correct+the+schedule" in posts[1]

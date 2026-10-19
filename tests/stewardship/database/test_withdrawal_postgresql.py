@@ -12,6 +12,7 @@ from django.db import DatabaseError, connection
 from django.db.models import F
 from django.urls import reverse
 
+from parishkit.stewardship.accounts import confirmation_views as views
 from parishkit.stewardship.accounts import withdrawal_commands as commands
 from parishkit.stewardship.accounts.confirmation_commands import confirm
 from parishkit.stewardship.accounts.models import PortalUser
@@ -155,6 +156,11 @@ def test_cancel_go_live_dialog_is_exact_atomic_and_preserves_cleanup(
             assert b'data-production-cancel-refused="no_reason"' in refused.content
         forged = post(item.browser, item.path, values | {"review": binding + "x"})
         assert forged.status_code == 400
+        # Another sign-in's Review binding.
+        other = signing.Signer(salt=views.SALT).unsign_object(binding)
+        other["actor"] = str(uuid4())
+        stolen = values | {"review": signing.Signer(salt=views.SALT).sign_object(other)}
+        assert post(item.browser, item.path, stolen).status_code == 403
         assert not ProductionWithdrawal.objects.exists()
         # An hour-old dialog still cancels: no page age reaches the
         # Administrator, since the intent is minted at Apply.
@@ -247,10 +253,23 @@ def test_cancel_go_live_dialog_refuses_what_changed(scheduled, monkeypatch):
     assert b'data-production-cancel-refused="started"' in started.content
     assert not ProductionWithdrawal.objects.exists()
     with web_login():
-        applied = post(
-            item.browser, item.path, values | {"review": first.context["review"]}
-        )
+        # Two Applies of one Review racing: the second's owner call finds
+        # the first's withdrawal under its key and refuses its newer
+        # intent; that is this Administrator's own cancellation, so Check.
+        real = commands.withdraw
+
+        def raced(*args, **kwargs):
+            """Cancel, then refuse as the losing concurrent Apply's owner does."""
+            real(*args, **kwargs)
+            raise PermissionError("Withdrawal replay belongs to another intent.")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(commands, "withdraw", raced)
+            applied = post(
+                item.browser, item.path, values | {"review": first.context["review"]}
+            )
         assert applied.status_code == 303, applied.content
+        assert applied["Location"] == reverse("admin:go_live")
         other_tab = post(
             item.browser, item.path, values | {"review": second.context["review"]}
         )
