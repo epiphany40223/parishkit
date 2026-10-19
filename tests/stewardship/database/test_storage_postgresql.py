@@ -533,16 +533,42 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             "stewardship_proposal_review_guard",
             "stewardship_proposal_review_guard_v1",
         ),
+        # A census change the parish added and its later step (#1710):
+        # INSERT only, each under its own name.
+        **{
+            table: (f"{table}_guard", f"{table}_guard_v1")
+            for table in (
+                "stewardship_census_addition",
+                "stewardship_census_addition_resolution",
+            )
+        },
         # A Campaign setup step kept as is (#1404): INSERT only, under its
         # own name.
         "stewardship_campaign_setup_review": (
             "stewardship_campaign_setup_review_guard",
             "stewardship_campaign_setup_review_guard_v1",
         ),
+        # A refresh's check of a final or decided item (#1689): INSERT
+        # only, by the promoting worker, under its own name.
+        "stewardship_refresh_check": (
+            "stewardship_refresh_check_guard",
+            "stewardship_refresh_check_guard_v1",
+        ),
         # A roster tick's history (#528): INSERT only, under its own name.
         "stewardship_ministry_roster_entry": (
             "stewardship_ministry_roster_entry_guard",
             "stewardship_ministry_roster_entry_guard_v1",
+        ),
+        # A pledge's review history (#1686): INSERT only, under its own name.
+        "stewardship_pledge_review": (
+            "stewardship_pledge_review_guard",
+            "stewardship_pledge_review_guard_v1",
+        ),
+        # A cannot-participate or cannot-attend answer's review history
+        # (#1685): INSERT only, under its own name.
+        "stewardship_limitation_review": (
+            "stewardship_limitation_review_guard",
+            "stewardship_limitation_review_guard_v1",
         ),
         # Publication plans and outcomes (#528, DAT-09.01): INSERT only,
         # each under its own name.
@@ -877,7 +903,12 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
                 "stewardship_proposal_resolution",
                 "stewardship_proposal_review",
                 "stewardship_campaign_setup_review",
+                "stewardship_census_addition",
+                "stewardship_census_addition_resolution",
                 "stewardship_ministry_roster_entry",
+                "stewardship_refresh_check",
+                "stewardship_pledge_review",
+                "stewardship_limitation_review",
                 "stewardship_publication_plan",
                 "stewardship_publication_entity",
                 "stewardship_publication_field",
@@ -1012,7 +1043,8 @@ def test_insert_and_update_use_database_clock(portal_session, monkeypatch):
 def test_session_bindings_are_immutable_in_service_and_sql(portal_session, field):
     """The same attribution UUID cannot be rebound to a new login identity.
 
-    ``authenticated_at`` may only advance, never move backwards.
+    ``authenticated_at`` is a binding too: a new sign-in issues a new session
+    (#1547), so the instant never changes in place (#1550).
     """
     value = {
         "principal_id": uuid4(),
@@ -1028,53 +1060,49 @@ def test_session_bindings_are_immutable_in_service_and_sql(portal_session, field
             correlation_id=uuid4(),
             change=lambda record: setattr(record, field, value),
         )
-    message = "only advance" if field == "authenticated_at" else "immutable"
-    with pytest.raises(IntegrityError, match=message), transaction.atomic():
+    with pytest.raises(IntegrityError, match="immutable"), transaction.atomic():
         PortalSession.objects.filter(pk=portal_session.pk).update(
             **{field: value, "version": F("version") + 1}
         )
 
 
-def test_session_authentication_advances_only_to_a_past_instant(portal_session):
-    """The verified instant moves forward in place, never into the future."""
+def test_session_authentication_never_moves_forward_either(portal_session):
+    """The verified instant does not advance in place, even to a past instant.
+
+    The retired step-up sign-in (#1547) was the only thing that moved it, so
+    0123 made it immutable (#1550): the service check refuses a later instant
+    on a live row, and the SQL guard on a live or a revoked one.
+    """
     later = portal_session.authenticated_at + timedelta(minutes=10)
 
     def advance(record):
         """Advance both instants, as the chronology CHECK requires."""
         record.authenticated_at = record.last_activity_at = later
 
-    changed = mutate_record(
-        PortalSession,
-        portal_session.pk,
-        expected_version=1,
-        actor_id=None,
-        correlation_id=uuid4(),
-        change=advance,
-    )
-    assert changed.authenticated_at == later
-    future = datetime(2100, 1, 1, tzinfo=UTC)
-    with (
-        pytest.raises(IntegrityError, match="only advance"),
-        transaction.atomic(),
-    ):
-        PortalSession.objects.filter(pk=portal_session.pk).update(
-            authenticated_at=future,
-            last_activity_at=future,
-            version=F("version") + 1,
+    with pytest.raises(StorageInvariantError):
+        mutate_record(
+            PortalSession,
+            portal_session.pk,
+            expected_version=1,
+            actor_id=None,
+            correlation_id=uuid4(),
+            change=advance,
         )
-    revoked = later + timedelta(minutes=1)
+    with pytest.raises(IntegrityError, match="immutable"), transaction.atomic():
+        PortalSession.objects.filter(pk=portal_session.pk).update(
+            authenticated_at=later, last_activity_at=later, version=F("version") + 1
+        )
+    revoked = portal_session.authenticated_at + timedelta(minutes=1)
     PortalSession.objects.filter(pk=portal_session.pk).update(
         revoked_at=revoked, version=F("version") + 1
     )
-    with (
-        pytest.raises(IntegrityError, match="only advance"),
-        transaction.atomic(),
-    ):
+    with pytest.raises(IntegrityError, match="immutable"), transaction.atomic():
         PortalSession.objects.filter(pk=portal_session.pk).update(
             authenticated_at=revoked, version=F("version") + 1
         )
+    original = portal_session.authenticated_at
     portal_session.refresh_from_db()
-    assert portal_session.authenticated_at == later
+    assert portal_session.authenticated_at == original
 
 
 @pytest.mark.parametrize("fail", [False, True])

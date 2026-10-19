@@ -81,7 +81,7 @@ def test_export_these_requests_posts_the_applied_view(page, component_origin):
         row.get_by_role("button", name="Export XLSX").click()
     body = sent.value.post_data
     assert "search=Example" in body and "ministry=9" in body
-    assert "format=xlsx" in body and "state=unresolved" in body
+    assert "format=xlsx" in body and "stage=to_review" in body
     assert "browser_timezone=" + quote(zone, safe="") in body
     assert "page=" not in body and "size=" not in body
     assert "?" not in sent.value.url

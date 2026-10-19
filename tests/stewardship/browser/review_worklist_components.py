@@ -11,11 +11,19 @@ view will answer with its page redrawn.
 
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
+from uuid import UUID
 
 from django.template import engines
 
+from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.pipeline import Decision, Placement, Stage
-from parishkit.stewardship.web.review_worklist import Column, build
+from parishkit.stewardship.web.review_worklist import (
+    STALE,
+    Column,
+    build,
+    page_address,
+)
 from parishkit.stewardship.web.tables import paginate
 
 PATH = "/review-worklist"
@@ -24,9 +32,17 @@ LEADER = "/review-worklist-leader"
 ACCEPTED = "/review-worklist-accepted"
 BULKED = "/review-worklist-bulked"
 REOPENED = "/review-worklist-reopened"
+# A decision another reader overtook, with a long item name: the longest
+# notice the line must hold (R38 finding 10).
+STALED = "/review-worklist-staled"
+# The answer to Apply with Stage Ignored, and the address it names, which a
+# reload then loads (R38 finding 6).
+FILTERED = "/review-worklist-filtered"
+FILTERED_ADDRESS = PATH + "?stage=ignored"
 ACCEPTED_NOTICE = "Mobile phone for Member 00 accepted."
 BULK_NOTICE = "2 changes accepted."
 REOPENED_NOTICE = "Mobile phone for Member 04 sent back to review."
+STALE_NOTICE = STALE.format(name="Home address for Martin, Luke and Emily")
 
 # The host page: the stream's heading, then the shared component.
 HOST = engines["django"].from_string(
@@ -49,7 +65,17 @@ ADD = engines["django"].from_string(
     " required></div>"
     '{% include "stewardship/components/review-worklist-note.html" %}'
 )
-COLUMNS = (Column("who", "Who"), Column("what", "What changed"))
+# Who is a Member's name, opening the Family hub for viewers who may open
+# it; What changed opens the item's own page for every viewer (R38 finding
+# 13).
+COLUMNS = (
+    Column("who", "Who", family=True),
+    Column("what", "What changed", link="what_url"),
+)
+FAMILY = UUID(int=81)
+HUB = f"/admin/reports/families/{FAMILY}/"
+ITEM = "/review-item/{index}"
+
 WHEN = datetime(2054, 10, 5, 12, tzinfo=UTC)
 
 # (stage, decision, by_hand, not_seen, held decision) of each Staff row: every
@@ -77,7 +103,9 @@ def _row(index, stage, decision=None, by_hand=False, not_seen=False, held=None):
         "by_hand": by_hand,
         "not_seen": not_seen,
         "who": f"Member {index:02d}",
+        "family_id": FAMILY,
         "what": "Mobile phone",
+        "what_url": ITEM.format(index=index),
         "baseline": "555-0100",
         "family_answer": f"555-{index:04d}",
         "reviewer_value": "555-0199" if edited else "",
@@ -89,14 +117,24 @@ def _row(index, stage, decision=None, by_hand=False, not_seen=False, held=None):
     }
 
 
-def _page(context, admin, rows, roles, stream="census", notice=None, path=PATH):
-    """Render the host page with ``rows`` for a reader holding ``roles``."""
-    table = paginate(rows, {"size": "25"}, carry=[("stage", "all")])
+def _page(
+    context,
+    admin,
+    rows,
+    roles,
+    stream="census",
+    notice=None,
+    path=PATH,
+    stage="all",
+):
+    """Render the host page with ``rows`` for a reader holding ``roles``,
+    at Stage ``stage``, naming its own address as a stream's view does."""
+    table = paginate(rows, {"size": "25"}, carry=[("stage", stage)])
     table = replace(table, method="post", action=path)
     counts = {}
     for row in rows:
-        stage = row["placement"].stage.value
-        counts[stage] = counts.get(stage, 0) + 1
+        at = row["placement"].stage.value
+        counts[at] = counts.get(at, 0) + 1
     counts.setdefault("not_seen", sum(row.get("not_seen", False) for row in rows))
     worklist = build(
         stream,
@@ -105,19 +143,26 @@ def _page(context, admin, rows, roles, stream="census", notice=None, path=PATH):
         prefix="worklist",
         action=path,
         columns=COLUMNS,
-        stage="all",
+        stage=stage,
         counts=counts,
         stages=[Stage.TO_REVIEW, Stage.CONFLICT, Stage.IGNORED, Stage.ENTERED_BY_HAND],
         items="changes",
         caption="Changes to review",
         filters_template=FILTERS,
         add_template=ADD,
+        address=page_address(path, [("stage", "" if stage == "all" else stage)]),
     )
     return (
         "text/html",
         HOST.render(
             context
             | {"admin_chrome": admin, "worklist": worklist, "table": table}
+            # The page's viewer, whose role decides the Family hub link.
+            | {
+                "request": SimpleNamespace(
+                    principal=Principal(UUID(int=1), frozenset(roles))
+                )
+            }
             | {"notice": notice}
         ),
     )
@@ -154,6 +199,7 @@ def components(context, admin):
     both = accepted | {1: (Stage.TO_ENTER_BY_HAND, Decision.ACCEPTED)}
     reopened = {4: (Stage.TO_REVIEW, None)}
     staff = {"staff"}
+    ignored = [row for row in staff_rows() if row["placement"].stage is Stage.IGNORED]
     return {
         PATH: _page(context, admin, staff_rows(), staff),
         ACCEPTED: _page(
@@ -163,6 +209,9 @@ def components(context, admin):
         REOPENED: _page(
             context, admin, staff_rows(reopened), staff, notice=REOPENED_NOTICE
         ),
+        STALED: _page(context, admin, staff_rows(), staff, notice=STALE_NOTICE),
+        FILTERED: _page(context, admin, ignored, staff, stage="ignored"),
+        FILTERED_ADDRESS: _page(context, admin, ignored, staff, stage="ignored"),
         LEADER: _page(
             context,
             admin,

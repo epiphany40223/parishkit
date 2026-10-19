@@ -7,6 +7,13 @@ filter bar fetch at the exact addresses they carry (the filter bar's in the
 sorted-query form the fixture server also matches), so the script's fetch is
 an ordinary page request and the swapped-in region is the real template
 output, plus Staff's reduced view and pages whose Open form is unavailable.
+Every page is the Family hub (#1678) of a campaign with census, Financial and
+Ministry stewardship: the header strip, then the Timeline tab, the Family tab
+and one tab per Member (slice 2, from the census unit test's response, each
+with its Ministry joins and leaves from slice 4), the Financial tab (slice
+3) and the Additional tab (slice 4), all
+from the ``hub_streams`` unit test's values. The fixtures also serve the hub
+at each content tab's own address, which a tab's first choice fetches.
 """
 
 from datetime import timedelta
@@ -15,6 +22,12 @@ from uuid import UUID
 
 from django.template.loader import render_to_string
 
+from parishkit.stewardship.reports.hub_census import shape
+from parishkit.stewardship.reports.hub_streams import (
+    financial_tab,
+    ministry_rows,
+    other_tab,
+)
 from parishkit.stewardship.reports.timeline_views import (
     TimelineQuery,
     page_context,
@@ -23,6 +36,15 @@ from parishkit.stewardship.reports.timeline_views import (
 from parishkit.stewardship.reports.timelines import Timeline
 from parishkit.stewardship.web.dates import using
 
+from ..test_hub_census import ANSWERS, NAMES, ROWS
+from ..test_hub_streams import (
+    ITEM,
+    METADATA,
+    NAMES_BY_DUID,
+    REQUESTS,
+    other,
+    shaped_pledge,
+)
 from ..test_response_metrics import START
 from ..test_timelines import CAMPAIGN, FAMILY, IDENTITY, TIMELINE
 from .automation_components import canonical
@@ -32,7 +54,7 @@ ADMIN = timeline_url(FAMILY)
 # oldest first, then back to newest first.
 OLDEST = ADMIN + "?size=all&sort=when"
 NEWEST = ADMIN + "?size=all&sort=-when"
-# The address the filter bar's Show lines sends for Kind Emails, from the
+# The address the filter bar's Apply filters sends for Kind Emails, from the
 # fixture browser (Pacific): its zone, the table's hidden size and sort, and
 # the blank days, as a native GET form sends them, in the order the fixture
 # server's fallback sorts them to.
@@ -50,7 +72,7 @@ EMAILS = canonical(
         ]
     )
 )
-# The address Show lines sends for From 2026-10-04 (the day after every
+# The address Apply filters sends for From 2026-10-04 (the day after every
 # fixture line, in the Pacific fixture browser) with Through blank.
 LATER = canonical(
     ADMIN
@@ -72,6 +94,36 @@ UNAVAILABLE = "/timeline-unavailable"
 # campaign work holds exports: Open form and the export buttons are
 # unavailable, each named by its reason (#1331).
 LOCKED = "/timeline-locked"
+# The hub's content sections for a campaign with every module (#1678), and
+# its census tabs, from the census unit test's response.
+HUB = ("family", "members", "financial", "other")
+CENSUS = shape(ANSWERS, NAMES, ROWS)
+# The census tabs' own addresses, as each tab's link carries them.
+CENSUS_TABS = ("family", "member-1", "member-2", "member-7")
+TAB = {key: ADMIN + "?tab=" + key for key in (*CENSUS_TABS, "financial", "other")}
+# Each content tab's own stream, as ``hub_reads`` gives it for that tab:
+# Member 1 has Ministry requests, the other Member tabs none.
+STREAMS = {
+    "member-1": {"hub_ministry": ministry_rows(REQUESTS, NAMES_BY_DUID)},
+    "member-2": {"hub_ministry": ()},
+    "member-7": {"hub_ministry": ()},
+    "financial": {"hub_financial": financial_tab(shaped_pledge(), METADATA)},
+    "other": {
+        "hub_other": other_tab(
+            other(
+                cannot_attend=True,
+                item=ITEM,
+                text="Please call about the choir",
+                disposition="current_actionable",
+                follow_up_needed=True,
+                followed_up=False,
+            ),
+            CENSUS.members,
+            ministry=True,
+            information=True,
+        )
+    },
+}
 # The export form's values, as the view's ``export_context`` gives them.
 EXPORT = {
     "url": "/timeline-export",
@@ -113,7 +165,13 @@ def components(context, admin):
                 "values": {"size": "all", "sort": "-when"},
             },
         ),
-        STAFF: (Timeline(TIMELINE.summary), {}),
+        # Staff's reduced view keeps only the portal lines (read_timeline).
+        STAFF: (
+            Timeline(
+                TIMELINE.summary, tuple(line for line in TIMELINE.events if line.portal)
+            ),
+            {},
+        ),
         UNAVAILABLE: (
             TIMELINE,
             {"full": True, "testing_codes": True, "family_test_url": ADMIN},
@@ -123,10 +181,23 @@ def components(context, admin):
             {"full": True, "eligible": False, "export": EXPORT | {"mutable": False}},
         ),
     }
+    pages |= {
+        path: (
+            TIMELINE,
+            {"full": True, "parameters": {"tab": key}} | STREAMS.get(key, {}),
+        )
+        for key, path in TAB.items()
+    }
     responses = {}
     with using("us_long"):
         for path, (timeline, options) in pages.items():
             # Administrators and Staff both may see Family codes.
-            options = {"show_codes": True, "export": EXPORT} | options
+            options = {
+                "show_codes": True,
+                "export": EXPORT,
+                "sections": HUB,
+                "census": CENSUS,
+                "ministry": True,
+            } | options
             responses[path] = ("text/html", render(context, admin, timeline, **options))
     return responses

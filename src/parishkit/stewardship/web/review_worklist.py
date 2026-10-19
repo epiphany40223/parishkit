@@ -36,6 +36,7 @@ from parishkit.stewardship.pipeline import (
     may_add,
     role_actions,
 )
+from parishkit.stewardship.web.refusals import Refusal
 
 # The row icons, in the order every row draws them, so an action keeps its
 # place from row to row (UX conventions, "Row actions and confirmation").
@@ -68,7 +69,9 @@ class Words:
 
     ``label`` names a row's icon ("Accept {name}") and ``button`` the bulk
     bar's; ``selected`` is the tooltip of the icon drawn selected (None
-    for an action that records no state, which is never drawn so).
+    for an action that records no state, which is never drawn so). Every
+    icon tooltip is one short phrase with no full stop (UX conventions,
+    "Row actions and confirmation"), as the portal's other icons are.
     ``done`` is what a dialog announces when the answer carries no notice.
     """
 
@@ -89,7 +92,7 @@ WORDS = {
         "Accept {name}?",
         "Accept {count} {items}?",
         "accepted.",
-        "Accepted.",
+        "Accepted",
     ),
     Action.EDIT: Words(
         "edit",
@@ -109,7 +112,7 @@ WORDS = {
         "Ignore {name}?",
         "Ignore {count} {items}?",
         "ignored.",
-        "Ignored.",
+        "Ignored",
     ),
     Action.BACK_TO_REVIEW: Words(
         "clear",
@@ -127,7 +130,7 @@ WORDS = {
         "Mark {name} entered by hand?",
         "Mark {count} {items} entered by hand?",
         "marked entered by hand.",
-        "Entered by hand.",
+        "Entered by hand",
     ),
     Action.HANDLED: Words(
         "entered_box",
@@ -136,7 +139,7 @@ WORDS = {
         "Mark {name} handled?",
         "Mark {count} {items} handled?",
         "marked handled.",
-        "Handled.",
+        "Handled",
     ),
 }
 
@@ -168,6 +171,10 @@ MARK_ICON = {
 # stage is a plain badge.
 STAGE_LOOK = {Stage.ENTERED_INCORRECTLY: "error"}
 NOT_SEEN = "not_seen"
+# The line an Ignored item gains when a refresh finds ParishSoft holding the
+# Family's answer (refresh rule 1, #1689): the reviewer's note, never a
+# change of stage.
+NOW_MATCHES = "ParishSoft now matches the Family's answer."
 EVERY_STAGE = "all"
 
 
@@ -186,6 +193,10 @@ BODIES = {
 }
 REOPEN_BODY = "The ignored item goes back to To review. Say why it is reopened."
 REOPEN = "reopen"
+# The choice of an action whose decision records no note (a Ministry roster
+# tick has none): its dialog hides the note (ui-v1.js data-note-field), and
+# the stream's service refuses one (``build``'s ``silent``).
+NO_NOTE = "no_note"
 BULK_BODY = (
     "Each item is recorded as its own icon would record it. If someone "
     "else changed one of them first, nothing is recorded."
@@ -217,11 +228,14 @@ def _selected_title(action, placement, undo):
     """
     state = WORDS[action].selected
     if action is Action.ACCEPT and placement.decision is not None:
-        state = f"{placement.decision.label}."
-    return f"{state} To change it, choose Back to review." if undo else state
+        state = placement.decision.label
+    # One phrase, no full stop (UX conventions, R38 finding 5).
+    return f"{state}; choose Back to review to change it" if undo else state
 
 
-def row_icons(stream, placement, roles, *, name, leads=False, by_hand=False):
+def row_icons(
+    stream, placement, roles, *, name, leads=False, by_hand=False, withheld=()
+):
     """One row's action icons for one reader, in ``ROW_ORDER``.
 
     Each is offered (an icon that opens its dialog, ``aria-pressed`` false
@@ -229,10 +243,13 @@ def row_icons(stream, placement, roles, *, name, leads=False, by_hand=False):
     in force: filled, ``aria-pressed`` true and unavailable, since choosing
     it again is no undo; Back to review is). An action the reader's role
     does not allow is left out, selected or not (UX conventions, "By role").
+    ``withheld`` are actions this one item cannot take whatever its stage
+    (a census field no value can be typed for has no Edit); they are left
+    out too, as the stream's service refuses them.
     """
     offered = allowed_actions(
         stream, placement.stage, roles, leads=leads, by_hand=by_hand
-    )
+    ) - frozenset(Action(action) for action in withheld)
     allowed = role_actions(stream, roles, leads=leads)
     selected = selected_actions(placement) & allowed
     undo = Action.BACK_TO_REVIEW in offered
@@ -265,13 +282,14 @@ def row_icons(stream, placement, roles, *, name, leads=False, by_hand=False):
     return icons
 
 
-def bulk_buttons(stream, roles, *, items="items"):
+def bulk_buttons(stream, roles, *, items="items", silent=frozenset()):
     """The bulk bar's buttons this reader may use on ``stream``.
 
     Each is available only while every ticked row offers its action
     (ui-v1.js wireSelection: its value is the kind each row's box lists).
     A Ministry leader's actions count here as on a Ministry they lead; a
     row on another Ministry offers them nothing, so its box lists no kind.
+    ``silent`` actions record no note, so their dialog shows none.
     """
     allowed = role_actions(stream, roles, leads=True)
     buttons = []
@@ -291,7 +309,11 @@ def bulk_buttons(stream, roles, *, items="items"):
                 # Reopening an ignored item needs a reason (spec, "Reviewed
                 # stage"): the note is required while a ticked row is
                 # Ignored (its box's data-confirm-choice).
-                "choice": REOPEN if action is Action.BACK_TO_REVIEW else "",
+                "choice": NO_NOTE
+                if action in silent
+                else REOPEN
+                if action is Action.BACK_TO_REVIEW
+                else "",
             }
         )
     return buttons
@@ -322,33 +344,72 @@ class Column:
     """One of a stream's identity columns, in the shared column order.
 
     ``key`` names the row's value; ``sort`` the table's sortable column, if
-    any; the first column is the row's header cell.
+    any; the first column is the row's header cell. ``family`` marks a
+    Family's or Member's name that opens the Family hub for viewers who may
+    open it (the row's ``family_id``; a "family" column always does, with
+    the shared Family-name link), and ``link`` names the row's key holding
+    the item's own page, which its cell opens for every viewer (UX
+    conventions, "Admin tables", R38 finding 13).
     """
 
     key: str
     heading: str
     sort: str = ""
     numeric: bool = False
+    family: bool = False
+    link: str = ""
 
 
-def _decorate(stream, row, roles, prefix, columns):
+HELD = "Earlier: {decision}, not in force."
+FAILED = "The last update failed."
+
+
+def decision_label(placement):
+    """The line under a row's stage: the decision behind it, worded.
+
+    The decision is shown only when the stage's word does not already say
+    it (Ignored, Accepted (edited)). A Conflict keeps an earlier decision
+    visible but not in force (spec, "Baseline refresh re-evaluation"), and
+    a change whose last update failed says so, since its stage alone
+    (Ready to update) reads as if nothing happened.
+    """
+    parts = []
+    if placement.decision and placement.decision.label != placement.stage.label:
+        parts.append(f"{placement.decision.label}.")
+    if placement.held_decision:
+        parts.append(HELD.format(decision=placement.held_decision.label))
+    if placement.failed:
+        parts.append(FAILED)
+    return " ".join(parts)
+
+
+def _decorate(stream, row, roles, prefix, columns, silent=frozenset()):
     """Give one row what its cells, box and icons need.
 
     Each offered icon opens the page's one decision dialog (Edit: the
     row's own value editor) with its own title, words and fields, so one
     dialog serves every row. Back to review on an Ignored item carries the
-    ``reopen`` choice, which makes the dialog's note required (ui-v1.js
+    ``reopen`` choice, which makes the dialog's note required, and a
+    ``silent`` action the ``no_note`` choice, which hides it (ui-v1.js
     data-confirm-choice).
     """
     placement = row["placement"]
     name = row["name"]
-    icons = row_icons(
-        stream,
-        placement,
-        roles,
-        name=name,
-        leads=row.get("leads", False),
-        by_hand=row.get("by_hand", False),
+    # A row decided on another page (``elsewhere``: its label and link, a
+    # Limitations page's Cannot contribute financially row, decided on
+    # Pledges) offers no icon and so no box; its Actions cell is the link.
+    icons = (
+        []
+        if row.get("elsewhere")
+        else row_icons(
+            stream,
+            placement,
+            roles,
+            name=name,
+            leads=row.get("leads", False),
+            by_hand=row.get("by_hand", False),
+            withheld=row.get("withheld", ()),
+        )
     )
     key = uuid4()
     reopen = placement.stage is Stage.IGNORED
@@ -368,7 +429,9 @@ def _decorate(stream, row, roles, prefix, columns):
         icon["title_one"] = words.title_one
         icon["done"] = "{name} " + words.done
         back = action is Action.BACK_TO_REVIEW
-        icon["choice"] = REOPEN if back and reopen else ""
+        icon["choice"] = (
+            NO_NOTE if action in silent else REOPEN if back and reopen else ""
+        )
         icon["body"] = (
             REOPEN_BODY if icon["choice"] else BODIES.get(action, DECIDE_BODY)
         )
@@ -377,13 +440,21 @@ def _decorate(stream, row, roles, prefix, columns):
     row["kinds"] = " ".join(kind for kind in kinds if Action(kind) in BULK)
     # A bulk Back to review asks for a note while a ticked row is Ignored.
     row["choice"] = REOPEN if reopen else ""
-    row["identity"] = [(row.get(column.key, ""), column) for column in columns]
+    # Each identity cell: its value, its column and the item page it opens
+    # (its column's ``link``), if any.
+    row["identity"] = [
+        (
+            row.get(column.key, ""),
+            column,
+            row.get(column.link, "") if column.link else "",
+        )
+        for column in columns
+    ]
     row["stage_label"] = placement.stage.label
     row["stage_look"] = STAGE_LOOK.get(placement.stage, "")
-    decision = placement.decision.label if placement.decision else ""
-    # The decision is shown beside the stage only when the stage's word
-    # does not already say it (Ready to update, Accepted (edited)).
-    row["decision_label"] = "" if decision == row["stage_label"] else decision
+    row["decision_label"] = decision_label(placement)
+    if row.get("now_matches"):
+        row["decision_label"] = f"{row['decision_label']} {NOW_MATCHES}".strip()
     row["edit_form"] = f"{prefix}-edit-{row['id']}"
     row["edit_dialog"] = f"{prefix}-edit-dialog-{row['id']}"
     row["edit_hint"] = f"{prefix}-edit-hint-{row['id']}"
@@ -405,9 +476,10 @@ class Worklist:
     ``prefix`` keeps the page's element ids apart; ``action`` is the page
     the filters and every decision post back to, whose answer is the page
     again, redrawn in place. ``baseline`` is whether the stream has a
-    Baseline column. ``fields`` are the page's view (its filters, Stage
-    included), which every form posts so its answer shows the same view.
-    The templates are the stream's own: its filters
+    Baseline column and ``reviewer`` whether it has a Reviewer's value
+    column (a stream with no Edit has none). ``fields`` are the page's view
+    (its filters, Stage included), which every form posts so its answer
+    shows the same view. The templates are the stream's own: its filters
     after Stage, its value editor (Edit and Add), and its export pane
     below the table.
     """
@@ -425,6 +497,7 @@ class Worklist:
     caption: str
     fields: dict = field(default_factory=dict)
     baseline: bool = True
+    reviewer: bool = True
     shows_now: bool = False
     bulk_too_many: bool = False
     bulk_key: UUID = field(default_factory=uuid4)
@@ -433,6 +506,10 @@ class Worklist:
     editor_template: object = "stewardship/components/review-worklist-value.html"
     add_template: object = None
     export_template: object = None
+    # The view's own address (``page_address``), which ui-v1.js puts in the
+    # address bar after each in-place answer, so a reload shows the same
+    # view; empty for a stream that keeps none.
+    address: str = ""
 
     max_bulk = MAX_BULK
 
@@ -501,7 +578,7 @@ class Worklist:
     @property
     def span(self):
         """How many columns a full-width row (the empty table's) spans."""
-        fixed = 6 + int(self.baseline) + int(self.shows_now)
+        fixed = 5 + int(self.baseline) + int(self.reviewer) + int(self.shows_now)
         return len(self.columns) + fixed + int(self.selectable)
 
 
@@ -519,7 +596,10 @@ def build(
     items="items",
     caption="Review worklist",
     baseline=True,
+    reviewer=True,
     fields=None,
+    address="",
+    silent=frozenset(),
     **templates,
 ):
     """The ``worklist`` for one reader of one page of ``stream``'s rows.
@@ -530,17 +610,23 @@ def build(
     ``submitted_at`` and the last decision (``decided_by``, ``decided_at``,
     ``note``); ``items`` is the plural the bulk dialogs count ("changes")
     and ``caption`` the table's name; optionally ``leads`` (the reader
-    leads its Ministry),
-    ``by_hand`` (a By hand census change) and ``not_seen`` (the Not seen in
-    ParishSoft flag). ``roles`` is the reader's role set. ``stage`` is the
-    Stage filter's value and ``fields`` the stream's other filters, posted
-    by every form. ``templates``
-    takes the stream's ``filters_template``, ``editor_template``,
-    ``add_template`` and ``export_template``.
+    leads its Ministry), ``by_hand`` (a By hand census change),
+    ``not_seen`` (the Not seen in ParishSoft flag), ``now_matches``
+    (ParishSoft now holds an Ignored item's Family answer) and ``withheld``
+    (actions this item cannot take). ``roles`` is the reader's role set.
+    ``stage`` is the Stage filter's value and ``fields`` the stream's other
+    filters, posted by every form; ``baseline`` and ``reviewer`` say whether
+    the stream has those columns. ``address`` is the view's own address
+    (``page_address``). ``silent`` names the actions whose decision records
+    no note (a Ministry roster tick, R39 finding 2): their dialogs show no
+    note, and the stream's service refuses one. ``templates`` takes the
+    stream's ``filters_template``, ``editor_template``, ``add_template`` and
+    ``export_template``.
     """
     stream = Stream(stream)
     columns = tuple(columns)
-    decorated = [_decorate(stream, row, roles, prefix, columns) for row in rows]
+    silent = frozenset(silent)
+    decorated = [_decorate(stream, row, roles, prefix, columns, silent) for row in rows]
     add = may_add(stream, roles) and templates.get("add_template") is not None
     return Worklist(
         stream=stream,
@@ -550,16 +636,33 @@ def build(
         columns=columns,
         stage=stage,
         stage_choices=stage_choices(counts, stages),
-        bulk=bulk_buttons(stream, roles, items=items),
+        bulk=bulk_buttons(stream, roles, items=items, silent=silent),
         add=add,
         items=items,
         caption=caption,
         fields={"stage": stage} | dict(fields or {}),
         baseline=baseline,
+        reviewer=reviewer,
         shows_now=any(row["shows_now"] for row in decorated),
         bulk_too_many=len(decorated) > MAX_BULK,
+        address=address,
         **templates,
     )
+
+
+def page_address(action, pairs):
+    """A worklist view's own address, for the address bar (R38 finding 6).
+
+    ``pairs`` are the ``(name, value)`` choices a link may carry: the Stage,
+    the stream's closed filters and the table's sort, size and page, never
+    a private value such as a name search, which stays in POST bodies (UX
+    conventions, "Admin tables"). Empty values are left out, so the default
+    view is the page's plain address. After every in-place answer ui-v1.js
+    puts it in the address bar (``a[data-page-address]``), and the stream's
+    view draws the same view from it on a reload.
+    """
+    kept = [(name, value) for name, value in pairs if value not in ("", None)]
+    return f"{action}?{urlencode(kept)}" if kept else action
 
 
 # --- The decision POST ------------------------------------------------------
@@ -711,10 +814,11 @@ class DecisionService(Protocol):
     def decide(self, principal, decision): ...
 
 
-STALE = (
-    "was changed by someone else first, so nothing was recorded. "
-    "The list shows its current state."
-)
+# Short, so a long item name still fits the notice's one reserved line on
+# a desktop (R38 finding 10); the list redrawn with it shows the item's
+# current state. The name leads, as in every other notice, because each
+# stream words its names to start a sentence ("The request from ...").
+STALE = "{name}: not recorded, changed by someone else."
 
 
 def record(service, principal, decision):
@@ -726,4 +830,14 @@ def record(service, principal, decision):
     try:
         return service.decide(principal, decision)
     except StaleDecision as error:
-        return f"{error.name or 'A chosen item'} {STALE}"
+        return STALE.format(name=error.name or "A chosen item")
+
+
+# A drawn form sent again with other choices after its first answer was
+# lost (a request key already bound to another decision): nothing was
+# recorded, and a reload draws fresh forms with fresh keys. Each stream's
+# view answers it as a 409 with this refusal.
+REBOUND = Refusal(
+    "This page was already used to record different choices, so nothing was recorded.",
+    "Reload the page, then try again.",
+)

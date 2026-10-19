@@ -60,27 +60,44 @@ def test_configuration_request_follows_until_applied_or_refused(state, live, tex
 
 
 @pytest.mark.parametrize(
-    ("state", "is_pending", "live", "text"),
+    ("kind", "is_pending", "text"),
     [
-        ("installing", True, True, "Checking and installing the new key"),
-        ("awaiting_ack", True, True, "waiting for the parts of the system that use it"),
-        ("applied", False, False, "Installed and confirmed"),
-        ("failed", False, False, "Not applied"),
+        ("pending", True, "Installing the new key"),
+        ("updated", False, "Key updated."),
+        ("failed", False, "The previous key is still in use."),
     ],
 )
-def test_credential_status_follows_until_confirmed_or_refused(
-    state, is_pending, live, text
-):
-    """The replacement page keeps following installation and consumer checks."""
-    receipt = SimpleNamespace(state=state, request_id=REQUEST)
-    html = render_to_string(
-        "stewardship/credential-status.html",
-        {"receipt": receipt, "pending": is_pending},
+def test_a_key_change_is_followed_and_redrawn_in_place(kind, is_pending, text):
+    """An integration's status line follows its key change while it runs;
+    once it finishes, its one follow-up redraws the status line and the
+    settings editor in place, quietly, never loading the page (#1568)."""
+    summary = SimpleNamespace(
+        kind=kind,
+        message="Key updated." if kind == "updated" else "Checking…",
+        at=datetime(2026, 10, 18, tzinfo=UTC),
+        request_id=REQUEST,
     )
-    assert pending(html, "credential") is live
+    html = render_to_string(
+        "stewardship/integration-status.html",
+        {
+            "target": "parishsoft",
+            "summary": summary,
+            "pending": is_pending,
+            "follow_url": "/admin/system/integrations/parishsoft/",
+        },
+    )
+    assert pending(html, "integration") is is_pending
     assert text in html
-    # The page updates itself; it has no Refresh link (#1586).
-    assert "Refresh status" not in html
+    follow = re.findall(r"<a hidden data-live-follow[^>]*>", html)
+    if is_pending:
+        assert follow == []
+    else:
+        (link,) = follow
+        assert "data-in-place " in link and "data-in-place-quiet" in link
+        assert 'data-in-place-only="integration-editor"' in link
+        address = "/admin/system/integrations/parishsoft/#integration-status"
+        assert f'href="{address}"' in link
+    assert "key-changes" not in html
 
 
 def task(state):

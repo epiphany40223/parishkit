@@ -84,7 +84,9 @@ def test_the_web_records_one_request_for_an_administrator(auth_service, google):
     # A sign-in instant other than the session's recorded one is refused.
     BackupRequest.objects.filter(pk=first.pk).update(state="expired", finished_at=now())
     current = session()
-    with pytest.raises(DatabaseError, match="fresh Administrator"):
+    with pytest.raises(
+        DatabaseError, match="A backup request requires a live Administrator session"
+    ):
         insert(authenticated_at=current.authenticated_at - timedelta(minutes=10))
     # Another login cannot record one.
     with pytest.raises(DatabaseError):
@@ -379,14 +381,18 @@ def test_another_session_a_revoked_one_or_staff_are_refused(auth_service, google
     from .campaign_builders import change
 
     signed_in()
-    with pytest.raises(DatabaseError, match="fresh Administrator"):
+    with pytest.raises(
+        DatabaseError, match="A backup request requires a live Administrator session"
+    ):
         insert(actor_id=uuid4())
     from django.db.models import F
 
     PortalSession.objects.filter(pk=session().pk).update(
         revoked_at=now(), version=F("version") + 1
     )
-    with pytest.raises(DatabaseError, match="fresh Administrator"):
+    with pytest.raises(
+        DatabaseError, match="A backup request requires a live Administrator session"
+    ):
         insert()
     store = auth_service.store
     change(
@@ -403,7 +409,9 @@ def test_another_session_a_revoked_one_or_staff_are_refused(auth_service, google
     )
     google[0]["email"] = "reader@example.org"
     signed_in()
-    with pytest.raises(DatabaseError, match="fresh Administrator"):
+    with pytest.raises(
+        DatabaseError, match="A backup request requires a live Administrator session"
+    ):
         insert()
     assert BackupRequest.objects.count() == 0
 
@@ -651,7 +659,9 @@ def test_a_live_session_of_any_sign_in_age_records_a_request(auth_service, googl
         PortalSession.objects.filter(pk=login.pk).update(
             last_activity_at=now() - timedelta(minutes=61)
         )
-    with pytest.raises(DatabaseError, match="fresh Administrator"):
+    with pytest.raises(
+        DatabaseError, match="A backup request requires a live Administrator session"
+    ):
         insert()
 
 

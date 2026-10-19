@@ -106,12 +106,12 @@ def test_tally_sums_groups_and_skips_report_only():
 def test_staff_panels_in_order_with_every_stage_counted():
     """Every stream Staff may open, in the spec's order, each stage counted
     (a stage with no items reads 0); Ministry To review is the menu's count
-    and its To enter by hand opens Roster changes to enter."""
+    and its To enter by hand opens Ministry requests at that Stage."""
     review = staff_counts(
         census={"to_review": 4, "conflict": 1, "ignored": 9},
         ministry={"to_enter_by_hand": 2, "entered_by_hand": 7},
         cannot_participate={"to_review": 3},
-        financial={},
+        financial={"to_review": 3, "to_enter_by_hand": 1},
         additional_information={"to_handle": 6},
     )
     panels = review_work.panels(chrome(counts={"ministry_report": 5}), review)
@@ -132,14 +132,22 @@ def test_staff_panels_in_order_with_every_stage_counted():
         ("To review", "/ministry_report/", None, 5, "requests"),
         (
             "To enter by hand",
-            "/admin/reports/ministries/follow-up/roster/",
+            "/ministry_report/?stage=to_enter_by_hand",
             None,
             2,
             "requests",
         ),
     ]
+    # Financial's cards open Pledges at their stage (#1686).
     assert cards(by_stream["financial"]) == [
-        ("To review", "/financial_report/", None, 0, "pledges")
+        ("To review", "/pledges_to_enter/?stage=to_review", None, 3, "pledges"),
+        (
+            "To enter by hand",
+            "/pledges_to_enter/?stage=to_enter_by_hand",
+            None,
+            1,
+            "pledges",
+        ),
     ]
     assert cards(by_stream["additional_information"]) == [
         ("To review", "/information_queue/", None, 0, "items"),
@@ -152,7 +160,7 @@ def test_a_stream_outside_the_menu_is_left_out_and_greyed_follows_the_menu():
     greyed with the menu's reason, never links."""
     review = staff_counts(census={"to_review": 1}, financial={})
     panels = review_work.panels(
-        chrome(names=["census_changes", "financial_report"], greyed=["census_changes"]),
+        chrome(names=["census_changes", "pledges_to_enter"], greyed=["census_changes"]),
         review,
     )
     assert [panel.stream for panel in panels] == ["census", "financial"]

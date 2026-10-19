@@ -64,7 +64,7 @@ def test_pages_are_accessible_and_fit_a_phone(page, component_origin, axe_source
 def test_the_page_names_the_family_and_offers_no_testing_view(page, component_origin):
     """The heading names the Family; no Production / Testing control (#1570)."""
     page.goto(component_origin + ADMIN)
-    visible(page.get_by_role("heading", name="Adams, Ann — timeline"))
+    visible(page.get_by_role("heading", name="Adams, Ann", exact=True))
     assert "Timeline" in page.title() and "Adams" not in page.title()
     assert page.locator("[data-in-place^='mode-']").count() == 0
     assert page.get_by_text("Testing rehearsal", exact=True).count() == 0
@@ -149,7 +149,7 @@ def test_when_heading_sorts_in_place_both_ways(page, component_origin):
 
 
 def test_the_kind_filter_narrows_the_lines_in_place(page, component_origin):
-    """Show lines swaps the table in place; nothing above it moves (#1570).
+    """Apply filters swaps the table in place; nothing above it moves (#1570).
 
     The window is tall enough to hold the whole page, so the shorter table
     cannot clamp the scroll position and any move of the button is a shift.
@@ -164,7 +164,7 @@ def test_the_kind_filter_narrows_the_lines_in_place(page, component_origin):
     # carries it, as a reader's would.
     has_value(page.locator('#table-filters input[name="zone"]'), "America/Los_Angeles")
     page.locator("#timeline-kind").select_option("emails")
-    button = page.get_by_role("button", name="Show lines")
+    button = page.get_by_role("button", name="Apply filters", exact=True)
     before = button.bounding_box()
     scrolled = page.evaluate("window.scrollY")
     with page.expect_response(
@@ -196,7 +196,7 @@ def test_the_kind_filter_narrows_the_lines_in_place(page, component_origin):
 def test_from_and_through_gate_apply_and_a_reload_keeps_the_view(
     page, component_origin
 ):
-    """A half-typed day holds Show lines; a whole one applies; reload keeps it.
+    """A half-typed day holds Apply filters; a whole one applies; reload keeps it.
 
     Engines differ in what typing does to a date control (see
     test_system_logs.py): Chromium and macOS WebKit mark a half-typed date
@@ -208,7 +208,7 @@ def test_from_and_through_gate_apply_and_a_reload_keeps_the_view(
     page.set_viewport_size({"width": 1280, "height": 2400})
     page.goto(component_origin + ADMIN)
     has_value(page.locator('#table-filters input[name="zone"]'), "America/Los_Angeles")
-    button = page.get_by_role("button", name="Show lines")
+    button = page.get_by_role("button", name="Apply filters", exact=True)
     hint = page.locator("#table-filters [data-complete-hint]")
     start = page.get_by_label("From", exact=True)
     start.click()
@@ -252,7 +252,7 @@ def test_from_and_through_gate_apply_and_a_reload_keeps_the_view(
 def test_the_filter_bar_is_one_row_on_a_desktop_and_wraps_on_a_phone(
     page, component_origin
 ):
-    """Kind, From, Through and Show lines share one row until the page narrows."""
+    """Kind, From, Through and the filter buttons share one row until it narrows."""
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + ADMIN)
     # The bar aligns its items' ends, so one row shares their bottoms.
@@ -275,7 +275,8 @@ def test_staff_see_the_summary_only(page, component_origin):
     assert form.get_attribute("action").endswith("/open-form/")
     assert page.locator("a[href*='#code=']").count() == 0
     assert page.get_by_role("heading", name="Timeline", exact=True).count() == 0
-    assert page.locator("[data-in-place], #table-filters").count() == 0
+    # No table and no in-place control but the hub's tabs (#1678).
+    assert page.locator("[data-in-place]:not([role=tab]), #table-filters").count() == 0
 
 
 def test_unavailable_open_form_is_disabled_with_its_reason(page, component_origin):
@@ -335,3 +336,52 @@ def test_staff_get_no_export_form(page, component_origin):
     page.goto(component_origin + STAFF)
     visible(page.get_by_role("heading", name="Summary"))
     assert export_form(page).count() == 0
+
+
+def test_the_hub_strip_and_tabs_frame_the_timeline(page, component_origin):
+    """The header strip names the last portal action; the Timeline tab is
+    chosen and every other tab is available, with no panel fetched until it
+    is chosen (#1678). The content tabs are tested in test_hub_census.py and
+    test_hub_streams.py.
+    """
+    errors = watch(page)
+    requests = []
+    page.on("request", lambda request: requests.append(request.url))
+    page.goto(component_origin + ADMIN)
+    strip = page.locator("p", has_text="Last portal action:")
+    # The fixture's newest portal action is the second submission; the
+    # receipt email after it is not the Family's action.
+    visible(strip)
+    assert "Last portal action: Submitted a response, " in strip.inner_text()
+    visible(strip.locator("time[data-local-instant]"))
+    tablist = page.get_by_role("tablist", name="Family information")
+    timeline = tablist.get_by_role("tab", name="Timeline")
+    has_attribute(timeline, "aria-selected", "true")
+    panel = page.get_by_role("tabpanel", name="Timeline")
+    visible(panel.get_by_role("heading", name="Summary"))
+    visible(panel.locator("#table-filters"))
+    page.evaluate(MARK)
+    loaded = len(requests)
+    for name in ("Financial", "Additional"):
+        other = tablist.get_by_role("tab", name=name, exact=True)
+        has_attribute(other, "aria-selected", "false")
+        assert other.get_attribute("aria-disabled") is None
+    assert tablist.locator('[aria-disabled="true"]').count() == 0
+    has_attribute(timeline, "aria-selected", "true")
+    assert page.evaluate(MARKED) == "kept"
+    assert page.url == component_origin + ADMIN and len(requests) == loaded
+    # Tab from the chosen tab moves into its panel.
+    timeline.focus()
+    page.keyboard.press("Tab")
+    focused(panel)
+    assert_clean(page, errors)
+
+
+def test_staff_get_the_hub_with_the_last_portal_action(page, component_origin):
+    """Staff's strip names the Last portal action too (Administrator decision,
+    2026-10-18); their Timeline tab is the summary, as before (#1678)."""
+    page.goto(component_origin + STAFF)
+    has_attribute(page.get_by_role("tab", name="Timeline"), "aria-selected", "true")
+    strip = page.locator("p", has_text="Last portal action:")
+    assert "Last portal action: Submitted a response, " in strip.inner_text()
+    visible(page.get_by_role("tabpanel").get_by_role("heading", name="Summary"))

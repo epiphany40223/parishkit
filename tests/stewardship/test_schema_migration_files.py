@@ -396,6 +396,39 @@ FROZEN = {
     "0121_digest_skip_dates.sql": (
         "cc88c09f4be01751997f1144be6ac2ade39bc3a760f90dc99baf09da17ced446"
     ),
+    "0122_automatic_report_views.sql": (
+        "b686ede20806893936ee416bd3829cc65adfa6e6857f4b7ad02233177b4744ae"
+    ),
+    "0123_sign_in_leftovers.sql": (
+        "8894706e2b79c2e72ecfba500995bfc6c4c281363feb5b235a084678bac22d8c"
+    ),
+    "0124_guard_wording.sql": (
+        "cbe60936ca8d92a473280cbb173b2c0c379b295135eef83b114750c7b2ce035c"
+    ),
+    "0125_secret_request_session.sql": (
+        "aaa27b6bb22e3e3df0723f659195396fd944b2137cc10111a130f7cc5ee982fd"
+    ),
+    "0126_information_limitation_review.sql": (
+        "4acebc765834c122f5a007e690658b6a99280b9e8a56f066250841e19a7eb669"
+    ),
+    "0127_pledge_review.sql": (
+        "bb2729437fdec314ee1c79d3fef4e3c8ffa0a4f372ded37b21b1bc68f54afeb4"
+    ),
+    "0128_census_pipeline_review.sql": (
+        "a586f0a0100242e02ee493f9baaf8fb8116efea5525dc6329cb35072239be7c1"
+    ),
+    "0129_census_additions.sql": (
+        "a63622c0286872d9fea2ed9fd2cbc8dc09ea338a4aea3089f3cd550762ea44c8"
+    ),
+    "0130_census_address_guard.sql": (
+        "3c1ede0cb9790113bffc6d57d71da1aa6371defc3ff28b754bd8acf6d04a0f9e"
+    ),
+    "0131_ministry_review_pipeline.sql": (
+        "a2c82ffe3c9e967b4d0c0d1599cbcc93c8658fa97235cfe9c37246c67372926b"
+    ),
+    "0132_refresh_checks.sql": (
+        "71f686b124fa6dd4eda1725feab9c124a74e65b986e95be1c883fc565988b342"
+    ),
 }
 
 

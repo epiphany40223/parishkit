@@ -36,6 +36,13 @@ def menu(names=ALL, greyed=(), counts=None):
             "reason": navigation.NO_CAMPAIGN if name in greyed else None,
             "count": counts.get(name),
         }
+        # Ministry requests carries its To enter by hand count for Home
+        # (admin_context.ENTRY_COUNT, R39 finding 2).
+        | (
+            {"entry_count": counts.get("ministry_entry")}
+            if name == "ministry_report"
+            else {}
+        )
         for name in names
     }
 
@@ -106,7 +113,7 @@ def test_steps_follow_the_viewers_menu():
 # Home's Family participation tiles instead (#1673).
 WORK = [
     "Census changes",
-    "Roster changes to enter",
+    "Ministry requests to enter by hand",
     "Additional information",
     "Ministry requests",
 ]
@@ -159,7 +166,7 @@ def test_active_and_paused_steps_carry_the_open_counts():
     entries = menu(
         counts={
             "census_changes": 4,
-            "ministry_roster": 6,
+            "ministry_entry": 6,
             "information_queue": 3,
             "ministry_report": 0,
         }
@@ -172,9 +179,9 @@ def test_active_and_paused_steps_carry_the_open_counts():
         "to do",
     )
     assert (active[1].url, active[1].count, str(active[1].note)) == (
-        "/ministry_roster/",
+        "/ministry_report/?stage=to_enter_by_hand",
         6,
-        "not yet entered",
+        "to enter by hand",
     )
     assert (active[2].count, str(active[2].note)) == (3, "open")
     assert (active[3].count, str(active[3].note)) == (0, "open")
@@ -190,9 +197,13 @@ def test_active_and_paused_steps_carry_the_open_counts():
             None,
             None,
         )
-    # A roster count the menu could not read shows the link with no number.
+    # A to-enter count the chrome could not read shows the link with no number.
     unread = home_steps.next_steps("active", menu())[1]
-    assert (unread.url, unread.count, unread.note) == ("/ministry_roster/", None, None)
+    assert (unread.url, unread.count, unread.note) == (
+        "/ministry_report/?stage=to_enter_by_hand",
+        None,
+        None,
+    )
     paused = home_steps.next_steps("paused", entries)
     assert labels(paused)[0] == "Pause and resume mail"
     assert labels(paused)[1:] == labels(active)
@@ -207,15 +218,20 @@ def test_greyed_queue_shows_no_count():
     assert step.reason == navigation.NO_CAMPAIGN
 
 
-def test_roster_step_is_the_menu_entry():
-    """Roster changes to enter is the viewer's own menu entry (#1660): greyed
-    with its reason, and left out when the menu has none."""
-    greyed = menu(greyed={"ministry_roster"}, counts={"ministry_roster": 3})
+def test_to_enter_step_follows_ministry_requests():
+    """Ministry requests to enter by hand follows Ministry requests' menu
+    entry (R39 finding 2, which folded Roster changes to enter into it):
+    greyed with its reason, and left out when the menu has none."""
+    greyed = menu(greyed={"ministry_report"}, counts={"ministry_entry": 3})
     step = home_steps.next_steps("closed", greyed)[1]
-    assert (step.label, step.url, step.note) == ("Roster changes to enter", None, None)
+    assert (step.label, step.url, step.note) == (
+        "Ministry requests to enter by hand",
+        None,
+        None,
+    )
     assert step.reason == navigation.NO_CAMPAIGN
-    without = menu(ALL - {"ministry_roster"})
-    assert "Roster changes to enter" not in labels(
+    without = menu(ALL - {"ministry_report"})
+    assert "Ministry requests to enter by hand" not in labels(
         home_steps.next_steps("closed", without)
     )
 
@@ -226,7 +242,7 @@ def test_closed_and_activating_steps():
     entries = menu(
         counts={
             "census_changes": 2,
-            "ministry_roster": 0,
+            "ministry_entry": 0,
             "information_queue": 1,
             "ministry_report": 5,
         }
@@ -235,7 +251,7 @@ def test_closed_and_activating_steps():
     assert labels(closed) == [*WORK, "Emailed reports"]
     assert [(step.count, str(step.note)) for step in closed[0:4]] == [
         (2, "to do"),
-        (0, "not yet entered"),
+        (0, "to enter by hand"),
         (1, "open"),
         (5, "open"),
     ]
@@ -292,7 +308,7 @@ def test_template_links_available_steps_and_names_greyed_ones():
     """The panel's link cards link what the menu offers, with the count large
     and what it means, and write the reason for the rest (#1673)."""
     entries = menu(
-        greyed={"ministry_report", "ministry_roster"},
+        greyed={"ministry_report"},
         counts={"information_queue": 5, "census_changes": 2},
     )
     context = {
@@ -331,8 +347,9 @@ def test_template_links_available_steps_and_names_greyed_ones():
         card("/census_changes/", "Census changes", 2, "to do", "link-card-attention")
         in html
     )
-    # Roster changes to enter is greyed with its own menu reason (#1660).
-    for label in ("Roster changes to enter", "Ministry requests"):
+    # Ministry requests to enter by hand is greyed with Ministry requests'
+    # menu reason (R39 finding 2).
+    for label in ("Ministry requests to enter by hand", "Ministry requests"):
         assert (
             f'<li class="link-card link-card-off" data-link-card>'
             f'<span class="link-card-label">{label}</span> '

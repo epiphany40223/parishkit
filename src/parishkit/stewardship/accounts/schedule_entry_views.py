@@ -118,6 +118,7 @@ from .schedule_forms import (
     Schedules,
     ScheduleWindow,
     email_usage,
+    saved_send_attrs,
     schedule_labels,
     schedule_order,
     window_text,
@@ -647,6 +648,12 @@ def entry_form(
     )
     # The address names the schedule; a posted ID is never read.
     del form.fields["id"]
+    # Edit posted as shown keeps the saved date, which the browser's window
+    # check (#1787) judges then; ``drawn`` is the saved send's moment.
+    if schedule and drawn:
+        form.fields["date"].widget.attrs.update(
+            saved_send_attrs(schedule["values"], drawn)
+        )
     if kept is not None:
         form.fields["time"].keep(kept)
     return form

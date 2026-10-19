@@ -51,21 +51,22 @@ from django.utils.translation import gettext_lazy as _
 
 from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.pipeline import (
+    Placement,
     Stage,
     Stream,
     cannot_participate_placement,
     census_placement,
-    financial_placement,
     information_placement,
     ministry_placement,
 )
 
 from .policy import Capability, allows
 
-# Streams whose page reads ``?stage=<value>`` and filters by it. Empty until
-# Census changes (#1683) and Ministry requests (#1684) move to the review
-# worklist and accept a stage by GET; each adds its stream here.
-STAGE_LINKED = frozenset()
+# Streams whose page reads ``?stage=<value>`` and filters by it. Each stream
+# is added as its cards are linked by stage; Financial's page is Pledges
+# (#1686). Ministry To enter by hand is linked by stage on its own
+# (``_stage_cards``).
+STAGE_LINKED = frozenset({Stream.FINANCIAL})
 
 # One statement for every count the viewer may see; each part runs only when
 # its flag is set (NULL otherwise), as the menu's own OPEN_COUNTS does. Its
@@ -112,12 +113,11 @@ SELECT
             GROUP BY 1, 2) g)
     END,
     CASE WHEN %(review_financial)s THEN (
-        SELECT count(*)
-        FROM stewardship_family_campaign f
-        JOIN stewardship_submission s ON s.id=f.effective_submission_id
-            AND s.mode='live' AND s.campaign_id=f.campaign_id
-            AND s.answers ? 'financial'
-        WHERE f.campaign_id=%(campaign)s)
+        SELECT coalesce(jsonb_agg(jsonb_build_array(g.stage, g.n)), '[]'::jsonb)
+        FROM (
+            SELECT stage, count(*) AS n
+            FROM stewardship_pledge_review_states_v1(%(campaign)s, NULL::uuid)
+            GROUP BY 1) g)
     END,
     CASE WHEN %(review_limitations)s THEN (
         SELECT CASE WHEN v ? 'unavailable' THEN -1
@@ -336,7 +336,10 @@ def place(row):
             for needed, done, n in information
         )
     if financial is not None:
-        counts[Stream.FINANCIAL] = _tally([(financial_placement(), financial)])
+        # Pledges' own selection places each pledge item (#1686).
+        counts[Stream.FINANCIAL] = _tally(
+            (Placement(Stage(stage)), n) for stage, n in financial
+        )
     if limitations == UNAVAILABLE:
         counts[Stream.CANNOT_PARTICIPATE] = None
     elif limitations is not None:
@@ -481,10 +484,10 @@ STREAMS = (
     ),
     StreamView(
         Stream.FINANCIAL,
-        "financial_report",
+        "pledges_to_enter",
         _("Financial"),
         _("pledges"),
-        (Stage.TO_REVIEW,),
+        (Stage.TO_REVIEW, Stage.TO_ENTER_BY_HAND),
     ),
     StreamView(
         Stream.ADDITIONAL_INFORMATION,
@@ -553,9 +556,9 @@ def panels(chrome, review):
 def _stage_cards(view, item, counts):
     """A Staff member's cards for one stream: one per stage in ``counts``.
 
-    Ministry To enter by hand is Roster changes to enter, the Staff list
-    that is opened from Ministry requests, so it follows that entry, and
-    census Ready to update is Publish to ParishSoft, the update run's page,
+    Ministry To enter by hand opens Ministry requests at that Stage, where
+    Roster changes to enter was folded (R39 finding 2), and census Ready to
+    update is Publish to ParishSoft, the update run's page,
     which is opened from Census changes. A stream in ``STAGE_LINKED`` links
     its page filtered to each stage.
     """
@@ -565,7 +568,7 @@ def _stage_cards(view, item, counts):
             continue
         url = item.url
         if url and view.stream is Stream.MINISTRY and stage is Stage.TO_ENTER_BY_HAND:
-            url = reverse("admin:ministry_roster")
+            url = f"{url}?stage={stage.value}"
         elif url and stage is Stage.READY_TO_UPDATE:
             url = reverse("admin:census_publication")
         elif url and view.stream in STAGE_LINKED:
