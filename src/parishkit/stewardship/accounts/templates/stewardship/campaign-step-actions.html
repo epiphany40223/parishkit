@@ -32,7 +32,9 @@ secondary and first, and one primary control, last.
   page's own Load the campaign's ParishSoft data (or Try again) is the
   step's primary, and while the load runs there is none. The in-place
   re-read once the load ends redraws this row.
-- Go-live readiness, the last step: Back only; the go-live flow follows.
+- Go live, the last step: nothing here. Its Check step draws its own
+  action row and only the Go live step bar (go-live-check.html, #1585); its
+  Back opens this stepper's ``previous`` step.
 - A sub-page of a step (``wizard.sub``): Return to <step>, and on a
   sub-page that saves (``wizard.direct``: Pages and emails' editor, New and
   Edit scheduled email, #1404 PR 4b) Save and go back, a submit button of
@@ -58,7 +60,7 @@ Back and Continue never save or discard the page's form. The row is an
 in-place region, so the page's redraw after a review dialog's Apply also
 renames Continue when the change altered the steps (Financial stewardship
 turned on or off adds or removes Share options).
-{% endcomment %}{% with wizard=admin_chrome.campaign_wizard %}{% if wizard and not wizard.creating %}{% with current=wizard.current upcoming=wizard.upcoming %}
+{% endcomment %}{% with wizard=admin_chrome.campaign_wizard %}{% if wizard and not wizard.creating and wizard.current.key != 'go_live' %}{% with current=wizard.current upcoming=wizard.upcoming %}
 <div id="campaign-step-actions" class="campaign-step-actions" data-in-place-region data-campaign-step-actions{% if wizard.direct and wizard.sub %} data-next-url="{{ current.url }}" data-next-fixed{% elif wizard.direct and upcoming.url %} data-next-url="{{ upcoming.url }}"{% endif %}>
 {% if wizard.sub %}{% blocktranslate trimmed asvar back_label with label=current.label %}Return to {{ label }}{% endblocktranslate %}{% button href=current.url variant="secondary" data-campaign-step-back %}{{ back_label }}{% endbutton %}
 {% if wizard.direct and keep_item %}<div class="campaign-step-primary" data-campaign-primary><form method="post" action="{% url 'admin:campaign_step_continue' %}" data-campaign-continue data-keep-item data-kept-text="{% blocktranslate trimmed with label=label %}{{ label }} kept as is.{% endblocktranslate %}" data-kept-focus="{{ keep_item.focus }}" data-kept-return="{{ current.url }}">{% csrf_token %}<input type="hidden" name="step" value="{{ current.key }}"><input type="hidden" name="item" value="{{ keep_item.item }}">{% button type="submit" %}{% translate "Keep as is and go back" %}{% endbutton %}</form>{% button type="submit" form=wizard.direct_form data-campaign-save data-step-inactive %}{% translate "Save and go back" %}{% endbutton %}</div>

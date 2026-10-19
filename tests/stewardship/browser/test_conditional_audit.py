@@ -175,18 +175,6 @@ def test_maintenance_message_gates_the_switch(page, component_origin):
     ("path", "button", "reason"),
     [
         (
-            "/go-live-unchecked",
-            "Start Testing cleanup",
-            "Cleanup can't start yet. Select Check readiness and public web address "
-            "first; cleanup can start once every check passes.",
-        ),
-        (
-            "/go-live-problems",
-            "Start Testing cleanup",
-            "Cleanup can't start yet. Fix the configuration and data checks above, "
-            "then select Check readiness and public web address again.",
-        ),
-        (
             "/production-confirmation-unchecked",
             "Confirm Production",
             "Select Verify final readiness and mail impact first; you can confirm "

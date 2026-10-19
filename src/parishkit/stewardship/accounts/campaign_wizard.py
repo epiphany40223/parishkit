@@ -19,7 +19,7 @@ the creation request), or once the Administrator pressed that step's
 **Continue to <next step>** while its form held no change (#1404): that
 stores a ``CampaignSetupReview`` row (``record_review``), the step "kept as
 is". Preview and test email is completed by an accepted test of the initial
-invitation's current revision. Go-live readiness completes only by going
+invitation's current revision. Go live completes only by going
 live, and the stepper is no longer shown then.
 
 The stepper's summary names the next step that is not done yet and offers

@@ -155,7 +155,7 @@ patterns = [
     ),
     # Going live: readiness, Testing cleanup, Family links, then Confirm
     # Production, each step under the one before it.
-    _page("campaign/go-live/", go_live_views.readiness, "go_live"),
+    _page("campaign/go-live/", go_live_views.check, "go_live"),
     _page(
         "campaign/go-live/families/",
         go_live_views.testing_families,

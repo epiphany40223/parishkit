@@ -44,7 +44,7 @@ def test_steps_are_the_campaign_pages_under_their_own_names():
         "Dates and mail schedules",
         "Campaign images",
         "Preview and test email",
-        "Go-live readiness",
+        "Go live",
     ]
     for step, page in zip(stepper.steps, wizard.PAGES, strict=True):
         # Load ParishSoft data has its own name for Refresh from ParishSoft.
@@ -469,13 +469,20 @@ def test_test_email_continues_only_after_an_accepted_test():
         wizard.build(True, "mail_test", done={"mail_test"}, mail_test_url=TEST_URL)
     )
     assert f'href="{reverse("admin:go_live")}"' in after
-    assert "Continue to Go-live readiness" in after and "<form" not in after
+    assert "Continue to Go live" in after and "<form" not in after
 
 
 def test_the_last_step_and_sub_pages_have_back_only():
-    """Go-live readiness has Back; a sub-page has Return to its step."""
-    last = actions(wizard.build(True, "go_live", done=set(), mail_test_url=TEST_URL))
-    assert "data-campaign-step-back" in last and "Continue" not in last
+    """Go live draws its own row; a sub-page has Return to its step.
+
+    The last step's page, the Go live page's Check step, draws only its own
+    step bar and action row (#1585), whose Back opens the step before it.
+    """
+    stepper = wizard.build(True, "go_live", done=set(), mail_test_url=TEST_URL)
+    assert actions(stepper).strip() == ""
+    chrome = {"admin_chrome": {"campaign_wizard": stepper}}
+    assert render_to_string("stewardship/campaign-stepper.html", chrome).strip() == ""
+    assert stepper.previous.url == TEST_URL
     sub = actions(
         wizard.build(True, "content", done={"settings"}, mail_test_url=None, sub=True)
     )
@@ -512,7 +519,7 @@ def test_load_notice_offers_the_load_until_families_exist():
         "stewardship/campaign-stepper.html",
         {"admin_chrome": {"campaign_wizard": loading}},
     )
-    assert "ParishSoft data is loading; Go-live readiness waits for it." in html
+    assert "ParishSoft data is loading; going live waits for it." in html
     assert "source_refresh" not in html and "<form" not in html
 
 

@@ -195,7 +195,7 @@ def test_continue_waits_while_an_image_is_chosen_but_not_uploaded(
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
     page.goto(component_origin + ARTWORK_STEP)
-    proceed = page.get_by_role("button", name="Continue to Go-live readiness")
+    proceed = page.get_by_role("button", name="Continue to Go live")
     hint = page.locator("#campaign-continue-hint")
     available(proceed)
     assert not hint.is_visible()

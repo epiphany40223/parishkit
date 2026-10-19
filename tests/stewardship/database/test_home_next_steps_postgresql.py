@@ -91,7 +91,7 @@ def sign_in(store, google, role):
                 "Pages and emails",
                 "Dates and mail schedules",
                 "Preview and test email",
-                "Go-live readiness",
+                "Go live",
             ],
         ),
         # The Response dashboard is linked from the campaign panel (#1673),

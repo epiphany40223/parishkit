@@ -315,7 +315,11 @@ def test_readiness_of_a_draft_ready_to_go_live(
 
 
 def test_readiness_once_cleanup_has_started(ready_links, monkeypatch):
-    """The page's problem and its recent cleanup requests, as the page lists them."""
+    """The command lists the problem and the cleanup request the page shows.
+
+    The Go live page's Check step shows that request as the go-live in
+    progress (#1585) instead of listing its readiness problems.
+    """
     login = ready_links[3]
     service = runtime()
     command = runner(service, monkeypatch)
@@ -333,8 +337,8 @@ def test_readiness_once_cleanup_has_started(ready_links, monkeypatch):
     }
     with web_login():
         page = page_browser(login).get(reverse("admin:go_live"))
-    assert [str(row.pk) for row in page.context["cleanup_requests"]] == [listed["id"]]
-    assert result["problems"] == list(page.context["preview"].problems)
+    assert page.context["state"] == "started"
+    assert str(page.context["stage"].request.pk) == listed["id"]
 
 
 # ------------------------------------------------- Production confirmation

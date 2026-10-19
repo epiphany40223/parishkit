@@ -1,6 +1,6 @@
 """Refresh on the go-live and Production pages acts in place (#519 PR 7b-2).
 
-Go-live readiness, Testing cleanup, Prepare Family links and Production
+Testing cleanup, Prepare Family links and Production
 activation are served at their real addresses (go_live_components), where
 their Refresh links lead, and each in-place read is answered with a later
 version of the page. Each test sets a mark outside every region, which only
@@ -12,7 +12,7 @@ the announcement and that exactly one in-place read was sent.
 
 import pytest
 
-from .go_live_components import CLEANUP, GO_LIVE, LINKS, PRODUCTION
+from .go_live_components import CLEANUP, LINKS, PRODUCTION
 from .test_in_place import MARK, MARKED
 from .test_live_status_in_place import answer_reads
 from .waits import has_text, hidden, painted, visible
@@ -114,21 +114,6 @@ def refresh(page, component_origin, address, fresh, link, message, *, before=Non
     assert page.evaluate("document.activeElement.textContent") == link
     assert len(reads) == 1
     return reads
-
-
-def test_readiness_refresh_is_in_place(page, component_origin):
-    """Go-live readiness's Refresh brings checks that now pass in place."""
-    refresh(
-        page,
-        component_origin,
-        GO_LIVE,
-        "/go-live-fresh",
-        "Refresh readiness preview",
-        "Readiness preview refreshed.",
-    )
-    visible(page.get_by_text("The settings and data checks passed.", exact=False))
-    hidden(page.get_by_text("Save exactly one initial invitation schedule."))
-    assert page.url == component_origin + GO_LIVE + "#readiness-preview"
 
 
 def test_cleanup_refresh_keeps_details_open_and_updates_them(page, component_origin):

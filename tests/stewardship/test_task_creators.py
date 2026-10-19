@@ -76,7 +76,13 @@ SITES = {
     "accounts/activation_progress.py::control": site(
         {"production_tokens", "production_token_cleanup"},
         WEB,
-        {"accounts/activation_views.py", "local/seed_web.py"},
+        # The Go live page's Check step retries a stopped go-live's failed
+        # disposal through it (Retry stopping go-live, #1585).
+        {
+            "accounts/activation_views.py",
+            "accounts/go_live_views.py",
+            "local/seed_web.py",
+        },
     ),
     "accounts/campaign_family_test.py::_enqueue": site(
         # Called by request_tests (the Family test page and admin_tests).

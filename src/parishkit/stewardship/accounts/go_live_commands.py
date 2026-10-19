@@ -43,6 +43,19 @@ def configured_origin():
     return origin, profile
 
 
+def origin_check(origin, profile):
+    """Run the DNS and origin check outside SQL: no transaction waits on it.
+
+    Used by Check readiness and public web address, and again by Start
+    go-live's Apply (``go_live_views._start``), which never trusts an
+    earlier result.
+    """
+    if connection.in_atomic_block:
+        raise StorageInvariantError("Origin verification cannot hold a transaction.")
+    connections.close_all()
+    return check_public_origin(origin, profile)
+
+
 def verify_preview(request, service, campaign_id):
     """An explicit Admin action checks DNS outside SQL, then snapshots current data."""
     if connection.in_atomic_block:
@@ -50,8 +63,7 @@ def verify_preview(request, service, campaign_id):
     actor = principal(request, service)
     editable_configuration(service)
     origin, profile = configured_origin()
-    connections.close_all()
-    verified = check_public_origin(origin, profile)
+    verified = origin_check(origin, profile)
     # The originating login can expire or lose its role during the bounded
     # resolver call. collect_inputs rechecks it before reading private inputs.
     inputs = collect_inputs(request, service, campaign_id)
@@ -88,6 +100,14 @@ def _load(request, preview_token):
 def start_cleanup(request, service, campaign_id, *, preview_token, acknowledge):
     """Recheck one exact preview; retry returns its original durable receipt.
 
+    The preview's five-minute lifetime (``_load``) bounds how old its DNS
+    and origin proof may be when the preview comes straight from
+    ``verify_preview`` (the local seeding tool). The Go live page's Start
+    go-live signs the preview again just before this call, so for it the
+    lifetime bounds nothing: its Apply runs ``origin_check`` again first
+    (``go_live_views._start``), and the deployment origin and profile the
+    preview binds are compared here.
+
     The acknowledgement records the admitted session's sign-in instant as
     ``reauthenticated_at`` (a sign-in of any age, #1547); the SQL guard
     requires it to equal the live session's ``authenticated_at``, which is
@@ -108,7 +128,9 @@ def start_cleanup(request, service, campaign_id, *, preview_token, acknowledge):
     ):
         raise ValueError("Invalid go-live preview.")
     with work_transaction():
-        # Waiting for another operation's lock must not extend the DNS proof.
+        # Waiting for another operation's lock must not take a preview past
+        # its lifetime (which, for Start go-live's re-signed preview, is not
+        # its DNS proof: its Apply re-ran that check just before).
         _load(request, preview_token)
         actor = principal(request, service)
         reauthenticated_at = sign_in_instant(request)

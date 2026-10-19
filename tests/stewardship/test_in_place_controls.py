@@ -831,16 +831,15 @@ def test_go_live_and_production_refreshes_are_in_place():
     """The go-live and Production pages' Refresh links, once plain reloads
     (``href=""``), re-read the page in place (#519 PR 7b-2): each names its
     page's real address and a region there as its fragment, and says what it
-    did. Readiness and Production activation gain regions of their own;
-    Testing cleanup's and Prepare Family links' regions wrap their
-    live-status elements, so live-status-v1.js watches the fresh ones."""
+    did. Production activation gains a region of its own; Testing cleanup's
+    and Prepare Family links' regions wrap their live-status elements, so
+    live-status-v1.js watches the fresh ones. The Go live page's Check step
+    has no Refresh link: it updates itself (#1585, #1586)."""
+    check = (TEMPLATES / "go-live-check.html").read_text()
+    assert 'data-in-place="refresh"' not in check
+    assert '{% translate "Refresh' not in check
+    assert 'data-live-status="go-live-check" data-live-pending' in check
     for name, region, words, message in (
-        (
-            "go-live-readiness.html",
-            "readiness-preview",
-            "Refresh readiness preview",
-            "Readiness preview refreshed.",
-        ),
         (
             "go-live-cleanup.html",
             "cleanup-progress",
@@ -921,7 +920,6 @@ def test_hosted_file_upload_is_in_place():
 # Page-refresh controls the go-live redesign removes (#1586 slice 2), kept
 # here until then (#1585) so a new one elsewhere still fails.
 GO_LIVE_REFRESH = {
-    "go-live-readiness.html": {"Refresh readiness preview"},
     "go-live-cleanup.html": {"Refresh cleanup progress"},
     "go-live-links.html": {"Refresh preparation progress"},
     "production-progress.html": {"Refresh Production progress"},

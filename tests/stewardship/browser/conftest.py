@@ -119,6 +119,7 @@ from .find_family_components import POSTS as FIND_FAMILY_POSTS
 from .find_family_components import components as find_family_components
 from .followup_components import POSTS as FOLLOWUP_POSTS
 from .followup_components import components as followup_components
+from .go_live_components import action_answer as go_live_action
 from .go_live_components import components as go_live_components
 from .go_live_components import posts as go_live_posts
 from .go_live_families_components import components as go_live_families_components
@@ -2477,7 +2478,20 @@ def component_origin():
             """
             # Read the body before answering: closing the connection with
             # an unread request body can reset it before the answer arrives.
-            self.rfile.read(int(self.headers.get("Content-Length") or 0))
+            body = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+            # Go live's Check step posts every action to its own address,
+            # answered by the posted action (#1585).
+            answer = go_live_action(self.path, body, responses)
+            if answer is not None:
+                status, location, page = answer
+                self.send_response(status)
+                if location:
+                    self.send_header("Location", location)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Security-Policy", CSP)
+                self.end_headers()
+                self.wfile.write(page.encode())
+                return
             if self.path == "/redirect-to-login":
                 self.send_response(303)
                 self.send_header("Location", "/login")

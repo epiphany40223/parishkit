@@ -35,7 +35,7 @@ from parishkit.stewardship.readiness_delivery import DeliveryOutcome
 from parishkit.stewardship.source.setup_completion import complete_setup
 
 from .credential_builders import keys
-from .preview_builders import OUT_OF_DATE, assert_out_of_date, previews_aged
+from .preview_builders import assert_out_of_date, previews_aged
 from .test_admin_navigation_postgresql import GO_LIVE, flow_steps
 from .test_bootstrap_postgresql import bootstrapped  # noqa: F401
 from .test_campaign_mail_postgresql import deliver
@@ -265,29 +265,44 @@ def test_http_acknowledgement_progress_and_cancel_are_private_and_passive(
     path = reverse("admin:go_live")
     with web_login():
         assert browser.get(path).status_code == 200
-        response = post(browser, path, {"action": "verify"})
-        assert response.status_code == 200, response.content
-        token = response.context["cleanup_token"]
-        assert token and b"Start Testing cleanup" in response.content
-        values = {"action": "cleanup", "preview_token": token, "acknowledge": "yes"}
+        assert post(browser, path, {"action": "verify"}).status_code == 303
+        # The passing check is kept for a reload: Start go-live is the one
+        # primary, opening the shared review dialog (#1585).
+        page = browser.get(path)
+        assert page.context["state"] == "passed", page.context["problems"]
+        assert b'data-review-open="go-live-start-review"' in page.content
+        assert b"Check readiness and public web address</button>" not in page.content
+        review = post(browser, path, {"action": "review"})
+        assert review.status_code == 200, review.content
+        assert b"data-review-answer" in review.content
+        assert b"Deleted Testing data cannot be restored" in review.content
+        token = review.context["start"]["token"]
+        values = {"action": "confirm", "preview_token": token}
         assert browser.post(path, values).status_code == 403
-        assert post(browser, path, values | {"acknowledge": "no"}).status_code == 400
+        assert post(browser, path, values | {"acknowledge": "yes"}).status_code == 400
         assert post(browser, path, values | {"actor": "other"}).status_code == 400
-        # An expired preview is the plain out-of-date refusal linking back to
-        # readiness (#398); the browser sees it on the error page.
-        with previews_aged(monkeypatch):
-            assert_out_of_date(post(browser, path, values), path)
-            csrf = {"csrfmiddlewaretoken": browser.cookies["pk_admin_csrf"].value}
-            page = browser.post(path, values | csrf, HTTP_ACCEPT="text/html")
-        assert page.status_code == 409
-        assert OUT_OF_DATE.encode() in page.content
-        assert f'<a href="{path}">Review the changes again</a>'.encode() in (
-            page.content
-        )
+        assert post(browser, path, values | {"preview_token": "x"}).status_code == 400
         assert not ProductionTransitionRequest.objects.exists()
-        started = post(browser, path, values)
-        assert started.status_code == 302, started.content
+        # The dialog may stay open: a preview older than five minutes still
+        # starts go-live once, because Apply re-checks the inputs instead of
+        # the preview's age (admin-portal spec, "Go live page").
+        with previews_aged(monkeypatch):
+            started = post(browser, path, values)
+        assert started.status_code == 303, started.content
         location = started["Location"]
+        # The same Apply again (a lost answer resent) is the same request.
+        again = post(browser, path, values)
+        assert again.status_code == 303 and again["Location"] == location
+        assert ProductionTransitionRequest.objects.count() == 1
+        # Check now says go-live started; a second Start by the same
+        # Administrator (another tab) just opens the step in progress.
+        check = browser.get(path)
+        assert check.context["state"] == "started"
+        assert b"Continue to Prepare" in check.content
+        assert b"1 of 4 steps completed" in check.content
+        reopened = post(browser, path, {"action": "review"})
+        assert reopened.status_code == 303 and reopened["Location"] == location
+        assert ProductionTransitionRequest.objects.count() == 1
         activity = PortalSession.objects.get(
             pk=request.portal_session.pk
         ).last_activity_at
@@ -316,6 +331,88 @@ def test_http_acknowledgement_progress_and_cancel_are_private_and_passive(
         )
         finished = browser.get(location)
         assert finished.context["status"].state == "cancelled"
+
+
+def test_apply_is_refused_when_the_web_address_or_readiness_fails_after_review(
+    ready_cleanup, settings, real_limiter, monkeypatch
+):
+    """Apply re-reads readiness and runs the public web address check again.
+
+    The check kept in the session only redraws the page: a DNS failure after
+    Review refuses Apply in the dialog with the check's reason, and the
+    reloaded step offers the check again; a readiness problem that appears
+    after Review refuses Apply as changed. Nothing starts either time.
+    """
+    from django.test import Client
+
+    from parishkit.stewardship.accounts.authentication import AuthRuntime
+    from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
+
+    from .campaign_builders import change
+    from .test_setup_views_postgresql import post
+
+    request, service, campaign = ready_cleanup
+    settings.STEWARDSHIP_AUTH_RUNTIME = AuthRuntime(
+        service.store, real_limiter, setup_is_complete
+    )
+    browser = Client(enforce_csrf_checks=True)
+    browser.cookies["pk_admin"] = request.session.session_key
+    path = reverse("admin:go_live")
+
+    def reviewed():
+        """Check, then Review: Apply's fields for the passing state."""
+        assert post(browser, path, {"action": "verify"}).status_code == 303
+        assert browser.get(path).context["state"] == "passed"
+        review = post(browser, path, {"action": "review"})
+        assert review.status_code == 200, review.content
+        return {"action": "confirm", "preview_token": review.context["start"]["token"]}
+
+    with web_login():
+        assert browser.get(path).status_code == 200
+        values = reviewed()
+        monkeypatch.setattr(go_live_commands, "check_public_origin", lambda *a: False)
+        refused = post(browser, path, values)
+        assert refused.status_code == 409, refused.content
+        assert b'data-go-live-start-refused="origin_unverified"' in refused.content
+        assert b"The public web address check failed or timed out" in refused.content
+        page = browser.get(path)
+        assert page.context["state"] == "unchecked"
+        assert page.context["origin_verified"] is False
+        monkeypatch.setattr(go_live_commands, "check_public_origin", lambda *a: True)
+        values = reviewed()
+    # A configuration change after Review: the test email no longer covers
+    # the current configuration, a readiness problem.
+    configuration = SystemConfiguration.objects.select_related(
+        "active_configuration"
+    ).get()
+    parish = configuration.active_configuration.canonical_document["sections"][
+        "parish"
+    ][0]
+    assert (
+        change(
+            service.store,
+            service.store.active(),
+            request.portal_session.principal_id,
+            [
+                {
+                    "operation": "update",
+                    "section": "parish",
+                    "id": parish["id"],
+                    "values": parish["values"] | {"name": "Changed Parish"},
+                }
+            ],
+        ).state
+        == "applied"
+    )
+    with web_login():
+        refused = post(browser, path, values)
+        assert refused.status_code == 409, refused.content
+        assert b'data-go-live-start-refused="changed"' in refused.content
+        page = browser.get(path)
+        assert page.context["state"] == "not_ready"
+        assert "family_test_mail_required" in page.context["preview"].problems
+    assert not ProductionTransitionRequest.objects.exists()
+    assert not CampaignCredentialState.objects.get(campaign=campaign).go_live_gate
 
 
 def test_admin_retry_resumes_failed_cleanup_without_recreating_inventory(
@@ -709,10 +806,11 @@ def test_chosen_family_test_blocks_cleanup_until_settled_then_is_deleted(
 def test_an_old_sign_in_starts_cleanup_and_records_it(
     ready_cleanup, settings, real_limiter
 ):
-    """A sign-in older than five minutes sees Start and starts cleanup (#1547).
+    """A sign-in older than five minutes starts go-live from Check (#1547).
 
-    The same form posted again returns the one request it started, which
-    records the session's Google sign-in instant.
+    Start go-live's review and Apply ask for no recent sign-in; the same
+    Apply posted again returns the one request it started, which records the
+    session's Google sign-in instant.
     """
     from django.test import Client
 
@@ -732,15 +830,15 @@ def test_an_old_sign_in_starts_cleanup_and_records_it(
     stale_sign_in()
     with web_login():
         assert browser.get(path).status_code == 200
-        response = post(browser, path, {"action": "verify"})
-        assert response.status_code == 200
-        assert "fresh" not in response.context
-        assert b"cleanup-fresh-reason" not in response.content
-        token = response.context["cleanup_token"]
-        assert token
-        values = {"action": "cleanup", "preview_token": token, "acknowledge": "yes"}
-        assert post(browser, path, values).status_code == 302
-        assert post(browser, path, values).status_code == 302
+        assert post(browser, path, {"action": "verify"}).status_code == 303
+        review = post(browser, path, {"action": "review"})
+        assert review.status_code == 200
+        assert b"step-up" not in review.content
+        token = review.context["start"]["token"]
+        values = {"action": "confirm", "preview_token": token}
+        assert post(browser, path, values).status_code == 303
+        # The same Apply posted again returns the one request it started.
+        assert post(browser, path, values).status_code == 303
     started = ProductionTransitionRequest.objects.get()
     assert (
         started.reauthenticated_at

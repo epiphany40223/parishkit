@@ -1,19 +1,23 @@
-"""Real readiness/cleanup templates with synthetic nonprivate view projections."""
+"""Real go-live templates with synthetic nonprivate view projections."""
 
 from types import SimpleNamespace as Value
+from urllib.parse import parse_qs
 from uuid import UUID
 
 from django.template.loader import render_to_string
 from django.urls import reverse
 
+from parishkit.stewardship.accounts import go_live_check
+from parishkit.stewardship.accounts.go_live_check import Progress
 from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.web.contracts import PageWindow
 from parishkit.stewardship.web.tables import window_table
 
-# The real addresses of Go-live readiness, Testing cleanup, Prepare Family
-# links and Production activation, where their Refresh links lead (#519 PR
-# 7b-2). A test answers each in-place read with a later version of the page
-# (the "-fresh" paths below), so the refreshed region differs.
+# The real addresses of Go live's Check step, Testing cleanup, Prepare
+# Family links and Production activation, where their forms post and their
+# Refresh links lead (#519 PR 7b-2). A test answers each in-place read with
+# a later version of the page (the "-fresh" paths below), so the refreshed
+# region differs.
 GO_LIVE = reverse("admin:go_live")
 CLEANUP = reverse("admin:go_live_cleanup", args=[UUID(int=59)])
 LINKS = reverse("admin:go_live_links", args=[UUID(int=59)])
@@ -95,7 +99,7 @@ def components(context, admin):
         "no_email": Percentage(500, 1500),
         "inventory": [("submissions", 1234)],
         "origin_verified": True,
-        "cleanup_token": "synthetic-preview",
+        "confirmation_token": "synthetic-confirmation",
     }
     progress = {
         "campaign": campaign,
@@ -226,34 +230,12 @@ def components(context, admin):
     }
     disposal["table"] = window_table(PageWindow(1, 25), disposal["records"], False)
     disposed = discarded | {"transition": disposal["transition"]}
-    unchecked = ready | {"origin_verified": None, "cleanup_token": None}
-    problems = unchecked | {
-        "problems": ["Save exactly one initial invitation schedule."]
-    }
-    return {
+    pages = {
         path: (
             "text/html",
             render_to_string(template, context | {"admin_chrome": admin} | values),
         )
         for path, template, values in (
-            ("/go-live", "stewardship/go-live-readiness.html", ready),
-            # Before a passing check, and with a problem (#563).
-            (
-                "/go-live-unchecked",
-                "stewardship/go-live-readiness.html",
-                ready | {"origin_verified": None, "cleanup_token": None},
-            ),
-            (
-                "/go-live-problems",
-                "stewardship/go-live-readiness.html",
-                ready
-                | {
-                    "problems": ["Save exactly one initial invitation schedule."],
-                    "cleanup_token": None,
-                },
-            ),
-            (GO_LIVE, "stewardship/go-live-readiness.html", problems),
-            ("/go-live-fresh", "stewardship/go-live-readiness.html", unchecked),
             (CLEANUP, "stewardship/go-live-cleanup.html", progress),
             ("/go-live-cleanup-fresh", "stewardship/go-live-cleanup.html", cleaned),
             (LINKS, "stewardship/go-live-links.html", links),
@@ -332,6 +314,210 @@ def components(context, admin):
             ),
         )
     }
+    return pages | check_pages(context, admin, ready)
+
+
+def check(context, state, stage=None, **values):
+    """The Check step's view context in ``state`` (go_live_views._check_context).
+
+    ``stage`` is go_live_check's Progress (idle by default); the step bar
+    is the real one for the state, and the region follows quickly (every
+    2 seconds) so a test sees an in-place update without waiting long.
+    """
+    stage = stage or Progress("idle")
+    return values | {
+        "stage": stage,
+        "state": state,
+        "wizard": go_live_check.bar(state, stage.in_progress_url),
+        "live_interval": None if state in {"started", "stopping"} else 2000,
+        "live_limit": 3 * 60 * 60 * 1000,
+        "warnings": {"backup_at": context["server_now"], "debug": False},
+    }
+
+
+def check_pages(context, admin, ready):
+    """The Check step in each of its states (#1585), by fixture path.
+
+    GO_LIVE, the real address every Check form posts to, shows the check
+    passed, so a test that checks readiness in place (from
+    /go-live-unchecked) receives it, and a reload of the address shows the
+    same. /go-live is not ready, with content to re-save.
+    """
+    problems = [
+        {
+            "text": "Save exactly one initial invitation schedule.",
+            "links": [("/admin/campaign/schedules/", "Dates and mail schedules")],
+        },
+        {
+            "text": "Preview and successfully send a selected Family email.",
+            "links": [
+                (
+                    "/admin/campaign/content/test/1/",
+                    "Preview and send a test of “Hello”",
+                ),
+                ("/admin/campaign/content/test/2/", "Preview and send a test of “Bye”"),
+            ],
+        },
+    ]
+    idle = ready | {"origin_verified": None}
+    started_row = Value(
+        pk=UUID(int=59),
+        state="cleanup_running",
+        created_at=context["server_now"],
+        campaign=ready["campaign"],
+    )
+    stopped_row = Value(**(vars(started_row) | {"state": "cancelled"}))
+    # A Back to Preview and test email, from the Campaign setup stepper the
+    # chrome builds for this page (drawn nowhere else on it).
+    stepper = Value(
+        current=Value(key="go_live"),
+        previous=Value(
+            url="/admin/campaign/content/test/1/", label="Preview and test email"
+        ),
+    )
+    states = (
+        ("/go-live", "not_ready", None, idle | {"problems": problems}),
+        (
+            "/go-live-problems",
+            "not_ready",
+            None,
+            idle
+            | {
+                "problems": problems[:1],
+                "preview": Value(**(vars(ready["preview"]) | {"resave": ()})),
+            },
+        ),
+        ("/go-live-unchecked", "unchecked", None, idle),
+        (
+            "/go-live-failed",
+            "unchecked",
+            None,
+            idle | {"origin_verified": False},
+        ),
+        (GO_LIVE, "passed", None, ready),
+        (
+            "/go-live-back",
+            "unchecked",
+            None,
+            idle | {"admin_chrome": admin | {"campaign_wizard": stepper}},
+        ),
+        (
+            "/go-live-closed",
+            "closed",
+            None,
+            idle
+            | {
+                "preview": Value(
+                    **(vars(ready["preview"]) | {"target_state": "closed"})
+                )
+            },
+        ),
+        (
+            "/go-live-started",
+            "started",
+            Progress("started", started_row, started_by="admin@example.org"),
+            {"campaign": ready["campaign"]},
+        ),
+        (
+            "/go-live-stopping",
+            "stopping",
+            Progress(
+                "stopping", started_row, stop_kind="cleanup", done=4210, total=9800
+            ),
+            {"campaign": ready["campaign"]},
+        ),
+        (
+            "/go-live-stop-failed",
+            "stop_failed",
+            Progress(
+                "stop_failed",
+                stopped_row,
+                stop_kind="links",
+                done=12,
+                total=1031,
+                retry="synthetic-retry-stop",
+                failed=(Value(), Value(updated_at=context["server_now"])),
+            ),
+            {"campaign": ready["campaign"]},
+        ),
+        (
+            "/go-live-stopped",
+            "unchecked",
+            Progress("idle", stopped_row, stopped_at=context["server_now"]),
+            idle,
+        ),
+    )
+    return {
+        path: (
+            "text/html",
+            render_to_string(
+                "stewardship/go-live-check.html",
+                context
+                | {"admin_chrome": admin}
+                | check(context, state, stage, **values),
+            ),
+        )
+        for path, state, stage, values in states
+    } | {
+        # The Start go-live dialog's answers (go-live-start-review.html).
+        "/go-live-review": (
+            "text/html",
+            _review({"preview": ready["preview"], "token": "synthetic-start"}),
+        ),
+        "/go-live-review-started": (
+            "text/html",
+            _review({"refused": "started", "stage": Progress("started", started_row)}),
+        ),
+        "/go-live-review-stopping": (
+            "text/html",
+            _review(
+                {"refused": "stopping", "stage": Progress("stopping", started_row)}
+            ),
+        ),
+        "/go-live-review-origin": (
+            "text/html",
+            _review({"refused": "origin_unverified"}),
+        ),
+    }
+
+
+def _review(start):
+    """Draw one answer of the Start go-live dialog."""
+    return render_to_string(
+        "stewardship/go-live-start-review.html",
+        {"start": start, "check_url": GO_LIVE},
+    )
+
+
+def actions():
+    """The fixture server's answers to Check's POSTs, by ``action`` (#1585).
+
+    Every Check form posts to GO_LIVE, as the real view's do: the check and
+    the retry redirect back there (so the in-place answer is the check
+    passed), Review answers the dialog's review, and Apply redirects to the
+    step in progress, the Testing cleanup page, which the dialog then opens.
+    """
+    return {
+        GO_LIVE: {
+            "verify": (303, GO_LIVE, ""),
+            "retry_stop": (303, GO_LIVE, ""),
+            "review": (200, None, "/go-live-review"),
+            "confirm": (303, CLEANUP, ""),
+        }
+    }
+
+
+def action_answer(path, body, responses):
+    """The answer to a POST of ``body`` to ``path``, or None when not Check's.
+
+    A review answer names the fixture page whose markup it carries.
+    """
+    answers = actions().get(path)
+    if answers is None:
+        return None
+    action = parse_qs(body.decode()).get("action", [""])[0]
+    status, location, page = answers.get(action, (400, None, ""))
+    return status, location, responses[page][1] if page else ""
 
 
 def posts():
