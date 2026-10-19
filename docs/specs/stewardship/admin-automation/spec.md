@@ -1301,9 +1301,14 @@ without the age clause, under the
 The command-session rule holds in every one of them, restore decisions and
 staged setup credentials included. The secret request guards keep their
 own tie to the automation session (see [secret replacement](#secret-replacement)).
-`stewardship_automation_fresh_principal_v1(principal, instant)` stays
-installed but unused, as do the recorded sign-in columns; dropping them is
-[#1550](https://github.com/epiphany40223/parishkit/issues/1550).
+Frozen migration 0123 (`stewardship_accounts.0028_sign_in_leftovers`,
+[#1550](https://github.com/epiphany40223/parishkit/issues/1550)) dropped
+`stewardship_automation_fresh_principal_v1(principal, instant)`, which no
+guard called after 0114, with its grants. It also made an Admin session's
+sign-in instant (`authenticated_at`) immutable: only the retired step-up
+sign-in moved it, and a new sign-in issues a new session. The recorded
+sign-in columns stay, as audit evidence that several guards still bind to
+the live session.
 
 ### Secret replacement
 
@@ -1918,7 +1923,7 @@ checks that every other ledger route is named here.
 | `signed_in_sessions` (list and Sign out, new, #953) | Permanent: browser session chrome; the operator's offline recovery signs everyone out |
 | `maintenance` | Permanent: the status page the access gate shows |
 | `campaign_step_continue` ([#1404](https://github.com/epiphany40223/parishkit/issues/1404)) | Permanent: the browser [Campaign setup stepper](../admin-portal/spec.md#create-the-campaign)'s own progress (a step kept as is, then the next step page, or one Pages and emails item kept as is, then Pages and emails, #1404 PR 6b); the command line applies settings directly and has no stepper |
-| `held_emails` ([#757](https://github.com/epiphany40223/parishkit/issues/757)) | Permanent: held-email decisions stay in the browser. The exemption predates [#1547](https://github.com/epiphany40223/parishkit/issues/1547), when they needed a recent Google sign-in that the decision guard (migration 0017) checked; since migration 0114 the guard binds only a live session of the actor |
+| `held_emails` ([#757](https://github.com/epiphany40223/parishkit/issues/757)) | Permanent: held-email decisions belong to a restore review (the `maintenance` page, also web-only) and its follow-up after release, each with a preview, a required note and an exact-count check; a command for them would be a new feature ([#1762](https://github.com/epiphany40223/parishkit/issues/1762)) |
 | `automation_access`, `automation_approval`, `automation_sessions` (revoke) and `automation_notices` (acknowledgement) (new) | Permanent: these pages are the human side of the interface (PR 2); `sessions` takes the page's filter and sort for one's own sessions (#621) |
 | `response_dashboard` ([#517](https://github.com/epiphany40223/parishkit/issues/517)), `response_dashboard_status` (the figures status the open page polls, [#1586](https://github.com/epiphany40223/parishkit/issues/1586)) | `report responses` with counts (PR 8c), and `report participation` for the statistics and daily table it absorbed from Participation ([#1537](https://github.com/epiphany40223/parishkit/issues/1537)) |
 

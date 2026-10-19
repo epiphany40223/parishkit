@@ -78,6 +78,12 @@ STYLES = {
     "label": f"padding:8px 16px 8px 0;font-size:16px;color:{INK};",
     "bar": "padding:8px 16px 8px 0;",
     "value": f"padding:8px 0;font-size:16px;color:{INK};white-space:nowrap;",
+    # The Campaign totals (#1564): each figure's label on its own row, then
+    # its bar and value, so four-digit counts fit a 320px phone. The value
+    # may wrap (before its parenthesis only), so it has no nowrap.
+    "total-label": f"padding:8px 0 4px;font-size:16px;color:{INK};",
+    "total-bar": "padding:0 16px 8px 0;",
+    "total-value": f"padding:0 0 8px;font-size:16px;color:{INK};",
     "track": "border-collapse:collapse;",
     "segment": "height:14px;line-height:14px;font-size:1px;",
     "image": "display:block;width:100%;max-width:880px;height:auto;border:0;",
@@ -135,7 +141,7 @@ _FIXED = {
     "align": {"left", "right"},
     "scope": {"col", "rowgroup"},
     # A day's date row spans the value columns (#1559): 3, or 2 without
-    # pledges.
+    # pledges. A Campaign totals label spans its bar and value (#1564).
     "colspan": {"2", "3"},
 }
 _PERCENT = re.compile(r"(?:100|[1-9]?[0-9])%")
@@ -149,7 +155,7 @@ LAYOUT_ATTRIBUTES = {
     "caption": {"style"},
     "table": {"role", "width", "cellpadding", "cellspacing", "border", "style"},
     "th": {"scope", "colspan", "align", "style"},
-    "td": {"width", "bgcolor", "align", "style"},
+    "td": {"width", "bgcolor", "align", "colspan", "style"},
 }
 
 
