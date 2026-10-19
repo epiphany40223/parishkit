@@ -2499,8 +2499,7 @@ Administrator confirmation.
 | `go_live_families` | `go-live families`, an export (PR 12) |
 | `go_live_prepare` | `go-live cleanup-status --watch`, `go-live cleanup-retry`, `go-live cleanup-cancel`, `go-live links`, `go-live links-status --watch`, `go-live links-retry`, `go-live links-cancel` (cancel or discard the preparation) (PR 12); the Go live page's Prepare step (#1585 slice 3) replaced the Testing cleanup and Prepare Family links pages |
 | `go_live_confirm` | `go-live confirm-preview`, `go-live confirm --token …` (PR 12); the Go live page's Confirm Production step (#1585 slice 4) replaced the old confirmation page |
-| `production_progress` | `go-live progress --watch` (PR 3b); the page's **Retry failed mail preparation** (PR 12) |
-| `production_withdrawal` | `go-live withdraw-preview --reason …`, `go-live withdraw --token …` (PR 12) |
+| `production_progress` | `go-live progress --watch` (PR 3b); the page's mail preparation **Retry**, and `go-live withdraw-preview --reason …`, `go-live withdraw --token …` for its Cancel go-live dialog (PR 12); the Go live page's Activation step (#1585 slice 5) replaced the separate Cancel go-live page |
 
 Cleanup, cleanup cancel, link preparation discard, confirmation and withdrawal
 ask at the [prompt](#command-line-confirmation) unless `--yes` is given. See

@@ -599,20 +599,17 @@ never scrolls to show it (Administrator, pk-local review of
   The identifier lives only in the tab's session history (history.state),
   never in the address. A reload draws the page from its address, so the
   list and the filter fields agree
-  ([#1562](https://github.com/epiphany40223/parishkit/issues/1562)). Production
-  activation's Refresh link ("Progress refreshed.") re-reads its page's
-  own address this way rather than reloading it, and a disclosure such as
-  Technical details stays open because only the list inside it is a region.
-  Its command button posts in place too, as do the [Go live page](../admin-portal/spec.md#go-live-page)'s
-  Check readiness and public web address (it redirects back to Check, focus
-  returns to the fresh button, and the overall result is read out: what
-  still needs fixing, else that every check passed), its Prepare step's
-  Retry and Refresh and prepare again (each redirects back to Prepare,
-  whose region is swapped), and Retry failed mail preparation. A button
-  that is gone once its request is taken hands focus to the page's Refresh
-  link just below (Production), or, on the Go live page, to the step's
-  heading; Start go-live's and Stop go-live's Apply open the page that
-  follows (the step in progress, or Check) as a page.
+  ([#1562](https://github.com/epiphany40223/parishkit/issues/1562)). The
+  [Go live page](../admin-portal/spec.md#go-live-page)'s command buttons
+  post in place: Check readiness and public web address (it redirects back
+  to Check, focus returns to the fresh button, and the overall result is
+  read out: what still needs fixing, else that every check passed), its
+  Prepare step's Retry and Refresh and prepare again (each redirects back
+  to Prepare, whose region is swapped), and Production activation's Retry
+  (it redirects back to Production activation). A button that is gone once
+  its request is taken hands focus to the step's heading; Start go-live's,
+  Stop go-live's and Cancel go-live's Apply open the page that follows (the
+  step in progress, or Check) as a page.
 - **Errors and fallback.** A POST that got an answer is never sent again; a
   saving POST is never re-sent at all; a read-only table POST with no answer
   falls back to the ordinary submission. A refused POST (an error answer, or
@@ -928,10 +925,11 @@ the [in-place controls](#in-place-controls); no other mechanism.
   page.
   The directory, Sent mail, System logs and Financial stewardship do this
   ([#1586](https://github.com/epiphany40223/parishkit/issues/1586)).
-- **Go-live pages.** The Go live page's Check, Prepare and Confirm
-  Production steps have no Refresh link. Production activation still has its own until the go-live
-  redesign applies this rule there
+- **Go-live pages.** The Go live page's steps, Check, Prepare, Confirm
+  Production and Production activation, have no Refresh link
   ([#1585](https://github.com/epiphany40223/parishkit/issues/1585)).
+  Production activation keeps updating itself while its campaign is
+  scheduled, so the start, or a cancellation, shows.
 
 ### No layout shift
 
@@ -1087,16 +1085,18 @@ short hint by the button saying what is missing (`data-require-complete` in
 the page script; first used by
 [Ministry follow-up](../admin-portal/spec.md#follow-up-workflows), #553). Fields required only in
 some states are required only while shown (not hidden or greyed). A required text field holding
-only spaces counts as empty, as the server trims it: the reason for
-cancelling go-live and the evidence notes on Mail delivery and delivery
-refusal pages use this gate, as does the typed "Production" confirmation
-(which, like the server, ignores spaces around the word). That field sits
-inside the Confirm Production review dialog, whose answer marks it
-`data-review-require`: Apply waits for it, and the dialog's reserved status
-line under the buttons says what is missing and describes Apply meanwhile.
-A dialog's own `fields_template` with `data-require-complete` is not used
-for it, because that gates a fields form drawn with the dialog, while this
-field arrives inside the review answer that Review fetches. The Admin
+only spaces counts as empty, as the server trims it: the evidence notes on
+Mail delivery and delivery refusal pages use this gate, as do the reason
+for cancelling go-live and the typed "Production" confirmation (which, like
+the server, ignores spaces around the word). Those two fields sit inside
+the Cancel go-live and Confirm Production review dialogs, whose answers
+mark them `data-review-require`: Apply waits for them, and the dialog's
+reserved status line under the buttons says what is missing and describes
+Apply meanwhile. A dialog's own `fields_template` with
+`data-require-complete` is not used for them, because that gates a fields
+form drawn with the dialog, while these fields arrive inside the review
+answer that Review fetches (and Apply checks them against what Review
+showed). The Admin
 portal requires JavaScript
 ([#565](https://github.com/epiphany40223/parishkit/issues/565));
 server validation is unchanged and still refuses an incomplete submission.
@@ -1191,8 +1191,7 @@ again after a refused Save shows what was posted, so its Save does not
 wait for a change then.
 
 The same holds for the rest of the Admin portal (#563, the audit's last
-slice): Confirm cancelling
-go-live while mail blocks it; the retry the Mail message page would offer while
+slice): the retry the Mail message page would offer while
 the resend admission refuses it; Queue new manual report while an earlier
 Weekly Admin digest is still being prepared or delivered (checked when the
 page opens); and Upload on Hosted files while the library is full. A button
@@ -3100,7 +3099,8 @@ marks the stages before the current one done, and the state words) and
 and Finishing setup (#1354), Load ParishSoft data
 ([#1404](https://github.com/epiphany40223/parishkit/issues/1404) PR 5),
 and the [Go live page](../admin-portal/spec.md#go-live-page)'s Prepare
-step ([#1585](https://github.com/epiphany40223/parishkit/issues/1585));
+step and Production activation
+([#1585](https://github.com/epiphany40223/parishkit/issues/1585));
 the other stage-progress displays move to it in
 [#1579](https://github.com/epiphany40223/parishkit/issues/1579).
 
