@@ -847,3 +847,57 @@ def test_an_old_sign_in_starts_cleanup_and_records_it(
         started.reauthenticated_at
         == PortalSession.objects.get(pk=request.portal_session.pk).authenticated_at
     )
+
+
+def test_a_refused_attempt_start_rolls_back_start_go_live_entirely(
+    ready_cleanup, monkeypatch
+):
+    """Start go-live begins attempt 1 in the transaction that starts cleanup.
+
+    When the attempt's refresh admission refuses at Apply (the Administrator
+    is no longer the one signed in, rechecked under the refresh's lock),
+    nothing of Start remains: no request, no go-live gate, no cleanup task
+    and no refresh. Start then succeeds once the admission passes.
+    """
+    from parishkit.stewardship.campaigns.cleanup_tasks import TASK_TYPE as CLEANUP
+    from parishkit.stewardship.jobs.models import TaskRun
+    from parishkit.stewardship.source.refresh_models import SourceRefreshCommand
+
+    request, service, campaign = ready_cleanup
+    real = go_live_commands.begin_attempt
+    refreshes = SourceRefreshCommand.objects.count()
+
+    def refused(row, **values):
+        """The real attempt start, with an admission that refuses."""
+        return real(row, **values | {"authorize": lambda scope: False})
+
+    with monkeypatch.context() as patch:
+        patch.setattr(go_live_commands, "begin_attempt", refused)
+        with web_login():
+            _, _, token = go_live_commands.verify_preview(request, service, campaign.pk)
+            with pytest.raises(PermissionError):
+                go_live_commands.start_cleanup(
+                    request,
+                    service,
+                    campaign.pk,
+                    preview_token=token,
+                    acknowledge=True,
+                    attempt=True,
+                )
+    assert not ProductionTransitionRequest.objects.exists()
+    assert not CampaignCredentialState.objects.get(campaign=campaign).go_live_gate
+    assert not TaskRun.objects.filter(task_type=CLEANUP).exists()
+    assert SourceRefreshCommand.objects.count() == refreshes
+    with web_login():
+        _, _, token = go_live_commands.verify_preview(request, service, campaign.pk)
+        go_live_commands.start_cleanup(
+            request,
+            service,
+            campaign.pk,
+            preview_token=token,
+            acknowledge=True,
+            attempt=True,
+        )
+    (transition,) = ProductionTransitionRequest.objects.all()
+    assert len(attempts(transition)) == 1
+    assert CampaignCredentialState.objects.get(campaign=campaign).go_live_gate

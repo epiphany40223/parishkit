@@ -48,7 +48,7 @@ STATES = (
     (
         "/go-live-prepare-again",
         "Going live needs a new ParishSoft refresh.",
-        ["done", "done", "active"],
+        ["done", "done", "waiting"],
         "Refresh and prepare again",
     ),
     (
@@ -168,6 +168,55 @@ def test_stage_boxes_update_in_place_and_a_reload_resumes(page, component_origin
         "Preparing links: 812 of 1,031 Families"
     )
     expect(page.locator("#go-live-prepare")).to_have_attribute("data-live-pending", "")
+    page.wait_for_timeout(2500)
+    assert len(reads) > seen + 1
+
+
+@pytest.mark.parametrize(
+    ("path", "heading", "detail"),
+    [
+        (
+            "/go-live-prepare-failed",
+            "A step failed after its automatic retries.",
+            "Its last attempt failed at",
+        ),
+        (
+            "/go-live-prepare-again",
+            "Going live needs a new ParishSoft refresh.",
+            "the pause has ended",
+        ),
+    ],
+)
+def test_a_waiting_step_keeps_its_idle_poll_across_a_reload(
+    page, component_origin, path, heading, detail
+):
+    """A failed or Refresh-and-prepare-again step still re-reads itself now
+    and then (data-live-interval; 30 seconds on the server, quicker here),
+    for a change made in another tab, and a browser reload returns to the
+    same state with the same idle poll."""
+    from playwright.sync_api import expect
+
+    reads = []
+
+    def counted(route):
+        """Count every read of the step, then let it through."""
+        if route.request.method == "GET":
+            reads.append(route.request.url)
+        route.continue_()
+
+    page.route(component_origin + path, counted)
+    page.goto(component_origin + path)
+    region = page.locator("#go-live-prepare")
+    expect(page.locator("#go-live-state")).to_have_text(heading)
+    expect(page.locator("[data-go-live-detail]")).to_contain_text(detail)
+    assert region.get_attribute("data-live-interval")
+    page.wait_for_timeout(2500)
+    assert len(reads) > 1
+    seen = len(reads)
+    page.reload()
+    expect(page.locator("#go-live-state")).to_have_text(heading)
+    expect(page.locator("[data-go-live-detail]")).to_contain_text(detail)
+    assert region.get_attribute("data-live-interval")
     page.wait_for_timeout(2500)
     assert len(reads) > seen + 1
 

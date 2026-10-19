@@ -33,6 +33,7 @@ check to the owners, which recheck authority under their own locks.
 """
 
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from django.core import signing
 from django.core.exceptions import ObjectDoesNotExist
@@ -92,6 +93,10 @@ class Prepare:
     dialog: "cleanup" while Testing data is still being deleted, "links"
     once Family links are being prepared or are prepared, else None.
     ``stopped_by_other`` is set when another Administrator stopped it.
+    ``failed_at`` is when the failed task's last attempt failed (a failed
+    stage, or the attempt's failed refresh): background tasks record no
+    failure detail beyond their state, so the step names the part that
+    failed and this time, as Check's Stop failed does.
     """
 
     state: str
@@ -105,6 +110,7 @@ class Prepare:
     controls: dict = field(default_factory=dict)
     stop_kind: str | None = None
     stopped_by_other: bool = False
+    failed_at: datetime | None = None
 
     @property
     def started(self):
@@ -142,25 +148,28 @@ def _latest(root_id):
 
 
 def _refresh_box(request_id, attempt):
-    """The Refresh ParishSoft data box's state for ``attempt`` (or None).
+    """The Refresh ParishSoft data box for ``attempt``: ``(state, task)``.
 
     Done once a full refresh that started after the attempt began has
     promoted (go_live_sequencing's rule); failed when the attempt's own
     refresh failed with nothing promoted; else in progress. A refresh that
     was coalesced into, or superseded by, another stays in progress: the
-    other one promotes, or the hold reaches its cap.
+    other one promotes, or the hold reaches its cap. ``task`` is the
+    attempt's own refresh task, read only when the box is not done.
     """
     if attempt is None:
-        return "waiting"
+        return "waiting", None
     if attempt.promoted_at is not None:
-        return "done"
+        return "done", None
     command = (
         SourceRefreshCommand.objects.select_related("request")
         .filter(pk=refresh_command_id(request_id, attempt.number))
         .first()
     )
     task = _latest(command.request.task_root_id) if command else None
-    return "failed" if task is not None and task.state == "failed" else "active"
+    if task is not None and task.state == "failed":
+        return "failed", task
+    return "active", task
 
 
 def _links(row, ready_inputs):
@@ -244,6 +253,37 @@ def read(request, service, campaign_id):
         return _started(actor, row)
 
 
+def _boxes(states):
+    """The three stage boxes for ``states`` (each stage's state, by key)."""
+    return tuple(
+        {
+            "key": key,
+            "label": label,
+            "state": states[key],
+            "status": stages.STATUS[states[key]],
+        }
+        for key, label in STAGES
+    )
+
+
+def _again_reason(attempt, refresh, links, made, instant):
+    """Why the step waits for Refresh and prepare again, or None.
+
+    No attempt (a request started before #1585 slice 3), the attempt's own
+    refresh failed, the refresh hold ended, or every preparation the
+    attempt allows went stale ("ParishSoft data keeps changing").
+    """
+    if attempt is None:
+        return "no_attempt"
+    if refresh == "failed":
+        return "refresh_failed"
+    if instant >= attempt.hold_end:
+        return "hold_ended"
+    if links["state"] in {"stale", "none"} and made >= MAX_PREPARATIONS:
+        return "exhausted"
+    return None
+
+
 def _started(actor, row):
     """The Prepare step of an open go-live request ``row`` (see ``read``)."""
     instant = database_now()
@@ -253,7 +293,7 @@ def _started(actor, row):
         "cleanup_complete": "done",
         "cleanup_failed": "failed",
     }.get(row.state, "active")
-    refresh = _refresh_box(row.pk, attempt)
+    refresh, refresh_task = _refresh_box(row.pk, attempt)
     ready_inputs = None
     if cleanup == "done":
         try:
@@ -262,6 +302,7 @@ def _started(actor, row):
             ready_inputs = None
     links = _links(row, ready_inputs)
     made = len(preparations(row, attempt)) if attempt else 0
+    reason = _again_reason(attempt, refresh, links, made, instant)
     # The boxes: each stage's state, the links only once the two before it
     # are done (until then they wait).
     states = {"cleanup": cleanup, "refresh": refresh, "links": "waiting"}
@@ -269,24 +310,21 @@ def _started(actor, row):
         states["links"] = "failed"
     elif cleanup == "done" and refresh == "done":
         states["links"] = "done" if links["state"] == "done" else "active"
-    boxes = tuple(
-        {
-            "key": key,
-            "label": label,
-            "state": states[key],
-            "status": stages.STATUS[states[key]],
-        }
-        for key, label in STAGES
-    )
+    preparing = links["state"] == "active" and links["task"].state in NONTERMINAL_STATES
+    if reason is not None and states["links"] == "active" and not preparing:
+        # The producer prepares nothing while the step waits for Refresh
+        # and prepare again, so unless a preparation task still runs, the
+        # links box is not In progress then: Not started, or Failed once
+        # ParishSoft data kept changing.
+        states["links"] = "failed" if reason == "exhausted" else "waiting"
     common = {
         "request": row,
-        "boxes": boxes,
+        "boxes": _boxes(states),
         "stop_kind": "cleanup"
         if cleanup != "done"
         else ("links" if links["preparation"] is not None else None),
         "controls": {"stop": sign(actor, row, "stop")},
     }
-    again = sign(actor, row, "again", number=len(found) + 1)
     if instant >= row.campaign.active_configuration.ends_at:
         return Prepare("closed", **common)
     if cleanup == "failed":
@@ -294,19 +332,15 @@ def _started(actor, row):
         common["controls"]["retry"] = sign(
             actor, row, "retry_task", task=task.pk, version=task.version
         )
-        return Prepare("failed", reason="cleanup", **common)
-    reason = None
-    if attempt is None:
-        reason = "no_attempt"
-    elif refresh == "failed":
-        reason = "refresh_failed"
-    elif instant >= attempt.hold_end:
-        reason = "hold_ended"
-    elif links["state"] in {"stale", "none"} and made >= MAX_PREPARATIONS:
-        reason = "exhausted"
+        return Prepare("failed", reason="cleanup", failed_at=task.updated_at, **common)
     if reason is not None:
-        common["controls"]["again"] = again
-        return Prepare("again", reason=reason, **common)
+        common["controls"]["again"] = sign(actor, row, "again", number=len(found) + 1)
+        return Prepare(
+            "again",
+            reason=reason,
+            failed_at=refresh_task.updated_at if reason == "refresh_failed" else None,
+            **common,
+        )
     if links["state"] == "failed":
         task = links["task"]
         common["controls"]["retry"] = sign(
@@ -317,7 +351,9 @@ def _started(actor, row):
             task=task.pk,
             version=task.version,
         )
-        return Prepare("failed", reason=links["kind"], **common)
+        return Prepare(
+            "failed", reason=links["kind"], failed_at=task.updated_at, **common
+        )
     if states["links"] == "done":
         return Prepare(
             "ready",

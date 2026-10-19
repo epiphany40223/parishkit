@@ -4302,7 +4302,9 @@ outcome.
      finish, the step shows "Go-live stopped at 3:42 PM." above its usual
      readiness state.
    - **Stop failed.** Stopping cleanup or discarding the links failed after
-     its automatic retries: "Stopping go-live did not finish: *sanitized
+     its automatic retries (a discard of earlier links that had already
+     failed when go-live was stopped counts too, so no discard is ever left
+     without a retry): "Stopping go-live did not finish: *sanitized
      reason*." Background tasks record no failure detail beyond their
      state, so the reason names the part that failed ("discarding the
      prepared Family links failed after its automatic retries"), and a
@@ -4342,7 +4344,11 @@ outcome.
    [stage boxes](https://github.com/epiphany40223/parishkit/pull/1517), left
    to right: **Delete Testing data**, **Refresh ParishSoft data** and
    **Prepare Family links**, each Not started, In progress, Done or Failed
-   in words. Under them, one detail line for the current box ("4,210 of
+   in words. A box is In progress only while its work runs: while the step
+   waits for **Refresh and prepare again**, the Prepare Family links box is
+   Not started (unless a preparation task is still finishing), or Failed
+   when ParishSoft data keeps changing. Under them,
+   one detail line for the current box ("4,210 of
    9,800 Testing records deleted"; "Waiting for the ParishSoft refresh to
    finish"; "Preparing links: 812 of 1,031 Families"; "ParishSoft data
    changed, so new links are being prepared (2 of 4)"). A stage that waits
@@ -4356,8 +4362,11 @@ outcome.
    - **Running.** No primary: "Nothing to do here; this page updates by
      itself. You can leave and come back."
    - **A stage failed** after its automatic retries: its box is Failed with
-     the sanitized reason. Primary: **Retry**, which retries the same task
-     and changes no data.
+     the sanitized reason. Background tasks record no failure detail beyond
+     their state, so, as Check's Stop failed does, the detail line names the
+     part that failed ("Preparing the Family links failed after its
+     automatic retries.") and when its last attempt failed. Primary:
+     **Retry**, which retries the same task and changes no data.
    - **Links keep going stale** ("ParishSoft data keeps changing") or **the
      hold ended** (below). Primary: **Refresh and prepare again**.
    - **All three done.** "Ready to confirm." Primary: **Continue to Confirm
@@ -4367,7 +4376,8 @@ outcome.
      own in-place reads draw the step, so a page left open shows Ready to
      confirm and its Continue.
    - **The attempt's refresh failed.** A ParishSoft refresh has no task
-     retry (a new refresh is its retry), so its box is Failed and the
+     retry (a new refresh is its retry), so its box is Failed, the detail
+     line says when it failed, and the
      primary is **Refresh and prepare again**, which begins the next
      attempt; a refresh that was merged into, or superseded by, another
      stays In progress until that one finishes or the hold reaches its cap.
@@ -4385,7 +4395,11 @@ outcome.
      number, the request). The server re-reads the step and acts only while
      the control still names it, minting the owner's own control then, so
      a resend after a lost answer does nothing more and no form is ever
-     refused for its age.
+     refused for its age. The re-read and the action run in one
+     transaction under the work lock, so nothing can move the step between
+     them. A Stop go-live whose owner finds the state moved at that moment
+     stops nothing and says so inside its dialog ("Go-live changed while it
+     was being stopped, so nothing was stopped."), never landing silently.
 3. **Confirm Production.** One impact preview, built once the links are
    prepared and labelled with its browser-local as-of time: whether the
    campaign becomes active now or is scheduled (with its start time), the

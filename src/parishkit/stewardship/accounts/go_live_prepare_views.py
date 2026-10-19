@@ -92,6 +92,10 @@ def prepare(request, campaign_id):
         if action == "review_stop":
             return _stop_answer(request, service, campaign_id)
         target = _act(request, service, campaign_id, action, request.POST["control"])
+        if target is None:
+            # Stop go-live found the step moved under the work lock: said
+            # inside its dialog, never a silent landing on the step.
+            return _stop_answer(request, service, campaign_id, changed=True)
         return _checked(request, service, HttpResponseRedirect(target, status=303))
     except ObjectDoesNotExist:
         return error_response(LookupError("Go-live preparation is unavailable."))
@@ -125,6 +129,9 @@ def _context(shown):
         "live_pending": shown.started,
         "live_interval": _IDLE_INTERVAL_MS if waiting else None,
         "live_limit": _WATCH_MS,
+        # "ParishSoft data changed, so new links are being prepared (2 of
+        # 4)": read now, so the words follow go_live_sequencing's cap.
+        "max_preparations": go_live_prepare.MAX_PREPARATIONS,
     }
 
 
@@ -134,32 +141,42 @@ def _act(request, service, campaign_id, action, token):
     The control must belong to this Administrator (else a 403) and name
     exactly what the step shows now; otherwise it was already acted on (a
     resend after a lost answer) or the step moved on, and nothing is done:
-    the step then shows how it stands now. The owners recheck everything
-    under their own locks.
+    the step then shows how it stands now. The step is read and the control
+    acted on in one work transaction, so the state the control was checked
+    against is the state it acts on: no other writer can move it between
+    the two. The owners still recheck everything under their own locks.
+
+    Returns None when Stop go-live found the state moved under an owner's
+    lock (``StaleRecordError``): nothing was stopped (the transaction rolled
+    back), and the caller says so inside the dialog.
     """
     value = go_live_prepare.unsign(token)
-    actor = principal(request, service)
-    if value["actor"] != str(actor.identity):
-        raise PermissionError("This go-live control belongs to another sign-in.")
-    shown = go_live_prepare.read(request, service, campaign_id)
     here = reverse("admin:go_live_prepare")
-    if not shown.started or str(shown.request.pk) != value["request"]:
-        return here if action != "stop" else reverse("admin:go_live")
-    if shown.controls.get(action) != token:
-        return here if action != "stop" else reverse("admin:go_live")
-    row = shown.request
+    away = here if action != "stop" else reverse("admin:go_live")
     try:
-        if action == "retry":
-            _retry(request, service, campaign_id, actor, row, value)
-        elif action == "again":
-            _again(request, service, actor, row, int(value["number"]))
-        else:
-            _stop(request, service, campaign_id, actor, row)
-            return reverse("admin:go_live")
+        with work_transaction():
+            actor = principal(request, service)
+            if value["actor"] != str(actor.identity):
+                raise PermissionError(
+                    "This go-live control belongs to another sign-in."
+                )
+            shown = go_live_prepare.read(request, service, campaign_id)
+            if not shown.started or str(shown.request.pk) != value["request"]:
+                return away
+            if shown.controls.get(action) != token:
+                return away
+            row = shown.request
+            if action == "retry":
+                _retry(request, service, campaign_id, actor, row, value)
+            elif action == "again":
+                _again(request, service, actor, row, int(value["number"]))
+            else:
+                _stop(request, service, campaign_id, actor, row)
+                return away
     except StaleRecordError:
         # The owner found the state moved under its own lock: the step shows
-        # how it stands now.
-        pass
+        # how it stands now; a stop says so in its dialog.
+        return None if action == "stop" else here
     return here
 
 
@@ -168,7 +185,10 @@ def _retry(request, service, campaign_id, actor, row, value):
 
     The owner's control is minted now, so no page age reaches the
     Administrator: cleanup's retry (``go_live_progress``), a preparation's
-    or its discard's retry (``activation_progress``).
+    or its discard's retry (``activation_progress``). Called inside
+    ``_act``'s transaction, after the control matched the step read there;
+    the task version the control names is checked again here so the
+    owner's control is minted for exactly that version.
     """
     if value["action"] == "retry_task":
         controls = go_live_progress.progress(request, service, campaign_id, row.pk)
@@ -181,6 +201,8 @@ def _retry(request, service, campaign_id, actor, row, value):
             pk=value["preparation"], transition=row
         )
         task = TaskRun.objects.get(pk=value["task"])
+        if str(task.version) != value["version"]:
+            raise StaleRecordError("The failed go-live task changed.")
         token = activation_progress._sign(
             actor, row, value["action"], preparation=preparation, task=task
         )
@@ -240,18 +262,22 @@ def _stop(request, service, campaign_id, actor, row):
             go_live_progress.control(request, service, campaign_id, row.pk, token=token)
 
 
-def _stop_answer(request, service, campaign_id):
+def _stop_answer(request, service, campaign_id, *, changed=False):
     """The Stop go-live dialog's review: the sentence for the state, or a refusal.
 
     A go-live no longer in progress is refused inside the dialog, saying
     who moved it on: another Administrator stopped it, or confirmed
-    Production (a 409 with its closed code).
+    Production (a 409 with its closed code). ``changed`` is an Apply whose
+    stop found the state moved under an owner's lock and stopped nothing
+    (``_act``); it is refused in the dialog too, saying to try again.
     """
     principal(request, service)
     shown = go_live_prepare.read(request, service, campaign_id)
     refused = None
     if not shown.started:
         refused = "confirmed" if shown.state == "confirmed" else "stopped"
+    elif changed:
+        refused = "changed"
     response = render(
         request,
         "stewardship/go-live-stop-review.html",
