@@ -56,6 +56,7 @@ when it lands.
   [review dialog](#review-dialog),
   [conditional fields](#conditional-fields),
   [binary choices](#binary-choices),
+  [Clear filters](#clear-filters),
   [Basic and Advanced modes](#basic-and-advanced-modes),
   [single-campaign interim](#single-campaign-interim),
   [addresses and legacy URLs](#addresses-and-legacy-urls),
@@ -1798,6 +1799,101 @@ Testing rehearsal.
   template the choice's options. Any other menu built from a loop is
   checked in review.
 
+### Clear filters
+
+**Rule.** Every Admin filter form (a page's `form#table-filters`, in a
+filter bar or a Filters panel) ends with two buttons side by side: **Apply
+filters**, then **Clear filters** directly after it (in a Filters panel
+both share Apply's grid cell, Clear wrapping under Apply where that cell is
+too narrow, so no row is added; in a filter bar whose filters leave too
+little room beside them, such as Sent mail's at 1280 px, Clear likewise
+wraps under Apply in the same item, Apply staying on the fields' row).
+The pair is never wider than its line, so on a phone Clear wraps under
+Apply rather than widening the page, and its two buttons have a narrower
+inline padding than other buttons, so that side by side they fit one
+Filters panel cell even with wider fonts. In Sent mail's and the
+Timeline's filter bars the pair takes the room beside the filters first,
+up to both buttons side by side, and the filters grow from what is left,
+never narrower than their own label line.
+Clear filters puts every filter back to the page's default in one step and
+shows the result in place. No filter form names its apply button otherwise
+(the Ministries list's Filter, Background work's Show tasks, Refused
+addresses' Show refusals, Roster changes' Apply and the Timeline's Show
+lines became Apply filters, #1651). **Why.** Clearing each field by hand,
+or editing the address, is slow and easy to get wrong; a reload or a link
+to the bare page would lose the reader's sort, rows per page and view
+choices (Administrator, pk-local review,
+[#1651](https://github.com/epiphany40223/parishkit/issues/1651)). **Shared
+code.** `components/filter-actions.html` (both buttons),
+`data-clear-filters` and `data-filter` in `ui-v1.js`, the unavailable tip
+in `admin-menu-v1.js`; `test_clear_filters.py` (the guard) and the browser
+tests of the pages it names. **Precedent.** #1651.
+
+- **Defaults are the server's.** Clear filters sends the filter form without
+  its filters, so the server answers with the page's own unfiltered view,
+  and the form then shows that answer's values: Census changes' Status goes
+  back to its open changes and System logs' Show boxes to their first-visit
+  ticks, not to blank fields. Every visible filter field is reset, including
+  one inside a closed disclosure (System logs' "Filter by identifier"), and
+  so is every hidden field that carries a filter, marked `data-filter`
+  (System logs' submitted-form mark, the family directory's kept Campaign
+  mail can reach, Sent mail's one-send view). A private filter, kept out
+  of addresses, is cleared from the form too, so no later request sends it.
+- **What it keeps.** The table's sort and rows per page, the browser's time
+  zone and any view choice the form carries as a hidden field (a
+  [segmented pair](#binary-choices)'s chosen view, such as Production or
+  Testing) are kept. The list starts again at its first page, as after
+  Apply.
+- **A data view is not a filter.** A choice that switches the data shown
+  between Production and Testing is a view, not a filter: Clear filters
+  keeps it. The family directory's Responses shown and Sent mail's
+  Production or Testing are segmented pairs, so their filter forms carry
+  the choice as a kept hidden field; such a choice drawn as a visible
+  control in a filter form is kept too, and is then marked `data-view`.
+  Roster changes' Show, also a segmented pair, is kept the same way.
+  (Coordinator default on
+  [#1651](https://github.com/epiphany40223/parishkit/issues/1651); the
+  Administrator can override it.)
+- **In place.** Clearing works as applying filters does
+  ([Admin tables](#admin-tables), #484): every table region, count, summary
+  and Filters panel count is refreshed without a reload or a scroll jump,
+  the address follows the answer as after Apply (a GET page's becomes the
+  cleared view's; a POST page keeps its own or shows the link the answer
+  draws), one request runs at a time, and a filter the server had refused
+  loses its mark. The Filters panel stays open. The live region
+  says "Filters cleared." and then the rows now shown.
+- **Focus.** Focus stays on Clear filters, which is then unavailable.
+  What is announced is the live region's "Filters cleared." and the rows
+  now shown; the unavailable reason's tip is not shown or announced at
+  that moment, but on the next hover, keyboard focus or tap.
+- **Unavailable.** Clear filters is unavailable while it has nothing to do:
+  every filter field shows the page's default and the list shown uses the
+  defaults too. It is then greyed (`aria-disabled`), stays in the tab order
+  and keeps its size and place ([no layout shift](#no-layout-shift)), and
+  its reason, "Every filter already shows its default.", is a tip shown on
+  hover, keyboard focus or tap and announced as its description, like
+  other unavailable in-page controls ([navigation rule
+  10](#navigation-rules)). It becomes available as soon as any filter
+  field changes. The page knows its defaults when it was opened with no
+  filter in its address, or after a Clear; a page opened already filtered
+  (a count link, a cross-link, a bookmark) keeps Clear filters available
+  until then. A POST report shown at its plain address is taken as its
+  default view, as a reload shows it.
+- **Never held by a filter's error.** A filter field the browser or server
+  refuses (a half-typed date, a malformed identifier) never holds Clear
+  filters: it is the quickest way out of that state.
+- **Not this pattern.** A box that applies itself when ticked, with no apply
+  button (Automation access's Include ended sessions), a segmented pair
+  (each segment applies at once), and Campaign comparison's Compare on day,
+  which has no unfiltered view.
+- **Guard.** A template test fails when an Admin template's filter form
+  does not draw its buttons through the shared component, draws another
+  submit button, or has a hidden field that is neither kept state (the
+  table's sort and size, the zone, a listed view choice) nor marked
+  `data-filter`, or a visible Production or Testing choice (`name="mode"`)
+  not marked `data-view`. It finds every filter form and field whatever
+  its attribute order, in every Admin template and subdirectory.
+
 ### Basic and Advanced modes
 
 **Rule.** A settings editor whose full form is much harder than what most
@@ -2315,8 +2411,8 @@ report whose filter form is longer than a row puts it in a "Filters" panel (the
 `filterpanel` template tag): a native disclosure that starts closed and renders
 open whenever the shown results use any filter other than the page's default,
 so an applied filter is never hidden. Open, a long form is a compact grid of
-its fields, each label tight above its box and Apply beside the last field
-when the row has room, in one column on a phone (#1411); the Family
+its fields, each label tight above its box and Apply and
+[Clear filters](#clear-filters) beside the last field when the row has room, in one column on a phone (#1411); the Family
 directory's short fields keep their filter bar. The Family directory and
 Census changes are the two exceptions to the closed start: the Family
 directory's Filters panel is open by default (an Administrator decision, #227),

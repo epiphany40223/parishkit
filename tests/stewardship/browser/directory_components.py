@@ -280,12 +280,17 @@ def preset_pages(values, counted):
     check choices, its response columns and one Family with those values.
     Each preset is served in Production and, as a Testing dashboard links
     it, with ``mode=testing``; both as an Administrator sees them while the
-    campaign has a rehearsal, with the Responses shown switch.
+    campaign has a rehearsal, with the Responses shown switch. The bare
+    Testing and Production views (``mode`` alone) are served too: Clear
+    filters' answer, which keeps the Testing choice, and the switch's
+    answer from there (#1651).
     """
     pages = {}
     for preset in (
         *RESPONSE_LIST_PRESETS.values(),
         *(preset | {"mode": "testing"} for preset in RESPONSE_LIST_PRESETS.values()),
+        {"mode": "testing"},
+        {"mode": "production"},
     ):
         query = DirectoryQuery.parse(QueryDict(urlencode(preset)))
         testing = query.mode == "testing"

@@ -16,7 +16,7 @@
 <input type="hidden" name="show" value="{{ show }}">
 <label for="roster-ministry">{% translate "Ministry" %}</label><select id="roster-ministry" name="ministry"><option value="">{% translate "All Ministries" %}</option>{% for item in ministries %}<option value="{{ item.duid }}"{% if ministry == item.duid|stringformat:'s' %} selected{% endif %}>{{ item.name }}</option>{% endfor %}</select>
 {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
-{% button type="submit" %}{% translate "Apply" %}{% endbutton %}</form>
+{% include "stewardship/components/filter-actions.html" %}</form>
 {# Row actions follow the shared action-table pattern (UX conventions, "Row actions and confirmation", #879): each row's tick is an icon button in the Actions column (roster-tick-row.html), and rows not yet marked have a selection box for the bulk bar's Mark entered in ParishSoft, which asks in the shared confirmation dialog. The sort headings, navigators and row ticks are forms of their own, so the boxes and the bulk key belong to form#roster-bulk (below, outside the region) through their form attribute. The region's data-refresh-url is the list's own address, which the dialog redraws the table from once the marks are recorded, keeping Show, Ministry, sort and page. #}
 <div id="{{ table.anchor }}" data-table-region data-refresh-url="{{ refresh_url }}">
 {% translate "Roster change pages" as pages_label %}{% include "stewardship/table-navigator.html" with table=table label=pages_label %}
