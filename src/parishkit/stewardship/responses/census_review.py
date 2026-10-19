@@ -163,6 +163,10 @@ def editable(proposal):
 
 ISO_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 BLANK_EDIT = "Enter the value to publish. To leave ParishSoft as it is, choose Ignore."
+# The review guard keeps at most this many bytes of an edit, measured as
+# PostgreSQL prints its JSON (``octet_length(admin_value::text)``, 0131).
+EDIT_BYTES = 1024
+LONG_ADDRESS = "This address is too long to save. Shorten its longest lines."
 # The Family form's messages that read wrong for an edit, in Edit value's
 # own words: a blank required name is a blank edit like any other, and an
 # edit cannot be left blank.
@@ -235,7 +239,9 @@ def edited_address(raw):
     ``raw`` maps each address part to its text (the editor's
     ``value_<part>`` fields). A blank address is refused, as any blank edit
     is; each part's reason is kept by its part's name, so the page marks
-    the part in error (``InvalidEdit.fields``).
+    the part in error (``InvalidEdit.fields``). The review guard holds the
+    edit to the same rules (``stewardship_response_address_guard_v1``,
+    migration 0138) and to its size limit, so what passes here is stored.
     """
     if type(raw) is not dict or set(raw) != set(ADDRESS_COMPONENTS):
         raise ValueError("This census change cannot take an edited value.")
@@ -248,6 +254,11 @@ def edited_address(raw):
         raise InvalidEdit(next(iter(reasons.values())), fields=reasons) from None
     if value is None:
         raise InvalidEdit(BLANK_EDIT)
+    # Each part fits its own limit, yet parts in a script of several bytes a
+    # character can together pass the guard's limit for the whole edit. The
+    # JSON's length is PostgreSQL's (same separators, characters unescaped).
+    if len(json.dumps(value, ensure_ascii=False).encode()) > EDIT_BYTES:
+        raise InvalidEdit(LONG_ADDRESS)
     return value
 
 
