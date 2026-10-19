@@ -31,7 +31,7 @@
 <div><label for="{{ w.prefix }}-stage">{% translate "Stage" %}</label><select id="{{ w.prefix }}-stage" name="stage">{% for value, label in w.stage_choices %}<option value="{{ value }}"{% if w.stage == value %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
 {% if w.filters_template %}{% include w.filters_template %}{% endif %}
 {% button type="submit" %}{% translate "Apply filters" %}{% endbutton %}
-<p class="help" data-complete-hint hidden></p>
+<p class="help" id="{{ w.prefix }}-filter-hint" data-complete-hint="reserve"></p>
 </form>
 <div id="{{ table.anchor }}" data-table-region>
 {% include "stewardship/table-navigator.html" with table=table label=w.pages_label %}

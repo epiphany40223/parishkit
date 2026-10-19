@@ -36,6 +36,7 @@ from parishkit.stewardship.pipeline import (
     may_add,
     role_actions,
 )
+from parishkit.stewardship.web.refusals import Refusal
 
 # The row icons, in the order every row draws them, so an action keeps its
 # place from row to row (UX conventions, "Row actions and confirmation").
@@ -732,3 +733,13 @@ def record(service, principal, decision):
         return service.decide(principal, decision)
     except StaleDecision as error:
         return f"{error.name or 'A chosen item'} {STALE}"
+
+
+# A drawn form sent again with other choices after its first answer was
+# lost (a request key already bound to another decision): nothing was
+# recorded, and a reload draws fresh forms with fresh keys. Each stream's
+# view answers it as a 409 with this refusal.
+REBOUND = Refusal(
+    "This page was already used to record different choices, so nothing was recorded.",
+    "Reload the page, then try again.",
+)
