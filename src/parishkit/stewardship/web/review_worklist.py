@@ -405,9 +405,10 @@ class Worklist:
     ``prefix`` keeps the page's element ids apart; ``action`` is the page
     the filters and every decision post back to, whose answer is the page
     again, redrawn in place. ``baseline`` is whether the stream has a
-    Baseline column. ``fields`` are the page's view (its filters, Stage
-    included), which every form posts so its answer shows the same view.
-    The templates are the stream's own: its filters
+    Baseline column and ``reviewer`` whether it has a Reviewer's value
+    column (a stream with no Edit has none). ``fields`` are the page's view
+    (its filters, Stage included), which every form posts so its answer
+    shows the same view. The templates are the stream's own: its filters
     after Stage, its value editor (Edit and Add), and its export pane
     below the table.
     """
@@ -425,6 +426,7 @@ class Worklist:
     caption: str
     fields: dict = field(default_factory=dict)
     baseline: bool = True
+    reviewer: bool = True
     shows_now: bool = False
     bulk_too_many: bool = False
     bulk_key: UUID = field(default_factory=uuid4)
@@ -501,7 +503,7 @@ class Worklist:
     @property
     def span(self):
         """How many columns a full-width row (the empty table's) spans."""
-        fixed = 6 + int(self.baseline) + int(self.shows_now)
+        fixed = 5 + int(self.baseline) + int(self.reviewer) + int(self.shows_now)
         return len(self.columns) + fixed + int(self.selectable)
 
 
@@ -519,6 +521,7 @@ def build(
     items="items",
     caption="Review worklist",
     baseline=True,
+    reviewer=True,
     fields=None,
     **templates,
 ):
@@ -534,7 +537,8 @@ def build(
     ``by_hand`` (a By hand census change) and ``not_seen`` (the Not seen in
     ParishSoft flag). ``roles`` is the reader's role set. ``stage`` is the
     Stage filter's value and ``fields`` the stream's other filters, posted
-    by every form. ``templates``
+    by every form; ``baseline`` and ``reviewer`` say whether the stream has
+    those columns. ``templates``
     takes the stream's ``filters_template``, ``editor_template``,
     ``add_template`` and ``export_template``.
     """
@@ -556,6 +560,7 @@ def build(
         caption=caption,
         fields={"stage": stage} | dict(fields or {}),
         baseline=baseline,
+        reviewer=reviewer,
         shows_now=any(row["shows_now"] for row in decorated),
         bulk_too_many=len(decorated) > MAX_BULK,
         **templates,
