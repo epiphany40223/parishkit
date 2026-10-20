@@ -210,6 +210,7 @@ def test_ministry_and_information_exports(
 ):
     """A Ministry list, a packet and the information queue."""
     from parishkit.stewardship.reports.information import InformationQuery
+    from parishkit.stewardship.reports.information_worklist import WorklistQuery
 
     harness = ministry_setup(response_service)
     browser, _ = signed_in()
@@ -263,6 +264,27 @@ def test_ministry_and_information_exports(
     assert count("admin_cmd_export_ministry_packet") == 1
     assert count("admin_cmd_export_information") == 1
 
+    # The worklist's Stage (#1735) is the export pane's follow-up filters:
+    # To handle exports the requests whose follow-up is needed, not done.
+    code, document = run("export", "information", *base, "--stage", "to_handle")
+    assert code == 0 and document["result"]["created"], document
+    staged = ExportRequest.objects.get(pk=document["result"]["export"]["id"])
+    # What the worklist's export pane posts for To handle, unsorted.
+    pane = WorklistQuery.parse({"stage": "to_handle"}).export_values("")
+    fields = pane | dict(
+        format="csv",
+        browser_timezone="UTC",
+        request_key=str(uuid4()),
+    )
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        assert (
+            post(browser, reverse("admin:information_export"), fields).status_code
+            == 302
+        )
+    page = ExportRequest.objects.get(request_key=fields["request_key"])
+    assert page.parameters == staged.parameters
+    assert len(requested()) == 6
+
     # The packet's file: rendered and streamed, never printed.
     render(run.service, reports_root, made["packet"].pk)
     code, document = run("export", "status", str(made["packet"].pk))
@@ -292,6 +314,16 @@ def test_ministry_and_information_exports(
         ),
         ("export", "ministry-packet", *base, "--ministry", "9", "--ministry", "9"),
         ("export", "information", *base, "--filter", "search=Example"),
+        # A worklist Stage stands for the follow-up filters (#1735).
+        (
+            "export",
+            "information",
+            *base,
+            "--stage",
+            "to_review",
+            "--filter",
+            "needed=yes",
+        ),
     ):
         code, document = run(*argv)
         assert code == 1 and document["error"]["code"] == "invalid", argv
@@ -301,7 +333,7 @@ def test_ministry_and_information_exports(
         "export", "ministry", *base, "--ministry", "123", "--requests", "join"
     )
     assert code == 1 and document["error"]["code"] == "invalid"
-    assert len(requested()) == 4
+    assert len(requested()) == 6
 
 
 @pytest.fixture

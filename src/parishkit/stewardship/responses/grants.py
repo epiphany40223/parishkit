@@ -59,13 +59,32 @@ def add_response_web_grants(tables, columns):
     # An Administrator's review of an Automatic change (#528, ADM-09) changes
     # its decision, admitted only with its paired stewardship_proposal_review.
     tables["stewardship_proposal_review"] = {"SELECT", "INSERT"}
+    # A census change the parish added (#1710) and its one later step;
+    # each guard admits INSERT only (migration 0129).
+    tables["stewardship_census_addition"] = {"SELECT", "INSERT"}
+    tables["stewardship_census_addition_resolution"] = {"SELECT", "INSERT"}
     # The guard sets resolved_at itself; Staff never write roster evidence.
+    # An Edit's Ministry (#1684) changes only with its paired revision.
     columns["stewardship_ministry_request"] = {
-        "UPDATE": {"state", "superseded_by_id", "version", "outcome", "assignee_id"}
+        "UPDATE": {
+            "state",
+            "superseded_by_id",
+            "version",
+            "outcome",
+            "assignee_id",
+            "reviewed_ministry_duid",
+        }
     }
     tables["stewardship_ministry_revision"] = {"SELECT", "INSERT"}
     # The roster Entered in ParishSoft tick's history (#528, step 4).
     tables["stewardship_ministry_roster_entry"] = {"SELECT", "INSERT"}
+    # The refresh checks (#1689) place final census changes and decided
+    # requests; web only reads them and the Not seen start.
+    tables["stewardship_refresh_check"] = {"SELECT"}
+    tables["stewardship_refresh_check_start"] = {"SELECT"}
+    # A pledge's review history (#1686): Staff and Administrators record
+    # each decision; its guard checks the actor, the item and its stage.
+    tables["stewardship_pledge_review"] = {"SELECT", "INSERT"}
     # Publication plans and outcomes (#528, DAT-09.01): web reads them all and
     # writes only an Administrator's confirmation; the worker writes the rest.
     for table in (
@@ -86,6 +105,9 @@ def add_response_web_grants(tables, columns):
         }
     }
     tables["stewardship_information_revision"] = {"SELECT", "INSERT"}
+    # Review decisions on cannot-participate and cannot-attend answers
+    # (#1685, migration 0126), each admitted by its own guard.
+    tables["stewardship_limitation_review"] = {"SELECT", "INSERT"}
     columns["stewardship_family_campaign"]["UPDATE"].update(
         {"first_live_submission_id", "effective_submission_id"}
     )

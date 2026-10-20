@@ -1474,6 +1474,17 @@
       }
       if (node instanceof HTMLFormElement) {
         syncHidden(node, fresh);
+        // A menu whose choices carry counts (the review worklist's Stage,
+        // #1684) takes the fresh page's choice labels, so its counts follow
+        // a decision or an Apply; the reader's own choice is kept.
+        fresh.querySelectorAll("select[data-sync-options][id]").forEach((copy) => {
+          const menu = node.querySelector(`#${CSS.escape(copy.id)}`);
+          if (!menu) return;
+          [...copy.options].forEach((option, index) => {
+            const shown = menu.options[index];
+            if (shown?.value === option.value) shown.textContent = option.textContent;
+          });
+        });
         // The state a submit-on-change box's form now shows (see
         // reconcileBoxes); the box keeps the reader's own tick.
         fresh.querySelectorAll("[data-submit-on-change][data-applied][id]").forEach((copy) => {
@@ -2271,6 +2282,131 @@
   if (window.history.state?.inPlaceView && document.querySelector(VIEWS_FORM)) {
     window.history.replaceState({...window.history.state, inPlaceView: null}, "");
   }
+  // Tabs (ui-conventions "Tabs", #1712; components/tabs.html): a tablist of
+  // in-place links (role="tab", data-in-place, data-in-place-only) above
+  // one panel per tab, each panel a region of its own (data-in-place-own).
+  // The server draws only the chosen tab's panel (data-tab-loaded). The
+  // first time another tab is chosen, its panel is fetched from the tab's
+  // address and swapped in alone through refreshTable, so the request,
+  // fallback, focus and announcement follow the in-place mechanism's rules;
+  // a drawn panel stays until the next load, so choosing its tab again needs
+  // no request. The chosen tab is the address's bare ?tab=. Choosing a tab
+  // adds a history entry (a tab is navigation, not a view choice, whose
+  // address is replaced), and Back or Forward shows the tab the address
+  // names, quietly. Activation is manual (a click, Enter or Space), so
+  // arrowing past a tab never loads its panel.
+  const TAB_ROW = "[data-tabs] > [role=tablist]";
+  const tabRowOf = (node) => node.closest(TAB_ROW);
+  const tabsIn = (row) => [...row.querySelectorAll(":scope > [role=tab]")];
+  const tabUnavailable = (tab) => tab.getAttribute("aria-disabled") === "true";
+  const tabPanel = (tab) => document.getElementById(tab.getAttribute("aria-controls") || "");
+  // Mark `tab` chosen in its row: aria-selected, the roving tabindex (only
+  // the chosen tab is in the Tab order) and the one panel shown. The panel
+  // area first keeps the height the reader's place needs (heldHeight), so a
+  // shorter panel, or an empty one while it loads, never pulls the page and
+  // the tab row down under the pointer (#736).
+  const showTab = (row, tab) => {
+    const area = row.closest("[data-tabs]").querySelector(".tabs-panels");
+    if (area) area.style.minHeight = heldHeight(area);
+    tabsIn(row).forEach((other) => {
+      const chosen = other === tab;
+      other.setAttribute("aria-selected", String(chosen));
+      if (!tabUnavailable(other)) other.tabIndex = chosen ? 0 : -1;
+      const panel = tabPanel(other);
+      if (panel) panel.hidden = !chosen;
+    });
+  };
+  // Choose `tab`: show it, put its address (without the panel's fragment,
+  // so a reload does not scroll to it) in a new history entry, and fetch its
+  // panel unless it is already drawn. `popped` is a Back or Forward: the
+  // entry is already there, and the switch is quiet (focus stays where it
+  // is and nothing is announced). An unavailable tab does nothing.
+  const chooseTab = (tab, popped = false) => {
+    const row = tabRowOf(tab);
+    const panel = tabPanel(tab);
+    if (!row || !panel || tabUnavailable(tab)) return;
+    if (tab.getAttribute("aria-selected") === "true") {
+      if (!popped) tab.focus({preventScroll: true});
+      return;
+    }
+    // A save in flight holds every in-place control, as refreshTable does.
+    if (saving) {
+      announce("Still saving…");
+      return;
+    }
+    const address = new URL(tab.href);
+    address.hash = "";
+    if (!popped) window.history.pushState(null, "", address.href);
+    showTab(row, tab);
+    if (panel.hasAttribute("data-tab-loaded")) {
+      // Another tab's panel still loading is overtaken, so its answer can
+      // neither show that panel nor take focus. Its region keeps no busy
+      // mark: the aborted request leaves it to a newer request, and there
+      // is none. Any other read in flight (a control inside a panel) is
+      // left to finish, as its region is that panel's own.
+      if (tableRequest && busyRegion?.matches("[role=tabpanel]:not([data-tab-loaded])")) {
+        tableRequest.abort();
+        busyRegion.removeAttribute("aria-busy");
+      }
+      // A click does not focus a link in every engine (Safari).
+      if (!popped) tab.focus({preventScroll: true});
+      return;
+    }
+    // With no usable answer the page is loaded the ordinary way. The address
+    // already names the tab, and assigning it with the panel's fragment
+    // would only scroll to the empty panel, so the fallback reloads.
+    refreshTable(panel, tab, address.href, {method: "GET"}, () => window.location.reload(),
+      {owner: tab, quiet: popped});
+  };
+  // A plain click on a tab, or Enter on it (a link's click), chooses it.
+  // Capture phase, so the generic a[data-in-place] handler (above, which
+  // listens in the bubble phase) never sees
+  // it; a modified click (a new tab or window) keeps its ordinary meaning.
+  document.addEventListener("click", (event) => {
+    if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey
+        || event.shiftKey || event.altKey || !(event.target instanceof Element)) return;
+    const tab = event.target.closest("[role=tab]");
+    if (!tab || !tabRowOf(tab)) return;
+    event.preventDefault();
+    chooseTab(tab);
+  }, true);
+  // The tab row's keys (WAI-ARIA tabs, manual activation): Left and Right
+  // move focus to the previous and next tab, wrapping at the ends, Home and
+  // End to the first and last, and Space chooses the focused tab without
+  // scrolling the page. An unavailable tab is reached too, so its tip
+  // (admin-menu-v1.js) says why it cannot be opened. Moving focus scrolls
+  // only the row's own box when the tab is out of its view.
+  document.addEventListener("keydown", (event) => {
+    if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey
+        || !(event.target instanceof Element)) return;
+    const tab = event.target.closest("[role=tab]");
+    const row = tab && tabRowOf(tab);
+    if (!row) return;
+    if (event.key === " ") {
+      event.preventDefault();
+      chooseTab(tab);
+      return;
+    }
+    const tabs = tabsIn(row);
+    const at = tabs.indexOf(tab);
+    const step = {ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: tabs.length - 1}[event.key];
+    if (step === undefined) return;
+    event.preventDefault();
+    const next = tabs[(step + tabs.length) % tabs.length];
+    next.focus({preventScroll: true});
+    next.scrollIntoView({block: "nearest", inline: "nearest"});
+  });
+  // Back or Forward to an entry of this page shows the tab its address
+  // names (the row's default when it names none), in place.
+  window.addEventListener("popstate", () => {
+    const row = document.querySelector(TAB_ROW);
+    if (!row) return;
+    const key = new URL(window.location.href).searchParams.get("tab");
+    const tabs = tabsIn(row).filter((tab) => !tabUnavailable(tab));
+    const tab = tabs.find((each) => each.dataset.tab === key)
+      || tabs.find((each) => each.dataset.tab === row.dataset.tabsDefault) || tabs[0];
+    if (tab) chooseTab(tab, true);
+  });
   // Clear filters (#1651, UX conventions "Clear filters"): the button
   // beside a filter form's apply button (components/filter-actions.html)
   // puts every filter back to the page's default in place. The server owns
@@ -3491,6 +3627,14 @@
       node.required = Boolean(control) && !control.disabled
         && control.validity?.valid !== false
         && anyValue(control, value, sameValue) !== negated;
+      // A label with both words (data-required-label, data-optional-label)
+      // says "required" only while the rule holds, so it follows the choice
+      // in place (the review worklist's note, required only to reopen an
+      // ignored item, #1681).
+      const label = node.labels?.[0];
+      if (label?.dataset.requiredLabel && label.dataset.optionalLabel) {
+        label.textContent = node.required ? label.dataset.requiredLabel : label.dataset.optionalLabel;
+      }
     });
   };
   const requireOne = (form) => {
@@ -3557,6 +3701,11 @@
       else if (field.dataset.clientError === hint) delete field.dataset.clientError;
     });
   };
+  // Whether a field still holds the value it was drawn with (a select: its
+  // drawn choice), for data-require-edit below.
+  const openedValue = (field) => (field instanceof HTMLSelectElement
+    ? [...field.options].every((option) => option.selected === option.defaultSelected)
+    : field.value === field.defaultValue);
   const gateComplete = (form) => {
     if (!form || !form.hasAttribute("data-require-complete")) return;
     requiredWhen(form);
@@ -3571,9 +3720,18 @@
       && SERVER_SPACE.test(node.value);
     // A live check (the follow-up contact time) marks a field it found in
     // error with data-client-error, whose text is the hint.
-    const missing = [...form.elements].find((node) => node.willValidate
+    const invalid = [...form.elements].find((node) => node.willValidate
       && !node.closest("[hidden]")
       && (node.hasAttribute("data-client-error") || !node.validity.valid || blank(node)));
+    // An editor marked data-require-edit (the review worklist's Edit, R38
+    // finding 4) also holds Save until one of its fields differs from the
+    // value it opened with, saying so in its data-unchanged-hint: saving
+    // the value the item already carries forward records no edit, only a
+    // plain Accept, which reads as a lost edit.
+    const unchanged = invalid ? null : [...form.querySelectorAll("[data-require-edit]")]
+      .find((group) => !group.closest("[hidden]") && [...group.querySelectorAll("[name]")]
+        .filter((field) => field.willValidate).every(openedValue));
+    const missing = invalid || unchanged?.querySelector("[name]") || null;
     const hint = form.querySelector("[data-complete-hint]");
     // An empty required field may say what to type (data-empty-hint) where
     // its data-missing-hint describes the format (a placeholder name, #563).
@@ -3585,7 +3743,9 @@
       // or going never moves what follows it (no layout shift: the System
       // logs table under its filter bar, #953). Any other hint hides.
       hint.hidden = !missing && hint.dataset.completeHint !== "reserve";
-      hint.textContent = missing
+      hint.textContent = unchanged
+        ? (unchanged.dataset.unchangedHint || "Change the value to save it.")
+        : missing
         ? (missing.dataset.clientError
           // An unreadable time entry (#398) or DUID list (#1577) says why
           // itself.
@@ -4607,6 +4767,26 @@
       }
       field.dispatchEvent(new Event("change", {bubbles: true}));
     });
+    // The review worklist's choice field (#1681): a nameless hidden input
+    // marked data-confirm-choice, which a data-required-when rule on the
+    // dialog's note reads, so one dialog asks for a note only when the
+    // action needs one. A row's icon gives its data-confirm-choice
+    // ("reopen" when it sends an Ignored item back to review); a bulk button's
+    // holds only while some ticked row's box carries the same choice, so
+    // sending items back to review in bulk asks for a reason only when it reopens an
+    // Ignored item (review pipeline spec, "Reviewed stage"). The "no_note"
+    // choice is an action that records no note (a Ministry roster tick, R39):
+    // it holds for every ticked row, and it hides the note (data-note-field),
+    // which data-confirm-reset has just emptied, so an empty one is posted.
+    const want = opener.dataset.confirmChoice || "";
+    const holds = !bulk || want === "no_note" || [...form.elements].some((box) =>
+      box.matches("input[data-select-row]:checked") && box.dataset.confirmChoice === want);
+    dialog.querySelectorAll("input[data-confirm-choice]").forEach((field) => {
+      field.value = want && holds ? want : "";
+    });
+    dialog.querySelectorAll("[data-note-field]").forEach((field) => {
+      field.hidden = want === "no_note";
+    });
     if (form.hasAttribute("data-require-complete")) gateComplete(form);
     confirming = {
       dialog, opener, form, chosen, values, busy: false, done: false,
@@ -4908,6 +5088,12 @@
     // returns focus to that row's first action once it is redrawn, so the
     // reader stays where they were; when the row is gone, the fallback.
     const row = state.opener.closest("tr[id]")?.id;
+    // A review worklist icon (data-row-action, #1681) returns focus to the
+    // same action's icon in the redrawn row, now drawn selected, so the
+    // reader hears the decision in force (data-focus-action names another
+    // when the decision is drawn on it: an Edit's is its Accept); otherwise
+    // to the row's first action, as above.
+    const kind = state.opener.dataset.focusAction || state.opener.dataset.rowAction || "";
     const fresh = dialog.hasAttribute("data-confirm-answer-page")
       ? new DOMParser().parseFromString(answer.text, "text/html")
       : await freshPage(region?.dataset.refreshUrl || window.location.href);
@@ -4916,8 +5102,10 @@
     dialog.close();
     const fallback = dialog.dataset.confirmFallback || "";
     redrawFrom(fresh);
+    const redrawn = row ? document.getElementById(row) : null;
     const target = (state.opener.isConnected && state.opener)
-      || (row && document.getElementById(row)?.querySelector("[data-confirm-open]:not(:disabled)"))
+      || (kind && redrawn?.querySelector(`[data-row-action="${CSS.escape(kind)}"]`))
+      || redrawn?.querySelector("[data-confirm-open]:not(:disabled)")
       || document.getElementById(fallback) || document.querySelector("main h1");
     target?.focus({preventScroll: true});
     target?.scrollIntoView({block: "nearest"});

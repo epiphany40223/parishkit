@@ -175,6 +175,8 @@ def test_reference_family_population_does_not_expand_interactive_queries(
         # one statement; Census changes is the only counted entry that is a
         # link on a Testing draft, so that statement now runs here when it
         # did not before. One fixed statement whatever the population: 56.
+        # Home's Review work counts (#1690) ride on that same statement
+        # (review_work.with_counts) and add none.
         "admin_shell": _measure(admin_page, query_limit=56),
     }
     print("Identity baseline: " + json.dumps(result, sort_keys=True))

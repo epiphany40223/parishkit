@@ -670,14 +670,16 @@ Open means not yet Handled or Ignored (decision 15): an item that is
 [review pipeline](../review-pipeline/spec.md#additional-information-stream)'s
 **To review** or **To handle** stage, so accepted requests still waiting on
 action stay listed. Handled, ignored, superseded and withdrawn items are
-not listed. Until
-[#1685](https://github.com/epiphany40223/parishkit/issues/1685) moves
-Additional information to the pipeline, the stage is read from today's
-fields as the pipeline's
-[existing state mapping](../review-pipeline/spec.md#existing-state-to-stage)
-reads them: `current_actionable` and not followed up, whether follow-up is
-needed (To handle) or not (To review). After #1685, an item whose recorded
-decision is Ignored is not listed.
+not listed. The stage is the one the
+[stream mapping](../review-pipeline/spec.md#additional-information-stream)
+derives, with each Staff revision's review decision
+([#1685](https://github.com/epiphany40223/parishkit/issues/1685), schema
+migration 0126): `current_actionable` and not followed up, with follow-up
+needed (To handle) or not needed and not Ignored (To review). An item a
+Staff member ignored, including one whose latest revision from before 0126
+left follow-up not needed
+([existing state](../review-pipeline/spec.md#existing-state-to-stage)), is
+Ignored and is not listed.
 
 It keeps no state between sends (decision 14): every send, scheduled,
 manual, recovery or test, lists every open request so read, and
