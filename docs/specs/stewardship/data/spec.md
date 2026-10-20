@@ -1087,11 +1087,17 @@ Every final click creates an immutable `Submission` version containing:
 - submitted UTC time and date derived from the Campaign's immutable timezone;
 - complete normalized answers for all enabled sections;
 - validation/content/schema versions;
-- request/session correlation without storing credentials; and
+- request/session correlation without storing credentials;
 - `entered_by_id`, the portal user who entered it for the Family through
   [Open form](../reports/spec.md#open-form), or null when the Family
   entered it (a soft reference with no foreign key, added by frozen migration
-  0065).
+  0065); and
+- `upcoming_pledge`, ParishSoft's pledge for the campaign's upcoming
+  financial period in the validation snapshot, recorded only for a response
+  that answers the financial questions and only when that snapshot's giving
+  read is proven complete, else null (frozen migration 0136, provisional
+  number; the review pipeline's A for the pledge,
+  [Financial stream](../review-pipeline/spec.md#financial-stream)).
 
 The current effective live response points to the latest accepted live version.
 Test versions are isolated from live calculations, response prefilling,
