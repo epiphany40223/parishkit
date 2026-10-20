@@ -223,6 +223,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
     # slice 2, the changes of slice 5 and the leaders import of slice 6.
     users = {
         "users list",
+        "users timeline",
         "users preview-upgrade",
         "users preview",
         "users confirm",

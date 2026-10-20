@@ -259,6 +259,7 @@ SLASHLESS_EXPECTED = {
     "/admin/users": "/admin/users/",
     "/admin/users/new": "/admin/users/new/",
     f"/admin/users/{T}/edit": f"/admin/users/{T}/edit/",
+    f"/admin/users/{T}/timeline": f"/admin/users/{T}/timeline/",
     "/admin/users/sessions": "/admin/users/sessions/",
     "/admin/users/automation": "/admin/users/automation/",
     "/admin/users/automation/approval": "/admin/users/automation/approval/",

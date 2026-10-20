@@ -381,8 +381,13 @@ ACTIVITY_TYPES = {
 # written type fails until it joins a group or is listed here. Not written
 # to either log, so in neither: ``authentication_limits_weakened`` goes only
 # to the process log at startup (``AuthenticationPolicy.warn_if_weaker``).
+# The reason of the types that only read (the first below); PAGE_READS
+# names them by it.
+READS_REASON = (
+    "Opening a page or report, or looking something up, reads; it changes nothing"
+)
 UNGROUPED_REASONS = {
-    "Opening a page or report, or looking something up, reads; it changes nothing": (
+    READS_REASON: (
         "background_viewed",
         "campaign_comparison_viewed",
         "census_changes_viewed",
@@ -401,6 +406,7 @@ UNGROUPED_REASONS = {
         "ministry_report_viewed",
         "participation_viewed",
         "portal_users_viewed",
+        "user_timeline_viewed",
         "postal_outreach_viewed",
         "response_dashboard_viewed",
         "response_data_quality_list_viewed",
@@ -568,6 +574,10 @@ UNGROUPED_REASONS = {
     ),
 }
 UNGROUPED = frozenset().union(*UNGROUPED_REASONS.values())
+# The types that record only opening a page or report, or a lookup (the
+# first reason above). A user's timeline leaves them out of its Admin
+# actions (#1866) until #1570's slice 3 gives them a kind of their own.
+PAGE_READS = frozenset(UNGROUPED_REASONS[READS_REASON])
 # The groups that hold operational entries as well as audit records. The
 # others are audit records only: while one is chosen the page greys the five
 # level boxes and waits for Audit record, and the read leaves operational

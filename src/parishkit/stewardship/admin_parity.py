@@ -484,6 +484,8 @@ LEDGER = {
     "user_edit": command("users list", "users preview", "users confirm"),
     "user_delete": command("users preview", "users confirm"),
     "user_name_suggestions": command("users preview"),
+    # One user's Timeline (#1866): the same summary and lines.
+    "user_timeline": command("users timeline"),
     # The leaders table and its import review (#952 slice 6).
     "user_leader_import": command("users import-leaders"),
     # The leaders section's passive status (#1863): no data of its own.

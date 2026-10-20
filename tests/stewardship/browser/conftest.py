@@ -191,6 +191,7 @@ from .upload_defaults_components import components as upload_defaults_components
 from .upload_defaults_components import posts as upload_defaults_posts
 from .user_components import POSTS as USER_POSTS
 from .user_components import components as user_components
+from .user_timeline_components import components as user_timeline_components
 from .weekly_components import components as weekly_components
 
 # The default Ministry leader roles a new campaign starts with (#922).
@@ -2216,6 +2217,7 @@ def component_origin():
     responses.update(tabs_components(context, admin))
     responses.update(find_family_components(context, admin))
     responses.update(user_components(context, admin))
+    responses.update(user_timeline_components(context, admin))
     responses.update(security_components(context, admin))
     responses.update(not_found_components(context, admin))
     responses.update(go_live_components(context, admin))

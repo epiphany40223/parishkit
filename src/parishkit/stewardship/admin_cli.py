@@ -3238,6 +3238,21 @@ def users_list(args, preamble, runtime, context):
     return read_users(context["caller"], runtime, args.sort, audit=context["audit"])
 
 
+def users_timeline(args, preamble, runtime, context):
+    """One user's Timeline, as the page shows it (#1866)."""
+    from .admin_reads import read_user_timeline
+
+    return read_user_timeline(
+        context["caller"],
+        runtime,
+        args.user,
+        kind=args.kind or "all",
+        start=args.start or "",
+        end=args.end or "",
+        zone=args.zone or "",
+    )
+
+
 def users_preview(args, preamble, runtime, context):
     """Review a change to Admin portal users (#952 slice 5)."""
     from .admin_users import CHANGES_LIMIT, preview_users
@@ -5092,6 +5107,21 @@ def _users_list_options(parser):
         "--sort",
         help="email, name, role or last_login; --sort=-NAME (with =) reverses "
         "it (default email; role and last_login start highest and newest)",
+    )
+
+
+def _users_timeline_options(parser):
+    """Options of ``users timeline``: the user and the page's filters."""
+    parser.add_argument(
+        "--user", required=True, type=_uuid, help="the user's ID, as users list prints"
+    )
+    parser.add_argument(
+        "--kind", help="all (default), sessions, actions, roles or emails"
+    )
+    parser.add_argument("--from", dest="start", help="first day, YYYY-MM-DD, in --zone")
+    parser.add_argument("--to", dest="end", help="last day, YYYY-MM-DD, in --zone")
+    parser.add_argument(
+        "--zone", help="the IANA time zone of --from and --to, e.g. America/New_York"
     )
 
 
@@ -7193,13 +7223,15 @@ def _users_specs():
 
     ``users list`` and ``users preview-upgrade`` are passive reads any
     session may run; each records the page's view event,
-    ``portal_users_viewed``. ``users preview`` and ``users confirm`` change
-    users as the Users page does (slice 5) and need a full-scope session, as
+    ``portal_users_viewed``. ``users timeline`` is one user's Timeline
+    (#1866), also passive, recording ``user_timeline_viewed``. ``users
+    preview`` and ``users confirm`` change users as the Users page does
+    (slice 5) and need a full-scope session, as
     does ``users import-leaders``, the page's leaders table and import
     (slice 6), and ``users email-leaders``, its Email Ministry leaders
     review and Apply (#1622).
     """
-    from .admin_reads import UsersList, UsersUpgradePreview
+    from .admin_reads import UsersList, UsersUpgradePreview, UserTimelineRead
     from .admin_users import LeaderEmails, LeaderImport, UsersConfirm, UsersPreview
 
     return (
@@ -7213,6 +7245,17 @@ def _users_specs():
             11,
             options=(_users_list_options,),
             audit_event="portal_users_viewed",
+        ),
+        CommandSpec(
+            "users timeline",
+            "Show one user's timeline: sign-ins, actions, role changes, emails.",
+            users_timeline,
+            "read_only",
+            False,
+            UserTimelineRead.field_names(),
+            11,
+            options=(_users_timeline_options,),
+            audit_event="user_timeline_viewed",
         ),
         CommandSpec(
             "users preview-upgrade",

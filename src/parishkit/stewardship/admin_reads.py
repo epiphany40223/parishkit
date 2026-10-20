@@ -1219,3 +1219,93 @@ def read_users_upgrade(caller, service, *, audit=True):
         return model, len(model.users)
 
     return _read_users(caller, service, read, audit=audit)
+
+
+@dataclass(frozen=True)
+class UserTimelineRead(ReadModel):
+    """``users timeline``: one user's Timeline, as the page shows it (#1866).
+
+    ``user`` is the person (record ID, email, Name, ``role`` or null for a
+    former user with ``removed_at``); ``summary`` the page's summary
+    (``last_sign_in``, ``last_email`` and ``ministries``); ``lines`` every
+    line the filters keep, newest first, each with its instant, kind, what
+    happened, detail and, for an email Sent mail lists, its delivery ID.
+    The command prints them all, unpaged.
+    """
+
+    user: dict
+    summary: dict
+    kind: str
+    lines: list
+
+
+def _timeline_line(line):
+    """One timeline line as the document prints it."""
+    return {
+        "at": line.at,
+        "kind": line.kind,
+        "what": str(line.what),
+        "detail": str(line.detail),
+        "message_id": line.message_id,
+    }
+
+
+def read_user_timeline(
+    caller, service, user_id, *, kind="all", start="", end="", zone=""
+):
+    """``users timeline``: one user's Timeline, read as the page reads it.
+
+    Admits as the page does (``MANAGE_USERS``), then validates the filters
+    with the page's own ``UserTimelineQuery`` before anything is read (a refused
+    one is ``invalid``), reads in one read-only snapshot through the page's
+    reader, rechecks the session and records the page's
+    ``user_timeline_viewed`` with the user's record ID. An unknown user is
+    ``not_available``, with no audit record.
+    """
+    from .accounts.policy import Capability
+    from .accounts.user_timeline_views import UserTimelineQuery
+    from .accounts.user_timelines import read_timeline
+    from .audit.schemas import Action
+    from .campaigns.work_locks import read_transaction
+    from .reports.timelines import narrow
+
+    values = {"kind": kind, "start": start, "end": end, "zone": zone}
+
+    def step():
+        """Admit, check the filters, read in the snapshot, recheck and audit."""
+        actor = _admit(caller, service.store, Capability.MANAGE_USERS)
+        # As on the page, the filters are checked once the reader is admitted.
+        query = UserTimelineQuery.parse(
+            {key: value for key, value in values.items() if value}
+        )
+        with read_transaction():
+            try:
+                timeline = read_timeline(user_id, actor.identity)
+            except LookupError:
+                raise NotAvailable("No such user.") from None
+        with transaction.atomic():
+            current = _recheck(caller, service.store, actor, Capability.MANAGE_USERS)
+            _audit(Action.USER_TIMELINE_VIEWED, current, subject_id=user_id)
+        return timeline, query
+
+    timeline, query = _held(step)
+    person, summary = timeline.person, timeline.summary
+    lines = narrow(timeline.events, query.kind, query.bounds)
+    return UserTimelineRead(
+        user={
+            "id": person.id,
+            "email": person.email,
+            "name": person.name,
+            "role": person.role,
+            "removed_at": person.removed_at,
+        },
+        summary={
+            "last_sign_in": summary.last_sign_in,
+            "last_email": None
+            if summary.last_email is None
+            else _timeline_line(summary.last_email),
+            "ministries": list(summary.ministries),
+        },
+        kind=query.kind,
+        lines=[_timeline_line(line) for line in reversed(lines)],
+    )

@@ -1011,6 +1011,7 @@ DESCRIPTIONS = {
     "family_timeline_viewed": _("Someone opened a Family's timeline."),
     "family_form_opened": _("Opened the Family form for a Family through Open form."),
     "portal_users_viewed": _("An Administrator opened the Users page."),
+    "user_timeline_viewed": _("Someone opened a user's timeline."),
     "user_change_requested": _(
         "An Administrator asked to add, change or delete Admin portal users."
     ),
