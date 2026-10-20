@@ -25,13 +25,13 @@
 {% if full %}<section class="panel" aria-labelledby="events-heading">
 <h2 id="events-heading">{% translate "Timeline" %}</h2>
 {# The filter bar (#1570): a GET form whose closed choices stay in the address, applied in place (ui-v1.js, form#table-filters[data-table-sync]); it carries the When sort as hidden fields, and the sort heading carries the filters back. The zone is the browser's, filled by ui-v1.js (#558), so From and Through are days in this computer's time zone, as on System logs; the gate's hint keeps its line (data-complete-hint="reserve"), so nothing moves. #}
-<form id="table-filters" data-table-sync method="get" action="{{ page_url }}#table" class="filter-bar" data-require-complete data-missing-hint="{% translate 'Correct the filters to apply them.' %}">
+<form id="table-filters" data-table-sync method="get" action="{{ page_url }}#table" class="filter-bar timeline-filters" data-require-complete data-missing-hint="{% translate 'Correct the filters to apply them.' %}">
 <input type="hidden" name="zone" value="{{ query.zone }}" data-browser-zone data-zone-missing-hint="{% translate "Your browser didn't report a time zone, so these dates can't be used. Clear From and Through, or check your computer's time zone setting." %}">
 {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
 <div class="fit"><label for="timeline-kind">{% translate "Kind" %}</label><select id="timeline-kind" name="kind">{% for key, label in kinds.items %}<option value="{{ key }}"{% if query.kind == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
 <div class="short" data-missing-hint="{% translate 'Enter a whole From date, or clear it.' %}"><label for="timeline-start">{% translate "From" %}</label><input id="timeline-start" type="date" name="start" value="{{ query.start }}" aria-describedby="timeline-zone-help" data-browser-zone-field></div>
 <div class="short" data-missing-hint="{% translate 'Enter a whole Through date, no earlier than From, or clear it.' %}"><label for="timeline-end">{% translate "Through" %}</label><input id="timeline-end" type="date" name="end" data-not-before="timeline-start" value="{{ query.end }}" aria-describedby="timeline-zone-help" data-browser-zone-field></div>
-{% button type="submit" %}{% translate "Show lines" %}{% endbutton %}
+{% include "stewardship/components/filter-actions.html" %}
 {% translate "From and Through are days in this computer's time zone:" as zone_note %}{% include "stewardship/components/zone-note.html" with note_text=zone_note note_id="timeline-zone-help" %}
 <p class="help" data-complete-hint="reserve" hidden></p>
 </form>
@@ -43,13 +43,9 @@
 {% empty %}<tr><td colspan="3">{% if filtered_out %}{% translate "No lines match these filters. Choose All in Kind and clear From and Through to see every line." %}{% else %}{% translate "Nothing recorded for this Family yet. Emails, sign-ins, submissions and review actions appear here as they happen." %}{% endif %}</td></tr>{% endfor %}</tbody></table></div>
 </div>
 </section>{% endif %}
-{% if export %}<section class="panel" aria-labelledby="timeline-export-heading">
-<h2 id="timeline-export-heading">{% translate "Export this timeline" %}</h2>
-<p>{% translate "The file holds this Family's details, the summary and every line of the timeline, whatever Kind, From and Through show, as they are when you queue the export; later activity is not included." %}{% if show_codes %} {% translate "It includes the Family code." %}{% endif %}</p>
-<form id="timeline-export" data-submit-waits data-keep-choices method="post" action="{{ export.url }}">{% csrf_token %}
+{# The export (#1679, ui-conventions "Downloaded files"): one row of small export buttons below the table, with no zone choice (the file's times are in the browser's zone). The Timeline is Production only, so the form posts no mode. #}
+{% if export %}<div class="export-pane">
+<form id="timeline-export" data-submit-waits method="post" action="{{ export.url }}">{% csrf_token %}
 <input type="hidden" name="request_key" value="{{ export.request_key }}">
-<fieldset{% if not export.mutable %} disabled aria-describedby="timeline-export-unavailable"{% endif %}><legend>{% translate "Timeline export options" %}</legend>
 {% if not export.mutable %}<p id="timeline-export-unavailable" class="help">{% translate "Exports are unavailable while other campaign work (a restore review, or a cleanup, purge or go-live step) is under way. Try again when it finishes." %}</p>{% endif %}
-<label for="timeline-format">{% translate "Export format" %}</label><select id="timeline-format" name="format">{% export_format_options "csv" "xlsx" "pdf" %}</select>
-<div class="label-row"><label for="timeline-export-timezone" id="timeline-export-timezone-label">{% translate "Export timezone" %}</label>{% translate "Your browser's time zone is selected when your browser allows it; otherwise UTC is selected. You can change it before exporting." as tip %}{% include "stewardship/components/toggletip.html" with tip_id="timeline-export-timezone-tip" tip_label_id="timeline-export-timezone-label" tip_text=tip %}</div><select id="timeline-export-timezone" name="browser_timezone" data-information-timezone>{% for zone in export.timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
-{# The fieldset greys the button while locked; the button names the reason itself too (#563, #1331). #}{% button type="submit" aria-describedby=export.mutable|yesno:",timeline-export-unavailable" %}{% translate "Queue timeline export" %}{% endbutton %}</fieldset></form></section>{% endif %}
+{% translate "The file holds this Family's details, the summary and every line of the timeline, whatever Kind, From and Through show, as they are when you export; later activity is not included." as tip %}{% if show_codes %}{% translate "It includes the Family code." as codes %}{% endif %}{# Each button names the reason while exports are held (#563, #1331). #}{% export_actions "csv" "xlsx" "pdf" name="timeline" label=_("Export this timeline") tip=tip tip_more=codes enabled=export.mutable describedby=export.mutable|yesno:",timeline-export-unavailable" %}</form></div>{% endif %}

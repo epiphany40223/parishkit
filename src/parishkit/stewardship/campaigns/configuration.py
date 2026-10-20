@@ -287,7 +287,10 @@ def schedule_values(values, campaign, *, interval=None):
 
     A daily digest may also carry ``comparison`` (#1018): ``True`` adds the
     Compared with past campaigns section. It is absent when off, so the
-    schedules saved before it existed stay exactly as they were.
+    schedules saved before it existed stay exactly as they were. A daily or
+    weekly digest may carry ``skip_dates`` (#1658, ``skip_dates``): the
+    slots it never sends, absent (or, once dropped, empty) when there are
+    none.
     """
     keys = {
         "campaign_id",
@@ -298,7 +301,7 @@ def schedule_values(values, campaign, *, interval=None):
         "subject",
         "template_version",
     }
-    if set(values) - {"comparison"} != keys:
+    if set(values) - {"comparison", "skip_dates"} != keys:
         invalid()
     if "comparison" in values and (
         values["comparison"] is not True or values.get("kind") != "daily_digest"
@@ -315,6 +318,11 @@ def schedule_values(values, campaign, *, interval=None):
         "weekly_digest",
     }:
         invalid()
+    if "skip_dates" in values:
+        # Only a digest skips a send; Family mail never carries skip dates.
+        if kind not in {"daily_digest", "weekly_digest"}:
+            invalid()
+        skip_dates(values["skip_dates"])
     try:
         local_time = time.fromisoformat(values["time"])
         if (
@@ -341,6 +349,34 @@ def schedule_values(values, campaign, *, interval=None):
     if values["date"] is not None:
         invalid()
     return None
+
+
+# The most sends one digest may skip: more than a year of daily digests.
+SKIP_LIMIT = 400
+
+
+def skip_dates(value):
+    """Validate a digest's ``skip_dates`` (#1658); return them as dates.
+
+    A list of at most ``SKIP_LIMIT`` canonical ISO dates in strictly
+    ascending order, so each is listed once and a document has one form. It
+    is empty once a change dropped every skip: a schedule update merges into
+    the saved values, so the key cannot simply be left out.
+    Each names a slot as the scheduler keys it (``SchedulePlan``): a weekly
+    digest's send day, a daily digest's reported day. Only the form is
+    checked here. A change that moves the digest's sends (its weekday or the
+    campaign's dates) drops each skip of a send still ahead that is no
+    longer a send (``accounts.digest_skips.drop_stale``); a past one is kept
+    on every later revision, though it then skips nothing, since a skipped
+    past slot has no fulfillment and a revision without it would plan that
+    send again as missed.
+    """
+    if type(value) is not list or len(value) > SKIP_LIMIT:
+        invalid()
+    days = [_date(item) for item in value]
+    if any(later <= earlier for earlier, later in zip(days, days[1:], strict=False)):
+        invalid()
+    return days
 
 
 def validate_campaign_sections(document):

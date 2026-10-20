@@ -242,7 +242,7 @@ def test_native_information_exports_use_real_worker_and_guarded_downloads(
         )
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             response, body = read(browser, route)
-            assert response.status_code == 200 and b"Queue complete export" in body
+            assert response.status_code == 200 and b"Export XLSX" in body
             assert (
                 browser.post(reverse("admin:information_export"), fields).status_code
                 == 403

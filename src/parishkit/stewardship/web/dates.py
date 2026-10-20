@@ -165,8 +165,8 @@ def browser_zone(zone):
 def unasked_zone(zone, fallback):
     """The zone a download that asks for none uses: the browser's, else ``fallback``.
 
-    A download whose rows hold no exact action times does not ask for a time
-    zone (#1127, ui-conventions "Downloaded files"); its form posts the
+    Downloads never ask for a time zone except System logs (#1679,
+    ui-conventions "Downloaded files", Time zones); the form posts the
     browser's zone silently (``data-browser-zone``) for the frame times. The
     choice was never the reader's, so nothing is refused for it: a missing,
     empty or unknown name (no Intl, "Etc/Unknown", a tab from before the
@@ -175,6 +175,23 @@ def unasked_zone(zone, fallback):
     page's own address parsing passes UTC.
     """
     return zone if type(zone) is str and zone in timezone_names() else fallback
+
+
+def download_zone(chosen, browser):
+    """The zone a page download writes its times in (#1679).
+
+    No download asks for a zone (ui-conventions "Downloaded files", Time
+    zones): the export row posts the browser's, ``browser`` (the
+    ``browser_timezone`` field), taken as :func:`unasked_zone` takes it, so
+    a missing or unknown one falls back to the parish's zone. ``chosen`` is
+    an explicit ``timezone`` field, None when absent: System logs' "Times
+    in" choice, or a tab opened before #1679 whose form still asked. It
+    wins, unchanged, and the caller checks it as strictly as it always has.
+    """
+    if chosen is not None:
+        return chosen
+    # The parish's zone is a database read, made only when it is needed.
+    return unasked_zone(browser, None) or parish_zone()
 
 
 def parish_zone():

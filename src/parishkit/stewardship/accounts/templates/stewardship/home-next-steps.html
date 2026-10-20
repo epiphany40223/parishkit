@@ -1,7 +1,6 @@
-{% load i18n stewardship home_steps %}{% home_next_steps as home %}
-{% comment %}Home's Next steps (NAV-18, admin-portal spec "Home page"): a few links chosen by the campaign's state and the viewer's role, each the viewer's own menu entry, so it is a link only while that entry is, and otherwise names the menu's reason. The Today line leads. Static: nothing appears or moves on a click.{% endcomment %}
-{% if home.steps or home.today %}<section class="panel" aria-labelledby="next-steps-heading" data-next-steps>
+{% load i18n stewardship home_steps %}{% home_next_steps as steps %}
+{% comment %}Home's Next steps (NAV-18, admin-portal spec "Home page"): a grid of link cards (#1673) chosen by the campaign's state, each the Administrator's own menu entry, so it is a link only while that entry is, and otherwise names the menu's reason. Static: nothing appears or moves on a click.{% endcomment %}
+{% if steps %}<section class="panel home-panel home-next-steps" aria-labelledby="next-steps-heading" data-next-steps>
   <h2 id="next-steps-heading">{% translate "Next steps" %}</h2>
-  {% if home.today %}<p data-today>{% translate "Today:" %}{% if 'responded' in home.today %} {% blocktranslate count count=home.today.responded trimmed %}{{ count }} Family responded in the past 24 hours.{% plural %}{{ count }} Families responded in the past 24 hours.{% endblocktranslate %}{% endif %}{% if 'requests' in home.today %} {% blocktranslate count count=home.today.requests trimmed %}{{ count }} open request in your Ministries.{% plural %}{{ count }} open requests in your Ministries.{% endblocktranslate %}{% endif %}</p>{% endif %}
-  {% if home.steps %}<ul>{% for step in home.steps %}<li data-next-step>{% if step.url %}<a href="{{ step.url }}">{{ step.label }}</a>{% if step.count is not None %} — {{ step.count|number }} {{ step.note }}{% endif %}{% if step.other %}; <a href="{{ step.other.url }}">{{ step.other.count|number }} {{ step.other.note }}</a>{% endif %}{% else %}{{ step.label }} — {{ step.reason }}{% endif %}</li>{% endfor %}</ul>{% endif %}
+  {% include "stewardship/components/link-cards.html" with cards=steps cards_labelledby="next-steps-heading" %}
 </section>{% endif %}

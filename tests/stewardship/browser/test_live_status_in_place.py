@@ -14,7 +14,7 @@ import time
 import pytest
 
 from .live_status_components import (
-    CREDENTIAL_RUNNING,
+    CHANGE_RUNNING,
     DISMISS,
     FAMILY_TESTS_PENDING,
     INTEGRATION,
@@ -106,21 +106,22 @@ def test_recent_family_tests_update_themselves(page, component_origin):
 
 
 def test_pending_status_updates_itself_then_stops(page, component_origin):
-    """A key change being installed is followed by itself to the end: the
-    first read finds it still waiting, the next that it is confirmed, all
-    without a reload; watching then stops, with one status line."""
+    """A configuration change being applied is followed by itself to the
+    end: the first read finds it still applying, the next that it is
+    applied, all without a reload; watching then stops, with one status
+    line."""
     page.set_viewport_size(VIEWPORT)
     reads = answer_reads(
         page,
         component_origin,
-        CREDENTIAL_RUNNING,
+        CHANGE_RUNNING,
         "/live-running-pending",
         "/live-running-applied",
     )
-    page.goto(component_origin + CREDENTIAL_RUNNING)
+    page.goto(component_origin + CHANGE_RUNNING)
     page.evaluate(MARK)
     assert refresh_controls(page).count() == 0
-    visible(page.get_by_role("heading", name="Installed and confirmed"))
+    visible(page.get_by_role("heading", name="Applied: your change is saved"))
     assert page.evaluate(MARKED) == "kept"
     assert len(reads) == 2
     # Watching stopped once the status finished: no further reads.
@@ -132,21 +133,22 @@ def test_pending_status_updates_itself_then_stops(page, component_origin):
 def test_reload_while_pending_shows_the_same_page_and_keeps_updating(
     page, component_origin
 ):
-    """A browser reload while the key change is still pending lands on the
-    same address and status (the server draws it again), and the page goes
-    on updating by itself until the change is confirmed (#1586)."""
+    """A browser reload while a configuration change is still pending
+    lands on the same address and status (the server draws it again), and
+    the page goes on updating by itself until it is applied (#1586,
+    #1568)."""
     page.set_viewport_size(VIEWPORT)
     # Unrouted, every read of the page finds the change still pending.
-    page.goto(component_origin + CREDENTIAL_RUNNING)
-    visible(page.get_by_text("Installed; waiting", exact=False))
+    page.goto(component_origin + CHANGE_RUNNING)
+    visible(page.get_by_text("Applying your change", exact=False))
     page.reload()
-    assert page.url == component_origin + CREDENTIAL_RUNNING
-    visible(page.get_by_text("Installed; waiting", exact=False))
+    assert page.url == component_origin + CHANGE_RUNNING
+    visible(page.get_by_text("Applying your change", exact=False))
     page.evaluate(MARK)
     reads = answer_reads(
-        page, component_origin, CREDENTIAL_RUNNING, "/live-running-applied"
+        page, component_origin, CHANGE_RUNNING, "/live-running-applied"
     )
-    visible(page.get_by_role("heading", name="Installed and confirmed"))
+    visible(page.get_by_role("heading", name="Applied: your change is saved"))
     assert page.evaluate(MARKED) == "kept"
     assert len(reads) == 1
 

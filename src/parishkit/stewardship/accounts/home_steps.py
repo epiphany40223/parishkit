@@ -1,20 +1,22 @@
-"""Home's Next steps list and Today line (ADM-12.21, NAV-18).
+"""Home's Next steps list (ADM-12.21, NAV-18).
 
-Home is a starting point (admin-portal spec, "Home page"): below its status
-panels it lists a few links chosen by the current campaign's state and the
-viewer's role, headed by one Today line. Every link comes from the viewer's
-own menu, so a next step is offered exactly when its menu entry is, greys out
-with the menu's own reason when the entry does, and is left out when the
-viewer's role has no such entry. Nothing here runs a query: the menu (with
-its open counts and the outgoing-mail warning count) is the chrome's, and the
-Today counts and Roster changes to enter's count come with Home's dashboard
-(``admin_dashboard``).
+Home is a starting point (admin-portal spec, "Home page"): below its
+overview it lists a few link cards chosen by the current campaign's state.
+Home is the Administrator's: Staff and Ministry leaders sign in to My review
+work instead (#1690, ``review_work``), so there is one list per state
+(#1726). Every link comes from the Administrator's own menu, so a next step
+is offered exactly when its menu entry is, greys out with the menu's own
+reason when the entry does, and is left out when the menu has no such entry.
+Nothing here runs a query: the menu (with its open counts and the
+outgoing-mail warning count) is the chrome's.
 """
 
 from typing import NamedTuple
 
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
+
+from parishkit.stewardship.pipeline import Stage
 
 from .admin_navigation import PAGES
 
@@ -23,79 +25,67 @@ from .admin_navigation import PAGES
 # closed keeps the list sensible if one ever does.
 _CLOSED = frozenset({"closed", "archived", "purging", "purge_cleanup_failed"})
 
-# The spec's table, by state and role: menu entry names in order. Three
-# names are not plain menu entries: ``campaign_mail`` is Preview and test
-# email for the initial invitation's current revision, offered while Pages
-# and emails is; ``mail_problems`` is Sent mail filtered to emails that may
-# not have arrived, with their count; and ``ministry_roster`` is Roster
-# changes to enter, offered while Ministry requests is, with its count.
+# The spec's table, by state: menu entry names in order. Two names
+# are not plain menu entries: ``campaign_mail`` is Preview and test email
+# for the initial invitation's current revision, offered while Pages and
+# emails is, and ``mail_problems`` is Sent mail filtered to emails that may
+# not have arrived, with their count.
 # The four lists Staff work through at campaign end (#1590), each with its
-# count, follow the Response dashboard while the campaign runs and after it
-# closes.
+# count, while the campaign runs and after it closes. ``ministry_entry`` is
+# Ministry requests at its To enter by hand Stage, the roster changes to
+# enter since Roster changes to enter was folded into it (R39 finding 2).
+# The Response dashboard is not a step: Home's campaign panel links it
+# (#1673).
 _WORK = (
-    "response_dashboard",
     "census_changes",
-    "ministry_roster",
+    "ministry_entry",
     "information_queue",
     "ministry_report",
 )
-_ACTIVE = {
-    "administrator": (*_WORK, "family_email_progress", "mail_problems"),
-    "staff": _WORK,
-    "ministry_leader": ("ministry_report",),
+_ACTIVE = (*_WORK, "family_email_progress", "mail_problems")
+# What each count means, after the number: Census changes' To review and
+# Conflict rows, and Ministry requests' To enter by hand Stage.
+_NOTES = {
+    "census_changes": _("to do"),
+    "ministry_entry": _("to enter by hand"),
 }
-# What each menu count means, after the number: the page's default view.
-_NOTES = {"census_changes": _("to do")}
 STEPS = {
-    "testing": {
-        "administrator": (
-            "campaign_settings",
-            "content_catalog",
-            "schedule_settings",
-            "campaign_mail",
-            "go_live",
-            "response_dashboard",
-        ),
-        "staff": ("response_dashboard",),
-        "ministry_leader": ("ministry_report",),
-    },
-    "activating": {
-        "administrator": ("production_progress", "deliveries"),
-        "staff": ("response_dashboard",),
-        "ministry_leader": ("ministry_report",),
-    },
+    "testing": (
+        "campaign_settings",
+        "content_catalog",
+        "schedule_settings",
+        "campaign_mail",
+        "go_live",
+    ),
+    "activating": ("production_progress", "deliveries"),
     # Still a draft while Testing cleanup runs and Production links are not
     # yet activated: readiness (which shows the cleanup) leads.
-    "activating_draft": {
-        "administrator": ("go_live", "production_progress", "deliveries"),
-        "staff": ("response_dashboard",),
-        "ministry_leader": ("ministry_report",),
-    },
+    "activating_draft": ("go_live", "production_progress", "deliveries"),
     "active": _ACTIVE,
-    # Pause and resume mail comes first for an Administrator; Staff and
-    # Ministry leaders cannot resume mail, so theirs is the Active list.
-    "paused": _ACTIVE
-    | {"administrator": ("delivery_control", *_ACTIVE["administrator"])},
-    "closed": {
-        "administrator": (*_WORK, "emailed_reports"),
-        "staff": _WORK,
-        "ministry_leader": ("ministry_report",),
-    },
+    # Resuming paused mail is the first job.
+    "paused": ("delivery_control", *_ACTIVE),
+    "closed": (*_WORK, "emailed_reports"),
 }
 
 
 class Other(NamedTuple):
-    """A step's second, separately linked count: the other mode's (#1576)."""
+    """A step's second, separately linked count: the other mode's (#1576).
+
+    ``note`` is the short visible text after the count ("in Testing");
+    ``more`` finishes the link's name for screen readers ("may not have
+    arrived"), so the small link inside its card stays one short line.
+    """
 
     url: str
     count: int
     note: str
+    more: str
 
 
 # What an Other count means, by the mode it counts.
 _OTHER_NOTES = {
-    "testing": _("in Testing may not have arrived"),
-    "production": _("in Production may not have arrived"),
+    "testing": _("in Testing"),
+    "production": _("in Production"),
 }
 
 
@@ -137,39 +127,20 @@ def campaign_state(campaign, mode, *, go_live=False):
     return "active"
 
 
-def role(roles):
-    """The viewer's highest role: the column of the table Home reads."""
-    for name in ("administrator", "staff", "ministry_leader"):
-        if name in roles:
-            return name
-    return None
-
-
-def next_steps(
-    state,
-    viewer_role,
-    menu,
-    *,
-    test_email=None,
-    mail_unknown=None,
-    setup_next=None,
-    roster_todo=None,
-):
-    """Home's Next steps for ``state`` and ``viewer_role``, as ``Step`` rows.
+def next_steps(state, menu, *, test_email=None, mail_unknown=None, setup_next=None):
+    """Home's Next steps for ``state``, as ``Step`` rows.
 
     ``menu`` is the chrome's menu entries by name (dicts with ``url``,
     ``label``, ``reason`` and ``count``), already filtered by the viewer's
-    role. A step whose entry the menu leaves out is left out here too, so a
-    role never sees a step it may not open. ``test_email`` is the initial
+    role. A step whose entry the menu leaves out is left out here too, so
+    no one sees a step they may not open. ``test_email`` is the initial
     invitation's current revision (or None), ``mail_unknown`` the
     chrome's count of emails that may not have arrived, and ``setup_next``
     the Campaign setup stepper's first step not done yet (or None), which
-    leads an Administrator's Testing list as Continue campaign setup.
-    ``roster_todo`` is Roster changes to enter's not-yet-entered count
-    (``admin_dashboard.roster_todo``), or None when Home could not read it.
+    leads the Testing list as Continue campaign setup.
     """
     steps = []
-    if setup_next is not None and state == "testing" and viewer_role == "administrator":
+    if setup_next is not None and state == "testing":
         # The Campaign setup stepper's way back in (#1404): Leave campaign
         # setup opens Home, which offers the first step not done yet.
         steps.append(
@@ -180,13 +151,13 @@ def next_steps(
                 setup_next.url,
             )
         )
-    for name in STEPS.get(state, {}).get(viewer_role, ()):
+    for name in STEPS.get(state, ()):
         if name == "campaign_mail":
             step = _test_email(menu.get("content_catalog"), test_email)
         elif name == "mail_problems":
             step = _mail_problems(menu.get("deliveries"), mail_unknown)
-        elif name == "ministry_roster":
-            step = _roster(menu.get("ministry_report"), viewer_role, roster_todo)
+        elif name == "ministry_entry":
+            step = _ministry_entry(menu.get("ministry_report"))
         else:
             entry = menu.get(name)
             step = entry and Step(
@@ -219,24 +190,24 @@ def _test_email(catalog, revision):
     return Step(label, reverse("admin:campaign_mail", args=[revision]))
 
 
-def _roster(ministry, viewer_role, count):
-    """Roster changes to enter, while the viewer's Ministry requests is offered.
+def _ministry_entry(entry):
+    """Ministry requests at its To enter by hand Stage, with that Stage's count.
 
-    The list hangs below Ministry requests (its breadcrumb parent), so it is
-    greyed with that entry's reason while that entry is greyed, and left out
-    when the viewer has none. Only Administrators and Staff may open it; the
-    page refuses anyone else, so no one else is offered it here either.
+    It follows Ministry requests' menu entry, greyed with its reason as
+    that entry is. Only the Administrator's and Staff's lists hold it (a
+    Ministry leader never sees the update phase, #1160); when its count
+    could not be read (``entry_count`` None), the card shows no number.
     """
-    if ministry is None or viewer_role not in {"administrator", "staff"}:
+    if entry is None:
         return None
-    label = str(PAGES["ministry_roster"].label)
-    if not ministry["url"]:
-        return Step(label, None, ministry["reason"])
+    url = entry["url"] and f"{entry['url']}?stage={Stage.TO_ENTER_BY_HAND.value}"
+    count = entry.get("entry_count")
     return Step(
-        label,
-        reverse("admin:ministry_roster"),
-        count=count,
-        note=None if count is None else _("not yet entered"),
+        str(_("Ministry requests to enter by hand")),
+        url,
+        entry["reason"],
+        count,
+        _NOTES["ministry_entry"] if url and count is not None else None,
     )
 
 
@@ -260,6 +231,7 @@ def _mail_problems(deliveries, unknown):
             f"{url}?state=needs_review&mode={unknown['other_mode']}",
             unknown["other"],
             _OTHER_NOTES[unknown["other_mode"]],
+            _("may not have arrived"),
         )
     if not unknown["count"]:
         return Step(label, url, other=other)
@@ -272,42 +244,26 @@ def _mail_problems(deliveries, unknown):
     )
 
 
-def today(dashboard):
-    """The Today line's counts for this viewer, by kind; empty for none.
-
-    Administrators and Staff (who may read campaign reports) get
-    ``responded``, the Families who responded in the past 24 hours; a
-    Ministry leader with My Ministries gets ``requests``, the open requests
-    in those Ministries. The next planned Family mailing is already in the
-    campaign panel and problems are listed above, so the line does not
-    repeat them. The template words each count.
-    """
-    counts = {}
-    families = dashboard.get("families") or {}
-    if families.get("recent") is not None:
-        counts["responded"] = families["recent"]
-    mine = dashboard.get("my_ministries")
-    if mine:
-        counts["requests"] = sum(
-            item["join"] + item["leave"] for item in mine["ministries"]
-        )
-    return counts
-
-
 def home(context):
-    """Next steps and Today for the Home template, from its rendering context.
+    """Next steps for the Home template, from its rendering context.
 
     Reads the chrome (``admin_chrome``: menu sections, the Production
     preparation flag and the outgoing-mail warning count), the dashboard and
     the viewer. Returns None when there is no current campaign or no
     chrome, because Home's campaign panel then says what to do (Create the
-    campaign, or why there is none) and there is no next step to list.
+    campaign, or why there is none) and there is no next step to list, and
+    for anyone but an Administrator, who alone is shown Home (#1726).
     """
     chrome = context.get("admin_chrome") or {}
     dashboard = context.get("dashboard") or {}
     configuration = context.get("configuration")
     principal = context.get("principal")
-    if not chrome.get("sections") or configuration is None or principal is None:
+    if (
+        not chrome.get("sections")
+        or configuration is None
+        or principal is None
+        or "administrator" not in principal.roles
+    ):
         return None
     state = campaign_state(
         dashboard.get("campaign"), configuration.mode, go_live=chrome.get("go_live")
@@ -321,15 +277,10 @@ def home(context):
         for section in chrome["sections"]
         for entry in section["items"]
     }
-    return {
-        "steps": next_steps(
-            state,
-            role(principal.roles),
-            menu,
-            test_email=dashboard.get("test_email"),
-            mail_unknown=chrome.get("delivery_unknown"),
-            setup_next=dashboard.get("setup_next"),
-            roster_todo=dashboard.get("roster_todo"),
-        ),
-        "today": today(dashboard),
-    }
+    return next_steps(
+        state,
+        menu,
+        test_email=dashboard.get("test_email"),
+        mail_unknown=chrome.get("delivery_unknown"),
+        setup_next=dashboard.get("setup_next"),
+    )

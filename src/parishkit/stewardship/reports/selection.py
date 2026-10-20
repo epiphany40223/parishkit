@@ -87,33 +87,62 @@ def current_inputs(campaign_id, population_scope):
     ), instant
 
 
-def _candidates(campaign_id, population_scope, expected):
-    """Prefer an exact ready build, then only this scope's published fallback."""
-    exact = None
-    if expected is not None:
-        exact = (
-            CampaignDailyFactSet.objects.filter(
-                campaign_id=campaign_id,
-                population_scope=population_scope,
-                source_id=expected.source_id,
-                submission_watermark=expected.submission_watermark,
-                timezone_configuration_id=expected.timezone_configuration_id,
-                through_date=expected.through_date,
-                state="ready",
-            )
-            .values_list("id", flat=True)
-            .first()
+def _exact_ready(campaign_id, population_scope, expected):
+    """The ready build of exactly the ``expected`` inputs, or None."""
+    if expected is None:
+        return None
+    return (
+        CampaignDailyFactSet.objects.filter(
+            campaign_id=campaign_id,
+            population_scope=population_scope,
+            source_id=expected.source_id,
+            submission_watermark=expected.submission_watermark,
+            timezone_configuration_id=expected.timezone_configuration_id,
+            through_date=expected.through_date,
+            state="ready",
         )
-    pointer = (
+        .values_list("id", flat=True)
+        .first()
+    )
+
+
+def _published(campaign_id, population_scope):
+    """This scope's published generation (the fallback), or None."""
+    return (
         CampaignFactPointer.objects.filter(
             campaign_id=campaign_id, population_scope=population_scope
         )
         .values_list("fact_set_id", flat=True)
         .first()
     )
+
+
+def _candidates(campaign_id, population_scope, expected):
+    """Prefer an exact ready build, then only this scope's published fallback."""
+    exact = _exact_ready(campaign_id, population_scope, expected)
+    pointer = _published(campaign_id, population_scope)
     return tuple(
         dict.fromkeys(value for value in (exact, pointer) if value is not None)
     )
+
+
+def newest_figures(campaign_id, population_scope):
+    """What a daily chart read of this scope would show now, unread (#1586).
+
+    Returns ``(fact_set_id, updating)``: the generation a page opened now
+    would choose (the exact ready build, else the published fallback; None
+    when there is neither), and whether the exact build of the current
+    inputs is not ready yet (the page's **Updating** state). The passive
+    figures status (``workspace_views.dashboard_status``) compares the
+    generation with the one a page shows, so an open Response dashboard or
+    Campaign comparison page brings newer figures in by itself. It reads no
+    figure and takes no generation lock; the caller owns authorization.
+    """
+    expected, _ = current_inputs(campaign_id, population_scope)
+    exact = _exact_ready(campaign_id, population_scope, expected)
+    if exact is not None:
+        return exact, False
+    return _published(campaign_id, population_scope), True
 
 
 @contextmanager

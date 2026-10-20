@@ -12,12 +12,8 @@
 {% else %}<p class="notice">{% translate "ParishSoft pledges and contributions are unavailable: the latest giving data read from ParishSoft is not confirmed complete for this campaign's comparison period. Unavailable does not mean zero. A later full ParishSoft refresh may fill it in." %}</p>{% endif %}
 <p><a href="{% url 'admin:response_dashboard' %}">{% translate "Response dashboard" %}</a></p>
 {# The summary follows the applied filters in place (data-table-sync): headline tiles, then the frequency and share-method charts (#720), each bar labelled with its count and share, the same values in its tooltip (#1266). #}
-<div id="financial-summary" data-table-sync><h2>{% translate "Summary of matching pledges" %}</h2>
-<ul class="stat-tiles">
-<li class="stat-tile"><span class="stat-label">{% translate "Families" %}</span> <span class="stat-value" data-summary="families">{{ summary.families|number }}</span></li>
-<li class="stat-tile"><span class="stat-label">{% translate "Total annual pledges" %}</span> <span class="stat-value" data-summary="annual-total">{{ summary.annual_total.display }}</span></li>
-<li class="stat-tile"><span class="stat-label">{% translate "Cannot contribute financially" %}</span> <span class="stat-value">{{ summary.cannot_give|default:0|number }}</span></li>
-</ul>
+<div id="financial-summary" data-table-sync><h2 id="financial-summary-heading">{% translate "Summary of matching pledges" %}</h2>
+{% include "stewardship/components/stat-tiles.html" with tiles=summary_tiles tiles_labelledby="financial-summary-heading" %}
 {% for chart in charts %}<h3>{{ chart.title }}</h3>
 {% include 'stewardship/components/chart.html' with no_table=True %}{% endfor %}
 </div>
@@ -38,20 +34,11 @@
 <div><label for="filter-frequency">{% translate "Frequency" %}</label><select id="filter-frequency" name="frequency"><option value="any">{% translate "Any frequency" %}</option>{% for key,label in frequencies.items %}<option value="{{ key }}"{% if query.frequency == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
 <div><label for="filter-share">{% translate "Share method" %}</label><select id="filter-share" name="share"><option value="any">{% translate "Any share method" %}</option><option value="none"{% if query.share == 'none' %} selected{% endif %}>{% translate "No share method chosen" %}</option>{% for key,label in share_choices %}<option value="{{ key }}"{% if query.share == key %} selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
 {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
-{% button type="submit" aria-describedby="financial-filter-hint" %}{% translate "Apply filters" %}{% endbutton %}
+{% include "stewardship/components/filter-actions.html" with apply_hint="financial-filter-hint" %}
 {# After Apply, so the date fieldsets, pledge range and selects pack the grid's rows with Apply beside the last select (#1411): a full-width note between the dates would end their row early and add rows. It names the zone for all four dates. #}{% translate "The dates are days in this computer's time zone:" as zone_note %}{% include "stewardship/components/zone-note.html" with note_text=zone_note note_id="financial-zone-help" %}
 <p class="help" id="financial-filter-hint" data-complete-hint="reserve"></p></form>{% endfilterpanel %}
-<p id="financial-matching" data-table-sync>{% translate "Matching Families:" %} {{ total|number }}.</p>
-<details class="export-panel"><summary id="financial-export-heading">{% translate "Export complete results (CSV, XLSX or PDF)" %}</summary>
-<p id="financial-export-count" data-table-sync>{% blocktranslate with shown=total|number count counter=total %}{{ shown }} matching Family, using the applied filters and sort above—not just this page. The file uses every matching pledge and its ParishSoft comparison totals as they are when you queue the export; later submissions or ParishSoft refreshes are not included.{% plural %}{{ shown }} matching Families, using the applied filters and sort above—not just this page. The file uses every matching pledge and its ParishSoft comparison totals as they are when you queue the export; later submissions or ParishSoft refreshes are not included.{% endblocktranslate %}</p>
-<form id="table-export" data-table-sync data-submit-waits method="post" action="{% url 'admin:financial_export' %}">{% csrf_token %}
-{% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
-<input type="hidden" name="request_key" value="{{ request_key }}">
-<fieldset{% if not mutable %} disabled{% endif %}><legend>{% translate "Complete-result export options" %}</legend>
-<label for="financial-format">{% translate "Export format" %}</label><select id="financial-format" name="format">{% export_format_options "csv" "xlsx" "pdf" %}</select>
-<div class="label-row"><label for="financial-export-timezone" id="financial-export-timezone-label">{% translate "Export timezone" %}</label>{% translate "Your browser's time zone is selected when your browser allows it; otherwise UTC is selected. You can change it before exporting." as tip %}{% include "stewardship/components/toggletip.html" with tip_id="financial-export-timezone-tip" tip_label_id="financial-export-timezone-label" tip_text=tip %}</div><select id="financial-export-timezone" name="browser_timezone" data-information-timezone>{% for zone in export_timezones %}<option value="{{ zone }}"{% if zone == 'UTC' %} selected{% endif %}>{{ zone }}</option>{% endfor %}</select>
-{% button type="submit" %}{% translate "Queue complete export" %}{% endbutton %}</fieldset></form></details>
-<script src="{% static 'stewardship/information-export-v1.js' %}" defer></script>
+{# The hidden data-page-address link is this view's address with only its closed choices, never the search, a date, the pledge range or the page (financial_views.page_address): ui-v1.js puts it in the address bar after each in-place answer, so a reload shows the same view (UX conventions, "Reload on a POST report", #1586). #}
+<p id="financial-matching" data-table-sync><a href="{{ page_address }}" data-page-address hidden></a>{% translate "Matching Families:" %} {{ total|number }}.</p>
 <div id="{{ table.anchor }}" data-table-region>
 {% translate "Financial result pages" as navigator_label %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 <div class="table-scroll" tabindex="0" role="region" aria-label="{% translate 'Financial stewardship results' %}"><table class="data-table whole-words financial-table">
@@ -67,4 +54,9 @@
 {% empty %}<tr><td colspan="7">{% translate "No matching pledges. Try Any status and Any amount, or clear the search and date filters." %}</td></tr>{% endfor %}</tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 </div>
+{% comment %}The export (#1679, ui-conventions "Downloaded files"): one row of small export buttons (export_actions), each posting its format, below the table, in the browser's time zone; its form's hidden filters follow each in-place Apply, sort or page (data-table-sync).{% endcomment %}<div class="export-pane">
+<form id="table-export" data-table-sync data-submit-waits method="post" action="{% url 'admin:financial_export' %}">{% csrf_token %}
+{% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+<input type="hidden" name="request_key" value="{{ request_key }}">
+{% export_actions "csv" "xlsx" "pdf" name="financial" label=_("Export complete results") enabled=mutable %}</form></div>
 {% endblock %}

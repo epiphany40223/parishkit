@@ -4,9 +4,10 @@ A single choice between two views of an Admin page is a segmented pair
 (components/segmented-choice.html): a labelled group of two in-place links,
 the chosen one aria-current (or, on a private-POST page, two small POST
 forms). These tests render the component, check the Participation page's
-Chart population links and the roster's Show links, and guard against a
-new two-option menu in an Admin template, including the loop-built menus
-the directory and the roster drew before #1535.
+Chart population links, and guard against a new two-option menu in an
+Admin template, including the loop-built menu the directory drew before
+#1535. Roster changes to enter's Show pair became its worklist's Stage
+filter (#1687), a row filter with more than two choices.
 """
 
 import re
@@ -16,10 +17,8 @@ from urllib.parse import parse_qsl, urlsplit
 from django.template.loader import render_to_string
 from django.urls import reverse
 
-from parishkit.stewardship.reports.ministry_roster_views import SORTING, show_links
 from parishkit.stewardship.reports.workspace import ReportQuery
 from parishkit.stewardship.reports.workspace_views import scope_links
-from parishkit.stewardship.web.tables import paginate
 
 TEMPLATES = (
     Path(__file__).parents[2]
@@ -32,11 +31,6 @@ COMPONENT = "stewardship/components/segmented-choice.html"
 # choice's options (the context name the loop read).
 CONVERTED = {
     "directory.html": ("mode", "modes", "reports/directory_views.py"),
-    "ministry-roster.html": (
-        "show",
-        "show_choices",
-        "reports/ministry_roster_views.py",
-    ),
 }
 SOURCE = Path(__file__).parents[2] / "src/parishkit/stewardship"
 # Two-option menus an Admin template may still draw, each with its reason.
@@ -132,32 +126,6 @@ def test_a_post_pair_is_two_small_read_forms():
     ]
 
 
-def test_show_links_keep_the_ministry_sort_and_size():
-    """Each Show segment keeps the applied Ministry, sort and page size and
-    goes back to the first page; an empty Ministry is left out."""
-    rows = [{"member_name": f"Member {index}"} for index in range(3)]
-    for ministry, kept in (("9", {"ministry": "9"}), ("", {})):
-        carry = [("show", "all")] + ([("ministry", ministry)] if ministry else [])
-        table = paginate(
-            rows,
-            {"size": "25", "page": "2", "sort": "member"},
-            carry=carry,
-            sorting=SORTING,
-        )
-        links = show_links(table, "/roster/")
-        assert set(links) == {"todo", "all"}
-        for show, link in links.items():
-            address = urlsplit(link)
-            assert address.path == "/roster/"
-            assert dict(parse_qsl(address.query)) == {
-                "show": show,
-                **kept,
-                "sort": "member",
-                "size": "25",
-                "page": "1",
-            }
-
-
 def test_scope_links_keep_the_view_and_return_to_the_first_page():
     """Each Chart population segment keeps the daily table's sort and size
     and an explicit zone, and goes back to the first page."""
@@ -197,9 +165,9 @@ def test_every_pair_is_drawn_by_the_shared_component():
 
 
 def test_converted_loop_menus_stay_gone():
-    """The directory's Responses shown and the roster's Show were menus
-    built from a loop (#1535), which the written-option guard below cannot
-    count, so each page is checked by name: no menu sends that choice, the
+    """The directory's Responses shown was a menu built from a loop
+    (#1535), which the written-option guard below cannot count, so the page
+    is checked by name: no menu sends that choice, the
     template no longer reads the choice's options, and the view no longer
     hands them over. The choice still travels with the filter form, as a
     hidden field."""
@@ -224,7 +192,7 @@ def test_no_admin_template_draws_a_two_option_menu():
             continue
         for match in SELECT.finditer(text):
             body = match.group(2)
-            if re.search(r"\{%\s*(?:for|include|export_format_options)\b", body):
+            if re.search(r"\{%\s*(?:for|include)\b", body):
                 continue
             if len(OPTION.findall(body)) != 2:
                 continue

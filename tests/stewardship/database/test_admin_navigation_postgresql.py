@@ -86,7 +86,9 @@ def test_navigation_and_testing_banner_match_current_capabilities(
     assert b"Postal outreach" not in body
     assert body.count(b'id="session-warning"') == 1
     assert body.count(b'id="session-expired"') == 1
-    assert (b"Family participation" in body) == (role != "ministry_leader")
+    # Staff and Ministry leaders land on My review work instead (#1690).
+    assert (b"Family participation" in body) == (role == "administrator")
+    assert (b"<h1>My review work</h1>" in body) == (role != "administrator")
     # Pages and emails, and Dates and mail schedules, are first-class entries.
     assert (b"Pages and emails" in body) == (role == "administrator")
     assert (b"Dates and mail schedules" in body) == (role == "administrator")
@@ -283,14 +285,16 @@ def test_background_pagination_preserves_filtered_scope(auth_service, google):
 
 
 def test_dashboard_failure_links_open_the_html_task_page(auth_service, google):
-    """A dashboard navigation link must not strand the Admin on a JSON response."""
+    """Home counts the failure and links Background work filtered to failed
+    tasks (#1673); the task's page is HTML, never a JSON response."""
     task = act(act(new(), "claim"), "permanent_failure")
     browser, _ = signed_in()
     with task_login(ServiceRole.WEB):
         response = browser.get("/admin/")
         assert response.status_code == 200
+        assert b"1 background task failed in the past 24 hours." in response.content
+        assert b'href="/admin/system/background/?state=failed"' in response.content
         path = f"/admin/system/background/{task.run_id}/"
-        assert f'href="{path}"'.encode() in response.content
         detail = browser.get(path)
         assert detail.status_code == 200
         assert detail["Content-Type"].startswith("text/html")

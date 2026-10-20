@@ -1,0 +1,22 @@
+{% load i18n stewardship %}{% comment %}
+  A filter form's Apply filters and Clear filters, side by side (UX
+  conventions "Clear filters", #1651). Every Admin form#table-filters draws
+  its buttons through this component, never on its own
+  (test_clear_filters.py).
+
+  Include it where the buttons belong, with the id of the form's reserved
+  hint line if it has one (the complete gate's reason for holding Apply):
+    {% include "stewardship/components/filter-actions.html" with apply_hint="log-filter-hint" %}
+
+  Apply filters comes first, so Enter in a field still applies (the
+  browser submits with a form's first submit button). Clear filters is a
+  formnovalidate submit button: a field the browser refuses never holds it,
+  and the gates in ui-v1.js leave formnovalidate buttons alone. ui-v1.js
+  (data-clear-filters) sends the form without its filters and shows the
+  server's unfiltered view in place, and marks the button unavailable
+  (aria-disabled, data-clear-unavailable) while every filter already shows
+  its default; only then does it name the tip below in aria-describedby,
+  which admin-menu-v1.js (data-menu-tip) shows on hover, focus or tap. The
+  tip floats, so it never moves anything (no layout shift). A page has one
+  filter form, so the tip's id is fixed.
+{% endcomment %}<div class="filter-actions">{% button type="submit" aria-describedby=apply_hint %}{% translate "Apply filters" %}{% endbutton %}<span class="filter-clear">{% button type="submit" variant="secondary" formnovalidate data-clear-filters data-menu-tip %}{% translate "Clear filters" %}{% endbutton %}<span class="admin-tip" id="table-filters-clear-tip" role="tooltip">{% translate "Every filter already shows its default." %}</span></span></div>

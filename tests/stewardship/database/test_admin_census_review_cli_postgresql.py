@@ -101,7 +101,10 @@ def test_an_administrator_approves_ignores_and_sends_back(
     # Ignore, then Back to To review; each advances the version.
     code, document = review(run, name, "ignored")
     assert code == 0 and document["result"]["proposal"]["decision"] == "ignored"
+    # Sending an ignored change back needs a note (#1683).
     code, document = review(run, name, "unreviewed")
+    assert code == 1 and document["error"]["code"] == "invalid", document
+    code, document = review(run, name, "unreviewed", "--note", "Asked again")
     assert code == 0 and document["result"]["proposal"]["decision"] == "unreviewed"
     assert (count(EVENT), count(UPDATED)) == (3, 3)
     assert [row.decision for row in ProposalReview.objects.order_by("created_at")] == [
@@ -163,15 +166,13 @@ def test_by_hand_stale_unknown_and_read_only_refusals(
     google,
     cli,  # noqa: F811
 ):
-    """A By-hand change has no Review (invalid), a changed version is stale,
-    an unknown change is not available, and a read-only session changes
-    nothing."""
+    """A changed version is stale, an unknown change is not available, and a
+    read-only session changes nothing; a By-hand change is reviewed like any
+    other since the review pipeline (#1683)."""
     submitted(response_service)
     signed_in()
     run = cli()
     home, name = rows()
-    code, document = review(run, home, "approved")
-    assert code == 1 and document["error"]["code"] == "invalid", document
     code, document = review(run, name, "approved", version=name.version + 1)
     assert code == 1 and document["error"]["code"] == "stale_version", document
     code, document = run(
@@ -184,6 +185,8 @@ def test_by_hand_stale_unknown_and_read_only_refusals(
     assert code == 1 and document["error"]["code"] == "denied", document
     assert (count(EVENT), count(UPDATED)) == (0, 0)
     assert not ProposalReview.objects.exists()
+    code, document = review(run, home, "approved")
+    assert code == 0 and document["result"]["proposal"]["decision"] == "approved"
 
 
 def test_staff_and_a_ministry_leader_are_denied(

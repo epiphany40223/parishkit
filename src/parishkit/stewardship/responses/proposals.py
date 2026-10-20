@@ -8,10 +8,13 @@ from .accepted_base import has_active_base
 from .capabilities import proposal_handling
 from .census import HOUSEHOLD_FIELDS
 from .comparison import ValueKind, canonical_value
-from .effective import RESOLVED_EXECUTIONS, proposal_index
+from .effective import ENTERED_EXECUTIONS, RESOLVED_EXECUTIONS, proposal_index
 from .inputs import FieldInput
 from .merge import KnownValue, MergeState, PriorChange, merge_value
 from .models import ProposedChange
+
+# Terminal Member requests, whose latest row outlives later responses.
+TERMINAL_FIELDS = frozenset({"moved_household", "deceased_status", "death_date"})
 
 
 def derive_proposals(submission, validated):
@@ -20,8 +23,10 @@ def derive_proposals(submission, validated):
     A same-intent pending proposal retains its original comparison baseline and
     decision, so a revisit cannot silently clear an upstream conflict or revive
     an ignored request. A genuinely edited field starts a new unreviewed intent.
-    Published/resolved outcomes remain immutable; later requests get new rows.
-    No immutable Family answer is edited, including to an Admin-corrected value.
+    Published/resolved outcomes remain immutable; later requests get new rows,
+    except the same answer again for a change already entered or published,
+    which keeps that change and makes none (#1683). No immutable Family answer
+    is edited, including to an Admin-corrected value.
     """
     require_work_order()
     if "census" not in validated.current.modules:
@@ -75,7 +80,21 @@ def derive_proposals(submission, validated):
             not field.source.available and submitted is None
         )
         new = None
-        if not unchanged:
+        # The Family answered again as before for a change already Entered
+        # by hand or written to ParishSoft, which the download may not show
+        # yet: it stays as it is, with no new row (the review pipeline's
+        # resubmission rule, #1683), rather than a second To review item
+        # for work already done.
+        # Terminal requests (moved, deceased, a death date) are left out: an
+        # entered one is no longer presented, so asking for it again is a
+        # new request, not the Family's previous answer.
+        entered = (
+            old is not None
+            and field.field not in TERMINAL_FIELDS
+            and old.execution in ENTERED_EXECUTIONS
+            and canonical_value(field.kind, old.submitted_value) == key
+        )
+        if not unchanged and not entered:
             same_intent = (
                 old is not None
                 and old.execution

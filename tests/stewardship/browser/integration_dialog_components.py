@@ -14,6 +14,19 @@ change's status page, Applied; the editor's region is then redrawn from
 ``SLACK_REMOVING`` is the same page whose region is redrawn from
 ``SLACK_REMOVED`` instead, Slack not set up.
 
+A pasted key (#1568): ``SLACK_KEY_REVIEW`` is the key's confirmation, which
+a test answers the Review (posted without the key) with; its Apply, the
+page's own form with the key, is answered with ``SLACK_PENDING``, the page
+whose status line says the key is being installed and polls
+``SLACK_STATUS``. A test answers that poll with ``SLACK_STATUS_PENDING``,
+then ``SLACK_STATUS_DONE``, whose follow-up re-reads ``SLACK`` in place,
+answered with ``SLACK_KEYED`` (Key updated). ``SLACK_UNSELECTED`` is the page
+whose key's switch did not finish: its Finish switching Review is answered
+with ``SLACK_FINISH``, and its Apply is redirected (``POSTS``) to
+``APPLIED``; the editor and status line are then redrawn from
+``SLACK_SETTLED``. ``PARISHSOFT_KEY`` is ParishSoft's page with its key
+field, answered with ``PARISHSOFT_KEY_REVIEW``.
+
 ParishSoft with a schedule saved from Basic (#1122): ``SCHEDULE`` posts to
 itself; a test answers its Save with ``SCHEDULE_REVIEW`` (the full review of
 a schedule change) and the editor's live check with
@@ -26,6 +39,7 @@ from uuid import UUID, uuid4
 
 from django.template.loader import render_to_string
 
+from parishkit.stewardship.accounts.integration_credentials import CredentialSummary
 from parishkit.stewardship.accounts.integration_forms import (
     InlineCredentialForm,
     IntegrationForm,
@@ -46,10 +60,21 @@ SCHEDULE = "/integration-dialog-schedule"
 SCHEDULE_REVIEW = "/integration-dialog-schedule-review"
 SCHEDULE_SETTLED = "/integration-dialog-schedule-settled"
 APPLIED = "/integration-dialog-applied"
+SLACK_KEY_REVIEW = "/integration-dialog-key-review"
+SLACK_PENDING = "/integration-dialog-pending"
+SLACK_STATUS = "/integration-dialog-status"
+SLACK_STATUS_PENDING = "/integration-dialog-status-pending"
+SLACK_STATUS_DONE = "/integration-dialog-status-done"
+SLACK_KEYED = "/integration-dialog-keyed"
+SLACK_UNSELECTED = "/integration-dialog-unselected"
+SLACK_FINISH = "/integration-dialog-finish"
+PARISHSOFT_KEY = "/integration-dialog-parishsoft-key"
+PARISHSOFT_KEY_REVIEW = "/integration-dialog-parishsoft-key-review"
 POSTS = {
     SLACK: (303, APPLIED, ""),
     SLACK_REMOVING: (303, APPLIED, ""),
     SCHEDULE: (303, APPLIED, ""),
+    SLACK_UNSELECTED: (303, APPLIED, ""),
 }
 CHANNEL = "C0123456789"
 NEW_CHANNEL = "C0987654321"
@@ -93,8 +118,12 @@ def components(context, admin, now):
             ),
         )
 
-    def slack(channel, digest, *, path, refresh, data=None, configured=True):
-        """Slack's page at ``digest`` showing ``channel``, or bound to ``data``."""
+    def slack(
+        channel, digest, *, path, refresh, data=None, configured=True, summary=None
+    ):
+        """Slack's page at ``digest`` showing ``channel``, or bound to ``data``,
+        with ``summary`` as its key change's status line (pending: no key
+        field, the editor saying the page updates by itself)."""
         form = IntegrationForm(
             "slack",
             data,
@@ -102,6 +131,7 @@ def components(context, admin, now):
         )
         if data:
             form.is_valid()
+        pending = summary is not None and summary.kind == "pending"
         return page(
             "slack",
             "Slack notifications",
@@ -110,13 +140,19 @@ def components(context, admin, now):
             page_url=path,
             configured=configured,
             removable=configured,
-            credential=InlineCredentialForm(
+            summary=summary,
+            pending=pending,
+            status_url=SLACK_STATUS,
+            credential=None
+            if pending
+            else InlineCredentialForm(
                 "slack", initial={"intent": "synthetic-intent"}, required=not configured
             ),
         )
 
-    def schedule(stored, digest):
-        """ParishSoft's page with ``stored`` as its schedule, at ``digest``."""
+    def schedule(stored, digest, *, path=SCHEDULE, key=False):
+        """ParishSoft's page with ``stored`` as its schedule, at ``digest``,
+        with its new-key field when ``key``."""
         form = IntegrationForm(
             "parishsoft", initial=stored | {"base_digest": digest}, stored=stored
         )
@@ -125,11 +161,43 @@ def components(context, admin, now):
             "ParishSoft",
             form,
             SCHEDULE_SETTLED,
-            page_url=SCHEDULE,
+            page_url=path,
             complete_gate=False,
             refresh_key=uuid4(),
+            credential=InlineCredentialForm(
+                "parishsoft", initial={"intent": "synthetic-intent"}
+            )
+            if key
+            else None,
             **_schedule(form.schedule, now),
         )
+
+    def status(summary):
+        """The passive status line the page polls, with ``summary``."""
+        return (
+            "text/html",
+            render_to_string(
+                "stewardship/integration-status.html",
+                {
+                    "target": "slack",
+                    "summary": summary,
+                    "pending": summary.kind == "pending",
+                    "follow_url": SLACK,
+                    "page_url": SLACK,
+                },
+            ),
+        )
+
+    installing = CredentialSummary(
+        "pending", now, "Checking the new key with Slack…", REQUEST
+    )
+    updated = CredentialSummary("updated", now, "Key updated.", REQUEST)
+    unselected = CredentialSummary(
+        "unselected",
+        now,
+        "A new key is installed, but switching to it did not finish.",
+        REQUEST,
+    )
 
     def review(**values):
         """The review dialog's answer, from the real fragment."""
@@ -179,6 +247,45 @@ def components(context, admin, now):
             ],
         ),
         SCHEDULE_SETTLED: schedule(EVERY_FOUR, "b" * 64),
+        SLACK_KEY_REVIEW: review(
+            kind="key", target="slack", label="Slack notifications", changes=[]
+        ),
+        SLACK_PENDING: slack(
+            CHANNEL, "b" * 64, path=SLACK, refresh=SLACK, summary=installing
+        ),
+        SLACK_STATUS: status(installing),
+        SLACK_STATUS_PENDING: status(installing),
+        SLACK_STATUS_DONE: status(updated),
+        SLACK_KEYED: slack(
+            CHANNEL, "c" * 64, path=SLACK, refresh=SLACK, summary=updated
+        ),
+        SLACK_UNSELECTED: slack(
+            CHANNEL,
+            "a" * 64,
+            path=SLACK_UNSELECTED,
+            refresh=SLACK_SETTLED,
+            summary=unselected,
+        ),
+        SLACK_FINISH: review(
+            kind="finish",
+            target="slack",
+            label="Slack notifications",
+            changes=[],
+            request_id=REQUEST,
+        ),
+        PARISHSOFT_KEY: schedule(BASIC, "a" * 64, path=PARISHSOFT_KEY, key=True),
+        PARISHSOFT_KEY_REVIEW: review(
+            kind="key",
+            target="parishsoft",
+            label="ParishSoft",
+            changes=[
+                {
+                    "label": "Expected ParishSoft organization ID",
+                    "before": "12345",
+                    "after": "54321",
+                }
+            ],
+        ),
         APPLIED: (
             "text/html",
             render_to_string(

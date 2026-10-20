@@ -271,7 +271,21 @@ DESCRIPTIONS = {
     ),
     "admin_cmd_followup_roster_bulk": _(
         "An automation session marked several Ministry requests Entered in "
-        "ParishSoft, as Roster changes to enter's bulk mark does."
+        "ParishSoft, as Ministry requests' bulk Entered by hand does."
+    ),
+    "admin_cmd_information_decide": _(
+        "An automation session accepted, ignored, reopened or handled "
+        "Additional information requests, as the actions on Additional "
+        "information do."
+    ),
+    "admin_cmd_limitations_decide": _(
+        "An automation session accepted, ignored, reopened or handled "
+        "Limitations answers, as the actions on Limitations do."
+    ),
+    "admin_cmd_pledges_decide": _(
+        "An automation session accepted, edited, ignored or reopened pledges, "
+        "or marked them entered in ParishSoft, as the actions on Pledges to "
+        "enter do."
     ),
     "admin_cmd_followup_information_update": _(
         "An automation session recorded follow-up on an Additional "
@@ -835,6 +849,10 @@ DESCRIPTIONS = {
     "weekly_digest_viewed": _("Someone opened a weekly report."),
     "information_viewed": _("Someone opened the information changes report."),
     "information_updated": _("Someone updated follow-up on an information change."),
+    "limitation_reviewed": _(
+        "Someone recorded a review decision on a cannot-participate or "
+        "cannot-attend answer."
+    ),
     "ministry_followup_viewed": _(
         "Someone opened Ministry requests (formerly Ministry follow-up) or one "
         "of its follow-up requests."
@@ -867,6 +885,12 @@ DESCRIPTIONS = {
     "roster_changes_exported": _(
         "Someone downloaded the Roster changes to enter list."
     ),
+    "pledges_to_enter_viewed": _("Someone opened the Pledges list."),
+    "pledges_to_enter_exported": _("Someone downloaded the Pledges list."),
+    "pledge_review_updated": _(
+        "Someone accepted, edited, ignored or reopened a Family's pledge, or "
+        "marked it entered in ParishSoft."
+    ),
     "census_change_updated": _(
         "Someone marked a census change entered in ParishSoft, ignored it, "
         "or reopened it."
@@ -875,6 +899,12 @@ DESCRIPTIONS = {
         "An upgrade moved open census changes that ParishSoft cannot take "
         "automatically (a gender, a death date, a Family address, or an "
         "answer that removes a value) to By hand. Count is how many."
+    ),
+    "refresh_checks_started": _(
+        "An upgrade started recording what each ParishSoft refresh finds for "
+        "census changes and Ministry requests already entered or decided, so "
+        "an entry ParishSoft does not show yet can be flagged Not seen in "
+        "ParishSoft."
     ),
     "census_publication_planned": _(
         "The server checked approved census changes against ParishSoft and "
@@ -1268,6 +1298,8 @@ FIELD_LABELS = {
     "directory_data_check": _("ParishSoft data to check"),
     "directory_response_columns": _("Response columns included"),
     "directory_sort": _("Sorted by"),
+    # A report view the open page made by itself (#1620).
+    "automatic": _("How it was opened"),
 }
 # A response list's sort columns (#851), by sort key, in each list's own
 # column headings; ``-key`` is the same column sorted the other way. The
@@ -1309,6 +1341,9 @@ _DIRECTORY_SORT_COLUMNS = {"name": _("Family")} | {
 # "all" and "any" are each report's first, unfiltered choice.
 VALUE_LABELS = {
     "report_mode": {"production": _("Production"), "testing": _("Testing")},
+    # Recorded only as true (log_rows._details shows a boolean as text): a
+    # reader's own view has no such field (#1620).
+    "automatic": {"True": _("Automatic refresh (the open page updated itself)")},
     "report_filter": {
         "all": _("Everything (no filter)"),
         "any": _("Everything (no filter)"),

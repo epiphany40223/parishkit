@@ -22,7 +22,7 @@ from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.wall_clock import WEEKDAYS
 from parishkit.stewardship.web.refusals import stale_page
 
-from . import admin_editing, schedule_local
+from . import admin_editing, digest_skips, schedule_local
 from .admin_editing import sign_preview
 from .campaign_views import _state
 from .content_forms import EMAIL_LABELS
@@ -119,11 +119,17 @@ def reviewed_sends(changes, prior, before_zone, after_zone):
 
 
 def describe(values, campaign):
-    """Pair civil intent with bounded UTC previews resolved in its own campaign zone."""
+    """Pair civil intent with bounded UTC previews resolved in its own campaign zone.
+
+    A digest's ``skipped_sends`` (#1658) are the sends its skip dates still
+    skip, with their UTC times, so the review shows each as a browser-local
+    send time rather than its slot key.
+    """
     if values is None:
         return None
     page = preview_slots(values, campaign)
     return values | {
+        "skipped_sends": digest_skips.skipped_sends(values, campaign),
         "weekday_label": WEEKDAYS[values["weekday"]]
         if values["weekday"] is not None
         else None,
@@ -150,6 +156,7 @@ def build_preview(
     series=(),
     series_changes=(),
     request_key=None,
+    skips=None,
 ):
     """Validate the complete candidate, including each stranded or reordered mailing.
 
@@ -181,7 +188,9 @@ def build_preview(
     Delivery never reads a series, so no series operation changes a send.
     ``request_key`` signs the preview with a direct save's request key
     (#1404 PR 4b, ``admin_editing.direct_key``); a review shown in a dialog
-    takes a fresh one.
+    takes a fresh one. ``skips`` maps a saved digest's id to the one send
+    (slot date) it skips (#1658, ``digest_skips.apply``), which adds the date
+    to its ``skip_dates`` and signs the send's time with the others.
     """
     configuration = state[0]
     digest = configuration.active_configuration.digest
@@ -199,6 +208,20 @@ def build_preview(
         if value != campaign.active_configuration.values[key]
     }
     patch = schedules.patch()
+    prior = {row["id"]: row["values"] for row in schedules.previous}
+    # A digest send skipped by this change (#1658): refused here unless it
+    # may be skipped, and its send time is signed below with the others.
+    skipped_due = (
+        digest_skips.apply(
+            patch,
+            skips,
+            prior,
+            campaign.active_configuration.values,
+            admin_editing.database_now(),
+        )
+        if skips
+        else []
+    )
     explicit = {row["id"] for row in patch}
     # A repeat's positions index the added forms, in form order. They name
     # the ids the form set just minted only if every added form produced
@@ -248,6 +271,16 @@ def build_preview(
             kind=row["values"]["kind"],
         )
     )
+    # A skip of a send still ahead that the change moves off the digest's
+    # sends (a new weekday or campaign dates, #1658) is dropped, so it never
+    # applies again if the digest later moves back; the review lists it.
+    dropped = digest_skips.drop_stale(
+        patch,
+        prior,
+        campaign.active_configuration.values,
+        window.values(),
+        admin_editing.database_now,
+    )
     schedule_changes = list(patch)
     if changed or campaign_values:
         patch.append(
@@ -291,7 +324,6 @@ def build_preview(
         )
         return None
     summary = work_summary(campaign.pk)
-    prior = {row["id"]: row["values"] for row in schedules.previous}
     changes = [
         {
             "id": row["id"],
@@ -302,6 +334,8 @@ def build_preview(
             "after": describe(row.get("values"), window.values()),
             "impact": summary.get(row["id"], {}),
             "label": EMAIL_LABELS[(row.get("values") or prior[row["id"]])["kind"]],
+            # Skips this change drops (#1658, ``digest_skips.drop_stale``).
+            "dropped_skips": dropped.get(row["id"], []),
         }
         for row in schedule_changes
     ]
@@ -346,11 +380,16 @@ def build_preview(
             snapshot=fingerprint(state[-1], summary),
             # Each send time still ahead now, which the confirmation checks
             # again: a review lives 15 minutes (#1464).
-            due=reviewed_sends(
-                schedule_changes,
-                prior,
-                campaign.active_configuration.values["timezone"],
-                window.values()["timezone"],
+            due=sorted(
+                {
+                    *reviewed_sends(
+                        schedule_changes,
+                        prior,
+                        campaign.active_configuration.values["timezone"],
+                        window.values()["timezone"],
+                    ),
+                    *(moment.isoformat() for moment in skipped_due),
+                }
             ),
             key=request_key,
         ),

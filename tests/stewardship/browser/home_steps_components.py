@@ -4,9 +4,10 @@
 the Ministry module off, so Ministry follow-up is greyed out with the menu's
 reason, Additional information carries an open count and two emails may not
 have arrived. ``PHONE_PATH`` is the same page; the test reads it at 320 px.
-``CLOSED_PATH`` and ``LEADER_PATH`` are a Staff member's and a Ministry
-leader's Home on a closed campaign with the Ministry module and the census
-(#1590): the campaign-end lists, each with its count.
+``CLOSED_PATH`` is an Administrator's Home on a closed campaign with the
+Ministry module and the census (#1590): the campaign-end lists, each with
+its count. Home is only the Administrator's (#1726); Staff and Ministry
+leaders sign in to My review work (``review_work_components``).
 """
 
 from types import SimpleNamespace
@@ -15,11 +16,20 @@ from uuid import UUID
 from django.template.loader import render_to_string
 
 from parishkit.stewardship.accounts import admin_context, admin_navigation
+from parishkit.stewardship.accounts.admin_dashboard import family_tiles
 from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.campaigns.domain import Percentage
 from parishkit.stewardship.jobs.delivery_metadata import mode_split
 
 PATH = "/home-next-steps"
+# Home's Family participation counts, as admin_dashboard.summary reads them.
+FAMILIES = {
+    "active": 400,
+    "participation": Percentage(40, 400),
+    "responded": 160,
+    "active_responded": 150,
+    "recent": 12,
+}
 CAMPAIGN = SimpleNamespace(
     pk=UUID(int=1522),
     state="active",
@@ -36,7 +46,6 @@ CAMPAIGN = SimpleNamespace(
 )
 COUNTS = {"information_queue": 3}
 CLOSED_PATH = "/home-next-steps-closed"
-LEADER_PATH = "/home-next-steps-leader"
 CLOSED = SimpleNamespace(
     **(
         vars(CAMPAIGN)
@@ -51,7 +60,12 @@ CLOSED = SimpleNamespace(
         }
     )
 )
-CLOSED_COUNTS = {"census_changes": 4, "information_queue": 3, "ministry_report": 2}
+CLOSED_COUNTS = {
+    "census_changes": 4,
+    "ministry_entry": 5,
+    "information_queue": 3,
+    "ministry_report": 2,
+}
 # Emails that may not have arrived: two in Production, one in Testing.
 UNKNOWN = mode_split({"production": 2, "testing": 1}, "production")
 
@@ -70,9 +84,7 @@ def components(context, admin):
         ),
         items,
     )
-    for section in sections:
-        for entry in section["items"]:
-            entry["count"] = COUNTS.get(entry["name"]) if entry["url"] else None
+    admin_context.attach_counts(sections, COUNTS)
     chrome = admin | {
         "sections": sections,
         "breadcrumbs": [],
@@ -88,12 +100,8 @@ def components(context, admin):
             "dashboard": {
                 "campaign": CAMPAIGN,
                 "refreshed_at": None,
-                "families": {
-                    "active": 400,
-                    "participation": Percentage(40, 400),
-                    "responded": 160,
-                    "recent": 12,
-                },
+                "families": FAMILIES,
+                "family_tiles": family_tiles(FAMILIES, recent=FAMILIES["recent"]),
             },
         },
     )
@@ -105,65 +113,45 @@ def components(context, admin):
 
 
 def closed_components(context, admin):
-    """Home on a closed campaign for Staff and for a Ministry leader (#1590).
+    """An Administrator's Home on a closed campaign (#1590).
 
-    The menu is each role's real one, with the counts the chrome would read;
-    Staff also get Roster changes to enter's count, as Home's dashboard
-    reads it.
+    The menu is the real one, with the counts the chrome would read,
+    Ministry requests' To enter by hand count among them (R39 finding 2).
     """
     configuration = SimpleNamespace(mode="production")
-    pages = {}
-    for path, actor in (
-        (CLOSED_PATH, Principal(UUID(int=2), frozenset({"staff"}))),
-        (
-            LEADER_PATH,
-            Principal(UUID(int=3), frozenset({"ministry_leader"}), frozenset({9})),
+    actor = Principal(UUID(int=2), frozenset({"administrator"}))
+    items = admin_context._navigation_items(
+        actor, True, CLOSED, configuration, parishsoft_data=True
+    )
+    sections, _breadcrumbs = admin_navigation.build(
+        SimpleNamespace(
+            url_name="index", namespace=admin_navigation.NAMESPACE, kwargs={}
         ),
-    ):
-        items = admin_context._navigation_items(
-            actor, False, CLOSED, configuration, parishsoft_data=True
-        )
-        sections, _breadcrumbs = admin_navigation.build(
-            SimpleNamespace(
-                url_name="index", namespace=admin_navigation.NAMESPACE, kwargs={}
-            ),
-            items,
-        )
-        for section in sections:
-            for entry in section["items"]:
-                entry["count"] = (
-                    CLOSED_COUNTS.get(entry["name"]) if entry["url"] else None
-                )
-        chrome = admin | {"admin": False, "sections": sections, "breadcrumbs": []}
-        staff = "staff" in actor.roles
-        pages[path] = (
-            "text/html",
-            render_to_string(
-                "stewardship/home.html",
-                context
-                | {
-                    "admin_chrome": chrome,
-                    "principal": actor,
-                    "configuration": configuration,
-                    "dashboard": {
-                        "campaign": CLOSED,
-                        "refreshed_at": None,
-                        "roster_todo": 5 if staff else None,
-                    },
-                },
-            ),
-        )
-    return pages
+        items,
+    )
+    admin_context.attach_counts(sections, CLOSED_COUNTS)
+    chrome = admin | {"sections": sections, "breadcrumbs": []}
+    html = render_to_string(
+        "stewardship/home.html",
+        context
+        | {
+            "admin_chrome": chrome,
+            "principal": actor,
+            "configuration": configuration,
+            "dashboard": {"campaign": CLOSED, "refreshed_at": None},
+        },
+    )
+    return {CLOSED_PATH: ("text/html", html)}
 
 
 # Home with System health problems and a critical-problems banner (#1214):
-# an error, two warnings (one Home also reports in its refresh block), and
-# a banner group whose problem is current.
+# an error and two warnings, counted in one line since #1673, and a banner
+# group whose problem is current.
 HEALTH_PATH = "/home-health"
 # Home with the shared kinds of #1214's slice 1: an unknown No-reminders
 # WorkGroup while Reminders are scheduled, a backup key that cannot be
 # checked, a requested backup never picked up, and (Production) off-site
-# copies not set up.
+# copies not set up; Home counts them in one line since #1673.
 SHARED_PATH = "/home-health-shared"
 
 
@@ -171,7 +159,6 @@ def health_components(context, admin, chrome, actor, configuration):
     """Home as an Administrator sees it while System health lists problems."""
     from datetime import timedelta
 
-    from parishkit.stewardship.accounts.backup_destination import OffsiteStatus
     from parishkit.stewardship.audit.critical_events import summary
     from parishkit.stewardship.source.refresh_status import FullRefreshStatus
     from parishkit.stewardship.system_health import Problem, Subject
@@ -206,10 +193,7 @@ def health_components(context, admin, chrome, actor, configuration):
                 "can_refresh": True,
                 "refresh_key": "component-key",
                 "health_problems": problems,
-                "health_listed": {"failed": True, "late": False, "offsite": True},
-                "offsite": OffsiteStatus(
-                    "failed", "Copying the newest backup failed.", now, None, None
-                ),
+                "health_severity": "error",
             },
         },
     )
@@ -219,7 +203,6 @@ def health_components(context, admin, chrome, actor, configuration):
             workgroup="Do not remind",
             detail="reminders_scheduled",
         ),
-        Problem("backup_key_unchecked"),
         Problem(
             "backup_request_failed",
             at=now - timedelta(hours=1),
@@ -238,12 +221,10 @@ def health_components(context, admin, chrome, actor, configuration):
                 "campaign": CAMPAIGN,
                 "refreshed_at": None,
                 "health_problems": shared,
-                "health_listed": {
-                    "failed": False,
-                    "late": False,
-                    "offsite": False,
-                    "offsite_unset": True,
-                },
+                "health_severity": "error",
+                # An unreadable backup key keeps System health from
+                # opening, so Home states it instead of counting it.
+                "health_lines": (Problem("backup_key_unchecked"),),
                 "offsite_unset": True,
             },
         },

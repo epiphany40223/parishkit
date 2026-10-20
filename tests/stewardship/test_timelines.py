@@ -348,7 +348,8 @@ def test_administrator_page_shows_summary_and_timeline():
     assert "mode-testing" not in page and "Testing rehearsal</a>" not in page
     assert (
         '<form id="table-filters" data-table-sync method="get" '
-        f'action="/admin/reports/families/{FAMILY}/#table" class="filter-bar"'
+        f'action="/admin/reports/families/{FAMILY}/#table" '
+        'class="filter-bar timeline-filters"'
     ) in page
     assert '<input type="hidden" name="size" value="all">' in page
     assert '<input type="hidden" name="sort" value="-when">' in page

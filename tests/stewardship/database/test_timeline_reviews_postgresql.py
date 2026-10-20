@@ -90,7 +90,8 @@ def test_census_reviews_and_resolutions_reach_both_roles(response_service, googl
     edit(harness, admin, fresh(name), "Corrected")
     edit(harness, admin, fresh(name), None)
     review(harness, admin, fresh(name), "ignored")
-    review(harness, admin, fresh(name), "unreviewed")
+    # Sending an ignored change back needs a note (#1683's census review).
+    review(harness, admin, fresh(name), "unreviewed", note="Asked again")
     resolve(harness, staff, home, "entered")
     lines, statements = reviews(harness.campaign.pk, family_id)
     # One statement: no Ministry line, so no names are read.
