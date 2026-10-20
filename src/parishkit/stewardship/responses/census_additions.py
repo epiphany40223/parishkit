@@ -221,11 +221,21 @@ def _member_listed(family, member_key):
         )
 
 
-def _no_open_change(family, entity_kind, entity_key, field):
-    """Refuse an Add while the same field already has an open change.
+class ReopenOverOpen(ValueError):
+    """An entered addition cannot go back while its field has an open change.
 
-    An open addition, or the Family's own change that is not ignored, is
-    decided with its own icons (an Edit corrects the Family's value).
+    Reopening it would leave two open changes of one field (#1840): another
+    open addition, or the Family's own change that is not ignored, made or
+    answered after this one was entered. Nothing was saved; decide or
+    withdraw the other change first. SQL refuses the same.
+    """
+
+
+def _open_change(family, entity_kind, entity_key, field, *, besides=None):
+    """Whether the field has an open change, other than addition ``besides``.
+
+    An open addition, or the Family's own change that is not ignored and
+    still open (SQL reads the same).
     """
     added = (
         open_additions()
@@ -235,6 +245,7 @@ def _no_open_change(family, entity_kind, entity_key, field):
             entity_key=entity_key,
             field=field,
         )
+        .exclude(pk=besides)
         .exists()
     )
     asked = (
@@ -249,7 +260,16 @@ def _no_open_change(family, entity_kind, entity_key, field):
         .exclude(decision="ignored")
         .exists()
     )
-    if added or asked:
+    return added or asked
+
+
+def _no_open_change(family, entity_kind, entity_key, field):
+    """Refuse an Add while the same field already has an open change.
+
+    An open addition, or the Family's own change that is not ignored, is
+    decided with its own icons (an Edit corrects the Family's value).
+    """
+    if _open_change(family, entity_kind, entity_key, field):
         raise AddRefusal(
             "add_exists",
             "This field already has an open change. Use that change's own icons "
@@ -414,7 +434,8 @@ def resolve_census_additions(
     request key derived from the page's bulk key for ``bulk``
     (``bulk_key_for``), so a repeated post records nothing more. One whose
     state does not take the step, or shown at another version, raises
-    ``BulkStale`` naming it. Nestable inside the caller's work transaction,
+    ``BulkStale`` naming it; reopening one whose field has another open
+    change raises ``ReopenOverOpen``. Nestable inside the caller's work transaction,
     so a bulk decision over proposals and additions together is all or
     none. Returns the resolutions in id order.
     """
@@ -467,6 +488,16 @@ def resolve_census_additions(
             if step == "reopened" and not note.strip():
                 # Undoing a mark needs a reason, as reopening Ignored does.
                 raise ValueError("Undoing Entered by hand needs a note.")
+            if step == "reopened" and _open_change(
+                addition.family_id,
+                addition.entity_kind,
+                addition.entity_key,
+                addition.field,
+                besides=addition.pk,
+            ):
+                # Checked under the work order, so no Add or Family answer
+                # slips in between.
+                raise ReopenOverOpen("Another open change covers this field.")
             sequence = addition_version(latest)
             resolution = CensusAdditionResolution.objects.create(
                 actor_id=actor_id,

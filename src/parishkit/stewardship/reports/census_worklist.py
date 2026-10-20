@@ -43,6 +43,7 @@ from parishkit.stewardship.responses.census_additions import (
     ADDED_PREFIX,
     FAMILY_ADD_FIELDS,
     AddRefusal,
+    ReopenOverOpen,
     add_census_change,
     addition_state,
     addition_version,
@@ -788,6 +789,18 @@ class CensusDecisions:
                 "change cannot go back to review.",
                 field_ids=("bulk_note" if decision.bulk else "note",),
                 fix="Withdraw the added change first, then send this one back.",
+            ) from None
+        except ReopenOverOpen:
+            # An entered addition reopened while another open change of its
+            # field exists (one added or answered after it was entered,
+            # #1840): the field never has two open changes.
+            raise AddRefusal(
+                "reopen_open_change",
+                "This field has another open change now, so this added change "
+                "cannot go back to review.",
+                field_ids=("bulk_note" if decision.bulk else "note",),
+                fix="Decide or withdraw the other change first, then send this "
+                "one back.",
             ) from None
         except NoteRequired:
             # The page's dialog requires the note too; a post without one

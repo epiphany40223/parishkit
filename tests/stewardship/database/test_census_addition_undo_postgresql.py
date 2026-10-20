@@ -17,6 +17,7 @@ from django.db import DatabaseError, IntegrityError, connection, transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports.census_changes import addition_rows
 from parishkit.stewardship.responses.census_additions import (
+    ReopenOverOpen,
     resolve_census_additions,
 )
 from parishkit.stewardship.responses.census_review import BulkStale
@@ -183,6 +184,74 @@ def test_sql_refuses_a_reopen_of_an_open_addition(response_service):
         (IntegrityError, DatabaseError), match="does not follow its latest step"
     ):
         forge(RESOLUTION, [staff, addition.pk, "reopened", "Typo", 1])
+
+
+def test_an_entered_addition_is_not_reopened_over_a_second_one(response_service):
+    """Once A is Entered by hand a second addition B of the field may be
+    added; while B is open A's undo is refused by the service and by SQL
+    (the field never has two open changes); once B is withdrawn it works."""
+    harness, _, staff, rows, campaign, first = entered(response_service)
+    second, _ = add(harness, staff, campaign, member_form(rows, "nickname", "Bob"))
+    with pytest.raises(ReopenOverOpen):
+        step(harness, staff, campaign, first, 2, "back_to_review", note="Typo")
+    with pytest.raises(
+        (IntegrityError, DatabaseError), match="reopens over an open change"
+    ):
+        forge(RESOLUTION, [staff, first.pk, "reopened", "Typo", 2])
+    assert CensusAdditionResolution.objects.filter(addition=first).count() == 1
+    step(harness, staff, campaign, second, 1, "back_to_review")
+    reopened = step(harness, staff, campaign, first, 2, "back_to_review", note="Typo")
+    assert reopened.action == "reopened"
+
+
+def test_an_entered_addition_is_not_reopened_over_the_familys_open_change(
+    response_service,
+):
+    """An addition added in place of the Family's ignored change, then
+    Entered by hand, frees that change to go back to review; while it is
+    open again, the addition's undo is refused at the note in plain words
+    (``reopen_open_change``) and by SQL."""
+    from .test_census_add_page_postgresql import worklist
+    from .test_census_pipeline_review_postgresql import decide
+    from .test_census_review_postgresql import fresh
+
+    harness, _, staff, rows = prepared(response_service)
+    campaign = campaign_of(rows)
+    decide(harness, staff, [rows["first_name"]], "ignore")
+    addition, _ = add(
+        harness,
+        staff,
+        campaign,
+        member_form(
+            rows, "first_name", "Robert", in_place_of=str(rows["first_name"].pk)
+        ),
+    )
+    step(harness, staff, campaign, addition, 1, "entered")
+    ignored = fresh(rows["first_name"])
+    worklist(
+        harness,
+        staff,
+        campaign,
+        "back_to_review",
+        {str(ignored.pk): ignored.version},
+        note="Family meant it",
+    )
+    with pytest.raises(AddRefusal) as refused:
+        worklist(
+            harness,
+            staff,
+            campaign,
+            "back_to_review",
+            {f"add-{addition.pk}": 2},
+            note="Typo",
+        )
+    assert refused.value.code == "reopen_open_change"
+    assert refused.value.field_ids == ("note",)
+    with pytest.raises(
+        (IntegrityError, DatabaseError), match="reopens over an open change"
+    ):
+        forge(RESOLUTION, [staff, addition.pk, "reopened", "Typo", 2])
+    assert CensusAdditionResolution.objects.filter(addition=addition).count() == 1
 
 
 def old_check():

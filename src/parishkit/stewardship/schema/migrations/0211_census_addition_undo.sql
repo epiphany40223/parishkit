@@ -25,7 +25,9 @@
 --   stewardship_census_addition_resolution_guard_v1 the step is the next
 --       sequence, and follows its latest one: an open addition is entered
 --       or withdrawn, an entered one only reopened, with a note that is not
---       blank, and a withdrawn one takes none;
+--       blank, and only while no other open change of the same field exists
+--       (another open addition, or the Family's own change not ignored),
+--       and a withdrawn one takes none;
 --   stewardship_census_addition_resolution_effect_v1 the audit's versions
 --       are the step's sequence and the next (1 and 2 for a first step, as
 --       before).
@@ -149,13 +151,15 @@ END $$;
 CREATE OR REPLACE FUNCTION public.stewardship_census_addition_resolution_guard_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE campaign uuid; latest public.stewardship_census_addition_resolution%ROWTYPE;
+    addition public.stewardship_census_addition%ROWTYPE;
 BEGIN
     IF TG_OP<>'INSERT' THEN
         RAISE EXCEPTION 'Census addition resolutions are immutable' USING ERRCODE='23514';
     END IF;
-    SELECT f.campaign_id INTO campaign FROM public.stewardship_census_addition a
-        JOIN public.stewardship_family_campaign f ON f.id=a.family_id
+    SELECT a.* INTO addition FROM public.stewardship_census_addition a
         WHERE a.id=NEW.addition_id;
+    SELECT f.campaign_id INTO campaign FROM public.stewardship_family_campaign f
+        WHERE f.id=addition.family_id;
     IF campaign IS NULL
        OR NOT public.stewardship_export_authorized_v1(NEW.actor_id,false)
        OR NOT public.stewardship_export_admitted_v1(campaign,true)
@@ -173,9 +177,29 @@ BEGIN
     IF NEW.sequence IS DISTINCT FROM coalesce(latest.sequence,0)+1
        OR (coalesce(latest.action,'reopened')='reopened'
            AND NEW.action NOT IN ('entered','withdrawn'))
-       OR (latest.action='entered' AND (NEW.action<>'reopened' OR btrim(NEW.note)=''))
+       OR (latest.action='entered' AND (NEW.action<>'reopened' OR NEW.note !~ '\S'))
        OR latest.action='withdrawn'
     THEN RAISE EXCEPTION 'Census addition step does not follow its latest step'
+        USING ERRCODE='23514'; END IF;
+    -- Reopening makes the addition open again, so, as a new addition is,
+    -- it is refused while the same field has another open change: another
+    -- open addition, or the Family's own change that is not ignored (one
+    -- added or answered after this one was entered). One field never has
+    -- two open changes.
+    IF NEW.action='reopened' AND (
+           EXISTS (SELECT 1 FROM public.stewardship_census_addition a
+               WHERE a.id<>addition.id AND a.family_id=addition.family_id
+                 AND a.entity_kind=addition.entity_kind
+                 AND a.entity_key=addition.entity_key AND a.field=addition.field
+                 AND coalesce((SELECT r.action FROM public.stewardship_census_addition_resolution r
+                     WHERE r.addition_id=a.id ORDER BY r.sequence DESC LIMIT 1),'reopened')='reopened')
+           OR EXISTS (SELECT 1 FROM public.stewardship_proposed_change p
+               JOIN public.stewardship_submission s ON s.id=p.submission_id
+               WHERE s.family_id=addition.family_id AND s.mode='live'
+                 AND p.entity_kind=addition.entity_kind AND p.entity_key=addition.entity_key
+                 AND p.field=addition.field AND p.decision<>'ignored'
+                 AND p.execution IN ('pending','conflict','queued','failed')))
+    THEN RAISE EXCEPTION 'Census addition reopens over an open change of its field'
         USING ERRCODE='23514'; END IF;
     NEW.created_at:=statement_timestamp();
     RETURN NEW;
@@ -231,7 +255,8 @@ BEGIN
                     AND prosrc LIKE '%ORDER BY r.sequence DESC LIMIT 1),''reopened'')=''reopened'')%')
                 OR (oid='public.stewardship_census_addition_resolution_guard_v1()'::regprocedure
                     AND prosrc LIKE '%Census addition step does not follow its latest step%'
-                    AND prosrc LIKE '%(latest.action=''entered'' AND (NEW.action<>''reopened'' OR btrim(NEW.note)=''''))%')
+                    AND prosrc LIKE '%(latest.action=''entered'' AND (NEW.action<>''reopened'' OR NEW.note !~ ''\\S''))%'
+                    AND prosrc LIKE '%Census addition reopens over an open change of its field%')
                 OR (oid='public.stewardship_census_addition_resolution_effect_v1()'::regprocedure
                     AND prosrc LIKE '%''before_version'',NEW.sequence,''after_version'',NEW.sequence+1%')))<>3
     THEN

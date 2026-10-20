@@ -2673,7 +2673,10 @@ The field never has two open changes by the worklist's own decisions: while
 an addition of the field is open, an ignored change of the same field
 offers no Back to review, and one posted anyway is refused (`reopen_added`;
 withdraw the addition first), as is `pk-admin census review` or `census
-resolve` reopening it; the check runs under the work order. A later Family response may still ask for the
+resolve` reopening it; the check runs under the work order. Likewise an
+entered addition's Back to review is refused while the field has another open
+change, another open addition or the Family's own change that is not ignored
+(`reopen_open_change`; decide or withdraw that one first), in SQL too. A later Family response may still ask for the
 same field again; the open addition then says the Family has an open change
 of this field too, so Staff decide that one and withdraw the addition if it
 is no longer needed. Its Baseline is ParishSoft's value of the field when it
