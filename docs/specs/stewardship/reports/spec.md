@@ -1240,6 +1240,14 @@ the data no longer has has no name: the page shows the
 [ParishSoft status](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
 badge in its place, and marks an inactive Family beside its name (#1216).
 No chart or summary sits above the table: the counts are the Stage choices'.
+The search and filters travel in POST bodies; the one address a link may
+carry is a Stage alone (`?stage=<value>`, a
+[My review work](../review-pipeline/spec.md#role-views) card's,
+[#1818](https://github.com/epiphany40223/parishkit/issues/1818)), and any
+other query string, or a Stage the filter does not offer, is refused with
+the page's plain-language filter error (a 400). The page's address carries
+its Stage the same way (To review is the plain address), so a reload after
+an in-place answer draws the same Stage.
 
 Staff and Administrators decide each request as the pipeline's
 [role-specific actions](../review-pipeline/spec.md#role-specific-actions)

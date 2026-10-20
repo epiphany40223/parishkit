@@ -93,6 +93,25 @@ def test_the_worklist_lists_and_decides_requests_in_place(
         assert response.status_code == 200
         assert f"The request from Family DUID {duid} accepted.".encode() in body
         assert "To handle (1)" in stage_options(body)
+        # A Stage alone may come by GET, a My review work card's link (#1818):
+        # the page opens at that Stage. Anything more, a repeated Stage or one
+        # the filter does not offer is the page's 400.
+        response, body = read(browser, ROUTE + "?stage=to_handle")
+        assert response.status_code == 200
+        assert b'<option value="to_handle" selected>' in body
+        # Its address carries the Stage, so a reload draws the same view;
+        # To review's is the plain address.
+        assert f'<a href="{ROUTE}?stage=to_handle" data-page-address'.encode() in body
+        assert f'href="{ROUTE}{item.pk}/">'.encode() in body
+        _, body = read(browser, ROUTE + "?stage=to_review")
+        assert f'href="{ROUTE}{item.pk}/">'.encode() not in body
+        assert f'<a href="{ROUTE}" data-page-address'.encode() in body
+        for query in (
+            "?stage=nope",
+            "?stage=to_handle&search=choir",
+            "?stage=a&stage=b",
+        ):
+            assert read(browser, ROUTE + query)[0].status_code == 400, query
         # The same post again replays it; the key with another choice is a
         # 409 asking for a reload.
         accept["version"] = str(int(accept["version"]))

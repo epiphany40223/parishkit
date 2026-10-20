@@ -250,8 +250,9 @@ def _respond(request, campaign_id, *, item_id=None):
     """Guard every data query, template render and byte; audit response completion.
 
     The list reads its filters, table choices and any decision from its own
-    POST body: a decision is recorded first, in its own work transaction, so
-    the page that answers shows its result. A request someone changed first
+    POST body, or a Stage alone from a GET link (``?stage=``): a decision
+    is recorded first, in its own work transaction, so the page that
+    answers shows its result. A request someone changed first
     is the page's notice, not an error; a page sent again with other
     choices is a 409 that asks for a reload.
     """
@@ -261,9 +262,14 @@ def _respond(request, campaign_id, *, item_id=None):
         principal = _principal(request, service.store)
         notice, history_page, history_only, decision = None, 1, False, None
         if item_id is None:
-            if request.GET:
+            # A link may carry a Stage alone, a My review work card's
+            # ``?stage=`` (#1818); WorklistQuery.parse checks its value.
+            # Search, dates and table choices stay private POST state.
+            if request.GET and (
+                request.method != "GET" or set(request.GET) != {"stage"}
+            ):
                 raise ValueError("Search and filters require a POST body.")
-            parameters = request.POST.copy()
+            parameters = (request.GET if request.GET else request.POST).copy()
             parameters.pop("csrfmiddlewaretoken", None)
             decision = read_decision(parameters)
             paging = paging_values(parameters)
