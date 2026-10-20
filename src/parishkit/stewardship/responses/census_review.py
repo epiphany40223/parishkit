@@ -81,7 +81,12 @@ from .comparison import ADDRESS_COMPONENTS, ValueKind
 from .contact_schema import PUT_SCHEMA, sendable
 from .member_census import InvalidMemberValue, validate_member_value
 from .member_requests import REQUEST_FIELDS
-from .models import REVIEW_DECISIONS, ProposalReview, ProposedChange
+from .models import (
+    REVIEW_DECISIONS,
+    ProposalResolution,
+    ProposalReview,
+    ProposedChange,
+)
 from .publication import MEMBER_FIELDS, encode_member_value
 
 # A review may start only while the change is open: never while it is queued
@@ -758,11 +763,24 @@ def _decide(proposal, action, actor_id, version, key, note, parish, value):
     the fields the change already has is a plain Accept. Ignore and Back to
     review are decisions. Entered by hand is a resolution
     (``census_resolution``), which on a To review By hand change accepts and
-    marks it in one step (decision 2).
+    marks it in one step (decision 2), and on a change Entered incorrectly
+    marks it again. Back to review on a change Entered incorrectly is a
+    resolution too (``reopened``, #1737): the change is final for reviews.
     """
     if action == ENTERED:
         return record_resolution(
             proposal, actor_id, version, key, "entered", note, parish
+        )
+    if action == BACK and (
+        proposal.execution == "resolved_external"
+        # A repeated post (the same request key) follows its first post's
+        # path: that post reopened the change, which is no longer entered.
+        or ProposalResolution.objects.filter(
+            actor_id=actor_id, request_key=key
+        ).exists()
+    ):
+        return record_resolution(
+            proposal, actor_id, version, key, "reopened", note, parish
         )
     if action in (ACCEPT, EDIT):
         # A repeated post (the same request key) follows the path its first
