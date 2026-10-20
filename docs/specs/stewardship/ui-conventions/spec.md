@@ -1641,8 +1641,17 @@ the campaign wizard in #1404 PR 4).
 - **While the dialog is open** it is a native modal `<dialog>`: the rest of
   the page, the form included, is inert and cannot be edited, and Tab stays
   inside the dialog. So the review shown is always the review of the form as
-  it stands, and no edit ever has to withdraw it. Escape or Cancel closes the
-  dialog, changes nothing, and returns focus to Review changes.
+  it stands, and no edit ever has to withdraw it. Escape or Cancel (or the
+  dialog's own dismiss label, below) closes the dialog, changes nothing,
+  and returns focus to Review changes.
+- **A dismiss label that names what is kept.** The button that closes the
+  dialog without applying reads **Cancel**, unless that word would read as
+  the action it dismisses: a dialog that asks whether to cancel something
+  then names what is kept instead (Cancel go-live's **Keep it scheduled**,
+  [#1806](https://github.com/epiphany40223/parishkit/issues/1806)), as the
+  [confirmation dialog](#row-actions-and-confirmation)'s own labels may
+  (the Basic and Advanced toggle's **Keep Advanced**). It behaves exactly as
+  Cancel does. The title still names the action ("Cancel go-live?").
 - **Apply** posts the dialog's signed preview without a page load, as the
   [Delete dialog](#row-actions-and-confirmation) does: from then on the
   dialog cannot be dismissed (no Escape, no Cancel) until the answer
@@ -2339,6 +2348,19 @@ opens one page per kind of reason. **Precedent.** #1128.
   the `menu_link` template tag (`components/menu-link.html`),
   `admin_navigation.PAGE_REASONS`, `admin_context.page_unavailable`.
   **Precedent.** #1242.
+- **A watched page that becomes unavailable settles.** A page that
+  [updates itself](#pages-that-update-themselves) can become unavailable
+  while it is open, as Production activation does when another tab or
+  another Administrator cancels go-live. Its next status read is then
+  answered with this refusal (409, `not_available`), which is never
+  retried: the self-updating region is replaced by the refusal's own words
+  and link (Production activation: the menu's reason and **Go to Go
+  live**), its stale controls go with it, and watching stops. It does not
+  wait for a focused control in the region, since those controls can no
+  longer act: focus moves to the new link instead. Any other 409
+  (a stale page, busy configuration) is still retried. **Shared code.**
+  `live-status-v1.js`. **Precedent.**
+  [#1805](https://github.com/epiphany40223/parishkit/issues/1805).
 
 ### Navigation rules
 
