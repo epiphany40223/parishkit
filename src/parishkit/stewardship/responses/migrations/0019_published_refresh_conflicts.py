@@ -1,7 +1,7 @@
 """Forward migration: the refresh's last census cases (#1749).
 
-Its SQL is the frozen file ``schema/migrations/0150_published_refresh_conflicts.sql``
-(number 0150, provisional until it is assigned in merge order), read whole
+Its SQL is the frozen file ``schema/migrations/0138_published_refresh_conflicts.sql``
+(number 0138, provisional until it is assigned in merge order), read whole
 and never parsed. It widens the refresh check outcome to ``conflict`` (an
 Updated in ParishSoft change ParishSoft no longer holds), adds a
 resolution's ParishSoft Member ID (a New Member Staff marked entered), and
@@ -25,16 +25,17 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0150_published_refresh_conflicts.sql"
+    / "0138_published_refresh_conflicts.sql"
 )
 
 
 class Migration(migrations.Migration):
     dependencies = [
-        # The migrations that install the previous frozen files (0140 and
-        # 0141), whose guard bodies this file replaces and joins, so the
-        # files apply in prefix order.
-        ("stewardship_responses", "0014_entered_incorrectly_fixes"),
+        # This app's previous migration (0136's, after 0133's), so the app
+        # keeps one leaf, and the migration that installs the previous frozen
+        # file (0137); 0133's and 0137's guard bodies this file replaces and
+        # joins, so the files apply in prefix order.
+        ("stewardship_responses", "0018_submission_upcoming_pledge"),
         ("stewardship_workflows", "0005_census_refresh_sources"),
     ]
 

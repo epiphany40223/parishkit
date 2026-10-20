@@ -345,7 +345,7 @@ def census_source(row, corpus):
       is active;
     - the Family's home address: ParishSoft's primary address of an active
       Family (``row.primary_address``, the snapshot's address fields;
-      ``_primary_address``), migration 0150's (provisional number) reading;
+      ``_primary_address``), migration 0138's (provisional number) reading;
     - a New Member: whether the data lists the Member ID recorded at its
       mark (``row.added_duid``) as an active, living Member of the Family,
       as the shared SQL status says ``current``; none without an ID.
@@ -406,7 +406,7 @@ def _primary_address(found):
     ``found`` is the snapshot's primary address record of the Family (its
     ``fields``), or None when the data has none. No read returns the
     country, so it is blank; ParishSoft's second and third street lines are
-    joined into the second. Migration 0150's
+    joined into the second. Migration 0138's
     ``stewardship_refresh_census_source_v1`` builds the same. A field
     ParishSoft returned as null reads as blank, as SQL's ``coalesce`` does.
     """
@@ -438,7 +438,7 @@ def _primary_address(found):
 def _address_key(value):
     """An address's confirmation key: the census comparison without the
     country (no read returns ParishSoft's) and with a ZIP+4 read as its
-    five digits. Migration 0150's ``stewardship_refresh_address_key_v1``."""
+    five digits. Migration 0138's ``stewardship_refresh_address_key_v1``."""
     if value is None:
         return None
     postal = value.get("postal_code") or ""

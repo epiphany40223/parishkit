@@ -644,7 +644,7 @@ unchanged exactly when ParishSoft holds that value, and Entered incorrectly
 only when a value was recorded and ParishSoft holds another one.
 
 [#1749](https://github.com/epiphany40223/parishkit/issues/1749) (migration
-0150, provisional number) adds the rest:
+0138, provisional number) adds the rest:
 
 - **An Updated in ParishSoft change found back at A, or at a third value,**
   is a Conflict (rule 2's exception and rule 3): the write was undone, or

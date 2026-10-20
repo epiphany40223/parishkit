@@ -415,8 +415,8 @@ def _previous_guard():
 
 
 def _own_bodies():
-    """0141's own two bodies, as replacement statements: a later file
-    (0150, #1749) replaces both, so the check is run against these."""
+    """0137's own two bodies, as replacement statements: a later file
+    (0138, #1749) replaces both, so the check is run against these."""
     text = FROZEN.read_text(encoding="utf-8")
     source = text.index("CREATE FUNCTION public.stewardship_refresh_census_source_v1")
     guard = text.index(
@@ -432,8 +432,8 @@ def _own_bodies():
 
 def test_do_block_refuses_the_old_definitions(db):
     """The closing check passes as installed and raises once the guard is put
-    back to 0136's body, its trigger is disabled, or the source function is
-    made SECURITY DEFINER. Each runs on 0141's own bodies, rolled back."""
+    back to 0132's body, its trigger is disabled, or the source function is
+    made SECURITY DEFINER. Each runs on 0137's own bodies, rolled back."""
     with transaction.atomic(), connection.cursor() as cursor:
         for statement in _own_bodies():
             cursor.execute(statement)

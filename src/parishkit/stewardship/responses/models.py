@@ -480,7 +480,7 @@ class ProposalResolution(ImmutableRecord):
     # entered (#1749): the Member they added, which the refresh confirms the
     # change by (``refresh_checks``). Only on an ``entered`` row; SQL also
     # requires a New Member change and no Member the Family's response
-    # listed (schema/migrations/0150_published_refresh_conflicts.sql).
+    # listed (schema/migrations/0138_published_refresh_conflicts.sql).
     member_duid = models.BigIntegerField(null=True, blank=True)
 
     class Meta:

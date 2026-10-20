@@ -1,4 +1,4 @@
--- Frozen forward migration file 0150 (the repository-wide file sequence;
+-- Frozen forward migration file 0138 (the repository-wide file sequence;
 -- provisional, the number is assigned centrally in merge order): the
 -- refresh's last census cases (#1749). This file is installed by its Django
 -- migration in the responses app and must never change once released;
@@ -6,7 +6,7 @@
 --
 -- The review pipeline (docs/specs/stewardship/review-pipeline/spec.md,
 -- "Refresh checks") re-evaluates a final census change against each
--- promoted refresh. 0136, 0140 and 0141 (provisional numbers) check a change
+-- promoted refresh. 0132, 0133 and 0137 (provisional numbers) check a change
 -- Entered by hand and confirm an Updated in ParishSoft one. This file adds:
 --   * An Updated in ParishSoft change ParishSoft no longer holds (back at
 --     the baseline, or at a third value) is a Conflict: a full refresh's
@@ -29,27 +29,27 @@
 -- Created: stewardship_refresh_address_key_v1, an address's confirmation
 -- key. Replaced, each from its latest body, with these changes and only
 -- these:
---   * stewardship_refresh_census_source_v1 (0141's): also the Family's
+--   * stewardship_refresh_census_source_v1 (0137's): also the Family's
 --     home address, from the snapshot's primary address of an active
 --     Family.
---   * stewardship_proposal_resolution_guard_v1 (0140's): a member_duid
+--   * stewardship_proposal_resolution_guard_v1 (0133's): a member_duid
 --     only on an 'entered' resolution of a New Member, never a Member the
 --     Family's response listed nor one another New Member of the Family is
 --     entered as now.
---   * stewardship_response_derived_guard_v1 (0140's; guards.sql has the
+--   * stewardship_response_derived_guard_v1 (0133's; guards.sql has the
 --     same body): the worker may move a published change to conflict, only
 --     through its reconciliation branch (fenced, pinned, changed source)
 --     with this promotion's 'conflict' check at the change's version whose
 --     observed value is the change's new one, its decision back to
 --     unreviewed; and the queue step requires the Member's current
 --     standing.
---   * stewardship_refresh_check_guard_v1 (0140's and 0141's bodies,
---     joined: 0140 and 0141 each replace 0136's and neither depends on the
+--   * stewardship_refresh_check_guard_v1 (0133's and 0137's bodies,
+--     joined: 0133 and 0137 each replace 0132's and neither depends on the
 --     other, so this one carries both): a census check may be of a Family's
 --     home address or a New Member; 'conflict' is the outcome of exactly a
 --     published change ParishSoft no longer holds, on a full refresh only
 --     (a quick update records none for it); a New Member, a home
---     address (and 0141's three fields) are never entered_incorrectly and
+--     address (and 0137's three fields) are never entered_incorrectly and
 --     take no value recorded at a mark.
 --   * stewardship_source_pin_guard (the baseline's; functions.sql has the
 --     same body): the source worker may also pin the promoting snapshot for
@@ -68,7 +68,7 @@ ALTER TABLE "stewardship_proposal_resolution" ADD COLUMN "member_duid" bigint NU
 ALTER TABLE "stewardship_proposal_resolution" ADD CONSTRAINT "proposal_resolution_member" CHECK (((member_duid IS NULL) OR (((action)::text = 'entered'::text) AND (member_duid > 0))));
 
 -- The snapshot's own value for one census change, as a {available, value}
--- object, or NULL when the snapshot gives no evidence: 0141's body, plus
+-- object, or NULL when the snapshot gives no evidence: 0137's body, plus
 -- the Family's home address (#1749), read as ParishSoft's primary address
 -- in the census address shape, with no country (no read returns one) and
 -- ParishSoft's second and third lines joined. responses/refresh_checks.py
@@ -1080,7 +1080,7 @@ BEGIN
               AND prosrc LIKE '%OR (NEW.outcome=''conflict'' AND change.execution<>''published'')%'
               AND prosrc LIKE '%stewardship_refresh_address_key_v1(NEW.observed->''value'')%'
               AND prosrc LIKE '%r.action=''entered''%'
-              -- 0140's rules and 0141's, both kept.
+              -- 0133's rules and 0137's, both kept.
               AND prosrc LIKE '%k.item_version=change.version-1%'
               AND prosrc LIKE '%A replaced census change is not checked%'
               AND prosrc LIKE '%stewardship_refresh_census_source_v1(%'

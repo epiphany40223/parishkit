@@ -24,12 +24,12 @@ On the worklist both are Staff's as well as an Administrator's
 (``pk-admin census resolve`` keeps Reopen the Administrator's, with a
 note). SQL admits them only while its latest refresh check says Entered
 incorrectly and no later response of the Family answered the field again
-(``schema/migrations/0140_entered_incorrectly_fixes.sql``, provisional).
+(``schema/migrations/0133_entered_incorrectly_fixes.sql``, provisional).
 
 Marking a New Member entered may name the **ParishSoft Member ID** of the
 Member Staff added (#1749, ``member_ids``), which the refresh confirms the
 change by; SQL admits it only on such a mark, never a Member the Family's
-response listed (``schema/migrations/0150_published_refresh_conflicts.sql``,
+response listed (``schema/migrations/0138_published_refresh_conflicts.sql``,
 provisional).
 """
 
