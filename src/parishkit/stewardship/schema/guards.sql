@@ -4916,13 +4916,34 @@ BEGIN
             -- that the web login reworks over Entered incorrectly (#1737):
             -- the web branch below admits that only with its paired
             -- resolution row, whose own guard requires the change's latest
-            -- refresh check to say Entered incorrectly.
+            -- refresh check to say Entered incorrectly; and an Updated in
+            -- ParishSoft change a refresh finds ParishSoft no longer holds
+            -- (#1749), which moves to conflict only with its paired refresh
+            -- check (below), never through the web login.
             IF (OLD.execution IN ('published','resolved_upstream','resolved_external','cancelled','superseded')
-                    AND NOT (OLD.execution='resolved_external' AND current_user='pk_stewardship_web'))
+                    AND NOT (OLD.execution='resolved_external' AND current_user='pk_stewardship_web')
+                    AND NOT (OLD.execution='published' AND NEW.execution='conflict'
+                        AND current_user<>'pk_stewardship_web'))
                 OR (to_jsonb(NEW)-ARRAY['current_available','current_value','current_source_id','admin_value_set','admin_value','decision','execution','superseded_by_id','version','updated_at'])
                     IS DISTINCT FROM (to_jsonb(OLD)-ARRAY['current_available','current_value','current_source_id','admin_value_set','admin_value','decision','execution','superseded_by_id','version','updated_at'])
             THEN
                 RAISE EXCEPTION 'Proposal history and terminal outcomes are immutable' USING ERRCODE='23514';
+            END IF;
+            -- An Updated in ParishSoft change becomes a Conflict (#1749) only
+            -- with the refresh check the promotion recorded for it at its
+            -- version, whose own guard checked ParishSoft's value against
+            -- the snapshot and the change: the change takes that value and
+            -- snapshot. The worker's reconciliation branch below then
+            -- requires the fenced, pinned source and returns the decision
+            -- to review.
+            IF OLD.execution='published' AND NOT EXISTS (
+                SELECT 1 FROM public.stewardship_refresh_check k
+                WHERE k.proposal_id=OLD.id AND k.item_version=OLD.version
+                  AND k.outcome='conflict' AND k.snapshot_id=NEW.current_source_id
+                  AND NEW.current_available
+                  AND k.observed=jsonb_build_object('available',true,'value',NEW.current_value))
+            THEN
+                RAISE EXCEPTION 'An updated change becomes a Conflict only with its refresh check' USING ERRCODE='23514';
             END IF;
             IF current_user='pk_stewardship_worker'
                AND NEW.current_source_id IS NOT DISTINCT FROM OLD.current_source_id THEN
@@ -4938,7 +4959,10 @@ BEGIN
                 -- it to pending or failed when that outcome is invalidated.
                 -- The publication check also marks it resolved upstream when
                 -- its plan, recorded in this transaction, found the value
-                -- already in ParishSoft.
+                -- already in ParishSoft. It queues a change only while the
+                -- current data lists its Member as an active, living Member
+                -- of the change's Family (#1738, #1749), as preflight and the
+                -- worker check before they read or write.
                 IF ROW(NEW.current_available,NEW.current_value,NEW.admin_value_set,
                        NEW.admin_value,NEW.decision,NEW.superseded_by_id)
                    IS DISTINCT FROM
@@ -4947,6 +4971,16 @@ BEGIN
                    OR NOT (
                    (OLD.execution IN ('pending','failed') AND NEW.execution='queued'
                        AND OLD.decision='approved' AND OLD.handling='api' AND OLD.entity_kind='member'
+                       AND public.stewardship_member_source_status_v1(
+                           (SELECT current_source.snapshot_id
+                               FROM public.stewardship_source_current current_source
+                               WHERE current_source.singleton),
+                           OLD.entity_key,
+                           (SELECT listed_family.family_duid
+                               FROM public.stewardship_submission listed_response
+                               JOIN public.stewardship_family_campaign listed_family
+                                   ON listed_family.id=listed_response.family_id
+                               WHERE listed_response.id=OLD.submission_id))='current'
                        AND EXISTS (SELECT 1 FROM public.stewardship_publication_field f
                            JOIN public.stewardship_publication_entity e ON e.id=f.entity_id
                            JOIN public.stewardship_publication_plan p ON p.id=e.plan_id
@@ -5012,11 +5046,17 @@ BEGIN
                 -- An approval resting on it goes back to To review while the
                 -- change stays open. A queued change keeps its approval (the
                 -- publish worker owns it then); its plan, merged against the
-                -- Family's baseline again, can only meet a conflict. Nothing
-                -- else here changes the decision. (The CASE is in
-                -- parentheses: an IF condition ends at its first THEN outside
-                -- them.)
-                IF NEW.decision IS DISTINCT FROM (CASE WHEN OLD.decision='approved'
+                -- Family's baseline again, can only meet a conflict. (The
+                -- CASE is in parentheses: an IF condition ends at its first
+                -- THEN outside them.)
+                -- An Updated in ParishSoft change a refresh found
+                -- ParishSoft no longer holds (#1749) goes back to To
+                -- review too: its approval is decided again, never carried
+                -- by a later refresh or the Family's same answer back
+                -- into force over the undo in ParishSoft. Nothing else
+                -- here changes the decision.
+                IF NEW.decision IS DISTINCT FROM (CASE WHEN OLD.execution='published'
+                       THEN 'unreviewed' WHEN OLD.decision='approved'
                        AND OLD.execution IN ('pending','failed')
                        AND NEW.execution IN ('pending','conflict')
                        AND EXISTS (SELECT 1 FROM public.stewardship_proposal_review base

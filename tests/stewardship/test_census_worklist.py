@@ -671,3 +671,53 @@ def test_link_pairs_carry_only_the_link_safe_choices():
     assert page_address("/c", link_pairs(chosen, {"sort": "-who"})) == (
         "/c?stage=all&route=automatic&start=2054-10-01&zone=UTC&sort=-who"
     )
+
+
+def test_a_refresh_conflict_and_a_member_id_say_so_under_the_stage():
+    """#1749: an Updated in ParishSoft change a refresh put back in Conflict
+    says why (an ordinary Conflict does not), and a New Member's mark names
+    the Member ID Staff gave; a New Member's Entered by hand opens its own
+    dialog asking for it."""
+    undone = shaped(execution="conflict", decision="unreviewed", refresh_conflict=True)
+    changed = shaped(
+        id="2", execution="conflict", decision="approved", refresh_conflict=False
+    )
+    added = shaped(
+        id="3",
+        entity_kind="proposed_member",
+        entity_key="local",
+        field="new_member",
+        handling="manual",
+        submitted_value={"first_name": "Newly", "last_name": "Sample"},
+        current_available=False,
+        current_value=None,
+        baseline_available=False,
+        baseline_value=None,
+        decision="approved",
+        execution="resolved_external",
+        resolution_action="entered",
+        resolution_member=7,
+    )
+    fresh = shaped(
+        id="4",
+        entity_kind="proposed_member",
+        entity_key="local",
+        field="new_member",
+        handling="manual",
+        submitted_value={"first_name": "Newly", "last_name": "Sample"},
+        current_available=False,
+        current_value=None,
+        baseline_available=False,
+        baseline_value=None,
+    )
+    worklist, html = page([undone, changed, added, fresh])
+    rows = {row["id"]: row for row in worklist.rows}
+    assert rows["1"]["decision_label"].endswith(
+        "ParishSoft no longer holds the update."
+    )
+    assert "no longer holds" not in rows["2"]["decision_label"]
+    assert rows["3"]["decision_label"].endswith("ParishSoft Member ID 7.")
+    assert rows["4"]["offers_entered"] and not rows["1"]["offers_entered"]
+    assert 'id="census-entered-dialog-4"' in html
+    # Census Add's dialog (#1710) has a value_member field of its own.
+    assert html.count("ParishSoft Member ID (optional)") == 1
