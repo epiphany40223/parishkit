@@ -13,6 +13,8 @@ import pytest
 
 from .conftest import NOW, SETUP_LOAD_STATUS, load_collections
 from .setup_live_components import load_status
+from .test_go_live_prepare import STATES as PREPARE_STATES
+from .test_production_activation import STATES as ACTIVATION_STATES
 from .test_setup_live_status import answer, observation
 from .waits import has_attribute
 
@@ -158,3 +160,40 @@ def test_reduced_motion_shows_a_still_spinner(page, component_origin):
     assert spinner.is_visible()
     assert spinner.evaluate(OFFSETS) == turning
     assert spinner.evaluate(SLOT)
+
+
+@pytest.mark.parametrize(("width", "scheme"), [(320, "dark"), (1280, "light")])
+def test_go_live_in_progress_boxes_show_the_shared_spinner(
+    page, component_origin, width, scheme
+):
+    """The Go live page's Prepare and Activation steps draw the one shared
+    spinner in every In progress box and nowhere else, in the mark's slot."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.emulate_media(color_scheme=scheme, reduced_motion="no-preference")
+    pages = [(row[0], "[data-go-live-stage]") for row in PREPARE_STATES]
+    pages += [
+        (row[0], "[data-production-stage]") for row in ACTIVATION_STATES if row[5]
+    ]
+    seen = 0
+    for path, boxes in pages:
+        page.goto(component_origin + path)
+        states = page.locator(boxes).evaluate_all(
+            "boxes => boxes.map(b => [b.dataset.stageState,"
+            " b.querySelectorAll('.spinner').length])"
+        )
+        # A spinner in an active box, none in any other.
+        assert [n for _, n in states] == [
+            1 if state == "active" else 0 for state, _ in states
+        ], path
+        spinners = page.locator(f"{boxes} .spinner")
+        for index in range(spinners.count()):
+            seen += 1
+            spinner = spinners.nth(index)
+            assert spinner.get_attribute("aria-hidden") == "true", path
+            assert spinner.evaluate(SLOT), path
+            ink, ring = spinner.evaluate(INK)
+            assert ring == ink, path
+        assert page.evaluate(
+            "document.documentElement.scrollWidth <= window.innerWidth"
+        ), path
+    assert seen >= 4
