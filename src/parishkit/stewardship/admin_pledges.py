@@ -42,7 +42,15 @@ from .admin_reads import NotAvailable, ReadModel, _recheck
 # The page's Stage choices (``pledge_review_views.STAGES`` and ``EVERY``),
 # spelled out because the parser is built before Django is set up; a test
 # keeps them equal.
-STAGE_CHOICES = ("to_review", "to_enter_by_hand", "entered_by_hand", "ignored", "all")
+STAGE_CHOICES = (
+    "to_review",
+    "to_enter_by_hand",
+    "entered_by_hand",
+    "entered_incorrectly",
+    "confirmed",
+    "ignored",
+    "all",
+)
 DEFAULT_STAGE = "to_review"
 # The decisions ``pledges decide`` takes (``pledge_review.RECORDED``), the
 # same way.
@@ -68,6 +76,7 @@ JSONL_KEYS = (
     "reviewer_frequency",
     "annual_pledge_to_enter",
     "frequency_to_enter",
+    "parishsoft_annual_pledge",
     "stage",
     "decision",
     "entered_by",

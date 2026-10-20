@@ -128,7 +128,7 @@ def test_decisions_move_the_pledge_through_its_stages_with_audit(
     """Accept, Entered by hand; each a row in sequence, with its audit event.
 
     The answer recorded is the response's own, set by the guard; the mark
-    keeps the decision and records no ParishSoft pledge.
+    keeps the decision and records ParishSoft's upcoming-year amount.
     """
     harness, submission = pledged(response_service)
     actor = admin()
@@ -149,7 +149,9 @@ def test_decisions_move_the_pledge_through_its_stages_with_audit(
         "cannot_give": False,
         "shares": {CHECK: ""},
     }
-    assert not rows[1].marked_pledge_known and rows[1].marked_pledge is None
+    # ParishSoft holds no pledge for the upcoming year yet: the mark records
+    # $0.00 from the current snapshot's proven giving read (#1704).
+    assert rows[1].marked_pledge_known and rows[1].marked_pledge == Decimal("0.00")
     contexts = [
         AuditContext.objects.get(event=event).context
         for event in AuditEvent.objects.filter(
@@ -452,9 +454,11 @@ def test_the_page_lists_decides_and_downloads_for_staff_only(response_service, g
         assert response.status_code == 200
         rows = list(csv.reader(io.StringIO(body.decode())))
         assert rows[0][:2] == ["Family", "Family DUID"] and len(rows) == 2
-        assert rows[1][8:12] == [
+        # ParishSoft annual pledge (#1704) is blank before any refresh check.
+        assert rows[1][8:13] == [
             "$1,234.50",
             "Monthly",
+            "",
             "To enter by hand",
             "Accepted",
         ]
