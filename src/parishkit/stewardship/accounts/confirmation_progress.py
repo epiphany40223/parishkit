@@ -33,7 +33,7 @@ from parishkit.stewardship.web.refusals import (
     return_link,
 )
 
-from .admin_caller import AdminCaller
+from .admin_caller import as_caller
 from .admin_editing import editable_configuration, principal
 from .confirmation_digest_outcomes import digest_outcomes
 from .withdrawal_commands import available
@@ -59,8 +59,8 @@ COUNT_LABELS = (
 def _current(caller, service, campaign_id, *, passive=True):
     """Authorize before reading any receipt; historical campaigns cannot retry.
 
-    ``caller`` is an ``AdminCaller``, or (until PR 12 moves ``retry``) the
-    retry's request, which ``principal`` converts.
+    ``caller`` is an ``AdminCaller``, or the page's retry request, which
+    ``principal`` converts.
     """
     actor = principal(caller, service, passive=passive)
     configuration = editable_configuration(service)
@@ -150,6 +150,8 @@ def retry_shown(request, service, campaign_id, *, control):
     failure checked is the one retried. Otherwise it was already retried (a
     resend after a lost answer) or has moved on: nothing is done, and the
     page shows how it stands now. Returns whether a retry was asked for.
+    ``request`` is the page's request or ``pk-admin go-live retry``'s
+    ``AdminCaller`` (#1809).
     """
     if type(control) is not str or len(control) > 4096:
         raise signing.BadSignature("Invalid Production progress control.")
@@ -160,7 +162,7 @@ def retry_shown(request, service, campaign_id, *, control):
         actor = principal(request, service)
         if binding.get("actor") != str(actor.identity):
             raise PermissionError("Production retry belongs to another sign-in.")
-        shown = progress(AdminCaller.from_request(request), service, campaign_id)
+        shown = progress(as_caller(request), service, campaign_id)
         if shown["control"] != control:
             return False
         retry(

@@ -119,7 +119,15 @@ def _binding(token):
 
 
 def confirm(
-    request, service, campaign_id, transition_id, preparation_id, *, token, typed
+    request,
+    service,
+    campaign_id,
+    transition_id,
+    preparation_id,
+    *,
+    token,
+    typed,
+    record=None,
 ):
     """Atomically consume one exact preview under installation/work/lifecycle order.
 
@@ -132,6 +140,10 @@ def confirm(
     readiness. The SQL login identifies the web service, not a browser user;
     its guard independently enforces durable scope/session/version invariants,
     but is not a second verifier of Django signatures or external DNS evidence.
+
+    ``record(actor, confirmation)`` runs after a new confirmation is
+    created (never for a replay), in this transaction: ``pk-admin go-live
+    confirm`` records its own event there (#1809).
     """
     if type(typed) is not str or typed.strip() != "Production":
         raise ValueError("Type Production to confirm this transition.")
@@ -203,7 +215,7 @@ def confirm(
             raise ValueError("Confirmation evidence requires UTC instants.")
         if _now() >= expires:
             raise StaleRecordError("Confirmation preview expired; verify it again.")
-        return ProductionConfirmation.objects.create(
+        created = ProductionConfirmation.objects.create(
             request_id=transition_id,
             preparation_id=preparation_id,
             activation_id=uuid4(),
@@ -223,3 +235,6 @@ def confirm(
             actor_id=actor.identity,
             correlation_id=current_correlation(),
         )
+        if record is not None:
+            record(actor, created)
+        return created
