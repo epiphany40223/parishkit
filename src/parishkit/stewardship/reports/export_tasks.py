@@ -265,7 +265,7 @@ def load_document(request, *, general=None, store=None):
         .first()
     )
     # The page's Summary, frozen with the request (#1557). A latest-data
-    # handoff, and a request made before migration 0146, has none and
+    # handoff, and a request made before migration 0142, has none and
     # carries its daily rows only.
     captured = (
         ParticipationExportSnapshot.objects.filter(request=request)

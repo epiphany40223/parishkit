@@ -1,4 +1,4 @@
--- Frozen forward migration file 0146 (the repository-wide file sequence,
+-- Frozen forward migration file 0142 (the repository-wide file sequence,
 -- number assigned centrally): the Response dashboard's export carries all
 -- the data on the page (#1557). This file is installed by its Django
 -- migration in the reports app and must never change once released;
@@ -181,7 +181,7 @@ BEGIN
         GET DIAGNOSTICS n = ROW_COUNT;
         cleared:=cleared+n;
     END LOOP;
-    -- The Response dashboard's Summary (migration 0146) belongs to its one
+    -- The Response dashboard's Summary (migration 0142) belongs to its one
     -- request alone, so it is cleared with it.
     UPDATE stewardship_participation_export_snapshot s SET document='{}'::jsonb
         WHERE s.request_id=request_uuid AND s.document<>'{}'::jsonb;
@@ -221,7 +221,7 @@ BEGIN
                  WHERE attrelid='public.stewardship_participation_export_snapshot'::regclass
                    AND attname='request_id')])
     THEN
-        RAISE EXCEPTION 'Migration 0146: the participation capture table is incomplete';
+        RAISE EXCEPTION 'Migration 0142: the participation capture table is incomplete';
     END IF;
     IF NOT EXISTS(SELECT 1 FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid
         WHERE t.tgrelid='public.stewardship_participation_export_snapshot'::regclass
@@ -234,7 +234,7 @@ BEGIN
           AND t.tgconstraint<>0 AND t.tgdeferrable AND t.tginitdeferred
           AND p.proname='stewardship_participation_export_summary_v1')
     THEN
-        RAISE EXCEPTION 'Migration 0146: the participation capture guards are not installed';
+        RAISE EXCEPTION 'Migration 0142: the participation capture guards are not installed';
     END IF;
     IF (SELECT count(*) FROM pg_proc
         WHERE pronamespace='public'::regnamespace AND NOT prosecdef
@@ -247,7 +247,7 @@ BEGIN
           AND position('stewardship_comparison_export_snapshot' IN prosrc)>0
           AND NOT has_function_privilege('public',oid,'EXECUTE'))
     THEN
-        RAISE EXCEPTION 'Migration 0146: the discard does not clear the participation capture';
+        RAISE EXCEPTION 'Migration 0142: the discard does not clear the participation capture';
     END IF;
 END
 $check$;

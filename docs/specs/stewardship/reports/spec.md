@@ -440,7 +440,7 @@ transaction reads the statistics and the funnel as the page does (the
 [campaign statistics](#campaign-statistics) and the Production
 [response funnel](#response-funnel) at that instant) and stores them in the
 request's immutable capture, `stewardship_participation_export_snapshot`
-(frozen migration 0146), so a response or ParishSoft update after the
+(frozen migration 0142), so a response or ParishSoft update after the
 request never changes the file, and a retried rendering writes the same
 figures. The page offers no export while the statistics cannot be read; a
 request made just as they became unreadable still captures the funnel, with

@@ -246,7 +246,7 @@ def create_export(
             ),
         )
         # The page's Summary, frozen with the request (#1557, migration
-        # 0146): the statistics and the funnel read now, in this
+        # 0142): the statistics and the funnel read now, in this
         # transaction, so the file holds what the page showed when asked.
         ParticipationExportSnapshot.objects.create(
             request=request,

@@ -461,7 +461,7 @@ class ParticipationExportSnapshot(ImmutableRecord):
     The page reads the statistics and the funnel in Python, so the web
     captures that same read (``participation_summary.capture``) into
     ``document`` in the request's own transaction, and SQL checks
-    everything around it (frozen migration 0146, #1557): one capture per
+    everything around it (frozen migration 0142, #1557): one capture per
     participation request, by its requester, from the web, before any
     attempt, and the document's closed shape. Unlike the other captures it
     names its request (the request is made first), and a deferred check

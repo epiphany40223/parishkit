@@ -6,7 +6,7 @@ funnel, ``response_dashboard.read_metrics``). The export carries all the data
 on the page, so when a participation export is requested its transaction
 reads both sets of figures as the page does (``capture``) and stores them,
 as plain labels, values and notes, in the request's immutable
-``ParticipationExportSnapshot`` (frozen migration 0146). The worker turns
+``ParticipationExportSnapshot`` (frozen migration 0142). The worker turns
 that document back into the Summary section of every format
 (``ParticipationSummary.rows``): the export's files never re-read a figure,
 so a response after the request cannot change them.
@@ -105,7 +105,7 @@ def summary_document(statistics, metrics):
     "Data as of"); each population row is a label, its value (a whole count,
     ``{"money": "1234.50"}`` or None) and its note (the unknown value's
     reason); each stage row is a label, its count and its note. SQL checks
-    exactly this shape (migration 0146).
+    exactly this shape (migration 0142).
     """
     with translation.override("en"):
         population = []

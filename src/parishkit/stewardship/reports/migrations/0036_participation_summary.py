@@ -1,7 +1,7 @@
 """Forward migration: the Response dashboard's export carries its Summary (#1557).
 
 Its SQL is the frozen file
-``schema/migrations/0146_participation_export_summary.sql`` (prefix 0146,
+``schema/migrations/0142_participation_export_summary.sql`` (prefix 0142,
 provisional until it is assigned in the repository-wide file sequence), read
 whole and never parsed. It creates the immutable
 ``stewardship_participation_export_snapshot``, which holds the page's
@@ -15,7 +15,7 @@ that is installed. The state operation records the same model, so
 migration, so it has no reverse operation.
 
 It depends on the reports app's previous migration and on the migration
-that installs the previous frozen file (0122), so the files apply in prefix
+that installs the previous frozen file (0141), so the files apply in prefix
 order. That puts it in the users swap's closure: its table is in
 ``runtime_grants.CLOSURE_TABLES``, its two new functions are
 ``CLOSURE_CREATED`` in the users swap test, and that test runs its discard
@@ -35,18 +35,20 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0146_participation_export_summary.sql"
+    / "0142_participation_export_summary.sql"
 )
 
 
 class Migration(migrations.Migration):
     dependencies = [
         ("stewardship_campaigns", "0014_digest_skip_dates"),
-        # The reports app's previous migration (0119, #1591).
-        ("stewardship_reports", "0031_leader_request_contacts"),
-        # The migration that installs the previous frozen file (0122, #1620),
-        # so the files apply in prefix order.
+        # The reports app's previous migration (0140, #1718).
+        ("stewardship_reports", "0035_edited_ministry_contacts"),
+        # The automatic report views (0122, #1620), whose discard it widens.
         ("stewardship_audit", "0006_automatic_report_views"),
+        # The migration that installs the previous frozen file (0141, #1670),
+        # so the files apply in prefix order.
+        ("stewardship_responses", "0021_added_member_links"),
     ]
 
     operations = [

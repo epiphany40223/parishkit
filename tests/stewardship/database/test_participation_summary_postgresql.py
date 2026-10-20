@@ -1,6 +1,6 @@
 """The Response dashboard's export freezes its Summary when requested (#1557).
 
-Frozen migration 0146: the request's own transaction captures the page's
+Frozen migration 0142: the request's own transaction captures the page's
 Summary (the statistics and the funnel) into an immutable
 ``stewardship_participation_export_snapshot``; the worker renders the file
 from that capture alone, the database requires one on every participation

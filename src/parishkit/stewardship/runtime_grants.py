@@ -617,10 +617,10 @@ CLOSURE_TABLES = {
         "stewardship_reports",
         "0020_comparison_exports",
     ),
-    # The Response dashboard's Summary capture (0146, #1557).
+    # The Response dashboard's Summary capture (0142, #1557).
     "stewardship_participation_export_snapshot": (
         "stewardship_reports",
-        "0032_participation_summary",
+        "0036_participation_summary",
     ),
     # A delivered email's follow-ups to addresses refused for now (0077, #806).
     "stewardship_outbox_address_retry": ("stewardship_jobs", "0027_address_retry"),

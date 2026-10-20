@@ -454,10 +454,10 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # whole again after 0060's, 0132's and 0137's, putting its bodies back over
 # theirs; the derived guard's later reruns are undone by
 # ``CLOSURE_REPLACED_ONLY``.
-# 0146 (#1557) creates the participation Summary capture table (in
+# 0142 (#1557) creates the participation Summary capture table (in
 # CLOSURE_TABLES) with its guard and the request table's deferred check
 # (``CLOSURE_CREATED``), and replaces 0109's discard in place, which 0109's
-# file brings back older, so ``CLOSURE_OLD_BODIES`` puts 0146's back.
+# file brings back older, so ``CLOSURE_OLD_BODIES`` puts 0142's back.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -812,7 +812,7 @@ CLOSURE_CREATED = {
         ),
         ("stewardship_responses", "0021_added_member_links"),
     ),
-    # 0146 (#1557) creates the participation Summary capture table (in
+    # 0142 (#1557) creates the participation Summary capture table (in
     # CLOSURE_TABLES) with its guard and the request table's deferred check;
     # all go, so its file installs whole again, after 0109's, whose discard
     # it replaces (``CLOSURE_OLD_BODIES`` puts it back after 0109's file
@@ -822,7 +822,7 @@ CLOSURE_CREATED = {
             "public.stewardship_participation_export_capture_v1()",
             "public.stewardship_participation_export_summary_v1()",
         ),
-        ("stewardship_reports", "0032_participation_summary"),
+        ("stewardship_reports", "0036_participation_summary"),
     ),
 }
 
@@ -1036,11 +1036,11 @@ CLOSURE_OLD_BODIES = {
     ("stewardship_accounts", "0022_drop_ministry_activity"): (
         "stewardship_ministry_activity"
     ),
-    # 0146 (#1557) replaces 0109's discard, which 0109's file (its routines
+    # 0142 (#1557) replaces 0109's discard, which 0109's file (its routines
     # in CLOSURE_CREATED and runtime_grants.CLOSURE_FUNCTIONS) brings back
     # without the participation capture; only that older body goes straight
     # from the capture loop to the pins.
-    ("stewardship_reports", "0032_participation_summary"): (
+    ("stewardship_reports", "0036_participation_summary"): (
         "END LOOP;\n    DELETE FROM stewardship_fact_pin"
     ),
 }
