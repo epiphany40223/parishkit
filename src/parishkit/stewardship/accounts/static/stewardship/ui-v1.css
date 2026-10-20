@@ -865,13 +865,25 @@ button.is-busy[aria-disabled=true], .button.is-busy[aria-disabled=true], input[t
 #table-filters .filter-actions[data-filter-place=row] { display: flex; width: max-content; flex-basis: 100%; grid-column: 1 / -1; justify-self: start; }
 .filter-clear { position: relative; display: inline-block; }
 button[data-clear-unavailable][aria-disabled=true], button[data-clear-unavailable][aria-disabled=true]:not(:disabled):hover { cursor: not-allowed; opacity: .55; background: var(--paper); color: var(--accent); box-shadow: none; }
-button.is-busy::after, .button.is-busy::after { content: ""; display: inline-block; width: .85em; height: .85em; margin-inline-start: .5em; vertical-align: -.1em; border: 2px solid currentColor; border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
+/* The working spinner (ui-conventions "Working spinner", #1847): the ONE
+   spinning icon of the portal, a ring with a quarter open. It is drawn
+   by components/spinner.html (.spinner) or, on a button whose request is
+   in flight, by the button's ::after (is-busy is a class ui-v1.js
+   toggles, so the ring is a pseudo-element there). Both share this one
+   rule and keyframes; test_spinner_guard.py fails on any other spinning
+   rule. A context changes only its size, colour (--spinner-ink, the
+   accent by default) or placement, in its own rule. Under reduced motion
+   it stands still (the rule at the end of this file). */
+.spinner, :is(button, .button).is-busy::after { display: inline-block; width: 1em; height: 1em; vertical-align: -.15em; border: 2px solid var(--spinner-ink, var(--accent)); border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
 @keyframes busy-spin { to { transform: rotate(360deg); } }
+/* A busy button: a slightly smaller ring after its label, in the
+   label's own colour. */
+:is(button, .button).is-busy::after { content: ""; --spinner-ink: currentColor; width: .85em; height: .85em; margin-inline-start: .5em; vertical-align: -.1em; }
 /* Live status regions (live-status-v1.js, live-running.html): a still-running
    indicator that says so in words, and prominent finished/failed outcomes. */
 .live-running { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem .5rem; margin: 0 0 .75rem; }
 .live-running .help { flex-basis: 100%; margin: 0; }
-.live-spinner { display: inline-block; width: 1em; height: 1em; align-self: center; border: 2px solid var(--accent); border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
+.live-running > .spinner { align-self: center; }
 .live-done { color: var(--accent-strong); }
 .live-failed { color: var(--error-ink); }
 .live-status-problem { margin-top: .5rem; }
@@ -1182,6 +1194,8 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
 .export-live > :first-child { margin-top: 0; }
 .export-state { font-size: 1.15rem; font-weight: 650; }
 .export-state-ready { color: var(--accent-strong); }
+/* A pending export's working spinner, before its words. */
+.export-state > .spinner { margin-inline-end: .35em; }
 /* A ready export's "until" line (#1398): its two sentences share one grid
    cell, so the line is as tall as the longer one from the start and the
    switch when the download window ends moves nothing (#736). */
@@ -1191,9 +1205,10 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
 /* Stage boxes (components/stage-boxes.html, UX conventions "Stage boxes"):
    one box per major stage of a long piece of work, left to right, wrapping
    on a phone with no sideways scroll. The status word always carries the
-   state; the mark (a bullet, a pointer, a check, a cross or a pause) and
-   the colour only reinforce it. Loading parish data and Finishing setup
-   (setup wizard) and Load ParishSoft data (Campaign setup) draw it. */
+   state; the mark (a bullet, the working spinner, a check, a cross or a
+   pause) and the colour only reinforce it. Loading parish data and
+   Finishing setup (setup wizard) and Load ParishSoft data (Campaign setup)
+   draw it. */
 .stage-boxes { list-style: none; margin: 0 0 1rem; padding: 0; display: grid; gap: .5rem; grid-template-columns: repeat(auto-fit, minmax(min(12rem, 100%), 1fr)); }
 /* The status sits on its own line under the stage's name, so a box keeps
    its height when its status word changes (Not started, then Done). */
@@ -1214,7 +1229,12 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
    box keeps its size as its state changes (no layout shift). */
 .stage-boxes > .stage-done::before { content: "\2713"; color: var(--accent); }
 .stage-boxes > .stage-done { background: var(--accent-soft); border-color: var(--accent-line); }
-.stage-boxes > .stage-active::before { content: "\25B8"; color: var(--warning-ink); }
+/* In progress shows the working spinner (components/spinner.html) in the
+   mark's place: absolutely positioned in the same reserved slot as every
+   state's mark (left .55rem, 1rem wide, centred on the label's first
+   line), so its arrival or departure moves nothing (#1847). */
+.stage-boxes > .stage-active::before { content: none; }
+.stage-boxes > li > .spinner { --spinner-ink: var(--warning-ink); position: absolute; left: calc(.55rem + (1rem - 1em) / 2); top: calc(.5rem + (1.6em - 1em) / 2); top: calc(.5rem + (1lh - 1em) / 2); }
 .stage-boxes > .stage-active { background: var(--warning-bg); border-color: var(--warning-border); }
 .stage-boxes > .stage-waiting .stage-label { color: var(--muted); }
 .stage-boxes > .stage-operator::before { content: "\23F8"; color: var(--ink); }
@@ -1252,7 +1272,6 @@ main nav.table-nav a, .table-nav-disabled { padding: .35rem .9rem; min-height: 3
 .campaign-load-ghost { visibility: hidden; }
 .campaign-load-ghost::before { content: attr(data-label); }
 .button-large { font-size: 1.1rem; padding: .8rem 1.75rem; }
-.spinner { display: inline-block; width: 1em; height: 1em; margin-inline-end: .35em; vertical-align: -.15em; border: 2px solid var(--accent); border-inline-end-color: transparent; border-radius: 50%; animation: busy-spin .8s linear infinite; }
 /* Export actions (#1679, components/export-actions.html): one row of small
    outlined buttons, one per format, smaller and quieter than the primary
    green buttons, wrapping on a phone instead of widening the page. They are
