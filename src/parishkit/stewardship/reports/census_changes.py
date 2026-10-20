@@ -62,6 +62,7 @@ from parishkit.stewardship.responses.refresh_checks import (
 )
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.source.source_status import (
+    MEMBER_STATUS_HEADING,
     NAME_NOT_RECORDED,
     STATUS_HEADING,
     family_status,
@@ -143,14 +144,17 @@ EARLIEST, LATEST = date(2000, 1, 1), date(2999, 12, 31)
 # The download's columns: the page's columns, names and order (#932), so
 # Member DUID sits right after Who in every format. ParishSoft status follows
 # Family, blank unless the data no longer has it: the page's badge beside the
-# name has a column of its own in a file (#1216). The latest Entered in
-# ParishSoft, Ignore or Reopen (#528) follows Submitted, as on the page: who,
-# when and its note.
+# name has a column of its own in a file (#1216). Member's ParishSoft status
+# follows Who in the same way, for the badge the page shows beside a Member
+# no longer active and living in the Family (rule 4, #1738; #1752). The
+# latest Entered in ParishSoft, Ignore or Reopen (#528) follows Submitted, as
+# on the page: who, when and its note.
 HEADINGS = (
     "Family",
     STATUS_HEADING,
     "Family DUID",
     "Who",
+    MEMBER_STATUS_HEADING,
     "Member DUID",
     "What changed",
     "ParishSoft now",
@@ -163,30 +167,31 @@ HEADINGS = (
     "Recorded at",
     "Note",
 )
-# Relative PDF column widths, in percent of the page's body width. Fifteen
+# Relative PDF column widths, in percent of the page's body width. Sixteen
 # columns share one landscape page, so a compact time ("Sep 30, 2026
 # 12:04 PM") keeps its date on one line and its time on the next, and a
 # status may take two lines ("Being" / "published"); a whole DUID and
-# "Automatic" stay on one line, and ParishSoft status, blank on most rows,
-# takes Family's narrow width. The resolution's who and note get room of
-# their own, and the values Families typed and ParishSoft holds share the
+# "Automatic" stay on one line, and each ParishSoft status, blank on most
+# rows, takes its name's narrow width. The resolution's who and note get room
+# of their own, and the values Families typed and ParishSoft holds share the
 # rest, long ones wrapping within their column.
 PDF_WEIGHTS = {
     "Family": 5,
     STATUS_HEADING: 5,
     "Family DUID": 7,
     "Who": 5,
+    MEMBER_STATUS_HEADING: 5,
     "Member DUID": 7,
     "What changed": 5,
-    "ParishSoft now": 6,
+    "ParishSoft now": 5,
     "Family's answer": 6,
     "Reviewer's value": 4,
     "How it reaches ParishSoft": 8,
     "Stage": 8,
     "Submitted": 10,
-    "Recorded by": 7,
+    "Recorded by": 5,
     "Recorded at": 10,
-    "Note": 7,
+    "Note": 5,
 }
 PRIVACY = "Sensitive parish report. Share only with authorized recipients."
 # The report's name: the PDF's page title, the XLSX sheet and workbook title.
@@ -1090,6 +1095,8 @@ def export_rows(result, zone, *, time_text=iso_time):
             source_status_label(family_status(row["family_name"])),
             str(row["family_duid"]),
             row["who"],
+            # The Who cell's badge (rule 4, #1738) in its own column (#1752).
+            source_status_label(row.get("member_status")),
             export_member_duid(row),
             row["label"],
             row["parishsoft_now"],

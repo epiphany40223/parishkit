@@ -3040,7 +3040,7 @@ zone the file's times are written in.
 CSV, XLSX and PDF are the page's own files, with the same columns. JSON
 Lines is for scripts: one object per change, the page's columns with the
 same text under the keys `family`, `parishsoft_status`, `family_duid`,
-`who`, `member_duid`, `what`, `parishsoft_now`, `family_answer`, `edited`,
+`who`, `member_parishsoft_status`, `member_duid`, `what`, `parishsoft_now`, `family_answer`, `edited`,
 `route`, `status`, `submitted`, `recorded_by`, `recorded_at` and `note`,
 plus `proposal_id`
 and `version`, which recording a row's outcome needs and the page's files
@@ -3974,6 +3974,14 @@ Each change is recorded in System logs as on the page
   TOKEN|-`, the Parish logos page's upload with its review and its Apply
   (full scope, Administrators only); they record
   `admin_cmd_branding_preview` and `admin_cmd_branding_confirm`.
+- `pk-admin/1` (#1752): a deliberate change, kept on version 1, as for
+  #1216. The files `export census` writes have a `Member's ParishSoft
+  status` column right after `Who`, and its JSON Lines a
+  `member_parishsoft_status` key after `who`: "Not in ParishSoft",
+  "Inactive in ParishSoft" or "Deceased in ParishSoft" for a change whose
+  Member is no longer an active, living Member of its Family, blank
+  otherwise. The command's options and document are unchanged; a script
+  that reads these files by position must change.
 - `pk-admin/1` (#1704): additive. `report pledges` and `export pledges`
   take the Pledges page's two new stages, `entered_incorrectly` and
   `confirmed`, and `report pledges` counts them in `stages`; the
