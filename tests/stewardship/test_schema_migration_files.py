@@ -411,6 +411,9 @@ FROZEN = {
     "0126_information_limitation_review.sql": (
         "4acebc765834c122f5a007e690658b6a99280b9e8a56f066250841e19a7eb669"
     ),
+    "0127_pledge_review.sql": (
+        "bb2729437fdec314ee1c79d3fef4e3c8ffa0a4f372ded37b21b1bc68f54afeb4"
+    ),
 }
 
 

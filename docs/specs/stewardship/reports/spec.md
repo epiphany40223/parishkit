@@ -2854,6 +2854,74 @@ the filter's form does not take is refused (400), as a POST's would be: a
 Share method is checked for an option identity's form, so one no longer
 offered matches no Family. A POST with a query string is refused too.
 
+This report stays the financial stream's statistics page. Reviewing each
+pledge and entering it in ParishSoft is on [Pledges](#pledges).
+
+### Pledges
+
+**Access:** Admin and Staff only; no Ministry leader sees it.
+
+**Pledges** (`/admin/reports/financial/pledges/`,
+[#1686](https://github.com/epiphany40223/parishkit/issues/1686)) is the
+financial stream's [review worklist](../review-pipeline/spec.md#review-worklist)
+and its [manual handling report](../review-pipeline/spec.md#manual-handling-reports)
+in one page, a menu entry of its own in Review work after Ministry requests.
+It was "Pledges to enter" until the Administrator renamed it (R39 finding 3,
+2026-10-19); its address is unchanged. The stream's
+stages, decisions and resubmission rule are the
+[Financial stream](../review-pipeline/spec.md#financial-stream)'s; this
+section is the page.
+
+- **Rows.** One row per Family whose current live response answers the
+  financial questions: the rows of
+  [Financial stewardship detail](#financial-stewardship-detail) with no filter.
+- **Filters**, always open: **Stage** first, To review by default, then To
+  enter by hand, Entered by hand, Ignored and Every stage, each with its count;
+  then the Family name or Family DUID search of Financial stewardship detail.
+- **Columns**, in the shared order: Family (the Family-name link), Family DUID,
+  Family's answer (the annual pledge, then its frequency, or "Cannot
+  contribute", then the share methods chosen), Reviewer's value (an Edit's
+  annual pledge and frequency), Stage, Submitted (the Family's latest
+  response), Last decision and Actions. There is no Baseline column: ParishSoft's
+  pledge for the upcoming year is read only once
+  [#1704](https://github.com/epiphany40223/parishkit/issues/1704) lands.
+- **Row and bulk actions** are the role table's for the stream: a To review row
+  offers Accept, Edit and Ignore; an Ignored row Back to review, with a required
+  note; a To enter by hand row Entered by hand and Back to review; an Entered by
+  hand row nothing (the mark is final). The bulk bar offers Accept, Ignore, Back
+  to review and Entered by hand, so the Administrator's flow ("a handful of
+  manual edits ... and then bulk approve all the financial pledges") is a few
+  Edits, then select all and Accept, then Stage To enter by hand, export, type
+  the pledges into ParishSoft, select all and Entered by hand.
+- **Edit** opens the row's own dialog with the annual pledge (the Family form's
+  format and limit: dollars and cents, under $1,000,000,000) and the frequency
+  (Weekly, Monthly, Quarterly, Annual, or No frequency for a zero pledge; a
+  pledge above zero needs one), filled from the value carried forward, and the
+  optional note. Save records Accepted (edited), the Family's answer stays
+  beside it, and the pledge to enter is the reviewer's value. A value the
+  server refuses is shown at its field
+  ([field errors](../ui-conventions/spec.md#field-errors-and-live-checks)).
+  Share methods and Cannot contribute are not edited here: Staff change those
+  through [Open form](#open-form), as before.
+- **Download.** The shared export buttons below the table download the applied
+  Stage and search as CSV, XLSX or PDF in the browser's time zone, rendered on
+  request as Roster changes to enter's are, with the page's columns and its
+  combined cells split
+  ([downloaded files](../ui-conventions/spec.md#downloaded-files)): Family,
+  Family DUID, ParishSoft status, Annual pledge, Frequency, Share methods,
+  Reviewer's annual pledge, Reviewer's frequency, Annual pledge to enter,
+  Frequency to enter, Stage, Decision, Entered by, Entered at, Submitted, Last
+  decision, Last decision at and Note. Money keeps its cents. The two "to
+  enter" columns are filled only for To enter by hand and Entered by hand
+  rows; at the other stages nothing is to be entered.
+- **Audit.** Each decision is one immutable history row (frozen migration
+  0127, provisional number) with a `pledge_review_updated` event that names
+  only versions; viewing and downloading the page are audited as a count only
+  (`pledges_to_enter_viewed`, `pledges_to_enter_exported`).
+
+Pledges are never written to ParishSoft (pledges are read-only in its API), so
+the stream has no Ready to update stage.
+
 ## Limitations
 
 **Access:** Admin and Staff only; both may record its review decisions.
@@ -2883,6 +2951,31 @@ participate in any ministries" or "Cannot attend Mass or prayer
 services"), Stage, Submitted (the response's time), Last decision and the
 row's actions. There is no Baseline (ParishSoft holds none of these
 answers) and no Reviewer's value (no Edit). Testing responses are excluded.
+
+A Family's **Cannot contribute financially** answer (the `cannot_give` flag
+on its $0 pledge) is listed here too, as a Family row whose answer reads
+"Cannot contribute financially" (R39 finding 11, the Administrator,
+2026-10-19), so every limitation a Family gave is on one page. It is not a
+Limitations item: it is decided once, on [Pledges](#pledges), so its Stage
+is its Pledges stage, its Last decision is Pledges' last decision, it has
+no box and no action icons, and its Actions cell is an "Open in Pledges"
+link that opens Pledges at that stage, named for screen readers by its row
+("Open in Pledges: the answer of" and the Family's name, which starts with the visible
+text, so voice control finds it). It is listed for viewers who may
+open Pledges (Administrators and Staff) while the campaign has the
+financial module, only while Show is everything (the Show choices name the
+two Limitations answers only) and matching the search as Pledges' search
+does. Its stage counts in the Stage choice whose value it shares (To
+review, Ignored); a pledge at a stage Limitations does not name (To enter
+by hand, Entered by hand, and any later Pledges stage such as Confirmed) is
+listed, and counted, under Every stage only, so a Cannot contribute answer
+that needs no work never shows in the default To review view. A Pledges read that cannot be shaped
+leaves these rows out with a logged warning rather than failing the page,
+and `pk-admin report limitations`, which prints only the summary, does not
+read them. The PDF's frame counts each kind on its own (Members, Families
+that cannot attend Mass, Families that cannot contribute financially), and
+the XLSX's Report information counts the Families table's rows as Family
+rows, since one Family can be listed for both.
 Talents that older responses recorded are never shown: no talent column,
 count or filter appears on the page or in the downloads, and no Member is
 listed only for such talents.
@@ -2932,9 +3025,11 @@ with both counts), with times in the browser's zone
 Stage filter too. Each table has the columns Member, Member DUID, Family,
 ParishSoft status, Family DUID, Cannot participate in ministries, Latest
 response and Stage for Members, and Family, ParishSoft status, Family DUID,
-Limitation, Latest response and Stage for Families. Limitation names the
-Family's limitation in the page's words, "Cannot attend Mass or prayer
-services", so a reader of the Families sheet sees what each row is about
+Limitation, Latest response and Stage for Families, whose rows include the
+Cannot contribute financially answers the table lists, each with its
+Pledges stage. Limitation names the Family's limitation in the page's
+words, "Cannot attend Mass or prayer services" or "Cannot contribute
+financially", so a reader of the Families sheet sees what each row is about
 (R39 finding 11); the Members sheet says it with its Cannot participate in
 ministries column, which reads Yes on every row. ParishSoft status splits out the page's
 [badge](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)

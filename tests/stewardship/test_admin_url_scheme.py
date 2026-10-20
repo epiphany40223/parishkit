@@ -276,6 +276,7 @@ SLASHLESS_EXPECTED = {
     "/admin/reports/responses": "/admin/reports/responses/",
     "/admin/reports/comparison": "/admin/reports/comparison/",
     "/admin/reports/financial": "/admin/reports/financial/",
+    "/admin/reports/financial/pledges": "/admin/reports/financial/pledges/",
     "/admin/reports/limitations": "/admin/reports/limitations/",
     "/admin/reports/census": "/admin/reports/census/",
     "/admin/reports/census/publication": "/admin/reports/census/publication/",

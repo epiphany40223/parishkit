@@ -13,7 +13,10 @@ from uuid import UUID
 from django.template.loader import render_to_string
 from django.urls import reverse
 
-from parishkit.stewardship.pipeline import cannot_participate_placement
+from parishkit.stewardship.pipeline import (
+    cannot_participate_placement,
+    financial_placement,
+)
 from parishkit.stewardship.reports.limitation_worklist import (
     SORTING,
     WorklistQuery,
@@ -31,6 +34,9 @@ PATH = reverse("admin:limitations_report")
 # The answers the tests receive after a decision, and their notices.
 ACCEPTED = "/limitations-report-accepted"
 ACCEPTED_NOTICE = "The answer of Family DUID 2 accepted."
+# A Family's Cannot contribute financially answer, decided on Pledges.
+CONTRIBUTION = "/limitations-report-cannot-contribute"
+PLEDGES_LINK = reverse("admin:pledges_to_enter") + "?stage=to_review"
 
 
 def answer(kind, family, duid, *, member=None, key="", decision=None, when=None):
@@ -123,6 +129,28 @@ def components(context, admin):
         )
 
     nobody = {"metadata": {"name": "Sample campaign"}, "members": [], "families": []}
+    # Dalton cannot contribute financially: a Limitations row at its Pledges
+    # stage, with a link to Pledges and no action (R39 finding 11).
+    contribution = nobody | {
+        "contributions": [
+            {
+                "kind": "cannot_give",
+                "member_key": "",
+                "family_name": "Dalton",
+                "family_duid": 3,
+                "family_id": None,
+                "submitted_at": when,
+                "pledge_item": str(UUID(int=92)),
+                "version": 0,
+                "placement": financial_placement(),
+                "in_force": False,
+                "decided_by": "",
+                "decided_at": None,
+                "note": "",
+                "pledges_url": PLEDGES_LINK,
+            }
+        ]
+    }
     narrowed = result()
     narrowed = narrowed | {
         "members": narrowed["members"][1:],
@@ -134,6 +162,7 @@ def components(context, admin):
         "/limitations-report-families-desc": page({"sort": "-family"}),
         "/limitations-report-member": page({"sort": "member"}),
         ACCEPTED: page({}, ACCEPTED_NOTICE, data=result(accepted=True)),
+        CONTRIBUTION: page({}, data=contribution, stage="to_review"),
         # Nobody has a limitation yet, and a Stage with nothing at it: the
         # two empty states differ (#227).
         "/limitations-report-none": page({}, data=nobody),
