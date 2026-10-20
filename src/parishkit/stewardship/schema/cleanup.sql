@@ -28,6 +28,9 @@ RETURNS text LANGUAGE sql IMMUTABLE SET search_path TO pg_catalog, public, pg_te
         WHEN 'weekly_digest_recipients' THEN 'stewardship_weekly_digest_recipient'
         WHEN 'weekly_digest_snapshots' THEN 'stewardship_weekly_digest_snapshot'
         WHEN 'engagement' THEN 'stewardship_family_engagement'
+        WHEN 'report_email_recipients' THEN 'stewardship_report_email_recipient'
+        WHEN 'report_email_snapshots' THEN 'stewardship_report_email_snapshot'
+        WHEN 'report_email_fact_pins' THEN 'stewardship_fact_pin'
         ELSE NULL END
 $$;
 REVOKE ALL ON FUNCTION public.stewardship_cleanup_relation_v1(text) FROM PUBLIC;
@@ -150,6 +153,9 @@ BEGIN
                 SELECT 1 FROM public.stewardship_daily_digest_ready WHERE snapshot_id=i.target_id)
                 AND NOT EXISTS (SELECT 1 FROM public.stewardship_fact_pin
                     WHERE parent_kind='digest' AND parent_id=i.target_id)
+            -- A report email's snapshot (#1786) goes after its recipients.
+            WHEN 'report_email_snapshots' THEN NOT EXISTS (
+                SELECT 1 FROM public.stewardship_report_email_recipient WHERE snapshot_id=i.target_id)
             WHEN 'proposals' THEN NOT EXISTS (
                 SELECT 1 FROM public.stewardship_proposed_change WHERE superseded_by_id=i.target_id)
             WHEN 'ministry_requests' THEN NOT EXISTS (
@@ -164,6 +170,7 @@ BEGIN
                 AND NOT EXISTS (SELECT 1 FROM public.stewardship_submission_receipt WHERE outbox_id=i.target_id)
                 AND NOT EXISTS (SELECT 1 FROM public.stewardship_daily_digest_recipient WHERE outbox_id=i.target_id)
                 AND NOT EXISTS (SELECT 1 FROM public.stewardship_weekly_digest_recipient WHERE outbox_id=i.target_id)
+                AND NOT EXISTS (SELECT 1 FROM public.stewardship_report_email_recipient WHERE outbox_id=i.target_id)
                 AND NOT EXISTS (SELECT 1 FROM public.stewardship_outbox_render r
                     JOIN public.stewardship_outbox_message m ON m.id=r.message_id
                     WHERE m.id=i.target_id AND r.id<>m.render_id)

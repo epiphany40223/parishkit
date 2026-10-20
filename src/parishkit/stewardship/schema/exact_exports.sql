@@ -220,15 +220,16 @@ END $$;
 CREATE TRIGGER exact_source_pin_retained BEFORE UPDATE OR DELETE ON stewardship_source_pin
 FOR EACH ROW EXECUTE FUNCTION stewardship_exact_source_pin_guard_v1();
 
-CREATE FUNCTION stewardship_exact_fact_pin_guard_v1() RETURNS trigger
+CREATE FUNCTION public.stewardship_exact_fact_pin_guard_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 BEGIN
+    -- A report email's facts (#1786) are pinned to its preparation, with
+    -- the snapshot that names them, by its live capture.
     IF current_user='pk_stewardship_worker' AND NEW.parent_kind='digest' THEN
-        IF NOT EXISTS(SELECT 1 FROM stewardship_daily_digest_ready r
-            JOIN stewardship_daily_digest_snapshot s ON s.id=r.snapshot_id
-            WHERE s.id=NEW.parent_id AND r.fact_set_id=NEW.fact_set_id
-              AND stewardship_daily_digest_live_v1(s.preparation_id,r.run_id,r.fence,r.worker_id)) THEN
-            RAISE EXCEPTION 'Daily fact protection requires its exact ready handoff' USING ERRCODE='23514';
+        IF NOT EXISTS(SELECT 1 FROM stewardship_report_email_snapshot s
+            WHERE s.preparation_id=NEW.parent_id AND s.fact_set_id=NEW.fact_set_id
+              AND stewardship_report_email_live_v1(s.preparation_id,s.run_id,s.fence,s.worker_id)) THEN
+            RAISE EXCEPTION 'Report fact protection requires its exact snapshot' USING ERRCODE='23514';
         END IF;
         RETURN NEW;
     END IF;
