@@ -101,6 +101,7 @@ class Action(StrEnum):
     CAMPAIGN_ARCHIVE_EXPORTED = "campaign_archive_exported"
     INFORMATION_VIEWED = "information_viewed"
     INFORMATION_UPDATED = "information_updated"
+    LIMITATION_REVIEWED = "limitation_reviewed"
     MINISTRY_FOLLOWUP_VIEWED = "ministry_followup_viewed"
     # The queue's Export these requests download (#1157).
     MINISTRY_FOLLOWUP_EXPORTED = "ministry_followup_exported"
@@ -120,6 +121,9 @@ class Action(StrEnum):
     # showed publication cannot carry as By hand; count: how many. Written
     # once, by the migration, as a system event with no subject.
     CENSUS_HANDLING_CORRECTED = "census_handling_corrected"
+    # The baseline refresh re-evaluation's Not seen start (#1689): written
+    # once, by migration 0132, as a system event with no subject.
+    REFRESH_CHECKS_STARTED = "refresh_checks_started"
     MINISTRY_ROSTER_ENTERED = "ministry_roster_entered"
     # Publication to ParishSoft (#528, DAT-09.01): a preflight's plan (count:
     # its entities), an Administrator's confirmation (count: entities to
@@ -140,10 +144,20 @@ class Action(StrEnum):
     CENSUS_PUBLICATION_SWITCHED_OFF = "census_publication_switched_off"
     CENSUS_PUBLICATION_READ_UNCONFIRMED = "census_publication_read_unconfirmed"
     CENSUS_PUBLICATION_REFUSED = "census_publication_refused"
-    # Someone opened Publish to ParishSoft (#528, ADM-09); count: plan rows.
+    # The final full refresh an update run requested once its plan updated a
+    # Member (#1688); the subject is the refresh command, so System logs
+    # says the refresh followed an update.
+    CENSUS_PUBLICATION_REFRESH_REQUESTED = "census_publication_refresh_requested"
+    # Someone opened Update ParishSoft (#528, ADM-09; #1688); count: plan rows.
     CENSUS_PUBLICATION_VIEWED = "census_publication_viewed"
     ROSTER_CHANGES_VIEWED = "roster_changes_viewed"
     ROSTER_CHANGES_EXPORTED = "roster_changes_exported"
+    # Pledges (#1686): opening and downloading it (count: rows),
+    # and one decision on a Family's pledge, whose subject is its
+    # stewardship_pledge_review row; no event holds an amount.
+    PLEDGES_TO_ENTER_VIEWED = "pledges_to_enter_viewed"
+    PLEDGES_TO_ENTER_EXPORTED = "pledges_to_enter_exported"
+    PLEDGE_REVIEW_UPDATED = "pledge_review_updated"
     RESPONSE_DASHBOARD_VIEWED = "response_dashboard_viewed"
     # The lists of Families behind the response funnel (#477): one event type
     # per list, so the audit names the list without a new context field. The
@@ -362,13 +376,25 @@ class Action(StrEnum):
     # census resolve-conflict: an Automatic Conflict's Use the Family's value
     # anyway (#1434, ADM-09.03).
     ADMIN_CMD_CENSUS_RESOLVE_CONFLICT = "admin_cmd_census_resolve_conflict"
+    # census update-check, update-confirm and update-rerun: Update
+    # ParishSoft's Check ParishSoft, Update and Run again (#1755).
+    ADMIN_CMD_CENSUS_UPDATE_CHECK = "admin_cmd_census_update_check"
+    ADMIN_CMD_CENSUS_UPDATE_CONFIRM = "admin_cmd_census_update_confirm"
+    ADMIN_CMD_CENSUS_UPDATE_RERUN = "admin_cmd_census_update_rerun"
     # followup roster-entered and followup roster-bulk: a resolved request's
-    # Entered in ParishSoft tick and Roster changes to enter's bulk mark;
+    # Entered in ParishSoft tick and a bulk Entered by hand;
     # followup information-update: an Additional information item's Save
     # (#463 PR 11b).
     ADMIN_CMD_FOLLOWUP_ROSTER_ENTERED = "admin_cmd_followup_roster_entered"
     ADMIN_CMD_FOLLOWUP_ROSTER_BULK = "admin_cmd_followup_roster_bulk"
     ADMIN_CMD_FOLLOWUP_INFORMATION_UPDATE = "admin_cmd_followup_information_update"
+    # information decide and limitations decide: a worklist decision, one
+    # item or in bulk (#1735).
+    ADMIN_CMD_INFORMATION_DECIDE = "admin_cmd_information_decide"
+    ADMIN_CMD_LIMITATIONS_DECIDE = "admin_cmd_limitations_decide"
+    # pledges decide: a Pledges decision, one pledge or in bulk
+    # (#1733).
+    ADMIN_CMD_PLEDGES_DECIDE = "admin_cmd_pledges_decide"
 
 
 # Closed field identifiers are operational metadata, never census values.
@@ -571,6 +597,10 @@ FIELDS = {
         # answers who exported what without its request row: closed words.
         "report",
         "format",
+        # A report view the open page made by itself to bring newer figures
+        # in (#1620): always true when present; a reader's own view has no
+        # such key. Mirrored in stewardship_safe_context_v1.
+        "automatic",
     },
 }
 
@@ -982,6 +1012,7 @@ def sanitize(kind, values):
             "exact_code_used",
             "ministry_operational",
             "directory_response_columns",
+            "automatic",
         }:
             valid = type(value) is bool
             safe[key] = value

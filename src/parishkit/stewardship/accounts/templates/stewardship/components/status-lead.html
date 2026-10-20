@@ -1,0 +1,5 @@
+{% load i18n %}{% comment %}
+  The icon and state word that lead a problem line (a status indicator,
+  ui-conventions "Status indicators"): ``level`` is "error" or "warning".
+  Home's problem lines share it, so each reads the same way (#1673).
+{% endcomment %}<span class="status-{{ level }}">{% include "stewardship/components/level-icon.html" with level=level %} <span class="status-word">{% if level == 'error' %}{% translate "Error" %}{% else %}{% translate "Warning" %}{% endif %}</span></span>

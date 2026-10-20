@@ -11,19 +11,20 @@ and the export count Production responses.
 """
 
 from contextlib import ExitStack
-from uuid import uuid4
+from urllib.parse import urlencode
+from uuid import UUID, uuid4
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError, transaction
-from django.shortcuts import redirect
+from django.shortcuts import redirect, render
 from django.template.loader import render_to_string
-from django.utils.translation import gettext as _
+from django.urls import reverse
 from django.views.decorators.http import require_GET
 
 from parishkit.stewardship.accounts.authentication import denial, runtime
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
-from parishkit.stewardship.accounts.sessions import authenticated_admin
+from parishkit.stewardship.accounts.sessions import authenticated_admin, passive_read
 from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.domain import Money
@@ -42,10 +43,13 @@ from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES, _principal
 from .facts import FactUnavailable
 from .ministries import can_report, unscoped
+from .models import POPULATION_SCOPES
+from .money import MoneyAmount
+from .participation_summary import population_figures
 from .read_admission import admit_report_read
 from .response_dashboard import _admit_mode, funnel_panels, read_metrics
 from .response_dashboard import _audit as _audit_funnel
-from .selection import guarded_participation
+from .selection import guarded_participation, newest_figures
 from .statistics import StatisticsUnavailable, calculate_statistics
 from .statistics_selection import capture_statistics
 from .workspace import (
@@ -112,8 +116,15 @@ def index(request):
         return private_response("Invalid report filters.\n", status=400)
 
 
-def _audit(principal, campaign_id, outcome):
-    """Parish-owned references survive purge without copying reported values."""
+def _audit(principal, campaign_id, outcome, *, automatic=False):
+    """Parish-owned references survive purge without copying reported values.
+
+    ``automatic`` marks a view the open page made by itself to bring newer
+    figures in (#1620); a reader's own view records no such key.
+    """
+    context = {"outcome": outcome}
+    if automatic:
+        context["automatic"] = True
     # An audit append takes no row locks, so it need not join the
     # writers' work order; waiting there stalled report pages behind
     # every source promotion and installer.
@@ -128,7 +139,7 @@ def _audit(principal, campaign_id, outcome):
             parish_id=system.active_configuration.parish.pk,
             campaign_id=campaign_id,
             subject_id=campaign_id,
-            context={"outcome": outcome},
+            context=context,
         )
 
 
@@ -149,7 +160,12 @@ def dashboard(request, campaign_id):
     finish, handed_off = None, False
     try:
         service = runtime()
-        principal = _principal(request, service.store)
+        # The page's own re-read when newer figures are ready (#1586) is
+        # passive: it never extends the sign-in, though it is audited, and
+        # marked automatic (#1620). The header can only add that mark: every
+        # view is audited whatever the request sends.
+        automatic = passive_read(request)
+        principal = _principal(request, service.store, read_only=automatic)
         try:
             query = ReportQuery.parse(request.GET)
         except ValueError:
@@ -159,7 +175,7 @@ def dashboard(request, campaign_id):
         identities = (campaign_id,)
         admit_report_read(campaign_id)
         if production:
-            _audit(principal, campaign_id, Outcome.STARTED)
+            _audit(principal, campaign_id, Outcome.STARTED, automatic=automatic)
         finalized = False
         response_guard = None
         # False once the statistics or daily facts could not be read.
@@ -180,6 +196,7 @@ def dashboard(request, campaign_id):
                         principal,
                         campaign_id,
                         Outcome.SUCCEEDED if succeeded else Outcome.FAILED,
+                        automatic=automatic,
                     )
                 except (DatabaseError, StorageInvariantError) as error:
                     emit_failure(error, event=Event.REPORT_AUDIT_FAILED)
@@ -279,6 +296,80 @@ def _participation(stack, guard, campaign_id, query):
         return None, "statistics"
 
 
+# The pages that show Participation figures, by the in-place region their
+# re-read names (the one holding the figures status, #1586).
+FIGURES_REGIONS = {
+    "dashboard": "response-dashboard",
+    "comparison": "comparison-report",
+}
+
+
+def figures_status(view, scope, shown, updating, *, newer=False, follow=True):
+    """The figures status region's context (report-figures-status.html).
+
+    ``view`` is the page (a FIGURES_REGIONS key), ``scope`` the population
+    scope its figures are for, ``shown`` the generation the page shows (None
+    when it shows none) and ``updating`` whether the newest figures are
+    still being prepared. ``newer`` (the status read's answer only) says a
+    newer generation than ``shown`` is ready, so the page re-reads itself.
+    ``follow`` False draws the notice but never watches it: a page that is
+    itself a refusal (a Campaign comparison day out of range) would only be
+    refused again by its own re-read.
+    """
+    query = urlencode({"view": view, "scope": scope, "shown": shown or ""})
+    return {
+        "figures_status": {
+            "view": view,
+            "region": FIGURES_REGIONS[view],
+            "updating": updating,
+            "newer": newer,
+            "follow": follow,
+            "url": reverse("admin:response_dashboard_status") + "?" + query,
+        }
+    }
+
+
+@require_GET
+def dashboard_status(request, campaign_id):
+    """Passive figures status an open report polls; never audited (#1586).
+
+    The Response dashboard and Campaign comparison audit every view, so
+    instead of re-reading themselves on a timer they poll this fragment: it
+    says only whether newer figures than the page's (``shown``) are ready
+    and whether the newest are still being prepared, never a figure. When
+    newer ones are ready, the page re-reads its own address once, passively
+    (UX conventions, "Pages that update themselves"). The read never
+    extends the sign-in.
+    """
+    try:
+        service = runtime()
+        _principal(request, service.store, read_only=True)
+        fields = request.GET
+        view = fields.get("view", "")
+        scope = fields.get("scope", "")
+        if (
+            set(fields) - {"view", "scope", "shown"}
+            or view not in FIGURES_REGIONS
+            or scope not in POPULATION_SCOPES
+        ):
+            raise ValueError("Invalid figures status options.")
+        shown = UUID(fields["shown"]) if fields.get("shown") else None
+        admit_report_read(campaign_id)
+        newest, updating = newest_figures(campaign_id, scope)
+    except (PermissionError, ObjectDoesNotExist):
+        return denial()
+    except (FactUnavailable, StorageInvariantError):
+        return report_unavailable()
+    except SAFE_FAILURES:
+        return report_unavailable()
+    except ValueError:
+        return private_response("Invalid report options.\n", status=400)
+    context = figures_status(view, scope, shown, updating, newer=newest != shown)
+    response = render(request, "stewardship/report-figures-status.html", context)
+    response["Cache-Control"] = "no-store"
+    return response
+
+
 def daily_table(chart, presented, query):
     """The daily table's sorted, paged context for one participation chart.
 
@@ -304,67 +395,27 @@ def daily_table(chart, presented, query):
     }
 
 
-def known_money(amount):
-    """A ``MoneyAmount`` as ``Money`` for a stat tile, or ``None`` if unknown."""
-    return Money(amount.cents) if amount.available else None
-
-
 def statistics_panel(statistics):
     """The Summary panel's Active population row of stat tiles (#720, #1540).
 
-    The active Families and Members, and with giving enabled two pledge
-    tiles (#728): the current annual pledges, and last year's pledges of
-    every Family in the ParishSoft data, whatever its status today (so not a
-    subtotal of these Families). Without an observation every tile reads
-    "—" with the reason, never zero. The responded and email-reach counts
-    are not shown (#1537): the Families by stage row gives the responses,
-    and ``report participation`` still reports all three.
+    The figures are ``participation_summary.population_figures``, which the
+    export's capture also reads (#1557): the active Families and Members,
+    and with giving enabled the two pledge totals (#728), so not a subtotal
+    of these Families. Without an observation every tile reads "—" with the
+    reason, never zero. The responded and email-reach counts are not shown
+    (#1537): the Families by stage row gives the responses, and ``report
+    participation`` still reports all three.
     """
-    active = statistics.active
-    no_data = _("No ParishSoft data has been loaded for this campaign yet.")
-    figures = [
-        ("active_families", _("Active Families"), active and active.families, no_data),
-        (
-            "active_members",
-            _("Active Members"),
-            active and active.active_members,
-            no_data,
-        ),
-    ]
-    if statistics.financial_enabled:
-        pledges = known_money(active.annual_pledge) if active else None
-        everyone = known_money(statistics.comparison_pledge_all)
-        # One reason per cause, so each says what is actually missing.
-        if active is None:
-            annual_reason = everyone_reason = no_data
-        elif statistics.financial is None:
-            annual_reason = everyone_reason = _(
-                "Giving is turned on, but this campaign has no giving "
-                "definition yet, so pledges cannot be totalled."
-            )
-        else:
-            annual_reason = _(
-                "The total is added up only when every responding Family's "
-                "pledge amount is known."
-            )
-            everyone_reason = _(
-                "The ParishSoft data kept for this campaign does not hold "
-                "every pledge for last year's period, so the total is not "
-                "added up."
-            )
-        figures += [
-            ("annual_pledges", _("Current annual pledges"), pledges, annual_reason),
-            (
-                "comparison_pledges_all",
-                _("Last year's pledges (all Families)"),
-                everyone,
-                everyone_reason,
-            ),
-        ]
     return {
         "tiles": tuple(
-            tile(key, label, value, unknown_reason="" if value is not None else reason)
-            for key, label, value, reason in figures
+            tile(
+                key,
+                label,
+                # A tile formats Money; the statistics hold exact cents.
+                Money(value.cents) if isinstance(value, MoneyAmount) else value,
+                unknown_reason="" if value is not None else reason,
+            )
+            for key, label, value, reason in population_figures(statistics)
         )
     }
 
@@ -428,6 +479,14 @@ def _page_context(campaign_id, query, participation, metrics, principal, cause=N
         "export_key": uuid4(),
         # No list of earlier exports: exports are point-in-time (#1398).
         "export_allowed": mutable,
+        # The chart's Updating status, which follows the newest figures
+        # (#1586).
+        **figures_status(
+            "dashboard",
+            query.scope,
+            selected.document.fact_set_id if selected.document is not None else None,
+            selected.updating,
+        ),
     }
     if selected.document is not None:
         context.update(participation_table_context(selected.document))

@@ -222,6 +222,9 @@ SHAPING_STEPS = frozenset(
         "data_to_fix_refused_addresses",
         "data_to_fix_unreachable_families",
         "data_to_fix_census_changes",
+        # The upcoming pledge a Family submit records, absorbed as none
+        # (#1753, reports.pledge_refresh.answered_pledge).
+        "answered_pledge",
     }
 )
 DRIVE_FAILURES = frozenset(

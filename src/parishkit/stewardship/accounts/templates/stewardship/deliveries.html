@@ -28,9 +28,9 @@
   <div class="short" data-missing-hint="{% translate 'Enter a whole Through date, no earlier than From, or clear it.' %}"><label for="delivery-end">{% translate "Through" %}</label><input id="delivery-end" type="date" name="end" data-not-before="delivery-start" value="{{ end }}" data-browser-zone-field></div>
   <div><label for="delivery-state">{% translate "Delivery" %}</label>
   <select name="state" id="delivery-state">{% for state in states %}<option value="{{ state }}"{% if state == selected_state %} selected{% endif %}>{{ state|delivery_label }}</option>{% endfor %}</select></div>
-  {% if send %}<input type="hidden" name="send" value="{{ send.key.token }}">{% endif %}
+  {% if send %}<input type="hidden" name="send" value="{{ send.key.token }}" data-filter>{% endif %}
   {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
-  {% button type="submit" aria-describedby="delivery-filter-hint" %}{% translate "Apply filters" %}{% endbutton %}
+  {% include "stewardship/components/filter-actions.html" with apply_hint="delivery-filter-hint" %}
   <p class="help" id="delivery-filter-hint" data-complete-hint="reserve"></p>
 </form>
 {% include "stewardship/delivery-bulk.html" %}

@@ -79,18 +79,20 @@ def test_financial_mobile_keyboard_and_accessibility(
     # through the SQL selection.
     assert page.locator("th[aria-sort=ascending]").inner_text().startswith("Family")
     assert page.locator("th button.sort-link").count() == 4
-    # The complete export is offered beside the page, with its own controls,
-    # in a disclosure that starts closed (#227).
-    page.get_by_text("Export complete results").click()
-    assert page.get_by_role("button", name="Queue complete export").count() == 1
-    assert page.get_by_label("Export format").input_value() == "xlsx"
-    assert page.get_by_label("Export timezone").count() == 1
-    # While the campaign cannot accept work every export control is disabled.
+    # The complete export is the row of export buttons below the table
+    # (#1679), XLSX first, with no format menu and no zone question.
+    row = page.get_by_role("group", name="Export complete results")
+    assert row.locator(".export-buttons button").all_inner_texts() == [
+        "Export XLSX",
+        "Export CSV",
+        "Export PDF",
+    ]
+    assert page.get_by_label("Export format").count() == 0
+    assert page.get_by_label("Export timezone").count() == 0
+    # While the campaign cannot accept work every export button is disabled.
     page.goto(component_origin + "/financial-gated")
-    page.get_by_text("Export complete results").click()
-    assert page.get_by_role("button", name="Queue complete export").is_disabled()
-    assert page.get_by_label("Export format").is_disabled()
-    assert page.get_by_label("Export timezone").is_disabled()
+    for name in ("Export XLSX", "Export CSV", "Export PDF"):
+        assert page.get_by_role("button", name=name).is_disabled()
     page.goto(component_origin + "/financial-last")
     assert page.get_by_role("button", name="Next", exact=True).count() == 0
     assert page.get_by_role("button", name="Previous", exact=True).count() == 2
@@ -152,20 +154,17 @@ def test_financial_filters_and_pages_post_privately(page, component_origin):
     # which it would otherwise interrupt (#623).
     visible(page.get_by_text("Filtered", exact=True))
 
-    # The export carries the applied filters, the chosen format and the
-    # one-time key. The fixture does not offer the browser's zone
-    # (America/Los_Angeles), so the export timezone stays UTC.
+    # The export carries the applied filters, the clicked format, the
+    # browser's zone (America/Los_Angeles), unasked, and the one-time key.
     page.goto(component_origin + "/financial-report")
-    page.get_by_text("Export complete results").click()
-    page.get_by_label("Export format").select_option("pdf")
     page.route(
         "**" + reverse("admin:financial_export"),
         lambda route: route.fulfill(body="Queued"),
     )
     with page.expect_request(lambda request: request.method == "POST") as sent:
-        page.get_by_role("button", name="Queue complete export").click()
+        page.get_by_role("button", name="Export PDF").click()
     body = sent.value.post_data
-    assert "format=pdf" in body and "browser_timezone=UTC" in body
+    assert "format=pdf" in body and "browser_timezone=America%2FLos_Angeles" in body
     assert "search=Example" in body and "request_key=" in body
     assert "page=" not in body and sent.value.url.endswith(
         reverse("admin:financial_export")
@@ -599,6 +598,48 @@ def test_applied_filters_redraw_the_summary_charts_in_place(page, component_orig
     assert frequency.locator("svg .role-mark text").all_text_contents()[0] == (
         "1 (25%)"
     )
+    assert_clean(page, errors)
+
+
+def test_a_reload_after_apply_shows_the_same_view(page, component_origin):
+    """Apply posts privately; the address bar then names the view (#1586).
+
+    The answer's hidden data-page-address (only the closed choices: here
+    Frequency, the sort and the rows per page) replaces the address, so a
+    browser reload asks for that address by GET, never sending the POST
+    again, and draws the same view, the filtered summary included.
+    """
+    from playwright.sync_api import expect
+
+    errors = watch(page)
+    route = reverse("admin:financial_report")
+    address = route + "?frequency=monthly&sort=pledge_desc&size=100"
+    answer = page.request.get(component_origin + "/financial-filtered").text()
+    page.goto(component_origin + route)
+    expect(page.locator("[data-stat=families] .stat-value")).to_have_text("51")
+    page.route(
+        lambda url: url.endswith(route),
+        lambda sent: (
+            sent.fulfill(body=answer, content_type="text/html")
+            if sent.request.method == "POST"
+            else sent.fallback()
+        ),
+    )
+    page.get_by_label("Search Family name or Family DUID").fill("Private name")
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        page.get_by_role("button", name="Apply filters").click()
+    assert "search=Private+name" in sent.value.post_data
+    expect(page.locator("[data-stat=families] .stat-value")).to_have_text("4")
+    expect(page).to_have_url(component_origin + address)
+    assert "Private" not in page.url
+    # The reload is the address's GET: no POST is sent again.
+    methods = []
+    page.on("request", lambda request: methods.append(request.method))
+    with page.expect_navigation():
+        page.reload()
+    expect(page.locator("[data-stat=families] .stat-value")).to_have_text("4")
+    expect(page).to_have_url(component_origin + address)
+    assert "POST" not in methods and "GET" in methods
     assert_clean(page, errors)
 
 

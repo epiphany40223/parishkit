@@ -10,67 +10,76 @@ from uuid import UUID
 
 from django.template.loader import render_to_string
 
-from parishkit.stewardship.reports.chart_specs import ministry_followup
-from parishkit.stewardship.reports.ministry_followup import (
-    FILTER_OUTCOMES,
-    SORTING,
-    STATES,
-    FollowupQuery,
+from parishkit.stewardship.pipeline import Stream
+from parishkit.stewardship.reports.ministry_followup import SORTING
+from parishkit.stewardship.reports.ministry_worklist import (
+    COLUMNS,
+    MEMBERS,
+    PREFIX,
+    WorklistQuery,
+    stage_choices,
 )
-from parishkit.stewardship.reports.ministry_followup_views import (
-    BULK_KIND_HINTS,
-    bulk_actions,
-    totals_tiles,
-)
+from parishkit.stewardship.web.review_worklist import build
 from parishkit.stewardship.web.tables import report_table
 
 SUBMITTED = datetime(2054, 10, 5, 14, 30, tzinfo=UTC)
 
 
-def ministry_page(rows=(), *, summaries=(), packet_choices=(), totals=None, **extra):
-    """Render Ministry requests (#1133) as its queue view does, from detached
-    values: the queue's ``rows``, the By Ministry ``summaries`` and the
-    packet's choices. ``totals`` default to none of either request, so the
-    follow-up chart's bars read zero; ``extra`` overrides any other context value.
+def ministry_page(rows=(), *, summaries=(), packet_choices=(), roles=None, **extra):
+    """Render Ministry requests (#1133) as its worklist view does (#1684),
+    from detached values: the worklist's decorated ``rows`` (as
+    ``ministry_worklist.decorate`` gives them), the By Ministry
+    ``summaries`` and the packet's choices, for a Staff reader unless
+    ``roles`` says otherwise; ``extra`` overrides any other context value.
     """
-    query = FollowupQuery()
+    query = WorklistQuery()
     rows = list(rows)
-    totals = totals or {
-        "joining": 0,
-        "leaving": 0,
-        "requests": 0,
-        "unresolved": 0,
-        "completed": 0,
-    }
+    roles = frozenset({"staff"}) if roles is None else roles
+    table = report_table(
+        rows,
+        number=1,
+        size=50,
+        total=len(rows),
+        carry=[],
+        sorting=SORTING,
+        sort=query.sort,
+        action="/admin/reports/ministries/",
+    )
+    worklist = build(
+        Stream.MINISTRY,
+        table.rows,
+        roles,
+        prefix=PREFIX,
+        action="/admin/reports/ministries/",
+        columns=COLUMNS,
+        stage=query.stage,
+        counts={},
+        stages=(),
+        items="requests",
+        caption="Ministry requests to review",
+        baseline=False,
+        fields={"page": "1"},
+        filters_template="stewardship/ministry-worklist-filters.html",
+        editor_template="stewardship/ministry-worklist-edit.html",
+        add_template="stewardship/ministry-worklist-add.html",
+        export_template="stewardship/ministry-worklist-export.html",
+    )
+    worklist.stage_choices = stage_choices({}, "staff" not in roles)
     context = {
         "metadata": {"name": "Renewal", "source_as_of": SUBMITTED},
-        "rows": rows,
+        "worklist": worklist,
+        "table": table,
         "total": len(rows),
         "ministries": [],
         "query": query,
-        "table": report_table(
-            rows,
-            number=1,
-            size=50,
-            total=len(rows),
-            carry=[],
-            sorting=SORTING,
-            sort=query.sort,
-            action="/admin/reports/ministries/",
-        ),
         "mutable": True,
-        "item": None,
-        "states": STATES,
-        "outcomes": FILTER_OUTCOMES,
-        "bulk_actions": bulk_actions(),
-        "bulk_kind_hints": BULK_KIND_HINTS,
-        "bulk_key": UUID(int=1),
+        "notice": None,
+        "can_tick": "staff" in roles,
+        "members_choices": MEMBERS if "staff" in roles else None,
+        "add_ministries": [],
+        "add_replaceable": [],
         "export_fields": query.form_values(),
-        "export_timezones": ["UTC"],
         "export_pdf_limit": 1000,
-        "totals": totals,
-        "followup_chart": ministry_followup(totals),
-        "totals_tiles": totals_tiles(totals),
         "by_ministry": list(summaries),
         # As Staff or an Administrator sees it: with the ParishSoft and
         # campaign marks (#1135).
@@ -80,7 +89,7 @@ def ministry_page(rows=(), *, summaries=(), packet_choices=(), totals=None, **ex
         "packet_limit": 200,
         "packet_key": UUID(int=2),
     }
-    return render_to_string("stewardship/ministry-followup.html", context | extra)
+    return render_to_string("stewardship/ministry-requests.html", context | extra)
 
 
 def in_order(html, *texts):
