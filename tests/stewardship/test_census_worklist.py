@@ -638,3 +638,115 @@ def test_a_refresh_conflict_and_a_member_id_say_so_under_the_stage():
     assert 'id="census-entered-dialog-4"' in html
     # Census Add's dialog (#1710) has a value_member field of its own.
     assert html.count("ParishSoft Member ID (optional)") == 1
+    # Row 3's mark may be made again with another ID (#1773, below), and
+    # Census Add's dialog has a value_member field of its own.
+    assert html.count('name="value_member"') == 3
+
+
+def entered_new_member(**values):
+    """A New Member Staff marked Entered by hand, by default naming ID 7."""
+    return shaped(
+        **{
+            "id": "3",
+            "entity_kind": "proposed_member",
+            "entity_key": "local",
+            "field": "new_member",
+            "handling": "manual",
+            "submitted_value": {"first_name": "Newly", "last_name": "Sample"},
+            "current_available": False,
+            "current_value": None,
+            "baseline_available": False,
+            "baseline_value": None,
+            "decision": "approved",
+            "execution": "resolved_external",
+            "resolution_action": "entered",
+            "resolution_member": 7,
+        }
+        | values
+    )
+
+
+def test_an_entered_new_member_offers_correcting_its_member_id():
+    """#1773: a New Member Entered by hand and not Confirmed keeps its mark
+    drawn selected and gains Correct the ParishSoft Member ID after it,
+    which opens the row's own dialog asking for the ID (required, filled in
+    with the mark's) and posts Entered by hand. It is one row at a time, so
+    it gives the row no bulk kind."""
+    worklist, html = page([entered_new_member()])
+    (shown,) = worklist.rows
+    assert icons(worklist) == [
+        ("accept", True),
+        ("entered_by_hand", True),
+        ("entered_by_hand", False),
+    ]
+    correct = shown["icons"][2]
+    name = shown["name"]
+    assert correct["remark"] and correct["icon"] == "edit"
+    assert correct["label"] == f"Correct the ParishSoft Member ID of {name}"
+    assert correct["dialog"] == "census-entered-dialog-3"
+    assert "decide=entered_by_hand" in correct["post"]
+    assert correct["title_one"] == "Correct the ParishSoft Member ID of {name}?"
+    assert correct["done"] == "{name} had its ParishSoft Member ID corrected."
+    assert correct["focus"] == "entered_by_hand" and correct["pressed"] is None
+    assert shown["kinds"] == "" and shown["offers_entered"]
+    dialog = html.split('id="census-entered-3"')[1].split("</form>")[0]
+    field = re.search(r"<input[^>]*name=\"value_member\"[^>]*>", dialog)[0]
+    assert "required" in field and 'value="7"' in field
+    assert "ParishSoft Member ID (optional)" not in dialog
+    assert "The next refresh checks the entry again with this ID." in dialog
+    # A mark that named no ID may gain one: Add, the field starts blank.
+    worklist, html = page([entered_new_member(resolution_member=None)])
+    add = worklist.rows[0]["icons"][2]
+    assert add["label"] == f"Add the ParishSoft Member ID of {name}"
+    assert add["done"] == "{name} had its ParishSoft Member ID added."
+    dialog = html.split('id="census-entered-3"')[1].split("</form>")[0]
+    field = re.search(r"<input[^>]*name=\"value_member\"[^>]*>", dialog)[0]
+    assert 'value=""' in field and "required" in field
+
+
+def test_a_not_seen_new_member_offers_the_correction():
+    """A New Member flagged Not seen in ParishSoft (a mistyped ID, most
+    likely) is still Entered by hand and offers the correction, out of
+    bulk."""
+    unseen = CheckState(outcome="unchanged", unseen=2, not_seen_after=2)
+    worklist, _ = page([shape(entered_new_member() | {"check": unseen})])
+    (shown,) = worklist.rows
+    assert shown["not_seen"]
+    assert [icon.get("remark", False) for icon in shown["icons"]] == [
+        False,
+        False,
+        True,
+    ]
+    assert shown["kinds"] == ""
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        # Confirmed: the refresh found the Member; nothing to correct.
+        {"check": CheckState(outcome="confirmed")},
+        # A later response of the Family replaced it: history.
+        {"replaced": True},
+    ],
+)
+def test_no_correction_once_confirmed_or_replaced(values):
+    """The correction is offered only while the mark is in question."""
+    worklist, _ = page([shape(entered_new_member() | values)])
+    assert not any(icon.get("remark") for icon in worklist.rows[0]["icons"])
+    assert not worklist.rows[0]["offers_entered"]
+
+
+def test_no_correction_without_the_census_roles_or_on_other_rows():
+    """A reader the campaign's work holds is offered nothing; an entered
+    Member field (not a New Member) has no correction."""
+    worklist, _ = page([entered_new_member()], mutable=False)
+    assert worklist.rows[0]["icons"] == []
+    suffix = shaped(
+        handling="manual",
+        field="suffix",
+        decision="approved",
+        execution="resolved_external",
+        resolution_action="entered",
+    )
+    worklist, _ = page([suffix])
+    assert icons(worklist) == [("accept", True), ("entered_by_hand", True)]
