@@ -10,7 +10,7 @@
   the buttons cannot: To review and Ignored are both follow-up not needed in
   the file, so either Stage exports both.
 {% endcomment %}<div class="export-pane">
-<form id="table-export" data-table-sync data-submit-waits method="post" action="{% url 'admin:information_export' %}">{% csrf_token %}
+<form id="table-export" data-table-sync method="post" action="{% url 'admin:information_export' %}">{% csrf_token %}
 {% for key,value in export_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
 <input type="hidden" name="request_key" value="{{ request_key }}">
 <label><input type="checkbox" name="history" value="yes"{% if not mutable %} disabled{% endif %}> {% translate "Include complete Staff workflow history" %}</label>

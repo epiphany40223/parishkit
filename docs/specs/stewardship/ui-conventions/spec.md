@@ -301,9 +301,12 @@ keyboard-operable equivalent that does the same thing, such as a **Move…**
 action with a date field (WCAG 2.2 SC 2.5.7). A drop never applies a change by
 itself: it fills in the same review the equivalent opens, and only Apply
 changes anything ([review dialog](#review-dialog)). Drag uses pointer events
-with a few-pixel threshold, so a click still follows a link, is offered on
-fine pointers only (touch uses the equivalent), and Escape cancels it. The
-first user is the planned
+with a few-pixel threshold, so a click still follows a link or presses a
+button, is offered on fine pointers only (touch uses the equivalent), and
+Escape cancels it. A drag may start from the item itself or from its
+equivalent's button; a press without a drag, and Enter or Space on the
+button, still open the equivalent. The
+first user is
 [Campaign calendar editing](../admin-portal/spec.md#editing-from-the-calendar)
 ([#1521](https://github.com/epiphany40223/parishkit/issues/1521)).
 
@@ -895,7 +898,9 @@ the [in-place controls](#in-place-controls); no other mechanism.
 - **Pace.** While background work is pending a status region reads fast
   (2 s backing off to 10 s, or the fixed pace the page asks for). A page
   whose state changes without the reader's own action re-reads every 30
-  seconds (Background work, Families on the form now), and a report's
+  seconds (Background work, Families on the form now; Data to fix in
+  ParishSoft every 60 seconds, because each check runs every section's
+  read, [admin portal](../admin-portal/spec.md#data-to-fix-refresh-and-empty-states)), and a report's
   figures status checks every 30 seconds while its figures are current, so
   figures a new response or ParishSoft load makes out of date are noticed.
   A watch that passes its time limit (an hour, or the page's own) slows
@@ -1274,6 +1279,10 @@ every Admin refusal summary does (#592). A review dialog's pane with its own
 status line says the refusal in that line instead
 ([field errors stay on the form](#review-dialog), #1410).
 
+Short fields that share a row (a date beside a time) keep their boxes level:
+a field's reserved error line sits under its box, never between the label and
+the box, so no field's box is pushed below its neighbour's (#1851).
+
 Where a rule can be checked in the browser, the page checks it too, and
 shows its error at the field the same way. The browser's own checks (a
 required field, a format) mark a field when the reader leaves it, and clear
@@ -1559,7 +1568,11 @@ the campaign wizard in #1404 PR 4).
   and described by it: no summary is placed above the heading, since moving
   focus there would jump the page to the top, and no error line is added
   that would move the pane's controls. The line clears on the form's next
-  edit or accepted Review (#1410).
+  edit or accepted Review (#1410). A form inside a dialog of its own (the
+  Campaign calendar's Move…, #1521) names its refusal line the same way
+  with `data-review-refused` instead, which leaves Apply's status line the
+  page's: a refusal is said where the reader is, in the dialog, and the
+  applied change on the page the dialog closes onto.
 - **Opening the dialog.** An accepted Review opens the dialog. Its title
   names the change ("Review campaign settings") and labels the dialog
   (`aria-labelledby`); focus moves to that title, never to Apply, so the
@@ -2618,16 +2631,23 @@ Apply while the panel and its form keep their elements. A report's export is
 not a disclosure: it is the compact row of
 [export buttons](#downloaded-files) below the page's table, always shown, which
 takes one line (#1679, replacing #227's closed export disclosure). The Family
-directory, Financial stewardship and Ministry requests follow the Filters
-panel rule (#227). Census changes, a worklist, keeps its filters always open,
-as Additional information and Limitations do since they became review
-worklists ([#1685](https://github.com/epiphany40223/parishkit/issues/1685))
+directory and Financial stewardship follow the Filters panel rule (#227).
+Census changes, a worklist, keeps its filters always open, as Additional
+information and Limitations do since they became review worklists
+([#1685](https://github.com/epiphany40223/parishkit/issues/1685))
 ([its filters and downloads](../reports/spec.md#census-change-filters-and-downloads),
 [#1682](https://github.com/epiphany40223/parishkit/issues/1682)). Ministry requests keeps its
 compact filter bar rather than a Filters panel: its By Ministry counts apply
 a Ministry and request into the filters in place, and a closed panel would
-hide what the link just applied. System logs and the remaining report pages
-are still to convert.
+hide what the link just applied. System logs keeps its filter bar for the
+same reason: each entry's Related icons apply a filter into the form in
+place. The [Timeline](../reports/spec.md#timeline) keeps a one-row filter
+bar, too short to need a panel, and Roster changes keeps its
+filter bar until it moves to the shared review worklist, whose filters are
+always open
+([#1687](https://github.com/epiphany40223/parishkit/issues/1687)). No page
+is left to convert
+([#1828](https://github.com/epiphany40223/parishkit/issues/1828)).
 An edit form's short fields (a status, an outcome,
 a date and a time) likewise share a row on desktop (`.field-row` in
 `ui-v1.css`), top-aligned so a time's reading line fits under its box, while
@@ -4319,11 +4339,13 @@ out or not set up yet. **Shared code.** The `{% for %}…{% empty %}` row or
 item in each template; `components/table.html` shows its caller's
 `table_empty` message. `tests/stewardship/test_admin_empty_states.py` checks
 that every such message in an Admin template has a reason or next step after
-its first sentence; its allowlist names the pages still to convert and two
-reviewed exceptions: the "None" value of a before-and-after review list, and
-the shared chart's "Nothing to show yet." row, which sits in the collapsed
-Exact values table under a chart whose visible summary and page say what it
-covers.
+its first sentence; its allowlist holds one reviewed exception, the shared
+chart's "Nothing to show yet." row, which sits in the collapsed Exact values
+table under a chart whose visible summary and page say what it covers
+([#1828](https://github.com/epiphany40223/parishkit/issues/1828) converted
+the last pages). A report table picks its filtered or unfiltered message
+with the `applied_filters` template filter, the Filters panel's own count,
+so the message and the panel's summary never disagree.
 Empty states drawn by `{% if %}…{% else %}` follow the same rule and are
 reviewed by hand. **Precedent.** Sent mail, Background work and Hosted
 files' empty rows;
@@ -4438,9 +4460,9 @@ phone rather than widening the page. A format the download cannot
 take right now (Ministry requests' PDF above its row limit) is shown
 unavailable, named by a line below the row that says why; while other campaign work
 holds exports, every button is unavailable with its reason (#563). The
-in-place progress, waiting note and refusal behaviour of the old Download
-buttons is unchanged: the clicked button shows it is busy, the row's other
-buttons wait with it, and the waiting note appears below the row. On a page
+clicked button shows it is busy, the row's other buttons wait with it, and
+the file downloads in place, with any waiting note or refusal in the row's
+reserved status line ([downloads happen in place](#downloads-happen-in-place)). On a page
 with a table the row sits below the table, so the page's data starts higher.
 **No explanatory line.** Export buttons carry no explanatory line: no
 count ("Exports all 7 estimated matching Families, every page."), no scope
@@ -4529,12 +4551,77 @@ Limitations report (formerly Talents and limitations,
 [#970](https://github.com/epiphany40223/parishkit/issues/970)) offers all
 three formats; the guard checks its Members and Families tables in each.
 
+### Downloads happen in place
+
+**Rule.** Every Admin export downloads in place
+(Administrator decision, 2026-10-19,
+[#1778](https://github.com/epiphany40223/parishkit/issues/1778)). The
+clicked export button shows the busy spinner on itself, the row's other
+buttons wait with it, and the file downloads from the same page; no export
+opens a separate "prepare, then download" page. This holds for both kinds:
+
+- **Queued exports** (Response dashboard, Campaign comparison, Financial
+  stewardship, Additional information, the Ministry follow-up packet,
+  Family directory, a Family's Timeline and the campaign archive) freeze
+  their data and build the file in the background, as before. The page
+  posts the request in place and checks the export's status passively,
+  at the [live-status](#pages-that-update-themselves) pace (2 seconds,
+  backing off to 10, paused while the tab is hidden), and never extends
+  the sign-in. A check that gets no answer or a server failure is tried
+  again at that pace. When the file is ready it is downloaded in place,
+  and a download answered busy is tried again a few times rather than
+  starting a new export. After 30 minutes the page stops checking and
+  says the file is taking longer than usual.
+- **In-memory exports** (Limitations, Census changes, Ministry requests'
+  Export these requests, Roster changes to enter and System logs) answer
+  the request with the file, which is downloaded in place too. The
+  button stays busy until the file arrives, not for a fixed time.
+
+The export row's reserved status line, directly under the buttons, says
+everything else. It keeps two lines' height while empty (three on a
+phone), and it shows at most two sentences, so nothing moves
+([no layout shift](#no-layout-shift)):
+
+- After five seconds, that the export is still being worked on: a queued
+  export's server status, such as "Preparing your file…" or why it has
+  not started yet
+  ([#340](https://github.com/epiphany40223/parishkit/issues/340)), and
+  otherwise a "Still working…" note.
+- A refusal in plain language, in the server's own words where it gives
+  some: other campaign work holds exports, a reused form, exports
+  temporarily unavailable, a denial, the file could not be created, the
+  export was cancelled or ended before it was downloaded, the sign-in
+  ended, or no answer came (the export may still have been started).
+
+Each start renews the form's one-time request key, whatever its answer,
+so the next click is a new export. The server is unchanged: snapshot freezing, auditing, owner
+and capability checks, limits, download windows and one-use download
+grants work as before.
+
+The export status address (`/admin/reports/exports/<request>/`) stays as
+the passive status read the button uses. It is also the page for the two
+exports only the command line asks for: the latest-data export
+(`export exact create`) and the chosen-Family test names file. No Admin
+page sends the reader there ([point-in-time downloads](#point-in-time-downloads)).
+**Why.** A separate page took the reader away from the report for a file
+that is usually ready in seconds, and the in-memory exports already
+stayed in place; one behaviour for every export is simpler (Administrator,
+2026-10-19). **Shared code.** The export submit handler in `ui-v1.js`
+(any submit from an `.export-actions` row or a `form[data-export-in-place]`)
+and the status line that `components/export-actions.html` reserves
+(`data-export-status`). The browser test `test_export_in_place.py` clicks
+each kind of export and receives the file without leaving the page.
+**Precedent.** [#1778](https://github.com/epiphany40223/parishkit/issues/1778).
+
 ### Point-in-time downloads
 
 **Rule.** A download is a point-in-time copy of what the report shows when
 it is asked for; the portal keeps no copies and no history of earlier
 downloads, and no page lists them. A download made in the background (an
-export) has a status page only for its short life: it says the file is
+export) is asked for and downloaded in place from its report
+([downloads happen in place](#downloads-happen-in-place)). Its status page
+remains for its short life only for the exports the command line asks for
+and for an address opened directly: it says the file is
 being prepared, starts the download once when the file is ready, offers
 Cancel while preparing and Retry after a failed run (until the export
 ends), and says until when the file can be downloaded again, in

@@ -795,6 +795,8 @@ NON_PAGES = frozenset(
         # status fragment.
         "system",
         "system_health_status",
+        # Data to fix in ParishSoft polls its counts region (#1859).
+        "parishsoft_fixes_status",
     }
 )
 

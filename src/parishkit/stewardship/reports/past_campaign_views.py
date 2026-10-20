@@ -28,7 +28,8 @@ campaigns page"):
 - ``archive`` (POST, ``archive/``) is This campaign's archive's Download
   campaign archive (#1018 part (a)): it queues the current campaign's
   archive workbook (``archive_exports.create_archive_export``) and answers
-  with the export's status page.
+  with a redirect to the export's status address, which the page follows
+  in place to download the file (#1778).
 
 Every route needs an Administrator (``CONFIGURE`` and ``FINANCIAL_DETAIL``);
 the service checks again. Every answer is ``no-store``. Note texts appear
@@ -549,7 +550,7 @@ def remove(request):
 
 @require_http_methods(["POST"])
 def archive(request):
-    """Queue the current campaign's archive workbook and show its status page.
+    """Queue the current campaign's archive workbook; redirect to its status.
 
     The form posts only its one-time ``request_key``. The file holds each
     Family's giving. A download unavailable now (or a reused form) redraws

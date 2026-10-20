@@ -810,7 +810,11 @@ heading, and the page sends `Cache-Control: no-store`. Top to bottom:
    [#1370](https://github.com/epiphany40223/parishkit/issues/1370), so no
    funnel chart remains anywhere; the Administrator can ask for one back.
 4. **Daily participation**: the Chart population choice, the daily chart
-   and its table ([participation graph](#participation-graph)).
+   and its table ([participation graph](#participation-graph)). Before the
+   chart has a day, the panel says "No campaign dates to show yet. The daily
+   table starts on the Campaign start date and gains a row each day."
+   ([empty tables](../ui-conventions/spec.md#empty-tables-and-lists),
+   [#1828](https://github.com/epiphany40223/parishkit/issues/1828)).
 5. **Export**: the export buttons **Export XLSX**, **Export CSV** and
    **Export PDF**, with no sentence on what they export
    ([export actions](../ui-conventions/spec.md#downloaded-files)), which
@@ -1423,8 +1427,24 @@ reauthentication ceremony, distinct-Family reveal budget, or Valkey dependency.
 The server rechecks the report role and campaign scope on each request and uses
 `Cache-Control: no-store` for interactive responses.
 
-In Testing mode the Family sign-in accepts only rehearsal codes, so the page,
-and a directory export's page, says the listed codes work only after go-live.
+An empty table says why, by the Filters panel's own count
+([empty tables](../ui-conventions/spec.md#empty-tables-and-lists),
+[#1828](https://github.com/epiphany40223/parishkit/issues/1828)). With
+Include mailing columns and no other filter, nothing is wrong: "No active
+Family needs a postal invitation: each one has a Family head email that
+campaign mail can reach, or no usable mailing address. Turn off Include
+mailing columns to list every Family." With any other filter: "No Families
+match these filters. Select Clear filters to list every active Family."
+With none: "No active Families in the ParishSoft data yet. Families are
+listed here once a ParishSoft refresh loads them; an Administrator starts
+one from Refresh from ParishSoft." Include response columns adds columns
+and lists the same Families, so it does not count as a filter here, though
+the panel's summary counts it.
+
+In Testing mode the Family sign-in accepts only rehearsal codes, so the page
+says the listed codes work only after go-live; its exports download in place
+from that page ([downloads happen in place](../ui-conventions/spec.md#downloads-happen-in-place)),
+and an export status page opened directly says the same.
 For Administrators the notice links "Try the Family form as a chosen Family",
 the chosen-Family test send they alone may open; Staff get no link and are told
 to ask an Administrator for a test invitation

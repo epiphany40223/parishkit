@@ -72,8 +72,8 @@ patterns = [
     ),
     # Past campaigns compared with the current one (#1018).
     _page("reports/comparison/", comparison_views.report, "campaign_comparison"),
-    # Its download form (#1018, slice 6): a POST answered with the export's
-    # status page.
+    # Its download form (#1018, slice 6): a POST answered with a redirect to
+    # the export's status address, which the page follows in place (#1778).
     _page(
         "reports/comparison/exports/",
         comparison_export_views.create,
