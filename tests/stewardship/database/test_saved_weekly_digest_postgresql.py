@@ -187,7 +187,12 @@ def test_weekly_detail_rejects_an_item_the_report_did_not_select(
         item = first.information[0]
         # The later report follows the first's coverage: the item was
         # reported, so nothing is new and nothing needs correcting.
-        empty = seed_weekly(harness, monkeypatch, reported={UUID(item)}, after=1)
+        empty = seed_weekly(
+            harness,
+            monkeypatch,
+            reported={UUID(item)},
+            after=first.submission_watermark,
+        )
         browser, _ = signed_in()
         path = reverse("admin:weekly_digest_snapshot", args=[empty.pk])
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
@@ -219,7 +224,12 @@ def test_weekly_corrections_do_not_repeat_former_text(
         harness, form, answers, _ = revisit(harness)
         answers["additional_information"] = ""
         submit(harness, form, answers)
-        correction = seed_weekly(harness, monkeypatch, reported={UUID(item)}, after=1)
+        correction = seed_weekly(
+            harness,
+            monkeypatch,
+            reported={UUID(item)},
+            after=first.submission_watermark,
+        )
         browser, _ = signed_in()
         path = reverse("admin:weekly_digest_snapshot", args=[correction.pk])
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):

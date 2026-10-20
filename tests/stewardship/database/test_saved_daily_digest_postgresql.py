@@ -16,6 +16,7 @@ from django.db import DatabaseError
 from django.test import Client
 from django.urls import reverse
 
+from parishkit.stewardship.accounts.templatetags.stewardship import arrows_hidden
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.audit.schemas import Outcome
 from parishkit.stewardship.campaigns.read_guards import DownloadPool, ReadLimits
@@ -49,7 +50,10 @@ SECTION = {
         {
             "label": "Families responded",
             "value": "1",
-            "lines": ["Last year on day 9: 7 Families", "Past average: 6 Families"],
+            "lines": [
+                "Last year on day 9: 7 (↓ 85.7% less)",
+                "Past average: 6 <b>Families</b> (↑ 100% more)",
+            ],
         }
     ],
     "charts": [
@@ -263,7 +267,9 @@ def test_the_retained_comparison_section_is_shown_as_saved(
         assert "a" * 64 in page and "b" * 64 in page
         for tile in SECTION["tiles"]:
             for line in tile["lines"]:
-                assert line in page
+                # Each saved line is drawn word for word, escaped and with
+                # its direction arrows hidden from screen readers (#1637).
+                assert arrows_hidden(line) in page
         assert 'id="comparison-families-spec"' in page
         assert "/admin/reports/comparison/?day=9" in page
         # The same digest with no section has none to show.
@@ -322,3 +328,57 @@ def test_terminal_audit_failure_preserves_response_and_emits_safe_signal(
         ) == [{"outcome": Outcome.STARTED}]
         assert sum(r.msg == Event.REPORT_AUDIT_FAILED for r in caplog.records) == 1
         assert "private report data" not in caplog.text
+
+
+def test_a_production_saved_page_recounts_the_emails_funnel(
+    live_response_service,
+    google,
+    monkeypatch,
+):
+    """A Production digest's page shows the funnel at the end of its report day.
+
+    The funnel is counted again from durable timestamps, so a later
+    submission leaves the saved page unchanged, and its chart images
+    (removed by #1370) are not drawn.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from .test_response_revisit_postgresql import revisit
+    from .test_response_submission_postgresql import submit
+
+    harness = live_response_service
+    # A Family submits on the report day (October 9); the digest is
+    # captured the next morning.
+    with campaign_clock(datetime(2054, 10, 9, 12, tzinfo=UTC)):
+        from .test_weekly_observation_postgresql import respond
+
+        respond(harness, "Report day request")
+    with campaign_clock(DAILY_AT):
+        seeded = seed_daily(harness, monkeypatch)
+        browser, _ = signed_in()
+        path = reverse("admin:daily_digest_snapshot", args=[seeded.snapshot_id])
+
+        def page_funnel():
+            """The page's funnel panel as {label: families}, and the page."""
+            with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+                _, content = read(browser, path)
+            panel = re.search(rb"<[^>]*data-digest-funnel.*?</section>", content, re.S)
+            assert panel, "The page has no funnel panel."
+            rows = re.findall(
+                rb'<th scope="row">([^<]+).*?</th><td>([^<]+)</td>',
+                panel.group(0),
+                re.S,
+            )
+            return {a.decode(): b.decode() for a, b in rows}, content
+
+        before, content = page_funnel()
+        assert before["Submitted"] == "1"
+        assert b"response-funnel-spec" not in content
+        assert b"response-activity-spec" not in content
+    # A submission after the report day does not change the saved page.
+    with campaign_clock(DAILY_AT + timedelta(hours=1)):
+        harness, form, answers, _ = revisit(harness)
+        answers["additional_information"] = "Later request"
+        submit(harness, form, answers)
+        after, _ = page_funnel()
+    assert after == before
