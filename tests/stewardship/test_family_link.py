@@ -123,7 +123,7 @@ FAMILY_NAME_PAGES = {
     "directory.html": "Active parishioner family directory",
     "find-family-results.html": "Find a Family results",
     "financial-report.html": "Financial stewardship",
-    "census-publication.html": "Publish to ParishSoft, newest check",
+    "update-parishsoft.html": "Update ParishSoft, newest check",
     # The shared review worklist (#1681) draws the worklists' names: Census
     # changes (#1683), Ministry requests (#1684), Limitations (#1685) and the
     # others on it.

@@ -475,7 +475,7 @@ def open_count(groups):
     ``census_placement`` puts at To review or Conflict, for every role that
     may read the page (Administrator decision, 2026-10-18). It is the
     mapping the page itself places rows with, so the count cannot drift
-    from the page's stages. Ready to update is not counted: Publish to
+    from the page's stages. Ready to update is not counted: Update
     ParishSoft and the manual-entry report own it. An edited value never
     changes a stage, so the groups need not carry it.
     """
@@ -579,7 +579,7 @@ def link_additions(changes, added):
 def census_rows(campaign_id):
     """Every census change of the campaign, read and worded, unfiltered.
 
-    The caller has checked who may read them. Publish to ParishSoft (#528)
+    The caller has checked who may read them. Update ParishSoft (#528)
     reads its plan's values from these rows, so both pages word a change
     the same way.
     """
