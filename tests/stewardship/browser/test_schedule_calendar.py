@@ -915,9 +915,14 @@ def test_dragging_a_send_onto_a_day_opens_move_with_that_day(page, component_ori
     assert page.evaluate("window.notReloaded === true")
     assert page.url.endswith(CALENDAR)
     assert not failures
-    # A click without a drag follows the link.
-    with page.expect_navigation():
+    # A click without a drag follows the link. The component server does not
+    # serve the real Edit address it names (it answers 404), and Firefox
+    # shows its own error page for that, whose "load" Playwright never sees;
+    # so wait only for the navigation to commit, then check where it went.
+    href = link.get_attribute("href")
+    with page.expect_navigation(wait_until="commit"):
         link.click()
+    assert page.url == component_origin + href
 
 
 def test_dragging_move_onto_a_day_opens_move_with_that_day(page, component_origin):
