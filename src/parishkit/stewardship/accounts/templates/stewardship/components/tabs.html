@@ -1,0 +1,24 @@
+{% comment %}
+  Tabs (ui-conventions "Tabs", #1712): several views of one subject on one
+  page, a row of tabs above one panel area. The view builds the set with
+  web/tabs.py's tab_set (the chosen tab is the address's bare ?tab=), and
+  ui-v1.js switches tabs in place.
+
+  Include it with a page-unique tabs_id, the row's accessible label and the
+  set:
+    {% include "stewardship/components/tabs.html" with tabs_id="family-tabs" label=_("Family information") tabs=tabs %}
+
+  - The row is a WAI-ARIA tablist. Each available tab is a real link to the
+    page's address for that tab, ending in its panel's fragment, and an
+    in-place link (data-in-place) that swaps only its own panel
+    (data-in-place-only); only the chosen tab is in the Tab order.
+  - Each available tab has one panel, a region of its own
+    (data-in-place-region, data-in-place-own) named by the tab's fragment.
+    Only the chosen tab's panel is drawn (its template, with the page's
+    context, marked data-tab-loaded); every other panel is empty and hidden
+    until the script fetches it the first time its tab is chosen.
+  - An unavailable tab (Tab.unavailable, its reason) has no link and no
+    panel: it is greyed, aria-disabled and described by its tip, which
+    admin-menu-v1.js shows as it shows an unavailable control's. The tips sit
+    after the row, so the tablist holds only tabs.
+{% endcomment %}<div class="tabs" id="{{ tabs_id }}" data-tabs><div class="tabs-list" role="tablist" aria-label="{{ label }}" data-tabs-default="{{ tabs.default }}">{% for tab in tabs.tabs %}{% if tab.unavailable %}<a role="tab" id="{{ tabs_id }}-tab-{{ tab.key }}" class="tabs-tab" aria-selected="false" aria-disabled="true" tabindex="-1" aria-describedby="{{ tabs_id }}-tip-{{ tab.key }}" data-menu-tip data-tab="{{ tab.key }}">{{ tab.label }}{% if tab.count is not None %} <span class="tabs-count">{{ tab.count }}</span>{% endif %}</a>{% else %}<a role="tab" id="{{ tabs_id }}-tab-{{ tab.key }}" class="tabs-tab" href="{{ tab.href }}#{{ tabs_id }}-panel-{{ tab.key }}" aria-controls="{{ tabs_id }}-panel-{{ tab.key }}" aria-selected="{{ tab.selected|yesno:'true,false' }}" tabindex="{{ tab.selected|yesno:'0,-1' }}" data-in-place="{{ tabs_id }}-tab-{{ tab.key }}" data-in-place-only data-tab="{{ tab.key }}">{{ tab.label }}{% if tab.count is not None %} <span class="tabs-count">{{ tab.count }}</span>{% endif %}</a>{% endif %}{% endfor %}</div>{% for tab in tabs.tabs %}{% if tab.unavailable %}<span class="admin-tip" id="{{ tabs_id }}-tip-{{ tab.key }}" role="tooltip">{{ tab.unavailable }}</span>{% endif %}{% endfor %}<div class="tabs-panels">{% for tab in tabs.tabs %}{% if not tab.unavailable %}<div class="tabs-panel" role="tabpanel" id="{{ tabs_id }}-panel-{{ tab.key }}" aria-labelledby="{{ tabs_id }}-tab-{{ tab.key }}" tabindex="0" data-in-place-region data-in-place-own data-tab-panel="{{ tab.key }}"{% if tab.selected %} data-tab-loaded>{% include tab.template %}{% else %} hidden>{% endif %}</div>{% endif %}{% endfor %}</div></div>

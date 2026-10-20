@@ -379,8 +379,16 @@ def reconcile_source_families(
             reconcile_ministry_requests,
         )
         from parishkit.stewardship.responses.reconciliation import reconcile_proposals
+        from parishkit.stewardship.responses.refresh_checks import (
+            record_refresh_checks,
+        )
 
         reconcile_proposals(snapshot, corpus, campaign_id=campaign_id)
         reconcile_ministry_requests(snapshot, corpus, campaign_id=campaign_id)
+        # After reconciliation, so a request it just resolved is Confirmed
+        # already: the refresh re-evaluation of final and decided items.
+        record_refresh_checks(
+            snapshot, corpus, campaign_id=campaign_id, full=claim.phase == "full"
+        )
         verify_source(claim)
         return result

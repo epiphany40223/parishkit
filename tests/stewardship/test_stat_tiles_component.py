@@ -20,8 +20,6 @@ from parishkit.stewardship.reports import (
     comparison_views,
     digest_presentation,
     financial_views,
-    limitation_views,
-    ministry_followup_views,
 )
 from parishkit.stewardship.reports.money import MoneyAmount
 from parishkit.stewardship.web.stat_tiles import StatTile, shown, tile
@@ -253,15 +251,6 @@ def test_home_family_participation_tiles():
     assert testing.details == ("Testing responses, while in Testing mode",)
 
 
-def test_ministry_request_totals_tiles():
-    """Ministry requests: the Join and Leave request counts."""
-    found = ministry_followup_views.totals_tiles({"joining": 1234, "leaving": 0})
-    assert [(t.key, t.label, t.text) for t in found] == [
-        ("joining", "Join requests", "1,234"),
-        ("leaving", "Leave requests", "0"),
-    ]
-
-
 def test_financial_summary_tiles_never_read_an_unknown_total_as_zero():
     """Financial stewardship: Families, the total in dollars and cents and
     the Families that cannot contribute; a total not added up is "—"."""
@@ -276,15 +265,6 @@ def test_financial_summary_tiles_never_read_an_unknown_total_as_zero():
         summary | {"annual_total": MoneyAmount(None)}
     )[1]
     assert unknown.text == "—" and "every matching Family" in unknown.unknown_reason
-
-
-def test_limitations_summary_tiles():
-    """Limitations: its two counts."""
-    found = limitation_views.summary_tiles({"cannot_serve": 2, "cannot_attend": 0})
-    assert [(t.label, t.text) for t in found] == [
-        ("Cannot participate in ministries", "2"),
-        ("Families that cannot attend Mass", "0"),
-    ]
 
 
 def test_campaign_comparison_tiles_keep_the_shared_wording():

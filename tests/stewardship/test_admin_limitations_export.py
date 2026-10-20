@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from parishkit.stewardship import admin_cli
+from parishkit.stewardship.admin_worklists import LIMITATION_STAGES
 from parishkit.stewardship.reports import limitation_views
 from parishkit.stewardship.reports.limitations import SHOW_WORDS
 
@@ -32,11 +33,22 @@ def test_the_command_offers_exactly_the_pages_choices():
     assert entry.streams
     args = parse()
     assert (args.show, args.format, args.timezone) == ("any", "xlsx", "UTC")
-    for fmt in limitation_views.FORMATS:
+    # The download's Stage is the page's, every stage by default (#1735).
+    assert args.stage == "all"
+    assert set(LIMITATION_STAGES) == limitation_views.FILE_STAGES
+    for stage in LIMITATION_STAGES:
+        assert parse("--stage", stage).stage == stage
+    # The page's formats, and the command's own JSON Lines (#1735).
+    for fmt in (*limitation_views.FORMATS, "jsonl"):
         assert parse("--format", fmt).format == fmt
     for word in SHOW_WORDS:
         assert parse("--show", word).show == word
-    for refused in (("--format", "jsonl"), ("--show", "talents"), ("--search", "x")):
+    for refused in (
+        ("--format", "json"),
+        ("--show", "talents"),
+        ("--search", "x"),
+        ("--stage", "history"),
+    ):
         with pytest.raises(admin_cli.UsageError):
             parse(*refused)
 

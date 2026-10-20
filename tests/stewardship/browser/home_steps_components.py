@@ -4,9 +4,10 @@
 the Ministry module off, so Ministry follow-up is greyed out with the menu's
 reason, Additional information carries an open count and two emails may not
 have arrived. ``PHONE_PATH`` is the same page; the test reads it at 320 px.
-``CLOSED_PATH`` and ``LEADER_PATH`` are a Staff member's and a Ministry
-leader's Home on a closed campaign with the Ministry module and the census
-(#1590): the campaign-end lists, each with its count.
+``CLOSED_PATH`` is an Administrator's Home on a closed campaign with the
+Ministry module and the census (#1590): the campaign-end lists, each with
+its count. Home is only the Administrator's (#1726); Staff and Ministry
+leaders sign in to My review work (``review_work_components``).
 """
 
 from types import SimpleNamespace
@@ -45,7 +46,6 @@ CAMPAIGN = SimpleNamespace(
 )
 COUNTS = {"information_queue": 3}
 CLOSED_PATH = "/home-next-steps-closed"
-LEADER_PATH = "/home-next-steps-leader"
 CLOSED = SimpleNamespace(
     **(
         vars(CAMPAIGN)
@@ -62,7 +62,7 @@ CLOSED = SimpleNamespace(
 )
 CLOSED_COUNTS = {
     "census_changes": 4,
-    "ministry_roster": 5,
+    "ministry_entry": 5,
     "information_queue": 3,
     "ministry_report": 2,
 }
@@ -84,9 +84,7 @@ def components(context, admin):
         ),
         items,
     )
-    for section in sections:
-        for entry in section["items"]:
-            entry["count"] = COUNTS.get(entry["name"]) if entry["url"] else None
+    admin_context.attach_counts(sections, COUNTS)
     chrome = admin | {
         "sections": sections,
         "breadcrumbs": [],
@@ -115,49 +113,35 @@ def components(context, admin):
 
 
 def closed_components(context, admin):
-    """Home on a closed campaign for Staff and for a Ministry leader (#1590).
+    """An Administrator's Home on a closed campaign (#1590).
 
-    The menu is each role's real one, with the counts the chrome would read,
-    Roster changes to enter's among them (#1660).
+    The menu is the real one, with the counts the chrome would read,
+    Ministry requests' To enter by hand count among them (R39 finding 2).
     """
     configuration = SimpleNamespace(mode="production")
-    pages = {}
-    for path, actor in (
-        (CLOSED_PATH, Principal(UUID(int=2), frozenset({"staff"}))),
-        (
-            LEADER_PATH,
-            Principal(UUID(int=3), frozenset({"ministry_leader"}), frozenset({9})),
+    actor = Principal(UUID(int=2), frozenset({"administrator"}))
+    items = admin_context._navigation_items(
+        actor, True, CLOSED, configuration, parishsoft_data=True
+    )
+    sections, _breadcrumbs = admin_navigation.build(
+        SimpleNamespace(
+            url_name="index", namespace=admin_navigation.NAMESPACE, kwargs={}
         ),
-    ):
-        items = admin_context._navigation_items(
-            actor, False, CLOSED, configuration, parishsoft_data=True
-        )
-        sections, _breadcrumbs = admin_navigation.build(
-            SimpleNamespace(
-                url_name="index", namespace=admin_navigation.NAMESPACE, kwargs={}
-            ),
-            items,
-        )
-        for section in sections:
-            for entry in section["items"]:
-                entry["count"] = (
-                    CLOSED_COUNTS.get(entry["name"]) if entry["url"] else None
-                )
-        chrome = admin | {"admin": False, "sections": sections, "breadcrumbs": []}
-        pages[path] = (
-            "text/html",
-            render_to_string(
-                "stewardship/home.html",
-                context
-                | {
-                    "admin_chrome": chrome,
-                    "principal": actor,
-                    "configuration": configuration,
-                    "dashboard": {"campaign": CLOSED, "refreshed_at": None},
-                },
-            ),
-        )
-    return pages
+        items,
+    )
+    admin_context.attach_counts(sections, CLOSED_COUNTS)
+    chrome = admin | {"sections": sections, "breadcrumbs": []}
+    html = render_to_string(
+        "stewardship/home.html",
+        context
+        | {
+            "admin_chrome": chrome,
+            "principal": actor,
+            "configuration": configuration,
+            "dashboard": {"campaign": CLOSED, "refreshed_at": None},
+        },
+    )
+    return {CLOSED_PATH: ("text/html", html)}
 
 
 # Home with System health problems and a critical-problems banner (#1214):

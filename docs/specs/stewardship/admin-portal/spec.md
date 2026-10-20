@@ -635,13 +635,15 @@ rule ([navigation rule 10](../ui-conventions/spec.md#navigation-rules),
 #### Menu groups
 
 The menu is grouped by what an Administrator is doing during a campaign, in
-the order a campaign runs: set it up, send it, read the responses, then the
-parish data, users and system pages that change rarely. The sidebar starts with
-Home, then these groups, each listing the entries the viewer's role may open:
+the order a campaign runs: set it up, send it, review the responses and read
+the reports, then the parish data, users and system pages that change rarely.
+The sidebar starts with Home for Administrators (Staff and Ministry leaders
+have My review work first in Review work instead; see the notes below), then
+these groups, each listing the entries the viewer's role may open:
 
 | Group | Entry | URL | Roles | Unavailable when (the reason shown) |
 | --- | --- | --- | --- | --- |
-| (top) | Home | `/admin/` | Administrator, Staff, Ministry leader | Never |
+| (top) | Home | `/admin/` | Administrator | Never |
 | Campaign setup | Campaign settings | `/admin/campaign/settings/` | Administrator | No current campaign |
 | Campaign setup | Pages and emails | `/admin/campaign/content/` | Administrator | No current campaign, or it is archived |
 | Campaign setup | Campaign images | `/admin/campaign/images/` | Administrator | No current campaign, or it is archived |
@@ -657,15 +659,16 @@ Home, then these groups, each listing the entries the viewer's role may open:
 | Mail and Family portal | Report emails | `/admin/mail/report-emails/` | Administrator, Staff (read-only) | No current campaign |
 | Mail and Family portal | Family portal availability | `/admin/mail/family-portal/` | Administrator | Never |
 | Mail and Family portal | Families on the form now | `/admin/mail/presence/` | Administrator | Never |
-| Responses and reports | Response dashboard | `/admin/reports/responses/` | Administrator, Staff | No current campaign |
-| Responses and reports | Campaign comparison | `/admin/reports/comparison/` | Administrator, Staff | No current campaign |
-| Responses and reports | Financial stewardship | `/admin/reports/financial/` | Administrator, Staff | The campaign has no financial module |
-| Responses and reports | Limitations | `/admin/reports/limitations/` | Administrator, Staff | The campaign has no Ministry module |
-| Responses and reports | Census changes | `/admin/reports/census/` | Administrator, Staff | The campaign does not include the census |
-| Responses and reports | Additional information | `/admin/reports/information/` | Administrator, Staff | No current campaign, or ParishSoft data has not been downloaded yet |
-| Responses and reports | Ministry requests | `/admin/reports/ministries/` | Administrator, Staff, Ministry leader | The campaign has no Ministry module |
-| Responses and reports | Roster changes to enter | `/admin/reports/ministries/follow-up/roster/` | Administrator, Staff | The campaign has no Ministry module |
-| Responses and reports | Active parishioner family directory | `/admin/reports/families/` | Administrator, Staff | No current campaign, or ParishSoft data has not been downloaded yet |
+| Review work | My review work | `/admin/` | Staff, Ministry leader (not Administrators) | Never |
+| Review work | Census changes | `/admin/reports/census/` | Administrator, Staff | The campaign does not include the census |
+| Review work | Ministry requests | `/admin/reports/ministries/` | Administrator, Staff, Ministry leader | The campaign has no Ministry module |
+| Review work | Pledges | `/admin/reports/financial/pledges/` | Administrator, Staff | The campaign has no financial module |
+| Review work | Additional information | `/admin/reports/information/` | Administrator, Staff | No current campaign, or ParishSoft data has not been downloaded yet |
+| Review work | Limitations | `/admin/reports/limitations/` | Administrator, Staff | The campaign has no Ministry module |
+| Reports and queries | Response dashboard | `/admin/reports/responses/` | Administrator, Staff | No current campaign |
+| Reports and queries | Campaign comparison | `/admin/reports/comparison/` | Administrator, Staff | No current campaign |
+| Reports and queries | Financial stewardship | `/admin/reports/financial/` | Administrator, Staff | The campaign has no financial module |
+| Reports and queries | Active parishioner family directory | `/admin/reports/families/` | Administrator, Staff | No current campaign, or ParishSoft data has not been downloaded yet |
 | Parish data | Parish settings | `/admin/parish/settings/` | Administrator | Never |
 | Parish data | Parish logos | `/admin/parish/logos/` | Administrator | Never |
 | Parish data | Ministries | `/admin/parish/ministries/` | Administrator | ParishSoft data has not been downloaded yet |
@@ -683,12 +686,37 @@ Home, then these groups, each listing the entries the viewer's role may open:
 
 Notes on the groups:
 
+- **Review work** comes before **Reports and queries** (the Administrator,
+  R39 findings 1 and 4, 2026-10-19): one group holds the
+  [review pipeline](../review-pipeline/spec.md)'s worklists, the daily work
+  while a campaign runs, in the order Census changes, Ministry requests,
+  Additional information, Limitations; the other holds the read-only reports
+  and queries. Until the split this was one group, Responses and reports.
+  Both groups' pages keep their `/admin/reports/` addresses (see
+  [URL scheme](#url-scheme)), so no address changed.
+- For Staff and Ministry leaders who are not Administrators, `/admin/` is
+  [My review work](../review-pipeline/spec.md#role-views), and it is the
+  first entry of Review work instead of a Home entry above the groups (R39
+  finding 4): their landing sits with the worklists it counts. Their trail's
+  root still names it, as for Home. Administrators keep Home at the top and
+  have no My review work entry.
+- **Review work** comes before **Reports and queries** (the Administrator,
+  R39 findings 1 and 4, 2026-10-19): one group holds the
+  [review pipeline](../review-pipeline/spec.md)'s worklists, the daily work
+  while a campaign runs, in the order Census changes, Ministry requests,
+  Pledges, Additional information, Limitations; the other holds the
+  read-only reports and queries. Until the split this was one group,
+  Responses and reports.
+  Both groups' pages keep their `/admin/reports/` addresses (see
+  [URL scheme](#url-scheme)), so no address changed.
 - Every report has its own entry, so none is reached only through another
   report: the [Response dashboard](../reports/spec.md#response-dashboard)
   (which absorbed Participation,
   [#1537](https://github.com/epiphany40223/parishkit/issues/1537); the old
   `/admin/reports/participation/` address is gone, with no redirect),
   [Financial stewardship](../reports/spec.md#financial-stewardship-detail),
+  [Pledges](../reports/spec.md#pledges) (the financial
+  stream's review, Administrators and Staff only),
   [Limitations](../reports/spec.md#limitations),
   [Census changes](../reports/spec.md#pending-census-changes),
   [Additional information](../reports/spec.md#additional-information),
@@ -699,27 +727,33 @@ Notes on the groups:
   [active parishioner family directory](../reports/spec.md#active-parishioner-family-directory) (with Family
   campaign codes and its mailing columns). Reports always show the current
   campaign. Ministry leaders see only their own Ministries in the Ministry
-  entry. [Roster changes to enter](#roster-changes-to-enter), the list Staff
-  enter roster changes from, is an entry of its own beside Ministry requests
-  ([#1660](https://github.com/epiphany40223/parishkit/issues/1660)), for
-  Administrators and Staff only. Census changes, Additional information,
-  Ministry requests and Roster changes to enter show their open counts
+  entry. Roster changes are entered from Ministry requests itself, at its
+  Stage To enter by hand ([roster entry](#roster-entry-on-ministry-requests));
+  the separate Roster changes to enter entry
+  ([#1660](https://github.com/epiphany40223/parishkit/issues/1660)) was folded
+  into it (the Administrator, R39 finding 2, 2026-10-19), and its address is
+  gone, with no redirect. Census changes, Additional information, Ministry
+  requests and Limitations show their open counts
   ([#585](https://github.com/epiphany40223/parishkit/issues/585),
   [#1590](https://github.com/epiphany40223/parishkit/issues/1590)): for
-  Census changes, the rows of its default Work to do view (To do and
-  Conflict, plus To review for an Administrator, who decides automatic
-  changes), counted from the page's own rows with its own status rules; for
-  Additional information, the current requests not yet marked "Follow-up
-  completed" (its default view also lists completed ones); for Ministry
-  requests, the total of its queue's default Unresolved view, read through that
-  page's own selection with every filter it applies (only the leader's own
-  Ministries for a Ministry leader); where that page would say the follow-up
-  is unavailable, no number shows; for Roster changes to enter, the rows of
-  its default Not yet entered view, read through that page's own selection
-  with its eligibility (a person resolved the request as Joined or Left) and
-  each row's current Entered in ParishSoft mark, only once the campaign is
-  past go-live (active, closed or archived; a draft has no resolved request
-  to enter). All four ride on one statement. Each is a plain number after the entry's
+  Census changes, the rows at its To review and Conflict stages, the same
+  for Administrators and Staff (Administrator decision, 2026-10-18; Ready
+  to update is left to Publish to ParishSoft and the manual-entry report),
+  placed with the page's own stage rules; for
+  Additional information, the current requests at the worklist's default
+  To review stage; for Ministry
+  requests, its requests at To review and Conflict, which is its worklist's
+  default Stage To review (no Ministry request reaches Conflict today, see
+  [existing state to stage](../review-pipeline/spec.md#existing-state-to-stage)),
+  read through that page's own selection with every filter it applies (only
+  the leader's own Ministries for a Ministry leader); where that page would
+  say the follow-up is unavailable, no number shows; for Limitations, the
+  answers at the worklist's default To review stage, read through that
+  page's own selection with its default filters, with the Cannot contribute
+  financially answers the page lists at To review, read through Pledges' own
+  stage selection, for a viewer who may open Pledges (R39 findings 10 and
+  11). The menu count stays Ministry requests' own; the roster changes still
+  to enter are counted only on Home's [Next steps](#home-page). All the counts ride on one statement. Each is a plain number after the entry's
   name that screen readers announce as "(N open)". No number shows at zero,
   nor on a greyed-out entry. The counts are read when a page loads, never
   updated in place, so a number never appears or disappears under the
@@ -873,9 +907,8 @@ state, modules and mode the chrome already reads, and from whether
 ParishSoft data has been downloaded yet (#1242): one small query, run once
 per request and only when an entry's condition needs it, for a viewer whose
 menu has Ministries, Additional information or the directory. The other
-exception is the open counts on Census changes, Additional information,
-Ministry requests and Roster changes to enter
-([Menu groups](#menu-groups)): one query reads them all, only when the
+exception is the open counts on Census changes, Additional information and
+Ministry requests ([Menu groups](#menu-groups)): one query reads them all, only when the
 viewer's menu offers one of those entries as a link, once per request.
 
 #### Home page
@@ -918,7 +951,9 @@ and links, and the detail lives on the linked pages. In order, Home shows:
    may read campaign reports, the **Responses** stat tiles for one
    population, all active Families (below). With no current campaign the
    panel says so, or offers Create the campaign.
-5. **My Ministries**, for a Ministry leader (below).
+5. The **Review work** panel: My review work's stream panels, with Ready
+   to update
+   ([review pipeline, role views](../review-pipeline/spec.md#role-views)).
 6. **Next steps**, drawn as
    [link cards](../ui-conventions/spec.md#overview-pages).
 7. The **Ministry catalog changes** notice, when there is one: detail, so
@@ -939,20 +974,30 @@ the menu (Home keeps it, under "ParishSoft data as of", while there is no
 current campaign, which is how ParishSoft data is first loaded before
 Create the campaign).
 
+Home is the Administrator's. Staff and Ministry leaders who are not
+Administrators sign in to **My review work** instead
+([review pipeline, role views](../review-pipeline/spec.md#role-views),
+[#1690](https://github.com/epiphany40223/parishkit/issues/1690)), which
+replaces Home for them, a leader's open requests per Ministry included;
+Home's Review work panel shows an Administrator the same counts. Home's
+Staff and Ministry leader forms (their Next steps, and a leader's My
+Ministries panel and Today line) were removed in
+[#1726](https://github.com/epiphany40223/parishkit/issues/1726).
+
 Home is a starting point, not only a status page. Its heading is "Home"; the
 parish name and the current campaign's name and state are its data line.
 Home shows a short **Next steps** grid of link cards chosen by the
-campaign's state and the viewer's role (the Response dashboard is linked
-from the campaign panel instead, so it is not repeated here):
+campaign's state (the Response dashboard is linked from the campaign panel
+instead, so it is not repeated here):
 
-| State | Administrator | Staff | Ministry leader |
-| --- | --- | --- | --- |
-| Draft in Testing | Continue campaign setup (the Campaign setup stepper's first step not done yet, #1404), Campaign settings, Pages and emails, Dates and mail schedules, Preview and test email (for the initial invitation's current revision), Go-live readiness | None | Ministry requests |
-| Production being activated | Production activation, Sent mail (while the campaign is still a draft, Go-live readiness leads) | None | Ministry requests |
-| Active | Census changes, Roster changes to enter, Additional information and Ministry requests (each with its count), Family email progress, Sent mail problems (with count) | Census changes, Roster changes to enter, Additional information, Ministry requests (each with its count) | Ministry requests (with open count) |
-| Mail paused | Pause and resume mail first, then the Active list | As Active | As Active |
-| Closed or archived | Census changes, Roster changes to enter, Additional information, Ministry requests (each with its count), Report emails | Census changes, Roster changes to enter, Additional information, Ministry requests (each with its count) | Ministry requests (with open count) |
-| No current campaign | Create the campaign when the deployment has never had one; otherwise says so, with no next steps | Says so; no next steps | Says so; no next steps |
+| State | Next steps |
+| --- | --- |
+| Draft in Testing | Continue campaign setup (the Campaign setup stepper's first step not done yet, #1404), Campaign settings, Pages and emails, Dates and mail schedules, Preview and test email (for the initial invitation's current revision), Go-live readiness |
+| Production being activated | Production activation, Sent mail (while the campaign is still a draft, Go-live readiness leads) |
+| Active | Census changes, Ministry requests to enter by hand, Additional information and Ministry requests (each with its count), Family email progress, Sent mail problems (with count) |
+| Mail paused | Pause and resume mail first, then the Active list |
+| Closed or archived | Census changes, Ministry requests to enter by hand, Additional information, Ministry requests (each with its count), Report emails |
+| No current campaign | Create the campaign when the deployment has never had one; otherwise says so, with no next steps |
 
 At 1366 × 768 with the menu open, an Administrator's Home on an active
 campaign with problems, failed tasks and automation notices shows the
@@ -968,40 +1013,6 @@ preparation), there is no way to create one until the single-campaign change
 Home explains in plain language that there is no current campaign and that
 the next one cannot be created here yet.
 
-For a Ministry leader whose follow-up access is limited to particular
-Ministries (not Administrators or Staff, who reach every Ministry from the
-menu), Home also shows a **My Ministries** panel (#533). It says what it
-counts: requests from Families to join or leave the leader's Ministries that
-are still open (New or In progress) in the current campaign. It lists each
-of the leader's Ministries in the campaign, and any Ministry since removed
-from the campaign that still has open requests, marked "no longer in this
-campaign" as the queue marks it. Each line gives the Ministry's open
-requests to join and to leave, or "No open requests", and, when there are
-some, an "Open requests" link to
-[Ministry requests](../reports/spec.md#ministry-change-summary)
-(`/admin/reports/ministries/?ministry=<DUID>`) with its queue filtered to
-that Ministry. The panel's last line, "Ministry requests · Follow-up packet
-for my Ministries", links the unfiltered page and the
-[follow-up packet](../reports/spec.md#multi-ministry-follow-up-packet) form
-at its foot ([#1133](https://github.com/epiphany40223/parishkit/issues/1133)). On
-a phone each Ministry is one short block (name, counts, link), never a
-squeezed table.
-
-The counts are exact: each is the queue's own selection, with the leader's
-scope and default filters, read for one Ministry and action without its
-rows, so the panel never counts a request the queue would not list for that
-leader. The link carries only the Ministry number (`?ministry=<DUID>`); the
-queue accepts that closed value by GET
-([follow-up workflows](#follow-up-workflows) lists what such a link may
-carry), checked against the person's current scope (a number outside it is
-refused), so Back and reload work.
-The queue then remembers that view like any other, so its request links,
-Save and next, and each request page's "Return to Ministry requests" link
-keep that Ministry. Search and every filter other than those
-[follow-up workflows](#follow-up-workflows) lists stay private POST state.
-The command line's status read does not
-compute the panel.
-
 The Responses tiles are a row of
 [stat tiles](../ui-conventions/spec.md#stat-tiles)
 ([#720](https://github.com/epiphany40223/parishkit/issues/720), #1673) for
@@ -1015,17 +1026,14 @@ between all Families and those who can use the Family form now; Home does
 not repeat it. The campaign panel's heading row links the Response
 dashboard, shown as the viewer's menu entry is.
 
-The Next steps panel comes after the campaign panel (and My Ministries). For a Ministry leader
-with My Ministries it opens with one **Today** line
-([decision 29](#navigation-decisions); contents confirmed on #522): the
-open requests in those Ministries. For Administrators and Staff the Today
-count (Families who responded in the past 24 hours) is the Responses
-tiles' third tile instead (#1673), so it is not repeated.
+The Next steps panel comes after the campaign panel and Review work. Home
+has no Today line ([decision 29](#navigation-decisions)): the Families who
+responded in the past 24 hours are the Responses tiles' third tile (#1673).
 
 Each next step is a link card for the viewer's own menu entry: a card
 linking the page while the menu offers it, the page's name and the menu's
 reason as muted plain text while the menu greys it out, and left out when
-the viewer's role has no such entry. A card with a count shows it large
+the menu has no such entry. A card with a count shows it large
 at the card's end, with what it means beneath the page's name ("4", "to
 do"), and its start bar is the warning colour while the count is above
 zero and the accent at zero; a card without a count has the plain edge.
@@ -1044,18 +1052,19 @@ the card keeps its two lines; each count is exactly the list its link opens
 ([#1576](https://github.com/epiphany40223/parishkit/issues/1576)).
 
 At campaign end the Staff work through four lists, so an active, paused,
-closed or archived campaign offers Administrators and Staff each of them
-with its count ([#1590](https://github.com/epiphany40223/parishkit/issues/1590)),
-and each count is the menu's, the number of rows its link opens by
-default: Census changes as "N to do" (its Work to do view); Roster changes
-to enter as "N not yet entered" (its Not yet entered view); Additional
-information and Ministry requests as "N open". Roster changes to enter is
-offered, and greyed with its reason, exactly as the viewer's menu entry is
-([#1660](https://github.com/epiphany40223/parishkit/issues/1660)), so only
-Administrators and Staff see it; when its count cannot be read (the
-follow-up is turned off or unavailable) the card shows no number. A
-Ministry leader's Closed list keeps Ministry requests with its open count,
-as in Active. These steps send no email. Preview and test email opens the
+closed or archived campaign offers each of them with its count
+([#1590](https://github.com/epiphany40223/parishkit/issues/1590)), and each
+count is the menu's: Census changes as "N to do" (its To review and
+Conflict rows; its link opens on To review), and for the others the number
+of rows its link opens by default; Ministry requests to enter by hand as
+"N to enter by hand" (Ministry requests at its Stage To enter by hand,
+`?stage=to_enter_by_hand`, counted with that Stage's own selection, only
+past go-live: a draft has no accepted request to enter); Additional
+information and Ministry requests as "N open". The to-enter card follows
+Ministry requests' menu entry, offered and greyed with its reason as that
+entry is ([roster entry](#roster-entry-on-ministry-requests)); when its
+count cannot be read (the follow-up is turned off or unavailable) the card
+shows no number. These steps send no email. Preview and test email opens the
 initial invitation's first email and follows Pages and emails'
 availability. With no current campaign there is no Next steps panel: the
 campaign panel offers Create the campaign or says why there is none.
@@ -1099,7 +1108,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 
 | Page | Name | Reached from | Roles | Current names | Current URL | New URL | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `index` | Home | Menu: Home | Administrator, Staff, Ministry leader | Campaign administration | `/admin/` | (same) | Heading becomes Home; parish and campaign shown as the data line. |
+| `index` | Home | Menu: Home | Administrator, Staff, Ministry leader | Campaign administration | `/admin/` | (same) | Heading becomes Home; parish and campaign shown as the data line. For Staff and Ministry leaders who are not Administrators the page is [My review work](../review-pipeline/spec.md#role-views) (#1690): its heading, its menu entry (the first of Review work), the trail's root and a "Return to" it all say My review work. |
 | `configuration_request` | Change status | Settings page the change came from (else Home) | Administrator | Configuration change status; Configuration change | `/admin/changes/<request>/` | (same) |  |
 | `campaign_settings` | Campaign settings | Menu: Campaign settings | Administrator | (same) | `/admin/campaign/settings/` | (same) |  |
 | `campaign_create` | Create the campaign | Home | Administrator | (new, #142) | `/admin/campaign/first/` | (same) | Offered on Home only while the deployment has never had a campaign; refused once one exists. Not linked from a change's status page. |
@@ -1148,20 +1157,21 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `report_export` | _report page name_ export | The report it came from | Administrator, Staff, Ministry leader | Ministry export / Additional-information export / Family-directory export / Family-directory mail-merge export; Report export (breadcrumb) | `/admin/reports/exports/<request>/` | (same) | Object-named (exception). Every export shares it: a latest-data export too (decision 8). A report's export is named after its report page, for example "Active parishioner family directory export" or "Ministry requests export" (#520), and its breadcrumb says the same name as its heading. Exports that are not one report's keep their own names (Campaign archive, Campaign comparison download, Family timeline export, Chosen-Family test names export). The export error page reads nothing from the database, so it cannot name the export; its link back says "Return to the export status page". Its actions post to `cancellation/`, `retries/` and `download/`. It is a [point-in-time](../operations/spec.md#point-in-time-exports) preparing step, not a history entry: past the download window it answers the fixed "no longer available" page, and no page lists earlier exports. |
 | `report_exact` | Latest-data export | Response dashboard | Administrator, Staff | Queued participation export; Exact export | `/admin/reports/exports/<request>/` (the shared export page) | (same) | Decision 8: folded into the shared export page; it keeps its own heading, and its trail names it. Its old addresses (`exact-exports/<request>/` and its actions) are gone (#864). Since #1537 it is requested only with `export exact create`: the Response dashboard offers the export of the chart shown. |
 | `financial_report` | Financial stewardship | Menu: Financial stewardship | Administrator, Staff | Financial stewardship detail; Financial report | `/admin/reports/financial/` | (same) |  |
+| `pledges_to_enter` | Pledges | Menu: Pledges | Administrator, Staff | (new, [#1686](https://github.com/epiphany40223/parishkit/issues/1686)) | (none) | `/admin/reports/financial/pledges/` | The financial stream's review worklist and manual report ([Pledges](../reports/spec.md#pledges)); its decisions post to the page itself, and its CSV/XLSX/PDF download (`pledges/exports/`) is a non-page action. |
 | `limitations_report` | Limitations | Menu: Limitations | Administrator, Staff | Talents and limitations | `/admin/reports/limitations/` | (same) | Renamed when talents were retired (#970); the old address is gone. Its CSV/XLSX/PDF download (`limitations/exports/`) is a non-page action. |
 | `census_changes` | Census changes | Menu: Census changes | Administrator, Staff | (new, #528) Pending census changes | `/admin/reports/census/` | (same) | Its CSV/XLSX/PDF download (`census/exports/`) is a non-page action; a row's Entered in ParishSoft, Ignore and Reopen post to the page itself. |
 | `census_publication` | Publish to ParishSoft | Census changes | Administrator | (new, [#528](https://github.com/epiphany40223/parishkit/issues/528)) | `/admin/reports/census/publication/` | (same) | Built in slices ([ADM-09](../../../plans/stewardship/admin-portal.md#adm-09-census-review-and-parishsoft-publication-ui)): the page, Check ParishSoft and the newest plan so far; Apply and Run again are not built yet. See [Publish to ParishSoft](../reports/spec.md#publish-to-parishsoft). Census changes links to it for Administrators, shown unavailable with its reason while publication is switched off. Check ParishSoft posts to the page itself; Apply posts to `publication/<plan>/confirmation/` and Run again to `publication/<plan>/retries/`. |
 | `information_queue` | Additional information | Menu: Additional information | Administrator, Staff | Additional information and follow-up | `/admin/reports/information/` | (same) |  |
-| `information_item` | Information request | Additional information | Administrator, Staff | Additional information and follow-up (one request); Information item | `/admin/reports/information/<item>/` | (same) | Return to the queue keeps its filters and page. |
+| `information_item` | Information request | Additional information | Administrator, Staff | Additional information and follow-up (one request); Information item | `/admin/reports/information/<item>/` | (same) | Its link back opens the worklist. |
 | `ministry_reports` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry reports | `/admin/ministry-reports/` | (retired; 404) | Replaced by Ministry requests, which shows the "no campaign" page when there is nothing for the viewer to report. |
 | `ministry_report` | Ministry requests | Menu: Ministry requests | Administrator, Staff, Ministry leader | Ministry report; Ministry follow-up | `/admin/reports/ministries/` | (same) | One page with the follow-up queue since [#1133](https://github.com/epiphany40223/parishkit/issues/1133): totals, By Ministry, the queue, Export these requests and the follow-up packet ([Ministry change summary](../reports/spec.md#ministry-change-summary)). No assignee column, filter or bulk assignment (#552). Its Export these requests download (`follow-up/exports/`, #1157) and bulk outcome (`follow-up/bulk/`, #1131) are non-page actions. |
 | `ministry_joiners` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry requests — Prospective joiners; Joining; Members joining | `/admin/reports/ministries/joining/` | (retired; 404) | Retired with no redirect ([#1157](https://github.com/epiphany40223/parishkit/issues/1157)): each request's contact details are on its Follow-up request page, and its export is Ministry requests' Export these requests. |
 | `ministry_leavers` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry requests — Requested leavers; Leaving; Members leaving | `/admin/reports/ministries/leaving/` | (retired; 404) | Retired with no redirect (#1157), as Members joining. |
 | `ministry_followup` | (retired) | (retired) | Administrator, Staff, Ministry leader | Ministry follow-up; Follow-up | `/admin/reports/ministries/follow-up/` | (retired; 404) | Retired with no redirect ([#1133](https://github.com/epiphany40223/parishkit/issues/1133)): the queue is now Ministry requests, at `/admin/reports/ministries/`. |
 | `ministry_followup_item` | Follow-up request | Ministry requests | Administrator, Staff, Ministry leader | Ministry follow-up (one request) | `/admin/reports/ministries/follow-up/<request>/` | (same) | Return to the queue keeps its filters and page. Status, notes and outcome only; no Assign to (#552). Shows the Member's contact details (#1157). A resolved join or leave's Entered in ParishSoft tick posts to `follow-up/<request>/roster/` (#528). |
-| `ministry_roster` | Roster changes to enter | Menu: Roster changes to enter | Administrator, Staff | (new, #528) | (none) | `/admin/reports/ministries/follow-up/roster/` | [Roster changes to enter](#roster-changes-to-enter); its CSV/XLSX/PDF download (`roster/exports/`) and its bulk Mark entered in ParishSoft (`roster/marks/`, #879) are non-page actions. |
+| `ministry_roster` | (retired) | (retired) | Administrator, Staff | Roster changes to enter (#528, #1660) | `/admin/reports/ministries/follow-up/roster/` | (retired; 404) | Folded into Ministry requests with no redirect (R39 finding 2): its rows are Ministry requests' Stages To enter by hand and Entered by hand ([roster entry](#roster-entry-on-ministry-requests)). |
 | `family_directory` | Active parishioner family directory | Menu: Active parishioner family directory | Administrator, Staff | (same) | `/admin/reports/families/` | (same) |  |
-| `timeline` | Timeline | Active parishioner family directory | Administrator, Staff | (new, #477; renamed from Family timeline, #1570) | `/admin/reports/families/<family>/` | (same) | One Family's [Timeline](../reports/spec.md#timeline); opened from every Family name the shared `family_link` helper draws (directory rows, Find a Family, NAV-19, and every other Admin table that names a Family; see the [Timeline](../reports/spec.md#timeline) for the list); `<family>` is the opaque campaign record id. Staff see the summary only. |
+| `timeline` | Timeline | Active parishioner family directory | Administrator, Staff | (new, #477; renamed from Family timeline, #1570) | `/admin/reports/families/<family>/` | (same) | One Family's [Timeline](../reports/spec.md#timeline); opened from every Family name the shared `family_link` helper draws (directory rows, Find a Family, NAV-19, and every other Admin table that names a Family; see the [Timeline](../reports/spec.md#timeline) for the list); `<family>` is the opaque campaign record id. Staff see the summary only. It is the Family's [information hub](#family-information-hub): a header strip above tabs (`?tab=`), on this one address. |
 | `emailed_reports` | Emailed reports | Menu: Emailed reports | Administrator, Staff | (new) | `/admin/reports/emailed/` | (same) | New page (decision 7, ADM-12.17): the current campaign's daily reports (and weekly reports for Administrators), newest first, each linking its page; Send a weekly report now is on it and returns to it, linking the report it produced. Retired with no redirect by [Report emails](../report-emails/spec.md#delivery-plan) delivery PR 5 (#1786); until it lands this page is current, and the Report emails page replaces it. |
 | `weekly_digest_manual` | Send a weekly report now | Emailed reports | Administrator | Request a manual information report; Manual information report | `/admin/reports/emailed/weekly/new/` | (same) | Was the Manual information report menu entry; now a button on Emailed reports, where it ends, linking the report it produced (or its background task until it is ready). Its address named the campaign until #865; that old address is gone, with no redirect (#864). Retired with no redirect by [Report emails](../report-emails/spec.md#delivery-plan) delivery PR 5 (#1786); until it lands this page is current, and the Report emails page replaces it. |
 | `weekly_digest_snapshot` | Weekly report | Report emails | Administrator, Staff | Weekly information report; Weekly summary | `/admin/reports/emailed/weekly/<snapshot>/` | (same) | Its old address, which weekly report emails sent before NAV-12 link, is gone, with no redirect (#864). |
@@ -1234,11 +1244,13 @@ Admin URLs follow the menu, so the address says where the reader is
 (issue #525):
 
 - **The first segment after `/admin/` is the menu group:** `campaign`
-  (Campaign setup), `mail` (Mail and Family portal), `reports` (Responses and
-  reports), `parish` (Parish data), `users` (Users and access) and `system`
-  (System). Home is `/admin/`, a change's status page is
-  `/admin/changes/<request>/`, and the sign-in, maintenance and setup wizard
-  pages keep their own prefixes outside the menu.
+  (Campaign setup), `mail` (Mail and Family portal), `reports` (Review work
+  and Reports and queries, which share it: Review work was split from
+  Reports and queries without moving its pages), `parish` (Parish data),
+  `users` (Users and access) and `system` (System). Home is `/admin/`, a
+  change's status page is `/admin/changes/<request>/`, and the sign-in,
+  maintenance and setup wizard pages keep their own prefixes outside the
+  menu.
 - **No campaign identifier:** every page is `/admin/<group>/<page>/`, for
   example `/admin/campaign/settings/`, `/admin/mail/family-history/` and
   `/admin/reports/responses/`, and campaign pages show the current
@@ -1325,7 +1337,9 @@ follows them.
 
 1. **Menu groups and their order?** Home, Campaign setup, Mail and Family
    portal, Responses and reports, Parish data, Users and access, System (as
-   proposed).
+   proposed). On 2026-10-19 (R39) the Administrator split Responses and
+   reports into Review work, then Reports and queries
+   ([Menu groups](#menu-groups)).
 2. **One menu entry per report, or a Reports landing page?** One entry per
    report (as proposed).
 3. **How does an unavailable entry show its reason?** Greyed out, with the
@@ -1416,7 +1430,9 @@ follows them.
     access to earlier campaigns returns with #145. (Superseded by #864: an
     old address naming a campaign is 404.)
 29. **A Home Today line?** (Administrator.) Yes, one per role; its contents
-    are confirmed in NAV-18.
+    are confirmed in NAV-18. (Superseded: the 24-hour count became a
+    Responses tile in #1673, and the leader's line left with My Ministries
+    when My review work replaced Home for Staff and leaders, #1726.)
 30. **Where is the test email's origin kept?** (Coordinator.) In the
     signed-in session.
 
@@ -2557,8 +2573,8 @@ campaign's selections never change.
   (#1219): it is left out of those lists anyway, so the Ministry would only
   appear empty. It is back as soon as one such Member is current again.
   Staff still see it where they list those requests (the follow-up queue's
-  "Members no longer in ParishSoft" choice, Roster changes to enter and the
-  request page). A Family who opens the form again no
+  "Members no longer in ParishSoft" choice, its To enter by hand roster
+  rows and the request page). A Family who opens the form again no
   longer sees that Ministry, and resubmitting does not withdraw its requests.
   Adding the DUID back shows those answers unmarked again, including on the
   Family form.
@@ -5671,8 +5687,9 @@ the record. The roles are levels, and each includes everything below it:
 
 1. **Ministry leader** signs in and sees only the Ministries they lead in
    ParishSoft ([#922](https://github.com/epiphany40223/parishkit/issues/922)).
-   A Ministry leader who leads none signs in and sees an empty My Ministries,
-   with a plain sentence saying why.
+   A Ministry leader who leads none signs in to
+   [My review work](../review-pipeline/spec.md#role-views), which says in a
+   plain sentence that nothing is waiting for them.
 2. **Staff** has everything a Ministry leader has, sees every Ministry, and
    has the Staff capabilities of the
    [overview](../spec.md#actors-and-authorization).
@@ -6051,8 +6068,9 @@ signs in with, the one the email was sent to, followed by the shared
 is not a Gmail address
 ([#1593](https://github.com/epiphany40223/parishkit/issues/1593)), with
 Google's help link. It lists each of the leader's Ministries with its open
-requests to join and to leave, or "No open requests", counted as Home's
-[My Ministries panel](#home-page) counts them, then links
+requests to join and to leave, or "No open requests", counted as the
+leader's [My review work](../review-pipeline/spec.md#role-views) counts
+them, then links
 [Ministry requests](../reports/spec.md#ministry-change-summary), and it
 ends with the guidance's line on whom to ask when sign-in still fails. It
 names no parishioner and carries no contact or request detail: email is not
@@ -6226,7 +6244,7 @@ rest of this section follows those decisions:
 
 1. The page name is **Data to fix in ParishSoft**.
 2. It is the last entry of the Parish data menu group, not an entry under
-   Responses and reports.
+   Responses and reports (since R39, Review work and Reports and queries).
 3. The sections run: Families the form cannot open, refused email
    addresses, Families no mail can reach, census and roster changes to
    enter.
@@ -6284,7 +6302,7 @@ role may not see left out:
 | 1 | Families the form cannot open | Families that cannot open the Family form because a Member's ParishSoft data has a value the form cannot accept | [Families the form cannot open](#system-health-page) | Administrator | `reports.source_form.blocked_families`, the System health sentence's own read, with its per-campaign and per-snapshot cache |
 | 2 | Refused email addresses | Unresolved refused addresses, and how many Families they belong to | [Refused addresses](#refused-addresses) | Administrator | `jobs.delivery_reads.unresolved_refusals()`, the set behind Sent mail's link-line count, counted in one query |
 | 3 | Families no mail can reach | Active parishioner Families with no deliverable email and no usable mailing address | The [active parishioner family directory](../reports/spec.md#active-parishioner-family-directory) with its "Can't be reached by email or mail" preset | Administrator, Staff | `accounts.admin_dashboard.unreachable_families`, the count Home showed before #1673, which is the directory's own "neither" selection |
-| 4 | Census and roster changes to enter | Census changes in the [Census changes](../reports/spec.md#pending-census-changes) default view for the viewer (To do and Conflict, plus To review for an Administrator); later, roster changes to enter | Census changes; later, *Roster changes to enter* | Administrator, Staff | `reports.census_changes.census_changes` with the page's default query; later, the roster filter's own read |
+| 4 | Census and roster changes to enter | Census changes at the [Census changes](../reports/spec.md#pending-census-changes) To review and Conflict stages, the same for every role; later, roster changes to enter | Census changes; later, Ministry requests at its Stage To enter by hand | Administrator, Staff | `reports.census_changes.census_changes` at every stage, counting the To review and Conflict rows; later, the roster filter's own read |
 
 Notes on the sections:
 
@@ -6361,16 +6379,15 @@ Notes on the sections:
 
 ## Follow-up workflows
 
-Additional-information items show Family, DUID, text, submission time, needed
-checkbox, followed-up checkbox/time, and Staff notes. Admin/Staff may search,
-filter, sort, edit workflow fields, and see history. Marking followed up sets
-the timestamp/actor; unchecking retains history and clears current state after
-confirmation. That confirmation appears only once a completed item's
-"Follow-up completed" is unticked, and Save stays unavailable, with a short
-hint, until it is ticked (default, pending Administrator confirmation, #519);
-the server still refuses an unconfirmed clear.
+Additional-information requests are reviewed on the
+[Additional information](../reports/spec.md#additional-information)
+worklist ([#1685](https://github.com/epiphany40223/parishkit/issues/1685)):
+To review, To handle, Handled or Ignored, decided one by one or in bulk,
+with no assignment. A request's own page shows its text, contact details and
+history; it has no follow-up form, so the Save and Save and next described
+below are the Ministry follow-up request's.
 
-Save follow-up on an information item and on a Ministry follow-up request acts
+Save follow-up on a Ministry follow-up request acts
 [in place](../ui-conventions/spec.md#in-place-controls) (#519): the request's panel, its form and its
 history are refreshed where the reader is, and "Follow-up saved." is
 announced.
@@ -6382,19 +6399,21 @@ session (never in the URL), as a change's origin is remembered (navigation
 rule 5). Links carry only an opaque token, and the session keeps the last 20
 views. The one exception is a link that opens the queue on
 [Ministry requests](../reports/spec.md#ministry-change-summary)
-(`/admin/reports/ministries/`) for one Ministry by GET: the "Open requests"
-link of Home's [My Ministries panel](#home-page) carries only the Ministry
-number (`?ministry=<DUID>`), and the By Ministry counts on the same page add
-the queue's own closed Request and Status values
-(`?ministry=<DUID>&action=join&state=any`,
-`?ministry=<DUID>&action=leave&state=any`, or the Ministry alone for
-Unresolved,
-[#1133](https://github.com/epiphany40223/parishkit/issues/1133)), so the
-queue shows exactly the requests counted. On the page itself a By Ministry
+(`/admin/reports/ministries/`) for one Ministry by GET: the To review card
+of a leader's [My review work](../review-pipeline/spec.md#role-views)
+carries only the Ministry number (`?ministry=<DUID>`), and the By Ministry
+counts on the same page add the worklist's own closed Request and Stage
+values (`?ministry=<DUID>&kind=join&stage=all`,
+`?ministry=<DUID>&kind=leave&stage=all`, or the Ministry alone for
+Unresolved, which is To review,
+[#1133](https://github.com/epiphany40223/parishkit/issues/1133), #1684), so the
+worklist shows exactly the requests counted. Home's Ministry requests to
+enter by hand card carries the Stage alone (`?stage=to_enter_by_hand`,
+[roster entry](#roster-entry-on-ministry-requests)). On the page itself a By Ministry
 count applies those filters in place rather than loading the address. Such a
 link may carry only
-`ministry`, `action` and `state`, each a single value the queue's filter
-form accepts, never a search; a token and a Ministry never travel
+`ministry`, `kind` and `stage`, each a single value the worklist's filters
+accept, never a search; a token and a Ministry never travel
 together. The Ministry is checked against the person's current follow-up
 scope, and one outside it is refused. The queue then remembers that view
 under a token like any other. A link the queue cannot use (a malformed or
@@ -6446,28 +6465,37 @@ request page's view audit (`ministry_followup_viewed`) records the request's
 `ministry_duid`, as the retired Members joining and leaving lists' views
 recorded theirs; never names or contact values.
 
-Below the queue table, **Export these requests**, the shared row of
+Below the worklist's table, **Export these requests**, the shared row of
 [export buttons](../ui-conventions/spec.md#downloaded-files),
-downloads the queue's applied view (its filters, search and sort; every
-page of it, not just the one shown) as CSV, XLSX or PDF (Administrator
+downloads the worklist's applied view (its Stage, filters, search and sort;
+every page of it, not just the one shown) as CSV, XLSX or PDF (Administrator
 decision, 2026-10-12, option (a) on #1157), replacing the retired Members joining and leaving exports.
 A request whose Member is no longer active in ParishSoft is not in the file
-(Administrator decision, 2026-10-13): the rows are the queue's own default
-selection, which leaves such requests out once open
-[#1217](https://github.com/epiphany40223/parishkit/issues/1217) lands, and
-the export refuses (400) any Status choice but the queue's own statuses, so
-the Staff-only choice of #1217 that lists only those requests is never
-exported.
+(Administrator decision, 2026-10-13): the rows are the worklist's own
+default Members choice, and the export refuses (400) the Staff-only choice
+of #1217 that lists only those requests. The one exception is Staff's
+roster rows at To enter by hand and Entered by hand, which the default
+choice lists with their badge because the roster work may still be real
+([roster entry](#roster-entry-on-ministry-requests)), as Roster changes to
+enter's file did.
 No line says how many requests the file holds
 ([export actions](../ui-conventions/spec.md#downloaded-files)); the form's
-hidden filters follow an in-place Apply, sort or page change. The rows are the queue selection's own,
-so a Ministry leader gets only the Ministries they lead, exactly as on the
-queue. The file's columns are the queue's (Member, Member DUID, Ministry,
-Request, Status with Outcome split out, Last contact), then the request
+hidden filters follow an in-place Apply, sort or page change. The rows are the follow-up selection's
+own, so a Ministry leader gets only the Ministries they lead, exactly as on
+the worklist. The file's columns are Member, Member DUID, ParishSoft status,
+Family, Family DUID, Ministry, Request, Stage, Decision (with a Ministry
+request's outcome, "Ignored: Stayed in the Ministry"), Reviewer's value,
+Replaced by a later response, Entered by, Entered at and Last contact
+(the roster-entry columns are blank in a Ministry leader's file;
+[roster entry](#roster-entry-on-ministry-requests)), in the
+[pipeline's words](../review-pipeline/spec.md#pipeline-vocabulary) (#1684;
+they replaced Status and Outcome), then the request
 page's contact details (Email, Phones, Known primary Family address, Gender,
 Age, Current Ministry role; blank where a detail does not apply to the
-request's kind). It has no Submitted column, as the queue has none
-(Administrator decision, 2026-10-13, on
+request's kind). A Ministry leader's file says Accepted (or Accepted
+(edited), or Added by the parish) where Staff's says To enter by hand or
+Entered by hand, as on the page. It has no Submitted
+column (Administrator decision, 2026-10-13, on
 [#1157](https://github.com/epiphany40223/parishkit/issues/1157)); the request
 page still shows when a request was submitted. Its Report information sheet
 and PDF card
@@ -6475,7 +6503,7 @@ hold the parish, campaign, data date, request time, display time zone, age
 reference date, count, filters and the privacy line. It carries the
 retired export's sensitivity notice, and its times are in the browser's
 zone ([time zones](../ui-conventions/spec.md#downloaded-files)). The file is
-rendered on request, as Roster changes to enter is, rather than queued as a
+rendered on request, as Census changes is, rather than queued as a
 stored export: a stored capture would need a schema change, because the
 export capture accepts only one Ministry's join or leave list or a packet.
 A PDF holds at most 1,000 requests (`EXPORT_PDF_LIMIT`; Administrator's
@@ -6497,36 +6525,155 @@ publish-restricted (`ministry_operational`; restricted means the leader
 rule, including #1591's requesting-Member values); never names, contact values,
 filters or search text.
 
-The queue's columns follow the shared
-[table column order](../ui-conventions/spec.md#table-column-order)
-([#932](https://github.com/epiphany40223/parishkit/issues/932)): Member (the
-row header, linking to the request), Member DUID, Ministry, Request (Join
-or Leave), Status and Last contact. Like every Admin table it has no
-Ministry DUID, and it has no Submitted column (Administrator decision,
-2026-10-11, [#1064](https://github.com/epiphany40223/parishkit/issues/1064)),
-so the table is narrower; the request page shows when the
-request was submitted. A Member added
-on the form is not in ParishSoft yet, so their Member DUID reads "New
-Member". The installed selection orders the rows and returns each request's
-Ministry DUID but not its Member key, so the page reads the Member keys of
-the rows shown in one query by request id; a schema change was not needed.
-The rows are newest first by default, the selection's own order, which no
-heading shows; Member and Ministry sort through the selection's own orders,
-and the selection's oldest-first order is no longer offered. Member DUID,
-Request, Status and Last contact do not sort, since the selection has no
-order for them. A long Member name is cut short with an ellipsis on one
-line; a long Ministry name wraps to at most two lines, ending in an
-ellipsis only when even two are too few, so a leader can tell similar
-Ministries apart without hovering
-([#1136](https://github.com/epiphany40223/parishkit/issues/1136)). A name
-cut short shows whole in a tip on hover, keyboard focus and tap
-([table fit and row
-height](../ui-conventions/spec.md#table-fit-and-row-height)). Member names read
-"Last, first", as the
-[Member-name rule](../ui-conventions/spec.md#family-and-member-names) asks,
-so the Member sort orders by surname; the search also finds the "first last"
-form. Migration 0069 changed the selection to build them
-([#932](https://github.com/epiphany40223/parishkit/issues/932)).
+Ministry requests is the Ministry stream's
+[review worklist](../review-pipeline/spec.md#review-worklist)
+([#1684](https://github.com/epiphany40223/parishkit/issues/1684)): the shared
+component (`components/review-worklist.html`, `web/review_worklist.py`) with
+the [review pipeline](../review-pipeline/spec.md#pipeline-vocabulary) words,
+the [selected-state icons](../ui-conventions/spec.md#row-actions-and-confirmation)
+and the [role-specific actions](../review-pipeline/spec.md#role-specific-actions).
+It replaced the follow-up queue table, its Status and Outcome filters and its
+bulk outcomes (#1131) at the same address, with no redirect of anything. Each
+request is at one stage, derived from its stored state as the pipeline's
+[existing state to stage](../review-pipeline/spec.md#existing-state-to-stage)
+table says (`pipeline.ministry_placement`):
+
+- **To review**: New or In progress (and Assigned, from before #552).
+- **To enter by hand**: Accepted (resolved as Joined the Ministry or Left
+  the Ministry by a person), not yet ticked Entered in ParishSoft; then
+  **Entered by hand** once ticked.
+- **Ignored**: Declined / no longer interested, Stayed in the Ministry,
+  Duplicate request, Other, or Closed: no response, whose stored outcome is
+  kept as the decision's label under the stage ("Ignored: Stayed in the
+  Ministry").
+- **Confirmed**: resolved by a ParishSoft refresh whose roster already shows
+  the change.
+
+A Ministry leader never sees the update phase ([#1160](https://github.com/epiphany40223/parishkit/issues/1160)):
+for a leader an accepted request is at the stage **Accepted** (or Accepted
+(edited), or Added by the parish) whether or not Staff have entered it, and
+the leader's Stage filter offers To review, Accepted, Ignored and Confirmed.
+Staff and Administrators get To review, To enter by hand, Entered by hand,
+Ignored and Confirmed. Each choice shows its count, and Every stage comes
+last; To review is the default. The counts are the reader's scope with the
+other filters applied, so they follow Apply and every decision in place.
+
+**Filters**, always open above the table: Stage, Search Member or Ministry
+name, Ministry (every Ministry in the reader's scope) and Request (Join or
+leave, Join, Leave), and, for Staff and Administrators only, **Members**: "In
+ParishSoft" (the default) or "No longer in ParishSoft" (#1217, below).
+
+**Columns**, in the shared
+[table column order](../ui-conventions/spec.md#table-column-order) and the
+worklist's own: Member (the row header; it sorts; it opens the Family hub
+for Staff and Administrators and is plain text for a Ministry leader, per
+the [worklist link rule](../ui-conventions/spec.md#admin-tables), R38),
+Member DUID ("New Member" for a Member added on the form), Ministry
+(the Family's Ministry, or the one the parish added, linking to the request
+page for every reader; it sorts; a Ministry
+since removed from the campaign carries the "Removed" badge), Last contact,
+then the worklist's Family's answer ("Join", "Leave", or "Leave (cannot
+participate)"; blank for a request the parish added), Reviewer's value (the
+Ministry an Edit or an Add carries forward, "Join Adult Choir"), Stage (with
+the decision under it), Submitted, Last decision (who, when and the note)
+and Actions. The worklist has no Baseline column: a Ministry request's
+baseline is only whether the Member is on the roster, which its kind already
+says. The rows are newest first by default, and the table scrolls sideways
+in its own box when it is wider than the page. A long Member or Ministry
+name is cut short, whole in its tip, as before (#1136).
+
+**Row actions** (icons, hidden rather than disabled by role, each with the
+shared confirmation dialog and its optional note):
+
+- **Accept** records a join as Joined the Ministry and a leave as Left the
+  Ministry. **Ignore** records Declined / no longer interested (a leave's
+  Stayed in the Ministry).
+- **Edit** (a join or a leave, To review only) opens a Ministry list and
+  accepts the request with the chosen Ministry as the reviewer's value
+  ("Accepted (edited)"); the Family's Ministry stays beside it. A Ministry
+  leader's list holds only the other campaign Ministries that leader leads,
+  so a request never leaves a leader's view by that leader's own decision;
+  Staff and Administrators get every other campaign Ministry. From then on
+  the leaders of the Ministry carried forward see the request as theirs and
+  may act on it; the leaders of the Family's Ministry still see it, read
+  only, as "Accepted (edited) into Adult Choir".
+- **Back to review** returns an accepted or ignored request to To review
+  (In progress), clearing an edited Ministry, until Staff tick it Entered in
+  ParishSoft; reopening an ignored request needs a note saying why. On a
+  request the parish added it withdraws it instead: the request leaves every
+  list and stays in its history.
+- **Entered by hand** (Staff and Administrators only, one row or in bulk,
+  at To enter by hand) ticks Entered in ParishSoft
+  ([roster entry](#roster-entry-on-ministry-requests)); its dialog has no
+  note, since a tick records none, and clearing a tick stays on the request
+  page.
+- A Confirmed request offers nothing. A request for a Member no longer in
+  ParishSoft, and an accepted request a later Family response replaced,
+  offer only Entered by hand, at To enter by hand.
+
+Accept, Ignore and Entered by hand are drawn selected while in force, and
+Back to review is the undo. Each decision is one revision of the request,
+with its own `ministry_request_updated` audit event and replay key, and the
+request page's history lists it with its note and any edited Ministry.
+
+**Add** (Staff and Administrators only, in the selection bar) records a
+request the Family did not ask for: a Member's DUID, a Ministry of the
+campaign, Join or Leave, an optional note and, optionally, the Ignored
+request of the same Member it is added in place of. It starts Accepted,
+shown as "Added by the parish", at To enter by hand, and the Ignored request
+reads "Added in its place: Join Adult Choir". A request belongs to a Family
+response, so Add needs the Member's Family to have a live response in the
+campaign that lists the Member; Add attaches the request to that Family's
+latest response. Add is refused, in plain words in its dialog, for a DUID
+no Family response lists or ParishSoft's data no longer lists as a current
+Member of that Family, a DUID two Families' responses list, a Member who
+already has a current request holding that Ministry, as its own or its
+Edit's (use that request's own icons instead; Back to review can return an
+edited request to its own Ministry), and a Member and Ministry added on
+that response before and withdrawn. An Edit into a Ministry another current
+request of the Member holds is refused the same way. Ministry leaders never Add: a leader who sees
+a mistaken request ignores it with a note, and Staff add the right one.
+
+**Bulk decisions**: the selection bar offers Accept, Ignore, Back to review
+and, for Staff, Entered by hand, each available only while every ticked row
+offers it ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)),
+for the rows of the current page. One decision is recorded for each ticked
+request, all or none, in one transaction under the shared work order with
+every request locked first; a request someone else changed first refuses
+the whole batch and the notice says so. One `ministry_followup_bulk_applied`
+event records the action, and the request page marks each revision
+"(bulk)". The bulk contact attempt of #1131 is retired with the bulk
+outcomes: a contact attempt is recorded on the request page, which keeps
+Status, Outcome, Notes and Record a contact attempt as below.
+
+**Family asked again**
+([resubmission rule](../review-pipeline/spec.md#resubmission-while-the-setting-is-off)):
+the Family form offers only undecided requests, so an accepted request not
+yet in the roster, or an ignored one, shows unticked, and leaving it
+unticked is not a withdrawal. When the Family ticks the same action for the
+same Member and Ministry again, no second request is made: the decided
+request keeps its decision, and its row says "Family asked again" with the
+date, so a reviewer can choose Back to review. The match is by the
+Family's own Ministry: after an Edit from Choir to Adult Choir, a Family
+that ticks Adult Choir gets a new request to review, which the reviewer
+ignores as a duplicate if it is one.
+
+While other campaign work holds edits, the worklist draws no row action,
+box, bulk bar or Add, and the page's locked notice says why; the rows stay
+readable. (The shared worklist has no unavailable state for its icons yet,
+so this page hides them rather than greying them as #1331 did for the
+bulk outcomes.) The Member's contact details on a request's page and in
+Export these requests are read for the Family's Ministry, so a leader of
+only the Ministry an Edit carried forward sees none for that request until
+the Ministry report's reads follow the Edit
+([#1718](https://github.com/epiphany40223/parishkit/issues/1718)).
+
+Every decision is checked on the server and in the database, never only by
+hiding an icon: the actor's current authority for the request's current
+Ministry (the edited one once edited) and, for an Edit, for the Ministry
+chosen; the request's version; the stage's own rules (Back to review never
+on a ticked or refresh-resolved request; a note to reopen an ignored one);
+and the campaign's work gate.
 
 Ministry follow-up has no assignment (Administrator decision, 2026-10-04,
 [#552](https://github.com/epiphany40223/parishkit/issues/552)): each
@@ -6540,33 +6687,6 @@ queue does not match it, while Unresolved and Any status do. Past
 history entries keep the assignment they recorded. The data model keeps the unused column and state, as described in
 the [data specification](../data/spec.md#follow-up-records).
 
-The queue page is compact
-([#1064](https://github.com/epiphany40223/parishkit/issues/1064)). Its
-filters share one compact filter bar that takes two rows at laptop
-widths; at phone width each field takes its own row.
-Every row of the table is one line, or two where a long Ministry name wraps
-(#1136), per [table fit and row
-height](../ui-conventions/spec.md#table-fit-and-row-height): any other cell
-holds one short value that does not wrap, so a table wider than the page
-scrolls sideways inside its own box. Request reads Join or Leave, and "Leave
-(cannot participate)" for a Member who cannot participate in any ministries,
-the whole reason being the marker's tooltip and written out on the request
-page. Status is one line, with a resolved request's outcome after a colon
-("Resolved: Joined the Ministry"); Closed: no response, whose outcome is always
-No response, does not repeat it. A Ministry since removed from the campaign
-carries a small "Removed" badge after its name, with "No longer in this
-campaign" as its tooltip and screen-reader text, instead of that sentence in
-the cell. Last contact uses the compact date and time of dense tables
-([date format](../ui-conventions/spec.md#date-format)).
-
-The queue lists current requests only
-([#1131](https://github.com/epiphany40223/parishkit/issues/1131)). Its filters
-are Search, Ministry, Request, Status and Outcome. There is no Request history
-filter, and Status offers no Withdrawn or Replaced by Family: those are the
-system's bookkeeping for a Family's resubmission, not a leader's decision. A
-request page reached by an old link still says the Family has since replaced
-or withdrawn the request. Each request page's history shows the past.
-
 Requests for Members no longer in ParishSoft are left out of the Ministry
 leaders' work (Administrator, 2026-10-13,
 [#1217](https://github.com/epiphany40223/parishkit/issues/1217)). A Member
@@ -6577,88 +6697,38 @@ form is never one. One SQL function decides this
 (`stewardship_member_source_status_v1`, migration 0092), the definition
 [#1216](https://github.com/epiphany40223/parishkit/issues/1216) shares:
 
-- A Ministry leader never sees, counts or acts on such a request: the queue,
-  its totals and the By Ministry counts on
+- A Ministry leader never sees, counts or acts on such a request: the
+  worklist, its Stage counts and the By Ministry counts on
   [Ministry requests](../reports/spec.md#ministry-change-summary), Home's My
   Ministries panel, the menu count and the
   [packets](../reports/spec.md#multi-ministry-follow-up-packet) leave it
   out. Its request page reads as an unknown request.
 - Staff and Administrators see the same by default, so their counts match.
-  Their queue's Status filter has one more choice, "Members no longer in
-  ParishSoft", which lists only these requests, of any status. Each is
+  Their worklist's Members filter has a second choice, "No longer in
+  ParishSoft", which lists only these requests, at the chosen stage. Each is
   marked beside the Member's name with the shared
   [ParishSoft status](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
   badge ("Not in ParishSoft", "Inactive in ParishSoft" or "Deceased in
   ParishSoft"), so it cannot be taken for a Ministry's activity mark. A
   Member the data no longer has in this Family has no name, so the badge
-  alone is the row's link, and its request page's heading names it by that
-  status (#1216). That view has no selection column or bulk bar. A
+  alone stands for the name, and its request page's heading names it by that
+  status (#1216). Their rows offer no action and have no box to tick, except
+  Entered by hand on an accepted join or leave still to enter. A
   request page opened from it gives the specific reason (no longer in
   ParishSoft, now in another Family, inactive or deceased) and has no
   follow-up form.
-- [Roster changes to enter](#roster-changes-to-enter) still lists such a
-  Member's resolved joins and leaves, with the same words in its
-  ParishSoft status column and downloads, because the roster work may still
-  be real.
+- Staff's To enter by hand and Entered by hand Stages still list such a
+  Member's accepted joins and leaves under the default Members choice too,
+  marked with the badge and with the same words in the file's ParishSoft
+  status column, because the roster work may still be real
+  ([roster entry](#roster-entry-on-ministry-requests)).
 - The server refuses a single or bulk edit of such a request, as it refuses
-  a stale one (409), naming the request in the bulk dialog, so a page read
-  before ParishSoft changed cannot record anything.
+  a stale one, saying so in the worklist's notice (or, on the request page,
+  with a 409), so a page read before ParishSoft changed cannot record
+  anything.
 - Nothing is deleted, cancelled or resolved, and no Family code or link
   changes. The filter is worked out on every read, so when ParishSoft lists
   the Member again the request comes back as it was.
-
-Leaders record one outcome for several requests at once
-([#1131](https://github.com/epiphany40223/parishkit/issues/1131)), through the
-shared [selection column, bulk bar](../ui-conventions/spec.md#admin-tables) and
-[confirmation dialog](../ui-conventions/spec.md#row-actions-and-confirmation).
-Only open requests (New or In progress) have a selection box. The selection
-covers the current page and the page help says so.
-
-The bulk bar offers Mark as Joined and Mark as Declined for requests to join,
-and Mark as Left and Mark as Stayed for requests to leave, with the outcome
-labels of [#1132](https://github.com/epiphany40223/parishkit/issues/1132)
-(Declined / no longer interested; Stayed in the Ministry). A button is
-available only while every ticked request is of its kind (Administrator,
-2026-10-13), as a [prerequisite gate](../ui-conventions/spec.md#prerequisite-gates):
-with only requests to join ticked, Left and Stayed are unavailable, and the
-other way round; with both kinds ticked, all four are, and the bar's reason
-line asks for one kind. Filtering Request to Join or Leave makes Select all
-choose one kind. Each button opens one dialog, which names the count and the
-outcome and applies to every ticked request. The dialog has an optional
-"Record a contact attempt" (How, Date, Time and What happened, as on the
-request form), which is applied to each request. Its fields return to their
-defaults each time it opens.
-
-Recording posts the chosen requests, each with the version its row showed,
-without a page load. The server applies them all or none, in one transaction
-under the shared work order, with every request locked first. Each request
-gets its own revision, projection and `ministry_request_updated` audit event,
-exactly as a single save does. Its notes carry forward, and every event
-shares one correlation id. One `ministry_followup_bulk_applied` event records
-the action, with how many requests it changed and how many were chosen.
-
-The server refuses the whole batch, saving nothing, when:
-
-- any request is outside the leader's Ministries (denied, as an unknown
-  request is);
-- any request changed or closed since the page was read, or its Member is
-  no longer in ParishSoft (each named in the dialog);
-- any request is not of the button's kind (named in the dialog; the page
-  never offers such a batch); or
-- the contact attempt is refused, as on the request form. Except for a
-  missing time zone, which Date and Time cannot fix, that refusal is shown at
-  the dialog's Date and Time, which it marks, in place of the box below the
-  buttons; Record outcome waits, naming it, until the dialog's fields change
-  ([#1332](https://github.com/epiphany40223/parishkit/issues/1332)).
-
-A batch is at most one page of the largest page size. Posting the same
-action again replays each request's revision rather than writing a second.
-On success the dialog redraws the table from the remembered view, keeping
-its filters, sort and page. Each bulk revision appears in the request page's
-Follow-up history like any edit, marked "(bulk)". The follow-up commands of
-the command line (PR 11,
-[#463](https://github.com/epiphany40223/parishkit/issues/463)) are still to
-come; the bulk action is listed with them.
 
 The request form is compact
 ([#1014](https://github.com/epiphany40223/parishkit/issues/1014)): on a
@@ -6740,95 +6810,451 @@ always entered in ParishSoft by hand
 request resolved by a person as *joined* or *leave confirmed* carries an
 **Entered in ParishSoft** tick that Staff and Admin set or clear
 [in place](../ui-conventions/spec.md#in-place-controls), on the request's
-page and on [Roster changes to enter](#roster-changes-to-enter); who and when
+page and on Ministry requests at To enter by hand; who and when
 are kept as history. A request resolved because the ParishSoft roster already
 shows the change (it has a resolution source) needs no tick and shows
-*Already in ParishSoft*. For Staff and Admin, the follow-up queue's Status
-column says only "Entered" or "Not yet entered", one line, with who and when
-on the request's page. Ministry leaders have no ParishSoft access, so they
+*Already in ParishSoft* (the stage Confirmed). For Staff and Admin, the
+worklist's Stage says To enter by hand or Entered by hand, its Entered by
+hand icon sets the tick, and the request page gives who and when. Ministry
+leaders have no ParishSoft access, so they
 never see the tick
 ([#1160](https://github.com/epiphany40223/parishkit/issues/1160)): no mark,
-who, when or form on their request pages and no Status line in their queue,
-and the server refuses their set or clear (the view, the service and the SQL
-guard each check). Their page help and the Status field's help say Staff
-enter roster changes in ParishSoft, where Staff and Admin read "update
-ParishSoft yourself". Ministry leaders never see Roster changes to enter
-either. A resolved request is a closed outcome
-that a later Family response never replaces (a new request for the same
-change is a separate request), so the tick stays with the request it was
-made on. The tick is not a field on the request: each set or clear is an
+who, when or form on their request pages, the stage Accepted in their
+worklist, and the server refuses their set or clear (the view, the service
+and the SQL guard each check). Their page help and the Status field's help
+say Staff enter roster changes in ParishSoft, where Staff and Admin read
+"update ParishSoft yourself". Ministry leaders never see the roster rows
+either. A later Family response never replaces a decided request: a
+Family that asks for it again is shown on it ("Family asked again"), not
+given a second request (#1684), so the tick stays with the request it was
+made on. Back to review is refused once a request is ticked; clear the tick
+first. The tick is not a field on the request: each set or clear is an
 immutable row of its own history table, added by forward migration 0061, and
 the request row never changes. Marking a request resolved never changes
 ParishSoft, and this tick only records that a person did.
 
-### Roster changes to enter
+### Roster entry on Ministry requests
 
-**Roster changes to enter** (`/admin/reports/ministries/follow-up/roster/`,
-Administrators and Staff) is the list staff work from: a menu entry of its
-own with its count ([Menu groups](#menu-groups),
-[#1660](https://github.com/epiphany40223/parishkit/issues/1660)), also
-linked from Ministry requests. It lists the resolved joins
-and leaves with no resolution source that are not yet ticked, or, with
-**Show** set to All, including entered, every one of them, to find and
-clear a mistaken mark, and **Ministry** narrows it to one Ministry (a closed
-DUID value, no schema change). Show (Not yet entered | All, including
-entered) is a [binary choice](../ui-conventions/spec.md#binary-choices)
-above the Ministry filter, applied at once in place, its links keeping the
-applied Ministry, sort and page size and going back to the first page
-([#1535](https://github.com/epiphany40223/parishkit/issues/1535)); Ministry
-keeps its Apply, which keeps the Show shown. Its columns follow the
-[table column order](../ui-conventions/spec.md#table-column-order): Member,
-Member DUID ("New Member" for a Member added on the form), ParishSoft
-status (blank while ParishSoft lists the Member in that Family; otherwise
-Not in ParishSoft, Inactive in ParishSoft or Deceased in ParishSoft,
-[#1217](https://github.com/epiphany40223/parishkit/issues/1217): such a
-change stays listed, since it may still need entering), Family, Family
-DUID, Ministry, Request (Join or Leave), Resolved, Resolved by,
-Replaced by a later response (Yes when the Family answered again after the
-change was resolved), Entered in ParishSoft (Yes or Not yet), Entered by and
-Entered at, with the tick last as the row's
-[row action](../ui-conventions/spec.md#row-actions-and-confirmation); a resolver or marker whose portal user is
-gone shows as "Former portal user"; times are browser-local in the compact date format. Every named
-column sorts in place, and Show, Ministry, sorting and paging travel in the
-address,
-since nothing on the list is private search text. A resolved change stays
-listed after the Family answers again (marked as replaced by a later
-response), since it still has to be entered. A tick there keeps the list's
-Show, Ministry, sort and page; a tick someone else changed first leaves the
-list as it is with a notice, which is what the page announces; the notice's
-two lines are kept while empty
-([no layout shift](../ui-conventions/spec.md#no-layout-shift)).
+Staff enter roster changes from **Ministry requests** itself, at its Stage
+**To enter by hand**, as Census changes does for census changes: the
+separate Roster changes to enter page and menu entry
+([#1660](https://github.com/epiphany40223/parishkit/issues/1660),
+[#1687](https://github.com/epiphany40223/parishkit/issues/1687)) were folded
+into it (the Administrator, R39 finding 2, 2026-10-19). Its address,
+`/admin/reports/ministries/follow-up/roster/`, and its download's are gone,
+with no redirect ([legacy URLs](../ui-conventions/spec.md#addresses-and-legacy-urls)).
 
-Several changes not yet ticked can be marked at once
-([#879](https://github.com/epiphany40223/parishkit/issues/879)) through the
-shared selection column, bulk bar and confirmation dialog of
-[row actions](../ui-conventions/spec.md#row-actions-and-confirmation): the
-bar's only action is Mark entered in ParishSoft, and clearing stays per row.
-The dialog posts to `roster/marks/`, which records each chosen tick exactly
-as a single tick is recorded (its own entry and audit event), all in one
-transaction or none; a change someone else ticked or cleared first refuses
-the whole request, naming that change in the dialog. A change listed twice
-(the Family answered again and both requests were resolved) names each row,
-in its box, its tick and that refusal, with the day it was resolved in the
-browser's time zone
-([#558](https://github.com/epiphany40223/parishkit/issues/558)); the dialog
-posts the browser's zone for the refusal, which leaves the day out rather
-than guess when no known zone came.
+For Administrators and Staff, To enter by hand lists every accepted join or
+leave with no resolution source (the ones a ParishSoft refresh has not
+already shown) that nobody has marked yet, and Entered by hand the marked
+ones, each with its count in the Stage choices. Both also list two kinds of
+row the review stages leave out, because the roster work may still be
+real: an accepted request for a
+[Member no longer in ParishSoft](#follow-up-workflows), marked with the
+shared badge, under the default Members choice as under "No longer in
+ParishSoft"; and an older accepted request a later Family response replaced,
+with "Replaced by a later response" under its Stage. A Ministry leader never
+sees either Stage ([#1160](https://github.com/epiphany40223/parishkit/issues/1160)):
+their worklist says Accepted.
 
-Its CSV, XLSX and PDF downloads carry the page's columns, without the tick
-([downloaded files](../ui-conventions/spec.md#downloaded-files)), for every
-row of the chosen Show and Ministry, in the browser's time zone (the PDF in the parish's
-compact date format). The view and each download are audited as counts.
-Its menu entry and Home's [Next steps](#home-page) give its default Not
-yet entered view's count (#1590, #1660).
+**Entered by hand** (the check-in-a-box icon) is offered on a To enter by
+hand row and in the bulk bar, Administrators and Staff only, never a
+Ministry leader. It asks in the worklist's dialog, which has no note since
+a tick records none, and records the Entered in ParishSoft tick, one row or
+the ticked rows of one page, all or none (each recorded exactly as a single
+tick, with its own entry and audit event). A marked row shows the icon
+selected, and the line under its Stage says who marked it and when. A row
+for a Member no longer in ParishSoft, or one a later response replaced,
+offers only Entered by hand: its review decisions stay where they were. A
+mistaken mark is cleared on the request's own page, which keeps the Clear
+Entered in ParishSoft button. A tick someone else changed first records
+nothing, and the page answers with its current state and the notice that
+says so. Every control acts in place and keeps the applied view.
+
+Ministry requests' **Export these requests** carries the roster-entry
+columns too, in the [table column order](../ui-conventions/spec.md#table-column-order):
+ParishSoft status, Family and Family DUID after Member DUID, and Replaced
+by a later response, Entered by and Entered at after Reviewer's value
+([follow-up workflows](#follow-up-workflows)). A Ministry leader's file
+leaves them blank, as their page never shows them. Its menu entry's count
+stays Ministry requests' own (To review); Home's
+[Next steps](#home-page) give the count of the To enter by hand Stage.
+`pk-admin report roster`, `export roster` and `followup roster-bulk` keep
+their meaning and their `--show todo|all` choice over the same rows, until
+the commands are renamed
+([#1688](https://github.com/epiphany40223/parishkit/issues/1688)).
 
 The [Ministry change summary](../reports/spec.md#ministry-change-summary)
 does not show the tick: its stored export cannot carry it without replacing
 the export capture functions, and a page that showed what its downloads do
-not would break the downloaded-files rule. Roster changes to enter is where
-the tick is read and set; the Administrator may ask for the summary to carry
-it too, as its own forward migration
+not would break the downloaded-files rule. Ministry requests is where the
+tick is read and set; the Administrator may ask for the summary to carry it
+too, as its own forward migration
 ([#528](https://github.com/epiphany40223/parishkit/issues/528)).
+
+## Family information hub
+
+The [Timeline](../reports/spec.md#timeline) page is one Family's
+**information hub** for the campaign: one place to see everything about the
+Family, so no separate "Family profile" page exists
+([#1678](https://github.com/epiphany40223/parishkit/issues/1678); the
+Administrator's design of 2026-10-18). It stays at the Timeline's address,
+`/admin/reports/families/<family>/`, with the page name **Timeline** and the
+same access, reads and audit; no new address and no alias is added
+([addresses and legacy URLs](../ui-conventions/spec.md#addresses-and-legacy-urls)).
+Every Admin table's Family name already links here through
+`{% family_link %}`. The hub draws a header strip above a row of
+[tabs](../ui-conventions/spec.md#tabs), which follow the shared tab rules.
+
+The hub is built in slices, each its own pull request; each subsection below
+says which slice delivers it:
+
+1. **Slice 1:** the header strip, the tab row and the Timeline tab.
+2. **Slice 2:** the Family tab and the Member tabs' census fields.
+3. **Slice 3:** the [Financial tab](#hub-financial-tab).
+4. **Slice 4:** the [Additional tab](#hub-additional-tab), and the Member
+   tabs' [Ministry joins and leaves](#member-tabs-ministry-joins-and-leaves).
+
+### Hub header strip
+
+**Slice 1.** A narrow band above the tabs, in the style of the Timeline's
+header lines. The heading is the Family's name in the shared surname-and-heads
+form ([Family and Member names](../ui-conventions/spec.md#family-and-member-names)),
+or "Timeline" alone when the latest ParishSoft data no longer has the Family;
+the browser title stays "Timeline", so browser history never keeps the name.
+Below it, on one line: the Family DUID, the envelope number when ParishSoft
+has one and the **Last portal action** (below). The strip has no link to the
+Active parishioner family directory: the Admin menu already has it
+(Administrator, 2026-10-19). The campaign's name and Counted at follow on
+the next line, as on the Timeline today.
+
+**Last portal action** is the newest action taken on the parishioner portal
+for the Family that an email reader could not have made, with its time in
+the browser's time zone, or "None recorded". It is one of the Timeline's own
+lines:
+
+- **Submitted a response**, except one Staff entered for the Family through
+  [Open form](../reports/spec.md#open-form);
+- **Signed out**, except in a session Staff opened through Open form;
+- **Got past the first step**, and **Reached the furthest step so far** when
+  that step is past the first (the form moved on).
+
+A sign-in and a form open are never counted: an email reader that fetches the
+Family's personal link (a mail scanner checking it) signs in and opens the
+form exactly as the Family would, so neither proves the Family was there.
+Reaching the first step is not counted either, because the form page reports
+it as soon as it loads, before anything is chosen, and a scanner that runs
+the page's script makes that report too. A session the system ended, and
+every email line, are not the Family's actions. Form steps are recorded per
+Family, not per session, so steps taken while Staff fill in the form through
+Open form count as well; the About panel says so. The engagement record keeps
+only the first and the furthest step, so a Family that comes back later and
+neither submits, signs out nor reaches a step further than before leaves the
+value where it was. For Administrators the value comes from the lines the
+Timeline already reads, so it adds no statement.
+
+Administrators and Staff both see it (Administrator decision, 2026-10-18).
+Staff still see only the Timeline's summary, not the full timeline
+([Timeline](../reports/spec.md#timeline) access): for them the page reads
+the sign-ins, session ends and engagement record the value comes from, and
+keeps only the lines that can be the Last portal action, so no other line of
+the timeline reaches their page. The About panel explains the value to both
+roles.
+
+### Hub tabs
+
+**Slice 1.** The tab row is the shared
+[tab component](../ui-conventions/spec.md#tabs), labelled "Family
+information", with the tabs in this order:
+
+1. **Timeline**: everything the Timeline page showed before the hub (its
+   summary, its timeline table with the filter bar and its export), for each
+   role as before. It is the first tab, so an address without `?tab=` opens
+   it, and its filters, When sort and export work inside its panel, in place,
+   exactly as before. Its filters stay its own: a tab's link carries only
+   `tab`.
+2. **Family**: Family-level information. Shown only when census is part of
+   the campaign (the campaign's modules include census).
+3. **One tab per Member**, labelled with the Member's name: each Member in
+   the Family's baseline and each Member the Family added. A Member the
+   Family removed, marked as moved or as deceased is shown clearly, with the
+   same marks the Family's census answers use, so the tab never reads as a
+   current Member's. Shown when census or Ministry stewardship is part of the
+   campaign, and only once the Family has submitted a response, since the
+   Members come from it ([Family and Member tabs](#family-and-member-tabs)).
+4. **Financial**: the Family's financial information. Shown when Financial
+   stewardship is part of the campaign.
+5. **Additional**: the cannot-participate answers and Additional
+   information. Shown when Ministry stewardship (where the
+   cannot-participate answers are given) or Additional information is part
+   of the campaign.
+
+A tab whose subject is not part of the campaign is left out, not greyed
+([conditional fields](../ui-conventions/spec.md#conditional-fields)).
+
+While the slices were landing, a tab that applied to the campaign but was
+not built yet was drawn as an
+[unavailable tab](../ui-conventions/spec.md#tabs) with the reason "Coming
+soon", so the Administrator saw the hub's whole shape from the first slice.
+Since slice 4 every tab is built, so no hub tab is drawn "Coming soon" any
+more; a Member tab in a campaign with Ministry stewardship but no census
+opens on its Ministry joins and leaves.
+
+Administrators and Staff both see every tab, since both review these
+streams; Ministry leaders cannot open the page. Within the Timeline tab each
+role sees what it saw before.
+
+### Hub content tabs
+
+**Slices 2 to 4.** Each content tab (every tab but Timeline) shows the
+Family's answers for its subject as the
+[review pipeline](../review-pipeline/spec.md) sees them, read through the
+shared stage mapping (`parishkit.stewardship.pipeline`), so the hub never
+holds a second comparison that could drift from the review worklist:
+
+- one row per field, with the **Baseline** (the ParishSoft value the Family
+  answered from, or nothing for data ParishSoft does not hold) beside the
+  **Family's answer** (its latest live response), and the **Reviewer's
+  value** when a reviewer edited or added one;
+- unchanged fields read as unchanged, and each changed field shows its
+  change's **stage**, with the stage's word and chip exactly as the
+  [pipeline vocabulary](../review-pipeline/spec.md#pipeline-vocabulary)
+  spells them, and the Not seen in ParishSoft flag when it is set;
+- per tab: the Family tab shows the Family-level census fields; a Member tab
+  shows that Member's census fields and Ministry joins and leaves (the
+  [census](../review-pipeline/spec.md#census-stream) and
+  [Ministry](../review-pipeline/spec.md#ministry-stream) streams); the
+  Financial tab the [financial stream](../review-pipeline/spec.md#financial-stream);
+  and the last tab the
+  [cannot participate](../review-pipeline/spec.md#cannot-participate-stream)
+  and [Additional information](../review-pipeline/spec.md#additional-information-stream)
+  streams.
+
+The tabs show; they do not act. Review decisions stay on the review
+worklist, which each panel links to. Each slice specifies its tab's columns and
+reads here before it is built, and adds a query-count test for its panel.
+
+### Family and Member tabs
+
+**Slice 2.** The Family tab and each Member tab show the census fields of
+the Family's latest live census response, read through the
+[census stream](../review-pipeline/spec.md#census-stream)'s stage mapping
+(`pipeline.census_placement`). Only Production (live) responses are read, as
+on the Timeline tab.
+
+**Which changes.** A field's change is the census change row that is in
+force for it, by the same rule the Family form uses when a Family answers
+again (`responses.effective.proposal_index`): the rows of the latest
+response that carries census answers, and for a Member's No longer in this
+household, Deceased and Death date requests the newest row of any of the
+Family's live responses, since those survive a later response that no longer
+shows the Member. A row kept only for history (superseded or cancelled) is
+no change. A field with no change in force is unchanged: the Family's answer
+matched ParishSoft when it answered, so its one value is both the Baseline
+and the Family's answer.
+
+**Members.** One tab per Member, in this order: each existing Member of the
+response, by Member DUID, then each Member whose only rows are kept requests
+from an earlier response (ParishSoft no longer lists the Member in this
+Family), then each Member the Family added, by name. A Member's tab is
+labelled with the Member's name, "Last, first"
+([Family and Member names](../ui-conventions/spec.md#family-and-member-names)),
+from the Family's answer, else the ParishSoft record the Family answered
+from; its address key is the tab's place in that order (`member-1`,
+`member-2`, ...), so no Member identifier enters the address or the browser
+history. Member tabs always show (Administrator, R39 finding 8): before the
+Family's first response with census answers, there is one tab per active,
+living Member of the Family in the current ParishSoft data, by Member DUID,
+labelled with the ParishSoft name, and the Family tab says it has no census
+answers yet. Such a tab shows no census part, only its mark: **No
+submission yet** when the Family has no response, saying the Member's
+answers appear once the Family submits, or **No census answers yet** when
+the Family answered before census joined the campaign, saying they appear
+once the Family answers again. Once a response gives Member tabs, the tabs
+follow that response: a Member who appears in ParishSoft after it has no tab
+until the Family answers again.
+
+**Marks.** Each panel opens with its subject's name as a heading, so a
+panel fetched after the Family answered again (which can renumber the
+Member tabs) still says whose it is. The heading adds the subject's DUID,
+written as in the header strip: "Family (DUID 100034)" on the Family tab and
+"Anderson, Michael (DUID 500010)" on a Member tab (Administrator,
+2026-10-19). A Member the Family added has no DUID yet, so its heading is
+the name alone; its **New Member** badge says it is not in ParishSoft yet.
+Tab labels stay names only. A Member tab then shows the Member's
+mark, as a badge, when it has one: **New Member** (the Family added the
+Member; not in ParishSoft yet), **No longer in this household**,
+**Deceased**, **No submission yet** or **No census answers yet** (above), or
+**Not in ParishSoft** (ParishSoft no longer lists the
+Member in this Family; the shared
+[no longer in ParishSoft](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
+mark). A moved or deceased Member's other fields were not
+asked on the form, so the tab shows only the request's own fields and says
+so.
+
+**Columns.** Each tab's changed fields are one table: **Field**,
+**Baseline** (the change's baseline value, "(not read)" where ParishSoft
+held none, "(blank)" for an empty one), **Family's answer**, **Reviewer's
+value** (drawn only when a change on the tab has one) and **Stage**, the
+stage's chip with its word ([pipeline vocabulary](../review-pipeline/spec.md#pipeline-vocabulary));
+an Entered incorrectly chip takes the Error look
+([status indicators](../ui-conventions/spec.md#status-indicators)), and a
+failed update attempt adds "Last update failed". A change whose stored
+state has no stage (one the SQL guards never store) shows no chip and is
+logged, so one bad row never takes down the page. Unchanged fields follow in
+a closed **Show unchanged** disclosure with **Field** and **Value**. A New
+Member's tab shows the addition's stage once, above a table of **Field** and
+**Family's answer**. The Not seen in ParishSoft flag is shown once the
+census stream records it
+([#1683](https://github.com/epiphany40223/parishkit/issues/1683)). Each
+panel links to [Census changes](../reports/spec.md#pending-census-changes), where
+the changes are reviewed.
+
+**Reads.** When census is part of the campaign the page reads two
+statements more, whichever tab is chosen, since the Member tabs' labels need
+them: the latest live response (with the Member names of the ParishSoft
+records the Family answered from) and its changes in force. With Ministry
+stewardship but no census only the first is read. When they give no
+Member tab (no response yet, or none with census answers), one statement
+more reads the Family's active, living Members in the current ParishSoft
+data for those tabs; a Family with no response skips the changes. All use
+the web login's
+existing grants, and the page's one audited view covers them; nothing new is
+audited.
+
+### Member tabs' Ministry joins and leaves
+
+**Slice 4.** In a campaign with Ministry stewardship each Member tab also
+shows the Member's Ministry joins and leaves, after its census fields (alone,
+in a campaign without census), read through the
+[Ministry stream](../review-pipeline/spec.md#ministry-stream)'s stage
+mapping (`pipeline.ministry_placement`), the mapping
+[Ministry requests](../reports/spec.md#ministry-change-summary) uses.
+
+**Which requests.** For each Ministry, the Member's newest request among the
+Family's live responses: the rule the Family form uses
+(`responses.ministry_requests.request_index`), restated in the read because
+that function takes the response work lock. A request that is superseded or
+cancelled is kept only for history and is not shown. A Member the Family
+added is matched by its local identity, as its requests are. A Member with
+no tab of its own (ParishSoft no longer lists the Member in the Family and no
+census request keeps it) has no hub row. A No submission yet tab (the
+Family has no response) shows only its mark, with no Ministry part and no
+read; a No census answers yet tab (a response from before census joined)
+still shows its Ministry joins and leaves after the mark. Ministry
+requests leaves out, by default, a request whose Member ParishSoft no longer
+lists as current in the Family (#1217) and lists it only with Status set to Members no longer in
+ParishSoft; the hub still shows such a request on the Member's tab, with its
+stage, and its note says so (the Member's standing is read as Ministry
+requests reads it, `stewardship_ministry_request_member_status_v1`).
+
+**Columns.** One table, **Ministry joins and leaves**: **Ministry** (its name
+in the current catalog, or the shared "Ministry" and DUID fallback),
+**Baseline** ("In this Ministry" for a leave, "Not in this Ministry" for a
+join: the roster the Family answered from), **Family's answer** (**Join** or
+**Leave**) and **Stage**, the stage's chip and word as on the other tabs,
+followed for a decided request by its outcome in the words Ministry requests
+uses (for example "Stayed in the Ministry"), or by the note above for a
+Member no longer current in ParishSoft. The table lists only the
+changes the Family asked for: the Ministries a Member stays in are not
+requests, so there is no Show unchanged list (each Ministry's roster is on
+the Ministry pages). A Member with no request says "No Ministry joins or
+leaves requested." The panel links to Ministry requests, where the requests
+are handled.
+
+**Reads.** Only the chosen Member tab reads them, so they add nothing to the
+other tabs: one statement for the Member's requests, each with its latest
+Entered in ParishSoft tick (the tick `workflows.roster.roster_marks` reads
+for Roster changes to enter), and, when there is a request, the Ministry
+names from the current catalog (`accounts.leader_import.ministry_names`, two
+statements). They use the web login's existing grants; nothing new is
+audited.
+
+### Hub Financial tab
+
+**Slice 3.** The Financial tab shows the Family's current live pledge (its
+effective live response's financial answers) exactly as
+[Financial stewardship detail](../reports/spec.md#financial-stewardship-detail)
+reads and words it: the same selection (`stewardship_financial_report_v1`,
+unpaged and narrowed by the Family's DUID, keeping the Family's own row) and
+the same completeness proof before any ParishSoft money is shown
+(`reports.financial.giving_proof`).
+
+A pledge is one item of the
+[financial stream](../review-pipeline/spec.md#financial-stream), not one per
+field, so its stage (`pipeline.financial_placement`: To review, since no
+decision is stored yet,
+[#1686](https://github.com/epiphany40223/parishkit/issues/1686)) is shown
+once, above its table, as a New Member's addition is. The table has
+**Field**, **Baseline** and **Family's answer**:
+
+- **Annual pledge**: the Baseline is the Family's pledges recorded in
+  ParishSoft for the campaign's comparison period (the report's ParishSoft
+  Pledged; the field reads "Annual pledge (ParishSoft 2026)" with the
+  period's years), "Unavailable" when the giving read is not proven
+  complete; the answer is the annual amount, or "Cannot contribute
+  financially".
+- **Frequency**: the frequency with its installment ("Monthly ($100.00
+  each)"), or the report's frequency words alone when there is no
+  installment ("No frequency", "Cannot contribute"). The Baseline is "(not
+  read)": ParishSoft's pledge frequency is not compared yet (the financial
+  stream's frequency rule).
+- **Share methods**: each chosen method with the Family's own words for any
+  Other method, or "None chosen". The Baseline is "(not read)": ParishSoft
+  holds no share method.
+
+A line below the table gives the ParishSoft contributions for the same
+period (the report's Contributed), as context for the pledge. Every row
+belongs to the pledge item, so the tab has no Show unchanged list, and no
+Reviewer's value column: a pledge cannot be edited yet. A Family whose
+current response has no financial answers says "This Family has not answered
+the financial questions yet." The panel links to Financial stewardship.
+
+**Reads.** Only the Financial tab reads them: the proof's two statements
+(the current or pinned snapshot and its giving cursor), the selection and
+the configurations the Family's response was answered under (for the share
+methods' words), four statements in all. The page's one audited view covers
+them; nothing new is audited.
+
+### Hub Additional tab
+
+**Slice 4.** The last tab, named **Additional** for short (Administrator,
+2026-10-19), shows the answers of the
+[cannot participate](../review-pipeline/spec.md#cannot-participate-stream)
+and [Additional information](../review-pipeline/spec.md#additional-information-stream)
+streams from the Family's effective live response, the response the
+[Limitations](../reports/spec.md#limitations) and
+[Additional information](../reports/spec.md#additional-information) pages
+read:
+
+- **Cannot attend Mass or prayer services**, the Family's welcome-page
+  answer, and, in a campaign with Ministry stewardship, **Cannot participate
+  in ministries** for each Member, labelled with the Member's name as its
+  tab is and in tab order. A Yes is an item, staged by
+  `pipeline.cannot_participate_placement` (To review until decisions are
+  stored, [#1685](https://github.com/epiphany40223/parishkit/issues/1685));
+  a No is unchanged. The Baseline is "(not read)": ParishSoft holds none.
+- In a campaign with Additional information, the Family's current item (its
+  newest current, actionable one), with its text as the Family's answer,
+  staged by `pipeline.information_placement` from its follow-up needed and
+  followed-up state (To review, To handle or Handled; Ignored waits for the
+  one-time migration of #1685). A superseded or withdrawn item is kept only
+  for history and is not shown. A Family with no current item lists
+  Additional information as "None given" under Show unchanged.
+
+The changed rows are one table (**Field**, **Baseline**, **Family's
+answer**, **Stage**), with the unchanged ones in a closed **Show unchanged**
+disclosure (**Field**, **Value**), as on the census tabs. The panel links to
+Limitations (with Ministry stewardship) and, with Additional information, to
+the Family's Additional information item, or its queue when the Family has
+no current item, where these answers are handled; a campaign without
+Additional information never mentions it on this tab. A Family with no
+response yet says so.
+
+**Reads.** Only this tab reads them: one statement for the effective live
+response's answers and the Family's current Additional information item.
+Member names come from the census read the page already makes. The page's
+one audited view covers them; nothing new is audited.
 
 ## System health
 
