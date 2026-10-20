@@ -26,6 +26,7 @@ from parishkit.stewardship.campaigns.production_models import (
 )
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.jobs.admission import _scope
+from parishkit.stewardship.jobs.campaign_mail_values import document_parish
 from parishkit.stewardship.source.readiness import source_readiness
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.contracts import PageWindow, expected_version, filters
@@ -42,6 +43,7 @@ from .activation_progress import control as links_control
 from .admin_caller import AdminCaller
 from .admin_editing import editable_configuration, principal
 from .authentication import runtime
+from .content_forms import sample_render
 from .content_models import ContentVersion
 from .go_live_check import remember_check
 from .go_live_commands import SALT as COMMAND_SALT
@@ -359,28 +361,20 @@ def _family_emails(preview):
     The subject names the email the Administrator wrote, as Pages and
     emails lists it, but rendered with the campaign's own values as the
     Preview and test email page shows it (#1846), never the raw template
-    with its ``{{ placeholders }}``. A revision without one falls back to
-    "Family email".
+    with its ``{{ placeholders }}``. A revision without a usable subject
+    falls back to "Family email". Only ``preview.configuration`` is read,
+    so a caller without a campaign (the confirm step) can use it too.
     """
-    from parishkit.stewardship.jobs.campaign_mail_values import document_parish
-
-    from .content_forms import sample_render
-
     templates = preview.configuration.family_templates
-    rows = ContentVersion.objects.filter(record_id__in=templates).select_related(
-        "configuration"
-    )
-    campaign = preview.campaign.active_configuration.values
+    # A revision ID repeats in every applied configuration's projection, so
+    # take each one's newest row: the configuration Check is reading.
     subjects = {}
-    for row in rows:
-        # The same render the test email page uses, so the name matches the
-        # subject the Administrator is about to preview.
-        rendered = sample_render(
-            {"subject": row.subject, "html": row.html, "text": row.text},
-            parish=document_parish(row.configuration.canonical_document),
-            campaign=campaign,
-        )
-        subjects[row.record_id] = rendered["subject"] if rendered else None
+    for row in (
+        ContentVersion.objects.filter(record_id__in=templates)
+        .select_related("configuration")
+        .order_by("-configuration__created_at")
+    ):
+        subjects.setdefault(row.record_id, _rendered_subject(row))
     return sorted(
         (
             (template, subjects.get(UUID(str(template))) or _("Family email"))
@@ -388,6 +382,33 @@ def _family_emails(preview):
         ),
         key=lambda item: str(item[1]),
     )
+
+
+def _rendered_subject(row):
+    """One email revision's subject with the campaign's values filled in.
+
+    Uses the same render as the Preview and test email page, from the
+    parish and campaign in the revision's own configuration. A render
+    failure (a malformed template) yields None rather than breaking the
+    whole Check page, which is where such a problem is found.
+    """
+    document = row.configuration.canonical_document
+    campaign = next(
+        (
+            record["values"]
+            for record in document["sections"]["campaigns"]
+            if record["id"] == str(row.campaign_id)
+        ),
+        None,
+    )
+    try:
+        return sample_render(
+            {"subject": row.subject, "html": "", "text": ""},
+            parish=document_parish(document),
+            campaign=campaign,
+        )["subject"]
+    except Exception:  # noqa: BLE001 -- any bad template falls back to the name
+        return None
 
 
 def _start(request, service, campaign_id, action):

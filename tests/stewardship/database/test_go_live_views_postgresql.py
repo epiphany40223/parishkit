@@ -252,7 +252,9 @@ def test_signature_alone_cannot_admit_cleanup_with_missing_current_proofs(
     assert not ProductionTransitionRequest.objects.exists()
 
 
-def test_readiness_names_family_emails_by_rendered_subject(campaign_test, monkeypatch):
+def test_readiness_names_family_emails_by_rendered_subject(
+    campaign_test, monkeypatch
+):
     """Check's test-email links show the subject with values filled in (#1846)."""
     from types import SimpleNamespace
 
@@ -261,26 +263,43 @@ def test_readiness_names_family_emails_by_rendered_subject(campaign_test, monkey
 
     campaign = Campaign.objects.select_related("active_configuration").get()
     active = AppliedConfigurationVersion.objects.latest("created_at")
-    record_id = uuid4()
+    good, bad = uuid4(), uuid4()
+
+    def row(record_id, subject):
+        """A content row holding a raw template, on the active configuration."""
+        return SimpleNamespace(
+            record_id=record_id,
+            configuration=active,
+            campaign_id=campaign.pk,
+            subject=subject,
+        )
+
     # A content revision is insert-only and must match the YAML, so stand in
-    # a row holding the raw template a link used to show.
-    row = SimpleNamespace(
-        record_id=record_id,
-        configuration=active,
-        subject="Reminder: {{ parish_name }} {{ campaign_year }} Renewal",
-        html="<p>Hello</p>",
-        text="Hello",
-    )
+    # rows holding the raw templates a link used to show.
+    rows = [
+        row(good, "Reminder: {{ parish_name }} {{ campaign_year }} Renewal"),
+        row(bad, "Broken {% nope"),
+    ]
+
+    class Rows(list):
+        """Enough of a queryset for ``_family_emails``."""
+
+        def select_related(self, *args):
+            return self
+
+        def order_by(self, *args):
+            return self
+
     monkeypatch.setattr(
-        go_live_views.ContentVersion.objects,
-        "filter",
-        lambda **kwargs: SimpleNamespace(select_related=lambda *args: [row]),
+        go_live_views.ContentVersion.objects, "filter", lambda **kwargs: Rows(rows)
     )
+    # Only the readiness is read: the confirm step passes no campaign.
     preview = SimpleNamespace(
-        campaign=campaign,
-        configuration=SimpleNamespace(family_templates=(str(record_id),)),
+        configuration=SimpleNamespace(family_templates=(str(good), str(bad)))
     )
-    [(_template, name)] = go_live_views._family_emails(preview)
+    names = dict(go_live_views._family_emails(preview))
     year = campaign_year(campaign.active_configuration.values)
     parish = active.canonical_document["sections"]["parish"][0]["values"]["name"]
-    assert name == f"Reminder: {parish} {year} Renewal"
+    assert names[str(good)] == f"Reminder: {parish} {year} Renewal"
+    # A template that cannot render falls back instead of breaking Check.
+    assert names[str(bad)] == "Family email"
