@@ -1,4 +1,4 @@
--- Frozen forward migration file 0140 (the repository-wide file sequence;
+-- Frozen forward migration file 0133 (the repository-wide file sequence;
 -- provisional, the number is assigned centrally in merge order): Entered
 -- incorrectly's two fixes (#1737). This file is installed by its Django
 -- migration in the responses app and must never change once released;
@@ -6,7 +6,7 @@
 --
 -- A census change Entered by hand (execution resolved_external) is final in
 -- the census guard. A refresh that finds ParishSoft holding a third value
--- places it at Entered incorrectly from its latest refresh check (0136,
+-- places it at Entered incorrectly from its latest refresh check (0132,
 -- provisional number), without changing the row. The review pipeline
 -- (docs/specs/stewardship/review-pipeline/spec.md, "Entered incorrectly
 -- stage" and "Refresh checks") fixes it in one of two ways, each a
@@ -33,7 +33,7 @@
 --     'reopened' makes it pending with decision unreviewed; 'ignored' never
 --     applies to it, and neither does a review or a Family's replacement.
 --     The worker and every other login still find it final.
---   * stewardship_refresh_check_guard_v1 (0136's): a census check of a
+--   * stewardship_refresh_check_guard_v1 (0132's): a census check of a
 --     change Entered by hand that is not confirmed must agree with the value
 --     recorded at the change's mark: unchanged exactly when ParishSoft holds
 --     that value (canonically compared), and entered_incorrectly only when a

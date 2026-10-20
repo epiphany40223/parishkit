@@ -1,7 +1,7 @@
 """Forward migration: Entered incorrectly's two fixes (#1737).
 
-Its SQL is the frozen file ``schema/migrations/0140_entered_incorrectly_fixes.sql``
-(number 0140, provisional until it is assigned in merge order), read whole
+Its SQL is the frozen file ``schema/migrations/0133_entered_incorrectly_fixes.sql``
+(number 0133, provisional until it is assigned in merge order), read whole
 and never parsed. It replaces the census resolution guard, the census
 derived guard and the refresh check guard so Staff and Administrators can
 mark a change Entered incorrectly Entered by hand again, or send it Back to
@@ -20,16 +20,16 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0140_entered_incorrectly_fixes.sql"
+    / "0133_entered_incorrectly_fixes.sql"
 )
 
 
 class Migration(migrations.Migration):
     dependencies = [
         # This app's previous migration, so the app keeps one leaf, and the
-        # migration that installs the previous frozen file (0136), whose
+        # migration that installs the previous frozen file (0132), whose
         # refresh check guard this file replaces.
-        ("stewardship_responses", "0013_census_pipeline_review"),
+        ("stewardship_responses", "0016_census_address_guard"),
         ("stewardship_workflows", "0004_refresh_checks"),
     ]
 

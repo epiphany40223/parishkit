@@ -193,7 +193,7 @@ def entered_incorrectly(proposal):
     Only a change Entered by hand can be, and only while its latest refresh
     check at its current version says so: the two fixes (Entered by hand
     again and Back to review) are offered and recorded then alone, as the
-    resolution guard (migration 0140, provisional number) also requires. One
+    resolution guard (migration 0133, provisional number) also requires. One
     query, for an entered change only.
     """
     if proposal.execution != "resolved_external" or replaced(proposal):
@@ -209,7 +209,7 @@ def replaced(proposal):
     A final change is never superseded (``proposals``): the Family's next
     answer makes a change of its own, and the earlier one is history. Such a
     change gets no refresh check and takes no fix (#1737), as the refresh
-    check and resolution guards (migration 0140, provisional) require.
+    check and resolution guards (migration 0133, provisional) require.
     ``proposal.submission`` must be loaded. One query.
     """
     submission = proposal.submission
@@ -231,7 +231,7 @@ def _remarked(rows):
     again over Entered incorrectly (#1737), and then by one. So a check at
     the version before an entered change's current one means that mark was
     made, and the latest such check's ParishSoft value is the value recorded
-    at it. The refresh check guard (migration 0140, provisional number)
+    at it. The refresh check guard (migration 0133, provisional number)
     reads it the same way. One query, when any change is entered.
     """
     wanted = {

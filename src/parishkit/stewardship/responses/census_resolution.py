@@ -24,7 +24,7 @@ On the worklist both are Staff's as well as an Administrator's
 (``pk-admin census resolve`` keeps Reopen the Administrator's, with a
 note). SQL admits them only while its latest refresh check says Entered
 incorrectly and no later response of the Family answered the field again
-(``schema/migrations/0140_entered_incorrectly_fixes.sql``, provisional).
+(``schema/migrations/0133_entered_incorrectly_fixes.sql``, provisional).
 """
 
 from uuid import UUID
