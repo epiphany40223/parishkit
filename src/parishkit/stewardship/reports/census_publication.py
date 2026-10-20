@@ -32,7 +32,10 @@ from parishkit.stewardship.responses.publication_models import (
     PublicationField,
     PublicationPlan,
 )
-from parishkit.stewardship.responses.publication_plans import confirmation_counts
+from parishkit.stewardship.responses.publication_plans import (
+    confirmation_counts,
+    unlisted_changes,
+)
 from parishkit.stewardship.responses.publication_tasks import (
     approved_changes,
     publication_running,
@@ -123,12 +126,17 @@ def enabled():
 
 
 def waiting(campaign_id):
-    """The approved Automatic changes not yet published, and their Members."""
-    changes = approved_changes(campaign_id)
-    return {
-        "changes": changes.count(),
-        "members": changes.values("entity_key").distinct().count(),
-    }
+    """The approved Automatic changes not yet published, and their Members.
+
+    Exactly the changes a preflight would plan: a change whose Member is no
+    longer an active, living Member of its Family is kept open (rule 4,
+    #1738) but left unplanned (``unlisted_changes``), so it is not counted
+    as waiting and cannot make Check ParishSoft available on its own.
+    """
+    rows = list(approved_changes(campaign_id).values_list("pk", "entity_key"))
+    unlisted = unlisted_changes(pk for pk, _ in rows)
+    kept = [key for pk, key in rows if pk not in unlisted]
+    return {"changes": len(kept), "members": len(set(kept))}
 
 
 def check_gate(campaign_id, *, enabled, waiting_changes):
