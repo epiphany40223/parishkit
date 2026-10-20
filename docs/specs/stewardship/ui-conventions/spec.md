@@ -90,13 +90,23 @@ when it lands.
 locked out on the other kind of device. **Shared code.** `ui-v1.css` (one
 theme for both portals); the button-label browser test at 320 px and 1280 px
 ([button labels](#button-labels)). **Precedent.** The original presentation
-rules; #227 (laptop-first Admin layout); #614.
+rules; #227 (laptop-first Admin layout); #614; #1844 (report email rows, a
+regression from #1564).
 
 The Admin portal is desktop-first, laid out for a laptop screen, but fully
 functional on tablets and phones. The Family portal is mobile-first with equivalent desktop fidelity.
 Both use one design system and parish branding, meet WCAG 2.2 AA, support the
 current and previous major versions of Chrome, Edge, Firefox, and Safari, and
 remain keyboard operable.
+
+Admin report emails are read at a desk, so their desktop layout is the
+default: a row of figures (a label, its bar and its value) stays on one line,
+and dates and amounts never wrap. Mail programs support CSS media queries
+unevenly (Outlook for Windows not at all; some drop the style block), so a
+phone layout that stacks those rows comes only from a media query in the
+email's style block, and the email must still fit a 320px phone where that
+query applies, since a mail program cannot scroll a table sideways. A
+change for phones never changes the desktop layout.
 
 ### Language and localization
 

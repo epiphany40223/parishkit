@@ -453,29 +453,25 @@ def render_daily_digest(document, *, public_origin, charts=True):
 
 
 def day_table_html(headings, rows, plain):
-    """The "Day by day" table, two rows per day so it fits a phone (#1559).
+    """The "Day by day" table: one row per day, its date first (#1844).
 
-    Four columns (date, first submissions, participation, pledges) need about
-    380px, wider than a 320px phone leaves inside the email's card, and mail
-    programs cannot scroll a table. So each day's date heads its own row
-    across the table, a row-group heading for screen readers, and its values
-    follow in one row under the value columns' headings. ``plain`` escapes a
-    text node. The first value column has no left padding, so the table
-    starts flush with its caption.
+    The date is a row heading that never wraps, so on a desktop each day is
+    one line. Four columns need about 380px, wider than a 320px phone leaves
+    inside the email's card, and mail programs cannot scroll a table
+    (#1559). So each day also has a date row across the value columns,
+    hidden inline; a mail program that keeps the email's <style> block shows
+    it on a phone and hides the date column instead (``pk-narrow`` and
+    ``pk-wide``). In every mail program that honours inline styles only
+    one of the two is displayed, so a screen reader hears each date once.
+    ``plain`` escapes a text node.
     """
-    values = headings[1:]
-    span = len(values)
+    span = len(headings) - 1
 
     def cells(tag, items, style, extra=""):
-        """One row of cells; the first is left-aligned under its date.
-
-        The later cells are right-aligned and padded.
-        """
+        """One row of right-aligned value cells, padded from the one before."""
         return "".join(
-            f'<{tag}{extra} align="{"right" if index else "left"}"'
-            f"{_style(style if index else style + '-lead')}>"
-            f"{plain(item)}</{tag}>"
-            for index, item in enumerate(items)
+            f'<{tag}{extra} align="right"{_style(style)}>{plain(item)}</{tag}>'
+            for item in items
         )
 
     html = (
@@ -484,14 +480,19 @@ def day_table_html(headings, rows, plain):
         '<table width="100%" cellpadding="0" cellspacing="0" '
         f'border="0"{_style("table")}><caption{_style("table-caption")}>'
         "Day by day</caption><thead><tr>"
-        + cells("th", values, "th", ' scope="col"')
+        f'<th scope="col" align="left" class="pk-wide"{_style("th-lead")}>'
+        f"{plain(headings[0])}</th>"
+        + cells("th", headings[1:], "th", ' scope="col"')
         + "</tr></thead>"
     )
     for day, *figures in rows:
         html += (
-            f'<tbody><tr><th scope="rowgroup" colspan="{span}" align="left"'
-            f"{_style('day')}>{plain(day)}</th></tr>"
-            f"<tr>{cells('td', figures, 'td')}</tr></tbody>"
+            f'<tbody><tr class="pk-narrow"{_style("day-row")}>'
+            f'<th scope="rowgroup" colspan="{span}" align="left"'
+            f"{_style('day-narrow')}>{plain(day)}</th></tr>"
+            f'<tr><th scope="row" align="left" class="pk-wide"'
+            f"{_style('day-lead')}>{plain(day)}</th>"
+            f"{cells('td', figures, 'td')}</tr></tbody>"
         )
     return html + "</table>"
 
@@ -508,13 +509,15 @@ def unbroken(text):
 
 
 def totals_html(totals, plain):
-    """The "Campaign totals" rows, two table rows per figure (#1564).
+    """The "Campaign totals" rows: label, bar and value on one line (#1844).
 
-    One row of label, bar and value needed about 310px with four-digit
-    counts, wider than a 320px phone leaves inside the email's card, and mail
-    programs cannot scroll a table. So each figure's label has a row of its
-    own, and its bar and exact value share the next one. The value wraps only
-    before its parenthesis (see unbroken), so it stays readable when narrow.
+    Each figure's label cell (it never wraps) sits beside one cell holding
+    a small table of its bar and exact value, so on a desktop every figure
+    is one line, as in v1.18.0. One row needs about 420px with four-digit
+    counts, wider than a 320px phone leaves inside the email's card (#1564).
+    A mail program that keeps the email's <style> block stacks the two cells
+    there (``pk-stack``): the label above, the bar and value below, the
+    value wrapping only before its parenthesis (``pk-wrap``, unbroken).
     ``plain`` escapes a text node.
     """
     html = (
@@ -522,10 +525,15 @@ def totals_html(totals, plain):
         f'border="0"{_style("rows")}><tbody>'
     )
     html += "".join(
-        f'<tr><td colspan="2"{_style("total-label")}>{plain(label)}</td></tr>'
-        f'<tr><td width="55%"{_style("total-bar")}>{bar_html}</td>'
-        f'<td width="45%" align="right"{_style("total-value")}>'
-        f"<strong>{unbroken(value)}</strong>{unbroken(note)}</td></tr>"
+        f'<tr><td width="34%" class="pk-stack"{_style("total-name")}>'
+        f"{plain(label)}</td>"
+        f'<td width="66%" class="pk-stack"{_style("total-figure")}>'
+        '<table role="presentation" width="100%" cellpadding="0" '
+        f'cellspacing="0" border="0"{_style("track")}><tbody><tr>'
+        f'<td width="60%"{_style("bar")}>{bar_html}</td>'
+        f'<td width="40%" align="right" class="pk-wrap"{_style("value")}>'
+        f"<strong>{unbroken(value)}</strong>{unbroken(note)}</td>"
+        "</tr></tbody></table></td></tr>"
         for label, value, bar_html, note in totals
     )
     return html + "</tbody></table>"

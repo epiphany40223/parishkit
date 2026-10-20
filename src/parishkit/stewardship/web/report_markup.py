@@ -55,6 +55,9 @@ _TD = (
     "padding:2px 0 8px {gap}px;font-size:14px;color:" + INK + ";"
     "border-bottom:1px solid " + TRACK + ";"
 )
+# A day's date heading on a phone, on a row of its own above the day's
+# values (#1559).
+_DAY = f"padding:10px 0 2px;font-size:14px;font-weight:bold;color:{INK};"
 # The day-by-day table's cells before each day took two rows (#1559): a
 # retained report compiled before then still carries them. Frozen history,
 # so literal.
@@ -78,25 +81,28 @@ STYLES = {
     "label": f"padding:8px 16px 8px 0;font-size:16px;color:{INK};",
     "bar": "padding:8px 16px 8px 0;",
     "value": f"padding:8px 0;font-size:16px;color:{INK};white-space:nowrap;",
-    # The Campaign totals (#1564): each figure's label on its own row, then
-    # its bar and value, so four-digit counts fit a 320px phone. The value
-    # may wrap (before its parenthesis only), so it has no nowrap.
-    "total-label": f"padding:8px 0 4px;font-size:16px;color:{INK};",
-    "total-bar": "padding:0 16px 8px 0;",
-    "total-value": f"padding:0 0 8px;font-size:16px;color:{INK};",
+    # The Campaign totals (#1844): each figure's label, then a cell holding
+    # its bar and value, side by side in one row. The label never wraps;
+    # on a phone, the report classes below stack the two cells.
+    "total-name": f"padding:8px 16px 8px 0;font-size:16px;color:{INK};"
+    "white-space:nowrap;",
+    "total-figure": "padding:0;",
     "track": "border-collapse:collapse;",
     "segment": "height:14px;line-height:14px;font-size:1px;",
     "image": "display:block;width:100%;max-width:880px;height:auto;border:0;",
     "table": "border-collapse:collapse;margin:16px 0 0;",
     "table-caption": f"text-align:left;font-size:14px;color:{MUTED};padding:0 0 6px;",
-    # The day-by-day table (#1559): each day's date heads its own row, then
-    # its values. Small headings and tight gaps keep the three value columns
-    # inside a 320px phone; "-lead" is the first column, with no gap before.
+    # The day-by-day table: small headings and tight gaps keep the three
+    # value columns inside a 320px phone (#1559); "-lead" is the date
+    # column, with no gap before it. Since #1844 the date leads its day's
+    # row and never wraps. The date row above the values is hidden unless a
+    # phone shows it; mso-hide keeps it hidden in Outlook for Windows too.
     "th": _TH.format(gap=8),
     "th-lead": _TH.format(gap=0),
-    "day": f"padding:10px 0 2px;font-size:14px;font-weight:bold;color:{INK};",
+    "day-lead": _TD.format(gap=0) + "font-weight:bold;white-space:nowrap;",
+    "day-row": "display:none;mso-hide:all;",
+    "day-narrow": _DAY + "mso-hide:all;",
     "td": _TD.format(gap=8),
-    "td-lead": _TD.format(gap=0),
     "link": f"color:{LINK};text-decoration:underline;",
     # The weekly digests' numbered request rows.
     "who": (
@@ -131,7 +137,32 @@ _RETAINED_STYLES = {
     _RETAINED_AS_OF,
     *_RETAINED_TABLE,
 }
-_STYLE_VALUES = frozenset(STYLES.values()) | _BUTTON_STYLES | _RETAINED_STYLES
+# The two-row styles before #1844 put each figure and each day back on one
+# desktop row: the Campaign totals' (#1564, v1.19.0) and the day table's
+# date row and first value cell (#1559, v1.18.0). A retained report still
+# carries them. Frozen history, so literal.
+_RETAINED_TWO_ROWS = {
+    "padding:8px 0 4px;font-size:16px;color:#1b2a31;",
+    "padding:0 16px 8px 0;",
+    "padding:0 0 8px;font-size:16px;color:#1b2a31;",
+    "padding:10px 0 2px;font-size:14px;font-weight:bold;color:#1b2a31;",
+    "padding:2px 0 8px 0px;font-size:14px;color:#1b2a31;"
+    "border-bottom:1px solid #e4e7ec;",
+}
+_STYLE_VALUES = (
+    frozenset(STYLES.values()) | _BUTTON_STYLES | _RETAINED_STYLES | _RETAINED_TWO_ROWS
+)
+# The report classes (#1844): mail programs that keep the email's <style>
+# block restack these cells on a phone (see mail_layout._style_block).
+# Without it every class is inert and the desktop layout shows. The weekly
+# digest's validator admits them too (it shares LAYOUT_ATTRIBUTES), though
+# only the daily digest compiles them.
+REPORT_CLASSES = {
+    "pk-stack",  # a Campaign totals label or figure cell: stacks on a phone
+    "pk-wrap",  # a Campaign totals value: may wrap on a phone
+    "pk-wide",  # a day's date cell and its heading: hidden on a phone
+    "pk-narrow",  # a day's date row: shown only on a phone
+}
 # Closed values for the presentational table attributes the bars use.
 _FIXED = {
     "role": {"presentation"},
@@ -139,10 +170,12 @@ _FIXED = {
     "cellspacing": {"0"},
     "border": {"0"},
     "align": {"left", "right"},
-    "scope": {"col", "rowgroup"},
+    "scope": {"col", "row", "rowgroup"},
     # A day's date row spans the value columns (#1559): 3, or 2 without
-    # pledges. A Campaign totals label spans its bar and value (#1564).
+    # pledges. A retained Campaign totals label spans its bar and value
+    # (#1564).
     "colspan": {"2", "3"},
+    "class": REPORT_CLASSES,
 }
 _PERCENT = re.compile(r"(?:100|[1-9]?[0-9])%")
 
@@ -154,8 +187,9 @@ LAYOUT_ATTRIBUTES = {
     "h2": {"style"},
     "caption": {"style"},
     "table": {"role", "width", "cellpadding", "cellspacing", "border", "style"},
-    "th": {"scope", "colspan", "align", "style"},
-    "td": {"width", "bgcolor", "align", "colspan", "style"},
+    "tr": {"class", "style"},
+    "th": {"scope", "colspan", "align", "class", "style"},
+    "td": {"width", "bgcolor", "align", "colspan", "class", "style"},
 }
 
 
