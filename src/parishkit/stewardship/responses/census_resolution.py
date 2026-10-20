@@ -25,6 +25,12 @@ On the worklist both are Staff's as well as an Administrator's
 note). SQL admits them only while its latest refresh check says Entered
 incorrectly and no later response of the Family answered the field again
 (``schema/migrations/0133_entered_incorrectly_fixes.sql``, provisional).
+
+Marking a New Member entered may name the **ParishSoft Member ID** of the
+Member Staff added (#1749, ``member_ids``), which the refresh confirms the
+change by; SQL admits it only on such a mark, never a Member the Family's
+response listed (``schema/migrations/0138_published_refresh_conflicts.sql``,
+provisional).
 """
 
 from uuid import UUID
@@ -49,6 +55,61 @@ from .models import (
 from .refresh_checks import entered_incorrectly
 
 MAX_NOTE = 2000
+# The largest ParishSoft Member ID the column holds (a PostgreSQL bigint).
+MAX_MEMBER_ID = 2**63 - 1
+
+
+class InvalidMemberId(ValueError):
+    """A ParishSoft Member ID a New Member's mark cannot take (#1749).
+
+    The message is static and safe, so the page may show it as the refusal
+    at the Member ID field.
+    """
+
+
+def member_id(proposal, raw):
+    """The ParishSoft Member ID ``raw`` gives for marking ``proposal`` entered.
+
+    ``raw`` is the dialog's text (blank for none, which is None). Only a New
+    Member takes one: a whole number, never one of the Members the Family's
+    response listed (a Member Staff added cannot be), and never the ID
+    another New Member of the Family is entered as now (two proposed
+    Members cannot be one ParishSoft Member; the same proposed Member
+    answered again may keep its own). Raises ``InvalidMemberId`` otherwise.
+    SQL checks the same. ``proposal.submission`` must be loaded.
+    """
+    text = (raw or "").strip()
+    if not text:
+        return None
+    if proposal.entity_kind != "proposed_member" or proposal.field != "new_member":
+        raise ValueError("Only a New Member takes a ParishSoft Member ID.")
+    digits = text.lstrip("0") or "0"
+    if not (text.isascii() and text.isdecimal()) or len(digits) > 19:
+        raise InvalidMemberId("Enter the ParishSoft Member ID as a whole number.")
+    value = int(digits)
+    if not 1 <= value <= MAX_MEMBER_ID:
+        raise InvalidMemberId("Enter the ParishSoft Member ID as a whole number.")
+    submission = proposal.submission
+    if str(value) in (submission.answers.get("members") or {}):
+        raise InvalidMemberId(
+            "That ParishSoft Member ID is a Member the Family already listed. "
+            "Enter the ID of the Member you added."
+        )
+    taken = ProposalResolution.objects.filter(
+        member_duid=value,
+        action="entered",
+        expected_version=F("proposal__version") - 1,
+        proposal__execution="resolved_external",
+        proposal__submission__family_id=submission.family_id,
+        proposal__submission__campaign_id=submission.campaign_id,
+        proposal__submission__mode=submission.mode,
+    ).exclude(proposal__entity_key=proposal.entity_key)
+    if taken.exists():
+        raise InvalidMemberId(
+            "Another New Member of this Family is already entered with that "
+            "ParishSoft Member ID. Enter the ID of this Member."
+        )
+    return value
 
 
 class KeyRebound(ValueError):
@@ -136,7 +197,15 @@ def _valid(action, note):
 
 
 def record_resolution(
-    proposal, actor_id, expected_version, request_key, action, note, parish
+    proposal,
+    actor_id,
+    expected_version,
+    request_key,
+    action,
+    note,
+    parish,
+    *,
+    member_duid=None,
 ):
     """Record one locked proposal's resolution, its result and its audit event.
 
@@ -148,13 +217,15 @@ def record_resolution(
     refused. A proposal changed since the page was drawn is refused by
     ``check_version``, so the person sees its current state first. The
     review worklist's bulk Entered by hand records each change through here
-    (``census_review.decide_census_changes``, #1683).
+    (``census_review.decide_census_changes``, #1683). ``member_duid`` is a
+    New Member's ParishSoft Member ID (``member_id``), only with ``entered``.
     """
     intent = dict(
         proposal_id=proposal.pk,
         expected_version=expected_version,
         action=action,
         note=note,
+        member_duid=member_duid,
     )
     previous = ProposalResolution.objects.filter(
         actor_id=actor_id, request_key=request_key
@@ -165,7 +236,9 @@ def record_resolution(
         return previous
     check_version(proposal, expected_version)
     incorrect = entered_incorrectly(proposal)
-    if not allowed(proposal, action, incorrect=incorrect):
+    if not allowed(proposal, action, incorrect=incorrect) or (
+        member_duid is not None and action != "entered"
+    ):
         raise ValueError("This census change cannot be resolved that way now.")
     if action == "reopened" and covered_by_addition(proposal):
         raise ReopenCovered("An open addition covers this census change.")

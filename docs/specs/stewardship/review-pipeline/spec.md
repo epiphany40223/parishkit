@@ -506,6 +506,8 @@ The rules, in order:
      change does today
      ([Automatic census review](../reports/spec.md#automatic-census-review)).
      The reviewer then decides against R, and R becomes the item's new A.
+     (An Updated in ParishSoft item instead goes back to To review:
+     [refresh checks](#refresh-checks).)
      An item already queued for update keeps its plan, and the plan meets
      the conflict at its own preflight check.
 4. **Entity gone.** The Member or Family left the baseline (inactive,
@@ -643,16 +645,58 @@ check of a change Entered by hand against the value recorded at its mark:
 unchanged exactly when ParishSoft holds that value, and Entered incorrectly
 only when a value was recorded and ParishSoft holds another one.
 
-Left for later, each in its own issue:
+[#1749](https://github.com/epiphany40223/parishkit/issues/1749) (migration
+0138, provisional number) adds the rest:
 
-- [#1749](https://github.com/epiphany40223/parishkit/issues/1749): an
-  Updated in ParishSoft change found back at A or at a third value (the
-  update is switched off in Production, so none exists yet), which needs
-  the derived guard to admit `published` to `conflict`; and confirming an
-  entered New Member (matching a new ParishSoft Member to the proposed one
-  is a staff association not yet built) and the Family's primary address
-  (with the smoke test's [mapping](#family-addresses)), which stay final
-  when Entered by hand.
+- **An Updated in ParishSoft change found back at A, or at a third value,**
+  is a Conflict (rule 2's exception and rule 3): the write was undone, or
+  ParishSoft changed after it. A full refresh records a check saying so
+  (with ParishSoft's value) and, in the same promotion, moves the change to
+  Conflict at that value, as reconciliation moves an open change, and back
+  to To review: its approval is decided again, as an approval resting on a
+  stale accepted ParishSoft value is, so that neither a later refresh nor
+  the Family's same answer can carry it back into force over the undo in
+  ParishSoft (its row's Last decision still shows it). The census guard
+  admits a change leaving Updated in ParishSoft only this way, from the
+  source worker at fenced, pinned data, with that check. A quick update
+  records nothing for such a change, since its change list could lag the
+  write. The row says "ParishSoft no longer holds the update." under its
+  stage until a review decides it again. A change a refresh already
+  confirmed is not checked again, so a write undone after that is not
+  caught.
+- **An entered New Member** is confirmed through a staff association.
+  Marking a New Member row Entered by hand one at a time asks for the new
+  Member's ParishSoft Member ID (optional: the DUID ParishSoft gave the
+  Member Staff added). The refresh confirms the change once the data lists
+  that ID as an active, living Member of the change's Family; until then it
+  is unchanged, and Not seen in ParishSoft counts as for any mark, so a
+  wrong ID is noticed. It is never Entered incorrectly. The ID may not be
+  one of the Members the Family's response listed, nor the ID another New
+  Member of the Family is entered as. Without an ID (marked in bulk, or
+  left blank) Entered by hand is final, as before. Either way the mark
+  cannot be made again: correcting a mistyped ID, or adding one later, is
+  [#1773](https://github.com/epiphany40223/parishkit/issues/1773). Nothing
+  guesses the association: matching by name and birth date inside the
+  Family (a twin, a namesake or a typo would confirm the wrong person or
+  none) and confirming on any new Member in the Family (no evidence it is
+  this one) were rejected.
+- **An entered home address** is confirmed against ParishSoft's primary
+  address ([the smoke test's mapping](#family-addresses)): the street lines
+  (ParishSoft's second and third lines joined), city, state and postal
+  code, ignoring the country and a ZIP+4 suffix, each compared as the
+  census address compare does. No read says which block is primary, so
+  the refresh takes the primary fields as the home block, except when they
+  hold the Family's own mailing answer and not its home answer, which shows
+  the primary is the mailing block: then there is no check. A Family whose
+  primary is the mailing block may hold any address there, so a different
+  value is unchanged (Not seen after the threshold), never Entered
+  incorrectly. The mailing address stays final when Entered by hand. The
+  Family must be active in the data, as for the email opt-out.
+- **The update run's queue step refuses a Member who left the Family** in
+  the database too: the census guard lets the publish worker queue a change
+  only while the current data lists its Member as an active, living Member
+  of the change's Family, the check preflight and the worker already make
+  in code (#1738).
 
 ### What is confirmable
 
@@ -661,13 +705,15 @@ field:
 
 - **Confirmable**: Member names, prefix, suffix, birth date, gender, marital
   status, email, phones, language, deceased status and date, a Member
-  leaving the household, a new Member appearing, Ministry joins and leaves
-  (the roster lists), the upcoming pledge amount, the Family's email
-  opt-out (below), and the Family's primary address
-  ([address finding](#family-addresses)).
-- **Not confirmable** (Entered by hand is final): share methods, the Family
-  address block ParishSoft does not report as primary, the pledge frequency
-  until its mapping is verified (below), and the non-ParishSoft streams.
+  leaving the household, a new Member appearing (by the ParishSoft Member
+  ID recorded at its mark, [above](#refresh-checks)), Ministry joins and
+  leaves (the roster lists), the upcoming pledge amount, the Family's email
+  opt-out (below), and the Family's home address, against ParishSoft's
+  primary address ([address finding](#family-addresses)).
+- **Not confirmable** (Entered by hand is final): share methods, the Family's
+  mailing address, a New Member marked without its ParishSoft Member ID,
+  the pledge frequency until its mapping is verified (below), and the
+  non-ParishSoft streams.
 
 The census email opt-out answer corresponds to the Family's ParishSoft
 `sendNoMail` flag (Administrator, 2026-10-18, recorded on
@@ -1263,14 +1309,13 @@ through the API stays out, since the mailing block cannot be verified and
 no read returns the `primaryAddress` selector, so ParishKit cannot tell
 which block a Family's primary fields follow. A hand-entered home address
 is **confirmable** for a Family known to have home as its primary address,
-comparing street lines, city, state and postal code; the mailing block,
-and any Family whose primary block is unknown, stay unconfirmable. How the
-refresh learns that a Family's primary is home (no read returns it, so it
-may have to be treated as unknown) and the change to
-`pipeline.CENSUS_CONFIRMABLE` are
-[#1749](https://github.com/epiphany40223/parishkit/issues/1749)'s; until
-then Entered by hand is final for both blocks. The same mapping would let
-the Family form show the primary address as the home block's baseline.
+comparing street lines, city, state and postal code; the mailing block
+stays unconfirmable. No read says which block is primary, so
+[#1749](https://github.com/epiphany40223/parishkit/issues/1749) takes the
+primary fields as the home block unless they hold the Family's mailing
+answer, and never reads a difference as Entered incorrectly
+([refresh checks](#refresh-checks)). The same mapping would let the Family
+form show the primary address as the home block's baseline.
 [#528](https://github.com/epiphany40223/parishkit/issues/528) records the
 schema reading above.
 

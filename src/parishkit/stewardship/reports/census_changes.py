@@ -320,7 +320,21 @@ SELECT p.id::text, p.entity_kind, p.entity_key, p.field,
         sc.snapshot_id, p.entity_key, f.family_duid) END AS member_status,
     -- The response's place in its Family's order, which tells a final change
     -- a later response replaced (#1737).
-    s.family_version
+    s.family_version,
+    -- The ParishSoft Member ID a New Member's latest mark named (#1749).
+    latest.member_duid,
+    -- Whether a refresh put this Updated in ParishSoft change back in
+    -- Conflict (#1749): its latest check says so and no review has decided
+    -- it since.
+    p.execution='conflict' AND coalesce((
+        SELECT true
+        FROM (SELECT k.outcome, k.item_version
+            FROM stewardship_refresh_check k WHERE k.proposal_id=p.id
+            ORDER BY k.created_at DESC, k.id DESC LIMIT 1) k
+        WHERE k.outcome='conflict'
+          AND NOT EXISTS (SELECT 1 FROM stewardship_proposal_review v
+              WHERE v.proposal_id=p.id AND v.expected_version>k.item_version)),
+        false) AS refresh_conflict
 FROM stewardship_campaign c
 LEFT JOIN stewardship_source_current sc ON sc.singleton
 JOIN stewardship_submission s ON s.campaign_id=c.id AND s.mode='live'
@@ -333,12 +347,14 @@ LEFT JOIN stewardship_source_member sm ON sm.id=mm.payload_id
 -- with who made it. Each advances the proposal's version, so the two
 -- histories never share one.
 LEFT JOIN LATERAL (
-    SELECT h.action, h.note, h.created_at, u.email
+    SELECT h.action, h.note, h.created_at, u.email, h.member_duid
     FROM (
-        SELECT r.action, r.note, r.created_at, r.actor_id, r.expected_version
+        SELECT r.action, r.note, r.created_at, r.actor_id, r.expected_version,
+            r.member_duid
         FROM stewardship_proposal_resolution r WHERE r.proposal_id=p.id
         UNION ALL
-        SELECT v.decision, v.note, v.created_at, v.actor_id, v.expected_version
+        SELECT v.decision, v.note, v.created_at, v.actor_id, v.expected_version,
+            NULL
         FROM stewardship_proposal_review v WHERE v.proposal_id=p.id
     ) h
     LEFT JOIN stewardship_portal_user u ON u.id=h.actor_id
@@ -429,6 +445,8 @@ COLUMNS = (
     "reopened",
     "member_status",
     "family_version",
+    "resolution_member",
+    "refresh_conflict",
 )
 
 # The menu's open count (#585, #1590; admin_context.OPEN_COUNTS embeds it):

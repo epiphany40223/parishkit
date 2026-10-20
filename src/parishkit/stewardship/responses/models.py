@@ -476,6 +476,12 @@ class ProposalResolution(ImmutableRecord):
     request_key = models.UUIDField()
     action = models.CharField(max_length=12)
     note = models.TextField(default="", blank=True)
+    # The ParishSoft Member ID (DUID) Staff give when they mark a New Member
+    # entered (#1749): the Member they added, which the refresh confirms the
+    # change by (``refresh_checks``). Only on an ``entered`` row; SQL also
+    # requires a New Member change and no Member the Family's response
+    # listed (schema/migrations/0138_published_refresh_conflicts.sql).
+    member_duid = models.BigIntegerField(null=True, blank=True)
 
     class Meta:
         db_table = "stewardship_proposal_resolution"
@@ -494,6 +500,11 @@ class ProposalResolution(ImmutableRecord):
             models.CheckConstraint(
                 condition=models.Q(action__in=RESOLUTION_ACTIONS),
                 name="proposal_resolution_action",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(member_duid__isnull=True)
+                | models.Q(member_duid__gt=0, action="entered"),
+                name="proposal_resolution_member",
             ),
         ]
 

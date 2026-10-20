@@ -2301,6 +2301,20 @@ Since Family addresses are not yet written by publication (see the
 [data workflow](../data/spec.md#review-and-publication)), an address
 entered in ParishSoft stays *To enter by hand* until it is marked.
 
+On a New Member row, Entered by hand (from the row's own icon) asks for
+the **ParishSoft Member ID** of the Member Staff added, optional, with its
+help: "The new Member's ID in ParishSoft. The next refresh confirms the
+entry when ParishSoft lists this Member in the Family. Leave it blank if you
+do not have it: the mark is then final." A value that is not a whole
+number, that is a Member the Family already listed, or that another New
+Member of the Family is entered as, is refused with its reason in the
+dialog. The row then says "ParishSoft Member ID N." under its
+stage. The bulk bar asks for none. What the refresh does with it is the
+review pipeline's
+[refresh checks](../review-pipeline/spec.md#refresh-checks); so is an
+Updated in ParishSoft row a later refresh puts back in Conflict, To review
+again, which says "ParishSoft no longer holds the update." under its stage.
+
 ### Automatic census review
 
 Every census change is reviewed on the worklist by Staff or an Administrator
