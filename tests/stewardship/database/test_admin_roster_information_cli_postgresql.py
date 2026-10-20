@@ -423,7 +423,12 @@ def test_the_save_is_the_page_s_once_per_key(live_response_service, google, cli)
     # Clearing a completed follow-up needs --confirm-clear.
     code, document = update(run, item, "--completed", "no")
     assert code == 1 and document["error"]["fields"][0]["field"] == "confirm_clear"
+    # It undoes Handled, so it needs new notes too (#1840).
     code, document = update(run, item, "--completed", "no", "--confirm-clear")
+    assert code == 1 and document["error"]["fields"][0]["field"] == "notes"
+    code, document = update(
+        run, item, "--completed", "no", "--confirm-clear", "--notes", "Not done yet"
+    )
     assert code == 0, document
     item.refresh_from_db()
     assert item.followed_up_at is None

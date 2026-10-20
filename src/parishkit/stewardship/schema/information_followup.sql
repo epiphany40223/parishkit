@@ -40,6 +40,14 @@ BEGIN
        AND coalesce(prior.review_decision,'ignored')='ignored'
     THEN RAISE EXCEPTION 'Reopening an ignored request needs a note'
         USING ERRCODE='23514'; END IF;
+    -- Leaving Handled (a completed follow-up cleared, whether by the
+    -- worklist's Back to review or the command line's clear) undoes a
+    -- terminal step, which needs a new note saying why, as reopening an
+    -- Ignored request does (#1840).
+    IF item.followed_up_at IS NOT NULL AND NOT NEW.followed_up
+       AND (btrim(NEW.notes)='' OR NEW.notes=prior.notes)
+    THEN RAISE EXCEPTION 'Undoing a handled request needs a note'
+        USING ERRCODE='23514'; END IF;
     -- Only a request To review (or already Ignored) is ignored: one whose
     -- follow-up is needed or done goes back to review first.
     IF NEW.review_decision='ignored'

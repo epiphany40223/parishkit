@@ -144,11 +144,15 @@ def test_each_record_is_the_csv_row_with_its_item_version_and_actions():
     assert admin_limitations_export.limitations_jsonl(empty, ZONE) == b""
 
 
-def test_handled_offers_nothing_and_history_offers_nothing():
-    """Handled is final, and a request in History takes no decision."""
-    for stream in (Stream.ADDITIONAL_INFORMATION, Stream.CANNOT_PARTICIPATE):
-        placement = Placement(Stage.HANDLED, Decision.ACCEPTED)
-        assert admin_worklists.row_actions(stream, placement, True) == []
+def test_handled_offers_back_to_review_and_history_offers_nothing():
+    """Handled is undone by Back to review (#1840) once its stream records
+    the undo, and a request in History takes no decision."""
+    placement = Placement(Stage.HANDLED, Decision.ACCEPTED)
+    for stream, expected in (
+        (Stream.ADDITIONAL_INFORMATION, ["back_to_review"]),
+        (Stream.CANNOT_PARTICIPATE, []),
+    ):
+        assert admin_worklists.row_actions(stream, placement, True) == expected
     history = Placement(Stage.HISTORY)
     assert (
         admin_worklists.row_actions(Stream.ADDITIONAL_INFORMATION, history, True) == []

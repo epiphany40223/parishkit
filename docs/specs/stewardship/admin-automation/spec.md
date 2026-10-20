@@ -3858,7 +3858,9 @@ pages' own pieces.
   Ignored item as it was; and clearing a To handle or Handled item sends it
   back to review, so the command never ignores an item on its own. Taking
   an Ignored item out of Ignored needs new `--notes` saying why, as the
-  page's Back to review does (`invalid` at `notes` otherwise).
+  page's Back to review does (`invalid` at `notes` otherwise); so does
+  clearing a completed follow-up, which undoes Handled
+  ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage)).
 - **Keys, scope and audit.** The three changes need a full-scope session,
   run in the page's command scope, and are not fresh-gated, as the pages'
   actions are not privileged. An item or request that is not a Live one of

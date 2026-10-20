@@ -494,7 +494,7 @@ ALLOWED_TABLE = [
     ("cannot_participate", Stage.TO_REVIEW, STAFF, False, {"accept", "ignore"}),
     ("cannot_participate", Stage.TO_HANDLE, STAFF, False, HANDLE),
     ("additional_information", Stage.TO_REVIEW, ADMIN, False, {"accept", "ignore"}),
-    ("additional_information", Stage.HANDLED, ADMIN, False, set()),
+    ("additional_information", Stage.HANDLED, ADMIN, False, {"back_to_review"}),
 ]  # fmt: skip
 
 

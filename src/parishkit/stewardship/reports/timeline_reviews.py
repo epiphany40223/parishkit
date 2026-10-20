@@ -276,11 +276,16 @@ def state_after(row, before):
         return replace(before, done="entered" if a == "true" else None)
     # Additional information: followed up is Handled, needed is Accepted
     # (To handle), neither is To review (``pipeline.information_placement``).
+    # Leaving Handled with the decision kept is Handled's undo, Back to
+    # review (review pipeline spec, "Undoing a terminal stage", #1840).
     needed, handled = a == "true", b == "true"
+    decision = Decision.ACCEPTED if needed or handled else None
+    undone = before.done == "handled" and not handled and decision is not None
     return replace(
         before,
-        decision=Decision.ACCEPTED if needed or handled else None,
+        decision=decision,
         done="handled" if handled else None,
+        forced=BACK_TO_REVIEW if undone else None,
     )
 
 

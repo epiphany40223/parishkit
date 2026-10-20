@@ -1041,6 +1041,13 @@ CLOSURE_REPLACED = {
         ("stewardship_reports", "0038_pledge_terminal_undo"),
         "item.stage IN ('entered_by_hand','entered_incorrectly','confirmed')",
     ),
+    # 0214 (#1840, provisional number) replaces 0126's information revision
+    # guard, which 0126's file (CLOSURE_CREATED) brings back; it creates
+    # nothing, so its file runs again whole.
+    "public.stewardship_information_revision_guard_v1()": (
+        ("stewardship_responses", "0025_information_handled_undo"),
+        "Undoing a handled request needs a note",
+    ),
 }
 
 

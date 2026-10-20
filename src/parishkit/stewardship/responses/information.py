@@ -25,7 +25,13 @@ from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.pipeline import Action as Decide
-from parishkit.stewardship.pipeline import Stage, information_placement
+from parishkit.stewardship.pipeline import (
+    Stage,
+    Stream,
+    information_placement,
+    undo_needs_note,
+    undo_stage,
+)
 from parishkit.stewardship.reports.export_services import admit_campaign
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.content import bounded_text
@@ -36,12 +42,24 @@ from .models import AdditionalInformationItem, AdditionalInformationRevision
 
 # The worklist's decisions on a request: what each records (follow-up
 # needed, followed up, review decision) and the stages it is offered at
-# (review pipeline spec, "Role-specific actions"). Handled is final.
+# (review pipeline spec, "Role-specific actions"). Back to review's record
+# depends on the stage it leaves (``recorded``).
 DECISIONS = {
     Decide.ACCEPT: ((True, False, "accepted"), {Stage.TO_REVIEW}),
     Decide.IGNORE: ((False, False, "ignored"), {Stage.TO_REVIEW}),
-    Decide.BACK_TO_REVIEW: ((False, False, "none"), {Stage.TO_HANDLE, Stage.IGNORED}),
+    Decide.BACK_TO_REVIEW: (
+        (False, False, "none"),
+        {Stage.TO_HANDLE, Stage.IGNORED, Stage.HANDLED},
+    ),
     Decide.HANDLED: ((True, True, "accepted"), {Stage.TO_HANDLE}),
+}
+# What Back to review records for the stage it returns a request to
+# (``pipeline.undo_stage``): a decision's undo goes to To review; Handled's
+# undo (#1840) removes only the follow-up's completion, so the request is
+# To handle again, still accepted, follow-up still needed.
+UNDO_RECORDS = {
+    Stage.TO_REVIEW: (False, False, "none"),
+    Stage.TO_HANDLE: (True, False, "accepted"),
 }
 MAX_NOTE = 2000
 MAX_BULK = 100
@@ -64,6 +82,17 @@ class ReopenNeedsNote(ValueError):
     "Reviewed stage"), whether it goes back to review or straight to
     follow-up through ``pk-admin followup information-update``; the
     revision guard refuses it too.
+    """
+
+
+class UndoNeedsNote(ReopenNeedsNote):
+    """A Handled request (or answer) left Handled with no note; nothing was saved.
+
+    Undoing a terminal step needs a reason, as reopening an ignored item
+    does (review pipeline spec, "Undoing a terminal stage", #1840), on the
+    worklist and through ``pk-admin followup information-update`` alike; the
+    revision guard refuses it too. It is a ``ReopenNeedsNote``, so every
+    caller that refuses a reopening without a note refuses this the same way.
     """
 
 
@@ -125,6 +154,41 @@ def new_note(notes, latest):
     revision, or None), as the revision guard checks.
     """
     return bool(notes.strip()) and (latest is None or notes != latest.notes)
+
+
+def recorded(action, placement):
+    """What ``action`` records on a request at ``placement``: (needed, done, decision).
+
+    Back to review records the stage ``pipeline.undo_stage`` returns the
+    request to (``UNDO_RECORDS``); every other action records one fixed
+    triple (``DECISIONS``).
+    """
+    if action is Decide.BACK_TO_REVIEW:
+        return UNDO_RECORDS[undo_stage(Stream.ADDITIONAL_INFORMATION, placement)]
+    return DECISIONS[action][0]
+
+
+def records(action):
+    """Every revision ``action`` can store, as the fields a repeat must match.
+
+    A replayed request key is checked against these, since the request has
+    moved on since its first post: Back to review stored either of its two
+    records, and only the undo of Handled confirms clearing the completion.
+    """
+    triples = (
+        UNDO_RECORDS.values()
+        if action is Decide.BACK_TO_REVIEW
+        else [DECISIONS[action][0]]
+    )
+    return [
+        {
+            "follow_up_needed": needed,
+            "followed_up": done,
+            "review_decision": decision,
+            "confirm_clear": action is Decide.BACK_TO_REVIEW and needed,
+        }
+        for needed, done, decision in triples
+    ]
 
 
 def latest_revision(item_id):
@@ -204,6 +268,14 @@ def update_information(
         if item.followed_up_at is not None and not followed_up and not confirm_clear:
             raise ClearUnconfirmed("Confirm clearing the completed follow-up.")
         latest = latest_revision(item_id)
+        if (
+            item.followed_up_at is not None
+            and not followed_up
+            and not new_note(notes, latest)
+        ):
+            # Clearing a completed follow-up undoes Handled, which needs a
+            # reason however it is recorded (#1840).
+            raise UndoNeedsNote("Undoing a handled request needs a note.")
         decision = flag_decision(
             item, latest, follow_up_needed=follow_up_needed, followed_up=followed_up
         )
@@ -260,7 +332,6 @@ def _decide_one(item, actor_id, action, version, key, note):
     A request whose version moved, or whose stage no longer offers the
     action (someone decided it first), is ``StaleItem``.
     """
-    (needed, completed, decision), stages = DECISIONS[action]
     previous = AdditionalInformationRevision.objects.filter(
         actor_id=actor_id, request_key=key
     ).first()
@@ -268,22 +339,32 @@ def _decide_one(item, actor_id, action, version, key, note):
         if (
             previous.item_id != item.pk
             or previous.expected_version != version
-            or previous.review_decision != decision
-            or previous.follow_up_needed != needed
-            or previous.followed_up != completed
+            or not any(
+                all(getattr(previous, name) == value for name, value in fields.items())
+                for fields in records(action)
+            )
         ):
             raise KeyRebound("This request key is already bound.")
         return previous
     if item.version != version:
         raise StaleItem(item.pk)
     latest = latest_revision(item.pk)
-    stage = information_stage(item, latest).stage
-    if stage not in stages:
+    placement = information_stage(item, latest)
+    stage = placement.stage
+    if stage not in DECISIONS[action][1]:
         raise StaleItem(item.pk)
-    if stage is Stage.IGNORED and not new_note(note, latest):
-        # Reopening an ignored request needs a reason (review pipeline
-        # spec, "Reviewed stage"); the dialog asks for it first.
+    if (
+        action is Decide.BACK_TO_REVIEW
+        and undo_needs_note(Stream.ADDITIONAL_INFORMATION, stage)
+        and not new_note(note, latest)
+    ):
+        # Reopening an ignored request, or undoing Handled, needs a reason
+        # (review pipeline spec, "Reviewed stage", "Undoing a terminal
+        # stage"); the dialog asks for it first.
+        if stage is Stage.HANDLED:
+            raise UndoNeedsNote("Undoing a handled request needs a note.")
         raise ReopenNeedsNote("Reopening an ignored request needs a note.")
+    needed, completed, decision = recorded(action, placement)
     # A revision's notes are the request's Staff notes, which the export
     # and the search read from the latest revision: a decision's note
     # replaces them, and a decision with none keeps them as they were.
@@ -292,7 +373,8 @@ def _decide_one(item, actor_id, action, version, key, note):
         expected_version=version,
         follow_up_needed=needed,
         followed_up=completed,
-        confirm_clear=False,
+        # Only Handled's undo clears a completion, which it confirms.
+        confirm_clear=stage is Stage.HANDLED,
         notes=note if note.strip() else (latest.notes if latest else ""),
     )
     return _write(item, actor_id, key, intent, decision)

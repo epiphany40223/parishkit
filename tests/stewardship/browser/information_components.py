@@ -51,6 +51,8 @@ REOPENED = "/information-reopened"
 REOPENED_NOTICE = "The request from Family DUID 2001 sent back to review."
 HANDLED = "/information-handled"
 HANDLED_NOTICE = "The request from Family DUID 2000 marked handled."
+UNDONE = "/information-undone"
+UNDONE_NOTICE = "The request from Family DUID 2000 sent back to review."
 BULKED = "/information-bulked"
 BULK_NOTICE = "2 requests accepted."
 STALE = "/information-stale"
@@ -229,6 +231,8 @@ def components(context, admin):
         IGNORED: page(size, IGNORED_NOTICE, ignored={1}),
         REOPENED: page(size, REOPENED_NOTICE),
         HANDLED: page(size, HANDLED_NOTICE, handled={0}),
+        # Handled's undo (#1840): To handle again, still accepted.
+        UNDONE: page(size, UNDONE_NOTICE, accepted={0}),
         BULKED: page(size, BULK_NOTICE, accepted={0, 1}),
         STALE: page(size, STALE_NOTICE),
         # What Apply returns for Stage To handle, one request there.

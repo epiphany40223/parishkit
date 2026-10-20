@@ -236,7 +236,11 @@ def test_ministry_follow_up_and_roster_ticks_share_one_request():
 
 
 def test_additional_information_follow_up_reads_as_handled():
-    """Needed is Accepted (To handle), followed up is Handled, neither is To review."""
+    """Needed is Accepted (To handle), followed up is Handled, neither is To review.
+
+    Leaving Handled with the Accept kept is Handled's undo, Back to review
+    (#1840), as leaving it for To review is.
+    """
     item = {"entity_kind": None, "entity_key": None, "subject": None}
     rows = [
         row("information", "i", 1, "true", "false", **item),
@@ -249,7 +253,7 @@ def test_additional_information_follow_up_reads_as_handled():
     assert words(rows) == [
         "Accepted",
         "Handled",
-        "Handled cleared",
+        "Back to review",
         "Follow-up updated",
         "Back to review",
         "Handled",

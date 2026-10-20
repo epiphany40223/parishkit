@@ -477,6 +477,9 @@ FROZEN = {
     "0213_pledge_terminal_undo.sql": (
         "d053b4d59e1dddb4c39930320fb378f8e1d74f90488b621ef2057f987a52891b"
     ),
+    "0214_information_handled_undo.sql": (
+        "151a03f5d72dcdee07f84fe9affc368bb04c1dab9aedd1df6ce48f3979bb0922"
+    ),
 }
 
 

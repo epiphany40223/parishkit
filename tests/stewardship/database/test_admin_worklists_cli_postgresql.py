@@ -212,8 +212,17 @@ def test_information_counts_ids_and_decisions(live_response_service, google, cli
     assert code == 0, document
     assert document["result"]["decisions"][0]["followed_up"]
     assert (count(UPDATED), count(INFORMATION_EVENT)) == (4, 3)
+    # Back to review undoes Handled (#1840), only with a new note.
+    code, document = inform(run, "back_to_review", item)
+    assert code == 1 and document["error"]["code"] == "invalid", document
+    assert document["error"]["fields"][0]["field"] == "note"
     code, document = inform(run, "back_to_review", item, note="Undo")
-    assert code == 1 and document["error"]["code"] == "stale_version", document
+    assert code == 0, document
+    (undone,) = document["result"]["decisions"]
+    assert (undone["decision"], undone["follow_up_needed"]) == ("accepted", True)
+    assert not undone["followed_up"]
+    code, document = run("information", "list", "--stage", "to_handle")
+    assert code == 0 and document["result"]["requests"][0]["item_id"] == str(item.pk)
 
 
 def test_ignored_needs_a_note_and_bulk_is_all_or_none(

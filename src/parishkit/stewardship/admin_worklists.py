@@ -301,21 +301,20 @@ def _limitation_rows(actor, campaign_id):
 
 
 def _recorded(stream, action):
-    """What a row of ``action`` stores: the fields a repeat must match."""
+    """Every row ``action`` can store, as the fields a repeat must match.
+
+    Back to review stores what the stage it left gives (a Handled item's
+    undo keeps its decision, #1840), so a repeat matches any of them.
+    """
     from .pipeline import Action
 
     if stream is INFORMATION:
-        from .responses.information import DECISIONS
+        from .responses.information import records
 
-        needed, completed, decision = DECISIONS[Action(action)][0]
-        return {
-            "review_decision": decision,
-            "follow_up_needed": needed,
-            "followed_up": completed,
-        }
+        return records(Action(action))
     from .responses.limitation_review import DECISIONS
 
-    return {"decision": DECISIONS[Action(action)][0]}
+    return [{"decision": DECISIONS[Action(action)][0]}]
 
 
 def _model(stream):
@@ -357,10 +356,12 @@ def _repeat(stream, actor, campaign_id, request_key, keys, action):
     if (
         {item: row.request_key for item, row in found.items()} != keys
         or len(matched) != len(keys)
-        or any(
-            getattr(row, field) != value
+        or not all(
+            any(
+                all(getattr(row, field) == value for field, value in fields.items())
+                for fields in expected
+            )
             for row in found.values()
-            for field, value in expected.items()
         )
     ):
         raise InvalidFollowup(
@@ -436,18 +437,20 @@ def _service(stream, store, campaign_id):
 def _decide(stream, service, actor, decision, note):
     """Record ``decision`` through the page's service, as the command reports it.
 
-    Someone else's decision first is ``stale_version``; a reopening with no
-    new note is ``invalid`` at ``note``, as the page's dialog requires one;
+    Someone else's decision first is ``stale_version``; a reopening, or a
+    Handled item's undo, with no new note is ``invalid`` at ``note``, as the
+    page's dialog requires one;
     a key the service finds bound to another decision ``invalid`` at
     ``request_key``.
     """
     from .admin_followup import InvalidFollowup, problem
     from .responses.census_review import KeyRebound
-    from .responses.information import ReopenNeedsNote
+    from .responses.information import ReopenNeedsNote, UndoNeedsNote
     from .storage import StaleRecordError
     from .web.review_worklist import StaleDecision
 
     reopen = "This item is Ignored; give a new --note saying why it is reopened."
+    undo = "This item is Handled; give a new --note saying why it goes back."
     try:
         service.decide(actor, decision)
     except StaleDecision:
@@ -456,6 +459,8 @@ def _decide(stream, service, actor, decision, note):
         raise InvalidFollowup(
             [problem("request_key", "This request key was used for another decision.")]
         ) from None
+    except UndoNeedsNote:
+        raise InvalidFollowup([problem("note", undo)]) from None
     except ReopenNeedsNote:
         raise InvalidFollowup([problem("note", reopen)]) from None
     except ValueError:

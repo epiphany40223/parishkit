@@ -3486,8 +3486,9 @@ current is exit 1 (`stale_version`). The flags give the request its
 worklist stage: needed is To handle, completed is Handled, and setting both
 to no keeps a To review or Ignored request as it was, or sends a To handle
 or Handled one back to review; the command never ignores a request. An
-Ignored request leaves Ignored only with new `--notes` saying why (exit 1,
-`invalid`, naming `notes`, otherwise).
+Ignored request leaves Ignored only with new `--notes` saying why, and
+clearing a completed follow-up undoes Handled, which needs new `--notes`
+saying why too (exit 1, `invalid`, naming `notes`, otherwise).
 
 Each change takes `--request-key`; without one it makes a key and prints it
 to standard error. A repeat with the key records nothing twice; the key
