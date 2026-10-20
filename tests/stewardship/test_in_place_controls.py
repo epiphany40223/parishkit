@@ -877,9 +877,6 @@ def test_hosted_file_upload_is_in_place():
     assert "data-in-place-focus" in UploadForm().fields["file"].widget.attrs
 
 
-# Page-refresh controls the go-live redesign removes (#1586 slice 2): none
-# is left since #1585 slice 5, so any new one fails.
-GO_LIVE_REFRESH = {}
 # Wording of a control that re-reads the page's own state.
 REREAD_WORDING = re.compile(
     r"^(?:Refresh|Reload|Re-read|Check for updates|Check again|Check status|"
@@ -995,15 +992,15 @@ def test_no_manual_page_refresh_controls():
     """Admin pages update themselves (UX conventions, "Pages that update
     themselves", #1586): no template draws a visible link, button or input,
     and no Python code builds a label, with wording that re-reads the page's
-    own state ("Refresh…", "Check for updates", …), other than the go-live
-    pages slice 2 converts (#1585). The controls in NOT_PAGE_REFRESH are not
-    page refreshes. Every occurrence in a file counts."""
+    own state ("Refresh…", "Check for updates", …); the go-live pages'
+    were the last, removed by #1585. The controls in NOT_PAGE_REFRESH are
+    not page refreshes. Every occurrence in a file counts."""
     found = {}
     for path in sorted(TEMPLATES.rglob("*.html")):
         for label in control_labels(path.read_text()):
             if REREAD_WORDING.match(label) and label not in NOT_PAGE_REFRESH:
                 found.setdefault(path.name, set()).add(label)
-    assert found == GO_LIVE_REFRESH
+    assert found == {}
     built = {}
     for path in sorted(PACKAGE.rglob("*.py")):
         if "migrations" in path.parts or "tests" in path.parts:
@@ -1029,27 +1026,20 @@ def test_no_manual_page_refresh_controls():
 # Text telling the reader to reload the page by hand to see background work
 # progress (#1586 slice 3): a page that waits on work follows it instead.
 REFRESH_THIS_PAGE = re.compile(r"refresh\s+this\s+page", re.IGNORECASE)
-# Python modules of the go-live pages the go-live redesign converts (#1585).
-GO_LIVE_MODULES = {"activation_progress.py"}
 
 
 def test_no_refresh_this_page_instructions():
     """No page tells the reader to "refresh this page" to check on work in
     progress (UX conventions, "Pages that update themselves", #1586): no
-    template, Python message or script says it, other than the go-live
-    pages slice 2 converts (#1585)."""
+    template, Python message or script says it (the go-live pages' last
+    one went with #1585)."""
     scripts = sorted((TEMPLATES.parents[1] / "static/stewardship").glob("*.js"))
     modules = [
         path
         for path in sorted(PACKAGE.rglob("*.py"))
         if not {"migrations", "tests"} & set(path.parts)
-        and path.name not in GO_LIVE_MODULES
     ]
-    pages = [
-        path
-        for path in sorted(TEMPLATES.rglob("*.html"))
-        if path.name not in GO_LIVE_REFRESH
-    ]
+    pages = sorted(TEMPLATES.rglob("*.html"))
     found = {
         path.name
         for path in (*pages, *modules, *scripts)

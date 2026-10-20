@@ -93,8 +93,12 @@ SITES = {
     # Called by request_sample and by the scheduled email's test of an unsaved
     # edit (#446), which share the limits and the task.
     "accounts/campaign_mail.py::_queue": site("campaign_mail_test", WEB),
+    # Production activation's Retry, and pk-admin go-live retry (#1809),
+    # which runs as the web login.
     "accounts/confirmation_progress.py::retry": site(
-        "activation_catchup", WEB, {"accounts/confirmation_views.py"}
+        "activation_catchup",
+        WEB,
+        {"accounts/confirmation_views.py", "admin_go_live.py"},
     ),
     "accounts/setup_mail.py::request_sample": site(
         "setup_mail_test",
@@ -110,7 +114,7 @@ SITES = {
         "production_cleanup", WEB, {"accounts/go_live_progress.py"}
     ),
     "campaigns/production_storage.py::begin_transition": site(
-        # cleanup_requests.begin_cleanup, from the go-live cleanup page.
+        # cleanup_requests.begin_cleanup, from the Go live page's Start go-live.
         "production_cleanup",
         WEB,
         {"campaigns/cleanup_requests.py"},

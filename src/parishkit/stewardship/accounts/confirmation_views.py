@@ -201,16 +201,47 @@ def _review(request, service, campaign_id):
     cancellation it builds again. Mail that blocks the cancellation is a
     refusal that links the pages that resolve it.
     """
+    refused, values = review_cancel(request, service, campaign_id)
+    if refused is None:
+        return _answer(
+            request,
+            service,
+            {
+                "inventory": values["inventory"],
+                "review": values["review"],
+                "reason_max": REASON_MAX,
+            },
+        )
+    if refused == "opened":
+        return _check(request, service)
+    answer = {"refused": refused}
+    if "inventory" in values:
+        answer["inventory"] = values["inventory"]
+    return _answer(request, service, answer)
+
+
+def review_cancel(caller, service, campaign_id):
+    """The Cancel go-live dialog's Review, request-free: ``(refused, values)``.
+
+    Shared with ``pk-admin go-live cancel-preview`` (#1809). ``refused`` is
+    None for a full review, whose ``values`` hold the ``confirmation``, the
+    ``inventory`` shown and the signed ``review`` binding; "blocking" for
+    mail that blocks it (``values`` hold the ``confirmation`` and the
+    ``inventory``); "opened" for go-live this Administrator already
+    cancelled (Check opens); else ``_unavailable_refusal``'s key, with no
+    values.
+    """
     try:
         actor, confirmation, inventory = withdrawal_commands.review(
-            request, service, campaign_id
+            caller, service, campaign_id
         )
     except StaleRecordError:
-        return _unavailable(request, service, campaign_id, principal(request, service))
-    if inventory["blocking"]:
-        return _answer(
-            request, service, {"refused": "blocking", "inventory": inventory}
+        refused = _unavailable_refusal(
+            caller, service, campaign_id, principal(caller, service)
         )
+        return refused or "opened", {}
+    if inventory["blocking"]:
+        return "blocking", {"confirmation": confirmation, "inventory": inventory}
     review = signing.Signer(salt=SALT).sign_object(
         {
             "actor": str(actor.identity),
@@ -219,11 +250,11 @@ def _review(request, service, campaign_id):
             "key": str(uuid4()),
         }
     )
-    return _answer(
-        request,
-        service,
-        {"inventory": inventory, "review": review, "reason_max": REASON_MAX},
-    )
+    return None, {
+        "confirmation": confirmation,
+        "inventory": inventory,
+        "review": review,
+    }
 
 
 def _binding(token):
@@ -241,33 +272,59 @@ def _binding(token):
 
 
 def _apply(request, service, campaign_id):
-    """The dialog's Apply: cancel go-live from a cancellation built now.
+    """The dialog's Apply, through ``apply_cancel``: open Check, which says
+    when go-live was cancelled, or draw the refusal inside the dialog (a
+    missing reason is a 400, the rest 409s)."""
+    refusal = apply_cancel(
+        request,
+        service,
+        campaign_id,
+        review=request.POST.get("review", ""),
+        reason=request.POST.get("reason", ""),
+    )
+    if refusal is None:
+        return _check(request, service)
+    refused, inventory = refusal
+    values = {"refused": refused}
+    if inventory is not None:
+        values["inventory"] = inventory
+    return _answer(request, service, values)
 
-    In order: the binding must be this Administrator's (else a 403); a
-    resend of an Apply that already cancelled opens Check (its request key
-    made it happen once); the reason must be more than spaces and at most
-    2,000 characters (else a 400 inside the dialog); the cancellation is
-    built again under the work lock, with the Review's request key, and must
-    still be available, on the same confirmation and with the same counts
-    and nothing blocking. Only then is its signed intent minted, from that
-    build, and go-live cancelled by its owner, which re-checks everything
-    under the campaign lock and in SQL.
+
+def apply_cancel(caller, service, campaign_id, *, review, reason, record=None):
+    """Cancel go-live from a cancellation built now: the dialog's Apply.
+
+    Request-free, so the page and ``pk-admin go-live cancel`` share it
+    (#1809). In order: the binding ``review`` must be this Administrator's
+    (else ``PermissionError``, a 403); a resend of an Apply that already
+    cancelled cancels nothing more (its request key made it happen once);
+    the reason must be more than spaces and at most 2,000 characters; the
+    cancellation is built again under the work lock, with the Review's
+    request key, and must still be available, on the same confirmation and
+    with the same counts and nothing blocking. Only then is its signed
+    intent minted, from that build, and go-live cancelled by its owner,
+    which re-checks everything under the campaign lock and in SQL;
+    ``record`` is the owner's hook for the command line's own event, in its
+    transaction.
+
+    Returns None once go-live is cancelled (now, or already by this
+    Administrator), else ``(refused, inventory)``: the dialog's refusal key
+    and, for blocking mail, the counts that show it (else None).
     """
-    actor = principal(request, service)
-    binding = _binding(request.POST.get("review", ""))
+    actor = principal(caller, service)
+    binding = _binding(review)
     if binding["actor"] != str(actor.identity):
         raise PermissionError("This cancellation belongs to another sign-in.")
     key = UUID(binding["key"])
     if ProductionWithdrawal.objects.filter(
         request_key=key, actor_id=actor.identity
     ).exists():
-        return _check(request, service)
-    reason = request.POST.get("reason", "")
+        return None
     if not reason.strip() or len(reason) > REASON_MAX:
-        return _answer(request, service, {"refused": "no_reason"})
+        return "no_reason", None
     try:
         built, token = withdrawal_commands.preview(
-            request,
+            caller,
             service,
             campaign_id,
             reason=reason,
@@ -275,65 +332,69 @@ def _apply(request, service, campaign_id):
             key=key,
         )
     except StaleRecordError:
-        return _unavailable(request, service, campaign_id, actor)
+        return _unavailable(caller, service, campaign_id, actor)
     if token is None:
-        return _answer(
-            request, service, {"refused": "blocking", "inventory": built["inventory"]}
-        )
+        return "blocking", built["inventory"]
     if (
         built["confirmation"] != binding["confirmation"]
         or built["inventory"] != binding["inventory"]
     ):
-        return _answer(request, service, {"refused": "changed"})
+        return "changed", None
     try:
-        withdrawal_commands.withdraw(request, service, campaign_id, token=token)
+        withdrawal_commands.withdraw(
+            caller, service, campaign_id, token=token, record=record
+        )
     except StaleRecordError:
         # The campaign started, delivery was paused, or the work changed
         # under the campaign lock: say which (nothing was cancelled).
-        return _unavailable(request, service, campaign_id, actor)
+        return _unavailable(caller, service, campaign_id, actor)
     except PermissionError:
         # Two Applies of one Review raced past the resend check above: the
         # first cancelled, and the owner refuses the second's newer intent
         # under the same request key. That is this Administrator's own
-        # cancellation, so open Check; anything else is refused as raised.
+        # cancellation, so it stands; anything else is refused as raised.
         if ProductionWithdrawal.objects.filter(
             request_key=key, actor_id=actor.identity
         ).exists():
-            return _check(request, service)
+            return None
         raise
-    return _check(request, service)
+    return None
 
 
-def _unavailable(request, service, campaign_id, actor):
-    """Refuse a Review or Apply made while Cancel go-live is not available.
+def _unavailable(caller, service, campaign_id, actor):
+    """``_unavailable_refusal`` as ``apply_cancel``'s answer: None or a refusal."""
+    refused = _unavailable_refusal(caller, service, campaign_id, actor)
+    return None if refused is None else (refused, None)
+
+
+def _unavailable_refusal(caller, service, campaign_id, actor):
+    """Why Cancel go-live is not available for a Review or Apply, or None.
 
     Go-live this Administrator already cancelled (in another tab) is no
-    refusal: the answer opens Check, which the dialog follows. Otherwise
-    the refusal says why: another Administrator cancelled it, live delivery
-    is paused, or the campaign has started; a cancellation that is
-    available again (its owner found the work moved under its lock), or a
-    campaign that is a draft again some other way, is "changed". Read
-    through ``withdrawal_commands.page``, which still finds the
-    confirmation once the campaign is a draft again.
+    refusal (None): Check opens, which the dialog follows. Otherwise the
+    key says why: another Administrator cancelled it, live delivery is
+    paused, or the campaign has started; a cancellation that is available
+    again (its owner found the work moved under its lock), or a campaign
+    that is a draft again some other way, is "changed". Read through
+    ``withdrawal_commands.page``, which still finds the confirmation once
+    the campaign is a draft again.
     """
-    now = withdrawal_commands.page(request, service, campaign_id)
+    now = withdrawal_commands.page(caller, service, campaign_id)
     withdrawal = now["withdrawal"]
     if withdrawal is not None:
         if withdrawal.actor_id == actor.identity:
-            return _check(request, service)
-        refused = "cancelled"
-    elif now["available"]:
-        refused = "changed"
-    elif now["campaign"].delivery_paused:
-        refused = "paused"
-    elif now["campaign"].state != "draft":
+            return None
+        return "cancelled"
+    if now["available"]:
+        return "changed"
+    if now["campaign"].delivery_paused:
+        return "paused"
+    if now["campaign"].state != "draft":
         # Scheduled past its start, active or closed.
-        refused = "started"
-    else:
-        # A draft again without a withdrawal of this confirmation: the
-        # campaign moved on some other way since the page was drawn.
-        refused = "changed"
-    return _answer(request, service, {"refused": refused})
+        return "started"
+    # A draft again without a withdrawal of this confirmation: the campaign
+    # moved on some other way since the page was drawn.
+    return "changed"
 
 
 def _check(request, service):

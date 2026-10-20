@@ -238,6 +238,20 @@ def test_the_catalog_lists_every_command_with_its_flags():
     }
     # Past campaigns' archive import (#1018), listed with the reports.
     reports |= {"history list", "history preview", "history confirm", "history remove"}
+    # The Go live page's actions (PR 12, #1809).
+    go_live = {
+        "go-live preview",
+        "go-live start",
+        "go-live status",
+        "go-live retry",
+        "go-live refresh-again",
+        "go-live stop",
+        "go-live confirm-preview",
+        "go-live confirm",
+        "go-live cancel-preview",
+        "go-live cancel",
+        "go-live families",
+    }
     assert set(entries) == (
         session
         | reads
@@ -250,6 +264,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         | operations
         | reports
         | users
+        | go_live
     )
     for entry in entries.values():
         names = {option["name"] for option in entry["options"]}
@@ -272,6 +287,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
             if name in reports
             else 11
             if name in users
+            else 12
+            if name in go_live
             else 3
         )
         # Only the chosen-Family send, the code and financial exports and an
@@ -296,6 +313,9 @@ def test_the_catalog_lists_every_command_with_its_flags():
                 "integration key replace",
                 "integration backup-key confirm",
                 "send confirm",
+                "go-live start",
+                "go-live confirm",
+                "go-live cancel",
             }
         ), name
         # A prompting command, and only one, takes --yes. Other branches add
@@ -311,6 +331,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
                 "export limitations",
                 "export roster",
                 "followup export",
+                "go-live families",
             }
         ), name
         if name in acknowledged:
@@ -962,6 +983,13 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_followup_roster_entered",
         "admin_cmd_followup_roster_bulk",
         "admin_cmd_followup_information_update",
+        # The Go live page's actions (PR 12, #1809).
+        "admin_cmd_go_live_start",
+        "admin_cmd_go_live_retry",
+        "admin_cmd_go_live_refresh_again",
+        "admin_cmd_go_live_stop",
+        "admin_cmd_go_live_confirm",
+        "admin_cmd_go_live_cancel",
     ]
     for event in events:
         assert Action(event) and event in DESCRIPTIONS, event

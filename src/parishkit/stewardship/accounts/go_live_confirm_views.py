@@ -158,10 +158,28 @@ def _review(request, service, campaign_id):
     shown counts and a fresh request key, signed without a time: Apply
     compares it with the preview it builds again.
     """
-    actor = principal(request, service)
-    shown = go_live_confirm.read(request, service, campaign_id)
+    shown, refusal, review = review_confirm(request, service, campaign_id)
+    if refusal is not None:
+        refused, shown = refusal
+        return _answer(request, service, {"refused": refused, "shown": shown})
+    if review is None:
+        return _activation(request, service)
+    return _answer(request, service, {"shown": shown, "review": review})
+
+
+def review_confirm(caller, service, campaign_id):
+    """The dialog's Review, request-free: ``(shown, refusal, review)``.
+
+    Shared with ``pk-admin go-live confirm-preview`` (#1809). ``review``
+    is the signed binding Apply compares (None when not ready); ``refusal``
+    is ``_not_ready``'s for a step that is not ready (None when it is, and
+    for this Administrator's own confirmation, which opens Production
+    activation instead); ``shown`` is the step read now.
+    """
+    actor = principal(caller, service)
+    shown = go_live_confirm.read(caller, service, campaign_id)
     if shown.state != "ready":
-        return _not_ready(request, service, actor, shown)
+        return shown, _not_ready(shown), None
     readiness = shown.preview.readiness
     review = signing.Signer(salt=SALT).sign_object(
         {
@@ -174,7 +192,7 @@ def _review(request, service, campaign_id):
             "key": str(uuid4()),
         }
     )
-    return _answer(request, service, {"shown": shown, "review": review})
+    return shown, None, review
 
 
 def _binding(token):
@@ -196,100 +214,130 @@ def _binding(token):
 
 
 def _apply(request, service, campaign_id):
-    """The dialog's Apply: confirm Production from a preview re-checked now.
+    """The dialog's Apply, through ``apply_review``: open Production
+    activation, or draw the refusal inside the dialog."""
+    refusal = apply_review(
+        request,
+        service,
+        campaign_id,
+        review=request.POST.get("review", ""),
+        typed=request.POST.get("typed", ""),
+    )
+    if refusal is None:
+        return _activation(request, service)
+    refused, shown = refusal
+    values = {"refused": refused}
+    if shown is not None:
+        values["shown"] = shown
+    return _answer(request, service, values)
 
-    In order: the binding must be this Administrator's (else a 403); a
-    resend of an Apply that already confirmed opens Production activation
-    (its request key made it happen once); the typed word must be there
-    (else a 400 inside the dialog); the step must still be ready and on
-    the same links; the public web address check runs again; the preview
-    is built again, and its inputs digest, target and counts must match
-    the Review's. Only then is the
-    confirmation token minted, from that preview, and Production confirmed
-    by its owner, which re-checks everything under the final locks. A
-    confirmation or stop that won a race is said in the dialog.
+
+def apply_review(caller, service, campaign_id, *, review, typed, record=None):
+    """Confirm Production from a preview re-checked now: the dialog's Apply.
+
+    Request-free, so the page and ``pk-admin go-live confirm`` share it
+    (#1809). In order: the binding ``review`` must be this Administrator's
+    (else ``PermissionError``, a 403); a resend of an Apply that already
+    confirmed confirms nothing more (its request key made it happen once);
+    the typed word must be there; the step must still be ready and on the
+    same links; the public web address check runs again; the preview is
+    built again, and its inputs digest, target and counts must match the
+    Review's. Only then is the confirmation token minted, from that
+    preview, and Production confirmed by its owner, which re-checks
+    everything under the final locks; ``record`` is the owner's hook for
+    the command line's own event, in its transaction. A confirmation or
+    stop that won a race is said as such.
+
+    Returns None once Production is confirmed (now, or already by this
+    Administrator), else ``(refused, shown)``: the dialog's refusal key and,
+    for a step that is not ready, the step read then (else None).
     """
-    actor = principal(request, service)
-    binding = _binding(request.POST.get("review", ""))
+    actor = principal(caller, service)
+    binding = _binding(review)
     if binding["actor"] != str(actor.identity):
         raise PermissionError("This confirmation belongs to another sign-in.")
     key = UUID(binding["key"])
     if ProductionConfirmation.objects.filter(
         request_key=key, actor_id=actor.identity
     ).exists():
-        return _activation(request, service)
-    typed = request.POST.get("typed", "")
+        return None
     if typed.strip() != WORD:
-        return _answer(request, service, {"refused": "typed"})
-    shown = go_live_confirm.read(request, service, campaign_id, preview=False)
+        return "typed", None
+    shown = go_live_confirm.read(caller, service, campaign_id, preview=False)
     if shown.state != "ready":
-        return _not_ready(request, service, actor, shown)
+        return _not_ready(shown)
     row, prepared = shown.request, shown.prepare.prepared
     if (str(row.pk), str(prepared.pk)) != (binding["request"], binding["preparation"]):
-        return _answer(request, service, {"refused": "changed"})
+        return "changed", None
     try:
         preview, verified, token = confirmation_commands.verify_preview(
-            request, service, campaign_id, row.pk, prepared.pk, key=key
+            caller, service, campaign_id, row.pk, prepared.pk, key=key
         )
     except StaleRecordError:
-        return _settled(request, service, campaign_id, actor)
+        return _settled(caller, service, campaign_id)
     if not verified:
-        return _answer(request, service, {"refused": "origin_unverified"})
+        return "origin_unverified", None
     readiness = preview.readiness
     if "campaign_closed" in preview.problems:
-        return _answer(request, service, {"refused": "closed"})
+        return "closed", None
     if "go_live_hold_ended" in preview.problems:
-        return _answer(request, service, {"refused": "hold_ended"})
+        return "hold_ended", None
     if preview.problems:
-        return _answer(request, service, {"refused": "problems"})
+        return "problems", None
     if readiness.target_state != binding["target"]:
-        return _answer(request, service, {"refused": "target"})
+        return "target", None
     if readiness.digest != binding["digest"] or token is None:
-        return _answer(request, service, {"refused": "changed"})
+        return "changed", None
     # The counts shown depend on the preview's instant, not only on its
     # inputs: a send that fell due since the Review changes them under the
     # same digest, and the Administrator confirms only the counts shown.
     if confirmation_commands.preview_counts(preview) != binding["counts"]:
-        return _answer(request, service, {"refused": "due"})
+        return "due", None
     try:
         confirmation_commands.confirm(
-            request, service, campaign_id, row.pk, prepared.pk, token=token, typed=typed
+            caller,
+            service,
+            campaign_id,
+            row.pk,
+            prepared.pk,
+            token=token,
+            typed=typed,
+            record=record,
         )
     except (StaleRecordError, PermissionError, ObjectDoesNotExist):
         # Another Administrator's confirmation or stop won the final locks
         # (the request is no longer the open Testing draft's), or an input
         # moved under them: say which. Anything else is raised again.
-        return _settled(request, service, campaign_id, actor)
-    return _activation(request, service)
+        return _settled(caller, service, campaign_id)
+    return None
 
 
-def _settled(request, service, campaign_id, actor):
-    """Answer an Apply whose step moved while it ran, by what it is now.
+def _settled(caller, service, campaign_id):
+    """The refusal of an Apply whose step moved while it ran, or None.
 
-    A confirmation or a stop that won is said as such (or, for this
-    Administrator's own confirmation from another tab, opens Production
-    activation); a step still ready had an input move under the owner's
-    locks: "changed", to review again.
+    A confirmation or a stop that won is said as such (None for this
+    Administrator's own confirmation from another tab); a step still ready
+    had an input move under the owner's locks: "changed", to review again.
     """
-    shown = go_live_confirm.read(request, service, campaign_id, preview=False)
+    shown = go_live_confirm.read(caller, service, campaign_id, preview=False)
     if shown.state != "ready":
-        return _not_ready(request, service, actor, shown)
-    return _answer(request, service, {"refused": "changed"})
+        return _not_ready(shown)
+    return "changed", None
 
 
-def _not_ready(request, service, actor, shown):
-    """Refuse a Review or Apply made while the step is not ``ready``.
+def _not_ready(shown):
+    """The refusal of a Review or Apply made while the step is not ``ready``.
 
     Production this Administrator already confirmed (in another tab) is no
-    refusal: the answer opens Production activation, which the dialog
-    follows. Every other state is refused in its own words.
+    refusal (None): Production activation opens. Every other state is
+    refused in its own words, as ``(refused, shown)``.
     """
     if shown.state == "confirmed" and not shown.confirmed_by_other:
-        return _activation(request, service)
+        return None
     refused = shown.state
     if refused == "not_started":
         refused = "stopped"
-    return _answer(request, service, {"refused": refused, "shown": shown})
+    return refused, shown
 
 
 def _activation(request, service):
