@@ -26,6 +26,7 @@ from parishkit.stewardship import (
     admin_pledges,
     admin_roster_tick,
     admin_tests,
+    admin_worklists,
     mail_halt_clear,
     system_health,
 )
@@ -86,6 +87,10 @@ ADMITTING_READ = {
     "followup bulk": (admin_followup, "admit_followup", {}),
     # Roster changes to enter's admission: Administrators and Staff only.
     "followup roster-bulk": (admin_roster_tick, "admit_roster", {}),
+    # The worklist pages' own admission: Administrators and Staff only
+    # (#1735).
+    "information decide": (admin_worklists, "admit_decide", {}),
+    "limitations decide": (admin_worklists, "admit_decide", {}),
     # The worklist pages' own admission: Administrators and Staff only
     # (#1733).
     "pledges decide": (admin_pledges, "admit_decide", {}),
