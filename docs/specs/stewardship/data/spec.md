@@ -1953,15 +1953,13 @@ each check that the other has not happened.
 ## Effective-value merge
 
 The value displayed on a repeat Family visit is computed from the immutable
-Family-submitted value, never an Admin review edit, while the campaign's
-[Families see reviewed changes](../review-pipeline/spec.md#families-see-reviewed-changes-setting)
-setting is off (always, until
-[#1705](https://github.com/epiphany40223/parishkit/issues/1705) ships).
-With it on, a live form shows the
+Family-submitted value, never an Admin review edit, until the release
+with [#1705](https://github.com/epiphany40223/parishkit/issues/1705)'s last
+slice deploys. From then on a live form shows the
 [reviewed Family form](../review-pipeline/spec.md#reviewed-family-form)
-instead, and the census slice of #1705 rewrites these rules for it,
-including the form after the setting is switched off again, which shows
-the Family's last sent answers:
+instead ([Families see reviewed changes](../review-pipeline/spec.md#families-see-reviewed-changes)),
+and the census slice of #1705 rewrites these rules for it; a Testing form
+keeps these rules:
 
 1. Start with the current ParishSoft value.
 2. If there is no prior effective response change, use current.
