@@ -36,7 +36,7 @@ from parishkit.stewardship.source.snapshot_names import snapshot_family_names
 from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
 from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.exports import csv_cell
-from parishkit.stewardship.workflows.models import MinistryRequest
+from parishkit.stewardship.workflows.models import MinistryRequest, RefreshCheck
 from parishkit.stewardship.workflows.review import placement
 from parishkit.stewardship.workflows.roster import (
     can_tick,
@@ -154,12 +154,13 @@ def roster_rows(campaign_id, principal, show, ministry=""):
             roster_entered=row["roster_entered"],
             reviewed=bool(row.get("reviewed_ministry_duid")),
             added=bool(row.get("parish_added")),
+            confirmed=row["confirmed"],
         )
         row["stage"] = row["placement"].stage.value
     shown = [
         row
         for row in rows
-        if (show == "all" or not row["roster_entered"])
+        if (show == "all" or not (row["roster_entered"] or row["confirmed"]))
         and (not ministry or str(row["ministry_duid"]) == ministry)
     ]
     return shown, result
@@ -182,8 +183,21 @@ def _ticked(campaign_id, principal):
         every_member=True,
     )
     rows = [row for row in result["rows"] if eligible(row)]
+    # A request a refresh check Confirmed (#1689) is in ParishSoft already:
+    # it stays in the list, but nothing is left to enter.
+    versions = {str(row["id"]): row["version"] for row in rows}
+    confirmed = {
+        str(key)
+        for key, version in RefreshCheck.objects.filter(
+            request_id__in=[row["id"] for row in rows], outcome="confirmed"
+        ).values_list("request_id", "item_version")
+        # A check at another version is about an earlier decision.
+        if versions.get(str(key)) == version
+    }
     marks = roster_marks([row["id"] for row in rows])
-    return [mark(row, marks) for row in rows], result
+    return [
+        mark(row, marks) | {"confirmed": str(row["id"]) in confirmed} for row in rows
+    ], result
 
 
 def family_keys(rows):

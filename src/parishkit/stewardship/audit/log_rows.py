@@ -431,6 +431,7 @@ UNGROUPED_REASONS = {
         "admin_cmd_pledges_decide",
         "census_change_updated",
         "census_handling_corrected",
+        "refresh_checks_started",
         "chair_review_decided",
         "information_updated",
         "limitation_reviewed",

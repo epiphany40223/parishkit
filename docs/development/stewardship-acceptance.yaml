@@ -529,6 +529,7 @@ sections:
     "Family resubmission": [FAM-06, DAT-08]
     "Families see reviewed changes setting": [DOM-01, FAM-06]
     "Baseline refresh re-evaluation": [DAT-08]
+    "Refresh checks": [DAT-08]
     "What is confirmable": [DAT-08]
     "Pipeline vocabulary": [ADM-03]
     "Stream mapping": [DAT-06, DAT-07]

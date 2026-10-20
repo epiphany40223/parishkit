@@ -68,6 +68,7 @@ from .models import (
     MinistryRequest,
     MinistryRosterEntry,
     MinistryWorkflowRevision,
+    RefreshCheck,
 )
 
 # What Accept records for each kind of request, and what Ignore records.
@@ -108,18 +109,29 @@ def leads(principal, ministry_duid):
     return allows(principal, Capability.MINISTRY_FOLLOWUP, ministry_id=ministry_duid)
 
 
-def placement(*, state, outcome, source_resolved, roster_entered, reviewed, added):
+def placement(
+    *,
+    state,
+    outcome,
+    source_resolved,
+    roster_entered,
+    reviewed,
+    added,
+    confirmed=False,
+):
     """A request's stage, with the decision the pipeline words it by.
 
     ``pipeline.ministry_placement`` knows only the stored workflow; an
     accepted request with an Edit's Ministry is Accepted (edited), and one
     the parish added is Added by the parish (spec, "Reviewed stage").
+    ``confirmed`` is whether its latest refresh check Confirmed it (#1689).
     """
     found = ministry_placement(
         state="new" if state == "assigned" else state,
         outcome=outcome,
         source_resolved=source_resolved,
         roster_entered=roster_entered,
+        confirmed=confirmed,
     )
     if found.decision is Decision.ACCEPTED and added:
         return replace(found, decision=Decision.ADDED)
@@ -129,7 +141,13 @@ def placement(*, state, outcome, source_resolved, roster_entered, reviewed, adde
 
 
 def _locked_placement(target):
-    """The stage of a locked request, its roster tick read under the lock."""
+    """The stage of a locked request, its roster tick and checks read under the lock.
+
+    A request a refresh check Confirmed (#1689) offers nothing, so a
+    decision on it is refused as on any stage that does not offer it. Its
+    revision guard does not know the checks: Back to review on one would
+    reopen it, and the next refresh would resolve it as Confirmed again.
+    """
     latest = (
         MinistryRosterEntry.objects.filter(request_id=target.pk)
         .order_by("-sequence")
@@ -142,6 +160,9 @@ def _locked_placement(target):
         roster_entered=bool(latest and latest.entered),
         reviewed=target.reviewed_ministry_duid is not None,
         added=target.parish_added,
+        confirmed=RefreshCheck.objects.filter(
+            request_id=target.pk, item_version=target.version, outcome="confirmed"
+        ).exists(),
     )
 
 
@@ -704,10 +725,16 @@ def _replaced(response, member, value):
     return found
 
 
-def ministry_placement_of(row, marks):
-    """A follow-up selection row's placement, from its fields and roster tick."""
+def ministry_placement_of(row, marks, checks=None):
+    """A follow-up selection row's placement, from its fields, tick and checks.
+
+    ``checks`` are the rows' refresh check states (``responses.
+    refresh_checks.check_states``), when the caller read them.
+    """
     current = marks.get(str(row["id"]), {})
+    check = (checks or {}).get(str(row["id"]))
     return placement(
+        confirmed=bool(check and check.outcome == "confirmed"),
         state=row["state"],
         outcome=row["outcome"],
         source_resolved=bool(row["source_resolved"]),

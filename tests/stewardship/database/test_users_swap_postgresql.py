@@ -429,6 +429,9 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # (0114's) and 0104's setup credential audit come back older from closure
 # files, so ``CLOSURE_REPLACED_ONLY`` runs 0124's replacements of those;
 # the rest (baseline guards no closure file installs again) survive.
+# 0132 (#1689, provisional number) creates the refresh check and start
+# tables (in CLOSURE_TABLES) with their two guards and replaces nothing; all
+# go, so its file installs whole again.
 # 0125 (#1763) adds a request column (IF NOT EXISTS, so its file runs again)
 # and a definer check granted to web and three installers
 # (runtime_grants.CLOSURE_FUNCTIONS, so ``closure_functions_absent`` drops it
@@ -697,6 +700,13 @@ CLOSURE_CREATED = {
             "public.stewardship_leader_email_dispatch_write_v1(text,jsonb,jsonb)",
         ),
         ("stewardship_jobs", "0035_leader_emails"),
+    ),
+    **dict.fromkeys(
+        (
+            "public.stewardship_refresh_check_guard_v1()",
+            "public.stewardship_refresh_check_start_guard_v1()",
+        ),
+        ("stewardship_workflows", "0004_refresh_checks"),
     ),
     # 0126 (#1685, provisional number) creates the Limitations review table
     # (in CLOSURE_TABLES) with its guard, deferred audit check, answer and
@@ -1631,6 +1641,10 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
                 ),
                 ("pk_stewardship_worker", "INSERT"),
             ),
+            # Refresh checks (0132, #1689): the worker records them in
+            # promotion and reads the start row; web only reads both.
+            "stewardship_refresh_check": ("pk_stewardship_worker", "INSERT"),
+            "stewardship_refresh_check_start": ("pk_stewardship_worker", "SELECT"),
         }
         for table in CLOSURE_TABLES:
             login, privilege = writers.get(table, ("pk_stewardship_web", "INSERT"))

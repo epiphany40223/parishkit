@@ -31,6 +31,7 @@ from parishkit.stewardship.reports.census_worklist import (
 )
 from parishkit.stewardship.responses.census_additions import AddRefusal, parse_add
 from parishkit.stewardship.responses.comparison import ADDRESS_COMPONENTS
+from parishkit.stewardship.responses.refresh_checks import CheckState
 from parishkit.stewardship.web.tables import paginate
 
 from .test_census_changes import SUBMITTED, row
@@ -472,6 +473,47 @@ def test_downloads_list_an_addition_as_the_page_does():
     assert line[7:11] == ("", "555-0123", "By hand", "To enter by hand")
     assert line[12] == "staff@example.org" and line[14] == "Phoned in"
     assert result["rows"][0]["baseline"] == "555-0100"
+
+
+def test_refresh_checks_place_final_changes_and_flag_not_seen():
+    """A final change's latest refresh check (#1689): Entered incorrectly
+    shows ParishSoft's value and offers no action yet (#1737); Not seen in
+    ParishSoft is a chip and a Stage choice of its own; an Ignored change
+    ParishSoft now matches says so under its stage."""
+    entered = {
+        "handling": "manual",
+        "field": "suffix",
+        "decision": "approved",
+        "execution": "resolved_external",
+        "submitted_value": "Jr.",
+        "current_value": "Sr.",
+        "baseline_value": "Sr.",
+    }
+    wrong = CheckState("entered_incorrectly", {"available": True, "value": "III"})
+    rows = [
+        shaped(id="wrong", check=wrong, **entered),
+        shaped(id="unseen", check=CheckState("unchanged", None, 2, 2), **entered),
+        shaped(id="ignored", decision="ignored", current_value="555-0199"),
+    ]
+    worklist, html = page(rows, stage="all")
+    by_id = {row["id"]: row for row in worklist.rows}
+    assert by_id["wrong"]["stage_label"] == "Entered incorrectly"
+    # Only the decision in force is drawn (selected); nothing is offered.
+    assert all(icon["selected"] for icon in by_id["wrong"]["icons"])
+    assert by_id["wrong"]["shows_now"]
+    assert by_id["wrong"]["parishsoft_now"] == "III"
+    assert by_id["unseen"]["stage_label"] == "Entered by hand"
+    assert by_id["unseen"]["not_seen"] and "Not seen in ParishSoft" in html
+    assert (
+        "ParishSoft now matches the Family's answer."
+        in (by_id["ignored"]["decision_label"])
+    )
+    choices = dict(worklist.stage_choices)
+    assert choices["entered_incorrectly"] == "Entered incorrectly (1)"
+    assert choices["not_seen"] == "Not seen in ParishSoft (1)"
+    assert choices["all"] == "Every stage (3)"
+    worklist, _ = page(rows, stage="not_seen")
+    assert [row["id"] for row in worklist.rows] == ["unseen"]
 
 
 def test_link_pairs_carry_only_the_link_safe_choices():
