@@ -2279,8 +2279,8 @@ staff review and then enter in ParishSoft by hand. Like the page,
 Administrators and Staff may run it, from a session of any scope; a Ministry
 leader is refused (`denied`), and a campaign without Financial stewardship
 is exit 1 (`not_available`). `--stage` is the page's Stage filter:
-`to_review` (the default), `to_enter_by_hand`, `entered_by_hand`,
-`entered_incorrectly`, `confirmed`, `ignored` or `all`. It prints `stage`, `matching` (the pledges at that stage), `total`
+`to_review` (the default), `conflict`, `to_enter_by_hand`,
+`entered_by_hand`, `entered_incorrectly`, `confirmed`, `ignored` or `all`. It prints `stage`, `matching` (the pledges at that stage), `total`
 and `stages` (every pledge by stage, zeros included). Each row names a
 Family and its pledge, so the rows stay on the page and in `export pledges`.
 It records the page's "viewed" event with a count of 0.
@@ -3928,3 +3928,6 @@ Each change is recorded in System logs as on the page
   `confirmed`, and `report pledges` counts them in `stages`; the
   JSON Lines of `export pledges` gain `parishsoft_annual_pledge`, the
   files' new ParishSoft annual pledge column.
+- `pk-admin/1` (#1747): additive. `report pledges` and `export pledges`
+  take the Pledges page's `conflict` stage, and `report pledges` counts
+  it in `stages`.
