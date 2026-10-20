@@ -164,7 +164,8 @@ def validate_address(payload):
     if result["country"] == "US":
         result["region"] = result["region"].upper()
         if result["region"] not in us_regions():
-            errors["region"] = "Enter a valid US state or territory abbreviation."
+            # The Family form's State drop-down says the same (#1785).
+            errors["region"] = "Choose a state from the list."
         if re.fullmatch(r"[0-9]{5}(?:-[0-9]{4})?", result["postal_code"]) is None:
             errors["postal_code"] = "Enter a five-digit ZIP code or ZIP+4."
     if errors:

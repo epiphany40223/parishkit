@@ -260,3 +260,11 @@ def test_household_shapes_and_source_owner_are_closed():
         validate_household(household(), {})
     with pytest.raises(TypeError):
         validate_household(household(), sources(email_opt_out=False))
+
+
+def test_a_us_region_refusal_says_what_the_state_drop_down_says():
+    """The server's US region refusal reads as the Family form's and the
+    Admin editor's State drop-down check does (#1785)."""
+    with pytest.raises(InvalidHousehold) as denied:
+        validate_address(address(region="Ontario"))
+    assert denied.value.fields["region"] == "Choose a state from the list."
