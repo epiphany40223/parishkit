@@ -12,7 +12,7 @@ Two writers share one revision history (``AdditionalInformationRevision``):
 Every revision states its review decision; the stage is derived from it and
 the flags (``information_stage``), never stored. SQL checks the same
 authority, version and pairing again (schema/information_followup.sql and
-migration 0134).
+migration 0126).
 """
 
 from uuid import UUID
@@ -82,7 +82,7 @@ def staff_ignored(latest):
     """Whether a request's latest revision leaves it Ignored.
 
     ``latest`` is that revision (None when no Staff member has saved the
-    request). A revision since migration 0134 says so itself; an older one
+    request). A revision since migration 0126 says so itself; an older one
     has no decision, and one that left follow-up not needed is a Staff
     choice of Ignore (review pipeline spec, "Existing state to stage").
     The caller only asks while the request is neither needed nor completed.

@@ -51,7 +51,10 @@ class SecretReplacementRequest(MutableRecord):
 
     Request UUID and payload reference are never reused, including after cleanup.
     Actor and sign-in fields are evidence supplied by authenticated admission,
-    not proof of current authorization. Installer and consumer database identities
+    not proof of current authorization. ``automation_session_id`` names the
+    automation session a command-line request was made through (NULL for a
+    browser request): the SQL intake and staged-to-testing guards require
+    that session live (#1763). Installer and consumer database identities
     separately own each transition and its append-only checkpoint.
     """
 
@@ -63,6 +66,7 @@ class SecretReplacementRequest(MutableRecord):
         "expires_at",
         "expected_fingerprint",
         "required_consumers",
+        "automation_session_id",
     )
     write_once_fields = (
         "resulting_fingerprint",
@@ -82,6 +86,9 @@ class SecretReplacementRequest(MutableRecord):
     resulting_fingerprint = models.CharField(max_length=64, null=True, blank=True)
     installed_at = UTCDateTimeField(null=True, blank=True)
     acknowledged_at = UTCDateTimeField(null=True, blank=True)
+    # A soft reference, like requested_by_id: automation sessions are kept
+    # for attribution and never deleted.
+    automation_session_id = models.UUIDField(null=True, blank=True)
 
     class Meta(MutableRecord.Meta):
         db_table = "stewardship_secret_request"

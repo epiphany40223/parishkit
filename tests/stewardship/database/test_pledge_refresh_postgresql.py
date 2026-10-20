@@ -1,7 +1,7 @@
 """The refresh re-evaluation of hand-entered pledges (#1704).
 
-Frozen migration 0139 (provisional number,
-``schema/migrations/0139_pledge_refresh_checks.sql``) adds the pledge refresh
+Frozen migration 0134 (provisional number,
+``schema/migrations/0134_pledge_refresh_checks.sql``) adds the pledge refresh
 checks, the upcoming-year pledge selection and the mark's amount. These tests
 promote real refreshes of synthetic giving (the campaign's upcoming period is
 2055 on fund 9) and read the real page rows: an accepted pledge is Confirmed
@@ -122,7 +122,7 @@ def checks():
 
 
 def row(harness, submission):
-    """The Pledges row of ``submission``, read as web."""
+    """The Pledges to enter row of ``submission``, read as web."""
     from parishkit.stewardship.accounts.policy import current_principal
 
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
@@ -453,8 +453,8 @@ def test_the_migration_check_refuses_the_old_pledge_review_guard(response_servic
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[3] / "src/parishkit/stewardship/schema"
-    old = (root / "migrations/0135_pledge_review.sql").read_text(encoding="utf-8")
-    new = (root / "migrations/0139_pledge_refresh_checks.sql").read_text(
+    old = (root / "migrations/0127_pledge_review.sql").read_text(encoding="utf-8")
+    new = (root / "migrations/0134_pledge_refresh_checks.sql").read_text(
         encoding="utf-8"
     )
 

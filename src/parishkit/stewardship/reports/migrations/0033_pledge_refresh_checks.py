@@ -1,22 +1,23 @@
 """Forward migration: the refresh re-evaluation of hand-entered pledges (#1704).
 
-Its SQL is the frozen file ``schema/migrations/0139_pledge_refresh_checks.sql``
-(prefix 0139 in the repository-wide file sequence, provisional until the
+Its SQL is the frozen file ``schema/migrations/0134_pledge_refresh_checks.sql``
+(prefix 0134 in the repository-wide file sequence, provisional until the
 coordinator assigns it at merge), read whole and never parsed. It creates
 ``stewardship_pledge_refresh_check`` (one immutable row per refresh and
 decided pledge, which only the promoting source worker writes, with the
 snapshot's own amount), the upcoming-year pledge selection its guard and the
-pledge review guard share, and the guard; and it replaces 0135's pledge
+pledge review guard share, and the guard; and it replaces 0127's pledge
 review guard in place so an Entered by hand mark may record ParishSoft's
 amount. It ends with a DO block that refuses to commit unless all of it is
 installed. The state operation records the table in Django's model state,
 so ``makemigrations --check`` stays clean. Reversing needs its own forward
 migration, so, like the baseline, it has no reverse operation.
 
-It depends on the reports app's previous migration (0135's, whose rows the
-checks name and whose guard it replaces) and on the migration that installs
-the previous frozen file (0136, in the workflows app, whose Not seen start
-the checks share), so the files apply in prefix order. That keeps it in the
+It depends on the reports app's previous migration (0127's, whose rows the
+checks name and whose guard it replaces), on the refresh checks' migration
+(0132, in the workflows app, whose Not seen start the checks share) and on
+the migration that installs the previous frozen file (0133, in the responses
+app), so the files apply in prefix order. That keeps it in the
 users swap's closure: its table is registered in
 ``runtime_grants.CLOSURE_TABLES``.
 """
@@ -35,7 +36,7 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0139_pledge_refresh_checks.sql"
+    / "0134_pledge_refresh_checks.sql"
 )
 
 
@@ -43,6 +44,7 @@ class Migration(migrations.Migration):
     dependencies = [
         ("stewardship_reports", "0032_pledge_review"),
         ("stewardship_workflows", "0004_refresh_checks"),
+        ("stewardship_responses", "0017_entered_incorrectly_fixes"),
     ]
 
     operations = [

@@ -1,7 +1,7 @@
 """Forward migration: the baseline refresh re-evaluation's refresh checks (#1689).
 
-Its SQL is the frozen file ``schema/migrations/0136_refresh_checks.sql``
-(number 0136, provisional until it is assigned in merge order), read whole
+Its SQL is the frozen file ``schema/migrations/0132_refresh_checks.sql``
+(number 0132, provisional until it is assigned in merge order), read whole
 and never parsed. It creates ``stewardship_refresh_check`` (one immutable
 row per refresh and final census change or decided Ministry request, which
 only the promoting source worker writes, with the snapshot's own evidence)
@@ -27,21 +27,18 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0136_refresh_checks.sql"
+    / "0132_refresh_checks.sql"
 )
 
 
 class Migration(migrations.Migration):
     dependencies = [
-        # The migration that installs the previous frozen file (0132, the
+        # The migration that installs the previous frozen file (0131, the
         # Ministry review pipeline), so the files apply in prefix order, and
-        # the census one (0131), whose changes the checks name. Both follow
+        # the census one (0128), whose changes the checks name. Both follow
         # the users swap, so its tables are in runtime_grants.CLOSURE_TABLES.
         ("stewardship_workflows", "0003_ministry_review_pipeline"),
-        ("stewardship_responses", "0013_census_pipeline_review"),
-        # The pledge review's frozen file (0135) comes before this one
-        # (0136) wherever both branches meet.
-        ("stewardship_reports", "0032_pledge_review"),
+        ("stewardship_responses", "0014_census_pipeline_review"),
     ]
 
     operations = [

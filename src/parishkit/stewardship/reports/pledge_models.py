@@ -4,7 +4,7 @@ Pledges (``reports.pledge_review``) is the financial stream's review
 worklist. Each Accept, Edit, Ignore, Back to review and Entered by hand on a
 Family's pledge is one ``PledgeReview`` row, and the Family's item is its
 current pledge answer with its latest row: no stage is stored (review
-pipeline spec, "Financial stream"). Frozen migration 0135 (provisional
+pipeline spec, "Financial stream"). Frozen migration 0127 (provisional
 number) creates the table with its guard, which admits INSERT only, from a
 current Administrator or Staff member, for the Family's current live
 response, at the item's next ``sequence``, in a decision its derived stage
@@ -193,7 +193,7 @@ class PledgeRefreshCheck(ImmutableRecord):
     counts only while its row is still the item's latest and in force. Only
     the source worker writes one, inside the promotion of ``snapshot_id``;
     SQL checks the item, the amount and the outcome and keeps the rows
-    immutable (schema/migrations/0139_pledge_refresh_checks.sql).
+    immutable (schema/migrations/0134_pledge_refresh_checks.sql).
     """
 
     snapshot_id = models.UUIDField()

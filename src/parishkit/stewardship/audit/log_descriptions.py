@@ -271,7 +271,21 @@ DESCRIPTIONS = {
     ),
     "admin_cmd_followup_roster_bulk": _(
         "An automation session marked several Ministry requests Entered in "
-        "ParishSoft, as Roster changes to enter's bulk mark does."
+        "ParishSoft, as Ministry requests' bulk Entered by hand does."
+    ),
+    "admin_cmd_information_decide": _(
+        "An automation session accepted, ignored, reopened or handled "
+        "Additional information requests, as the actions on Additional "
+        "information do."
+    ),
+    "admin_cmd_limitations_decide": _(
+        "An automation session accepted, ignored, reopened or handled "
+        "Limitations answers, as the actions on Limitations do."
+    ),
+    "admin_cmd_pledges_decide": _(
+        "An automation session accepted, edited, ignored or reopened pledges, "
+        "or marked them entered in ParishSoft, as the actions on Pledges to "
+        "enter do."
     ),
     "admin_cmd_followup_information_update": _(
         "An automation session recorded follow-up on an Additional "

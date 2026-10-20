@@ -1347,6 +1347,8 @@ def test_users_read_through_the_actor_and_domain_rules_grant_nothing(
         assert summary["authorization_scope"]["operational"] is (principal is not head)
         assert [row["duid"] for row in summary["summaries"]] == duids
         assert sorted(row["ministry_duid"] for row in queue["rows"]) == duids
+        # Staff's To enter by hand count (R39) is Home's, not the menu's.
+        counts.pop(admin_context.ENTRY_COUNT, None)
         assert queue["total"] == total and counts == {"ministry_report": total}
         if principal is head:
             assert [(m["duid"], m["join"]) for m in mine["ministries"]] == [(9, 1)]

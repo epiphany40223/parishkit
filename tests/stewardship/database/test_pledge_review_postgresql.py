@@ -1,7 +1,7 @@
 """Pledges under the real web role (#1686).
 
-Frozen migration 0135 (provisional number,
-``schema/migrations/0135_pledge_review.sql``) adds the financial stream's
+Frozen migration 0127 (provisional number,
+``schema/migrations/0127_pledge_review.sql``) adds the financial stream's
 review history, the item selection the page and the guard share, and the
 guard. These tests run the decision service, the page, its download and the
 SQL guard as installed: the stages a decision and a Family's resubmission
@@ -53,7 +53,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 FROZEN = (
     Path(__file__).resolve().parents[3]
-    / "src/parishkit/stewardship/schema/migrations/0135_pledge_review.sql"
+    / "src/parishkit/stewardship/schema/migrations/0127_pledge_review.sql"
 )
 ROUTE = "admin:pledges_to_enter"
 

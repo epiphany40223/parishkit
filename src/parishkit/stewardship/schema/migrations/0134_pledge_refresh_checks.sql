@@ -1,4 +1,4 @@
--- Frozen forward migration file 0139 (the repository-wide file sequence;
+-- Frozen forward migration file 0134 (the repository-wide file sequence;
 -- provisional, the coordinator assigns the final number at merge): the
 -- refresh re-evaluation of hand-entered pledges (#1704, review pipeline).
 -- This file is installed by its Django migration in the reports app and must
@@ -9,8 +9,8 @@
 -- "Financial stream", Pledge confirmation) re-evaluates each decided pledge
 -- at every promoted refresh against ParishSoft's pledge for the upcoming
 -- stewardship year, which the snapshot already holds. A pledge's stage is
--- derived from its decision rows (0135), so a refresh records what it found
--- in a row of its own, as 0136 does for census changes and Ministry
+-- derived from its decision rows (0127), so a refresh records what it found
+-- in a row of its own, as 0132 does for census changes and Ministry
 -- requests. Additive, as the spec's "Data integrity" requires during the
 -- campaign:
 --   * stewardship_pledge_upcoming_v1 (new): one Family's ParishSoft pledge
@@ -22,7 +22,7 @@
 --     check or a mark.
 --   * stewardship_pledge_refresh_items_v1 (new, SECURITY DEFINER, granted to
 --     the source worker alone): the decided pledges in force of a campaign
---     (or the one a decision row names), through 0135's shared selection,
+--     (or the one a decision row names), through 0127's shared selection,
 --     with each one's decision, mark, carried-forward amount and the amount
 --     recorded at its mark ($0.00 when it recorded none). The worker reads
 --     no response answers or decision rows itself.
@@ -31,16 +31,16 @@
 --     outcome (confirmed, unchanged, entered incorrectly, or ParishSoft now
 --     matching an ignored pledge), ParishSoft's amount and whether the
 --     refresh was full. Its guard admits an INSERT only inside the promotion
---     of the current snapshot (the owner check 0136 uses; only the source
+--     of the current snapshot (the owner check 0132 uses; only the source
 --     worker's login is granted INSERT), for a decided pledge whose decision
 --     row is the latest and in force, with no confirmed check yet, at that
 --     row's sequence, with the snapshot's own amount and an outcome that
 --     agrees with it. It stamps the time. Rows are retained with their
 --     items: no path deletes one.
---   * stewardship_pledge_review_guard_v1 (0135's, replaced in place): an
+--   * stewardship_pledge_review_guard_v1 (0127's, replaced in place): an
 --     Entered by hand mark may now record ParishSoft's upcoming-year amount
 --     (marked_pledge_known), which must be the current snapshot's own;
---     every other rule is 0135's, unchanged.
+--     every other rule is 0127's, unchanged.
 -- The file ends with a DO block that refuses to commit unless all of this
 -- is installed. Reversing needs its own forward migration.
 SET LOCAL check_function_bodies = false;
@@ -79,7 +79,7 @@ $$;
 
 -- The decided pledges a refresh re-evaluates: a decision row that is the
 -- item's latest and in force, at To enter by hand, Entered by hand or
--- Ignored (0135's selection), each with C, the Edit's annual pledge else
+-- Ignored (0127's selection), each with C, the Edit's annual pledge else
 -- the Family's answer decided on, and the amount recorded at its mark, or
 -- $0.00 (A) when it recorded none. ``review_uuid`` limits it to the item
 -- that row belongs to, whose campaign it finds when ``campaign_uuid`` is
@@ -124,7 +124,7 @@ BEGIN
     IF TG_OP<>'INSERT' THEN
         RAISE EXCEPTION 'Pledge refresh checks are immutable' USING ERRCODE='23514';
     END IF;
-    -- Inside the promotion of the current snapshot, as 0136's checks are:
+    -- Inside the promotion of the current snapshot, as 0132's checks are:
     -- the lease's phase says whether the refresh is full. Only the source
     -- worker's login holds INSERT.
     SELECT lease.phase INTO phase FROM stewardship_source_current current_source
@@ -141,7 +141,7 @@ BEGIN
         WHERE k.review_id=NEW.review_id AND k.outcome='confirmed')
     THEN RAISE EXCEPTION 'A confirmed pledge is not checked again' USING ERRCODE='23514'; END IF;
     -- A decided pledge whose decision row is the item's latest and in force
-    -- (the definer selection above, over 0135's), at that row's sequence.
+    -- (the definer selection above, over 0127's), at that row's sequence.
     SELECT * INTO item FROM stewardship_pledge_refresh_items_v1(NULL,NEW.review_id);
     IF item.review_id IS NULL OR NEW.item_version IS DISTINCT FROM item.sequence
     THEN RAISE EXCEPTION 'A pledge refresh check requires a decided pledge in force'
@@ -174,7 +174,7 @@ CREATE TRIGGER stewardship_pledge_refresh_check_guard
     BEFORE INSERT OR UPDATE OR DELETE ON public.stewardship_pledge_refresh_check
     FOR EACH ROW EXECUTE FUNCTION public.stewardship_pledge_refresh_check_guard_v1();
 
--- 0135's pledge review guard, unchanged but for the mark: Entered by hand
+-- 0127's pledge review guard, unchanged but for the mark: Entered by hand
 -- may record ParishSoft's upcoming-year amount, which must be the current
 -- snapshot's own (#1704); any other row still records none.
 CREATE OR REPLACE FUNCTION public.stewardship_pledge_review_guard_v1() RETURNS trigger
@@ -288,7 +288,7 @@ BEGIN
     THEN
         RAISE EXCEPTION 'The decided pledge selection is not installed as declared';
     END IF;
-    -- The replaced pledge review guard: 0135's rules, and the mark's amount
+    -- The replaced pledge review guard: 0127's rules, and the mark's amount
     -- checked against the current snapshot.
     IF NOT EXISTS(SELECT 1 FROM pg_trigger t
             WHERE t.tgrelid='public.stewardship_pledge_review'::regclass
