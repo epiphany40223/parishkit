@@ -255,9 +255,12 @@ migration):
 - `ReportEmailRecipient` (`stewardship_report_email_recipient`): one per distinct
   address of the cohort: the address, how it was chosen (`user`, `group` or
   `outside`, with the user or group), its outbox message, and its
-  disposition (`queued`, with its message, or `revoked`, when the recipient
-  failed the [recheck](#resolving-recipients) before a message was made),
-  unique per snapshot and address.
+  disposition (`queued`, with its message; `revoked`, when the recipient
+  failed the [recheck](#resolving-recipients) before a message was made; or
+  `covered`, with no message and the earlier accepted messages that already
+  covered every slot of the send, see
+  [already-accepted recipients](#catch-up-recovery-and-holds)), unique per
+  snapshot and address.
 
 A manual send's request is a `ReportEmailManualRequest`
 (`stewardship_report_email_manual_request`) row keyed by its request id, so a replay returns the same send. All four tables are campaign
@@ -297,7 +300,10 @@ proves, so a retry resumes where the last attempt stopped:
    something to report** is on completes here with nothing to send, unless
    it is a Send now, which always sends.
 5. **`fanout`**: each cohort address is rechecked and gets its own outbox
-   message (purpose `admin_report`), or a `revoked` recipient row.
+   message (purpose `admin_report`), a `revoked` recipient row, or a
+   `covered` one when earlier accepted messages already covered the send's
+   slots for that address (see
+   [already-accepted recipients](#catch-up-recovery-and-holds)).
 6. **`complete`**: the occurrence succeeds once every recipient is settled,
    with the fulfillment `delivered` (reason `report_email_complete`) or
    `empty` (`report_email_no_current_recipients`, or
@@ -452,15 +458,10 @@ Pause and resume mail
 ([live delivery pause](../admin-portal/spec.md#live-delivery-pause)) is
 separate and unchanged: it holds every report send of the campaign, and
 resume's recovery plan coalesces held report sends as it coalesces held
-digests today. One difference: a digest's recovery skipped a recipient
-whose message for the same days had already been accepted, from the
-per-recipient coverage the digests kept; a report send keeps no such
-coverage, so its recovery send goes to its whole cohort again, and a
-recipient whose held send was accepted before a second pause gets the
-report twice. The case needs two pauses around one delivery and is
-accepted for now
-([#1835](https://github.com/epiphany40223/parishkit/issues/1835) tracks
-recipient coverage for report sends).
+digests today. A recipient whose message for those slots the provider
+already accepted is not sent the recovery send
+([already-accepted recipients](#catch-up-recovery-and-holds)), so two
+pauses around one delivery never send it twice.
 
 ### Sends after the campaign ends
 
@@ -502,6 +503,40 @@ Report sends use the shared machinery unchanged:
   A recovery send of a report whose `as_of` is when the email is made
   reports as of its own capture instant. Either is labeled "recovery" in its
   subject.
+- **Already-accepted recipients** (#1835). A send never goes again to an
+  address that already has every one of its slots. When a scheduled or
+  recovery send fans out, each address that passes the recheck is
+  compared with the earlier sends of the same report (same campaign, mode
+  and Testing epoch) to that address whose covered slots overlap its own:
+  - when messages the provider accepted (`delivered`) together cover every
+    slot of the send, the address is `covered`: it gets no new message and
+    its row names those messages;
+  - otherwise, when one of those earlier messages may still be, or have
+    been, accepted, the send waits and retries until it settles, since
+    sending could duplicate an accepted message and skipping could drop
+    one that was never accepted. That is a message `submitting` or
+    `delivery_unknown` (for example after a crash between the
+    provider's acceptance and its record); one that was ever
+    `delivery_unknown` and has not since been delivered or finally
+    refused; or one `pending`, `retry_wait` or `permanent_failure` whose
+    own send's occurrence may still run (anything but succeeded, skipped
+    or coalesced), because mail dispatch submits or retries a report
+    message only while its occurrence is open;
+  - otherwise (no earlier message, or only ones that can never be sent:
+    cancelled, or unsent or refused in a send that has ended) the address
+    gets its own message.
+
+  A waiting send is never failed for waiting: its task retries with the
+  usual backoff (at most every ten minutes) for as long as it takes, and
+  the report's later sends wait behind it. The earlier message's unknown
+  outcome is what the Administrator resolves; mail dispatch logs it.
+
+  A Send now covers no slot, so it always sends to every recipient and
+  never covers a later send. A covered address counts as delivered when
+  the send completes. The database's recipient guard checks each
+  `covered` and `queued` row against the same comparison
+  (`stewardship_report_email_prior_v1`), so every doubt holds the send
+  rather than risk a second copy.
 - **Holds.** Configuration activation holds, restore holds and their
   release, the live delivery pause and the campaign work gates hold report
   sends as they hold digests today. A send covered by an unreviewed or
@@ -571,8 +606,10 @@ Administrator recheck does
 A recipient who fails the recheck has their unsent message safely cancelled
 with `recipient_revoked`, retained as an audited withdrawal of that
 obligation, never as delivery, with today's completion, settlement, retry
-and reopening rules unchanged. When no recipient was accepted the occurrence
-records `report_email_no_current_recipients` and an `empty` fulfillment.
+and reopening rules unchanged. When no recipient was accepted (a
+[covered](#catch-up-recovery-and-holds) recipient counts as accepted) the
+occurrence records `report_email_no_current_recipients` and an `empty`
+fulfillment.
 
 ### Testing redirect
 

@@ -172,7 +172,10 @@ class ReportEmailRecipient(ImmutableRecord):
     ``kind`` is ``user``, ``group`` or ``outside``; ``ref`` the user's record
     id or the group's name (None for an outside address). A ``queued``
     recipient has its own outbox message; a ``revoked`` one failed the
-    recheck before its message was made and never gets one.
+    recheck before its message was made and never gets one; a ``covered``
+    one gets none because earlier messages the provider accepted already
+    covered every slot of the send (#1835). ``covered_messages`` names those
+    accepted messages, and is empty for the other two.
     """
 
     snapshot = models.ForeignKey(ReportEmailSnapshot, on_delete=models.PROTECT)
@@ -183,6 +186,7 @@ class ReportEmailRecipient(ImmutableRecord):
     outbox = models.OneToOneField(
         "stewardship_jobs.OutboxMessage", on_delete=models.PROTECT, null=True
     )
+    covered_messages = models.JSONField(default=list)
 
     class Meta:
         db_table = "stewardship_report_email_recipient"
@@ -195,8 +199,16 @@ class ReportEmailRecipient(ImmutableRecord):
                 name="report_email_recipient_kind",
             ),
             models.CheckConstraint(
-                condition=models.Q(disposition="queued", outbox__isnull=False)
-                | models.Q(disposition="revoked", outbox__isnull=True),
-                name="report_email_recipient_disposition",
+                condition=models.Q(
+                    disposition="queued", outbox__isnull=False, covered_messages=[]
+                )
+                | models.Q(
+                    disposition="revoked", outbox__isnull=True, covered_messages=[]
+                )
+                | (
+                    models.Q(disposition="covered", outbox__isnull=True)
+                    & ~models.Q(covered_messages=[])
+                ),
+                name="report_email_recipient_coverage",
             ),
         ]

@@ -3,13 +3,18 @@
 The report pipeline's ``fanout`` phase (report-emails spec, "Report
 pipeline", "Resolving recipients", "Testing redirect"): each cohort address
 is rechecked and gets its own outbox message with the snapshot's email, or
-a ``revoked`` recipient row when it is no longer a recipient. Each
-recipient row and its message commit together, a page at a time; a
+a ``revoked`` recipient row when it is no longer a recipient, or a
+``covered`` one when messages the provider already accepted cover every
+slot of the send for that address ("Catch-up, recovery and holds", #1835).
+Each recipient row and its message commit together, a page at a time; a
 replayed page skips addresses it has already handled. Mail dispatch sends
 nothing until the whole cohort is handled.
 """
 
+import json
 from uuid import uuid4
+
+from django.db import connection
 
 from parishkit.stewardship.accounts.configuration_models import AppliedIntegration
 from parishkit.stewardship.accounts.policy_schema import normalized_email
@@ -34,6 +39,32 @@ from .report_email_ownership import (
 
 LIMIT = 25
 PURPOSE = "admin_report"
+
+
+class CoverageUncertain(Exception):
+    """An earlier message to a cohort address may still be, or have been, accepted.
+
+    Sending could duplicate a message the provider accepted, and skipping
+    could drop one it never did, so the page is rolled back and the task
+    retries once that message has settled.
+    """
+
+
+def prior_coverage(snapshot_id, address):
+    """The database's comparison of one address with the report's earlier sends.
+
+    ``stewardship_report_email_prior_v1`` (frozen file 0250) answers
+    ``{"state": "covered", "messages": [...]}``, ``{"state": "uncertain"}``
+    or ``{"state": "none"}``; the recipient guard admits a row only when it
+    agrees with the same answer, so the worker never decides on its own.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT stewardship_report_email_prior_v1(%s,%s)", [snapshot_id, address]
+        )
+        value = cursor.fetchone()[0]
+    # Django returns jsonb as text; a raw psycopg connection would parse it.
+    return json.loads(value) if isinstance(value, str) else value
 
 
 def testing_line(testing_recipient, label, address):
@@ -79,7 +110,13 @@ def recipient_render(snapshot, member, *, configuration_id, email, mode, testing
 
 
 def fanout_report(claim):
-    """Handle at most one page of cohort addresses under exact task ownership."""
+    """Handle at most one page of cohort addresses under exact task ownership.
+
+    Each address is rechecked first (a revoked row), then compared with the
+    report's earlier sends: a covered address gets a row naming the
+    accepted messages and no new message; an uncertain one raises
+    ``CoverageUncertain``, which rolls the page back for a later retry.
+    """
     require_work_order()
     row = bound_preparation(_status(lock_task_claim(claim)))
     scope = current_preparation(row)
@@ -112,6 +149,15 @@ def fanout_report(claim):
             # Removed from the report, or no longer an Administrator or Staff:
             # an audited withdrawal, never a delivery (spec, the recheck).
             ReportEmailRecipient.objects.create(disposition="revoked", **fields)
+            continue
+        coverage = prior_coverage(snapshot.pk, member["address"])
+        if coverage["state"] == "uncertain":
+            raise CoverageUncertain("An earlier report message has not settled.")
+        if coverage["state"] == "covered":
+            # Already accepted for every slot of this send: never sent again.
+            ReportEmailRecipient.objects.create(
+                disposition="covered", covered_messages=coverage["messages"], **fields
+            )
             continue
         identity = DeliveryIdentity(
             scope_id=row.campaign_id,

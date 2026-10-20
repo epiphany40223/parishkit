@@ -504,6 +504,10 @@ FROZEN = {
     "0161_report_conversion.sql": (
         "3e723f78dcd1ac826e1d7b31309f34f513d6d9e31c23e713e279b41fc9f8a016"
     ),
+    # Provisional number (#1835): renumbered when its pull request merges.
+    "0250_report_recovery_coverage.sql": (
+        "60230b2f72f8db40e2e1b48a43cae84534ed5be1d76915a4b26c2c49f8ae8368"
+    ),
 }
 
 
