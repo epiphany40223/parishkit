@@ -1951,7 +1951,8 @@ pk-admin delivery bounce-report MESSAGE_ID --address ADDRESS \
 ```
 
 `delivery list` takes Sent mail's filters: `--recipient` (a Family DUID, an
-email address or a delivery id, as input only), `--purpose` (`initial`,
+email address, a delivery id, or any other text as part of a Family's or a
+person's name, ignoring case, as input only), `--purpose` (`initial`,
 `reminder`, `receipt`, `family_test`, `daily_digest`, `weekly_digest`,
 `operational`, `security_event` or `leader_email`, or the group `family`:
 invitations and reminders), `--state` (a state, or the groups `needs_attention`,

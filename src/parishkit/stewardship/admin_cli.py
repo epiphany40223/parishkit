@@ -3863,7 +3863,10 @@ def _delivery_list_options(parser):
     )
     parser.add_argument(
         "--recipient",
-        help="a Family DUID, an email address or a delivery ID, as the page's",
+        help=(
+            "a Family DUID, an email address, a delivery ID or part of a "
+            "name, as the page's"
+        ),
     )
     _page_options(parser)
 

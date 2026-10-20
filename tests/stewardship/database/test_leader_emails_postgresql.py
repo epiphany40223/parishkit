@@ -587,6 +587,60 @@ def test_sent_mail_lists_ministry_leader_emails(production):
     assert rows["leader-9@example.org"].subject not in own
 
 
+def test_a_leader_email_without_a_users_page_name_takes_the_best_member_name(
+    mail_ready, request, google, monkeypatch
+):
+    """A Ministry leader email whose address has no Users-page Name (a user
+    since removed, who never signed in) shows the ParishSoft Member name
+    the Users page would give it (Administrator decision 2026-10-20,
+    #1562): of two Members sharing the address, the one in an active
+    Family. The Member-name read ranks as the Users page's own read."""
+    from parishkit.stewardship.accounts.users_upgrade import member_names
+    from parishkit.stewardship.jobs import delivery_reads
+
+    from .leader_builders import leader
+
+    store = request.getfixturevalue("auth_service").store
+    convert(store)
+    leaders_source(
+        store,
+        [
+            leader("shared@example.org", 9, family="inactive"),
+            leader(" Shared@Example.org ", 9),
+            leader("ann@example.org", 9),
+        ],
+    )
+    add_users(
+        store,
+        ("shared@example.org", "Shared, Leader", "ministry_leader"),
+        ("ann@example.org", "Ann, Leader", "ministry_leader"),
+    )
+    browser, login = signed_in()
+    assert login.status_code == 302
+    rows = prepared(store, ["shared@example.org", "ann@example.org"])
+    ids = {address: row.outbox_id for address, row in rows.items()}
+    with task_login(ServiceRole.WEB, exact=True):
+        expected = member_names()
+        found = delivery_reads.member_names(list(ids.values()), admin_id())
+    assert expected["shared@example.org"] == ["Example 1, Leader", "Example 0, Leader"]
+    assert found == {
+        ids["shared@example.org"]: "Example 1, Leader",
+        ids["ann@example.org"]: expected["ann@example.org"][0],
+    }
+    # With no Users-page Name, Sent mail names each by its Member.
+    monkeypatch.setattr(delivery_reads, "administrator_names", lambda _: {})
+    status, html = sent_mail(browser, purpose="leader_email")
+    assert status == 200
+    assert f'id="recipient-{ids["shared@example.org"]}">Example 1, Leader</button>' in (
+        html
+    )
+    # And a name finds it (#1849), in any case.
+    status, html = sent_mail(browser, recipient="example 1")
+    assert status == 200
+    assert f"/admin/mail/sent/{ids['shared@example.org']}/" in html
+    assert f"/admin/mail/sent/{ids['ann@example.org']}/" not in html
+
+
 def test_a_leader_who_is_no_longer_one_is_not_emailed(production):
     """A user demoted to Staff before the send: the unsent email is cancelled."""
     harness, _browser = production

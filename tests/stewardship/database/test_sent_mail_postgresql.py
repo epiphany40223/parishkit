@@ -61,6 +61,16 @@ BY_PAGE = (
     "SELECT message_id, address FROM "
     "stewardship_delivery_page_recipients_v1(%s::uuid[],%s)"
 )
+MEMBER_NAMES = (
+    "SELECT message_id, name FROM "
+    "stewardship_delivery_page_member_names_v1(%s::uuid[],%s)"
+)
+NAMES_FROZEN = (
+    Path(__file__).resolve().parents[3]
+    / "src/parishkit/stewardship/schema/migrations/0220_page_member_names.sql"
+).read_text(encoding="utf-8")
+NAMES_CHECK = NAMES_FROZEN[NAMES_FROZEN.index("DO $check$") :]
+NAMES_FUNCTION = "public.stewardship_delivery_page_member_names_v1(uuid[], uuid)"
 # A Family's two heads, stored with capitals as ParishSoft may give them.
 HEADS = ("First.Head@Example.org", "second@example.org")
 
@@ -208,7 +218,11 @@ def test_both_reads_refuse_all_but_an_administrator_on_the_web_login(
     google[0].update(email="staff@example.org", sub="synthetic-staff")
     signed_in()
     staff = PortalUser.objects.get(email="staff@example.org").pk
-    for sql, value in ((BY_ADDRESS, "second@example.org"), (BY_PAGE, [message_id])):
+    for sql, value in (
+        (BY_ADDRESS, "second@example.org"),
+        (BY_PAGE, [message_id]),
+        (MEMBER_NAMES, [message_id]),
+    ):
         for actor in (staff, uuid4(), None):
             assert call_as(ServiceRole.WEB, sql, (value, actor)) == "42501"
         for service in (ServiceRole.WORKER, ServiceRole.MAIL_DISPATCH):
@@ -362,7 +376,7 @@ def test_sent_mail_filters_by_recipient_purpose_delivery_and_mode(
     assert status == 400 and "first.head" not in html
     # Refused filters answer 400, never a wider list.
     for query in (
-        {"recipient": "not an address"},
+        {"recipient": "1,2"},
         {"recipient": "a@b@c"},
         {"purpose": "newsletter"},
         {"mode": "all"},
@@ -371,8 +385,9 @@ def test_sent_mail_filters_by_recipient_purpose_delivery_and_mode(
         assert sent_mail(browser, **query)[0] == 400, query
 
 
-def test_a_name_in_recipient_is_refused_at_the_field(response_service, google):
-    """A name typed in Recipient (R40b, #1562) draws Sent mail again,
+def test_a_malformed_recipient_is_refused_at_the_field(response_service, google):
+    """A malformed Recipient (R40b, #1562: digits and commas that are no
+    DUID) draws Sent mail again,
     answered 400, rather than an error page: the filter form shows what was
     sent, the Recipient marked with the message in its hint row and the
     summary, and the list is the one for no filters in the mode sent. A
@@ -383,15 +398,18 @@ def test_a_name_in_recipient_is_refused_at_the_field(response_service, google):
     production = family_message(harness)
     reminder = family_message(harness, purpose="reminder")
     status, html = sent_mail(
-        browser, recipient="Thompson", purpose="reminder", state="needs_attention"
+        browser, recipient="1,2", purpose="reminder", state="needs_attention"
     )
     assert status == 400
     assert "Delivery action unavailable" not in html
     assert '<form id="table-filters"' in html
     field = re.search(r'<input id="delivery-recipient"[^>]*>', html).group(0)
-    assert 'value="Thompson"' in field and 'aria-invalid="true"' in field
+    assert 'value="1,2"' in field and 'aria-invalid="true"' in field
     assert 'aria-describedby="delivery-filters_error"' in field
-    message = "Enter a Family DUID, an email address or a delivery ID, or clear it."
+    message = (
+        "Enter a name, a whole Family DUID, one email address or a delivery ID, "
+        "or clear it."
+    )
     assert html.count(message) >= 3  # the hint, the line and the summary
     assert '<option value="needs_attention" selected>' in html
     assert '<option value="reminder" selected>' in html
@@ -399,16 +417,16 @@ def test_a_name_in_recipient_is_refused_at_the_field(response_service, google):
     assert listed(html, ids) == {production, reminder}
     assert shown_mode(region(html, "delivery-mode")) == "production"
     (address,) = re.findall(r'<a href="([^"]*)" data-page-address hidden>', html)
-    assert "Thompson" not in address and "state=" not in address
+    assert "1,2" not in address and "state=" not in address
     # The mode sent is kept: Testing lists the Testing email.
-    status, html = sent_mail(browser, recipient="Thompson", mode="testing")
+    status, html = sent_mail(browser, recipient="1,2", mode="testing")
     assert status == 400 and listed(html, ids) == {testing}
     # A repeated field is structural, so it keeps the error page.
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         token = browser.cookies["pk_admin_csrf"].value
         response = browser.post(
             "/admin/mail/sent/",
-            {"csrfmiddlewaretoken": token, "recipient": ["Thompson", "1"]},
+            {"csrfmiddlewaretoken": token, "recipient": ["1,2", "1"]},
         )
     assert response.status_code == 400
     assert "Delivery action unavailable" in response.content.decode()
@@ -558,10 +576,10 @@ def test_a_person_without_a_users_page_name_takes_a_parishsoft_name(
     """An email to a person whose address has no Users-page Name (here a
     sign-in rule from before users, which has none) is named by the
     ParishSoft Member listing that address (Administrator decision
-    2026-10-20, #1562), with one more read only then; an address no Member
-    lists keeps the address."""
+    2026-10-20, #1562), in the Users page's default-Name order, with one
+    Member-name read for the page; an address no Member lists keeps the
+    address."""
     from parishkit.stewardship.accounts.users_upgrade import member_names
-    from parishkit.stewardship.jobs.delivery_reads import person_names
 
     harness = activate_response_service(response_service)
     add_rules(
@@ -573,18 +591,104 @@ def test_a_person_without_a_users_page_name_takes_a_parishsoft_name(
     signed_in()
     admin = PortalUser.objects.get(email="admin@example.org").pk
     with task_login(ServiceRole.WEB, exact=True):
-        listed = member_names()
-        (expected, *_) = listed["valid@example.org"]
-        assert "nobody.listed@example.org" not in listed
+        # The Users page's own read ranks the same names; its first is ours.
+        (expected, *_) = member_names()["valid@example.org"]
         rows = read_listing({}, actor=admin)["rows"]
         with CaptureQueriesContext(connection) as queries:
             named = with_recipients(rows, admin)
         # The address read, the users and the Member names.
         assert len([q for q in queries if q["sql"].startswith("SELECT")]) == 3
-        assert person_names({"Valid@Example.org"}) == {"valid@example.org": expected}
     by_address = {row["recipient_address"]: row["recipient_name"] for row in named}
     assert by_address["valid@example.org"] == expected
     assert by_address["nobody.listed@example.org"] is None
+
+
+def test_the_member_name_read_names_only_emails_to_people(response_service, google):
+    """It returns one name for a notice whose address a Member lists, none
+    for a Family email or an unlisted address, and refuses a list longer
+    than any page."""
+    harness = activate_response_service(response_service)
+    add_rules(harness.service.store, address("valid@example.org"))
+    recipients = notices(harness)
+    signed_in()
+    admin = PortalUser.objects.get(email="admin@example.org").pk
+    family = family_message(harness)
+    listed = recipients["valid@example.org"].outbox_id
+    ids = [recipient.outbox_id for recipient in recipients.values()] + [family]
+    rows = call_as(ServiceRole.WEB, MEMBER_NAMES, (ids, admin))
+    assert [message for message, _ in rows] == [listed]
+    assert rows[0][1]
+    assert call_as(ServiceRole.WEB, MEMBER_NAMES, ([family], admin)) == []
+    too_many = [uuid4() for _ in range(501)]
+    assert call_as(ServiceRole.WEB, MEMBER_NAMES, (too_many, admin)) == "22023"
+    assert call_as(ServiceRole.WEB, MEMBER_NAMES, (None, admin)) == "22023"
+
+
+def test_the_member_name_check_block_refuses_an_older_install():
+    """0220's DO block passes on the installation, and refuses it with the
+    function missing, made an invoker, executable by PUBLIC, or without its
+    caller or Administrator check."""
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(NAMES_CHECK)
+    with connection.cursor() as cursor:
+        cursor.execute(f"SELECT pg_get_functiondef('{NAMES_FUNCTION}'::regprocedure)")
+        body = cursor.fetchone()[0]
+    caller = "IF session_user<>'pk_stewardship_web' AND NOT pg_has_role(session_user,"
+    assert body.count(caller) == 1
+    administrator = (
+        "public.stewardship_export_authorized_v1(actor_uuid,true) IS NOT TRUE"
+    )
+    assert body.count(administrator) == 1
+    for statements in (
+        [f"DROP FUNCTION {NAMES_FUNCTION}"],
+        [f"ALTER FUNCTION {NAMES_FUNCTION} SECURITY INVOKER"],
+        [f"GRANT EXECUTE ON FUNCTION {NAMES_FUNCTION} TO PUBLIC"],
+        [
+            body.replace(
+                caller, "IF false AND (true OR pg_has_role(session_user,"
+            ).replace("'USAGE') THEN", "'USAGE')) THEN", 1)
+        ],
+        [body.replace(administrator, "false")],
+    ):
+        with (
+            pytest.raises(DatabaseError, match="0220"),
+            transaction.atomic(),
+            connection.cursor() as cursor,
+        ):
+            for statement in statements:
+                cursor.execute(statement)
+            cursor.execute(NAMES_CHECK)
+
+
+def test_a_name_finds_families_and_people_ignoring_case(response_service, google):
+    """Recipient text that is no DUID, address or delivery ID is a name
+    (#1849): a Family email matches by part of its Family's ParishSoft name,
+    an email to a person by part of the name Recipient shows, in any case;
+    a name nobody has lists nothing."""
+    from parishkit.stewardship.source.snapshot_models import SourceCurrent
+    from parishkit.stewardship.source.snapshot_names import snapshot_family_names
+
+    harness = activate_response_service(response_service)
+    named_users(harness.service.store)
+    recipients = notices(harness)
+    browser, _ = signed_in()
+    family = family_message(harness)
+    snapshot = SourceCurrent.objects.values_list("snapshot_id", flat=True).first()
+    name = snapshot_family_names(snapshot, [1])[1]
+    surname = name.split(",")[0]
+    morgan = recipients["morgan@example.org"].outbox_id
+    ids = {family, morgan}
+    for typed, shown in (
+        (surname.upper(), {family}),
+        (surname[1:-1].lower(), {family}),
+        ("MORGAN admin", {morgan}),
+        ("organ", {morgan}),
+        ("No such name anywhere", set()),
+    ):
+        status, html = sent_mail(browser, recipient=typed)
+        assert status == 200, typed
+        assert listed(html, ids) == shown, typed
+        assert f'value="{typed}"' in html
 
 
 def test_a_production_family_recipient_opens_its_timeline(response_service, google):

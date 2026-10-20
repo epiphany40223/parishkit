@@ -321,8 +321,9 @@ REFUSED_KEEPS = ("mode", "zone", "sort", "size")
 def _recipient_refusal(parameters):
     """A ``FilterError`` when Sent mail's Recipient is unusable, else None.
 
-    A Recipient that is not a Family DUID, an email address or a delivery
-    ID (a name, the likeliest) is a rule the reader fixes at that one field
+    A malformed Recipient (digits and commas that are no whole Family
+    DUID, or an "@" that is no one address; any other text is a name,
+    #1849) is a rule the reader fixes at that one field
     (UX conventions, Field errors and live checks), so the page is drawn
     again with the error there, not replaced by an error page. Every
     structural rule (an unknown or repeated field, a sort or size the table

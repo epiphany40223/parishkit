@@ -219,8 +219,9 @@ def components(now):
     )
     yield ("/deliveries-names", "deliveries", names)
     # The same page drawn again for a Recipient the server refuses at its
-    # field (#1562): a short hex-like name the field's pattern lets through.
-    yield ("/deliveries-refused", "deliveries", refused_recipient(names, "Abbe"))
+    # field (#1562): a DUID out of range, which the field's pattern lets
+    # through.
+    yield ("/deliveries-refused", "deliveries", refused_recipient(names, "0"))
     # Sent mail's filters and its Production / Testing links acting in
     # place (#1562): the answers a test routes the Testing link and an
     # applied filter to.
