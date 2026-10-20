@@ -522,6 +522,13 @@ FROZEN = {
     "0162_report_recovery_coverage.sql": (
         "4d10bc449e224f7434df25cb695981a534bb2c469c1f319e5b5f67137f8e0d5f"
     ),
+    # Provisional numbers (#1872): renumbered when their pull request merges.
+    "0260_report_coverage_decisions.sql": (
+        "a34f87afc1add89eafcd52bd2fe7f7fb13a5f9b186fbe7cee67dd82d1ea1ce17"
+    ),
+    "0261_report_waiting_read.sql": (
+        "98f6b6862d2f1b545c7233e0552583e9c36c84b60c18c6e3588ead4c43f9a9ec"
+    ),
 }
 
 

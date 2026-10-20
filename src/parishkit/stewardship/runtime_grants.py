@@ -387,6 +387,9 @@ LEADERS_WITHOUT_USER_FUNCTION = "stewardship_leaders_without_user_v1(text, uuid)
 # session and audits every call with the number of leaders; it returns no
 # parishioner data, only counts and Ministry names.
 LEADER_EMAILS_FUNCTION = "stewardship_leader_emails_v1(text, uuid)"
+# The report sends waiting on an earlier email, for an Administrator's Sent
+# mail and Mail message page (0261, #1872): ids and times, never an address.
+REPORT_WAITING_FUNCTION = "stewardship_report_email_waiting_v1(uuid)"
 # One email's recipient addresses for its Mail message page (#1024): web
 # reads them, for an Administrator only, without any grant on the email's
 # rendering (its subject and body).
@@ -588,6 +591,11 @@ CLOSURE_FUNCTIONS = {
     # The report conversion's open digest work check (0161,
     # #1786), which the admin-recovery login's offline conversion asks.
     DIGEST_WORK_FUNCTION: ("stewardship_reports", "0041_report_conversion"),
+    # The report sends waiting on an earlier email (0261, provisional, #1872).
+    REPORT_WAITING_FUNCTION: (
+        "stewardship_reports",
+        "0037_report_waiting_read",
+    ),
 }
 
 
@@ -737,6 +745,12 @@ CLOSURE_TABLES = {
         ),
         ("stewardship_reports", "0040_report_pipeline"),
     ),
+    # An Administrator's coverage decision about an earlier report email
+    # (0260, provisional, #1872), which web records and reads.
+    "stewardship_report_email_coverage_decision": (
+        "stewardship_reports",
+        "0036_report_coverage_decisions",
+    ),
 }
 
 
@@ -868,8 +882,9 @@ def runtime_functions(role, *, target=None):
     opens that follow-up and reads its link token. Web records an
     Administrator's report that a delivered email bounced (#806 slice 4),
     and, for an Administrator, reads the emails meant for one address and
-    the addresses of a Sent mail page's reports and notices (#1562), and
-    the Families an address belongs to and a Family's users (#1867).
+    the addresses of a Sent mail page's reports and notices (#1562), the
+    Families an address belongs to and a Family's users (#1867), and the
+    report sends waiting on an earlier email (#1872).
     The general worker asks whether a publication plan's or outcome's audit
     event is recorded (#528), since it cannot read audit rows itself, and
     which added Member links a promoted snapshot supports (#1670).
@@ -913,6 +928,7 @@ def runtime_functions(role, *, target=None):
                 PAGE_MEMBER_NAMES_FUNCTION,
                 ADDRESS_PEOPLE_FUNCTION,
                 FAMILY_USERS_FUNCTION,
+                REPORT_WAITING_FUNCTION,
                 DEBUG_OFF_FUNCTION,
             },
             ServiceRole.CONFIG_INSTALLER: {

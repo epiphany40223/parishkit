@@ -55,6 +55,10 @@ REFUSAL_SORTING = Sorting.by_column(
     descending_first={"refused"},
     tiebreak=("id",),
 )
+# The coverage decisions on a report email (#1872), each stored as an
+# evidence note plus the decision of the same id
+# (``ReportEmailCoverageDecision``).
+COUNT_ACTIONS = {"count_delivered": "delivered", "count_unsent": "unsent"}
 
 
 def parse_window(parameters, allowed, sorting=None):
@@ -745,7 +749,9 @@ def bounce_panel(delivery, recipients, *, can_change):
     )
 
 
-def offered_actions(state, task_state, *, campaign_state, can_resolve, can_retry):
+def offered_actions(
+    state, task_state, *, campaign_state, can_resolve, can_retry, countable=False
+):
     """The resolutions a message's page offers now, in the page's order.
 
     ``state`` is the message's state and ``task_state`` its latest delivery
@@ -754,8 +760,13 @@ def offered_actions(state, task_state, *, campaign_state, can_resolve, can_retry
     (``stewardship_delivery_retry_admitted_v1``). The bulk actions on
     Sent mail (``delivery_bulk``) select by these same rules, so a bulk
     action never touches a message whose own page would not offer it.
+    ``countable`` says the message is a report email that was once unknown
+    and then cancelled, with no coverage decision yet (#1872): it is
+    offered both decisions, whatever its task's state, since neither sends.
     """
     actions = ["note"] if campaign_state != "archived" and can_resolve else []
+    if countable and actions and state == "cancelled":
+        return actions + list(COUNT_ACTIONS)
     if task_state == "failed" and actions:
         if state == "delivery_unknown":
             # Both settle the attempt from external evidence without a
@@ -787,6 +798,10 @@ QUESTIONS = {
     "permanent_failure": (("send_again", "retry_failed"), ("keep_failed", "note")),
     "pending": (("try_again", "retry_unsent"),),
     "retry_wait": (("try_again", "retry_unsent"),),
+    # A report email once unknown and then cancelled, which a later send of
+    # its report waits on (#1872), asks "Did it reach its recipient?"; any
+    # other cancelled email asks nothing.
+    "cancelled": (("reached", "count_delivered"), ("not_reached", "count_unsent")),
 }
 # The actions that send the email again, whose refusal the page explains by
 # the admission condition that failed (retry_refusal).
@@ -837,7 +852,7 @@ def email_outcome(state, refused):
     return "still_sending"
 
 
-def question_choices(state, task_state, actions, *, blocked, refusal):
+def question_choices(state, task_state, actions, *, blocked, refusal, countable=False):
     """The answers an email's outcome panel offers, with why any is unavailable.
 
     Returns ``[{"choice", "action", "unavailable"}]`` in the page's order
@@ -848,9 +863,13 @@ def question_choices(state, task_state, actions, *, blocked, refusal):
     changed (no campaign, archived, held) or None; ``refusal`` is why the
     resend admission refused a send (``retry_refusal``), or None. A
     still-sending email asks nothing until its background task has failed,
-    as before.
+    as before. A cancelled email asks only when ``countable`` (a report
+    email whose coverage decision is still to be made, #1872); its answers
+    send nothing, so they never wait for a task.
     """
     if state in {"pending", "retry_wait"} and task_state != "failed":
+        return []
+    if state == "cancelled" and not countable:
         return []
     rows = []
     for choice, action in QUESTIONS.get(state, ()):
@@ -919,7 +938,112 @@ def retry_refusal(message):
     return None
 
 
-def read_detail(message_id, parameters):
+def coverage_undecided(message):
+    """Whether a report email may take a coverage decision now (#1872).
+
+    It must be a report email that ended cancelled after its outcome was
+    once unknown, with no decision yet: no outcome can ever settle it, so a
+    later send of its report would wait on it for good. The decision guard
+    (frozen file 0260) checks the same when one is recorded, and also that
+    the email belongs to a report cohort, that the evidence note of the same
+    id is this Administrator's, at the email's current version and from the
+    same transaction, and that the campaign accepts Admin changes.
+    """
+    from parishkit.stewardship.reports.models import ReportEmailCoverageDecision
+
+    from .outbox_models import OutboxEvent
+
+    return (
+        message["purpose"] == "admin_report"
+        and message["state"] == "cancelled"
+        and OutboxEvent.objects.filter(
+            message_id=message["id"], state="delivery_unknown"
+        ).exists()
+        and not ReportEmailCoverageDecision.objects.filter(
+            message_id=message["id"]
+        ).exists()
+    )
+
+
+def with_coverage_decisions(message, notes):
+    """Each note, named by the coverage decision recorded with it (#1872).
+
+    A decision is stored as an evidence note plus the decision of the same
+    id, so its note reads ``count_delivered`` or ``count_unsent`` rather
+    than a bare note. Only a report email can have one, so other emails'
+    notes are returned as they are, with no query.
+    """
+    if message["purpose"] != "admin_report" or not notes:
+        return notes
+    from parishkit.stewardship.reports.models import ReportEmailCoverageDecision
+
+    decided = dict(
+        ReportEmailCoverageDecision.objects.filter(
+            pk__in=[note["id"] for note in notes]
+        ).values_list("id", "decision")
+    )
+    actions = {value: key for key, value in COUNT_ACTIONS.items()}
+    return [
+        note | {"action": actions[decided[note["id"]]]}
+        if note["id"] in decided
+        else note
+        for note in notes
+    ]
+
+
+def report_waiting(actor_id):
+    """The report sends waiting on an earlier email, for an Administrator (#1872).
+
+    Read through ``stewardship_report_email_waiting_v1`` (frozen file
+    0261): one row per waiting send and per earlier email it waits on, as
+    ``{"send", "due_at", "message_id"}``, ids and times only, never an
+    address. Raises ``PermissionError`` when the read refuses ``actor_id``
+    (see ``_definer_rows``).
+    """
+    rows = _definer_rows(
+        "SELECT preparation_id, due_at, message_id "
+        "FROM public.stewardship_report_email_waiting_v1(%s)",
+        (actor_id,),
+    )
+    if rows is None:
+        raise PermissionError("Waiting report sends require an Administrator.")
+    return [
+        dict(send=send, due_at=due_at, message_id=message_id)
+        for send, due_at, message_id in rows
+    ]
+
+
+def waiting_emails(actor_id):
+    """Sent mail's waiting note (#1872): each email a report send waits on.
+
+    One entry per earlier email, oldest first, with its id, when it was
+    created and how many sends wait on it. One definer read, and one query
+    for the emails' times only when any send waits.
+    """
+    from .outbox_models import OutboxMessage
+
+    counts = {}
+    for row in report_waiting(actor_id):
+        counts[row["message_id"]] = counts.get(row["message_id"], 0) + 1
+    if not counts:
+        return []
+    created = dict(
+        OutboxMessage.objects.filter(pk__in=counts).values_list("id", "created_at")
+    )
+    return sorted(
+        (
+            dict(id=message, created_at=created.get(message), sends=count)
+            for message, count in counts.items()
+        ),
+        key=lambda entry: (
+            entry["created_at"] is None,
+            entry["created_at"],
+            entry["id"],
+        ),
+    )
+
+
+def read_detail(message_id, parameters, actor=None):
     """One delivery: its metadata, history, latest task, notes and actions.
 
     The history's upper version is pinned to the message read, so a page
@@ -937,6 +1061,11 @@ def read_detail(message_id, parameters):
     email is paused and ``last_attempt_at`` is when the provider was last
     asked to send it (None before any attempt). Raises
     ``OutboxMessage.DoesNotExist`` for an unknown message.
+
+    ``actor`` is the admitted Administrator, for whom ``report_waiting``
+    (the report sends waiting on this email, #1872) is read; without one it
+    is empty. A note recorded with a coverage decision is named by that
+    decision (``with_coverage_decisions``).
 
     Every email Sent mail lists opens here, operational and security
     notices and Ministry leader emails too (#1562). Those belong to no
@@ -980,17 +1109,19 @@ def read_detail(message_id, parameters):
                 (message["campaign_id"], message_id),
             )
             can_resolve, can_retry = cursor.fetchone()
+    countable = resolvable and coverage_undecided(message)
     actions = offered_actions(
         message["state"],
         task and task["state"],
         campaign_state=campaign_state,
         can_resolve=can_resolve,
         can_retry=can_retry,
+        countable=countable,
     )
     notes, notes_following = window.rows(
         DeliveryResolution.objects.filter(message_id=message_id)
         .order_by("-created_at", "-id")
-        .values("created_at", "action", "evidence_note")
+        .values("id", "created_at", "action", "evidence_note")
     )
     refused = email_refusals(message_id)
     task_state = task and task["state"]
@@ -1018,7 +1149,7 @@ def read_detail(message_id, parameters):
         delivery=message,
         events=events,
         task=task,
-        notes=notes,
+        notes=with_coverage_decisions(message, notes),
         window=window,
         has_next=events_following or notes_following,
         actions=actions,
@@ -1034,7 +1165,13 @@ def read_detail(message_id, parameters):
             actions,
             blocked=blocked,
             refusal=refusal,
+            countable=countable,
         ),
+        # The report sends waiting on this email (#1872), read for the
+        # admitted Administrator; none for any other email, or without one.
+        report_waiting=[]
+        if actor is None or message["purpose"] != "admin_report"
+        else [row for row in report_waiting(actor) if row["message_id"] == message_id],
         paused=paused,
         last_attempt_at=OutboxEvent.objects.filter(
             message_id=message_id, action="submit", version__lte=message["version"]

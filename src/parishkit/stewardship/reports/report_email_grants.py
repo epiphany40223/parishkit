@@ -18,7 +18,11 @@ SNAPSHOT = "stewardship_report_email_snapshot"
 RECIPIENT = "stewardship_report_email_recipient"
 MANUAL = "stewardship_report_email_manual_request"
 COMPLETION = "stewardship_report_email_completion_ready"
-TABLES = (MANUAL, PREPARATION, SNAPSHOT, RECIPIENT, COMPLETION)
+# An Administrator's coverage decision about an earlier report email (0260,
+# #1872), which web records, with its evidence note, and reads, and the
+# worker's coverage comparison reads.
+DECISION = "stewardship_report_email_coverage_decision"
+TABLES = (MANUAL, PREPARATION, SNAPSHOT, RECIPIENT, COMPLETION, DECISION)
 # The columns that bind a snapshot or recipient without its content.
 # When its email was made is a binding too: Emailed reports lists the sends.
 SNAPSHOT_BINDING = {"id", "preparation_id", "campaign_id", "has_content", "created_at"}
@@ -48,6 +52,10 @@ def add_report_email_grants(tables, columns, *, worker):
         return
     for table in (SNAPSHOT, RECIPIENT):
         tables.setdefault(table, set()).update({"SELECT", "INSERT"})
+    # The coverage comparison (stewardship_report_email_prior_v1), which the
+    # fanout and the recipient guard run with the worker's rights, reads
+    # the Administrator's coverage decisions (#1872).
+    tables.setdefault(DECISION, set()).add("SELECT")
     # The open-requests read (and the snapshot guard, which runs it with the
     # worker's rights) tells open from followed-up requests.
     _columns(columns, "stewardship_additional_information", {"followed_up_at"})
@@ -71,8 +79,9 @@ COPY_COLUMNS = {"subject", "html", "images", "blocks"}
 
 
 def add_report_email_web_grants(tables, columns):
-    """Record Send now; read sends by their bindings, and saved copies."""
+    """Record Send now and coverage decisions; read sends and saved copies."""
     tables.setdefault(MANUAL, set()).update({"SELECT", "INSERT"})
+    tables.setdefault(DECISION, set()).update({"SELECT", "INSERT"})
     add_report_email_dispatch_grants(tables, columns, private=False)
     _columns(columns, SNAPSHOT, COPY_COLUMNS)
     # Sent mail's retry admission and a retry's seed (the report branches

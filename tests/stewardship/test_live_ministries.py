@@ -96,6 +96,7 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         "stewardship_delivery_page_member_names_v1(uuid[], uuid)",
         "stewardship_address_people_v1(text, uuid)",
         "stewardship_family_users_v1(bigint, uuid)",
+        "stewardship_report_email_waiting_v1(uuid)",
         DEBUG_OFF_FUNCTION,
     }
     # The worker's definer routines purge ended Admin sessions (ADM-11),

@@ -264,6 +264,7 @@ ACTIVITY_TYPES = {
         *built_types("outbox_"),
         "delivery_unknown",
         *built_types("delivery_resolution_"),
+        *built_types("report_email_coverage_"),
         *built_types("delivery_held_"),
         "delivery_bulk_resolved",
         "restore_hold_resolved",

@@ -369,6 +369,7 @@ from .pledge_models import (  # noqa: E402,F401
     PledgeReview,
 )
 from .report_email_models import (  # noqa: E402,F401
+    ReportEmailCoverageDecision,
     ReportEmailManualRequest,
     ReportEmailPreparation,
     ReportEmailRecipient,
