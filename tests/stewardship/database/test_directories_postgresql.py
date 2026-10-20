@@ -225,14 +225,20 @@ def test_mailing_columns_merge_postal_outreach_into_the_directory(
             """The page with mailing columns on and these filters."""
             return search(browser, route, {"mailing": "yes"} | values)
 
-        for own, (response, body) in (
-            ("any", read(browser, route + "?mailing=yes")),
-            ("email", mailing(reach="email")),
-            ("neither", mailing(reach="neither")),
-            ("any", mailing(reason="deliverable")),
-            ("mail", mailing(reach="mail")),
+        # The empty row says why (#1828): with mailing columns and no other
+        # filter (the overridden reach is not one), no Family needs a postal
+        # invitation; with another filter, Clear filters is the next step.
+        postal = b"No active Family needs a postal invitation:"
+        filtered = b"No Families match these filters. Select Clear filters"
+        for own, empty, (response, body) in (
+            ("any", postal, read(browser, route + "?mailing=yes")),
+            ("email", postal, mailing(reach="email")),
+            ("neither", postal, mailing(reach="neither")),
+            ("any", filtered, mailing(reason="deliverable")),
+            ("mail", postal, mailing(reach="mail")),
         ):
-            assert response.status_code == 200 and b"No matching Families." in body
+            assert response.status_code == 200 and empty in body
+            assert (filtered if empty == postal else postal) not in body
             assert harness.code.encode() not in body
             assert b'<option value="mail" selected>' in body
             assert b'aria-describedby="directory-reach-tip" disabled>' in body
@@ -246,6 +252,15 @@ def test_mailing_columns_merge_postal_outreach_into_the_directory(
             # toggletips and the About panel (pk-local batch 5).
             assert b"lock-reason" not in body and b"directory-mailing-help" not in body
             assert b"Set by Include mailing columns." not in body
+        # Without mailing columns a filter that matches no Family names
+        # Clear filters too, whether or not the response columns are on.
+        for values in (
+            {"search": "No such Family"},
+            {"reason": "no_head", "responses": "yes"},
+        ):
+            response, body = search(browser, route, values)
+            assert response.status_code == 200 and filtered in body
+            assert b"No active Families in the ParishSoft data yet." not in body
         # Without mailing columns the same filter finds the Family, without
         # the mailing columns.
         response, body = search(browser, route, {"reach": "email"})
