@@ -23,12 +23,12 @@ from parishkit.stewardship.reports.charts import (
 from parishkit.stewardship.reports.daily_digest import (
     CHART_ID,
     DailyDigestDocument,
-    bar,
-    digest_rows,
     render_daily_digest,
 )
 from parishkit.stewardship.reports.digest_presentation import chart_layout
 from parishkit.stewardship.reports.money import MoneyAmount
+from parishkit.stewardship.reports.report_blocks.day_by_day import digest_rows
+from parishkit.stewardship.reports.report_blocks.markup import bar
 from parishkit.stewardship.reports.statistics import (
     CampaignStatistics,
     PopulationStatistics,
