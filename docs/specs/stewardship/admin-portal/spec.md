@@ -5300,13 +5300,18 @@ After a mail outage many emails can need the same decision. A collapsed
 (#382 item M4), each shown only while some email of the current campaign
 qualifies:
 
-- **Retry all failed emails**: every failed email whose own page offers
-  **Retry failed delivery**.
-- **Record all "Not sure it arrived" emails as not sent**: every uncertain
-  email whose own page offers recording it as not sent. As on that page,
-  the evidence is the Administrator's: a required checkbox says they checked
-  the mail service's own records and these emails were not sent. Nothing is
-  resent and no address is blocked.
+- **Failed emails: send them all again?** ("Preview sending again"): every
+  failed email whose own page lets "Send it again?" be answered Yes
+  ([resolution questions](#resolution-questions)).
+- **Not sure they arrived: record them all as not sent?** ("Preview
+  recording as not sent"): every uncertain email whose own page lets "What
+  did you find?" be answered "It was not sent" and then "Send it again?"
+  No. As on that page, the evidence is the Administrator's: a required
+  checkbox says they checked the mail service's own records and these
+  emails were not sent. Nothing is resent and no address is blocked.
+
+The questions and answers are worded as on each email's own page
+([#1563](https://github.com/epiphany40223/parishkit/issues/1563)).
 
 A message qualifies only by the rules its own page uses
 (`delivery_reads.offered_actions`): the campaign is not archived and its
@@ -5352,9 +5357,14 @@ inserts.
 
 #### Mail message page
 
-An email's own page (`/admin/mail/sent/<message>/`) reads top to bottom
-in the order the Administrator asked for
-([#1015](https://github.com/epiphany40223/parishkit/issues/1015)):
+An email's own page (`/admin/mail/sent/<message>/`) answers one question
+first: is anything left for the Administrator to do
+([#1563](https://github.com/epiphany40223/parishkit/issues/1563))? It
+reads top to bottom in this order, which keeps the order the
+Administrator asked for in
+[#1015](https://github.com/epiphany40223/parishkit/issues/1015) for the
+details below the outcome. Everything one recipient was sent is listed
+from Sent mail's Recipient link; this page is about one email.
 
 1. **Heading.** The page is
    [object-named](#page-names-and-placement): its heading names the email by its
@@ -5366,9 +5376,13 @@ in the order the Administrator asked for
    that data no longer has, is named by its type alone. The browser title is the type alone, so browser
    history does not keep the Family's name, as on the
    [Timeline](../reports/spec.md#timeline).
-2. **Type, mode and state** on one line under the heading, such as
+2. **Outcome panel**: what happened to the email and what, if anything, is
+   left to do, with the resolution question when there is one (see
+   [Outcome panel](#outcome-panel) and
+   [Resolution questions](#resolution-questions) below).
+3. **Type, mode and state** on one line under the panel, such as
    "Initial invitation · Production · Not sure it arrived".
-3. **Family and recipients.** The Family's name and its Family DUID (the
+4. **Family and recipients.** The Family's name and its Family DUID (the
    shared
    [Not in ParishSoft](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
    badge when the name is unknown), or "Administrator email" for a report
@@ -5378,7 +5392,9 @@ in the order the Administrator asked for
    mode does, "Testing mode sends it to:" names where. When the email's
    delivery recorded [refused addresses](#refused-addresses) that are still
    unresolved, they follow, each once and linking its newest refusal's
-   page; one an Administrator reported bounced says "(bounce reported)". The recipient lists stay with the email's rendering, which the web
+   page; one an Administrator reported bounced says "(bounce reported)".
+   A failed or delivered email's outcome panel lists them instead, so
+   they are named once. The recipient lists stay with the email's rendering, which the web
    login never reads (see
    [Why sends are waiting](#why-sends-are-waiting)). This page is the one
    narrow exception
@@ -5410,8 +5426,8 @@ in the order the Administrator asked for
    "delivered", "refused permanently" or "not sure it arrived"; an address
    shown as just "refused for now" is no longer tried (a receipt, Testing
    mail, an email sent before follow-ups existed, or a follow-up that
-   ended). When the email reached only some addresses the line "Delivered
-   to 1 of 2 addresses." follows. The page's About panel explains these
+   ended). When the email reached only some addresses, the outcome panel
+   says so ("Delivered to 1 of 2 addresses."). The page's About panel explains these
    labels, that one email goes to all addresses at once, and the automatic
    retry of an address refused for now (#806). Before the
    rendering's first finished attempt, or when its evidence does not
@@ -5420,32 +5436,17 @@ in the order the Administrator asked for
    functions with the same caller checks (see
    [outbox recipient reads](../data/spec.md#outbox-recipient-reads)).
    Setting a flaky address aside is a later slice of #806.
-4. **Attempt history**: one table of short rows, one per recorded change,
+5. **Attempt history**: one table of short rows, one per recorded change,
    newest first, with When leading as in any log, then the attempt number,
-   what happened and the resulting state (#934).
-5. **Technical details** (the delivery ID), closed, as the
+   what happened and the resulting state (#934). Once the email is settled
+   (its panel says Delivered or Not sent (cancelled)) the table waits in a
+   closed "Attempt history" disclosure, which stays open across paging once
+   opened; otherwise it is shown.
+6. **Technical details** (the delivery ID), closed, as the
    [page help](../ui-conventions/spec.md#page-help) convention places
    internal identifiers.
-6. **Latest background task**, linking its page, with its state.
-7. **Resolve this email**, shown only when a decision is available: the
-   resolutions the email's state allows (confirming delivery from external
-   evidence, recording that the provider did not send it, a retry, or a
-   duplicate-risk resend), as the
-   [delivery workflow](../background-processing/spec.md#family-invitations-and-reminders)
-   defines, together with **Save evidence note**. One plain sentence says
-   what the actions do. Each needs a note, labelled "Why are you doing
-   this? (saved in this email's history)" ("Note to save in this email's
-   history" for the evidence note), such as "Gmail Sent folder shows it was
-   sent": it is stored with the command, copied into the email's immutable
-   event history, shown under Admin evidence and decisions, and never
-   emailed to anyone. An uncertain email's "Not sure it arrived" notice, and
-   the note when a retry is unavailable, sit just above the section (or,
-   without one, just above the evidence note's disclosure described next),
-   beside the actions they caution about. When the only thing offered is the evidence note (nothing to
-   decide, such as a delivered email), the section is not shown; the note
-   form waits in a closed "Add a note to this email's history" disclosure,
-   whose summary is the form's only heading.
-8. **Report a bounced address**, on a Production Family email only
+7. **Latest background task**, linking its page, with its state.
+8. **Did this email bounce?**, a closed disclosure holding Report a bounced address, on a Production Family email only
    ([#806](https://github.com/epiphany40223/parishkit/issues/806) slice 4).
    When a delivered email later bounces (a non-delivery report arrives in
    the sending mailbox, which the system never reads), an Administrator
@@ -5478,18 +5479,155 @@ in the order the Administrator asked for
    ([#1211](https://github.com/epiphany40223/parishkit/issues/1211)); see
    [data](../data/spec.md#job-outbox-audit-and-purge-records) for the
    record.
-9. **Admin evidence and decisions**: the notes and resolutions recorded on
-   the email, newest first.
+9. **Add a note**: while the evidence note is offered and the outcome
+   panel's question does not already offer it (a delivered, still-sending
+   or cancelled email), the note form waits in a closed "Add a note to this
+   email's history" disclosure, whose summary is the form's only heading.
+   The note ("Note to save in this email's history"), as every note on the
+   page, is stored with the command, copied into the email's immutable event
+   history, shown under Admin evidence and decisions, and never emailed to
+   anyone.
+10. **Admin evidence and decisions**: the notes and resolutions recorded on
+    the email, newest first.
 
 The attempt history and the Admin evidence share one page window, as
 before. Each list ends with Previous page and Next page links, named for
 both lists ("Attempt history and evidence pages"), that act
 [in place](../ui-conventions/spec.md#in-place-controls) and refresh both
-lists; the resolution forms sit between the two regions, so a note being
-typed survives paging. Paging the attempt history can change its height
-and so move the forms and the evidence list below it: a recorded exception
-to [no layout shift](../ui-conventions/spec.md#no-layout-shift)
-(Administrator, 2026-10-11). No schema change.
+lists; the outcome panel and the note form are regions of their own that
+paging never replaces, so a note being typed survives paging. The outcome
+panel is above the attempt history, so paging never moves it; paging can
+still change the history's height and so move the bounce report, the note
+form and the evidence list below it: a recorded exception to
+[no layout shift](../ui-conventions/spec.md#no-layout-shift)
+(Administrator, 2026-10-11).
+
+##### Outcome panel
+
+The panel is one region at the top of the page. Its heading names the
+outcome, and takes focus after an answer is applied in place. Which panel
+shows follows from the email's state and its unresolved
+[refused addresses](#refused-addresses) (`delivery_reads.email_outcome`):
+
+- **Delivered** (`delivered`): "Delivered on" its time (browser-local, the
+  time the email was finished), "Delivered to 1 of 2 addresses." when it
+  reached only some, and the reminder that delivered means the mail
+  service accepted it, which does not prove it reached the inbox. No form:
+  the note and the bounce report wait in their closed disclosures below.
+- **Still sending** (`still_sending`: queued, waiting to retry, or being
+  handed to the mail service): the status in plain words, with the next
+  attempt's time (browser-local) while it waits to retry. While campaign
+  email is paused, the panel says the email waits until mail is resumed and
+  links [Pause and resume mail](#live-delivery-pause). The only action is
+  the one offered before this page changed: after its background task
+  failed, **Try again now** (`retry_unsent`), with its note, or shown
+  unavailable with its reason.
+- **Needs resolution** (`needs_resolution`): Not sure it arrived
+  (`delivery_unknown`), Failed (`permanent_failure`), or a delivered
+  Family email with a refused address still set aside. The panel says what
+  happened in one or two plain sentences, what to check first, and asks the
+  question described next. For Not sure it arrived, what to check names the
+  addresses the email was really sent to (the Testing recipient in Testing
+  mode), the email's type and the time of its last attempt (browser-local):
+  look in the sending mailbox's Sent folder, or the Google Workspace email
+  log search, for that email. The subject is not named: it lives only in
+  the email's rendering, which the web login never reads. For a Failed
+  email whose delivery recorded refused addresses, the panel lists them,
+  each linking its Refused address page, where it is cleared after checking
+  the mailbox; a retry after clearing reaches the cleared address. For a
+  delivered email with a refused address, the panel lists the refused
+  addresses with "Check the address, then clear it on its Refused address
+  page so future email reaches it." and asks nothing: the other addresses
+  already have this email, so it is not resent.
+- **Not sent (cancelled)** (`cancelled`): the email was cancelled before it
+  was sent; nothing is left to do.
+
+Reporting a bounce redraws only its own panel, so a delivered email's
+outcome panel names the newly set-aside address the next time the page is
+opened, as its Refused addresses line did before.
+
+An operational or security notice belongs to no campaign, and every
+resolution is a campaign's, so its panel shows its outcome but offers
+nothing, saying that such a notice cannot be resolved here.
+
+##### Resolution questions
+
+A needs-resolution panel asks one question, as a radio group in a
+fieldset named by the question. Yes and No are radio buttons, not the
+[segmented pair](../ui-conventions/spec.md#binary-choices), which is for
+two views of a page. Each answer leads to exactly one existing action of
+the [delivery workflow](../background-processing/spec.md#family-invitations-and-reminders),
+posted to the page's existing resolution command, with the same server
+checks, notes, duplicate acknowledgement, command idempotency, stale-version
+refusal (409 with its plain-language message and code) and audit as before.
+No answer adds a server command or a rule.
+
+- **Not sure it arrived** asks "What did you find?":
+  - "It was sent": "Where did you see that it was sent?" → **Mark as
+    delivered** (`accept`).
+  - "It was not sent" asks "Send it again?":
+    - Yes: the duplicate-risk tick and "Why send it again?" → **Send it
+      again** (`resend`). During a pause the resent email waits with the
+      paused mail, which the answer says.
+    - No: "Where did you see that it was not sent?" → **Record as not
+      sent** (`confirm_unsent`).
+  - "I can't tell yet": "What have you checked so far?" → **Save note**
+    (`note`); the email stays Not sure it arrived.
+- **Failed** asks "Send it again?":
+  - Yes: "Why send it again?" → **Send it again** (`retry_failed`).
+  - No: "Why leave it as failed?" → **Save note** (`note`); it stays Failed.
+
+Every answer needs its note, as the server requires; each prompt is
+specific to the answer. An answer the rules do not allow now stays in the
+group, unavailable, named by its reason (`aria-describedby`), as
+[prerequisite gates](../ui-conventions/spec.md#prerequisite-gates) require,
+and its fields are never shown. The reasons, each with the code
+[`delivery show`](../admin-automation/spec.md#operations) reports, are
+read in this order, the first that applies:
+
+| Code | When | The page says |
+| --- | --- | --- |
+| `no_campaign` | An operational or security notice | Notices belong to no campaign, so they can't be resolved here. |
+| `archived` | The campaign is archived | The campaign is archived, so its email can't be changed. |
+| `held` | The campaign's export admission refuses (other campaign work holds it, #1331) | The notice about other campaign work |
+| `task_running` | Its latest background task has not failed | This email's background task has not finished, so it can be answered once it has. |
+| `campaign_ended` | A Production invitation or reminder; the campaign is no longer scheduled or active, or its end has passed | The campaign has ended, so it is not sent again. |
+| `family_responded` | A Production invitation or reminder; the Family has responded | The Family has already responded, so it is not sent again. |
+| `family_unreachable` | A Production Family email; the Family is no longer active, eligible or deliverable | The Family can no longer be emailed (ParishSoft no longer gives it a usable address, or it left the campaign). |
+| `paused` | Production campaign email is paused, and the email is not Not sure it arrived | Campaign email is paused; it can be sent again once mail is resumed. |
+| `not_admitted` | The resend admission refuses for any other reason | The generic reason: it needs the campaign to be open, campaign email not paused, up-to-date ParishSoft data, and no other email already covering this one. |
+
+The last five apply only to the two send-again answers, and only after
+`stewardship_delivery_retry_admitted_v1` has refused them: the page never
+diagnoses an admitted resend, so the admitted or refused answer is always
+the server's own. The diagnosis reads only columns the web login already
+reads (the campaign's state, dates and pause, and the Family's eligibility
+and response) in one query. No schema change.
+
+The answers' fields share one reserved slot (a CSS grid cell holding every
+answer's panel), so the slot is as tall as its tallest answer before any
+choice is made; the answers not chosen are invisible and inert, and each
+answer's button sits at the bottom of the slot. Choosing, or changing, an
+answer therefore never moves the button or anything below the panel
+([no layout shift](../ui-conventions/spec.md#no-layout-shift)). The radio
+buttons themselves are never in a form, so nothing but the chosen answer's
+own form is sent. Each button is unavailable until its note (and, for a
+resend, the tick) is complete, with the hint after it
+(`data-require-complete`). An answer acts
+[in place](../ui-conventions/spec.md#in-place-controls): its view
+redirects back, and the outcome panel, the type and recipients lines, the
+attempt history, the bounce report, the note form and the Admin evidence
+are redrawn, with focus on the
+outcome panel's heading, so the panel now says Delivered, Still sending
+(the resend is queued), or Failed (recorded as not sent, which can still be
+sent again), with the note listed under Admin evidence and decisions; no
+stale form remains. The decisions other
+campaign work holds stay in view, unavailable, named by its notice (#1331).
+
+The command line offers the same questions: `delivery show` reports the
+panel's `outcome` and each answer's `choice`, `action` and reason code
+(`unavailable`, null when allowed); each choice maps to one `delivery resolve` action or
+`delivery resend`, unchanged.
 
 #### Refused addresses
 
@@ -7373,7 +7511,7 @@ actions have landed.
   hours and not acknowledged), so the banner's one Acknowledge clears both;
   the alert email and the System logs entry remain. Its sentence says how
   many addresses, since when, that later emails still go to them, and that
-  **Report a bounced address** on the email's
+  **Report bounce**, under **Did this email bounce?** on the email's
   [Mail message page](#mail-message-page), where the address is labeled
   refused permanently, sets it aside; it links the newest such email. It is
   read with the page's other facts in the same statement, so Home's problem

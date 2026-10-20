@@ -57,51 +57,66 @@ def test_an_export_page_offers_no_regenerate():
 
 
 def test_delivery_resolutions_post_in_place():
-    """Each resolution is a data-in-place POST, keyed by its action, that
-    lands on the Admin evidence and also replaces the state line, history,
-    forms and bounce panel; each region it names is drawn by the page."""
-    text = (TEMPLATES / "delivery.html").read_text()
-    form = in_place_form(text, "delivery-resolve-{{ command.action }}")
+    """Each answer of the Mail message page's question is a data-in-place
+    POST, keyed by its choice, that lands on the outcome panel and also
+    replaces the state line, history, note form and bounce panel; each
+    region it names is drawn by the page (#1563)."""
+    page = (TEMPLATES / "delivery.html").read_text()
+    answer = (TEMPLATES / "delivery-answer.html").read_text()
+    form = in_place_form(answer, "delivery-resolve-{{ row.choice }}")
     assert (
-        "action=\"{% url 'admin:delivery_resolve' delivery.id %}#delivery-evidence\""
+        "action=\"{% url 'admin:delivery_resolve' delivery.id %}#delivery-resolve\""
         in form
     )
-    assert names_region(text, "delivery-evidence")
+    assert names_region(page, "delivery-resolve")
     only = re.search(r'data-in-place-only="([^"]*)"', form).group(1).split()
     assert only == [
         "delivery-state",
         "delivery-history",
         "delivery-resolve",
+        "delivery-note",
         "bounce-report",
+        "delivery-evidence",
     ]
     for region in only:
-        assert names_region(text, region), region
-    # The state line and every recipient line whose outcome a resolution
+        assert names_region(page, region), region
+    # The note form lists the same regions and lands on the evidence.
+    note = in_place_form(page, "delivery-note-form")
+    assert (
+        "#delivery-evidence" in note
+        and f'data-in-place-only="{" ".join(only)}"' in (note)
+    )
+    # The state line and every recipient line whose outcome an answer
     # changes sit in #delivery-state, so none keeps a stale label.
-    start = text.index('<div id="delivery-state" data-in-place-region>')
-    state = text[start : text.index("</div>", start)]
+    start = page.index('<div id="delivery-state" data-in-place-region>')
+    state = page[start : page.index("</div>", start)]
     for line in ("delivery.state|delivery_label", "email-recipients", "email-routed"):
         assert line in state, line
-    assert "email-reached" in state
+    # How many addresses it reached is in the outcome panel (#1563).
+    assert "email-reached" not in state
+    # The outcome heading takes focus after an answer, whichever it is.
+    assert (
+        page.count('<h2 id="outcome-heading" tabindex="-1" data-in-place-focus>') == 6
+    )
     for message in (
-        "Evidence note saved.",
-        "Delivery confirmed.",
+        "Marked as delivered.",
+        "Sending it again.",
         "Recorded as not sent.",
-        "Resend authorized.",
+        "Note saved.",
+        "Trying again.",
     ):
-        assert f"{{% translate '{message}' %}}" in form
+        assert f'{{% translate "{message}" as message %}}' in page, message
 
 
 def test_delivery_resolutions_survive_paging():
-    """The resolution forms sit in a region only their own answers replace
-    (data-in-place-own), so paging the history keeps typed evidence, and the
-    note disclosure stays open across a note's answer."""
+    """The outcome panel and the note form are regions only their own
+    answers replace (data-in-place-own), so paging the history keeps typed
+    notes, and the note disclosure stays open across a note's answer."""
     text = (TEMPLATES / "delivery.html").read_text()
-    tag = re.search(r'<div id="delivery-resolve"[^>]*>', text).group(0)
-    assert "data-in-place-region" in tag and "data-in-place-own" in tag
-    body = text[text.index(tag) :]
-    body = body[: body.index("{% comment %}Report a bounced address")]
-    assert body.count("<form ") == 1 and 'data-in-place="delivery-resolve-' in body
-    assert '<details id="delivery-note-disclosure" data-keep-open>' in body
-    # No resolution form is left outside the region.
+    for region in ("delivery-resolve", "delivery-note"):
+        tag = re.search(rf'<div id="{region}"[^>]*>', text).group(0)
+        assert "data-in-place-region" in tag and "data-in-place-own" in tag
+    assert '<details id="delivery-note-disclosure" data-keep-open>' in text
+    # Every resolution form posts from one of the two regions.
     assert text.count("admin:delivery_resolve") == 1
+    assert text.count('include "stewardship/delivery-answer.html"') == 7

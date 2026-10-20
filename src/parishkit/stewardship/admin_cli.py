@@ -2905,8 +2905,7 @@ def digest_weekly_request(args, preamble, runtime, context):
 # The page's acknowledgements, asked at the prompt (PR 9c): the same words
 # the person ticks on the delivery and refused address pages.
 RESEND_ACKNOWLEDGEMENT = (
-    "The prior attempt may already have been delivered. I accept the "
-    "duplicate risk and explicitly authorize another attempt."
+    "It may already have arrived. I accept that the recipient could get a second copy."
 )
 CLEAR_ACKNOWLEDGEMENT = (
     "I verified this address for this Family and authorize removing this refusal."

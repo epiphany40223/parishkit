@@ -598,6 +598,25 @@ input[aria-invalid=true], textarea[aria-invalid=true], select[aria-invalid=true]
 /* A choice group (checkboxes or radios) with an unanswered required choice;
    only groups marked .choice-group, never a whole Member section or panel. */
 fieldset.choice-group:has(> label > input:is([type=checkbox], [type=radio])[aria-invalid=true]) { border: 2px solid var(--error-border); }
+/* The Mail message page's resolution question (#1563). Every answer of one
+   question shares one grid cell (.choice-slot), so the cell is as tall as
+   its tallest answer before anything is chosen, and choosing or changing an
+   answer never moves what follows (no layout shift, #736). An answer not
+   chosen keeps its space but is invisible (ui-v1.js also makes it inert);
+   each answer's button sits at the bottom of the cell, a nested question's
+   cell filling the rest of its answer. The note starts two lines tall and
+   grows with what is typed, where the browser can. */
+.choice-slot { display: grid; }
+.choice-slot > [data-choice-panel] { grid-area: 1 / 1; display: flex; flex-direction: column; min-width: 0; margin: 0; }
+.choice-slot > [data-choice-panel] > .choice-slot { flex: 1; }
+[data-choice-panel][data-choice-hidden] { visibility: hidden; }
+.choice-answer > .choice-submit { margin-top: auto; padding-top: .5rem; }
+.choice-answer textarea { field-sizing: content; min-height: 3lh; max-height: 12lh; }
+/* The questions are compact, so the reserved slot stays short: the
+   answers sit side by side (wrapping on a phone) and a question inside the
+   outcome panel draws no card of its own. */
+.outcome-panel fieldset.choice-question { border: 0; background: none; padding: 0; margin-block: .75rem; }
+.choice-question > .choice-options { display: flex; flex-wrap: wrap; gap: .25rem 1.5rem; }
 /* The Ministry packet lists every Ministry in the reader's scope (#533), which
    for an Administrator can be many, so the boxes flow into columns. */
 .packet-choices { columns: 18rem auto; column-gap: 1.5rem; }
