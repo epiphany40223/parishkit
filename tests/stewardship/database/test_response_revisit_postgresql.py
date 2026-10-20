@@ -27,8 +27,13 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 
 @pytest.mark.parametrize("change", ["moved", "removed", "inactive", "deceased"])
-def test_promotion_cancels_inaccessible_member_proposals(live_response_service, change):
-    """A disappeared person keeps history, never actionable or foreign values."""
+def test_promotion_keeps_an_open_change_whose_member_left(
+    live_response_service, change
+):
+    """Rule 4 (#1738): a refresh leaves an open change whose Member left the
+    Family (gone, moved, inactive or deceased) exactly as it was, with its
+    history, and records no foreign value; the update run refuses such a
+    Member instead."""
     from parishkit.stewardship.deployment import ServiceRole
 
     from .test_background_grants_postgresql import task_login
@@ -37,6 +42,7 @@ def test_promotion_cancels_inaccessible_member_proposals(live_response_service, 
     form, answers = form_and_answers(harness)
     answers["members"]["3"]["first_name"] = "Requested change"
     response = submit(harness, form, answers).submission
+    before = ProposedChange.objects.get(submission=response)
     data = response_source()
     if change == "removed":
         del data.members[3]
@@ -52,10 +58,13 @@ def test_promotion_cancels_inaccessible_member_proposals(live_response_service, 
     with task_login(ServiceRole.WORKER, exact=True):
         promote(snapshot, claim, harness.campaign, harness.rings)
     proposal = ProposedChange.objects.get(submission=response)
-    assert proposal.execution == "cancelled"
-    assert proposal.current_available is False and proposal.current_value is None
+    assert proposal.execution == "pending" and proposal.version == before.version
+    assert (proposal.current_available, proposal.current_value) == (
+        before.current_available,
+        before.current_value,
+    )
     assert proposal.submitted_value == "Requested change"
-    assert proposal.current_source_id == snapshot.pk
+    assert proposal.current_source_id == before.current_source_id
 
 
 def test_changed_promotions_release_only_unused_comparison_pins(live_response_service):

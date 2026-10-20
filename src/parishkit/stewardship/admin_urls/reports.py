@@ -1,4 +1,4 @@
-"""Responses and reports group URLs: every report page and its form actions.
+"""Review work and Reports and queries URLs: every report page and its form actions.
 
 Pages end in ``/`` and name no campaign: reports show the current campaign,
 so each route hands its unchanged view the current campaign's id
@@ -40,7 +40,7 @@ from ..reports import (
     ministry_export_views,
     ministry_followup_exports,
     ministry_followup_views,
-    ministry_roster_views,
+    pledge_review_views,
     timeline_views,
     weekly_manual_views,
     weekly_views,
@@ -85,6 +85,14 @@ patterns = [
         financial_export_views.create,
         "financial_export",
     ),
+    # Pledges (#1686): the financial stream's review worklist, whose
+    # decisions post to the page itself, and its CSV/XLSX/PDF download.
+    _page("reports/financial/pledges/", pledge_review_views.page, "pledges_to_enter"),
+    _page(
+        "reports/financial/pledges/exports/",
+        pledge_review_views.export,
+        "pledges_to_enter_export",
+    ),
     _page("reports/limitations/", limitation_views.report, "limitations_report"),
     _page(
         "reports/limitations/exports/",
@@ -97,12 +105,25 @@ patterns = [
         census_change_views.export,
         "census_changes_export",
     ),
-    # Publish to ParishSoft (#528, ADM-09), linked from Census changes; its
-    # Check ParishSoft posts to the page itself.
+    # Update ParishSoft (#528, ADM-09; renamed from Publish to ParishSoft by
+    # #1688, whose old address is gone with no redirect), linked from Census
+    # changes. Its Check ParishSoft posts to the page itself; Update's review
+    # and Apply post to its confirmation, and Run again's to its retries,
+    # each naming the plan and answering the review dialog.
     _page(
-        "reports/census/publication/",
+        "reports/census/update-parishsoft/",
         census_publication_views.page,
-        "census_publication",
+        "update_parishsoft",
+    ),
+    _page(
+        "reports/census/update-parishsoft/confirmation/",
+        census_publication_views.confirmation,
+        "update_parishsoft_confirmation",
+    ),
+    _page(
+        "reports/census/update-parishsoft/retries/",
+        census_publication_views.retries,
+        "update_parishsoft_retries",
     ),
     _page("reports/information/", information_views.queue, "information_queue"),
     _page(
@@ -115,11 +136,9 @@ patterns = [
         information_views.detail,
         "information_item",
     ),
-    _page(
-        "reports/information/<uuid:item_id>/record/",
-        information_views.update,
-        "information_update",
-    ),
+    # A request's Save (information_update) was retired, with no redirect
+    # (#1685): decisions are made on the Additional information worklist,
+    # which posts them to its own address.
     # The Members joining and leaving lists (joining/, leaving/) and their
     # export form (exports/) were retired, with no redirect (#1157): a
     # request's contact details are on its follow-up page, and the export is
@@ -134,13 +153,6 @@ patterns = [
         "reports/ministries/packets/",
         ministry_export_views.create_packet,
         "ministry_packet",
-    ),
-    # One outcome for the requests chosen on the queue (#1131), posted by
-    # its confirmation dialog.
-    _page(
-        "reports/ministries/follow-up/bulk/",
-        ministry_followup_views.bulk,
-        "ministry_followup_bulk",
     ),
     # Export these requests (#1157): the queue's filtered set as a file,
     # rendered on request. A request is a UUID, so "exports" is never one.
@@ -160,29 +172,13 @@ patterns = [
         "ministry_followup_update",
     ),
     # The Entered in ParishSoft tick of a resolved join or leave (#528) is a
-    # POST to its request's roster/, and Roster changes to enter, the list
-    # staff work from, sits beside the queue with its downloads under it.
+    # POST to its request's roster/. Staff mark them from Ministry requests'
+    # To enter by hand Stage: Roster changes to enter, the list once here,
+    # was folded into it with no redirect (R39 finding 2).
     _page(
         "reports/ministries/follow-up/<uuid:request_id>/roster/",
         ministry_followup_views.roster,
         "ministry_followup_roster",
-    ),
-    _page(
-        "reports/ministries/follow-up/roster/",
-        ministry_roster_views.page,
-        "ministry_roster",
-    ),
-    _page(
-        "reports/ministries/follow-up/roster/exports/",
-        ministry_roster_views.export,
-        "ministry_roster_export",
-    ),
-    # The list's bulk Mark entered in ParishSoft (#879), posted by its
-    # confirmation dialog.
-    _page(
-        "reports/ministries/follow-up/roster/marks/",
-        ministry_roster_views.bulk,
-        "ministry_roster_bulk",
     ),
     # The directory's fixed actions before its Family pages; a Family is a
     # UUID, so "exports" or "search" can never be taken for one (a unit test

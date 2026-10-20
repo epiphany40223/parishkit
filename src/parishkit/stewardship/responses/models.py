@@ -136,6 +136,12 @@ class Submission(ImmutableRecord):
     # A soft reference like ``actor_id``: no foreign key, so history outlives
     # the portal user. Added by frozen migration 0065.
     entered_by_id = models.UUIDField(null=True)
+    # ParishSoft's pledge for the campaign's upcoming financial period in the
+    # validation snapshot, recorded at the submit only for a response that
+    # answers the financial questions and only with that snapshot's proven
+    # giving read, else None (#1753, frozen migration 0136, provisional). The
+    # financial stream's A for the pledge; a guard checks it in SQL.
+    upcoming_pledge = models.DecimalField(max_digits=24, decimal_places=2, null=True)
 
     class Meta:
         db_table = "stewardship_submission"
@@ -313,6 +319,9 @@ class AdditionalInformationItem(MutableRecord):
         ]
 
 
+INFORMATION_DECISIONS = ("accepted", "ignored", "none")
+
+
 class AdditionalInformationRevision(ImmutableRecord):
     """An authorized Staff edit with immutable notes and completion attribution.
 
@@ -332,6 +341,12 @@ class AdditionalInformationRevision(ImmutableRecord):
     notes = models.TextField(default="", blank=True)
     followed_up_at = UTCDateTimeField(null=True)
     followed_up_by_id = models.UUIDField(null=True)
+    # The review decision this revision records (#1685, schema migration
+    # 0126): ``accepted`` (to handle, or handled once followed up),
+    # ``ignored`` or ``none`` (to review). Every revision since 0126 states
+    # it; an older one has none, and is read by its follow-up flags
+    # (``pipeline.information_placement``).
+    review_decision = models.CharField(max_length=12, null=True)
 
     class Meta:
         db_table = "stewardship_information_revision"
@@ -359,6 +374,83 @@ class AdditionalInformationRevision(ImmutableRecord):
                 ),
                 name="information_revision_completion",
             ),
+            # Accepted needs follow-up needed or completed; Ignored and To
+            # review (none) need neither.
+            models.CheckConstraint(
+                condition=models.Q(review_decision__isnull=True)
+                | models.Q(review_decision="accepted", follow_up_needed=True)
+                | models.Q(review_decision="accepted", followed_up=True)
+                | models.Q(
+                    review_decision__in=INFORMATION_DECISIONS[1:],
+                    follow_up_needed=False,
+                    followed_up=False,
+                ),
+                name="information_revision_decision",
+            ),
+        ]
+
+
+LIMITATION_KINDS = ("member", "proposed_member", "family")
+LIMITATION_DECISIONS = ("accepted", "ignored", "none", "handled")
+
+
+class LimitationReview(ImmutableRecord):
+    """One review decision on a cannot-participate or cannot-attend answer (#1685).
+
+    Nothing is stored when a Family submits: the answer is the Family's live
+    response, as the Limitations report reads it. Each Accept, Ignore,
+    Handled or Back to review (``none``) is one immutable row naming the
+    answer (``kind`` and, for a Member, ``member_key``: the key the
+    response's service answers use), the effective live response it was
+    decided on, and ``expected_version``, the number of decisions recorded
+    for the answer before it. A decision stays in force while every later
+    live response gives the same answer
+    (schema/migrations/0126_information_limitation_review.sql).
+    """
+
+    family = models.ForeignKey(
+        "stewardship_campaigns.FamilyCampaign",
+        on_delete=models.PROTECT,
+        related_name="+",
+    )
+    submission = models.ForeignKey(
+        Submission, on_delete=models.PROTECT, related_name="+"
+    )
+    kind = models.CharField(max_length=16)
+    member_key = models.CharField(max_length=64, blank=True, default="")
+    expected_version = models.PositiveBigIntegerField()
+    request_key = models.UUIDField()
+    decision = models.CharField(max_length=12)
+    note = models.TextField(default="", blank=True)
+
+    class Meta:
+        db_table = "stewardship_limitation_review"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("family", "kind", "member_key", "expected_version"),
+                name="limitation_review_version",
+            ),
+            models.UniqueConstraint(
+                fields=("actor_id", "request_key"), name="limitation_review_replay"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(actor_id__isnull=False),
+                name="limitation_review_identity",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(kind__in=LIMITATION_KINDS),
+                name="limitation_review_kind",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(decision__in=LIMITATION_DECISIONS),
+                name="limitation_review_decision",
+            ),
+            # A Family's own answer has no Member key; a Member's has one.
+            models.CheckConstraint(
+                condition=models.Q(kind="family", member_key="")
+                | (~models.Q(kind="family") & ~models.Q(member_key="")),
+                name="limitation_review_key",
+            ),
         ]
 
 
@@ -384,6 +476,12 @@ class ProposalResolution(ImmutableRecord):
     request_key = models.UUIDField()
     action = models.CharField(max_length=12)
     note = models.TextField(default="", blank=True)
+    # The ParishSoft Member ID (DUID) Staff give when they mark a New Member
+    # entered (#1749): the Member they added, which the refresh confirms the
+    # change by (``refresh_checks``). Only on an ``entered`` row; SQL also
+    # requires a New Member change and no Member the Family's response
+    # listed (schema/migrations/0138_published_refresh_conflicts.sql).
+    member_duid = models.BigIntegerField(null=True, blank=True)
 
     class Meta:
         db_table = "stewardship_proposal_resolution"
@@ -402,6 +500,11 @@ class ProposalResolution(ImmutableRecord):
             models.CheckConstraint(
                 condition=models.Q(action__in=RESOLUTION_ACTIONS),
                 name="proposal_resolution_action",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(member_duid__isnull=True)
+                | models.Q(member_duid__gt=0, action="entered"),
+                name="proposal_resolution_member",
             ),
         ]
 
@@ -484,6 +587,99 @@ class ProposalReview(ImmutableRecord):
         ]
 
 
+ADDITION_ENTITIES = ("family", "member")
+ADDITION_ACTIONS = ("entered", "withdrawn")
+
+
+class CensusAddition(ImmutableRecord):
+    """A census change the parish added that no Family answer asked for (#1710).
+
+    Staff and Administrators **Add** it on the Census changes review worklist
+    (review pipeline spec, "Reviewed stage"): one Member field or Family
+    address of a Family that responded, with the value to carry into
+    ParishSoft, shown as *Added by the parish*. It never touches the
+    Family's submitted answers or the proposals derived from them, so the
+    Family submit path and its guards are unchanged. It may name the
+    Family's ignored change it was added in place of (``in_place_of``),
+    and the database records ParishSoft's value of the field at that moment
+    (``baseline``).
+    Who, when and the note are the row's own; its one later step (Entered
+    by hand or withdrawn) is a ``CensusAdditionResolution``. SQL checks the
+    actor, the campaign, the Family, the field and the value's shape again
+    (schema/migrations/0129_census_additions.sql).
+    """
+
+    family = models.ForeignKey(
+        "stewardship_campaigns.FamilyCampaign", on_delete=models.PROTECT
+    )
+    entity_kind = models.CharField(max_length=20)
+    entity_key = models.CharField(max_length=36)
+    field = models.CharField(max_length=40)
+    value = models.JSONField()
+    in_place_of = models.ForeignKey(
+        ProposedChange,
+        on_delete=models.PROTECT,
+        null=True,
+        related_name="additions_in_place",
+    )
+    request_key = models.UUIDField()
+    note = models.TextField(default="", blank=True)
+    # ParishSoft's value of the field when the change was added, as the
+    # census source reads it ({"available": ..., "value": ...}), and the
+    # snapshot it came from: the baseline a refresh re-evaluates the
+    # addition against (review pipeline, "Baseline refresh re-evaluation",
+    # #1689). The guard sets both; NULL when the source has no such field.
+    baseline = models.JSONField(null=True, editable=False)
+    baseline_source_id = models.UUIDField(null=True, editable=False)
+
+    class Meta:
+        db_table = "stewardship_census_addition"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("actor_id", "request_key"), name="census_addition_replay"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(actor_id__isnull=False)
+                & models.Q(entity_kind__in=ADDITION_ENTITIES)
+                & ~models.Q(entity_key="")
+                & ~models.Q(field=""),
+                name="census_addition_identity",
+            ),
+        ]
+
+
+class CensusAdditionResolution(ImmutableRecord):
+    """The one later step of a parish-added census change (#1710).
+
+    ``entered`` records that a person typed it into ParishSoft (Entered by
+    hand); ``withdrawn`` is its Back to review, which withdraws an added
+    change (review pipeline spec, "Reviewed stage"). Either is final: one
+    row per addition, so a second step (another reader's, at the same
+    time) is refused by the unique addition.
+    """
+
+    addition = models.OneToOneField(
+        CensusAddition, on_delete=models.PROTECT, related_name="resolution"
+    )
+    action = models.CharField(max_length=12)
+    request_key = models.UUIDField()
+    note = models.TextField(default="", blank=True)
+
+    class Meta:
+        db_table = "stewardship_census_addition_resolution"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("actor_id", "request_key"),
+                name="census_addition_resolution_replay",
+            ),
+            models.CheckConstraint(
+                condition=models.Q(actor_id__isnull=False)
+                & models.Q(action__in=ADDITION_ACTIONS),
+                name="census_addition_resolution_identity",
+            ),
+        ]
+
+
 class SubmissionReceiptOccurrence(ImmutableRecord):
     """One atomic receipt or proven no-recipient outcome per accepted submission.
 
@@ -521,3 +717,48 @@ from .publication_models import (  # noqa: E402,F401
     PublicationOutcome,
     PublicationPlan,
 )
+
+
+class AddedMemberLink(ImmutableRecord):
+    """The ParishSoft Member a Member the Family added on the form became.
+
+    A Member added on the form has only the form's local UUID
+    (``proposed_key``, the ``proposed_member`` entity key); once Staff
+    create the person in ParishSoft the Family answers for them under the
+    new Member DUID (``member_key``). Promotion records this link when the
+    evidence is causal and unique (``responses/added_members.py``; data
+    spec, "Proposed changes"; #1670), and the Ministry leader contact rule
+    reads both keys as one person. ``proposal`` is the Entered by hand New
+    Member change the link rests on and ``snapshot_id`` the promoted snapshot
+    that showed the Member. Only the promoting source worker inserts one,
+    SQL checks the evidence again, and a link never changes
+    (schema/migrations/0141_added_member_links.sql).
+    """
+
+    family = models.ForeignKey(
+        "stewardship_campaigns.FamilyCampaign",
+        on_delete=models.PROTECT,
+        related_name="+",
+    )
+    proposed_key = models.CharField(max_length=36)
+    member_key = models.CharField(max_length=20)
+    proposal = models.ForeignKey(
+        ProposedChange, on_delete=models.PROTECT, related_name="+"
+    )
+    snapshot_id = models.UUIDField()
+
+    class Meta:
+        db_table = "stewardship_added_member_link"
+        constraints = [
+            models.UniqueConstraint(
+                fields=("family", "proposed_key"),
+                name="added_member_link_proposed_once",
+            ),
+            models.UniqueConstraint(
+                fields=("family", "member_key"), name="added_member_link_member_once"
+            ),
+            models.CheckConstraint(
+                condition=models.Q(actor_id__isnull=True),
+                name="added_member_link_identity",
+            ),
+        ]

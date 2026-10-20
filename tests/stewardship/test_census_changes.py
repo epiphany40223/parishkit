@@ -2,21 +2,18 @@
 
 import csv
 import io
-import re
 from datetime import UTC, datetime
-from html import unescape
 from zoneinfo import ZoneInfo
 
 import pytest
 from openpyxl import load_workbook
 
 from parishkit.stewardship.reports import pdf_design
-from parishkit.stewardship.reports.census_change_views import SORTING, status_choices
+from parishkit.stewardship.reports.census_change_views import SORTING
 from parishkit.stewardship.reports.census_changes import (
     HEADINGS,
     PDF_WEIGHTS,
     PRIVACY,
-    STATUSES,
     CensusQuery,
     census_csv,
     census_pdf,
@@ -215,46 +212,6 @@ def test_filters_narrow_the_rows():
     assert counts["superseded"] == 1
 
 
-def test_status_choices_count_what_each_lists():
-    """Each Status choice carries how many changes it lists (#1682).
-
-    A status counts its own changes, whatever the other filters; Work to do
-    counts To do and Conflict, and To review only for an Administrator; Every
-    status counts them all; a status with no change keeps its choice at 0.
-    """
-    counts = {key: 0 for key in STATUSES} | {
-        "to_review": 2,
-        "to_do": 3,
-        "conflict": 1,
-        "published": 4,
-    }
-    admin = dict(
-        (key, count)
-        for key, _label, count in status_choices(counts, administrator=True)
-    )
-    assert admin == {
-        "open": 6,
-        "to_review": 2,
-        "to_do": 3,
-        "conflict": 1,
-        "being_published": 0,
-        "published": 4,
-        "already": 0,
-        "entered": 0,
-        "ignored": 0,
-        "all": 10,
-    }
-    staff = dict(
-        (key, count)
-        for key, _label, count in status_choices(counts, administrator=False)
-    )
-    assert staff["open"] == 4 and staff["all"] == 10
-    labels = [
-        label for _key, label, _count in status_choices(counts, administrator=True)
-    ]
-    assert labels[0] == "Work to do" and labels[-1] == "Every status"
-
-
 def test_dates_are_days_in_the_browser_zone():
     """From and Through are whole local days; a date needs a known zone."""
     query = CensusQuery.parse(
@@ -288,20 +245,21 @@ def test_parse_refuses_values_outside_the_closed_choices(values):
 
 def test_csv_follows_the_page_column_order_in_the_chosen_zone():
     """The download has the page's columns in the page's order (#932):
-    Member DUID right after Who, then Submitted and the latest resolution's
-    three columns (#528), times in the chosen zone."""
+    the Member's ParishSoft status (#1752) and Member DUID right after Who,
+    then Submitted and the latest resolution's three columns (#528), times
+    in the chosen zone."""
     result = select(rows(), CensusQuery(), administrator=False)
     text = census_csv(result, ZoneInfo("America/Chicago")).decode()
     table = list(csv.reader(io.StringIO(text)))
     assert tuple(table[0]) == HEADINGS
     assert HEADINGS[:2] == ("Family", "ParishSoft status")
-    assert HEADINGS[3:5] == ("Who", "Member DUID")
-    assert HEADINGS[11:] == ("Submitted", "Recorded by", "Recorded at", "Note")
-    assert table[1][3] == "Pat Sample" and table[1][11] == "2054-10-05T09:30:00-05:00"
-    # A current Family has no status; no resolution yet: its three columns
-    # are blank.
-    assert table[1][1] == ""
-    assert table[1][12:] == ["", "", ""]
+    assert HEADINGS[3:6] == ("Who", "Member's ParishSoft status", "Member DUID")
+    assert HEADINGS[12:] == ("Submitted", "Recorded by", "Recorded at", "Note")
+    assert table[1][3] == "Pat Sample" and table[1][12] == "2054-10-05T09:30:00-05:00"
+    # A current Family and Member have no status; no resolution yet: its
+    # three columns are blank.
+    assert table[1][1] == table[1][4] == ""
+    assert table[1][13:] == ["", "", ""]
     assert len(table) == 4
 
 
@@ -323,6 +281,39 @@ def test_downloads_put_a_missing_family_s_status_in_its_own_column():
     ]
 
 
+@pytest.mark.parametrize(
+    ("status", "words"),
+    [
+        ("moved", "Not in ParishSoft"),
+        ("missing", "Not in ParishSoft"),
+        ("inactive", "Inactive in ParishSoft"),
+        ("deceased", "Deceased in ParishSoft"),
+    ],
+)
+def test_downloads_put_a_member_s_status_beside_who(status, words):
+    """The Who cell's badge (rule 4, #1738) is the shared words in Member's
+    ParishSoft status, right after Who, in every format (#1752); Who keeps
+    the name, and a current Member or a household change leaves it blank."""
+    left = shape(row(member_status=status))
+    family = shape(
+        row(id="2", entity_kind="family", entity_key="7001", field="home_address")
+    )
+    result = {"rows": [left, shape(row(id="3", member_status="current")), family]}
+    zone = ZoneInfo("UTC")
+    table = list(csv.reader(io.StringIO(census_csv(result, zone).decode())))
+    assert [line[3:6] for line in table] == [
+        ["Who", "Member's ParishSoft status", "Member DUID"],
+        ["Pat Sample", words, "41"],
+        ["Pat Sample", "", "41"],
+        ["Family", "", ""],
+    ]
+    sheet = workbook(result, zone)["Census changes"]
+    assert [sheet.cell(line, 5).value for line in (1, 2)] == [
+        "Member's ParishSoft status",
+        words,
+    ]
+
+
 def test_downloads_word_member_duid_as_the_page_does():
     """CSV and XLSX give Member DUID right after Who: the DUID, "New Member"
     for a Member added on the form, and blank for a household change (#932)."""
@@ -339,7 +330,7 @@ def test_downloads_word_member_duid_as_the_page_does():
     result = {"rows": [shape(item) for item in (row(), proposed, family)]}
     zone = ZoneInfo("UTC")
     table = list(csv.reader(io.StringIO(census_csv(result, zone).decode())))
-    assert [line[4] for line in table] == ["Member DUID", "41", "New Member", ""]
+    assert [line[5] for line in table] == ["Member DUID", "41", "New Member", ""]
     sheet = workbook(result, zone)["Census changes"]
     assert sheet.max_column == len(HEADINGS)
     column = HEADINGS.index("Member DUID") + 1
@@ -391,233 +382,6 @@ def test_member_duid_column_sorts_with_blank_rows_after_members():
     assert [item["id"] for item in up] == ["c", "a", "b"]
     down = SORTING.sort_rows(shaped, "-member_duid")
     assert [item["id"] for item in down] == ["b", "a", "c"]
-
-
-def page_headings(html):
-    """The rendered page table's column headings, as a reader sees them.
-
-    A sort heading's arrow and its hidden "(sort ascending)" text are not
-    part of the heading's name, so they are dropped with every other tag.
-    """
-    head = re.search(r"<thead>(.*?)</thead>", html, re.DOTALL).group(1)
-    cells = re.findall(r"<th\b[^>]*>(.*?)</th>", head, re.DOTALL)
-    hidden = re.compile(r'<span class="(?:sort-indicator|visually-hidden)".*?</span>')
-    return [
-        unescape(re.sub(r"<[^>]*>", "", hidden.sub("", cell))).strip() for cell in cells
-    ]
-
-
-def test_page_shows_member_duid_beside_who():
-    """Who is followed by its own Member DUID column; a New Member says so."""
-    from django.template.loader import render_to_string
-
-    from parishkit.stewardship.web.tables import paginate
-
-    rows = [
-        shape(row()),
-        shape(
-            row(
-                id="2",
-                entity_kind="proposed_member",
-                entity_key="p-1",
-                field="new_member",
-                submitted_value={"first_name": "Lee"},
-            )
-        ),
-    ]
-    table = paginate(rows, {}, sorting=SORTING)
-    html = render_to_string(
-        "stewardship/census-changes.html",
-        {
-            "table": table,
-            "query": CensusQuery(),
-            "query_fields": {},
-            "status_counts": {},
-            "status_choices": [],
-            "route_choices": [],
-            "kind_choices": [],
-        },
-    )
-    headings = [
-        "Family",
-        "Family DUID",
-        "Who",
-        "Member DUID",
-        "What changed",
-        "Submitted",
-    ]
-    positions = [html.index(f">{heading}<") for heading in headings]
-    assert positions == sorted(positions)
-    # The downloads have the page's columns, in its order (#932), except the
-    # page's last, Actions, which has no file column (#528), and ParishSoft
-    # status, the badge the page shows in the Family cell (#1216). Each of
-    # the page's labelled lists (#1472) is a run of file columns, in the
-    # list's order: Values, and Last recorded.
-    groups = {
-        "Values": ("ParishSoft now", "Family's answer", "Edited value"),
-        "Last recorded": ("Recorded by", "Recorded at", "Note"),
-    }
-    files = [heading for heading in HEADINGS if heading != "ParishSoft status"]
-    page = []
-    for heading in page_headings(html):
-        page.extend(groups.get(heading, (heading,)))
-    assert page == [*files, "Actions"]
-    # Each value is named beside it; a blank one says so.
-    assert "<dt>ParishSoft now</dt><dd>" in html
-    assert "<dt>Family's answer</dt><dd>" in html
-    assert '<td class="numeric">41</td>' in html
-    assert '<td class="numeric">New Member</td>' in html
-
-
-def test_values_tell_a_field_never_read_from_one_read_empty():
-    """ParishSoft now says (not read) where ParishSoft was never read (every
-    Family field) and (blank) where it was read and is empty; a Conflict's
-    When the Family answered says (blank) where ParishSoft was empty then
-    (#1472). The downloads leave every one of them an empty cell."""
-    from django.template.loader import render_to_string
-
-    from parishkit.stewardship.web.tables import paginate
-
-    family = row(
-        id="family",
-        entity_kind="family",
-        field="email_opt_out",
-        handling="manual",
-        current_value=False,
-        submitted_value=True,
-    )
-    empty = row(id="empty", current_value=None)
-    unread = row(id="unread", current_available=False)
-    conflict = row(
-        id="conflict", execution="conflict", baseline_value=None, current_value="1"
-    )
-    shaped = [shape(each) for each in (family, empty, unread, conflict)]
-    assert [each["parishsoft_read"] for each in shaped] == [False, True, False, True]
-    html = render_to_string(
-        "stewardship/census-changes.html",
-        {
-            "table": paginate(shaped, {}, sorting=SORTING),
-            "query": CensusQuery(),
-            "query_fields": {},
-            "status_counts": {},
-            "status_choices": [],
-            "route_choices": [],
-            "kind_choices": [],
-        },
-    )
-
-    def values(identifier):
-        """The row's Values cell as label: text pairs."""
-        cell = re.search(
-            rf'<tr id="change-{identifier}">.*?<dl class="cell-pairs[^"]*">(.*?)</dl>',
-            html,
-            re.DOTALL,
-        ).group(1)
-        pairs = re.findall(r"<dt>(.*?)</dt><dd>(.*?)</dd>", cell, re.DOTALL)
-        return {
-            unescape(label): unescape(re.sub(r"<[^>]*>", "", text)).strip()
-            for label, text in pairs
-        }
-
-    assert values("family")["ParishSoft now"] == "(not read)"
-    assert values("unread")["ParishSoft now"] == "(not read)"
-    assert values("empty")["ParishSoft now"] == "(blank)"
-    assert "When the Family answered" not in values("empty")
-    assert values("conflict") == {
-        "ParishSoft now": "1",
-        "When the Family answered": "(blank)",
-        "Family's answer": "555-0199",
-    }
-    # The downloads are unchanged: an empty ParishSoft now cell either way.
-    result = select(shaped, CensusQuery(status="all"), administrator=True)
-    table = list(csv.reader(io.StringIO(census_csv(result, UTC).decode())))
-    column = HEADINGS.index("ParishSoft now")
-    by_who = {line[HEADINGS.index("Who")]: line for line in table[1:]}
-    assert by_who["Family"][column] == ""
-    assert sorted(line[column] for line in table[1:]) == ["", "", "", "1"]
-    assert "(not read)" not in "".join(map(str, table))
-    assert "(blank)" not in "".join(map(str, table))
-
-
-WORK_TO_DO_EMPTY = "No census changes need your work right now."
-NONE_YET = "No census changes yet."
-NO_MATCH = "No census changes match these filters."
-
-
-def empty_page(changes, query, *, administrator):
-    """The page's table cell and Status choices when ``query`` keeps none.
-
-    ``changes`` go through the view's own ``select``, so the Status choices
-    count every status while the table shows only what the filters keep.
-    """
-    from django.template.loader import render_to_string
-
-    from parishkit.stewardship.web.tables import paginate
-
-    result = select(
-        [shape(change) for change in changes], query, administrator=administrator
-    )
-    assert result["rows"] == []
-    return unescape(
-        render_to_string(
-            "stewardship/census-changes.html",
-            result
-            | {
-                "table": paginate(result["rows"], {}, sorting=SORTING),
-                "query": query,
-                "query_fields": {},
-                "status_choices": status_choices(
-                    result["status_counts"], administrator=administrator
-                ),
-                "route_choices": [],
-                "kind_choices": [],
-            },
-        )
-    )
-
-
-@pytest.mark.parametrize(
-    ("changes", "administrator", "counted"),
-    [
-        # To review is an Administrator's work: Staff's Work to do leaves it
-        # out, while their Status choices still count it.
-        ([row(id="1"), row(id="2")], False, "To review"),
-        # Being published needs no one's work: no one's Work to do lists it.
-        ([row(decision="approved", execution="queued")], True, "Being published"),
-    ],
-)
-def test_empty_work_to_do_names_the_list_not_the_counts(
-    changes, administrator, counted
-):
-    """An empty Work to do never claims there is nothing at all (#227).
-
-    The Status choices count rows that Work to do leaves out, so the
-    message speaks of work for the viewer and points to Every status.
-    """
-    html = empty_page(changes, CensusQuery(), administrator=administrator)
-    assert f">{counted} ({len(changes)})</option>" in html
-    assert ">Work to do (0)</option>" in html
-    assert WORK_TO_DO_EMPTY in html
-    assert "set Status to “Every status”" in html
-    assert NONE_YET not in html and NO_MATCH not in html
-
-
-@pytest.mark.parametrize(
-    ("query", "message", "absent"),
-    [
-        (CensusQuery(status="all"), "tick Include history", NO_MATCH),
-        # Every status with history is everything: no change at all yet.
-        (CensusQuery(status="all", history="yes"), NONE_YET, NO_MATCH),
-        (CensusQuery(search="Nobody"), NO_MATCH, NONE_YET),
-        (CensusQuery(history="yes"), NO_MATCH, NONE_YET),
-    ],
-)
-def test_empty_table_says_why_for_the_filters(query, message, absent):
-    """Each filter combination's empty table gives its own reason (#227)."""
-    html = empty_page([], query, administrator=True)
-    assert message in html and absent not in html
-    if query.history:
-        assert "tick Include history" not in html
 
 
 def test_xlsx_report_information_states_what_the_pdf_frame_states():
@@ -714,16 +478,18 @@ def test_csv_xlsx_and_pdf_carry_the_same_columns_and_rows():
     assert drawn["rows"][0][submitted] == "Oct 5, 2054 9:30 AM"
     assert drawn["frame"].eyebrow == "Example Parish · Stewardship 2055"
     assert drawn["frame"].details == ("3 changes in this file.",)
-    # Every heading has a PDF column width, and the columns fill the page.
+    # Every heading has a PDF column width, in percent, and the columns fill
+    # the page.
     assert set(PDF_WEIGHTS) == set(HEADINGS)
+    assert sum(PDF_WEIGHTS.values()) == 100
     assert sum(drawn["table"].widths) == pytest.approx(pdf_design.BODY_WIDTH)
     # A compact time keeps its date on one line and its time on the next,
-    # the longest status breaks only between words, and a whole DUID and
+    # the longest stage breaks only between words, and a whole DUID and
     # "Automatic" each stay on one line.
     for heading, text, lines in (
         ("Submitted", "Sep 30, 2026 12:04 PM", ["Sep 30, 2026", "12:04 PM"]),
         ("Recorded at", "Sep 30, 2026 12:04 PM", ["Sep 30, 2026", "12:04 PM"]),
-        ("Status", "Being published", ["Being", "published"]),
+        ("Stage", "Updated in ParishSoft", ["Updated", "in", "ParishSoft"]),
         ("Family DUID", "1234567", ["1234567"]),
         ("Member DUID", "1234567", ["1234567"]),
         ("How it reaches ParishSoft", "Automatic", ["Automatic"]),
@@ -798,7 +564,7 @@ def test_shape_reads_the_latest_resolution():
     assert shown["resolution_at"] == when
     text = census_csv({"rows": [shown]}, ZoneInfo("UTC")).decode()
     line = list(csv.reader(io.StringIO(text)))[1]
-    assert line[12:] == [
+    assert line[13:] == [
         "staff@example.org",
         "2054-10-06T15:00:00+00:00",
         "Typed it in",
@@ -806,140 +572,6 @@ def test_shape_reads_the_latest_resolution():
     # A resolution whose portal user is gone still says someone made it.
     gone = shape(row(resolution_action="ignored", resolution_at=when))
     assert gone["resolution_by"] == "Former portal user"
-
-
-def test_page_offers_row_actions_last_and_only_where_allowed():
-    """The page heads Recorded by, Recorded at and Note after Submitted, as
-    the files do, and Actions last; a row's action icons appear only where
-    they apply, Reopen only for an Administrator (#528), each opening one of
-    the page's shared dialogs (#879)."""
-    from django.template.loader import render_to_string
-
-    from parishkit.stewardship.reports.census_change_views import (
-        row_controls,
-        row_dialogs,
-    )
-    from parishkit.stewardship.web.tables import paginate
-
-    when = datetime(2054, 10, 6, 15, tzinfo=UTC)
-
-    def page(administrator, mutable=True):
-        """The page as an Administrator or a Staff member sees it."""
-        shown = [
-            shape(row(id="todo", handling="manual", field="suffix")),
-            shape(row(id="auto")),
-            shape(
-                row(
-                    id="ignored",
-                    handling="manual",
-                    decision="ignored",
-                    resolution_action="ignored",
-                    resolution_at=when,
-                    resolution_by="staff@example.org",
-                    resolution_note="Duplicate",
-                )
-            ),
-        ]
-        row_controls(shown, administrator=administrator, mutable=mutable)
-        return render_to_string(
-            "stewardship/census-changes.html",
-            {
-                "table": paginate(shown, {}, sorting=SORTING),
-                "query": CensusQuery(),
-                "query_fields": {"status": "open"},
-                "status_counts": {},
-                "status_choices": [],
-                "route_choices": [],
-                "kind_choices": [],
-                "administrator": administrator,
-                "action": "/admin/reports/census/",
-                "mutable": mutable,
-                "row_dialogs": row_dialogs(administrator),
-            },
-        )
-
-    def icons(html, proposal):
-        """The data-confirm-with of each icon the row ``proposal`` draws."""
-        return re.findall(
-            rf'name="proposal" value="{proposal}"[^>]*data-confirm-with="resolve=(\w+)',
-            html,
-        )
-
-    html = page(True)
-    headings = ["Submitted", "Last recorded", "Actions"]
-    positions = [html.index(f">{heading}<") for heading in headings]
-    assert positions == sorted(positions)
-    # Last recorded names who, when and the note (#1472).
-    assert "<dt>By</dt><dd>staff@example.org</dd><dt>At</dt>" in html
-    assert "<dt>Note</dt><dd>Duplicate</dd>" in html
-    assert icons(html, "todo") == ["entered", "ignored"]
-    assert icons(html, "ignored") == ["reopened"]
-    assert "staff@example.org" in html and "Duplicate" in html
-    assert "data-compact>2054-10-06T15:00:00+00:00</time>" in html
-    # An Automatic row's actions are the Administrator's alone.
-    assert icons(html, "auto") == ["approve", "ignore_automatic"]
-    assert 'aria-label="Mark Suffix for' in html
-    # Each icon names its dialog and carries the row's version and key.
-    assert 'data-confirm-open="census-enter-dialog"' in html
-    assert re.search(
-        r'resolve=entered&amp;version=\d+&amp;request_key=[0-9a-f-]{36}"', html
-    )
-    for form, dialog in row_dialogs(True):
-        drawn = f'<form id="{form}" method="post" action="/admin/reports/census/"'
-        assert f"{drawn} data-table-sync" in html
-        assert f'id="{dialog}"' in html
-    # The three shared dialogs, and the Automatic row's own Edit value.
-    assert html.count("data-confirm-answer-page") == 4
-    assert '<input type="hidden" name="status" value="open">' in html
-    assert html.count('name="note"') == 4  # one per dialog, none in a row
-    assert "<details" not in html.split("<table", 1)[1]
-    staff = page(False)
-    assert icons(staff, "todo") == ["entered", "ignored"]
-    assert icons(staff, "ignored") == [] and icons(staff, "auto") == []
-    assert 'id="census-reopen-dialog"' not in staff
-    # While other campaign work holds the campaign, nothing is offered, the
-    # page says why, and no row-action dialog is drawn.
-    gated = page(True, mutable=False)
-    assert "data-confirm-open" not in gated
-    assert 'id="census-enter-dialog"' not in gated
-    assert "Other campaign work" in gated
-
-
-def test_resolution_form_parsing():
-    """A row's form is all five fields once, or none (a filter POST)."""
-    from django.http import QueryDict
-
-    from parishkit.stewardship.reports.census_change_views import _resolution
-
-    proposal, key = (
-        "00000000-0000-4000-8000-000000000001",
-        "00000000-0000-4000-8000-000000000002",
-    )
-    form = QueryDict(mutable=True)
-    form.update(
-        {
-            "resolve": "ignored",
-            "proposal": proposal,
-            "version": "3",
-            "request_key": key,
-            "note": "  Duplicate  ",
-            "status": "open",
-        }
-    )
-    parsed = _resolution(form)
-    assert parsed["action"] == "ignored" and parsed["expected_version"] == 3
-    assert parsed["note"] == "Duplicate" and str(parsed["proposal_id"]) == proposal
-    assert dict(form) == {"status": ["open"]}
-    assert _resolution(QueryDict("status=open", mutable=True)) is None
-    for broken in (
-        "resolve=entered",
-        f"resolve=entered&proposal={proposal}&version=x&request_key={key}&note=",
-        f"resolve=entered&proposal=bad&version=1&request_key={key}&note=",
-        f"resolve=entered&resolve=ignored&proposal={proposal}&version=1"
-        f"&request_key={key}&note=",
-    ):
-        with pytest.raises(ValueError):
-            _resolution(QueryDict(broken, mutable=True))
 
 
 def test_pdf_keeps_a_seven_digit_duid_on_one_line():
@@ -950,110 +582,6 @@ def test_pdf_keeps_a_seven_digit_duid_on_one_line():
     for heading in ("Family DUID", "Member DUID"):
         values = ["1234567" if name == heading else "" for name in HEADINGS]
         assert table.cells(values)[HEADINGS.index(heading)] == ["1234567"], heading
-
-
-def test_bulk_form_parsing():
-    """A bulk review is the button's decision, the page's key, a note and
-    one or more distinct ticked rows, or none at all (a filter POST); more
-    rows than one bulk review covers raise TooMany (#528, ADM-09)."""
-    from django.http import QueryDict
-
-    from parishkit.stewardship.reports.census_change_views import TooMany, _bulk
-    from parishkit.stewardship.responses.census_review import MAX_BULK
-
-    first, second, key = (
-        "00000000-0000-4000-8000-000000000001",
-        "00000000-0000-4000-8000-000000000002",
-        "00000000-0000-4000-8000-000000000003",
-    )
-    head = f"bulk=approve&bulk_key={key}&bulk_note=++Checked++"
-    form = QueryDict(
-        f"{head}&change={first}:3&change={second}:4&status=open", mutable=True
-    )
-    parsed = _bulk(form)
-    assert parsed["action"] == "approve" and parsed["note"] == "Checked"
-    assert {str(key): value for key, value in parsed["versions"].items()} == {
-        first: 3,
-        second: 4,
-    }
-    assert dict(form) == {"status": ["open"]}
-    assert _bulk(QueryDict("status=open", mutable=True)) is None
-    for broken in (
-        head,
-        f"bulk=approve&change={first}:1",
-        f"{head}&change={first}:1&change={first}:2",
-        f"{head}&change={first}",
-        f"{head}&change={first}:x",
-        f"{head}&change=bad:1",
-        f"bulk=entered&bulk_key={key}&bulk_note=&change={first}:1",
-    ):
-        with pytest.raises(ValueError):
-            _bulk(QueryDict(broken, mutable=True))
-    many = "&".join(f"change={first[:-3]}{index:03}:1" for index in range(MAX_BULK + 1))
-    with pytest.raises(TooMany):
-        _bulk(QueryDict(f"{head}&{many}", mutable=True))
-
-
-def test_page_offers_bulk_review_only_on_reviewable_rows():
-    """An Administrator's page has a box for each row a Review is offered
-    for, listing that Review's decisions, the bulk bar and its dialog; a
-    By-hand row has no box; Staff, or a page held by other campaign work,
-    get none of it; a page of more rows than one bulk review covers says
-    how to review several (#528, ADM-09)."""
-    from uuid import uuid4
-
-    from django.template.loader import render_to_string
-
-    from parishkit.stewardship.reports.census_change_views import (
-        bulk_actions,
-        row_controls,
-    )
-    from parishkit.stewardship.web.tables import paginate
-
-    shown = [
-        shape(row(id="todo", handling="manual", field="suffix")),
-        shape(row(id="auto")),
-    ]
-    row_controls(shown, administrator=True, mutable=True)
-
-    def page(bulk, too_many=False):
-        """The page with or without bulk review."""
-        return render_to_string(
-            "stewardship/census-changes.html",
-            {
-                "table": paginate(shown, {}, sorting=SORTING),
-                "query": CensusQuery(),
-                "query_fields": {"status": "open"},
-                "status_counts": {},
-                "status_choices": [],
-                "route_choices": [],
-                "kind_choices": [],
-                "administrator": True,
-                "action": "/admin/reports/census/",
-                "mutable": True,
-                "bulk": bulk,
-                "bulk_too_many": too_many,
-                "max_bulk": 250,
-                "bulk_actions": bulk_actions(),
-                "bulk_key": uuid4(),
-            },
-        )
-
-    html = page(True)
-    assert html.count("data-select-row") == 1
-    assert 'data-confirm-kind="approve ignore_automatic"' in html
-    assert 'value="auto:' in html and 'value="todo:' not in html
-    assert 'id="census-bulk"' in html and "data-confirm-answer-page" in html
-    assert html.count('data-confirm-open="census-bulk-dialog"') == 3
-    assert 'name="bulk_note"' in html and 'name="bulk_key"' in html
-    assert '<input type="hidden" name="status" value="open">' in html
-    assert ">Approve 3 changes?<" not in html  # titles are filled in by script
-    assert 'data-title-many="Approve {count} changes?"' in html
-    without = page(False)
-    assert "data-select-row" not in without and 'id="census-bulk"' not in without
-    many = page(False, too_many=True)
-    assert "data-select-row" not in many and "show 250 rows per page" in many
-    assert 'id="census-bulk"' in many
 
 
 def test_a_bulk_review_covers_one_campaign():

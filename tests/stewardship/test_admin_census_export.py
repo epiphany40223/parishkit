@@ -96,7 +96,7 @@ def test_actions_follow_the_reader_s_capabilities():
     assert records([row(decision="ignored")], STAFF)[0]["actions"] == []
     automatic = row(entity_kind="member", entity_key="3", handling="api")
     assert records([automatic], ADMIN)[0]["actions"] == []
-    done = row(execution="published")
+    done = row(execution="published", decision="approved")
     assert records([done], ADMIN)[0]["actions"] == []
     # While other campaign work holds the campaign, the page offers none.
     held = [row(), row(decision="ignored")]
@@ -109,8 +109,8 @@ def test_actions_follow_the_reader_s_capabilities():
 @pytest.mark.parametrize(
     ("values", "decisions"),
     [
-        # To review: Approve or Ignore; an approved one Ignore or back.
-        ({}, ["approved", "ignored"]),
+        # To review: Accept or Ignore; an accepted one Ignore or back.
+        ({}, ["accepted", "ignored"]),
         ({"decision": "approved"}, ["ignored", "unreviewed"]),
         ({"execution": "failed", "decision": "approved"}, ["ignored", "unreviewed"]),
         # A Conflict is never approved; it may be ignored or sent back.

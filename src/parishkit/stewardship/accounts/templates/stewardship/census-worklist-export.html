@@ -1,0 +1,11 @@
+{% load i18n stewardship %}{% comment %}
+  Census changes' download (#1683, #1679), below the table and always shown,
+  as a worklist's export pane is (UX conventions, "Admin tables"): one row of
+  small export buttons (export_actions), each posting its format and the
+  browser's time zone unasked. Its hidden filters follow every in-place Apply,
+  sort or page change (data-table-sync), so it downloads the list the table
+  shows.
+{% endcomment %}<div class="export-pane">
+<form id="table-export" data-table-sync method="post" action="{% url 'admin:census_changes_export' %}">{% csrf_token %}
+{% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+{% export_actions "csv" "xlsx" "pdf" name="census" label=_("Export these changes") %}</form></div>

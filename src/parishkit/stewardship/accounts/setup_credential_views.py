@@ -13,7 +13,7 @@ from parishkit.stewardship.web.contracts import expected_version
 
 from . import setup_help
 from .authentication import runtime
-from .integration_forms import LABELS, CredentialForm
+from .integration_forms import KEY_RULES, LABELS, CredentialForm, rule_key
 from .secret_input import SecretInput
 from .setup_credentials import TARGETS, credential_status, stage_credential
 from .setup_drafts import view_draft
@@ -31,19 +31,15 @@ STEP = {
 
 # Closed messages for a credential the staging owner rejects as malformed; the
 # owner's own exception text is never shown.
+# A ParishSoft key or Slack token says its shared key rule's words, which
+# the page checks as it is typed (#1577).
 INVALID = {
-    "parishsoft": _(
-        "This does not look like a ParishSoft API key. Paste the key exactly as "
-        "ParishSoft provided it, on one line with no spaces."
-    ),
+    "parishsoft": KEY_RULES["parishsoft"].message,
     "google_workspace": _(
         "This is not a usable Google service-account key. Paste the entire, "
         "unmodified JSON key file downloaded from Google Cloud."
     ),
-    "slack": _(
-        "This does not look like a Slack bot token. Paste the Bot User OAuth "
-        "Token, which starts with xoxb-, on one line with no spaces."
-    ),
+    "slack": KEY_RULES["slack"].message,
 }
 
 
@@ -135,16 +131,29 @@ class SetupCredentialForm(CredentialForm):
             candidate.widget.attrs.update(candidate.widget_attrs(candidate.widget))
         candidate.label = FIELD_LABELS[target]
         candidate.required = not saved or stale
-        candidate.widget.attrs["data-missing-hint"] = MISSING[target]
+        # What the complete gate says while the key is empty.
+        empty = MISSING[target]
         if saved and stale:
             candidate.error_messages["required"] = KEEP_ERRORS["stale"]
-            candidate.widget.attrs["data-missing-hint"] = KEEP_ERRORS["stale"]
+            empty = KEEP_ERRORS["stale"]
         elif saved and organization is not None:
-            candidate.widget.attrs |= {
-                "data-required-when": f"organization_id!={organization}",
-                "data-missing-hint": KEEP_ERRORS["organization"],
-            }
+            candidate.widget.attrs["data-required-when"] = (
+                f"organization_id!={organization}"
+            )
+            empty = KEEP_ERRORS["organization"]
+        if target in KEY_RULES:
+            # Spaces around a pasted key are stripped, as Integration
+            # settings strips them; the key itself may hold none (#1577).
+            candidate.strip = True
+        self.key_rule = rule_key(candidate, target, empty)
         setup_help.apply(self, setup_help.CREDENTIALS[target], replace=True)
+
+    def clean_candidate(self):
+        """A pasted key follows its rule (#1577); blank may keep the saved one."""
+        value = self.cleaned_data["candidate"]
+        if value and self.key_rule is not None:
+            self.key_rule.check(value)
+        return value
 
 
 def _keep_refusal(form, current, organization):

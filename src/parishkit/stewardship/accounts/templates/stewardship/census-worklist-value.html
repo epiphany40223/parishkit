@@ -1,0 +1,19 @@
+{% load i18n %}{% comment %}
+  A census change's Edit editor on the review worklist (#1683), drawn per
+  row (row.editor, census_changes.editor): the reviewer's value, which
+  starts as the value carried forward. A Family address is its parts, named
+  value_<part> (web/review_worklist.read_decision), checked as the Family
+  form checks an address; a Member field is a date no later than the
+  campaign's today, its census choices, or text within the field's limit.
+  A value the server refuses is shown in the one reserved error line and
+  marks its field (an address: each part refused) until it is edited (ui-v1.js refuseAtFields). Save waits until a
+  value differs from the one the editor opened with (data-require-edit,
+  R38 finding 4): saving that value records a plain Accept, not an edit.
+  It ends with the worklist's note, as every editor does.
+{% endcomment %}{% with e=row.editor %}<div class="dialog-fields" data-missing-hint="{% if e.kind == 'date' %}{% translate 'Enter a whole date no later than today.' %}{% elif e.kind == 'address' %}{% translate 'Enter the street, city and country.' %}{% else %}{% translate 'Enter the value to carry forward, within the length shown.' %}{% endif %}" data-require-edit data-unchanged-hint="{% translate 'Change the value to save it; Accept keeps it as it is.' %}">
+{% if e.kind == "address" %}{% for part, value in e.parts.items %}<div><label for="{{ dialog_id }}-{{ part }}">{% if part == "line1" %}{% translate "Street" %}{% elif part == "line2" %}{% translate "Street, second line (optional)" %}{% elif part == "city" %}{% translate "City" %}{% elif part == "region" %}{% translate "State or region" %}{% elif part == "postal_code" %}{% translate "ZIP or postal code" %}{% else %}{% translate "Country" %}{% endif %}</label>{% if part == "country" %}<select id="{{ dialog_id }}-{{ part }}" name="value_{{ part }}" data-confirm-reset required><option value=""></option>{% for code, name in e.countries %}<option value="{{ code }}"{% if code == value %} selected{% endif %}>{{ name }}</option>{% endfor %}</select>{% else %}<input id="{{ dialog_id }}-{{ part }}" name="value_{{ part }}" value="{{ value }}"{% for key, limit in e.limits.items %}{% if key == part %} maxlength="{{ limit }}"{% endif %}{% endfor %}{% if part == "line1" or part == "city" %} required{% endif %} data-confirm-reset>{% endif %}</div>{% endfor %}
+{% else %}<label for="{{ dialog_id }}-value">{% translate "Reviewer's value" %}</label>{% if e.choices %}<select id="{{ dialog_id }}-value" name="value" data-confirm-reset required>{% for choice in e.choices %}{% if choice %}<option value="{{ choice }}"{% if choice == e.value %} selected{% endif %}>{{ choice }}</option>{% endif %}{% endfor %}</select>{% else %}<input id="{{ dialog_id }}-value" name="value" type="{{ e.kind }}" value="{{ e.value }}" required{% if e.maxlength %} maxlength="{{ e.maxlength }}"{% endif %}{% if e.kind == "date" %} max="{{ edit_today }}"{% endif %} data-confirm-reset>{% endif %}
+{% if e.maxlength %}<p class="help">{% blocktranslate with count=e.maxlength %}At most {{ count }} characters.{% endblocktranslate %}</p>{% endif %}{% endif %}
+<div class="field-error-line"><ul class="errorlist" id="{{ dialog_id }}-error" hidden><li></li></ul></div>
+</div>{% endwith %}
+{% include "stewardship/components/review-worklist-note.html" with note_name="note" %}

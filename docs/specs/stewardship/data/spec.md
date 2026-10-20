@@ -587,6 +587,8 @@ the corpus:
   corpus would change none of them, with the same decision promotion makes,
   so a new submission, a staff review edit or a row the last promotion
   itself reconciled does not force another promotion;
+- no added Member link (see [Proposed changes](#proposed-changes)) is
+  waiting to be recorded;
 - an active Family link generation is still current (a stale one fails the
   refresh, as promotion would).
 
@@ -1087,11 +1089,17 @@ Every final click creates an immutable `Submission` version containing:
 - submitted UTC time and date derived from the Campaign's immutable timezone;
 - complete normalized answers for all enabled sections;
 - validation/content/schema versions;
-- request/session correlation without storing credentials; and
+- request/session correlation without storing credentials;
 - `entered_by_id`, the portal user who entered it for the Family through
   [Open form](../reports/spec.md#open-form), or null when the Family
   entered it (a soft reference with no foreign key, added by frozen migration
-  0065).
+  0065); and
+- `upcoming_pledge`, ParishSoft's pledge for the campaign's upcoming
+  financial period in the validation snapshot, recorded only for a response
+  that answers the financial questions and only when that snapshot's giving
+  read is proven complete, else null (frozen migration 0136, provisional
+  number; the review pipeline's A for the pledge,
+  [Financial stream](../review-pipeline/spec.md#financial-stream)).
 
 The current effective live response points to the latest accepted live version.
 Test versions are isolated from live calculations, response prefilling,
@@ -1120,7 +1128,43 @@ Decision and execution are orthogonal:
 
 Ignored decisions remain searchable and may return to unreviewed/approved.
 Published or resolved records are immutable outcomes; a later response creates
-new proposed-change records where necessary.
+new proposed-change records where necessary. A later census response that
+gives the same answer again for an ordinary field already *published* or
+*resolved_external* (not yet in the promoted download) creates none: the
+entered change stays as it is
+([resubmission rule](../review-pipeline/spec.md#resubmission-while-the-setting-is-off),
+[#1683](https://github.com/epiphany40223/parishkit/issues/1683)). The
+submission's completeness check admits that absence, and the effective-value
+index keeps that change for the next response while each census response
+answers it the same way. A terminal request (moved, deceased, a death date)
+asked for again after it was entered is a new request, since an entered one
+is no longer presented.
+
+A Member the Family added on the form has only the form's local UUID, and
+the form drops that entry once its New Member change is Entered by hand;
+from then on the Family answers for the person under the new ParishSoft
+Member, once a refresh shows them. Each promotion
+records an added Member link (`stewardship_added_member_link`, one
+immutable row per Family campaign and added Member: the local UUID, the
+ParishSoft Member DUID, the Entered by hand New Member change it rests on
+and the snapshot that showed the Member;
+[#1670](https://github.com/epiphany40223/parishkit/issues/1670)) when the
+evidence is causal and unique, never by matching names, email or birth
+dates:
+
+- the added Member's New Member change is Entered by hand (Staff created
+  the person in ParishSoft);
+- it is the Family's only Entered by hand New Member without a link; and
+- the promoted snapshot has exactly one active, living Member of the Family
+  who was not in the Family's ParishSoft household on any live response up
+  to the one that first added the person (its `members` answers) and who has
+  no link yet.
+
+Anything ambiguous records nothing, and a recorded link never changes. Only
+the promoting source worker may insert a link, and its guard checks the
+change, the snapshot's Member and the earlier responses again. The Ministry
+leader contact rule reads the link
+([cannot participate](../reports/spec.md#ministry-change-summary)).
 
 Writability is `api`, `manual`, or `report-only`. It is derived from a shared
 ParishSoft capability registry, not guessed in views. The initial registry is:
@@ -1200,6 +1244,17 @@ digest content include only items still `current_actionable` at generation.
 The next digest includes a compact correction section for items sent in a prior
 digest and since superseded/withdrawn, preventing stale emailed work from
 remaining silently actionable. History views expose every disposition.
+Each Staff revision also records its review decision (`accepted`, `ignored`
+or `none`; empty on revisions saved before schema migration 0126), from which
+the [review pipeline](../review-pipeline/spec.md#additional-information-stream)
+derives the item's stage.
+
+A cannot-participate or cannot-attend answer stores nothing beyond the live
+response. Each review decision on one is an immutable
+`stewardship_limitation_review` row naming the Family campaign record, the
+answer (a Member's key, or the Family itself), the effective live response
+it was decided on, a per-answer sequence, the decision, the note, the actor
+and the time ([Limitations](../reports/spec.md#limitations)).
 
 A `MinistryRequest` represents one Member/Ministry requested action (`join` or
 `leave`). Latest effective submissions may create, cancel, or supersede a
@@ -1214,12 +1269,38 @@ the `assigned` state and their database rules remain, unused, for requests
 assigned before that decision, which a same-intent Family resubmission still
 carries forward until the next Staff edit clears them.
 
+The review pipeline adds three request fields
+([#1684](https://github.com/epiphany40223/parishkit/issues/1684), one
+additive forward migration; no existing row or value changes):
+`reviewed_ministry_duid`, the Ministry an Edit carries forward (set only on a
+request resolved as joined or leave confirmed, never its own Ministry, and
+cleared by Back to review), which every revision also records;
+`parish_added`, true for a request Staff added with no Family answer behind
+it, attached to the Family's latest live response; and
+`added_in_place_of`, the Ignored request of the same Member it was added
+in place of. Each revision also keeps its decision's note
+(`decision_note`). The SQL guards admit, besides today's edits: a revision
+that sends a resolved or closed request back to In progress (never one a
+refresh resolved or one ticked Entered in ParishSoft; reopening an ignored
+one needs a note), or that withdraws (cancels) a request the parish added;
+an Edit only by someone who may follow up both the request's Ministry and
+the one chosen, which must be another of the campaign's Ministries; and an
+added request only from a current Staff member or Administrator, for a
+Member of that Family's response and a campaign Ministry. A Family answer
+that repeats a decided request's action for the same Member and Ministry
+creates no new request: the submission's completeness check accepts the
+decided request in its place ("Family asked again"). Authority for a
+request is checked against its current Ministry: the edited one once
+edited.
+
 Manual census work uses proposed-change execution state rather than a separate
 workflow; each resolution's note, actor and time are an immutable resolution
 row ([Manual census resolution](../reports/spec.md#manual-census-resolution)).
-Admin and Staff may mark manual items resolved externally or ignored; only
-Admin may approve/edit/publish API-writable items, each decision an immutable
-review row ([Automatic census review](../reports/spec.md#automatic-census-review)).
+Admin and Staff review every census change (Accept, Edit, Ignore, Back to
+review), each decision an immutable review row
+([Automatic census review](../reports/spec.md#automatic-census-review)), and
+mark By hand items resolved externally; only an Administrator publishes
+([role-specific actions](../review-pipeline/spec.md#role-specific-actions)).
 
 ### Content and email templates
 
@@ -2003,7 +2084,14 @@ Snapshot promotion performs these effects transactionally:
   applying provider-suppression records;
 - resolve proposals that now match upstream;
 - mark three-way conflicts;
-- resolve Ministry requests whose requested roster state is now current.
+- keep, unchanged, an open census change whose Member is no longer an
+  active, living Member of its Family (the review pipeline's
+  [rule 4](../review-pipeline/spec.md#refresh-checks)), since publication
+  refuses such a Member ([review and publication](#review-and-publication));
+- resolve Ministry requests whose requested roster state is now current;
+- re-evaluate final census changes and decided Ministry requests against
+  the new data, recording a refresh check for each whose outcome changed
+  ([refresh checks](../review-pipeline/spec.md#refresh-checks)).
 
 Promotion plans no mail itself. A Family that becomes active, eligible or
 deliverable changes its row's planning columns, which the
@@ -2033,13 +2121,21 @@ filter, bulk approve/ignore/reset, and inline proposed-value edits. Bulk actions
 must display exact affected counts and cannot operate on records outside the
 current authorization/filter snapshot.
 
-`Publish to ParishSoft` performs an asynchronous mandatory preflight:
+`Update ParishSoft` performs an asynchronous mandatory preflight:
 
 1. In a short transaction, create the preflight record with the configured
    expected-organization and promoted source-version identifiers. Preflight
    does not claim the mutation lease.
 2. Validate the upstream organization without cache and fetch uncached current
    contact payloads for every affected entity without holding a database lock.
+   A change whose Member the promoted data no longer lists as an active,
+   living Member of the change's Family (moved to another Family, inactive,
+   deceased or gone) is left out of the plan: it stays open and unplanned,
+   and the Member is not read for it, so a change a Family made is never
+   written to a Member of another household
+   ([#1738](https://github.com/epiphany40223/parishkit/issues/1738)). A
+   Member with changes from two Families plans only those of the Family
+   they are in now.
 3. Re-evaluate each approved field against baseline/proposed/current. After
    an Administrator resolved a conflict with *Use the Family's value anyway*
    ([reports](../reports/spec.md#automatic-census-review), ADM-09.03), the
@@ -2090,7 +2186,7 @@ current authorization/filter snapshot.
    `stewardship_publication_confirmation_guard_v1` (neither SECURITY
    DEFINER) with a self-verifying DO block, under the
    [post-launch schema policy](../operations/spec.md#post-launch-schema-policy)
-   ([Publish to ParishSoft](../reports/spec.md#publish-to-parishsoft)).
+   ([Update ParishSoft](../reports/spec.md#update-parishsoft)).
 5. If any field the API would write on an entity is a three-way conflict,
    block all writes to that entity and return it for re-review. A field
    reported *By hand* (step 6) is never evaluated, so it never blocks.
@@ -2135,7 +2231,12 @@ revalidates its fencing token, confirms the system is still in Production mode
 database also refuses to queue an entity's changes outside Production mode,
 though no guard can refuse the PUT itself),
 fetches the uncached contact record, and repeats
-canonical merge/conflict evaluation against the confirmed plan digest. Any
+canonical merge/conflict evaluation against the confirmed plan digest. As it
+queues the entity's changes it also confirms the current promoted data still
+lists the Member, active and living, in each written change's Family (a
+refresh may have promoted since the preflight); an entity none of whose
+changes it has queued yet is checked before its read, so such a Member is
+not read either. Any
 difference invalidates that entity without writing and returns it for
 confirmation; a conditional-write primitive is used when ParishSoft exposes
 one. Publication then groups fields by entity and uses idempotent v2 `PUT`
@@ -2174,8 +2275,10 @@ while its PUT may have landed. Turning publication off never needs them
 cleared first. After releasing the lease, a run that published at least one
 entity requests one full refresh through the shared refresh request path,
 as a manual refresh attributed to the Administrator who confirmed the plan,
-carrying the publication's correlation id and logged as following a
-publication, which coalesces with a full refresh already waiting; it reconciles the
+carrying the run's correlation id and audited as following an update
+(`census_publication_refresh_requested`), which coalesces with a full
+refresh already waiting; it reconciles the
+
 promoted snapshot under a new lease claim. A failed request leaves the
 run's outcomes as they are and logs a WARNING, and the next scheduled
 refresh catches up. Publication ships switched off;
@@ -2186,9 +2289,9 @@ Admins may publish any reviewed subset during or after an active campaign.
 They need not finish review in one session. Later Family submissions supersede
 unpublished proposals as appropriate but never rewrite publication history.
 
-Only an Administrator approves and publishes; the per-change decisions are
-the worklist's
-[Automatic census review](../reports/spec.md#automatic-census-review). Only changes the
+Only an Administrator publishes. Staff and Administrators record the
+per-change decisions on the worklist
+([Automatic census review](../reports/spec.md#automatic-census-review)). Only changes the
 [handling registry](#proposed-changes) marks API-writable are ever written;
 staff enter every other census change by hand from the
 [Census changes](../reports/spec.md#pending-census-changes) worklist.

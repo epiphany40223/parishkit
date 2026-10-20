@@ -42,6 +42,7 @@ from parishkit.stewardship.reports import (
     limitations,
     ministry_roster_views,
     pdf_design,
+    pledge_review_views,
 )
 from parishkit.stewardship.reports.census_changes import (
     CensusQuery,
@@ -82,6 +83,7 @@ from .test_ministry_packets import item as member
 from .test_ministry_packets import packet
 from .test_participation_rendering import document as participation
 from .test_participation_rendering import summary as participation_summary
+from .test_pledge_review import pledge_row
 from .test_roster import roster_row
 from .test_timeline_exports import document as timeline
 
@@ -470,7 +472,7 @@ def case_census_changes(monkeypatch):
 
 
 def case_ministry_roster(monkeypatch):
-    """Roster changes to enter (#528)."""
+    """The roster list's file (#528)."""
     zone = ZoneInfo("America/Chicago")
     rows = [roster_row()]
     headers = csv_headers(ministry_roster_views.roster_csv(rows, zone))
@@ -478,6 +480,21 @@ def case_ministry_roster(monkeypatch):
     seen = pdf_capture(
         monkeypatch,
         lambda: ministry_roster_views.roster_pdf(
+            rows, zone, parish="P", campaign="C", as_of=SUBMITTED
+        ),
+    )
+    return headers[0], headers, sheets, seen["table"], labels
+
+
+def case_pledges_to_enter(monkeypatch):
+    """Pledges (#1686)."""
+    zone = ZoneInfo("America/Chicago")
+    rows = [pledge_row()]
+    headers = csv_headers(pledge_review_views.pledges_csv(rows, zone))
+    sheets, labels = xlsx_headers(pledge_review_views.pledges_xlsx(rows, zone))
+    seen = pdf_capture(
+        monkeypatch,
+        lambda: pledge_review_views.pledges_pdf(
             rows, zone, parish="P", campaign="C", as_of=SUBMITTED
         ),
     )

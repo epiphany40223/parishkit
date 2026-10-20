@@ -23,17 +23,13 @@ INCLUDE = '{% include "stewardship/components/filter-actions.html"'
 # is added here, so the list in the spec's review stays complete.
 FILTER_FORMS = {
     "background.html",
-    "census-changes.html",
+    "components/review-worklist.html",
     "deliveries.html",
     "delivery-refusals.html",
     "directory.html",
     "financial-report.html",
-    "information.html",
-    "limitations-report.html",
     "logs.html",
     "ministries.html",
-    "ministry-followup.html",
-    "ministry-roster.html",
     "timeline.html",
 }
 # Hidden fields a filter form keeps when its filters are cleared: the

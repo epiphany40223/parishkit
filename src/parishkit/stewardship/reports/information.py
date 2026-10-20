@@ -165,13 +165,18 @@ def name_families(result):
     return result
 
 
-def information_page(campaign_id, query, *, item_id=None, page_size=PAGE_SIZE):
+def information_page(
+    campaign_id, query, *, item_id=None, page_size=PAGE_SIZE, whole=False
+):
     """Detach one coherent source/item page under the caller's campaign guard.
 
     The shared closed SQL query also owns complete export captures. Every private
     value is bound; one MVCC statement prevents mixed names, workflow versions,
     counts and rows during concurrent Staff/Family edits. Its ``counts`` are
     every matching request by follow-up state, beside ``total`` (#720).
+    ``whole`` reads every matching request in one statement instead of one
+    page, as the review worklist does (#1685), which places, filters and
+    pages them itself.
     """
     with connection.cursor() as cursor:
         cursor.execute(
@@ -179,7 +184,7 @@ def information_page(campaign_id, query, *, item_id=None, page_size=PAGE_SIZE):
             (
                 campaign_id,
                 json.dumps({"filters": query.form_values(), "history": False}),
-                query.page,
+                None if whole else query.page,
                 item_id,
                 page_size,
             ),

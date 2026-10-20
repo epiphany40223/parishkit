@@ -950,7 +950,8 @@ def test_a_key_from_a_script_still_takes_the_key_save_path(
     """A key posted by a script (as the dialog's would be) is still the
     key-save path, never a review: the sealed intake and its redirect back
     to the page, with the key never echoed. A value str.strip() keeps, such
-    as U+FEFF, is a key there, as the page script reads it (#750)."""
+    as U+FEFF, is a key there, as the page script reads it (#750), and the
+    key rule refuses it at the field (#1577), still never as a review."""
     browser, _ = signed_in()
     page = browser.get(URL)
     response = fetch(
@@ -959,9 +960,14 @@ def test_a_key_from_a_script_still_takes_the_key_save_path(
         edit(auth_service.store, organization_id="12345")
         | {"intent": hidden(page, "intent"), "candidate": pasted},
     )
-    assert (response.status_code, response["Location"]) == (302, URL)
-    assert SecretReplacementRequest.objects.count() == 1
     assert b"data-review-answer" not in response.content
+    if pasted == SECRET:
+        assert (response.status_code, response["Location"]) == (302, URL)
+        assert SecretReplacementRequest.objects.count() == 1
+    else:
+        assert response.status_code == 400
+        assert b"This does not look like a ParishSoft API key." in response.content
+        assert nothing_staged()
 
 
 def key_review(browser, page, **fields):
@@ -1180,3 +1186,24 @@ def test_spaces_the_server_strips_are_no_key(auth_service, google, handoff):
     )
     assert review.status_code == 200 and b"data-review-answer" in review.content
     assert not SecretReplacementRequest.objects.exists()
+
+
+def test_a_malformed_new_key_is_refused_at_its_field(auth_service, google, handoff):
+    """Save with a new key its rule refuses (a space inside, #1577) draws the
+    page again (400) with the rule's words at the key field, the key never
+    echoed and nothing staged."""
+    from parishkit.stewardship.accounts.integration_forms import KEY_RULES
+
+    browser, _ = signed_in()
+    page = browser.get(URL)
+    refused = fetch(
+        browser,
+        URL,
+        edit(auth_service.store)
+        | {"intent": hidden(page, "intent"), "candidate": "SYNTHETIC KEY"},
+    )
+    assert refused.status_code == 400
+    text = unescape(refused.content.decode())
+    assert str(KEY_RULES["parishsoft"].message) in text
+    assert "SYNTHETIC KEY" not in text
+    assert nothing_staged()

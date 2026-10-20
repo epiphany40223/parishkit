@@ -417,7 +417,7 @@ def test_packet_choices_list_every_ministry_in_scope_beyond_the_table(
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = search(browser, root, {"search": "Food"})
         assert response.status_code == 200
-        table = body.decode().split('id="followup-table"', 1)[1]
+        table = body.decode().split("<caption>Ministry requests to review", 1)[1]
         table = table.split("</table>", 1)[0]
         assert "Food pantry" in table and "Choir" not in table
         counts = body.decode().split('<section id="by-ministry"', 1)[1]
@@ -470,7 +470,7 @@ def test_packet_choices_list_every_ministry_in_scope_beyond_the_table(
         ) in body
         assert f'<a href="#ministry-packet-9">{message}</a>' in body
         assert 'value="201"' not in body and "ministries=" not in body
-        assert 'id="followup-table"' in body
+        assert "<caption>Ministry requests to review" in body
         response = post(browser, route, too_many, HTTP_ACCEPT="application/json")
         assert response.status_code == 400
         assert "at most 200" in response.json()["refusal"]["message"]

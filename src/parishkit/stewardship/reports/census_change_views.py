@@ -7,22 +7,19 @@ sorts in place; a download is the filtered list rendered in memory, in the
 timezone the page chose (this browser's); and every view and download is
 audited as a count only.
 
-A row's Entered in ParishSoft, Ignore or Reopen (#528), and an
-Administrator's Approve, Ignore or Back to To review on an Automatic row
-(ADM-09), Edit value or Clear edit on one (ADM-09.04), and Use the Family's
-value anyway on a Conflict (ADM-09.03), post to the page itself with the
-page's filters and table choices, so the answer is the same page, refreshed
-in place, with a notice naming the row.
+The page is the census stream's review worklist (#1683; the shared
+``components/review-worklist.html``): a row's Accept, Edit, Ignore, Back to
+review or Entered by hand, and the bulk bar's, post to the page itself with
+the page's filters and table choices (``review_worklist.read_decision``), so
+the answer is the same page, refreshed in place, with a notice naming the
+row. ``census_worklist`` builds the rows and records the decisions.
 """
 
-from dataclasses import replace
 from datetime import UTC, datetime
-from urllib.parse import urlencode
-from uuid import UUID, uuid4
 from zoneinfo import ZoneInfo
 
 from django.core.exceptions import ObjectDoesNotExist
-from django.db import DatabaseError, IntegrityError, transaction
+from django.db import DatabaseError, transaction
 from django.http import HttpResponse
 from django.template.loader import render_to_string
 from django.urls import reverse
@@ -36,22 +33,16 @@ from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
-from parishkit.stewardship.responses.census_resolution import resolve_census_change
+from parishkit.stewardship.pipeline import Stage
+from parishkit.stewardship.responses.census_additions import AddRefusal
+from parishkit.stewardship.responses.census_resolution import InvalidMemberId
 from parishkit.stewardship.responses.census_review import (
-    MAX_BULK,
-    BulkStale,
     InvalidEdit,
     KeyRebound,
-    Unchanged,
     campaign_today,
-    edit_census_change,
-    resolve_census_conflict,
-    review_census_change,
-    review_census_changes,
 )
-from parishkit.stewardship.responses.models import ProposedChange
 from parishkit.stewardship.schema_primitives import timezone_names
-from parishkit.stewardship.storage import StaleRecordError, StorageInvariantError
+from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.contracts import (
     ErrorCode,
@@ -63,25 +54,23 @@ from parishkit.stewardship.web.exports import (
     download_headers,
     page_download,
 )
-from parishkit.stewardship.web.refusals import Refusal, with_status_code
+from parishkit.stewardship.web.refusals import Refusal, with_codes, with_status_code
 from parishkit.stewardship.web.responses import campaign_response
+from parishkit.stewardship.web.review_worklist import read_decision, record
 from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
 
 from . import census_publication
 from .census_changes import (
     KINDS,
-    LABELS,
-    REVIEW_CHOICES,
     ROUTES,
-    STATUS_CHOICES,
     STATUSES,
     CensusQuery,
     census_changes,
     census_csv,
     census_pdf,
     census_xlsx,
-    status_choice_counts,
 )
+from .census_worklist import LINK_DEFAULTS, CensusDecisions, add_fields, worklist_page
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .family_links import link_families
@@ -92,20 +81,6 @@ FORMATS = {
     "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "pdf": "application/pdf",
 }
-# The filter's choices, in order, with their plain labels.
-STATUS_LABELS = {
-    "open": "Work to do",
-    **{key: STATUSES[key] for key in STATUS_CHOICES if key in STATUSES},
-    "all": "Every status",
-}
-
-
-def status_choices(counts, *, administrator):
-    """The Status filter's (key, label, count) choices, in order (#1682)."""
-    listed = status_choice_counts(counts, administrator=administrator)
-    return [(key, label, listed[key]) for key, label in STATUS_LABELS.items()]
-
-
 ROUTE_LABELS = dict(
     zip(
         ROUTES,
@@ -120,6 +95,11 @@ KIND_LABELS = dict(
         strict=True,
     )
 )
+
+
+# What a GET of the page may carry: the filters a link may (the view's own
+# address, census_worklist.link_pairs) and the table's choices.
+LINK_PARAMETERS = frozenset(LINK_DEFAULTS) | table_parameters()
 
 
 def _text(value):
@@ -141,8 +121,6 @@ SORTING = Sorting.by_column(
             row["member_duid"] or 0,
         ),
         "what": lambda row: _text(row["label"]),
-        # Automatic first, then By hand, whatever the labels say.
-        "route": lambda row: not row["automatic"],
         "status": lambda row: list(STATUSES).index(row["status"]),
         "submitted": lambda row: row["submitted_at"],
     },
@@ -239,476 +217,45 @@ def _choices(parameters, *, export):
     return extra
 
 
-# The fields a row's resolution form adds to the page's own POST (#528).
-RESOLUTION_FIELDS = ("resolve", "proposal", "version", "request_key", "note")
-RESOLVED = {
-    "entered": "marked entered in ParishSoft.",
-    "ignored": "marked ignored.",
-    "reopened": "reopened.",
-}
-# An Administrator's review of an Automatic row (#528, ADM-09): the decision
-# each form value records (census_changes.REVIEW_CHOICES), and how the notice
-# words it.
-REVIEWS = dict(REVIEW_CHOICES)
-REVIEWED = {
-    "approve": "approved.",
-    "ignore_automatic": "marked ignored.",
-    "to_review": "sent back to To review.",
-}
-# An Administrator's Edit value and Clear edit on an Automatic row (#528,
-# ADM-09.04), and how the notice words each; an edit equal to the Family's
-# answer clears the edit, and says why.
-EDITS = {
-    "edit": "now has an edited value.",
-    "clear_edit": "no longer has an edited value.",
-}
-EDIT_MATCHED = "no longer has an edited value: it matched the Family's answer."
-EDIT_UNCHANGED = "already has that value to publish, so nothing was recorded."
-# An Administrator's Use the Family's value anyway on a Conflict (#528,
-# ADM-09.03): the review action's value, and how the notice words it.
-RESOLVE_CONFLICT = "use_family"
-CONFLICT_RESOLVED = "approved over ParishSoft's current value."
-# PostgreSQL's SQLSTATE for a unique violation.
-UNIQUE_VIOLATION = "23505"
-STALE = (
-    "was updated by someone else, so nothing was recorded. "
-    "The list shows its current status."
-)
-
-
-def _resolution(parameters):
-    """Remove a row's resolution fields from the form; None when there are none.
-
-    A resolution is sent with the page's own filters and table choices, so
-    the answer is the same page, refreshed in place.
-    """
-    found = {name: parameters.pop(name, None) for name in RESOLUTION_FIELDS}
-    # Edit value's field (ADM-09.04): its form sends it with Save value and
-    # with Clear edit, which ignores it; no other form has it.
-    edited = parameters.pop("value", None)
-    if edited is None and all(value is None for value in found.values()):
-        return None
-    if any(value is None or len(value) != 1 for value in found.values()):
-        raise ValueError("A census change resolution needs every field once.")
-    values = {name: value[0] for name, value in found.items()}
-    if (
-        (edited is None and values["resolve"] == "edit")
-        or (edited is not None and values["resolve"] not in EDITS)
-        or (edited is not None and len(edited) != 1)
-    ):
-        raise ValueError("Only Edit value's form sends an edited value, once.")
-    if values["resolve"] == "clear_edit":
-        edited = None
-    resolution = {
-        "action": values["resolve"],
-        "proposal_id": UUID(values["proposal"]),
-        "expected_version": int(values["version"]),
-        "request_key": UUID(values["request_key"]),
-        "note": values["note"].strip(),
-    }
-    if values["resolve"] in EDITS:
-        resolution["value"] = edited[0] if edited is not None else None
-    return resolution
-
-
-# The fields the bulk review dialog adds to the page's own POST (#528,
-# ADM-09): the button's decision, the page's bulk key, the optional note and
-# the ticked rows, each "<proposal id>:<version shown>".
-BULK_FIELDS = ("bulk", "bulk_key", "bulk_note")
-BULK_TOO_MANY = Refusal(
-    f"Choose at most {MAX_BULK:,} changes at a time. Nothing was recorded.",
-    "Show fewer rows per page, then try again.",
-)
+# A refused edit value's static reason, shown at its field in the dialog.
+EDIT_REFUSED = "Correct the value, then save it again."
 REBOUND = Refusal(
     "This page was already used to record different choices, so nothing was recorded.",
     "Reload the page, then try again.",
 )
 
 
-def _bulk(parameters):
-    """Remove a bulk review's fields from the form; None when there are none.
+def _edit_refusal(error):
+    """The page's answer to an edited value the change cannot take.
 
-    Each ticked row carries the version it showed, so every change is
-    checked against its own version. No row twice; anything else is a
-    malformed form (a 400). More rows than one bulk review may cover raise
-    ``TooMany``, which the dialog explains.
+    Its static reason, shown in place at the editor's field (an address: at
+    each part with a reason of its own) and logged by the shared refusal
+    hook with the field's name only.
     """
-    found = {name: parameters.pop(name, None) for name in BULK_FIELDS}
-    rows = parameters.pop("change", None)
-    if rows is None and all(value is None for value in found.values()):
-        return None
-    if rows is None or any(
-        value is None or len(value) != 1 for value in found.values()
-    ):
-        raise ValueError("A bulk census review needs every field once.")
-    values = {name: value[0] for name, value in found.items()}
-    if values["bulk"] not in REVIEWS:
-        raise ValueError("Invalid bulk census review.")
-    if len(rows) > MAX_BULK:
-        raise TooMany
-    versions = {}
-    for row in rows:
-        identity, separator, version = row.partition(":")
-        if (
-            not separator
-            or len(row) > 64
-            or not version.isascii()
-            or not version.isdecimal()
-        ):
-            raise ValueError("Invalid census change selection.")
-        versions[UUID(identity)] = int(version)
-    if not versions or len(versions) != len(rows):
-        raise ValueError("A census change was chosen twice.")
-    return {
-        "action": values["bulk"],
-        "versions": versions,
-        "bulk_key": UUID(values["bulk_key"]),
-        "note": values["bulk_note"].strip(),
-    }
+    fields = [
+        FieldError(ErrorCode.INVALID, f"value_{part}") for part in error.fields
+    ] or [FieldError(ErrorCode.INVALID, "value")]
+    return validation_response(fields, refusal=Refusal(str(error), EDIT_REFUSED))
 
 
-class TooMany(Exception):
-    """More rows were ticked than one bulk review may cover."""
+# A refused ParishSoft Member ID's fix (#1749), beside its static reason; a
+# correction's (#1773) cannot be left blank.
+MEMBER_ID_REFUSED = "Correct the Member ID, or leave it blank, then record it again."
+MEMBER_ID_CORRECTION_REFUSED = "Correct the Member ID, then record it again."
 
 
-def _row_name(proposal):
-    """The changed row as the notice names it: what changed, and whose.
+def _add_refusal(error):
+    """The page's answer to an Add, or a reopen, the reader can correct (#1710).
 
-    DUIDs, not names, so the notice reads the same whatever the snapshot
-    holds; the row itself shows the names.
+    Its static reason and next step, shown in the dialog at the fields it
+    names (``AddRefusal.field_ids``), with its closed code for the refusal
+    log.
     """
-    who = (
-        "the Family"
-        if proposal.entity_kind == "family"
-        else "a New Member"
-        if proposal.entity_kind == "proposed_member"
-        else f"Member DUID {proposal.entity_key}"
+    fields = [FieldError(ErrorCode.INVALID, name) for name in error.field_ids]
+    return with_codes(
+        validation_response(fields, refusal=Refusal(str(error), error.fix)),
+        error.code,
     )
-    label = LABELS.get(proposal.field, proposal.field)
-    return f"{label} for {who} in Family DUID {proposal.submission.family.family_duid}"
-
-
-def _resolve(service, principal, campaign_id, resolution):
-    """Record a resolution; the notice the page shows about it.
-
-    The proposal must belong to this page's campaign (otherwise it is denied,
-    as an unknown one is). A change someone else updated first is not an
-    error the reader caused: the page answers with its current state and
-    says so, whether the service saw the newer version or the database
-    refused a racing second write. Every other refusal (an action not allowed
-    from the row's state, a forged or rebound request) is a 400, as a bad
-    filter is.
-    """
-    action, proposal_id = resolution.pop("action"), resolution.pop("proposal_id")
-    proposal = (
-        ProposedChange.objects.select_related("submission__family")
-        .filter(pk=proposal_id, submission__campaign_id=campaign_id)
-        .filter(submission__mode="live")
-        .first()
-    )
-    if proposal is None:
-        raise PermissionError("This census change is unavailable.")
-    name = _row_name(proposal)
-    try:
-        if action in EDITS:
-            try:
-                review = edit_census_change(
-                    service.store, principal.identity, proposal_id, **resolution
-                )
-            except Unchanged:
-                return f"{name} {EDIT_UNCHANGED}"
-            if action == "edit" and not review.admin_value_set:
-                return f"{name} {EDIT_MATCHED}"
-            return f"{name} {EDITS[action]}"
-        if action == RESOLVE_CONFLICT:
-            resolve_census_conflict(
-                service.store, principal.identity, proposal_id, **resolution
-            )
-            return f"{name} {CONFLICT_RESOLVED}"
-        if action in REVIEWS:
-            review_census_change(
-                service.store,
-                principal.identity,
-                proposal_id,
-                decision=REVIEWS[action],
-                **resolution,
-            )
-        else:
-            resolve_census_change(
-                service.store,
-                principal.identity,
-                proposal_id,
-                action=action,
-                **resolution,
-            )
-    except StaleRecordError:
-        return f"{name} {STALE}"
-    except IntegrityError as error:
-        # A racing write normally surfaces as StaleRecordError above, under
-        # the row lock. Only the expected race (a second resolution of the
-        # same version: a unique violation) becomes the stale notice. Any
-        # other refusal (a guard or audit mismatch) is logged and fails the
-        # request, so a future bug is never hidden behind the race wording.
-        if getattr(error.__cause__, "sqlstate", None) == UNIQUE_VIOLATION:
-            return f"{name} {STALE}"
-        emit_failure(error, event=Event.TASK_FAILED)
-        raise
-    return f"{name} {REVIEWED[action] if action in REVIEWS else RESOLVED[action]}"
-
-
-def _review_many(service, principal, campaign_id, bulk):
-    """Record a bulk review; the notice the page shows about it.
-
-    Every chosen change must belong to this page's campaign (otherwise the
-    whole request is denied, as an unknown change is). All or none: one
-    someone else updated first leaves every change as it is, and the notice
-    names it, as a single row's would; a racing second write the database
-    refuses reads the same, without a name. Any other refusal is a 400.
-    """
-    versions = bulk["versions"]
-    proposals = {
-        proposal.pk: proposal
-        for proposal in ProposedChange.objects.select_related("submission__family")
-        .filter(pk__in=list(versions), submission__campaign_id=campaign_id)
-        .filter(submission__mode="live")
-    }
-    if len(proposals) != len(versions):
-        raise PermissionError("A census change is unavailable.")
-    action = bulk["action"]
-    try:
-        review_census_changes(
-            service.store,
-            principal.identity,
-            versions,
-            decision=REVIEWS[action],
-            note=bulk["note"],
-            bulk_key=bulk["bulk_key"],
-        )
-    except BulkStale as error:
-        return f"{_row_name(proposals[error.proposal_id])} {STALE}"
-    except IntegrityError as error:
-        # As for one row (_resolve): only the expected race is the notice.
-        if getattr(error.__cause__, "sqlstate", None) == UNIQUE_VIOLATION:
-            return f"A chosen change {STALE}"
-        emit_failure(error, event=Event.TASK_FAILED)
-        raise
-    if len(versions) == 1:
-        return f"{_row_name(next(iter(proposals.values())))} {REVIEWED[action]}"
-    return f"{len(versions):,} changes {REVIEWED[action]}"
-
-
-def bulk_actions():
-    """The bulk bar's buttons, one per review decision, in the review icons' order.
-
-    Each opens the page's one confirmation dialog, which takes its title
-    and announcement from the button and counts the ticked rows (ui-v1.js).
-    Its value is also its kind (data-confirm-kind), which makes it
-    available only while every ticked row allows that decision (each row's
-    box lists its review icons' choices), so the dialog always acts on every
-    ticked row; the service checks each row again.
-    """
-    # The button, then the dialog's title for one row and for several.
-    words = {
-        "approve": ("Approve", "Approve {name}?", "Approve {count} changes?"),
-        "ignore_automatic": ("Ignore", "Ignore {name}?", "Ignore {count} changes?"),
-        "to_review": (
-            "Back to To review",
-            "Send {name} back to To review?",
-            "Send {count} changes back to To review?",
-        ),
-    }
-    actions = []
-    for action, _decision in REVIEW_CHOICES:
-        label, title_one, title_many = words[action]
-        actions.append(
-            {
-                "value": action,
-                "label": label,
-                "title_one": title_one,
-                "title_many": title_many,
-                "done_one": f"{{name}} {REVIEWED[action]}",
-                "done_many": f"{{count}} changes {REVIEWED[action]}",
-            }
-        )
-    return actions
-
-
-def row_controls(rows, *, administrator=False, mutable=False):
-    """Give each shown row what its Actions cell needs (#528, #879).
-
-    A fresh request key per drawn row makes a repeated submission of the
-    same action a replay, never a second resolution. ``actions`` lists the
-    row's icon buttons (``row_actions``) for this viewer.
-    """
-    for row in rows:
-        row["request_key"] = uuid4()
-        # Edit value has its own key, so its replay is never taken for a
-        # decision's (ADM-09.04).
-        row["edit_key"] = uuid4()
-        # How the confirmation dialog and the icons name the row: what
-        # changed, and whose.
-        row["confirm_name"] = f"{row['label']} for {row['who']}"
-        # Save value is described by its complete-gate hint; built here
-        # because the {% button %} tag takes each attribute as one value.
-        row["edit_describedby"] = f"edit-complete-{row['id']}"
-        # Edit value's own form and dialog (one per row: its field differs).
-        row["edit_form"] = f"census-edit-{row['id']}"
-        row["edit_dialog"] = f"census-edit-dialog-{row['id']}"
-        row["actions"] = row_actions(row, administrator=administrator, mutable=mutable)
-
-
-# The page's shared confirmation dialogs for one row's action (#879): the
-# reversible decisions with an optional note, Entered in ParishSoft (final,
-# so its Confirm is the destructive one and it says so), and Reopen, whose
-# note is required. Edit value has one dialog per row (its field differs).
-DECIDE_DIALOG = "census-decide-dialog"
-ENTER_DIALOG = "census-enter-dialog"
-REOPEN_DIALOG = "census-reopen-dialog"
-
-
-def row_dialogs(administrator):
-    """The (form id, dialog id) of each shared row-action dialog drawn.
-
-    Reopen is the Administrator's alone, so only their page draws it.
-    """
-    found = [("census-decide", DECIDE_DIALOG), ("census-enter", ENTER_DIALOG)]
-    if administrator:
-        found.append(("census-reopen", REOPEN_DIALOG))
-    return found
-
-
-CONFLICT_BODY = (
-    "ParishSoft changed after the Family answered. {what} anyway approves "
-    "this change: publication writes {value} over the value in ParishSoft "
-    "now, but only while ParishSoft still has that value. If ParishSoft "
-    "changes again first, the approval is withdrawn and the change needs "
-    "review again. Ignore keeps ParishSoft's value."
-)
-
-
-def row_actions(row, *, administrator, mutable):
-    """The icon buttons of one row's Actions cell, in their order (#879).
-
-    Each is a dict: ``icon`` (components/action-icon.html), ``label`` (its
-    accessible name and tooltip, naming the row), ``dialog`` (the
-    confirmation dialog it opens), ``post`` (the row's other fields the
-    dialog posts beside the proposal, data-confirm-with), and the dialog's
-    ``title`` and ``done`` words for this action, with an optional ``body``.
-
-    The rows and roles are those the earlier Record outcome and Review forms
-    offered (#528): nothing while other campaign work holds the campaign;
-    on a By-hand row, Entered in ParishSoft and Ignore for anyone who may
-    resolve it, else Reopen for an Administrator; on an Automatic row an
-    Administrator's Edit value, Clear edit, Use the Family's value anyway
-    and the decisions its review icons allow, only while it allows one. The
-    service and SQL check every one again.
-    """
-    if not mutable:
-        return []
-    keys = {"version": row["version"], "request_key": row["request_key"]}
-
-    def action(icon, label, resolve, *, dialog=DECIDE_DIALOG, title, done, body=""):
-        """One icon button posting ``resolve`` for this row."""
-        return {
-            "icon": icon,
-            "label": label.format(name=row["confirm_name"]),
-            "dialog": dialog,
-            "post": urlencode({"resolve": resolve} | keys),
-            "title": title,
-            "done": f"{{name}} {done}",
-            "body": body,
-        }
-
-    if not row["automatic"]:
-        if row["can_resolve"]:
-            return [
-                action(
-                    "entered",
-                    "Mark {name} entered in ParishSoft",
-                    "entered",
-                    dialog=ENTER_DIALOG,
-                    title="Mark {name} entered in ParishSoft?",
-                    done=RESOLVED["entered"],
-                ),
-                action(
-                    "ignore",
-                    "Ignore {name}",
-                    "ignored",
-                    title="Ignore {name}?",
-                    done=RESOLVED["ignored"],
-                    body="Record that this change will not be entered in "
-                    "ParishSoft. An Administrator may reopen it.",
-                ),
-            ]
-        if row["can_reopen"] and administrator:
-            return [
-                action(
-                    "clear",
-                    "Reopen {name}",
-                    "reopened",
-                    dialog=REOPEN_DIALOG,
-                    title="Reopen {name}?",
-                    done=RESOLVED["reopened"],
-                )
-            ]
-        return []
-    if not (administrator and row["review_actions"]):
-        return []
-    found = []
-    if row["edit"]:
-        found.append(
-            {
-                "icon": "edit",
-                "label": f"Edit value of {row['confirm_name']}",
-                "dialog": row["edit_dialog"],
-                "post": "",
-                "title": "Edit value of {name}",
-                "done": "",
-                "body": "",
-            }
-        )
-        if row["edit"]["edited"]:
-            found.append(
-                action(
-                    "clear_edit",
-                    "Clear edit of {name}",
-                    "clear_edit",
-                    title="Clear the edit of {name}?",
-                    done=EDITS["clear_edit"],
-                    body="Publication goes back to writing the Family's answer.",
-                )
-            )
-    if row["resolve_conflict"]:
-        what = (
-            "Use the edited value"
-            if row["admin_value_set"]
-            else "Use the Family's value"
-        )
-        value = "the edited value" if row["admin_value_set"] else "the Family's answer"
-        found.append(
-            action(
-                "override",
-                f"{what} anyway for {{name}}",
-                RESOLVE_CONFLICT,
-                title=f"{what} anyway for {{name}}?",
-                done=CONFLICT_RESOLVED,
-                body=CONFLICT_BODY.format(what=what, value=value),
-            )
-        )
-    # The decisions, in the review icons' (and the bulk bar's) order.
-    words = {
-        "approve": ("entered", "Approve {name}", "Approve {name}?"),
-        "ignore_automatic": ("ignore", "Ignore {name}", "Ignore {name}?"),
-        "to_review": (
-            "clear",
-            "Send {name} back to To review",
-            "Send {name} back to To review?",
-        ),
-    }
-    for choice in row["review_actions"]:
-        icon, label, title = words[choice]
-        found.append(action(icon, label, choice, title=title, done=REVIEWED[choice]))
-    return found
 
 
 def _respond(request, campaign_id, *, export, render):
@@ -726,26 +273,30 @@ def _respond(request, campaign_id, *, export, render):
         principal = _principal(request, service.store, export=export)
         admit_report_read(campaign_id)
         try:
-            if request.GET:
+            if request.GET and (export or request.method != "GET"):
                 raise ValueError("Census change filters require private POST state.")
-            parameters = request.POST.copy()
+            # A GET carries only the choices a link may (R38 finding 6): the
+            # view's own address, which the page puts in the address bar, so
+            # a reload draws the same view; the name search never does.
+            if set(request.GET) - LINK_PARAMETERS:
+                raise ValueError("Census change links carry no private filter.")
+            parameters = (
+                request.GET if request.method == "GET" else request.POST
+            ).copy()
             parameters.pop("csrfmiddlewaretoken", None)
-            bulk = None if export else _bulk(parameters)
-            resolution = None if export else _resolution(parameters)
-            if bulk is not None and resolution is not None:
-                raise ValueError("One census change action at a time.")
+            decision = None if export else read_decision(parameters)
             extra = _choices(parameters, export=export)
+            if not export and "stage" not in parameters:
+                # The worklist opens on To review (review pipeline spec,
+                # "Review worklist").
+                parameters["stage"] = Stage.TO_REVIEW.value
             query = CensusQuery.parse(parameters)
-            # Each is recorded in its own work transaction, before the
-            # page's read, so the page that answers shows the result.
-            if resolution is not None:
-                extra["notice"] = _resolve(service, principal, campaign_id, resolution)
-            elif bulk is not None:
-                extra["notice"] = _review_many(service, principal, campaign_id, bulk)
-        except TooMany:
-            return validation_response(
-                [FieldError(ErrorCode.INVALID)], refusal=BULK_TOO_MANY
-            )
+            # Recorded in its own work transaction, before the page's read,
+            # so the page that answers shows the result.
+            if decision is not None:
+                extra["notice"] = record(
+                    CensusDecisions(service.store, campaign_id), principal, decision
+                )
         except KeyRebound:
             # The same drawn form was sent again with other choices (its
             # first answer was lost): nothing was saved, and a reload draws
@@ -753,15 +304,25 @@ def _respond(request, campaign_id, *, export, render):
             return validation_response(
                 [FieldError(ErrorCode.STALE)], status=409, refusal=REBOUND
             )
+        except AddRefusal as error:
+            return _add_refusal(error)
         except InvalidEdit as error:
-            # An edited value the change cannot take (ADM-09.04): its static
-            # reason, shown in place after the row's Edit value form, and
-            # logged by the shared refusal hook with the field's name only.
+            return _edit_refusal(error)
+        except InvalidMemberId as error:
+            # A New Member's Member ID the mark cannot take, shown in place
+            # at the dialog's field (#1749).
             return validation_response(
-                [FieldError(ErrorCode.INVALID, "value")],
-                refusal=Refusal(str(error), "Correct the value, then save it again."),
+                [FieldError(ErrorCode.INVALID, "value_member")],
+                refusal=Refusal(
+                    str(error),
+                    MEMBER_ID_CORRECTION_REFUSED
+                    if error.correcting
+                    else MEMBER_ID_REFUSED,
+                ),
             )
         except ValueError:
+            # A malformed form, or a decision the change's stage does not
+            # offer: a 400, as a bad filter is.
             return _error(campaign_id, status=400)
         finalized, count = False, 0
 
@@ -831,10 +392,11 @@ def _respond(request, campaign_id, *, export, render):
 
 @require_http_methods(["GET", "POST"])
 def report(request, campaign_id):
-    """The default GET shows the work to do; filters use POST."""
+    """The default GET shows the changes To review; filters use POST, and a
+    GET may carry the view's own address (its link-safe choices, R38)."""
 
     def render(result, query, extra):
-        """The native page: one table that pages and sorts in place."""
+        """The census stream's review worklist: one table, redrawn in place."""
         action = reverse("admin:census_changes")
         table = paginate(
             result["rows"],
@@ -846,31 +408,27 @@ def report(request, campaign_id):
         # the page's Family record ids.
         link_families(campaign_id, table.rows)
         # Other campaign work (a restore review, cleanup, purge or go-live
-        # step) holds the campaign: the page offers no row actions, as the
-        # service would refuse them, and says why.
+        # step) holds the campaign: the page offers no actions, as the
+        # services would refuse them, and says why.
         mutable = True
         try:
             admit_campaign(campaign_id, mutating=True)
         except PermissionError:
             mutable = False
-        row_controls(table.rows, administrator=result["administrator"], mutable=mutable)
+        worklist, table = worklist_page(
+            result, query, table, action, mutable=mutable, paging=extra["paging"]
+        )
         return render_to_string(
             "stewardship/census-changes.html",
-            result
-            | {
-                "table": replace(table, method="post", action=action),
+            {
+                "worklist": worklist,
+                "table": table,
                 "campaign_id": campaign_id,
                 "query": query,
                 "query_fields": query.form_values(),
-                # Each Status choice with how many changes it lists (#1682),
-                # the counts the retired summary above the table showed.
-                "status_choices": status_choices(
-                    result["status_counts"], administrator=result["administrator"]
-                ),
                 "route_choices": ROUTE_LABELS.items(),
                 "kind_choices": KIND_LABELS.items(),
                 "notice": extra.get("notice"),
-                "action": action,
                 # The latest date an edited birth or death date may hold:
                 # the campaign's today, as the server checks it.
                 "edit_today": campaign_today(
@@ -879,25 +437,15 @@ def report(request, campaign_id):
                     )
                 ).isoformat(),
                 "mutable": mutable,
-                # Publish to ParishSoft's link (#528, ADM-09), the
+                # The Add dialog's choices (#1710): what may change, and the
+                # ignored changes an addition may be added in place of.
+                "add_fields": add_fields(),
+                "add_replaceable": result["replaceable"],
+                "administrator": result["administrator"],
+                # Update ParishSoft's link (#528, ADM-09; #1688), the
                 # Administrator's: unavailable, with its reason, while the
                 # deployment's parishsoft_publication setting is off.
                 "publication_on": census_publication.enabled(),
-                # Bulk review is the Administrator's, on rows a review is
-                # offered for, while the page shows no more rows than one
-                # bulk review covers (All rows can show more); one key per
-                # drawn page makes a repeated post a replay
-                # (census_review.bulk_key_for).
-                "bulk": mutable
-                and result["administrator"]
-                and len(table.rows) <= MAX_BULK,
-                "bulk_too_many": mutable
-                and result["administrator"]
-                and len(table.rows) > MAX_BULK,
-                "max_bulk": MAX_BULK,
-                "bulk_actions": bulk_actions(),
-                "row_dialogs": row_dialogs(result["administrator"]),
-                "bulk_key": uuid4(),
             },
             request=request,
         ).encode()
