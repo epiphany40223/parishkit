@@ -130,11 +130,13 @@ def test_live_campaign_offers_no_test_of_unsaved_text_until_paused(scheduled):
         "subject": "Edited",
         "html": "<p>{{ family_code }} {{ family_url }}</p>",
         "generate_text": "on",
-        "csrfmiddlewaretoken": item.browser.cookies["pk_admin_csrf"].value,
     }
     tests = CampaignMailTest.objects.count()
     with web_login():
         entry = item.browser.get(new_page)
+        # The New page sets the CSRF cookie: the fixture opens no Admin page
+        # since the Prepare Family links page retired (#1585).
+        values["csrfmiddlewaretoken"] = item.browser.cookies["pk_admin_csrf"].value
         assert f'data-closed="{NOT_OPEN}"'.encode() in entry.content
         refused = item.browser.post(send, values)
         assert refused.status_code == 404, refused.content

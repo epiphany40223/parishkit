@@ -93,12 +93,24 @@
     itself, which then holds every region the change redraws, without
     reading the page again: System health's actions (#1356), whose page
     read is audited.
-{% endcomment %}{% if review %}<dialog id="{{ dialog_id }}" class="confirm-dialog review-dialog" aria-labelledby="{{ dialog_id }}-title"{% if describedby %} aria-describedby="{{ describedby }}"{% endif %} data-review-dialog data-confirm-fallback="{{ fallback }}" data-review-return="{{ return_url|default:'' }}"{% if redraw_answer %} data-review-redraw="answer"{% elif redraw_body %} data-review-redraw="body"{% endif %} data-review-outcome="{{ outcome_id }}" data-working="{% translate 'Applying…' %}" data-applied="{% translate 'Applied.' %}" data-applied-at="{% translate 'Applied at {time}.' %}">
+  - A review answer's field marked data-review-require (the Confirm
+    Production dialog's typed word, #1585) holds Apply until it is valid,
+    saying its data-missing-hint in the status line under the buttons,
+    which then describes Apply. The field names the Apply form
+    (<dialog_id>-apply) in its form attribute, so Apply posts it.
+  - redraw_leave=True ends on the page Apply's answer redirected to, opened
+    as an ordinary page load, without following a change status first: the
+    Go live page's Start go-live (#1585), whose Apply opens the step in
+    progress, a page of its own that follows its own work.
+  - cancel (optional) replaces the Cancel label when "Cancel" would read as
+    the action it dismisses: Cancel go-live's "Keep it scheduled" (UX
+    conventions, "Review dialog", #1806).
+{% endcomment %}{% if review %}<dialog id="{{ dialog_id }}" class="confirm-dialog review-dialog" aria-labelledby="{{ dialog_id }}-title"{% if describedby %} aria-describedby="{{ describedby }}"{% endif %} data-review-dialog data-confirm-fallback="{{ fallback }}" data-review-return="{{ return_url|default:'' }}"{% if redraw_answer %} data-review-redraw="answer"{% elif redraw_body %} data-review-redraw="body"{% elif redraw_leave %} data-review-redraw="leave"{% endif %} data-review-outcome="{{ outcome_id }}" data-working="{% translate 'Applying…' %}" data-applied="{% translate 'Applied.' %}" data-applied-at="{% translate 'Applied at {time}.' %}">
 <h2 id="{{ dialog_id }}-title" tabindex="-1" data-review-title>{{ title }}</h2>
 <div class="dialog-body" tabindex="0" role="region" aria-labelledby="{{ dialog_id }}-title" data-review-body></div>
-<form method="post" action="{{ apply_url }}" data-review-apply>{% csrf_token %}<input type="hidden" name="action" value="{{ apply_action|default:'confirm' }}"></form>
-<div class="dialog-actions">{% button type="button" data-confirm-accept %}{% translate "Apply" %}{% endbutton %}{% button type="button" variant="secondary" data-confirm-cancel %}{% translate "Cancel" %}{% endbutton %}</div>
-<p class="dialog-status" role="status" data-confirm-status></p>
+<form id="{{ dialog_id }}-apply" method="post" action="{{ apply_url }}" data-review-apply>{% csrf_token %}<input type="hidden" name="action" value="{{ apply_action|default:'confirm' }}"></form>
+<div class="dialog-actions">{% button type="button" data-confirm-accept %}{% translate "Apply" %}{% endbutton %}{% button type="button" variant="secondary" data-confirm-cancel %}{% if cancel %}{{ cancel }}{% else %}{% translate "Cancel" %}{% endif %}{% endbutton %}</div>
+<p id="{{ dialog_id }}-status" class="dialog-status" role="status" data-confirm-status></p>
 <div class="notice notice-error" role="alert" data-confirm-error hidden></div>
 </dialog>{% else %}<dialog id="{{ dialog_id }}" class="confirm-dialog" aria-labelledby="{{ dialog_id }}-title" aria-describedby="{{ dialog_id }}-body" data-confirm-dialog data-confirm-form="{{ form_id }}" data-confirm-fallback="{{ fallback }}" data-title-one="{{ title_one }}" data-title-many="{{ title_many }}" data-done-one="{{ done_one }}" data-done-many="{{ done_many }}"{% if answer_page %} data-confirm-answer-page{% endif %} data-working="{% translate 'Working…' %}">
 <h2 id="{{ dialog_id }}-title" data-confirm-title>{{ title_many }}</h2>

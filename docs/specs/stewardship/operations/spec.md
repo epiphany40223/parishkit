@@ -1995,9 +1995,10 @@ scheduled full refresh is 02:00 tomorrow.
 - The settings page no longer refuses a schedule for its gaps: it states the
   longest wait for new data and when the alarm would sound (see
   [cost and freshness summary](../admin-portal/spec.md#cost-and-freshness-summary)).
-- Before Start, go-live readiness still requires a full refresh that
-  started within `source_stale_seconds`, and Start waives only that age
-  because it queues the go-live's own refresh. After Start, the go-live's
+- Before Start, go-live readiness requires a completed full refresh of the
+  current organization and campaign window, of any age: one merely older
+  than `source_stale_seconds` does not block Check or Start, because Start
+  queues the go-live's own refresh. After Start, the go-live's
   checks require the attempt's refresh (or a later full refresh) and expire
   at the attempt's hold end instead; see
   [freshness during a go-live](../admin-portal/spec.md#go-live-page).

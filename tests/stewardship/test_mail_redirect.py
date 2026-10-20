@@ -455,10 +455,16 @@ def test_local_without_a_redirect_still_delivers_to_mailpit_as_before(recording)
 
 
 def gmail_admitted_in_local(monkeypatch):
-    """Simulate a LOCAL transport beyond the mail catcher (a real key)."""
+    """Simulate a LOCAL transport beyond the mail catcher (a real key).
+
+    It skips ``workspace_transport``'s own redirect rule (#1399), so these
+    tests show that ``envelope`` alone still refuses or redirects.
+    """
     for module in (family_delivery, readiness_delivery):
         monkeypatch.setattr(
-            module, "workspace_transport", lambda value, profile: MailTransport.GMAIL
+            module,
+            "workspace_transport",
+            lambda value, profile, *, redirect: MailTransport.GMAIL,
         )
 
 

@@ -15,7 +15,6 @@ from django.urls import path
 from parishkit.stewardship.campaigns.configuration import REMINDER_WORKGROUP_SLUG
 
 from ..accounts import (
-    activation_views,
     artwork_views,
     campaign_create_views,
     campaign_family_test_views,
@@ -27,6 +26,8 @@ from ..accounts import (
     content_delete_views,
     content_history,
     content_views,
+    go_live_confirm_views,
+    go_live_prepare_views,
     go_live_views,
     reminder_workgroup_views,
     schedule_calendar_views,
@@ -34,7 +35,6 @@ from ..accounts import (
     schedule_entry_views,
     schedule_views,
     share_views,
-    withdrawal_views,
 )
 from ..accounts.group_root_views import group_root
 from ..web.admin_routes import current_campaign
@@ -153,34 +153,27 @@ patterns = [
         reminder_workgroup_views.reminder_workgroup,
         "reminder_workgroup",
     ),
-    # Going live: readiness, Testing cleanup, Family links, then Confirm
-    # Production, each step under the one before it.
-    _page("campaign/go-live/", go_live_views.readiness, "go_live"),
+    # Going live (#1585): the Go live page's Check, Prepare and Confirm
+    # Production steps, then Production activation. The Testing cleanup,
+    # Prepare Family links, old Confirm Production and Cancel go-live pages
+    # retired with no redirect (#864): their addresses answer as unknown ones.
+    _page("campaign/go-live/", go_live_views.check, "go_live"),
     _page(
         "campaign/go-live/families/",
         go_live_views.testing_families,
         "go_live_families",
     ),
     _page(
-        "campaign/go-live/cleanup/<uuid:request_id>/",
-        go_live_views.cleanup_status,
-        "go_live_cleanup",
+        "campaign/go-live/preparing/",
+        go_live_prepare_views.prepare,
+        "go_live_prepare",
     ),
     _page(
-        "campaign/go-live/cleanup/<uuid:request_id>/links/",
-        activation_views.links,
-        "go_live_links",
+        "campaign/go-live/confirmation/",
+        go_live_confirm_views.confirmation,
+        "go_live_confirm",
     ),
-    _page(
-        "campaign/go-live/cleanup/<uuid:request_id>/links/<uuid:preparation_id>/"
-        "confirmation/",
-        confirmation_views.confirmation,
-        "production_confirmation",
-    ),
+    # Production activation, the Activation step (#1585 slice 5), holds
+    # Cancel go-live's review dialog; its old page retired with no redirect.
     _page("campaign/production/", confirmation_views.progress, "production_progress"),
-    _page(
-        "campaign/production/cancellation/",
-        withdrawal_views.withdrawal,
-        "production_withdrawal",
-    ),
 ]

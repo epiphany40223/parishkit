@@ -511,7 +511,9 @@ def test_backup_drive_probes_and_copies_the_newest_set(tmp_path, monkeypatch, ca
     monkeypatch.setattr(
         backup_drive,
         "workspace_session",
-        lambda value, subject, profile: sessions.append((value, subject, profile)),
+        lambda value, subject, profile, redirect: sessions.append(
+            (value, subject, profile, redirect)
+        ),
     )
     tags = []
 
@@ -533,7 +535,9 @@ def test_backup_drive_probes_and_copies_the_newest_set(tmp_path, monkeypatch, ca
         "copied_set": None,
         "target": "backup_drive",
     }
-    assert sessions == [(b"service-account", "mail@example.org", configuration.profile)]
+    assert sessions == [
+        (b"service-account", "mail@example.org", configuration.profile, None)
+    ]
     backups = private_directory(configuration.paths["backups"], create=True)
     directory = backups / "20260927T020000Z"
     directory.mkdir(mode=0o700)
@@ -613,9 +617,10 @@ def test_local_send_to_through_the_mail_catcher_sends_nothing(
     """LOCAL's mail catcher passes the check, but ``--send-to`` sends nothing.
 
     The send path goes over Gmail, so without a mail redirect the envelope
-    rule refuses it first (#1399); with one it takes only a Google service
-    account, which LOCAL still refuses. Either way the smoke send stops
-    before any SMTP connection, with exit status 2.
+    rule refuses it first (#1399); with one it needs a Google service
+    account, so the installed mail catcher is refused before the key is
+    parsed (#1878). Either way the smoke send stops before any SMTP
+    connection, with exit status 2.
     """
     from contextlib import nullcontext
     from dataclasses import replace
@@ -682,8 +687,8 @@ def test_local_send_to_through_the_mail_catcher_sends_nothing(
     captured = capsys.readouterr()
     assert not captured.out and "smoke check refused" in captured.err
     assert opened == [] and refusals == []
-    # With a redirect the route is admitted, and the parser refuses the
-    # mail-catcher document: still nothing is sent.
+    # With a redirect the route is admitted, and the send refuses the
+    # mail-catcher document before parsing it: still nothing is sent.
     monkeypatch.setattr(
         smoke,
         "load_deployment",
@@ -692,5 +697,4 @@ def test_local_send_to_through_the_mail_catcher_sends_nothing(
     assert smoke.execute_smoke(args) == 2
     captured = capsys.readouterr()
     assert not captured.out and "smoke check refused" in captured.err
-    assert opened == []
-    assert len(refusals) == 1
+    assert opened == [] and refusals == []

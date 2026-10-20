@@ -66,6 +66,13 @@ ELSEWHERE = {
     # Home links it only while a restore left a held email undecided:
     # test_held_emails_page_postgresql.py.
     "held_emails",
+    # The Go live page's Prepare and Confirm Production steps (#1585) are
+    # linked only once go-live has started (Check's Continue to Prepare and
+    # the step bar, then Prepare's Continue to Confirm Production), which no
+    # crawl here starts: test_go_live_check_postgresql.py,
+    # test_go_live_prepare_postgresql.py and test_go_live_confirm_postgresql.py.
+    "go_live_prepare",
+    "go_live_confirm",
 }
 # Pages these fixtures cannot open, so a crumb linking one is trusted to the
 # registry's linkable flag instead of a 200, each with where it is rendered.
@@ -419,9 +426,9 @@ def _go_live_in_production(auth_service, settings):
     go-live may switch the deployment to Production, so the mode is set
     directly, as the debug-banner test does; every request runs guarded.
     No Production confirmation is stored, so Production activation (which
-    the menu links in this state) and Cancel go-live answer "unavailable"
-    (``ALLOWED``); test_withdrawal_postgresql.py opens both after a real
-    confirmation. The Family web runtime is configured with the key rings
+    the menu links in this state) answers "unavailable" (``ALLOWED``);
+    test_withdrawal_postgresql.py opens it, and its Cancel go-live dialog,
+    after a real confirmation. The Family web runtime is configured with the key rings
     the capture was promoted with, as a deployment always has it, so the
     directory can show codes.
     """

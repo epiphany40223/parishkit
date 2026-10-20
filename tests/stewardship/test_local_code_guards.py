@@ -6,7 +6,10 @@ use-time check that a LOCAL deployment refuses a real provider, with the
 same input admitted (or at least not refused by that check) in Production,
 so a change that removes a guard without its replacement fails here.
 Later #1399 changes replace a guard with its configured successor and
-update the matching case. ParishSoft's is now a setting: LOCAL may choose
+update the matching case: a real Workspace key, and with it Drive, is now
+admitted in LOCAL beside a mail redirect on the normal clock, so the mail
+and Drive cases pin LOCAL without one (test_local_real_workspace covers
+LOCAL with one). ParishSoft's is now a setting: LOCAL may choose
 the real API for reads, so its cases pin that LOCAL defaults to the fake and
 never writes to ParishSoft, whatever it reads from. Google sign-in may use a
 real OAuth client in LOCAL too, so its tests (after the cases) pin what keeps
@@ -53,10 +56,11 @@ PRODUCTION = DeploymentProfile.PRODUCTION
 
 
 def mail(profile, monkeypatch, tmp_path):
-    """The mail transport admits a Google service account only outside LOCAL."""
+    """Without a mail redirect, a Google service account is admitted only
+    outside LOCAL (test_local_real_workspace covers LOCAL with one)."""
     from parishkit.stewardship.mail_catcher import workspace_transport
 
-    workspace_transport(account(), profile)
+    workspace_transport(account(), profile, redirect=None)
 
 
 def mail_route(profile, monkeypatch, tmp_path):

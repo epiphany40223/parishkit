@@ -301,7 +301,7 @@ def test_create_is_step_one_of_the_campaign_wizard(page, component_origin):
         "Dates and mail schedules",
         "Campaign images",
         "Preview and test email",
-        "Go-live readiness",
+        "Go live",
     ]
     for index, label in enumerate(labels):
         assert later.nth(index).get_attribute("aria-disabled") == "true"

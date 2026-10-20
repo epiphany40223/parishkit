@@ -7,7 +7,7 @@ irreversible acknowledgement. Activation remains a separate, closed owner.
 
 import hashlib
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 from datetime import datetime
 from uuid import UUID
 
@@ -72,13 +72,23 @@ def collect_inputs(caller, service, campaign_id):
 
     The digest deliberately omits wall-clock sampling time. It includes the
     computed target, current source/full proof and due-group binding, so start,
-    close, source expiry and newly due slots can still invalidate a preview.
-    A final response must independently repeat current authorization.
+    close, a new source snapshot and newly due slots can still invalidate a
+    preview. A final response must independently repeat current authorization.
 
-    ``caller`` is an ``AdminCaller``: the Go-live readiness page and the
+    A full refresh that is merely older than ``source_stale_seconds``
+    (``full_refresh_stale``) is no problem here (#1812): Start go-live
+    queues the go-live's own full refresh in the same transaction, and
+    every check after Start requires that refresh (``confirmation_readiness.
+    go_live_source``). Its age is therefore left out of the digest too, so
+    a refresh turning stale while Check or the Start dialog is open never
+    makes the Administrator check again. ``source`` keeps the real reason
+    and expiry for callers that start no refresh (``start_cleanup`` without
+    an attempt, the local seeding tool).
+
+    ``caller`` is an ``AdminCaller``: the Go live page's Check step and the
     ``go-live readiness`` command (ADM-11) read through this one function.
-    Until PR 12 moves them, ``go_live_commands`` still pass their request,
-    which ``principal`` converts.
+    The page's views still pass ``go_live_commands`` their request, which
+    ``principal`` converts; ``pk-admin`` passes its caller (#1809).
     """
     with work_transaction():
         principal(caller, service, passive=True)
@@ -111,7 +121,7 @@ def collect_inputs(caller, service, campaign_id):
         cleanup = cleanup_preview(campaign_id)
         records = integration_records(document)
         problems = list(config.problems)
-        if not source.ready:
+        if source.reason not in {"ready", "full_refresh_stale"}:
             problems.append(source.reason)
         if cleanup.unresolved:
             problems.append("testing_delivery_unresolved")
@@ -164,7 +174,7 @@ def collect_inputs(caller, service, campaign_id):
             "credentials": (str(credentials.pk), credentials.version)
             if credentials
             else None,
-            "source": asdict(source),
+            "source": asdict(_bound_source(source)),
             "families": impact.digest,
             "digests": asdict(digests),
             "inventory": cleanup.inventory.digest,
@@ -197,14 +207,21 @@ def collect_inputs(caller, service, campaign_id):
 def recent_cleanup_requests(campaign_id):
     """The campaign's ten most recent cleanup requests, newest first.
 
-    Go-live readiness lists them (identifier, state and creation instant
-    only), and so does ``go-live readiness``.
+    ``go-live readiness`` lists them (identifier, state and creation
+    instant only); the Go live page's Check step shows the latest instead.
     """
     return list(
         ProductionTransitionRequest.objects.filter(campaign_id=campaign_id)
         .order_by("-created_at", "-id")
         .only("id", "state", "created_at")[:10]
     )
+
+
+def _bound_source(source):
+    """The source proof the digest binds: which snapshots, not how old (#1812)."""
+    if source.reason == "full_refresh_stale":
+        source = replace(source, reason="ready")
+    return replace(source, expires_at=None)
 
 
 def _catalogs(source):
