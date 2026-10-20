@@ -99,7 +99,7 @@ occurrence never changes. An earlier revision froze the removal in a
 separate reason at resolution time; it was removed because it missed a
 removal after the evidence and a provider failure followed by removal,
 leaving one rule for both. The authoritative rule is the
-[Administrator digests](../specs/stewardship/background-processing/spec.md#administrator-digests)
+[Administrator digests](../specs/stewardship/background-processing/spec.md#administrator-report-emails)
 completion rule.
 
 One expected, harmless side effect of the live read: if the scheduler

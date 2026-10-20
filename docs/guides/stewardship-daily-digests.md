@@ -8,7 +8,7 @@ PR #46's verified merge `849cc71f`. It implements
 and its daily-specific BG-07.05 tests under the
 [controlling plan](../plans/stewardship/background-processing.md#bg-07-submission-confirmations-and-admin-digests).
 The authoritative behavior is the
-[daily digest contract](../specs/stewardship/background-processing/spec.md#daily-campaign-digest),
+[daily digest contract](../specs/stewardship/report-emails/spec.md#block-registry),
 [report parity](../specs/stewardship/reports/spec.md#daily-email-report-parity),
 and [immutable input model](../specs/stewardship/data/spec.md#campaign-daily-report-facts).
 Weekly digests, full post-close resolution, the complete Phase 5 report UI and
@@ -333,7 +333,7 @@ delivery procedure in the controlling plan.
 | 4.6 | Low | Fixed: anonymous requests require the deterministic 403 response on every representation, including malformed queries. |
 
 The recipient-resolution clarification is specified in the
-[Administrator digest contract](../specs/stewardship/background-processing/spec.md#administrator-digests).
+[Administrator digest contract](../specs/stewardship/background-processing/spec.md#administrator-report-emails).
 Empty fulfillment is explicit and distinct from delivered fulfillment; it never
 changes a cancelled OutboxMessage into an accepted one. The fresh-install schema
 audit against `931a103` found the intended completion-view disposition column,
