@@ -25,6 +25,13 @@ from parishkit.stewardship.reports.report_email_models import (
 
 from .auth_builders import signed_in
 from .campaign_builders import campaign_clock, complete_empty_catchup
+from .digest_snapshot_builders import (
+    DAILY_AT,
+    WEEKLY_AT,
+    WEEKLY_CANARY,
+    seed_daily,
+    seed_weekly,
+)
 from .report_builders import (
     WEEKLY_INSTANT,
     add_digest,
@@ -32,9 +39,11 @@ from .report_builders import (
 )
 from .report_builders import weekly_allocated as allocated
 from .test_admin_export_cli_postgresql import read_only_session
-from .test_admin_report_cli_postgresql import cli  # noqa: F401
+from .test_admin_report_cli_postgresql import cli, parity  # noqa: F401
 from .test_family_mail_preparation_postgresql import family_mail  # noqa: F401
 from .test_report_emails_page_postgresql import apply_requests
+from .test_saved_daily_digest_postgresql import read
+from .test_weekly_observation_postgresql import respond
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -131,6 +140,91 @@ def test_list_show_sends_and_copy_read_the_page(
         reader = read_only_session(run.service)
         code, document = run("report-email", "list", secret=reader)
         assert code == 0 and document["result"]["reports"][0]["id"] == row["id"]
+
+
+def test_copy_reads_a_retained_daily_digest(family_mail, google, cli, monkeypatch):  # noqa: F811
+    """A Daily saved before the conversion: its figures and view events (#1836)."""
+    with campaign_clock(DAILY_AT):
+        seeded = seed_daily(family_mail, monkeypatch)
+        browser, _ = signed_in()
+        run = cli()
+        snapshot = str(seeded.snapshot_id)
+        parity(
+            "daily_digest_viewed",
+            lambda: read(browser, f"/admin/reports/emailed/daily/{snapshot}/"),
+            lambda: run("report-email", "copy", snapshot),
+        )
+        code, document = run("report-email", "copy", snapshot)
+        assert code == 0, document
+        result = document["result"]
+        assert result["kind"] == "daily" and result["snapshot_id"] == snapshot
+        assert result["participation"]["fact_set_id"] == str(seeded.ready.fact_set_id)
+        assert result["days"] and result["statistics"]["active"]["families"] >= 1
+        assert "@" not in str(document)
+
+        # A read-only session reads it.
+        reader = read_only_session(run.service)
+        code, document = run("report-email", "copy", snapshot, secret=reader)
+        assert code == 0 and document["result"]["snapshot_id"] == snapshot
+
+        # A retained report whose facts cannot be read is the page's 503:
+        # unavailable (exit 3, retry), recorded as a failed read.
+        from parishkit.stewardship.reports import digest_views
+        from parishkit.stewardship.reports.facts import FactUnavailable
+
+        def unreadable(snapshot_id):
+            """The retained facts no longer match their inputs."""
+            raise FactUnavailable("Daily report facts do not match.")
+
+        failed = AuditEvent.objects.filter(
+            event_type="daily_digest_viewed",
+            auditcontext__context__outcome="failed",
+        )
+        before = failed.count()
+        monkeypatch.setattr(digest_views, "retained_document", unreadable)
+        code, document = run("report-email", "copy", snapshot)
+        assert code == 3 and document["error"]["code"] == "unavailable"
+        assert failed.count() == before + 1
+
+
+def test_copy_reads_a_retained_weekly_digest(
+    live_response_service,
+    google,
+    cli,  # noqa: F811
+    monkeypatch,
+):
+    """A Weekly saved before the conversion: item states, no Family text (#1836)."""
+    respond(live_response_service, WEEKLY_CANARY)
+    with campaign_clock(WEEKLY_AT):
+        retained = seed_weekly(live_response_service, monkeypatch)
+        browser, _ = signed_in()
+        run = cli()
+        snapshot = str(retained.pk)
+        parity(
+            "weekly_digest_viewed",
+            lambda: read(browser, f"/admin/reports/emailed/weekly/{snapshot}/"),
+            lambda: run("report-email", "copy", snapshot),
+        )
+        code, document = run("report-email", "copy", snapshot)
+        assert code == 0, document
+        result = document["result"]
+        assert result["kind"] == "weekly" and not result["manual"]
+        assert result["total"] == len(result["items"]) >= 1
+        assert str(retained.information[0]) in {
+            item["item_id"] for item in result["items"]
+        }
+        assert all(item["current"] == "current_actionable" for item in result["items"])
+        assert "CANARY" not in str(document) and "@" not in str(document)
+        # The page's own paging: past the last page, and a malformed number.
+        code, document = run("report-email", "copy", snapshot, "--page", "2")
+        assert code == 1 and document["error"]["code"] == "not_available"
+        code, document = run("report-email", "copy", snapshot, "--page", "02")
+        assert code == 1 and document["error"]["code"] == "invalid"
+
+        # A read-only session reads it.
+        reader = read_only_session(run.service)
+        code, document = run("report-email", "copy", snapshot, secret=reader)
+        assert code == 0
 
 
 def test_send_now_is_the_rows_send_now(
