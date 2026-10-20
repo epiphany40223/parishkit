@@ -17,8 +17,13 @@ from parishkit.stewardship.reports.census_change_views import (
     ROUTE_LABELS,
     SORTING,
 )
-from parishkit.stewardship.reports.census_changes import CensusQuery, select, shape
-from parishkit.stewardship.reports.census_worklist import worklist_page
+from parishkit.stewardship.reports.census_changes import (
+    CensusQuery,
+    select,
+    shape,
+    shape_addition,
+)
+from parishkit.stewardship.reports.census_worklist import add_fields, worklist_page
 from parishkit.stewardship.responses.comparison import phone_record
 from parishkit.stewardship.responses.refresh_checks import CheckState
 from parishkit.stewardship.web.tables import paginate
@@ -52,6 +57,9 @@ STALE_NOTICE = (
 )
 EDITED = "/census-changes-edited"
 EDITED_NOTICE = "Home address for the Family in Family DUID 1002 accepted (edited)."
+# Add (#1710): the page after an Add, with the added row (id "add-a1").
+ADDED = "/census-changes-added"
+ADDED_NOTICE = "Nickname for Member DUID 103 in Family DUID 1003 added."
 # Row 3 Entered incorrectly (#1737): a refresh found ParishSoft at a third
 # value, and the pages after each of its two fixes.
 INCORRECT = "/census-changes-incorrect"
@@ -120,14 +128,43 @@ def components(context, admin):
             }
         )
 
-    def page(paging, notice=None, *, stage="all", rows=ROWS, **changes):
+    def addition():
+        """The parish-added row: Member 03's nickname, To enter by hand."""
+        return shape_addition(
+            {
+                "id": "a1",
+                "entity_kind": "member",
+                "entity_key": "103",
+                "field": "nickname",
+                "value": '"Bo"',
+                "in_place_of": None,
+                "created_at": when + timedelta(hours=1),
+                "baseline": None,
+                "family_duid": 1003,
+                "family_name": "Family 03",
+                "member_name": "Member 03",
+                "snapshot_id": None,
+                "added_by": "staff@example.org",
+                "added_note": "Phoned in",
+                "step": None,
+                "step_note": None,
+                "step_at": None,
+                "step_by": None,
+            }
+        )
+
+    def page(paging, notice=None, *, stage="all", rows=ROWS, added=False, **changes):
         """Render the page with the table paged and sorted as ``paging`` says,
         the Stage filter at ``stage``, ``notice`` above the table, and
-        ``changes`` (``shaped``'s) applied, for a Staff reader."""
+        ``changes`` (``shaped``'s) applied, for a Staff reader; ``added``
+        puts the parish-added row first."""
         query = CensusQuery(stage=stage)
-        found = [shaped(index, **changes) for index in range(rows)]
+        found = [addition()] * added + [
+            shaped(index, **changes) for index in range(rows)
+        ]
         result = select(found, query, administrator=False)
         result["roles"] = frozenset({"staff"})
+        result["replacements"] = {}
         table = paginate(
             result["rows"],
             paging,
@@ -152,6 +189,10 @@ def components(context, admin):
                     "mutable": True,
                     "administrator": False,
                     "edit_today": "2054-10-06",
+                    "add_fields": add_fields(),
+                    "add_replaceable": [
+                        ("9", "Mobile phone for Member 09, Family DUID 1009")
+                    ],
                 },
             ),
         )
@@ -167,6 +208,7 @@ def components(context, admin):
         BULKED: page(size, BULK_NOTICE, accepted={0, 1}),
         STALE: page(size, STALE_NOTICE),
         EDITED: page(size, EDITED_NOTICE, accepted={2}),
+        ADDED: page(size, ADDED_NOTICE, added=True),
         INCORRECT: page(size, incorrect={3}),
         REENTERED: page(size, REENTERED_NOTICE, entered={3}),
         RETURNED: page(size, RETURNED_NOTICE),

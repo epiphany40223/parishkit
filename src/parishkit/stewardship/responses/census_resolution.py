@@ -40,7 +40,12 @@ from parishkit.stewardship.reports.export_services import admit_campaign
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import check_version
 
-from .models import RESOLUTION_ACTIONS, ProposalResolution, ProposedChange
+from .models import (
+    RESOLUTION_ACTIONS,
+    CensusAddition,
+    ProposalResolution,
+    ProposedChange,
+)
 from .refresh_checks import entered_incorrectly
 
 MAX_NOTE = 2000
@@ -53,6 +58,31 @@ class KeyRebound(ValueError):
     same drawn form (or bulk key) is sent again with other choices, so the
     page offers a reload rather than a generic refusal (a 409).
     """
+
+
+class ReopenCovered(ValueError):
+    """An ignored change an open parish addition covers cannot be reopened.
+
+    The addition stands in for it (#1710): reopening it would leave two
+    open changes of one field. Nothing was saved; withdraw the addition
+    first.
+    """
+
+
+def covered_by_addition(proposal):
+    """Whether an open parish addition covers ``proposal``'s field (#1710).
+
+    The same Family, Member (or Family) and field, with no later step.
+    The callers hold the work order, so no Add can slip in between this
+    check and their write.
+    """
+    return CensusAddition.objects.filter(
+        family_id=proposal.submission.family_id,
+        entity_kind=proposal.entity_kind,
+        entity_key=proposal.entity_key,
+        field=proposal.field,
+        resolution__isnull=True,
+    ).exists()
 
 
 OPEN_EXECUTIONS = frozenset({"pending", "conflict"})
@@ -137,6 +167,8 @@ def record_resolution(
     incorrect = entered_incorrectly(proposal)
     if not allowed(proposal, action, incorrect=incorrect):
         raise ValueError("This census change cannot be resolved that way now.")
+    if action == "reopened" and covered_by_addition(proposal):
+        raise ReopenCovered("An open addition covers this census change.")
     resolution = ProposalResolution.objects.create(
         actor_id=actor_id, request_key=request_key, **intent
     )

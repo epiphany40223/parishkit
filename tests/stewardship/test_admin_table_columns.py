@@ -220,6 +220,8 @@ FAMILY_LABELS = {"find-family-results.html": "a Family search result's DUID"}
 MEMBER_DUID_PAGES = {
     "census-changes.html",
     "census-publication.html",
+    # Census Add's dialog asks for the Member's DUID (#1710).
+    "census-worklist-add.html",
     "limitations-report.html",
     "ministry-followup.html",
     # Ministry requests' review worklist (#1684): its help and Add's Member.

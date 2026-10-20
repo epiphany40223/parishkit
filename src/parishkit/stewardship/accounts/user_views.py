@@ -62,6 +62,7 @@ from parishkit.stewardship.campaigns.work_locks import read_transaction
 from parishkit.stewardship.storage import StaleRecordError
 from parishkit.stewardship.web.admin_forms import AdminForm
 from parishkit.stewardship.web.contracts import filters
+from parishkit.stewardship.web.field_rules import EMAIL, email_input
 from parishkit.stewardship.web.refusals import (
     UserFacingError,
     UserFacingMissing,
@@ -155,20 +156,25 @@ class UserForm(AdminForm):
     # field as the reader leaves it; ``plan_changes`` words the server's
     # refusal. Each field is described by its reserved error line (and the
     # Name by its help line), whose ids user-entry.html draws.
+    # The address's format is the shared email rule (#1577), which
+    # ``clean_email`` (normalized_email) admits exactly: the browser checks
+    # it as the field is left, in its reserved line, and Review's complete
+    # gate says what it waits for (#1330).
     email = forms.CharField(
         label=_("Email"),
         max_length=254,
         required=False,
-        widget=forms.EmailInput(
-            attrs={
+        widget=email_input(
+            {
                 "autocomplete": "off",
-                "spellcheck": "false",
                 "required": True,
                 "aria-describedby": "id_email_error",
                 "data-user-email": True,
-                # Review's complete gate says what it waits for (#1330).
-                "data-empty-hint": MESSAGES["email_required"],
-                "data-missing-hint": MESSAGES["email_invalid"],
+                **EMAIL.worded(
+                    MESSAGES["email_invalid"],
+                    code="email_invalid",
+                    empty=MESSAGES["email_required"],
+                ).attrs(),
             }
         ),
     )

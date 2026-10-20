@@ -2140,9 +2140,10 @@ pk-admin report participation
 pk-admin report comparison --day 12
 pk-admin report responses --mode testing --grain day
 pk-admin report financial
-pk-admin report limitations
+pk-admin report limitations --stage to_review
 pk-admin report census --status all --route by_hand
 pk-admin report information --disposition all --needed yes
+pk-admin report information --stage to_handle
 pk-admin report ministry
 pk-admin report ministry --ministry 9 --requests join --state unresolved
 pk-admin report source-form
@@ -2157,9 +2158,9 @@ pk-admin report roster --show all --ministry 9
 | `report comparison` | Campaign comparison | `day` and `date` (the comparison day: the current campaign's last complete day, or `--day`), `status`, `last_year`, `current` (the current campaign's figures at the day and so far, and its renewal of last year's Families), `years` (each imported year's figures at the day and final figures, renewal and, for a final year, its pledge distribution) and `averages` (the imported years' mean of each figure at the day); see below |
 | `report responses` | Response dashboard (Families by stage) | `metrics`: the funnel `stages`, the three figures beside it, the `activity` buckets, the `sends` and each list's length (`lists`), which the page no longer shows; null in Testing without a rehearsal |
 | `report financial` | Financial report | The summary over every pledge: `families`, `annual_total`, `frequencies`, `shares` (by share option id), `no_share`, `cannot_give` and the comparison period |
-| `report limitations` | Limitations | `cannot_serve` (Members who cannot participate in ministries) and `cannot_attend` (Families who cannot attend Mass or prayer services) |
+| `report limitations` | Limitations | `cannot_serve` (Members who cannot participate in ministries) and `cannot_attend` (Families who cannot attend Mass or prayer services) at `stage`, and `stages`: every answer by stage, zeros included |
 | `report census` | Census changes | `matching`: how many changes the filters keep, split by `routes` (`automatic`, `by_hand`) and `kinds` (`contact`, `moved`, `deceased`, `new_member`), and `statuses`, every change of the campaign by status (the counts the Status filter's choices show); see below |
-| `report information` | Additional information | `matching`: how many items match the filters |
+| `report information` | Additional information | `matching`: how many items match the filters; with `--stage`, how many requests are at that stage, and `stages`, each stage's count (null without `--stage`) |
 | `report ministry` | Ministry report | `summaries`: each Ministry's DUID (`ministry`), name, state and request counts; with `--ministry` and `--requests`, `matching` is that list's request count |
 
 The options are the pages' own, and a value the page would refuse is exit 1
@@ -2183,6 +2184,13 @@ The options are the pages' own, and a value the page would refuse is exit 1
   `--completed` (`any`, `yes` or `no`), and `--start` and `--end` (days
   in the time zone `--zone` names, for example `America/New_York`, which
   is required with them, as the page takes days in your browser's zone).
+  `--stage` (`to_review`, `to_handle`, `ignored`, `handled`, `history` or
+  `all`, Every stage, which leaves History out) counts the review worklist
+  instead, as its Stage filter does; it replaces `--disposition`, `--needed`
+  and `--completed`, so giving one of those with it is exit 1 (`invalid`).
+- `report limitations`: `--stage` (`all`, the default, every answer, or
+  `to_review`, `to_handle`, `ignored` or `handled`), the review worklist's
+  Stage filter.
 - `report ministry`: `--sort`, `--page` and `--size` for the summary; `--ministry DUID` with `--requests join` or `--requests leave`
   counts one Ministry's list, and takes `--state`, `--history` (`current`
   or `all`) and `--start`, `--end` and `--zone`, as `report information`
@@ -2235,8 +2243,10 @@ A section that cannot count never fails the command. It prints counts
 only, never a name or address, and records the page's "viewed" event with
 the total it printed. A restore under review is exit 3 (`unavailable`).
 
-`report roster` counts **Roster changes to enter**, the resolved Ministry
-joins and leaves that staff enter in ParishSoft by hand. Like the page,
+`report roster` counts the roster changes to enter, the resolved Ministry
+joins and leaves that staff enter in ParishSoft by hand (on the page,
+Ministry requests' Stage To enter by hand; the Roster changes to enter page
+was folded into it). Like the page,
 Administrators and Staff may run it, from a session of any scope; a
 Ministry leader is refused (`denied`). Its options are the page's:
 `--show todo` (the default: not yet marked Entered in ParishSoft) or
@@ -2261,6 +2271,68 @@ including zeros, with `superseded` and `cancelled` only with `--history`.
 Each row names a Family and often a Member, with their contact details, so
 the rows stay on the page and its downloads. It records the page's
 "viewed" event with a count of 0.
+
+### Pledges
+
+`report pledges` counts **Pledges**, the Families' pledges that
+staff review and then enter in ParishSoft by hand. Like the page,
+Administrators and Staff may run it, from a session of any scope; a Ministry
+leader is refused (`denied`), and a campaign without Financial stewardship
+is exit 1 (`not_available`). `--stage` is the page's Stage filter:
+`to_review` (the default), `to_enter_by_hand`, `entered_by_hand`, `ignored`
+or `all`. It prints `stage`, `matching` (the pledges at that stage), `total`
+and `stages` (every pledge by stage, zeros included). Each row names a
+Family and its pledge, so the rows stay on the page and in `export pledges`.
+It records the page's "viewed" event with a count of 0.
+
+`export pledges` writes the page's download to standard output and its
+document (`campaign_id`, `stage`, `file_name`, `content_type`, `format`,
+`timezone`, `size`, `sha256`, `count`) to standard error, as `export census`
+does. It needs a full-scope session and takes the same `--stage`, plus
+`--format` (`xlsx`, the default, `csv`, `pdf` or `jsonl`) and `--timezone`
+(UTC, the default, or a time zone name). JSON Lines is for scripts: one
+object per pledge, the files' columns under the keys `family`,
+`family_duid`, `parishsoft_status`, `annual_pledge`, `frequency`,
+`share_methods`, `reviewer_annual_pledge`, `reviewer_frequency`,
+`annual_pledge_to_enter`, `frequency_to_enter`, `stage`, `decision`,
+`entered_by`, `entered_at`, `submitted`, `last_decision`, `last_decision_at`
+and `note`, plus `item_id` and `version`, which `pledges decide` takes, and
+`actions`, the decisions you may record on it now. The file names Families,
+so create it private and delete it once used; the wrapper refuses to write
+it to a terminal.
+
+```sh
+(umask 077; pk-admin export pledges --stage all --format jsonl > pledges.jsonl)
+pk-admin pledges decide --action accept --item ITEM_ID:0 --item ITEM_ID:2
+pk-admin pledges decide --action edit --item ITEM_ID:0 \
+    --amount 1,300 --frequency monthly
+pk-admin pledges decide --action entered_by_hand --item ITEM_ID:1
+```
+
+`pledges decide` records one decision, as a row's icon or the bulk bar does:
+`accept`, `edit` (one pledge, with `--amount` and, for a pledge above zero,
+`--frequency`: `weekly`, `monthly`, `quarterly` or `annual`), `ignore`,
+`back_to_review` (a `--note` saying why is required to reopen an ignored
+pledge) or `entered_by_hand`. It needs a full-scope session; Administrators
+and Staff may run it. Entered by hand is final, so it asks for `yes` first
+(see [Confirmations](#confirmations)), or takes `--yes`; the others ask
+nothing. Each `--item` is a pledge's `item_id` and `version` from the JSON
+Lines; up to 100 at once, all or none. A campaign without Financial
+stewardship is exit 1 (`not_available`). A pledge someone decided since, or
+that the Family answered again, is exit 1 (`stale_version`): export again.
+A decision the pledge's stage does not offer, or an amount the Family form
+would refuse, is exit 1 (`invalid`, the amount's problem at `amount` or
+`frequency`). `--note -` reads the note from standard input (then
+`entered_by_hand` needs `--yes`). `--request-key` is made for you when left
+out; repeating with the same key, pledges, decision and value returns the
+same rows (`created` false), and using the key for other pledges, another
+decision or another value is `invalid`. A note longer than 2,000
+characters, or an amount the Edit would refuse, is refused before the
+question is asked. The result has
+`created`, `request_key` and `decisions` (each row's `id`, `item_id`,
+`sequence`, `action`, `decision`, `entered` and `created_at`), never the
+amount or the note. System logs show the page's `pledge_review_updated` and
+the command's `admin_cmd_pledges_decide`.
 
 ### Recording a census change's outcome
 
@@ -2547,7 +2619,12 @@ pk-admin export fetch EXPORT_ID
 
 - `export financial` is the Financial stewardship page's export;
   `export information` the Additional information page's, with
-  `--history` for each item's workflow history; `export ministry` the
+  `--history` for each item's workflow history and `--stage` for the
+  worklist's Stage (`to_review`, `to_handle`, `ignored`, `handled`,
+  `history` or `all`), which sets the follow-up filters as the page's
+  export pane does, ordered by name unless `--filter sort=` says otherwise
+  (To review and Ignored both export the requests whose follow-up is not
+  needed); `export ministry` the
   Ministry requests page's, for one Ministry's list
   (`--ministry DUID --requests join|leave`, both required; the summary
   export was removed, #1126);
@@ -2742,20 +2819,38 @@ with the directory's Response filters.
 ### Limitations download
 
 `export limitations` writes the page's download of the **Limitations**
-report to standard output, and its document (`campaign_id`, `file_name`,
-`content_type`, `format`, `timezone`, `size`, `sha256`, `count`) to
-standard error, as `export census` does. It needs a full-scope session, as
+report to standard output, and its document (`campaign_id`, `stage`,
+`file_name`, `content_type`, `format`, `timezone`, `size`, `sha256`,
+`count`) to standard error, as `export census` does. It needs a full-scope session, as
 every export does; Administrators and Staff may run it, and a Ministry
 leader is refused (`denied`). It takes the page's Show menu as `--show`
 (`any`, the default, `cannot_serve` for Members who cannot participate in
 ministries, or `cannot_attend` for Families that cannot attend Mass or
-prayer services), without the page's search, `--format` (`xlsx`, the
-default, `csv` or `pdf`) and `--timezone` (UTC, the default, or a time zone
-name, for the file's times). It records the page's "downloaded" event
-(`talents_report_exported`) with the number of rows in the file.
+prayer services), without the page's search, the download's Stage as
+`--stage` (`all`, the default, or `to_review`, `to_handle`, `ignored` or
+`handled`), `--format` (`xlsx`, the default, `csv`, `pdf` or `jsonl`) and
+`--timezone` (UTC, the default, or a time zone name, for the file's times).
+It records the page's "downloaded" event (`talents_report_exported`) with
+the number of rows the report read (before `--stage` leaves some out, as
+the page counts them); the document's `count` is the rows in the file.
+
+JSON Lines is for scripts: one object per answer, Members' first, with the
+CSV's columns under the keys `member`, `member_duid`, `family`,
+`parishsoft_status`, `family_duid`, `cannot_participate`, `latest_response`
+and `stage` (a Family's answer has only `family`, `parishsoft_status`,
+`family_duid`, `limitation`, `latest_response` and `stage`), plus `kind`
+(`member`, `proposed_member` or `family`), `item_id` and `version`, which
+`limitations decide` takes, and `actions`, the decisions you may record on
+it now (none while other campaign work holds the campaign). Once the
+Limitations page lists the Families that cannot contribute financially
+(R39 finding 11, with #1734), each of those is a Family record of `kind`
+`cannot_give` whose `item_id` is `pledge-<id>` and whose `actions` are
+always empty: it is decided on Pledges, never with `limitations decide`.
 
 ```sh
 (umask 077; pk-admin export limitations --show cannot_serve > limitations.xlsx)
+(umask 077; pk-admin export limitations --stage to_review --format jsonl \
+    > limitations.jsonl)
 ```
 
 The files are the page's own, with the same two tables (Members, then
@@ -2763,10 +2858,71 @@ Families) and columns; `count` is the Member rows plus the Family rows. The
 file names Families and Members, so create it private, as above, and
 delete it once used; the wrapper refuses to write it to a terminal.
 
+### Additional information and Limitations decisions
+
+The **Additional information** and **Limitations** review worklists record
+Staff decisions: Accept, Ignore, Back to review and Handled. `information
+decide` and `limitations decide` record them as a row's icon or the bulk bar
+does, through the pages' own decision services. Like the pages,
+Administrators and Staff may run them, from a full-scope session; a
+Ministry leader is refused (`denied`).
+
+`information list` prints the Additional information requests at the
+worklist's `--stage` (`to_review`, the default, `to_handle`, `ignored`,
+`handled`, `history` or `all`, Every stage, which leaves History out), and
+takes `--start`, `--end` and `--zone` as `report information` does. It
+prints `stage`, `filters` and `requests`, each request's `item_id` and
+`version` (what `information decide` takes), `stage`, `decision`,
+`disposition`, `submitted_at`, `decided_at` and `actions` (the decisions you
+may record on it now), never the Family, what it wrote or the Staff notes:
+read those on the page, or download them with `export information`. It runs
+on a session of any scope and records the page's `information_viewed`.
+Limitations answers come from `export limitations --format jsonl` (see
+[Limitations download](#limitations-download)), since their ids carry the
+Family's DUID.
+
+```sh
+pk-admin information list --stage to_review
+pk-admin information decide --action accept --item ITEM_ID:1 --item ITEM_ID:3
+pk-admin information decide --action back_to_review --item ITEM_ID:2 \
+    --note "Asked the Family again"
+pk-admin limitations decide --action handled --item m41-3:1
+```
+
+Each takes `--action` (`accept`, `ignore`, `back_to_review` or `handled`),
+one `--item ID:VERSION` for each item (up to 100, all or none), `--note TEXT`
+(at most 2,000 characters; `-` reads standard input, which then needs
+`--yes`) and `--request-key`. Handled is final, so it asks for `yes` first
+(see [Confirmations](#confirmations)), or takes `--yes`; the others ask
+nothing, as they can be changed again. Taking an Ignored item back to
+review needs a `--note` saying why (for a request, a new one, not its
+current notes) (exit 1, `invalid`, naming `note`,
+otherwise). An item someone decided since, or that the Family answered
+again, is exit 1 (`stale_version`): list or export again. An action the
+item's stage does not offer is `stale_version` too, as on the page. A
+request that is not one of the current campaign's, or an answer whose
+Family is not, is exit 1 (`not_available`); a Limitations id the page never
+draws is `invalid`. A repeat with the same key, items and decision returns
+the same rows (`created` false); using the key for other items or another
+decision is `invalid`.
+
+| Field | What it holds |
+| --- | --- |
+| `created` | False for a repeat with the same key, which recorded nothing |
+| `request_key` | The key, for a repeat |
+| `decisions` | Each item's recorded row, in the order the items were given: `id`, `expected_version`, `decision` and `created_at`, with `item_id`, `follow_up_needed` and `followed_up` for a request and `kind` for an answer (never its item id, which names the Family's DUID); never the note |
+
+System logs show the services' `information_updated` or
+`limitation_reviewed` for each item and the command's
+`admin_cmd_information_decide` or `admin_cmd_limitations_decide`.
+`followup information-update` still sets a request's follow-up flags, until
+issue 1688 renames the commands; only `information decide` can Ignore a
+request.
+
 ### Roster changes download
 
-`export roster` writes the page's download of **Roster changes to enter**
-to standard output, and its document (`campaign_id`, `file_name`,
+`export roster` writes the roster changes to enter (the file the retired
+Roster changes to enter page downloaded) to standard output, and its document (`campaign_id`, `file_name`,
 `content_type`, `format`, `timezone`, `size`, `sha256`, `count`) to
 standard error, as `export limitations` does. It needs a full-scope
 session, as every export does; Administrators and Staff may run it, and a
@@ -3178,7 +3334,9 @@ The queue's **Export these requests** is `followup export`, see
 `followup roster-bulk` marks several at once, as **Roster changes to
 enter**'s bulk mark does. `followup information-show` reads one
 **Additional information** request's page with its follow-up history, and
-`followup information-update` is its **Save follow-up**. The read runs on a
+`followup information-update` sets its follow-up flags, which the page's
+review worklist now records as Accept, Handled and Back to review (issue
+1685; issue 1688 renames the commands). The read runs on a
 session of any scope and records the page's `information_viewed`; the
 changes need a full-scope session. Ministry leaders may not tick, and only
 Staff and Administrators follow up Additional information, as on the pages.
@@ -3209,9 +3367,9 @@ Find the requests with `followup list --state resolved`: a row whose
 `roster.eligible` is true and `roster.entered` is false is one to enter, and
 its `id` and `roster.sequence` are the `ID` and `VERSION`. The list shows
 only each Member's newest request for a Ministry (as the queue does), but
-**Roster changes to enter** also lists an older resolved request that a
-newer request has replaced, so such a request can be missing from
-`followup list`. That is a known gap: mark it on the page, or with
+Ministry requests' To enter by hand Stage also lists an older resolved
+request that a newer request has replaced, so such a request can be
+missing from `followup list`. That is a known gap: mark it on the page, or with
 `followup roster-entered` if you already have its ID.
 
 `followup information-update` takes `--needed yes|no` (Follow-up needed),
@@ -3222,7 +3380,12 @@ page keeps it as typed). Each one left out stays as it is, as the page's form op
 in. Clearing a completed follow-up (`--completed no`) needs
 `--confirm-clear`, the page's confirmation box; without it the command is
 exit 1 (`invalid`, naming `confirm_clear`). A version that is no longer
-current is exit 1 (`stale_version`).
+current is exit 1 (`stale_version`). The flags give the request its
+worklist stage: needed is To handle, completed is Handled, and setting both
+to no keeps a To review or Ignored request as it was, or sends a To handle
+or Handled one back to review; the command never ignores a request. An
+Ignored request leaves Ignored only with new `--notes` saying why (exit 1,
+`invalid`, naming `notes`, otherwise).
 
 Each change takes `--request-key`; without one it makes a key and prints it
 to standard error. A repeat with the key records nothing twice; the key
@@ -3753,3 +3916,10 @@ Each change is recorded in System logs as on the page
   `schedule preview` change document may give a saved daily or weekly
   digest a `skip` date, which skips that one send; `schedule show` and each
   side of `schedule preview` list a digest's `skip_dates` (empty when none).
+- `pk-admin/1` (#1735): additive. `information list`, `information
+  decide` and `limitations decide`, the Additional information and
+  Limitations worklists' decisions; `report limitations` gains `--stage`
+  and the `stage` and `stages` fields; `report information` gains
+  `--stage` and the `stage` and `stages` fields (null without it);
+  `export limitations` gains `--stage`, `--format jsonl` and the
+  document's `stage`; `export information` gains `--stage`.
