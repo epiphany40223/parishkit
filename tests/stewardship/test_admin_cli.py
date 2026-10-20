@@ -314,8 +314,11 @@ def test_the_catalog_lists_every_command_with_its_flags():
             }
         ), name
         # A prompting command, and only one, takes --yes. Other branches add
-        # their own prompting commands, so this is not a closed list.
-        assert ("--yes" in names) == entry["prompts"], name
+        # their own prompting commands, so this is not a closed list. A
+        # command that stopped asking when its mark could be undone (#1840)
+        # still takes --yes, ignored, so older scripts keep working.
+        kept_yes = name in {"pledges decide"}
+        assert ("--yes" in names) == (entry["prompts"] or kept_yes), name
         # Only the downloads stream a file to standard output.
         assert entry["streams"] == (
             name
@@ -939,13 +942,14 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "all",
     ]
     assert "--search" not in options
-    # pledges decide (#1733): keyed, full scope, not fresh-gated; it
-    # prompts, but only for Entered by hand, which is final. Each chosen
-    # pledge carries its own version, so there is no --expected-version.
+    # pledges decide (#1733): keyed, full scope, not fresh-gated; it asks
+    # nothing, since Entered by hand can be undone (#1840), but still takes
+    # --yes for older scripts. Each chosen pledge carries its own version,
+    # so there is no --expected-version.
     pledges = entries["pledges decide"]
     assert pledges["scope"] == "full" and pledges["changes_state"]
     assert pledges["request_key"] and not pledges["expected_version"]
-    assert pledges["prompts"] and not pledges["fresh_gated"]
+    assert not pledges["prompts"] and not pledges["fresh_gated"]
     assert pledges["audit_event"] == "admin_cmd_pledges_decide"
     assert pledges["result_fields"] == ["created", "request_key", "decisions"]
     options = {option["name"]: option for option in pledges["options"]}

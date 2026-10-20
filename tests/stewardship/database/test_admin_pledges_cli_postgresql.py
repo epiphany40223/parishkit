@@ -221,17 +221,30 @@ def test_decisions_go_through_the_page_s_service_and_guard(
     )
     assert "1,300" not in str(document) and "Recheck" not in str(document)
 
-    # Entered by hand is final, so it asks first.
+    # Entered by hand can be undone (#1840), so it asks nothing.
     code, document = decide(run, submission, "entered_by_hand")
-    assert code == 4 and document["error"]["code"] == "confirmation_required"
-    code, document = decide(run, submission, "entered_by_hand", "--yes")
     assert code == 0, document
     assert document["result"]["decisions"][0]["entered"]
     assert state(harness, submission).stage == "entered_by_hand"
     assert (count(EVENT), count(UPDATED)) == (4, 4)
-    code, document = decide(run, submission, "back_to_review", "--note", "Undo")
+    # Back to review undoes the mark only with a note, keeping the Edit.
+    code, document = decide(run, submission, "back_to_review")
     assert code == 1 and document["error"]["code"] == "invalid", document
     assert (count(EVENT), count(UPDATED)) == (4, 4)
+    code, document = decide(run, submission, "back_to_review", "--note", "Undo")
+    assert code == 0, document
+    (undone,) = document["result"]["decisions"]
+    assert (undone["action"], undone["decision"], undone["entered"]) == (
+        "back_to_review",
+        "accepted_edited",
+        False,
+    )
+    assert state(harness, submission).stage == "to_enter_by_hand"
+    assert (count(EVENT), count(UPDATED)) == (5, 5)
+    # --yes is still accepted, and asks nothing either way.
+    code, document = decide(run, submission, "entered_by_hand", "--yes")
+    assert code == 0, document
+    assert (count(EVENT), count(UPDATED)) == (6, 6)
 
 
 def test_unknown_read_only_and_leader_refusals(

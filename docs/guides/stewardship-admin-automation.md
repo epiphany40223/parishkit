@@ -2306,28 +2306,31 @@ pk-admin pledges decide --action accept --item ITEM_ID:0 --item ITEM_ID:2
 pk-admin pledges decide --action edit --item ITEM_ID:0 \
     --amount 1,300 --frequency monthly
 pk-admin pledges decide --action entered_by_hand --item ITEM_ID:1
+pk-admin pledges decide --action back_to_review --item ITEM_ID:2 \
+    --note "Marked by mistake"
 ```
 
 `pledges decide` records one decision, as a row's icon or the bulk bar does:
 `accept`, `edit` (one pledge, with `--amount` and, for a pledge above zero,
 `--frequency`: `weekly`, `monthly`, `quarterly` or `annual`), `ignore`,
-`back_to_review` (a `--note` saying why is required to reopen an ignored
-pledge) or `entered_by_hand`. It needs a full-scope session; Administrators
-and Staff may run it. Entered by hand is final, so it asks for `yes` first
-(see [Confirmations](#confirmations)), or takes `--yes`; the others ask
-nothing. Each `--item` is a pledge's `item_id` and `version` from the JSON
+`back_to_review` or `entered_by_hand`. It needs a full-scope session;
+Administrators and Staff may run it. Nothing asks first: every decision can
+be changed again, Entered by hand too. `back_to_review` on an Ignored pledge
+reopens it, and on an Entered by hand, Entered incorrectly or Confirmed one
+undoes that step, so the pledge goes back to To enter by hand with its
+decision kept (To review for a pledge ParishSoft already held); both need a
+`--note` saying why. `--yes` is still accepted and does nothing. Each `--item` is a pledge's `item_id` and `version` from the JSON
 Lines; up to 100 at once, all or none. A campaign without Financial
 stewardship is exit 1 (`not_available`). A pledge someone decided since, or
 that the Family answered again, is exit 1 (`stale_version`): export again.
 A decision the pledge's stage does not offer, or an amount the Family form
 would refuse, is exit 1 (`invalid`, the amount's problem at `amount` or
-`frequency`). `--note -` reads the note from standard input (then
-`entered_by_hand` needs `--yes`). `--request-key` is made for you when left
+`frequency`). `--note -` reads the note from standard input. `--request-key` is made for you when left
 out; repeating with the same key, pledges, decision and value returns the
 same rows (`created` false), and using the key for other pledges, another
 decision or another value is `invalid`. A note longer than 2,000
-characters, or an amount the Edit would refuse, is refused before the
-question is asked. The result has
+characters, or an amount the Edit would refuse, is refused before anything
+is recorded. The result has
 `created`, `request_key` and `decisions` (each row's `id`, `item_id`,
 `sequence`, `action`, `decision`, `entered` and `created_at`), never the
 amount or the note. System logs show the page's `pledge_review_updated` and

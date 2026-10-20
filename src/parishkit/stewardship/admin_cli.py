@@ -7889,9 +7889,9 @@ def pledges_decide(args, preamble, runtime, context):
     The page's own role check comes first, so a Ministry leader is
     ``denied`` before any input or prompt. Without ``--request-key`` a new
     key is made and written to standard error before anything is done.
-    Entered by hand is final, so, as a decision that cannot be undone, it
-    asks first (or takes ``--yes``); the others can be changed again and
-    ask nothing.
+    Every decision can be changed again, Entered by hand too (Back to
+    review with a note undoes it, #1840), so none asks first; ``--yes`` is
+    still accepted, and does nothing, so older scripts keep working.
     """
     from . import admin_pledges
     from .web.review_worklist import MAX_NOTE
@@ -7904,20 +7904,12 @@ def pledges_decide(args, preamble, runtime, context):
     # The page strips the note it posts; so does a note read from standard
     # input (``_input``).
     note = _input(args.note, context, MAX_NOTE * 4).strip()
-    # Refused before the prompt: nothing is asked about a decision the page
-    # could not post (too many pledges, a long note, a value or option an
-    # Edit would refuse).
+    # Refused before any transaction: a decision the page could not post
+    # (too many pledges, a long note, a value or option an Edit would
+    # refuse).
     admin_pledges.check_choice(
         versions, args.action, amount=args.amount, frequency=args.frequency, note=note
     )
-    if args.action == "entered_by_hand":
-        confirm(
-            context,
-            (
-                f"Mark {len(versions)} pledge(s) entered by hand in ParishSoft.",
-                "Entered by hand is final: it cannot be undone.",
-            ),
-        )
     return admin_pledges.decide_pledges(
         context["caller"],
         runtime,
@@ -7985,7 +7977,7 @@ def _pledges_decide_options(parser):
         required=True,
         choices=DECIDE_ACTIONS,
         help="accept, edit (one pledge, with --amount), ignore, "
-        "back_to_review or entered_by_hand (final)",
+        "back_to_review or entered_by_hand",
     )
     parser.add_argument(
         "--item",
@@ -8008,8 +8000,14 @@ def _pledges_decide_options(parser):
     parser.add_argument(
         "--note",
         default="",
-        help="an optional note (required to reopen an ignored pledge), or - "
-        "to read it from standard input (entered_by_hand then needs --yes)",
+        help="an optional note (required to reopen an ignored pledge or to "
+        "undo Entered by hand, Entered incorrectly or Confirmed with "
+        "back_to_review), or - to read it from standard input",
+    )
+    # Entered by hand asked first while it was final; nothing asks now
+    # (#1840), but scripts written then may still pass --yes.
+    parser.add_argument(
+        "--yes", action="store_true", help="accepted for older scripts; ignored"
     )
     _request_key_option(parser)
 
@@ -8020,7 +8018,7 @@ def _pledge_specs():
     ``report pledges`` is a read-only count; ``export pledges`` needs full
     scope, as every export and as the download's post records activity;
     ``pledges decide`` is keyed and full scope, and neither privileged nor
-    asking except for Entered by hand, as on the page.
+    asking, as on the page.
     """
     from .admin_pledges import PledgeDecide, PledgeExport, PledgeReport
 
@@ -8062,8 +8060,7 @@ def _pledge_specs():
             PledgeDecide.field_names(),
             8,
             options=(_pledges_decide_options,),
-            # Only Entered by hand, which is final, asks.
-            prompts=True,
+            # Nothing asks: every decision can be undone (#1840).
             request_key=True,
         ),
     )
