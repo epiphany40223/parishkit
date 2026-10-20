@@ -2244,18 +2244,21 @@ number, that is a Member the Family already listed, or that another New
 Member of the Family is entered as, is refused with its reason in the
 dialog. The row then says "ParishSoft Member ID N." under its
 stage. The bulk bar asks for none. While such a row is Entered by hand and
-not Confirmed, it also offers **Correct the ParishSoft Member ID** (a
-pencil, after the selected Entered by hand icon, which stays selected and
-where focus returns) to Staff and Administrators, one row at a time. Its
+not Confirmed, it also offers **Correct the ParishSoft Member ID** (**Add
+the ParishSoft Member ID** when the mark names none; a pencil, after the
+selected Entered by hand icon, which stays selected and where focus
+returns) to Staff and Administrators. Its
 dialog says "Record the ID of the Member you added. Check the Member in
 ParishSoft first: the next refresh checks the entry again." and asks for
 the **ParishSoft Member ID**,
 required, filled in with the ID the mark names (blank when it names none),
 with its help: "The ID ParishSoft gave the Member you added. The next
 refresh checks the entry again with this ID." Recording it marks the row
-Entered by hand again with that ID; the same ID as now, or any ID the
-first mark would refuse, is refused at the field. The notice says "…
-ParishSoft Member ID corrected." What the refresh does with it is the
+Entered by hand again with that ID; an ID the
+[rules](../review-pipeline/spec.md#refresh-checks) refuse (the same ID as
+now among them) is refused at the field, with "Correct the Member ID, then
+record it again." The notice says "… had its ParishSoft Member ID
+corrected." (or "added."). What the refresh does with it is the
 review pipeline's
 [refresh checks](../review-pipeline/spec.md#refresh-checks); so is an
 Updated in ParishSoft row a later refresh puts back in Conflict, To review

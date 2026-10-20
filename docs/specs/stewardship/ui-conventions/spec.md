@@ -3404,6 +3404,11 @@ inventory on #879 lists.
   again is not an undo; the row's own undo action (the review pipeline's
   Back to review) is, so the selected icon is unavailable
   (`aria-disabled="true"`) and its tooltip names the state and the undo.
+  An action that amends the mark in force rather than undoing it comes
+  after the selected icon, is never a toggle (no `aria-pressed`), acts on
+  one row at a time (no bulk), and returns focus to the selected icon; so
+  far only Census changes' Correct the ParishSoft Member ID
+  ([#1773](https://github.com/epiphany40223/parishkit/issues/1773)).
   So the decision shows on the icons, not only in a
   status column ([review pipeline](../review-pipeline/spec.md#selected-state-icons),
   [#1680](https://github.com/epiphany40223/parishkit/issues/1680)). **Shared

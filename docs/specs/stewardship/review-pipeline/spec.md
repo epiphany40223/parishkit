@@ -661,8 +661,9 @@ only when a value was recorded and ParishSoft holds another one.
   [#1773](https://github.com/epiphany40223/parishkit/issues/1773) (migration
   0273, provisional number) lets Staff and Administrators correct a
   mistyped ID, or give one the mark lacked: while the change is Entered by
-  hand and not Confirmed (Not seen or not), its row offers **Correct the
-  ParishSoft Member ID**, one row at a time. It records a new Entered by
+  hand and not Confirmed (Not seen or not), its row offers the correction
+  ([its icon and dialog](../reports/spec.md#manual-census-resolution)), one
+  row at a time. It records a new Entered by
   hand mark (a resolution row at the change's version, as Entered by hand
   again does over Entered incorrectly) naming the new ID, which must differ
   from the one the current mark names and pass the same rules. The
@@ -708,7 +709,8 @@ field:
   leaves (the roster lists), the upcoming pledge amount, the Family's email
   opt-out (below), and the Family's home address, against ParishSoft's
   primary address ([address finding](#family-addresses)).
-- **Not confirmable** (Entered by hand is final): share methods, the Family's
+- **Not confirmable** (Entered by hand is final unless noted): share
+  methods, the Family's
   mailing address, a New Member marked without its ParishSoft Member ID
   (until one is given, [above](#refresh-checks)),
   the pledge frequency until its mapping is verified (below), and the
@@ -938,7 +940,10 @@ Accept (check), Edit (pencil; opens the stream's own value editor: for a
 pledge the amount and frequency, for a Ministry request the Ministry list
 scoped to the reader), Ignore (eye struck through), Back to review (arrow
 turning back), and, in the update phase, Entered by hand / Handled (check in
-a box). Each takes the optional note in the shared confirmation dialog.
+a box). A census New Member Entered by hand also offers Correct (or Add) the
+ParishSoft Member ID (pencil, after its selected mark;
+[refresh checks](#refresh-checks)). Each takes the optional note in the
+shared confirmation dialog.
 
 ### Selected-state icons
 
@@ -955,7 +960,8 @@ breaks the box rule, giving a box only to rows offering a review decision,
 so the By hand rows have actions but no box. The bulk bar offers Accept,
 Ignore, Back to review and Entered by hand / Handled
 ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)), with
-the exact count in the dialog. Edit and Add are one item at a time. The
+the exact count in the dialog. Edit, Add and a New Member's Member ID
+correction are one item at a time. The
 typical flow the Administrator described is a handful of Edits, then select
 all on the page and Accept; pledges work the same way.
 
