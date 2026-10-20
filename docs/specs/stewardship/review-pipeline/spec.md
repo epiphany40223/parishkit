@@ -1513,7 +1513,7 @@ changes what each role lands on:
   As built (#1690), they are one **Review work** panel on Home, just before
   Next steps, with each stream a group in it; Ready to update is on Census
   changes only (the one stream ParishSoft's API writes) and opens
-  [Publish to ParishSoft](../reports/spec.md#publish-to-parishsoft).
+  [Update ParishSoft](../reports/spec.md#update-parishsoft).
 
 ## Review worklist
 
