@@ -91,9 +91,10 @@ LEDGER = {
     "session_renew": permanent(SESSION_CHROME),
     "maintenance": permanent("the status page the access gate shows"),
     "held_emails": permanent(
-        "held-email decisions stay in the browser: the exemption predates "
-        "#1547, and the decision guard (migrations 0017 and 0114) now binds "
-        "only a live session of the deciding Administrator"
+        "held-email decisions belong to a restore review (the maintenance "
+        "page, also web-only) and its follow-up after release, each with a "
+        "preview, a required note and an exact-count check; a command for "
+        "them would be a new feature"
     ),
     # The human side of the automation interface (the specification's action
     # inventory): approving, listing and revoking sessions, and acknowledging
@@ -271,7 +272,17 @@ LEDGER = {
     "daily_digest_chart": permanent(IMAGES),
     "daily_digest_download": permanent(IMAGES),
     "financial_report": command("report financial"),
-    "limitations_report": command("report limitations"),
+    # Pledges (#1686, #1733): counts only, as its rows name
+    # Families and their pledges; its decisions go through the page's own
+    # PledgeDecisions service, and its rows with their ids and versions are
+    # export pledges --format jsonl's.
+    "pledges_to_enter": command("report pledges", "pledges decide"),
+    "pledges_to_enter_export": command("export pledges"),
+    # Limitations (#1685, #1735): counts by stage only, as its rows name
+    # Families and Members; its decisions go through the page's own
+    # LimitationDecisions service, and its rows with their ids and versions
+    # are export limitations --format jsonl's.
+    "limitations_report": command("report limitations", "limitations decide"),
     # Counts only (#463): its rows name Families and Members, so they are
     # export census's. A row's Entered in ParishSoft, Ignore and Reopen post
     # here too (#528): census resolve; so does an Automatic row's Review
@@ -285,12 +296,25 @@ LEDGER = {
         "census edit",
         "census resolve-conflict",
     ),
-    # Publish to ParishSoft (#528, ADM-09): its check and plan come to the
-    # command line in the page's own fourth slice.
-    "census_publication": pending(
-        "#528 slice 4", "census publish-check", "census publish-plan"
+    # Update ParishSoft (#528, ADM-09; #1688): its check and plan, Update
+    # and Run again (#1755), renamed from #528's fourth slice (decision 7:
+    # update, not publish), through the page's own checks and services.
+    "update_parishsoft": command("census update-check", "census update-plan"),
+    "update_parishsoft_confirmation": command("census update-confirm"),
+    "update_parishsoft_retries": command("census update-rerun"),
+    # Additional information's review worklist (#1685) posts its decisions
+    # to the page itself: ``information decide`` (#1735), through the page's
+    # own InformationDecisions service, with ``information list`` the rows'
+    # ids, versions and stages. The retired request Save's ``followup
+    # information-update`` (#463 PR 11b) stays here until #1688 renames the
+    # commands; ``followup information-show`` reads one request.
+    "information_queue": command(
+        "report information",
+        "information list",
+        "information decide",
+        "followup information-show",
+        "followup information-update",
     ),
-    "information_queue": command("report information"),
     # One Family's submission and its follow-up history: ``followup
     # information-show`` (#463 PR 11b), which prints only the item's state
     # and history, as the Ministry follow-up items are read; its content is
@@ -300,8 +324,23 @@ LEDGER = {
     # By Ministry counts. ``report ministry`` prints those counts, and
     # ``export ministry`` writes one Ministry's join or leave list, the file
     # the retired Members joining and leaving pages offered (#1157); the
-    # queue itself is ``followup list``'s (#463 PR 11a).
-    "ministry_report": command("report ministry", "export ministry", "followup list"),
+    # queue itself is ``followup list``'s (#463 PR 11a). Its review worklist
+    # (#1684) posts its bulk decisions to the page itself, where the
+    # retired bulk outcome address's ``followup bulk`` now belongs, until
+    # #1688 renames the commands. Its To enter by hand Stage holds the
+    # roster changes to enter since Roster changes to enter was folded into
+    # it (R39 finding 2): ``report roster`` counts them, ``export roster``
+    # writes their file and ``followup roster-bulk`` is its bulk Entered by
+    # hand.
+    "ministry_report": command(
+        "report ministry",
+        "export ministry",
+        "followup list",
+        "followup bulk",
+        "report roster",
+        "export roster",
+        "followup roster-bulk",
+    ),
     # A packet of the chosen Ministries' Members and contacts: an export.
     "ministry_packet": command("export ministry-packet"),
     # The Response dashboard shows the funnel and, since #1537, the
@@ -424,27 +463,15 @@ LEDGER = {
     # Home's Acknowledge buttons; events list reads what they acknowledge.
     "security_event_acknowledge": command("events list", "events acknowledge"),
     "critical_events_acknowledge": command("events list", "events acknowledge"),
-    # An item's Save (#463 PR 11b).
-    "information_update": command(
-        "followup information-show", "followup information-update"
-    ),
     # A Ministry request's page and its Save (#463 PR 11a).
     "ministry_followup_item": command("followup show"),
     "ministry_followup_update": command("followup show", "followup update"),
-    # Bulk outcomes on the queue (#1131): followup bulk (#463 PR 11a).
-    "ministry_followup_bulk": command("followup list", "followup bulk"),
     # Export these requests (#1157): the queue's filtered set with contacts,
     # through the page's own writer (#463 PR 11c).
     "ministry_followup_export": command("followup export"),
     # The roster Entered in ParishSoft tick and its list (#528), one at a
     # time or in bulk (#463 PR 11b).
     "ministry_followup_roster": command("followup show", "followup roster-entered"),
-    # Counts only (#463): its rows name Members, so they are export roster's.
-    "ministry_roster": command("report roster"),
-    # The page's download, through the page's own writer.
-    "ministry_roster_export": command("export roster"),
-    # The list's bulk Mark entered in ParishSoft (#879).
-    "ministry_roster_bulk": command("report roster", "followup roster-bulk"),
     # Integrations and credentials.
     "integrations": command("integration list"),
     # The settings page as it opens, its Save, its Remove, the backup

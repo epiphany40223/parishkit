@@ -154,6 +154,7 @@ from .not_found_components import components as not_found_components
 from .past_campaign_components import POSTS as PAST_CAMPAIGN_POSTS
 from .past_campaign_components import components as past_campaign_components
 from .pause_components import components as pause_components
+from .pledges_components import components as pledges_components
 from .publication_components import POSTS as PUBLICATION_POSTS
 from .publication_components import components as publication_components
 from .refresh_schedule_components import components as refresh_schedule_components
@@ -163,8 +164,7 @@ from .report_components import SLOW_GETS as REPORT_SLOW_GETS
 from .report_components import components as report_components
 from .response_dashboard_components import components as dashboard_components
 from .restore_review_components import components as restore_review_components
-from .roster_components import POSTS as ROSTER_POSTS
-from .roster_components import components as roster_components
+from .review_worklist_components import components as review_worklist_components
 from .schedule_list_components import POSTS as SCHEDULE_LIST_POSTS
 from .schedule_list_components import components as schedule_list_components
 from .security_components import POSTS as SECURITY_POSTS
@@ -1551,6 +1551,20 @@ def component_origin():
                 "saved": True,
             },
         ),
+        # The Slack token's step, whose key rule the shared case table runs
+        # through every engine (#1577).
+        (
+            "/setup-credential-slack",
+            "setup-credential",
+            {
+                "draft": setup_draft,
+                "form": SetupCredentialForm("slack"),
+                "target": "slack",
+                "label": "Slack",
+                "step_label": "Slack bot token",
+                "saved": False,
+            },
+        ),
         # A current ParishSoft key may be kept; changing the organization
         # needs the key again (#563).
         (
@@ -2220,7 +2234,8 @@ def component_origin():
     responses.update(source_form_components(context, admin))
     responses.update(data_to_fix_components(context, admin))
     responses.update(go_live_families_components(context, admin))
-    responses.update(roster_components(context, admin))
+    responses.update(review_worklist_components(context, admin))
+    responses.update(pledges_components(context, admin))
     responses.update(financial_components(context, admin))
     responses.update(weekly_components(context, admin))
     responses.update(chart_components(context, admin))
@@ -2289,7 +2304,6 @@ def component_origin():
         | AUTOMATION_POSTS
         | SIGNED_IN_POSTS
         | FOLLOWUP_POSTS
-        | ROSTER_POSTS
         | PUBLICATION_POSTS
         | INFORMATION_POSTS
         | FIND_FAMILY_POSTS

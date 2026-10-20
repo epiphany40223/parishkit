@@ -131,6 +131,29 @@ def test_write_only_form_real_csrf_staging_and_cancellation(setup_http, google):
     assert row.ciphertext is None and row.scrubbed_at is not None
 
 
+def test_a_key_follows_its_rule_at_the_field(setup_http, google):
+    """A key with a space inside is refused at its field in the key rule's
+    words, nothing staged (#1577); spaces around a pasted key are stripped,
+    so the sealed key is the key itself."""
+    from parishkit.stewardship.accounts.integration_forms import KEY_RULES
+
+    private = publish("parishsoft")
+    with web_login():
+        browser = started()
+        version = str(SetupAttempt.objects.get().version)
+        values = {"organization_id": "1", "version": version}
+        refused = post(browser, URL, values | {"candidate": "two words"})
+        assert refused.status_code == 400
+        message = str(KEY_RULES["parishsoft"].message).encode()
+        assert message in refused.content.replace(b"&#x27;", b"'")
+        assert b'aria-invalid="true"' in refused.content
+        assert not SetupSealedCredential.objects.exists()
+        padded = post(browser, URL, values | {"candidate": f" {CANDIDATE.decode()} "})
+        assert padded.status_code == 302, padded.content
+    row = SetupSealedCredential.objects.get()
+    assert private.open(row.pk, row.ciphertext) == CANDIDATE
+
+
 def test_a_stale_saved_key_must_be_entered_again(setup_http, google):
     """Keeping is refused once the settings the key was saved for have changed."""
     publish("google_workspace")

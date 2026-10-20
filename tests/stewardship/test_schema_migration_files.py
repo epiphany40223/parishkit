@@ -399,6 +399,69 @@ FROZEN = {
     "0122_automatic_report_views.sql": (
         "b686ede20806893936ee416bd3829cc65adfa6e6857f4b7ad02233177b4744ae"
     ),
+    "0123_sign_in_leftovers.sql": (
+        "8894706e2b79c2e72ecfba500995bfc6c4c281363feb5b235a084678bac22d8c"
+    ),
+    "0124_guard_wording.sql": (
+        "cbe60936ca8d92a473280cbb173b2c0c379b295135eef83b114750c7b2ce035c"
+    ),
+    "0125_secret_request_session.sql": (
+        "aaa27b6bb22e3e3df0723f659195396fd944b2137cc10111a130f7cc5ee982fd"
+    ),
+    "0126_information_limitation_review.sql": (
+        "4acebc765834c122f5a007e690658b6a99280b9e8a56f066250841e19a7eb669"
+    ),
+    "0127_pledge_review.sql": (
+        "bb2729437fdec314ee1c79d3fef4e3c8ffa0a4f372ded37b21b1bc68f54afeb4"
+    ),
+    "0128_census_pipeline_review.sql": (
+        "a586f0a0100242e02ee493f9baaf8fb8116efea5525dc6329cb35072239be7c1"
+    ),
+    "0129_census_additions.sql": (
+        "a63622c0286872d9fea2ed9fd2cbc8dc09ea338a4aea3089f3cd550762ea44c8"
+    ),
+    "0130_census_address_guard.sql": (
+        "3c1ede0cb9790113bffc6d57d71da1aa6371defc3ff28b754bd8acf6d04a0f9e"
+    ),
+    "0131_ministry_review_pipeline.sql": (
+        "a2c82ffe3c9e967b4d0c0d1599cbcc93c8658fa97235cfe9c37246c67372926b"
+    ),
+    "0132_refresh_checks.sql": (
+        "850b796b28d7cd472fee463fc6e119b73c33150ca920c899d1d69d400f84ed9d"
+    ),
+    "0133_entered_incorrectly_fixes.sql": (
+        "a482e1594c86f1c27820c4901171c055f1b3490615f92da97b76d4eca904e312"
+    ),
+    "0134_pledge_refresh_checks.sql": (
+        "18c6c6c4053ce6470a3db4586f486bfd76716417e34903a695e7aff871eed912"
+    ),
+    "0135_pledge_conflicts.sql": (
+        "958caff9e59ffe8464f3a71a2fe21582e8372b3371b4f2a46186a0a019f94ab7"
+    ),
+    "0136_submission_upcoming_pledge.sql": (
+        "b66fcf15d06818dc6781b5a5813df647282dbe1f1dfb30ff4edf922696bd64cf"
+    ),
+    "0137_census_refresh_sources.sql": (
+        "5e855dbbfaffb607d16f4c9d5ff25bf443c021a2cc853a5c9f30ee2f5a1a94f3"
+    ),
+    "0138_published_refresh_conflicts.sql": (
+        "9e24ed6ab1b4a65d1c9081a976b562a2b7720e4fe383ef115548207d4df5759f"
+    ),
+    "0139_new_member_id_correction.sql": (
+        "6a6a5744da0c33c346213a5a178e55100141f073ac76cba98c04072b0200c8ae"
+    ),
+    "0140_edited_ministry_contacts.sql": (
+        "fca7ffa4f76a74ccc422264b303b79a4af5c859f55017abf6f3267fcba4e223c"
+    ),
+    "0141_added_member_links.sql": (
+        "01bf1e8b13a9f293d3c3713984a6b8e3cfab64288b22784688e10ff02d917820"
+    ),
+    "0142_participation_export_summary.sql": (
+        "e8eecd8555cfd8f4cfee650b6974b92551ab1f52d592b3ae0b513445d5fce073"
+    ),
+    "0143_reviewed_form_shown_items.sql": (
+        "5071598637b62aed4cce02362f86a7e67cb1273996387308a95969aa064f0a66"
+    ),
 }
 
 

@@ -86,7 +86,7 @@ BEGIN
                    OR public.stewardship_automation_fresh_v1(login.id,NEW.actor_id)))
        OR NOT EXISTS(SELECT 1 FROM public.stewardship_production_event event
             WHERE event.request_id=request.id AND event.action='complete') THEN
-        RAISE EXCEPTION 'Production confirmation requires fresh post-cleanup Admin authentication' USING ERRCODE='42501';
+        RAISE EXCEPTION 'Production confirmation requires completed cleanup and a live Admin session' USING ERRCODE='42501';
     END IF;
     IF request.id IS NULL OR preparation.id IS NULL OR generation.id IS NULL OR campaign.id IS NULL
        OR runtime.current_campaign_id IS DISTINCT FROM campaign.id

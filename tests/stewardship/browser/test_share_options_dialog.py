@@ -143,7 +143,9 @@ def test_a_refused_row_is_marked_and_keeps_the_dialog_shut(page, component_origi
     answer_reviews(page, component_origin, SHARE_REFUSED, 400, address=SHARE)
     page.goto(component_origin + SHARE)
     failures = watch(page)
-    page.locator("#id_options-0-label").fill("{{ family_code }}")
+    # A label the page admits, which this server answer refuses anyway (a
+    # private placeholder is now held by the label rule before Save, #1577).
+    page.locator("#id_options-0-label").fill("Edited label")
     page.get_by_role("button", name="Save", exact=True).click()
     visible(page.locator("[data-error-summary]"))
     has_attribute(page.locator("#id_options-0-label"), "aria-invalid", "true")

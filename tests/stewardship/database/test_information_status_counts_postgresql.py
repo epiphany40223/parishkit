@@ -2,8 +2,9 @@
 
 Frozen migration 0100 replaces ``stewardship_information_report_v2`` in
 place so it returns, beside the total, every matching request by follow-up
-state. The counts must cover every matching request, not the page, follow
-the filters, and drive the page's Follow-up status chart. The migration's
+state. The counts must cover every matching request, not the page, and
+follow the filters; the page itself, now the review worklist (#1685), counts
+by stage instead and draws no chart. The migration's
 closing check must pass on the installed schema and refuse 0094's body or a
 changed grant or setting, and the whole file must install over 0094's body
 (an upgrade from the previous schema). Each check statement runs in a
@@ -122,21 +123,17 @@ def test_counts_cover_every_matching_request_and_follow_the_filters(
     )
 
 
-def test_the_page_draws_the_followup_status_chart(live_response_service, google):
-    """The queue draws the chart from the counts; with no request, nothing."""
+def test_the_worklist_draws_no_chart_and_counts_by_stage(live_response_service, google):
+    """The review worklist (#1685) has no chart: its Stage choices count."""
     browser, _ = signed_in()
     route = reverse("admin:information_queue")
-    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        response, body = read(browser, route)
-    assert response.status_code == 200
-    assert b'id="information-status" data-table-sync' in body
-    assert b"information-followup-spec" not in body
     respond(live_response_service, "Please call us")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = read(browser, route)
     assert response.status_code == 200
-    assert b"information-followup-spec" in body
-    assert b"Not needed, not completed \\u2014 1 out of 1 (100%)" in body
+    assert b"information-followup-spec" not in body
+    assert b'id="information-status"' not in body
+    assert b">To review (1)</option>" in body and b">Every stage (1)</option>" in body
 
 
 def check_refuses(statement, message):

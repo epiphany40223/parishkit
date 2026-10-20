@@ -78,40 +78,7 @@ def test_a_retained_capture_from_before_zones_is_retried_unchanged():
     assert InformationQuery.retained(zoned).form_values() == zoned
 
 
-@pytest.mark.parametrize(
-    "extra",
-    [
-        "&notes=duplicate",
-        "&unknown=yes",
-        "&followed_up=true",
-        "&confirm_clear=no",
-        "&follow_up_needed=yes&follow_up_needed=yes",
-    ],
-)
-def test_workflow_command_rejects_duplicate_unknown_or_ambiguous_values(extra):
-    """Native checkbox parsing does not turn arbitrary strings into approval."""
-    values = QueryDict(f"expected_version=1&request_key={uuid4()}&notes=text" + extra)
-    with pytest.raises(ValueError):
-        information_views.change_values(values)
-
-
-def test_unchecked_flags_are_false_and_notes_remain_plain_text():
-    """The server preserves submitted text while enforcing checkbox grammar."""
-    key = uuid4()
-    result = information_views.change_values(
-        QueryDict(f"expected_version=2&request_key={key}&notes=%3Cscript%3E")
-    )
-    assert result == dict(
-        expected_version=2,
-        request_key=key,
-        notes="<script>",
-        followed_up=False,
-        follow_up_needed=False,
-        confirm_clear=False,
-    )
-
-
-@pytest.mark.parametrize("action", ["queue", "detail", "update"])
+@pytest.mark.parametrize("action", ["queue", "detail"])
 def test_information_outage_recovery_has_no_private_values(monkeypatch, action):
     """Recovery works even if database-backed layout context cannot be loaded."""
     monkeypatch.setattr(
@@ -121,10 +88,8 @@ def test_information_outage_recovery_has_no_private_values(monkeypatch, action):
     factory = RequestFactory()
     if action == "queue":
         response = information_views.queue(factory.get("/"), campaign)
-    elif action == "detail":
-        response = information_views.detail(factory.get("/"), campaign, item)
     else:
-        response = information_views.update(factory.post("/"), campaign, item)
+        response = information_views.detail(factory.get("/"), campaign, item)
     assert response.status_code == 503
     assert response["Cache-Control"] == "no-store"
     assert response["Retry-After"] == "5"
@@ -134,24 +99,14 @@ def test_information_outage_recovery_has_no_private_values(monkeypatch, action):
     assert reverse("admin:information_queue").encode() in response.content
 
 
-def test_workflow_get_cannot_mutate():
-    """Prefetch or navigation must not record a Staff edit."""
-    response = information_views.update(RequestFactory().get("/"), uuid4(), uuid4())
-    assert response.status_code == 405
+def test_the_retired_request_save_is_gone():
+    """A request's Save route is retired with no redirect (#1685): decisions
+    post to the worklist itself, and a GET of the worklist decides nothing."""
+    from django.urls import NoReverseMatch
 
-
-def test_native_multiline_notes_keep_browser_length_and_stable_resaves():
-    """Transport CRLF must not count twice or change the replay intent."""
-    values = QueryDict("", mutable=True)
-    values.update(expected_version="1", request_key=str(uuid4()))
-    canonical = "x\n" * 2500
-    values["notes"] = canonical.replace("\n", "\r\n")
-    first = information_views.change_values(values)
-    assert first["notes"] == canonical and len(first["notes"]) == 5000
-    values["notes"] = first["notes"].replace("\n", "\r\n")
-    assert information_views.change_values(values) == first
-    values["notes"] = "one\rtwo"
-    assert information_views.change_values(values)["notes"] == "one\ntwo"
+    with pytest.raises(NoReverseMatch):
+        reverse("admin:information_update", args=[uuid4()])
+    assert not hasattr(information_views, "update")
 
 
 def test_name_families_names_rows_from_their_snapshot_as_the_sql_does(monkeypatch):
