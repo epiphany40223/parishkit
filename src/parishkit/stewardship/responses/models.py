@@ -7,12 +7,38 @@ have separate owners and may never rewrite a submitted Family value.
 """
 
 from django.db import models
+from django.db.models import F, Func, Value
+from django.db.models.lookups import Exact
 
 from parishkit.stewardship.storage import (
     ImmutableRecord,
     MutableRecord,
     UTCDateTimeField,
 )
+
+
+def shown_shape(name):
+    """The check that pairs ``reviewed_view`` with its ``shown_items`` (0143).
+
+    A form not drawn as the reviewed form records no shown items (SQL NULL);
+    a reviewed form records a JSON array of entries, possibly empty. The
+    baseline and the Submission carry the same check.
+    """
+    return models.CheckConstraint(
+        condition=models.Q(reviewed_view=False, shown_items__isnull=True)
+        | (
+            models.Q(reviewed_view=True, shown_items__isnull=False)
+            & Exact(
+                Func(
+                    F("shown_items"),
+                    function="jsonb_typeof",
+                    output_field=models.TextField(),
+                ),
+                Value("array"),
+            )
+        ),
+        name=name,
+    )
 
 
 class FamilyFormBaseline(MutableRecord):
@@ -45,6 +71,15 @@ class FamilyFormBaseline(MutableRecord):
     expires_at = UTCDateTimeField()
     state = models.CharField(max_length=12, default="open")
     ended_at = UTCDateTimeField(null=True)
+    # What the form showed (#1705, migration 0143): whether it was drawn as
+    # the reviewed Family form, and then one entry per census, Ministry or
+    # pledge item naming which immutable value it showed. Both are fixed
+    # when the baseline is issued and copied, unchanged, to the Submission,
+    # so the submit judges the form by the rule it was drawn under. Nothing
+    # sets them until #1705's last slice turns the reviewed form on; every
+    # baseline until then is false with no entries.
+    reviewed_view = models.BooleanField(default=False, db_default=False)
+    shown_items = models.JSONField(null=True)
 
     immutable_fields = MutableRecord.immutable_fields + (
         "family_id",
@@ -59,6 +94,8 @@ class FamilyFormBaseline(MutableRecord):
         "projection_digest",
         "definition_digest",
         "expires_at",
+        "reviewed_view",
+        "shown_items",
     )
 
     class Meta(MutableRecord.Meta):
@@ -95,6 +132,7 @@ class FamilyFormBaseline(MutableRecord):
                 & ~models.Q(projection_version=""),
                 name="family_baseline_contract_identity",
             ),
+            shown_shape("family_baseline_shown_shape"),
         ]
 
 
@@ -142,6 +180,11 @@ class Submission(ImmutableRecord):
     # giving read, else None (#1753, frozen migration 0136, provisional). The
     # financial stream's A for the pledge; a guard checks it in SQL.
     upcoming_pledge = models.DecimalField(max_digits=24, decimal_places=2, null=True)
+    # The baseline's record of what its form showed (#1705, migration 0143),
+    # copied unchanged by the submit, so every stream can read what this
+    # response's form showed after the baseline itself is gone.
+    reviewed_view = models.BooleanField(default=False, db_default=False)
+    shown_items = models.JSONField(null=True)
 
     class Meta:
         db_table = "stewardship_submission"
@@ -179,6 +222,7 @@ class Submission(ImmutableRecord):
                 condition=~models.Q(prior_submission_id=models.F("id")),
                 name="submission_not_own_predecessor",
             ),
+            shown_shape("submission_shown_shape"),
         ]
 
 
