@@ -1219,17 +1219,23 @@ def test_flow_steps_and_return_link_orient_a_configuration_change(
 
 @pytest.mark.parametrize("width", [390, 1280])
 def test_go_live_steps_wrap_without_overflow(page, component_origin, axe_source, width):
-    """All four go-live steps fit a phone by wrapping, never scrolling (#196)."""
+    """All four Go live steps fit a phone, never scrolling (#196): Production
+    activation's step bar while initial mail is prepared (#1585 slice 5)."""
+    from playwright.sync_api import expect
+
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + "/go-live-steps")
-    steps = page.get_by_role("list", name="Steps")
+    steps = page.get_by_role("list", name="Go live steps")
     visible(steps)
     assert steps.locator("li").count() == 4
-    assert steps.get_by_role("link").count() == 0
     current = steps.locator('[aria-current="step"]')
-    assert current.count() == 1 and "Activation" in current.inner_text()
-    for item in steps.locator("li").all():
-        visible(item)
+    assert current.count() == 1
+    expect(page.locator(".setup-stepper-current")).to_have_text(
+        "Step 4 of 4: Activation"
+    )
+    expect(page.locator(".setup-stepper-count")).to_have_text("3 of 4 steps completed")
+    # No numbered flow list beside it: one step indicator per page.
+    assert page.locator(".flow-steps").count() == 0
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert axe_violations(page, axe_source) == []
 

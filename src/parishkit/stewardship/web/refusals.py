@@ -512,6 +512,16 @@ STEP_REASONS = {
     # it showed are no longer the ones Apply would confirm.
     "due": "stale_page",
     "typed": "unexpected_fields",
+    # Production activation's Cancel go-live (#1585 slice 5): the reason
+    # missing is an incomplete form the dialog gates; mail being sent (or
+    # uncertain, or needing recovery) blocks it until resolved; live
+    # delivery was paused, or another Administrator cancelled, since the
+    # page was drawn. A start that passed is "started" and a changed count
+    # "changed", as above.
+    "no_reason": "unexpected_fields",
+    "blocking": "send_work_blocks",
+    "paused": "stale_page",
+    "cancelled": "stale_page",
 }
 
 

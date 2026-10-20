@@ -6,6 +6,15 @@ on `pr/stewardship-go-live-readiness`, based on verified main `17f5f2fc`.
 Follow the [controlling Phase 4 sequence](../plans/stewardship/overall.md#phase-4-production-scheduling-delivery-and-notifications)
 and [Production-transition contract](../specs/stewardship/admin-portal/spec.md#production-transition).
 
+> **Historical.** This guide records how the server side was built and
+> reviewed. The Go-live readiness and Testing cleanup pages it describes,
+> with their tick box and five-minute preview, were replaced by the Check
+> and Prepare steps of the four-step
+> [Go live page](../specs/stewardship/admin-portal/spec.md#go-live-page)
+> ([#1585](https://github.com/epiphany40223/parishkit/issues/1585)), which
+> reuses their server-side owners. The operator's procedure is the launch
+> runbooks' [Production activation](stewardship-launch-runbooks.md#production-activation).
+
 ## Coherent outcome
 
 Give an authenticated Admin a current, exact readiness/impact preview and a
