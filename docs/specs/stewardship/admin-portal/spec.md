@@ -6459,7 +6459,9 @@ Unresolved, which is To review,
 [#1133](https://github.com/epiphany40223/parishkit/issues/1133), #1684), so the
 worklist shows exactly the requests counted. Home's Ministry requests to
 enter by hand card carries the Stage alone (`?stage=to_enter_by_hand`,
-[roster entry](#roster-entry-on-ministry-requests)). On the page itself a By Ministry
+[roster entry](#roster-entry-on-ministry-requests)), as does each Staff
+Ministry card of [My review work](../review-pipeline/spec.md#role-views)
+(`?stage=<value>`, #1818). On the page itself a By Ministry
 count applies those filters in place rather than loading the address. Such a
 link may carry only
 `ministry`, `kind` and `stage`, each a single value the worklist's filters

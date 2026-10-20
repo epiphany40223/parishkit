@@ -865,9 +865,15 @@ changes what each role lands on:
     every "Return to" it, for those who land on it. Its menu entry is the
     first of the Review work group, not a Home entry above the groups
     ([admin portal, menu groups](../admin-portal/spec.md#menu-groups)).
-  - Until a stream moves to the worklist, its cards link to its current
-    page unfiltered (no current page reads a stage from its address); each
-    worklist slice makes its cards link `?stage=<value>`.
+  - Each Staff card of Census changes, Ministry requests, Additional
+    information and Financial links its stream's worklist at its stage,
+    `?stage=<value>`, so the page opens on the rows counted
+    (Administrator decision, 2026-10-19,
+    [#1818](https://github.com/epiphany40223/parishkit/issues/1818)). A
+    leader's per-Ministry cards link `?ministry=<DUID>` instead, and Cannot
+    participate, which has only To review, links its page unfiltered. A
+    stage link the page cannot use is refused in plain words, as every
+    worklist link is.
 - **Administrators** keep the full Home and menu, and also get the same
   panels, plus a Ready to update count per stream with its update link.
   As built (#1690), they are one **Review work** panel on Home, just before
