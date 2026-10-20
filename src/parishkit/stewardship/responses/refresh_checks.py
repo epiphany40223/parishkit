@@ -292,7 +292,7 @@ def census_source(row, corpus):
 
     ``row`` is annotated with its Family's ``family_duid``. None means the
     data gives no evidence either way, so the change gets no check (rule
-    4: it keeps its stage). Migration 0141's
+    4: it keeps its stage). Migration 0137's
     ``stewardship_refresh_census_source_v1`` reads the same, and the check's
     guard requires it:
 

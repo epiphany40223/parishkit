@@ -583,7 +583,7 @@ beside the stages it is a flag of.
 
 Issue #1738 also checks three census fields the Member contact read does not
 carry, each against its own reading of the promoted data, with the
-snapshot's own evidence (migration 0141, provisional number, widens the
+snapshot's own evidence (migration 0137, provisional number, widens the
 check's guard for them):
 
 - **Moved** (a Member leaving the household): ParishSoft holds it when the

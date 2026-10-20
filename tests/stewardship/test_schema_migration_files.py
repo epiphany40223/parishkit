@@ -441,8 +441,8 @@ FROZEN = {
     "0136_submission_upcoming_pledge.sql": (
         "b66fcf15d06818dc6781b5a5813df647282dbe1f1dfb30ff4edf922696bd64cf"
     ),
-    "0141_census_refresh_sources.sql": (
-        "9537e9417f513ddba109d1e21f21b4578fdc21b8cdb11d2cb3dfe2ca00286947"
+    "0137_census_refresh_sources.sql": (
+        "5e855dbbfaffb607d16f4c9d5ff25bf443c021a2cc853a5c9f30ee2f5a1a94f3"
     ),
 }
 
