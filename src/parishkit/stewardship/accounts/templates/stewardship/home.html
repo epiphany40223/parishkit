@@ -52,19 +52,7 @@
     {% if not dashboard.campaign %}<dl class="home-facts">{% include "stewardship/home-data-age.html" %}</dl>
     {% if dashboard.can_refresh %}<p><a href="{% url 'admin:source_refresh' %}">{% translate "Refresh now" %}</a></p>{% endif %}{% endif %}
   </section>
-  {% if dashboard.my_ministries %}{% with mine=dashboard.my_ministries %}<section class="panel" aria-labelledby="my-ministries-heading" data-my-ministries>
-    <h2 id="my-ministries-heading">{% translate "My Ministries" %}</h2>
-    {# A short list, not a table, so each Ministry fits a phone screen with no horizontal scrolling (#533 review). #}
-    <p>{% translate "Requests from Families to join or leave your Ministries that are still open (New or In progress) in the current campaign." %}</p>
-    {% if mine.ministries %}<ul class="my-ministries">{% for ministry in mine.ministries %}<li data-ministry="{{ ministry.duid }}">
-      <span class="my-ministry-name">{{ ministry.name }}{% if not ministry.in_campaign %} <span class="my-ministry-note">({% translate "no longer in this campaign" %})</span>{% endif %}</span>
-      <span class="my-ministry-counts">{% if ministry.join or ministry.leave %}{% blocktranslate count count=ministry.join trimmed %}{{ count }} asking to join{% plural %}{{ count }} asking to join{% endblocktranslate %} · {% blocktranslate count count=ministry.leave trimmed %}{{ count }} asking to leave{% plural %}{{ count }} asking to leave{% endblocktranslate %}{% else %}{% translate "No open requests" %}{% endif %}</span>
-      {% if ministry.join or ministry.leave %}{% url 'admin:ministry_report' as queue_url %}{% blocktranslate asvar open_label with name=ministry.name %}Open requests for {{ name }}{% endblocktranslate %}{% with duid=ministry.duid|stringformat:"s" %}{% button variant="secondary" href=queue_url|add:"?ministry="|add:duid aria-label=open_label %}{% translate "Open requests" %}{% endbutton %}{% endwith %}{% endif %}
-    </li>{% endfor %}</ul>
-    {% else %}<p>{% translate "None of your Ministries is part of the current campaign." %}</p>{% endif %}
-    <p><a href="{% url 'admin:ministry_report' %}">{% translate "Ministry requests" %}</a> · <a href="{% url 'admin:ministry_report' %}#ministry-packet-heading">{% translate "Follow-up packet for my Ministries" %}</a></p>
-  </section>{% endwith %}{% endif %}
-  {# Review work (#1690; review pipeline spec, "Role views"): the panels Staff and Ministry leaders land on, with Ready to update, for an Administrator. #}{% if dashboard.review %}{% load review_work %}{% review_panels dashboard.review as review_panels %}{% if review_panels %}<section class="panel" aria-labelledby="review-work-heading" data-review-work>
+  {# Review work (#1690; review pipeline spec, "Role views"): the panels Staff and Ministry leaders land on instead of Home, with Ready to update. #}{% if dashboard.review %}{% load review_work %}{% review_panels dashboard.review as review_panels %}{% if review_panels %}<section class="panel" aria-labelledby="review-work-heading" data-review-work>
     <h2 id="review-work-heading">{% translate "Review work" %}</h2>
     {% include "stewardship/review-work-panels.html" with panels=review_panels nested=True %}
   </section>{% endif %}{% endif %}

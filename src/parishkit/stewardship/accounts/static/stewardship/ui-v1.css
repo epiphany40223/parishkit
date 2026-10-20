@@ -1051,14 +1051,6 @@ td > :last-child { margin-bottom: 0; }
    a name of ordinary length: two lines of 14rem hold about 55 characters,
    and the longest Ministry name in use is under 50. */
 .cell-clamp { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; overflow-wrap: break-word; min-width: 14rem; max-width: 18rem; }
-/* Home's My Ministries list (#533): name, counts, then the button, wrapping
-   between them on a phone, never inside a word. */
-.my-ministries { list-style: none; padding: 0; margin: 0; }
-.my-ministries li { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem 1rem; padding: .6rem 0; border-top: 1px solid var(--border); overflow-wrap: normal; }
-.my-ministries li:first-child { border-top: 0; }
-.my-ministry-name { flex: 1 1 14rem; font-weight: 600; }
-.my-ministry-note { font-weight: 400; }
-.my-ministry-counts { flex: 0 1 auto; }
 .data-table tbody tr:has(input[data-select-row]:checked) { background: var(--accent-soft); }
 /* Scheduled emails (#448): an editable row opens its editor when chosen; a
    schedule that already sent is muted and has no control. */
