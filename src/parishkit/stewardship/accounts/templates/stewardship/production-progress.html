@@ -56,7 +56,6 @@
 <dt>{% if row.complete %}{% translate "Difference" %}{% else %}{% translate "Difference so far" %}{% endif %}</dt><dd>{{ row.difference|number }}</dd>
 </dl></section>{% endfor %}
 </details>
-<details class="technical-details" data-keep-open><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Worker task state" %}</dt><dd><code>{{ task.state }}</code></dd><dt>{% translate "Preparation phase" %}</dt><dd><code>{{ demand.phase }}</code></dd><dt>{% translate "Committed groups" %}</dt><dd>{{ demand.groups_completed|number }}</dd></dl></details>
 {% elif state == 'scheduled' %}<p data-production-start>{% translate "Scheduled to start" %} <time data-local-instant datetime="{{ campaign.active_configuration.starts_at|instant }}">{{ campaign.active_configuration.starts_at|instant }}</time>. {% translate "Emails follow the mail schedules from then." %}</p>
 {% if cancel_unavailable == 'paused' %}{% url 'admin:delivery_control' as controls_url %}<p data-production-cancel-unavailable="paused">{% translate "Cancel go-live isn't available while live mail delivery is paused. To cancel, resume mail first on" %} <a href="{{ controls_url }}">{% translate "Pause and resume mail" %}</a>.</p>{% elif cancel_unavailable == 'started' %}<p data-production-cancel-unavailable="started">{% translate "The start time has passed, so go-live can no longer be cancelled." %}</p>{% endif %}
 {% elif state == 'closed' %}<p>{% translate "The campaign has closed. Its mail and responses stay in their reports." %}</p>
@@ -67,6 +66,9 @@
 {% if control %}<form method="post" action="{% url 'admin:production_progress' %}#production-status" data-in-place="production-retry" data-in-place-message="{% translate 'Mail preparation retry started.' %}" data-production-primary>{% csrf_token %}<input type="hidden" name="action" value="retry"><input type="hidden" name="control" value="{{ control }}">{% button type="submit" %}{% translate "Retry" %}{% endbutton %}</form>{% endif %}
 </div>
 </div>
+{% comment %}Technical details sit outside the self-updating region: an update replaces the region's content, which would close an open disclosure under the reader. Like Send progress's, it says it is as of when the page was opened. It is drawn only for a direct activation (the case with stage boxes).{% endcomment %}
+{% if boxes %}<details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Worker task state" %}</dt><dd><code>{{ task.state }}</code></dd><dt>{% translate "Preparation phase" %}</dt><dd><code>{{ demand.phase }}</code></dd><dt>{% translate "Committed groups" %}</dt><dd>{{ demand.groups_completed|number }}</dd></dl>
+<p>{% translate "These values are as of when this page was opened; reload the page to update." %}</p></details>{% endif %}
 {% include 'stewardship/components/review-outcome.html' with outcome_id="production-outcome" %}
 <p class="setup-sr-only" data-live-announcer="production-status" role="status"></p>
 <p><a href="{% url 'admin:campaign_settings' %}">{% translate "Review Campaign settings" %}</a></p>
