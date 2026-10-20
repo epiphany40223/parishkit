@@ -1,7 +1,7 @@
 """Forward migration: a Ministry request's details follow its Edit.
 
-Its SQL is the frozen file ``schema/migrations/0144_edited_ministry_contacts.sql``
-(prefix 0144, provisional, assigned in the repository-wide file sequence),
+Its SQL is the frozen file ``schema/migrations/0140_edited_ministry_contacts.sql``
+(prefix 0140, provisional, assigned in the repository-wide file sequence),
 read whole and never parsed (#1718). It replaces
 ``stewardship_ministry_packet_v1`` and ``stewardship_ministry_report_v3`` so
 a request that review's Edit (#1684) accepted with another Ministry carried
@@ -22,16 +22,19 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0144_edited_ministry_contacts.sql"
+    / "0140_edited_ministry_contacts.sql"
 )
 
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("stewardship_reports", "0031_leader_request_contacts"),
-        # The migration that installs the previous frozen file (0132, the
-        # review pipeline's Edit, #1684), so the files apply in prefix order.
+        # This app's previous migration, so the app keeps one leaf.
+        ("stewardship_reports", "0034_pledge_conflicts"),
+        # The review pipeline's Edit (0131, #1684), whose Edit it reads.
         ("stewardship_workflows", "0003_ministry_review_pipeline"),
+        # The migration that installs the previous frozen file (0139), so
+        # the files apply in prefix order.
+        ("stewardship_responses", "0020_new_member_id_correction"),
     ]
 
     operations = [migrations.RunSQL(FROZEN_SQL.read_text(encoding="utf-8"))]

@@ -43,7 +43,7 @@ LATER = definition(
     ),
     "stewardship_ministry_followup_v1",
 )
-# 0144 (#1718) has since replaced the packet and report selections again,
+# 0140 (#1718) has since replaced the packet and report selections again,
 # changing the removed-Ministry text this check reads; 0119's bodies, the
 # ones before it, still hold that text.
 CONSENT = (SCHEMA_FILES / "migrations/0119_leader_request_contacts.sql").read_text(

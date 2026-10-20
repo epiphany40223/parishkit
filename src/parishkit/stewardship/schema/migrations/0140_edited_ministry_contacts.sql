@@ -1,4 +1,4 @@
--- Frozen forward migration file 0144 (the repository-wide file sequence;
+-- Frozen forward migration file 0140 (the repository-wide file sequence;
 -- provisional number): a Ministry request's contact details and lists
 -- follow its Edit (#1718).
 -- This file is installed by its Django migration in the reports app and must
@@ -8,7 +8,7 @@
 -- files and then this; the baseline already carries the replaced packet body,
 -- so the install ends in the same catalog as an upgraded database.
 --
--- Review's Edit (#1684, migration 0132) accepts a Ministry request with
+-- Review's Edit (#1684, migration 0131) accepts a Ministry request with
 -- another Ministry carried forward (reviewed_ministry_duid), whose leaders
 -- see the request as theirs and decide it from then on. The Member's
 -- contact details on the request page and in Export these requests are read
@@ -29,14 +29,14 @@
 --                                    requests' current role, read through
 --                                    stewardship_ministry_report_v4
 -- The report's By Ministry counts count an edited request under both of its
--- Ministries, as the follow-up selection (0132) lists it under either, so
+-- Ministries, as the follow-up selection (0131) lists it under either, so
 -- each count link lists exactly what it counts; both selections keep both
 -- Ministries of an edited request in scope (a Ministry removed from the
 -- campaign included), so a packet offered for either gets its section, an
 -- empty one for the Family's. Nothing widens: each selection still reads
 -- only the Ministries in the reader's SQL-derived scope; a leader gets an
 -- edited request's details only for the Ministry whose leaders may decide
--- it (the revision guard's authority, 0132), and the publish-flag and
+-- it (the revision guard's authority, 0131), and the publish-flag and
 -- consent rules (0119) are unchanged, consent being the Member's latest
 -- standing request, now about its current Ministry.
 -- A request's versions and consent are found over whole chains (every
@@ -61,7 +61,7 @@ SET LOCAL search_path = public;
 -- compared in sorted order: an installed database may hold them in the
 -- order of a later ALTER FUNCTION ... SET. A transaction-local setting holds
 -- them, not a temporary table: the migration login has no TEMP privilege.
-SELECT set_config('stewardship.migration_0144_acl', (
+SELECT set_config('stewardship.migration_0140_acl', (
     SELECT count(*)||':'||coalesce(string_agg(p.proname||'='||coalesce(p.proacl::text,'default')
             ||'/'||coalesce((SELECT array_agg(c ORDER BY c) FROM unnest(p.proconfig) c)::text,''),';'
         ORDER BY p.proname),'')
@@ -691,7 +691,7 @@ BEGIN
                 AS consented%'
               ELSE p.prosrc LIKE '%    ) q JOIN ministries m ON m.duid=q.ministry_duid
 ), latest AS MATERIALIZED (%' END)<>2 THEN
-        RAISE EXCEPTION 'Migration 0144 (Ministry request details follow its Edit) did not replace the selections';
+        RAISE EXCEPTION 'Migration 0140 (Ministry request details follow its Edit) did not replace the selections';
     END IF;
     -- CREATE OR REPLACE keeps the grants and names the same settings; check
     -- that nothing changed them.
@@ -701,8 +701,8 @@ BEGIN
         FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname IN ('stewardship_ministry_packet_v1',
             'stewardship_ministry_report_v3'))
-        IS DISTINCT FROM current_setting('stewardship.migration_0144_acl') THEN
-        RAISE EXCEPTION 'Migration 0144 changed the selections'' grants or settings';
+        IS DISTINCT FROM current_setting('stewardship.migration_0140_acl') THEN
+        RAISE EXCEPTION 'Migration 0140 changed the selections'' grants or settings';
     END IF;
 END
 $check$;

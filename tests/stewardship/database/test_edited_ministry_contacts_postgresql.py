@@ -1,6 +1,6 @@
-"""Frozen migration 0144's closing check (#1718).
+"""Frozen migration 0140's closing check (#1718).
 
-0144 replaces the Ministry packet and report selections so a request that
+0140 replaces the Ministry packet and report selections so a request that
 review's Edit (#1684) carried into another Ministry is listed, with its
 Member's contact details, under that Ministry. Its behaviour is tested in
 test_ministry_contacts_postgresql.py; these tests check that its closing
@@ -18,7 +18,7 @@ from .test_hide_gone_members_postgresql import SCHEMA_FILES, definition
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
-MIGRATION = (SCHEMA_FILES / "migrations/0144_edited_ministry_contacts.sql").read_text(
+MIGRATION = (SCHEMA_FILES / "migrations/0140_edited_ministry_contacts.sql").read_text(
     encoding="utf-8"
 )
 EARLIER = (SCHEMA_FILES / "migrations/0119_leader_request_contacts.sql").read_text(
@@ -26,8 +26,8 @@ EARLIER = (SCHEMA_FILES / "migrations/0119_leader_request_contacts.sql").read_te
 )
 CHECK = MIGRATION[MIGRATION.index("DO $check$") :]
 ACL = MIGRATION[
-    MIGRATION.index("SELECT set_config('stewardship.migration_0144_acl'") : (
-        MIGRATION.index(", true);", MIGRATION.index("migration_0144_acl"))
+    MIGRATION.index("SELECT set_config('stewardship.migration_0140_acl'") : (
+        MIGRATION.index(", true);", MIGRATION.index("migration_0140_acl"))
         + len(", true);")
     )
 ]
@@ -36,9 +36,9 @@ CURRENT = "coalesce(r.reviewed_ministry_duid,r.ministry_duid) AS ministry_duid"
 
 
 def check_refuses(statement, message):
-    """Run ``statement`` and then 0144's closing check, which must refuse it."""
+    """Run ``statement`` and then 0140's closing check, which must refuse it."""
     with (
-        pytest.raises(DatabaseError, match=f"Migration 0144 {message}"),
+        pytest.raises(DatabaseError, match=f"Migration 0140 {message}"),
         transaction.atomic(),
         connection.cursor() as cursor,
     ):

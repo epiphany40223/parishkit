@@ -1958,7 +1958,7 @@ selection and the packet list an edited request, with its details, under
 that Ministry only, so its leaders see the Member's details and a leader of
 only the Family's Ministry, who still sees the request read only, sees none
 ([#1718](https://github.com/epiphany40223/parishkit/issues/1718), frozen
-migration 0144). An earlier version of the request, shown with the history
+migration 0140). An earlier version of the request, shown with the history
 option, stays under the Family's Ministry but is not consent there (the
 rule below): its leaders see only published values on it. Both selections
 keep both Ministries of an edited request listed, so a packet for the

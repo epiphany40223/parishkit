@@ -450,8 +450,8 @@ FROZEN = {
     "0139_new_member_id_correction.sql": (
         "6a6a5744da0c33c346213a5a178e55100141f073ac76cba98c04072b0200c8ae"
     ),
-    "0144_edited_ministry_contacts.sql": (
-        "d5328809a803402da16efcc64f43f7b0378f4dd98fa2c7d95d007b8a0e6239f0"
+    "0140_edited_ministry_contacts.sql": (
+        "fca7ffa4f76a74ccc422264b303b79a4af5c859f55017abf6f3267fcba4e223c"
     ),
 }
 
