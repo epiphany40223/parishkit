@@ -81,7 +81,7 @@ from .ministries import (
     reads_every_ministry,
     unscoped,
 )
-from .ministry_contacts import request_contacts
+from .ministry_contacts import current_ministry, request_contacts
 from .ministry_exports import MAX_PACKET_MINISTRIES
 from .ministry_followup import (
     CHANNELS,
@@ -562,8 +562,9 @@ def _page_response(
 
             item = result["rows"][0]
             # Named before the contacts are read, so a failed read's audit
-            # event still carries the request's Ministry.
-            shown_ministry = item["ministry_duid"]
+            # event still carries the request's Ministry: the one its
+            # contacts are read under (#1718).
+            shown_ministry = current_ministry(item)
             # The Member's contact details (#1157), read for this one request
             # through the same scoped SQL the Ministry lists used. An in-place
             # history page swaps only the history, so it skips them.
