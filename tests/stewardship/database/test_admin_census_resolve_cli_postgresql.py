@@ -129,23 +129,37 @@ def test_an_administrator_enters_ignores_and_reopens(response_service, google, c
     assert code == 0, document
     assert document["result"]["proposal"]["decision"] == "unreviewed"
 
-    # Entered in ParishSoft cannot be undone, so it asks first, as the
-    # page's dialog does: without an answer (or --yes) nothing changes.
+    # Entered in ParishSoft can be undone (#1840), so it asks nothing; on a
+    # To review change it accepts and marks in one step.
     code, document = resolve(run, home, "entered")
-    assert code == 4, document
-    assert document["error"]["code"] == "confirmation_required"
-    assert (count(EVENT), count(UPDATED)) == (2, 2)
-    code, document = resolve(run, home, "entered", "--yes")
     assert code == 0, document
     assert document["result"]["proposal"]["execution"] == "resolved_external"
+    assert document["result"]["proposal"]["decision"] == "unreviewed"
     assert (count(EVENT), count(UPDATED)) == (3, 3)
     assert ProposalResolution.objects.filter(proposal=home).count() == 3
 
-    # A final change, and an automatic one, take no outcome: the page's 400.
+    # An entered change, and an automatic one, take no Ignore: the page's
+    # 400.
     for proposal in (home, name):
         code, document = resolve(run, proposal, "ignored")
         assert code == 1 and document["error"]["code"] == "invalid", document
     assert count(EVENT) == 3
+
+    # Reopen undoes the mark (#1840), with a required note: the change is
+    # To enter by hand again, Accepted, as it was shown.
+    code, document = resolve(run, home, "reopened")
+    assert code == 1 and document["error"]["code"] == "invalid", document
+    code, document = resolve(run, home, "reopened", "--note", "Typed it wrong")
+    assert code == 0, document
+    assert document["result"]["proposal"]["decision"] == "accepted"
+    assert document["result"]["proposal"]["execution"] == "pending"
+    assert document["result"]["resolution"]["action"] == "reopened"
+    assert "Typed it wrong" not in str(document)
+    # --yes is still accepted, and does nothing.
+    code, document = resolve(run, home, "entered", "--yes")
+    assert code == 0, document
+    assert document["result"]["proposal"]["execution"] == "resolved_external"
+    assert (count(EVENT), count(UPDATED)) == (5, 5)
 
 
 def test_stale_unknown_and_read_only_refusals(response_service, google, cli):  # noqa: F811
@@ -175,9 +189,10 @@ def test_staff_enter_and_ignore_but_never_reopen(
     cli,  # noqa: F811
     monkeypatch,
 ):
-    """As on the page: Staff record Entered and Ignore; Reopen is the
-    Administrator's, so Staff reopening is denied with nothing recorded. A
-    Ministry leader may do none of them."""
+    """As on the page: Staff record Entered and Ignore; reopening an Ignore
+    is the Administrator's, so Staff reopening one is denied with nothing
+    recorded, but Staff undo a mark (#1840). A Ministry leader may do none
+    of them."""
     submitted(response_service)
     signed_in()
     run = cli()
@@ -196,21 +211,26 @@ def test_staff_enter_and_ignore_but_never_reopen(
     assert code == 0, document
     with monkeypatch.context() as patch:
         staff(patch)
-        # The early role check is the page's own capability (#1341), which
-        # Staff hold: they still reach the prompt.
+        # Nothing asks any more (#1840).
         code, document = resolve(run, home, "entered")
-        assert code == 4, document
-        assert document["error"]["code"] == "confirmation_required"
-        code, document = resolve(run, home, "entered", "--yes")
         assert code == 0, document
-    assert document["result"]["proposal"]["execution"] == "resolved_external"
-    assert (count(EVENT), count(UPDATED)) == (3, 3)
-    # A Ministry leader is refused by the page's own admission.
+        assert document["result"]["proposal"]["execution"] == "resolved_external"
+        # Staff undo the mark, with its note.
+        code, document = resolve(run, home, "reopened", "--note", "Not yet")
+        assert code == 0, document
+        assert document["result"]["proposal"]["execution"] == "pending"
+        code, document = resolve(run, home, "entered")
+        assert code == 0, document
+    assert (count(EVENT), count(UPDATED)) == (5, 5)
+    # A Ministry leader is refused by the page's own admission, the undo
+    # too.
     with monkeypatch.context() as patch:
         with_roles(patch, {"ministry_leader"}, frozenset({4}))
         code, document = resolve(run, home, "ignored")
         assert code == 1 and document["error"]["code"] == "denied", document
-    assert (count(EVENT), count(UPDATED)) == (3, 3)
+        code, document = resolve(run, home, "reopened", "--note", "Leader")
+        assert code == 1 and document["error"]["code"] == "denied", document
+    assert (count(EVENT), count(UPDATED)) == (5, 5)
 
 
 def test_another_campaign_s_change_is_not_available(

@@ -1904,8 +1904,7 @@ the prompt or from `--yes`.
 A prompting command checks your role first: if your user no longer may do
 the action (an Administrator who is now Staff, say), it exits 1 (`denied`)
 before it reads any input, looks anything up or prompts. A command Staff
-may run, such as `export financial` or `census resolve`, still prompts
-Staff.
+may run, such as `export financial`, still prompts Staff.
 
 Since [#1547](https://github.com/epiphany40223/parishkit/issues/1547) no
 Admin page asks for a recent sign-in, so a session never stands in for one.
@@ -2340,11 +2339,14 @@ the command's `admin_cmd_pledges_decide`.
 (`entered`), **Ignore** (`ignored`) or **Reopen** (`reopened`) icon. Like the
 page's buttons it needs a full-scope session; Administrators and Staff may
 record Entered and Ignore, and only an Administrator may reopen an ignored
-change (Staff get `denied`).
-Entered in ParishSoft cannot be undone, so, as the page's dialog does,
-`--action entered` shows the change's id and version and asks for `yes`
-(see [Confirmations](#confirmations)), or takes `--yes`; Ignore and Reopen
-ask nothing.
+change (Staff get `denied`). Reopen of a change that is Entered by hand
+(also Entered incorrectly or Confirmed), Updated in ParishSoft or Already in
+ParishSoft is the page's **Back to review** of that step, which Staff may
+record too: the change goes back to the stage before it with its decision
+kept (To enter by hand or Ready to update; To review when nobody had
+decided it), and nothing is written to ParishSoft.
+Every outcome can be undone that way, so no action asks first; `--yes` is
+still accepted and does nothing.
 
 ```sh
 pk-admin census resolve PROPOSAL_ID --action entered --expected-version 3
@@ -2355,17 +2357,18 @@ pk-admin census resolve PROPOSAL_ID --action reopened --expected-version 4 \
 `PROPOSAL_ID` and the `--expected-version` are the change's id and version,
 which `export census --format jsonl` prints (`proposal_id` and `version`,
 with the `actions` the change takes now; the page's own downloads leave
-them out). `--note` is optional, except to reopen; `-` reads it from
-standard input, which keeps a note that names people out of shell history
-and the process list, and then needs `--yes`, because standard input cannot
-carry both the note and an answer. `--request-key` is made for you and
+them out). `--note` is optional, except to reopen (an ignored change, or a
+terminal step); `-` reads it from standard input, which keeps a note that
+names people out of shell history and the process list, and then needs
+`--yes`, as before. `--request-key` is made for you and
 written to standard error when left out. Repeating the command with the
 same key returns the same resolution (`created` false) and records nothing
 new; the key used for another outcome or note is exit 1 (`invalid`). A
 change someone updated since that version is exit 1 (`stale_version`):
 read it again on the page. An outcome the change's status does not allow
-(an automatic change, or one already entered), or reopening without a
-note, is exit 1 (`invalid`); a change that is not the current campaign's
+(an automatic change, an entered one marked again before a refresh found
+it wrong, one queued for an update run, or one a later response of the
+Family replaced), or reopening without a note, is exit 1 (`invalid`); a change that is not the current campaign's
 is exit 1 (`not_available`), and so is a repeat after the current campaign
 changed.
 

@@ -845,8 +845,9 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert options["--address"]["required"] and options["--note"]["required"]
     # census resolve: a Census changes row's Record outcome, keyed and
     # versioned, full scope, not fresh-gated, as its page asks for no recent
-    # sign-in; it prompts, but only for Entered in ParishSoft, which cannot
-    # be undone (its page's confirmation dialog).
+    # sign-in. Every outcome can be undone now (#1840), so nothing asks, but
+    # it keeps its prompting shape: --yes is still accepted (and does
+    # nothing), so scripts that pass it keep working.
     census = entries["census resolve"]
     assert census["scope"] == "full" and census["changes_state"]
     assert census["request_key"] and census["expected_version"]

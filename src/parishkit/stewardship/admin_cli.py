@@ -2696,9 +2696,11 @@ def census_resolve(args, preamble, runtime, context):
 
     Without ``--request-key`` a new key is made and written to standard error
     before anything is done, so a run that crashes can be repeated with it.
-    Entered in ParishSoft cannot be undone, so, as the page's confirmation
-    dialog does, it asks first (or takes ``--yes``); Ignore and Reopen can
-    be undone and ask nothing, as on the page.
+    Every outcome can be undone: Reopen also undoes a terminal step (Entered
+    in ParishSoft, Entered incorrectly, Confirmed, Updated in ParishSoft;
+    #1840) as the page's Back to review does, with the required note. So
+    nothing asks first; ``--yes`` is still accepted, so scripts that pass it
+    keep working, and does nothing.
     """
     from .accounts.policy import Capability
     from .admin_census import resolve_census
@@ -2711,15 +2713,6 @@ def census_resolve(args, preamble, runtime, context):
     # The page strips the note it posts; so does a note read from standard
     # input (``_input``).
     note = _input(args.note, context, MAX_NOTE * 4).strip()
-    if args.action == "entered":
-        confirm(
-            context,
-            (
-                f"Mark census change {args.proposal_id} (version "
-                f"{args.expected_version}) as entered in ParishSoft.",
-                "Entered in ParishSoft cannot be undone.",
-            ),
-        )
     return resolve_census(
         context["caller"],
         runtime,
@@ -4449,7 +4442,8 @@ def _census_resolve_options(parser):
         required=True,
         choices=CENSUS_ACTIONS,
         help="entered (Entered in ParishSoft), ignored (Ignore) or reopened "
-        "(Reopen, Administrators only)",
+        "(Reopen an ignored change, Administrators only; or Back to review of "
+        "an entered, updated or confirmed change, which undoes that step)",
     )
     parser.add_argument(
         "--expected-version",
@@ -4460,8 +4454,8 @@ def _census_resolve_options(parser):
     parser.add_argument(
         "--note",
         default="",
-        help="an optional note (required to reopen), or - to read it from "
-        "standard input (needs --yes)",
+        help="an optional note (required to reopen or undo), or - to read it "
+        "from standard input (needs --yes)",
     )
     _request_key_option(parser)
 
@@ -6616,7 +6610,10 @@ def _report_specs():
             CensusResolve.field_names(),
             8,
             options=(_census_resolve_options,),
-            # Only Entered in ParishSoft, which cannot be undone, asks.
+            # Nothing asks any more: every outcome can be undone (#1840).
+            # The command keeps its prompting shape, so --yes is still
+            # accepted (it does nothing) and a - note still needs it, as
+            # scripts written for it expect.
             prompts=True,
             request_key=True,
             expected_version=True,

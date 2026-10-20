@@ -1545,7 +1545,7 @@ Administrator who is now Staff) is `denied` with no prompt, never
 `invalid`, `stale_version` or `not_available`, and learns nothing of the
 state the prompt would describe. The capability is the action's own, so a
 command Staff may run (`export financial`, `export directory`, `export
-postal`, `export family-timeline`, `census resolve`, `followup bulk`,
+postal`, `export family-timeline`, `followup bulk`,
 `followup roster-bulk`) still prompts Staff;
 the action then admits again as its page's post does.
 
@@ -2852,16 +2852,19 @@ changes row's Mark entered in ParishSoft, Ignore and Reopen
 ([#528](https://github.com/epiphany40223/parishkit/issues/528)): full scope,
 keyed, and not fresh-gated, as the page's action is not privileged. Reopen
 also undoes a terminal outcome (Entered by hand, Entered incorrectly,
-Confirmed, Updated in ParishSoft) as the page's Back to review does
+Confirmed, Updated in ParishSoft, Already in ParishSoft) as the page's Back
+to review does
 ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage),
-[#1840](https://github.com/epiphany40223/parishkit/issues/1840)), so no action asks first any more; `--action entered` keeps its
-`--yes` option, which does nothing. It admits as the page's post does (`census_change_views._principal`,
+[#1840](https://github.com/epiphany40223/parishkit/issues/1840)), so no action asks first any more. The command keeps its
+`--yes` option, which does nothing except that a `-` note still needs it, as
+before, so scripts written for the prompt keep working. It admits as the page's post does (`census_change_views._principal`,
 recording activity), then in the page's command scope
 (`task_retries.command_scope`, that admission repeated around the effect)
 checks the current campaign as the page does (`admit_report_read`), finds
 the Live change in it (any other is `not_available`) and calls the page's
 `census_resolution.resolve_census_change`, which checks the action's
-capability (Reopen is the Administrator's), the version and the row's
+capability (reopening an Ignore is the Administrator's; undoing a terminal
+outcome, with its required note, is Staff's too), the version and the row's
 state, and records `census_change_updated`. In the same transaction the
 command records `admin_cmd_census_resolve`, only for a new key: the key is
 the page's `request_key`, so a repeat with the same intent returns the
