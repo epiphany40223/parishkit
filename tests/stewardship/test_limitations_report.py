@@ -1,14 +1,17 @@
 """Limitations report shaping and exports (#247 follow-up, #970).
 
 The report was "Talents and limitations"; since #970 it lists only the
-limitations, and its SQL (``stewardship_limitations_report_v1``) neither
-lists nor counts older answers' stored talents.
+limitations, and its SQL (``stewardship_limitations_report_v2`` since #1685)
+neither lists nor counts older answers' stored talents. Since #1685 the page
+is the cannot-participate stream's review worklist, and each download row
+carries its Stage.
 """
 
 import copy
 import csv
 import io
 from datetime import UTC, datetime
+from uuid import UUID
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -39,8 +42,16 @@ MEMBER_HEADINGS = [
     "Family DUID",
     "Cannot participate in ministries",
     "Latest response",
+    "Stage",
 ]
-FAMILY_HEADINGS = ["Family", "ParishSoft status", "Family DUID", "Latest response"]
+FAMILY_HEADINGS = [
+    "Family",
+    "ParishSoft status",
+    "Family DUID",
+    "Limitation",
+    "Latest response",
+    "Stage",
+]
 # The writers read ``zone.key``, so tests pass a ZoneInfo, as the view does.
 UTC_ZONE = ZoneInfo("UTC")
 # The download context the view lends the XLSX and PDF writers.
@@ -68,10 +79,30 @@ def result():
                 "proposed": False,
                 "cannot_serve": True,
                 "submitted_at": WHEN,
+                "kind": "member",
+                "member_key": "3",
+                "version": 0,
+                "decision": None,
+                "in_force": False,
+                "decided_by": None,
+                "decided_at": None,
+                "note": None,
             }
         ],
         "families": [
-            {"family_name": "Example", "family_duid": 10, "submitted_at": WHEN}
+            {
+                "family_name": "Example",
+                "family_duid": 10,
+                "submitted_at": WHEN,
+                "kind": "family",
+                "member_key": "",
+                "version": 1,
+                "decision": "accepted",
+                "in_force": True,
+                "decided_by": "staff@example.org",
+                "decided_at": WHEN,
+                "note": "",
+            }
         ],
         "summary": {"cannot_serve": 1, "cannot_attend": 1},
     }
@@ -110,11 +141,20 @@ def test_downloads_match_the_page_columns():
     shaped = shape_result(raw)
     rows = list(csv.reader(io.StringIO(limitations_csv(shaped, UTC).decode())))
     assert rows[0] == MEMBER_HEADINGS
-    assert rows[1] == ["Alex Example", "3", "Example", "", "10", "Yes", WHEN]
-    assert rows[2] == ["New Example (proposed)", "", "Example", "", "10", "Yes", WHEN]
+    member = ["Alex Example", "3", "Example", "", "10", "Yes", WHEN, "To review"]
+    assert rows[1] == member
+    assert rows[2] == ["New Example (proposed)", "", *member[2:]]
     rows.pop(2)
     assert rows[2] == [] and rows[3] == FAMILY_HEADINGS
-    assert rows[4] == ["Example", "", "10", WHEN]
+    # The Family's answer was accepted, and its decision still holds.
+    assert rows[4] == [
+        "Example",
+        "",
+        "10",
+        "Cannot attend Mass or prayer services",
+        WHEN,
+        "To handle",
+    ]
     book = workbook(shaped)
     assert [cell.value for cell in book["Members"][1]] == MEMBER_HEADINGS
     assert [cell.value for cell in book["Families"][1]] == FAMILY_HEADINGS
@@ -156,8 +196,13 @@ def test_pdf_prints_both_tables_with_the_csv_columns_and_rows(monkeypatch):
     # The formula-like name prints as typed; the CSV guards it.
     # The Member DUID follows the Member, as on the page (#932).
     assert member_rows[0][:6] == ("=cmd", "3", "Example", "", "10", "Yes")
-    assert member_rows[0][6] == family_rows[0][3] == "Oct 5, 2026 9:00 AM"
-    assert family_rows[0][:3] == ("Example", "", "10")
+    assert member_rows[0][6] == family_rows[0][4] == "Oct 5, 2026 9:00 AM"
+    assert family_rows[0][:4] == (
+        "Example",
+        "",
+        "10",
+        "Cannot attend Mass or prayer services",
+    )
     assert frame.eyebrow == "Example Parish · Stewardship 2055"
     # The tables' frame adds two blank lines of room for their captions.
     assert frame.details == (
@@ -226,25 +271,33 @@ def test_xlsx_escapes_control_characters_in_source_names():
     assert book["Families"]["A2"].value == "Example\\u000b"
 
 
-def page(raw, paging=None):
-    """Render the report page from a shaped result, as the view does."""
+def page(raw, paging=None, stage="all"):
+    """Render the worklist page from a shaped result, as the view does."""
     from django.template.loader import render_to_string
 
-    from parishkit.stewardship.reports.limitation_views import tables
+    from parishkit.stewardship.reports.limitation_worklist import (
+        SORTING,
+        WorklistQuery,
+        answer_rows,
+        at_stage,
+        worklist_page,
+    )
+    from parishkit.stewardship.web.tables import paginate
 
     shaped = shape_result(raw)
-    query = LimitationsQuery()
-    members, families = tables(shaped, query, paging or {}, "/report")
+    query = WorklistQuery(stage=stage)
+    shown, counts = at_stage(answer_rows(shaped), stage)
+    table = paginate(shown, paging or {}, sorting=SORTING)
+    worklist, table = worklist_page(counts, query, table, "/report", mutable=True)
     return render_to_string(
         "stewardship/limitations-report.html",
-        shaped
-        | {
-            "metadata": {"name": "Renewal"},
-            "members_table": members,
-            "families_table": families,
+        {
+            "worklist": worklist,
+            "table": table,
             "campaign_id": "00000000-0000-4000-8000-000000000000",
             "query": query,
             "query_fields": query.form_values(),
+            "mutable": True,
         },
     )
 
@@ -271,47 +324,58 @@ def test_the_show_filter_takes_only_the_limitation_words():
             LimitationsQuery.parse(invalid)
 
 
-def members_table(raw, paging):
-    """The rendered Members table of the page (shaping a copy of ``raw``)."""
+def table_body(raw, paging):
+    """The rendered worklist table of the page (shaping a copy of ``raw``)."""
     html = page(copy.deepcopy(raw), paging)
-    start = html.index("<h2>Members who cannot participate in ministries</h2>")
-    return html[start : html.index("<h2>Families that cannot attend")]
+    return html[html.index("<table") : html.index("</table>")]
 
 
-def test_members_table_leads_with_the_member_then_family_and_family_duid():
-    """Member, Member DUID, Family, Family DUID, the rest, then Latest response
-    (#932); each DUID has its own right-aligned cell and sorts in place."""
+def test_the_table_leads_with_the_family_then_the_member_and_their_duids():
+    """Family, Family DUID, Member, Member DUID, then the shared columns
+    (#932, #1685); each DUID has its own right-aligned cell and sorts."""
     raw = result()
     raw["members"].append(
         raw["members"][0]
         | {"family_name": "Other", "family_duid": 7, "member_name": "B"}
-        | {"member_duid": 41}
+        | {"member_duid": 41, "member_key": "41"}
     )
-    members = members_table(raw, {"members_sort": "duid"})
-    columns = ["member", "member_duid", "family", "duid", "cannot_serve", "latest"]
-    positions = [members.index(f'data-sort-column="{key}"') for key in columns]
+    table = table_body(raw, {"sort": "duid"})
+    columns = ["family", "duid", "member", "member_duid"]
+    positions = [table.index(f'data-sort-column="{key}"') for key in columns]
     assert positions == sorted(positions)
-    assert 'data-sort-column="talents"' not in members
-    assert '</th>\n<td class="numeric">3</td>\n<td>Example</td>' in members
-    assert '<td>Example</td>\n<td class="numeric">10</td>' in members
-    assert "DUID 10" not in members
+    assert 'data-sort-column="talents"' not in table
+    assert '<td class="numeric">10</td><td>Alex Example</td>' in table
+    assert '<td>Alex Example</td><td class="numeric">3</td>' in table
+    assert "Cannot participate in any ministries" in table
+    assert "Cannot attend Mass or prayer services" in table
     # Sorted by Family DUID: 7 comes before 10.
-    assert members.index(">7</td>") < members.index(">10</td>")
+    assert table.index(">7</td>") < table.index(">10</td>")
     # Sorted by Member DUID, descending: 41 comes before 3.
-    members = members_table(raw, {"members_sort": "-member_duid"})
-    assert members.index(">41</td>") < members.index(">3</td>")
+    table = table_body(raw, {"sort": "-member_duid"})
+    assert table.index(">41</td>") < table.index(">3</td>")
 
 
-def test_a_proposed_member_has_an_empty_member_duid_cell():
-    """A proposed Member has no DUID; its cell is empty and sorts last."""
+def test_a_proposed_member_reads_new_member_and_sorts_last():
+    """A proposed Member has no DUID; its cell reads New Member and sorts
+    after the Members' DUIDs."""
     raw = result()
     raw["members"].append(
         raw["members"][0]
         | {"member_name": "New", "member_duid": None, "proposed": True}
+        | {"kind": "proposed_member", "member_key": str(UUID(int=5))}
     )
-    members = members_table(raw, {"members_sort": "member_duid"})
-    assert '<br>Proposed household member</th>\n<td class="numeric"></td>' in members
-    assert members.index(">3</td>") < members.index("Proposed household member")
+    table = table_body(raw, {"sort": "member_duid"})
+    assert '<td>New</td><td class="numeric">New Member</td>' in table
+    assert table.index(">3</td>") < table.index("New Member")
+
+
+def test_the_stage_filter_lists_and_counts_each_stage():
+    """The Family's accepted answer is To handle; the Member's is To review."""
+    html = page(result(), stage="to_review")
+    assert ">To review (1)</option>" in html and ">To handle (1)</option>" in html
+    assert ">Every stage (2)</option>" in html
+    table = html[html.index("<table") : html.index("</table>")]
+    assert "Alex Example" in table and "To handle" not in table
 
 
 def captured_pdf(monkeypatch, shaped):

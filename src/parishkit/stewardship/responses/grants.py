@@ -86,6 +86,9 @@ def add_response_web_grants(tables, columns):
         }
     }
     tables["stewardship_information_revision"] = {"SELECT", "INSERT"}
+    # Review decisions on cannot-participate and cannot-attend answers
+    # (#1685, migration 0126), each admitted by its own guard.
+    tables["stewardship_limitation_review"] = {"SELECT", "INSERT"}
     columns["stewardship_family_campaign"]["UPDATE"].update(
         {"first_live_submission_id", "effective_submission_id"}
     )

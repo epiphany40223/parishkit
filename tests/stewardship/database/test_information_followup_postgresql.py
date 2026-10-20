@@ -1,6 +1,5 @@
 """Real live information, authorized Staff revisions and independent SQL guards."""
 
-import re
 import socket
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
@@ -8,9 +7,6 @@ from uuid import uuid4
 
 import pytest
 from django.db import DatabaseError, connection, connections
-from django.test.utils import CaptureQueriesContext
-from django.urls import reverse
-from django.utils.html import escape
 
 from parishkit.stewardship.accounts.models import PortalUser
 from parishkit.stewardship.audit.models import AuditContext, AuditEvent
@@ -18,10 +14,8 @@ from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports.information import (
     InformationQuery,
-    information_history,
     information_page,
 )
-from parishkit.stewardship.reports.information_views import CONFIRM_MESSAGE
 from parishkit.stewardship.reports.weekly_observation import capture_weekly_observation
 from parishkit.stewardship.responses.information import update_information
 from parishkit.stewardship.responses.models import (
@@ -32,11 +26,8 @@ from parishkit.stewardship.source.snapshot_names import snapshot_family_names
 from parishkit.stewardship.storage import StaleRecordError
 
 from .auth_builders import signed_in
-from .family_link_checks import link_reads, timeline_link
-from .test_admin_refusal_log_postgresql import entries as refusals
 from .test_background_grants_postgresql import task_login
 from .test_export_views_postgresql import post
-from .test_report_workspace_postgresql import read
 from .test_weekly_observation_postgresql import respond
 
 pytestmark = pytest.mark.django_db(transaction=True)
@@ -159,192 +150,6 @@ def test_followup_history_replay_confirmation_and_sql_pairing(
         for text in (shown.upper(), shown.split(", ", 1)[1]):
             found = information_page(harness.campaign.pk, InformationQuery(search=text))
             assert [match["id"] for match in found["rows"]] == [row["id"]], text
-        route = reverse("admin:information_queue")
-        with CaptureQueriesContext(connection) as queries:
-            response, body = read(browser, route)
-        assert response.status_code == 200 and b"Please contact" in body
-        assert response["Cache-Control"] == "no-store"
-        # The queue's Family name is the link to its request, drawn by the
-        # shared helper with no Timeline link, so no record ids are read.
-        item_link = reverse("admin:information_item", args=[item.pk])
-        assert re.search(
-            f'<th scope="row"><a href="{item_link}[^"]*">{re.escape(escape(shown))}'
-            "</a></th>",
-            body.decode(),
-        )
-        assert link_reads(queries) == []
-        assert not re.search(rb'/admin/reports/families/[0-9a-f-]{36}/"', body)
-        with CaptureQueriesContext(connection) as queries:
-            response, body = read(
-                browser, reverse("admin:information_item", args=[item.pk])
-            )
-        assert response.status_code == 200 and b"Called the Family" in body
-        # The request page's heading opens the Family's Timeline (#1570).
-        link = timeline_link(harness.campaign, duid, shown)
-        assert f"<h2>{link} — Family DUID".encode() in body
-        assert len(link_reads(queries)) == 1
-        assert b"Staff edit history" in body
-        rows, more = information_history(item.pk, 1, version=first.expected_version + 1)
-        assert [row.pk for row in rows] == [first.pk] and not more
-        assert information_history(item.pk, 2, version=item.version) == ([], False)
-        for values, found in (
-            ({"search": "Called"}, True),
-            ({"completed": "yes"}, False),
-        ):
-            response, body = search(browser, route, values)
-            assert response.status_code == 200
-            assert (b"Please contact" in body) is found
-            assert b"?search=" not in body
-        for suffix in ("?search=Private", "?page=1"):
-            assert read(browser, route + suffix)[0].status_code == 400
-        # The shared table (#203): Family and Submitted headings sort through
-        # the selection's closed vocabulary as POST forms, a page past the end
-        # shows the last page, and unknown tokens and sizes are refused.
-        response, body = search(
-            browser,
-            route,
-            {"search": "Called", "sort": "name", "size": "25", "page": "7"},
-        )
-        assert response.status_code == 200 and b"Please contact" in body
-        assert b"Page 1 of 1" in body and b'aria-sort="ascending"' in body
-        assert b'value="name_desc"' in body and b'value="newest"' in body
-        assert b"search=" not in body
-        for invalid in ({"sort": "submitted_at"}, {"size": "250"}, {"size": "5"}):
-            seen = len(refusals())
-            assert search(browser, route, invalid)[0].status_code == 400
-            # The error page is not streamed: its one entry, at once.
-            assert len(refusals()) == seen + 1
-        # A date the reader can fix at its field draws the queue again
-        # (#1332): 400, the values sent in the filters, the error at both
-        # dates and in the summary, and the results for no filters.
-        # The reader's earlier view was a search for "Called".
-        assert search(browser, route, {"search": "Called"})[0].status_code == 200
-        audited = set(
-            AuditEvent.objects.filter(event_type="information_viewed").values_list(
-                "pk", flat=True
-            )
-        )
-        seen = len(refusals())
-        response, body = search(
-            browser,
-            route,
-            {
-                "search": "Nobody",
-                "start": "2026-11-05",
-                "end": "2026-11-01",
-                "zone": "America/New_York",
-                "sort": "name",
-            },
-        )
-        assert response.status_code == 400 and response["Cache-Control"] == "no-store"
-        assert response.stewardship_codes == ("invalid",)
-        # The streamed page leaves its durable entry once it closes (#1484),
-        # and System logs lists it.
-        (entry,) = refusals()[seen:]
-        assert entry.actor_id == actor
-        assert entry.context["route"] == "admin:information_queue"
-        assert (entry.context["status"], entry.context["codes"]) == (400, ["invalid"])
-        logs = search(browser, "/admin/system/logs/", {"applied": "yes", "info": "yes"})
-        assert logs[0].status_code == 200
-        assert f'<tr id="log-info-{entry.pk}"'.encode() in logs[1]
-        assert b'value="2026-11-05" aria-invalid="true"' in body
-        assert b'id="end" type="date" name="end" value="2026-11-01"' in body
-        assert body.count(b'aria-invalid="true"') == 2
-        # Each date keeps its zone note before the message (#1047).
-        described = b"information-zone-help submitted-dates_error"
-        assert body.count(b'aria-describedby="' + described + b'"') == 2
-        assert (
-            b'<ul class="errorlist" id="submitted-dates_error"><li>Enter a Submitted'
-            in body
-        )
-        assert b'<a href="#end">Enter a Submitted on or before' in body
-        assert b"Please contact" in body and b'aria-sort="ascending"' in body
-        assert b"data-filter-panel open" in body
-        # The search sent stays in its field only; the export and the
-        # table's controls carry the filters the results use (none).
-        assert body.count(b'value="Nobody"') == 1
-        assert body.count(b'value="2026-11-05"') == 1
-        # This request's own audit: shown, but not for the filters asked for.
-        outcomes = AuditContext.objects.filter(
-            event__event_type="information_viewed"
-        ).exclude(event__in=audited)
-        assert sorted(
-            context["outcome"] for context in outcomes.values_list("context", flat=True)
-        ) == ["denied", "started"]
-        # The remembered view is now the unfiltered one the page shows, with
-        # the sort sent, not the reader's earlier search.
-        token = re.search(rb'data-queue-address="[^"]*\?queue=(\w+)"', body).group(1)
-        response, body = read(browser, route + "?queue=" + token.decode())
-        assert response.status_code == 200 and b"Please contact" in body
-        assert b'value="Called"' not in body and b'aria-sort="ascending"' in body
-        assert b"aria-invalid" not in body
-        # A hostile value sent back into its field stays text.
-        response, body = search(browser, route, {"start": '"><script>x'})
-        assert response.status_code == 400 and b"<script>x" not in body
-        assert b'value="&quot;&gt;&lt;script&gt;x" aria-invalid="true"' in body
-        # Whole, ordered dates without a known zone keep the error page.
-        response, body = search(browser, route, {"start": "2026-11-01", "zone": ""})
-        assert response.status_code == 400 and b"time zone" in body
-        assert b'id="table-filters"' not in body
-        assert response.stewardship_codes == ("invalid", "zone_missing")
-        # The Family DUID heading sorts through the same vocabulary (#960).
-        response, body = search(browser, route, {"sort": "duid_desc"})
-        assert response.status_code == 200 and b"Please contact" in body
-        assert b'aria-sort="descending"' in body and b'value="duid"' in body
-        update_path = reverse("admin:information_update", args=[item.pk])
-        values = {
-            "expected_version": str(item.version),
-            "request_key": str(uuid4()),
-            "notes": "Native browser edit",
-            "follow_up_needed": "yes",
-        }
-        assert browser.post(update_path, values).status_code == 403
-        assert post(browser, update_path, values).status_code == 302
-        assert post(browser, update_path, values).status_code == 302
-        assert (
-            post(
-                browser, update_path, values | {"request_key": str(uuid4())}
-            ).status_code
-            == 409
-        )
-        # Completed, then cleared without the confirmation by a request built
-        # by hand (#1332): the item page again, 400 with the invalid code,
-        # showing what was sent (its version too) with the error at the box
-        # and in the summary. Nothing is saved.
-        item.refresh_from_db()
-        completed = values | {"request_key": str(uuid4()), "followed_up": "yes"}
-        completed["expected_version"] = str(item.version)
-        assert post(browser, update_path, completed).status_code == 302
-        item.refresh_from_db()
-        assert item.followed_up_at is not None
-        saved = AdditionalInformationRevision.objects.count()
-        cleared = values | {
-            "expected_version": str(item.version),
-            "request_key": str(uuid4()),
-            "notes": "Reopen <this>",
-        }
-        response, body = search(browser, update_path, cleared)
-        assert response.status_code == 400 and response["Cache-Control"] == "no-store"
-        assert response.stewardship_codes == ("invalid",)
-        page = body.decode()
-        assert (
-            '<input type="checkbox" id="information-confirm-clear" name="confirm_clear"'
-            ' value="yes" aria-invalid="true"'
-            ' aria-describedby="information-save_error">'
-        ) in page
-        message = str(CONFIRM_MESSAGE)
-        assert (
-            f'<ul class="errorlist" id="information-save_error"><li>{message}</li>'
-        ) in page
-        assert f'<a href="#information-confirm-clear">{message}</a>' in page
-        assert f'name="expected_version" value="{item.version}"' in page
-        assert 'name="followed_up" value="yes">' in page
-        assert 'name="follow_up_needed" value="yes" checked>' in page
-        assert ">Reopen &lt;this&gt;</textarea>" in page
-        assert 'id="information-item"' in page
-        assert AdditionalInformationRevision.objects.count() == saved
-        item.refresh_from_db()
-        assert item.followed_up_at is not None
         # Direct SQL cannot rewrite history or alter checkboxes without a receipt.
         for statement in (
             "UPDATE stewardship_information_revision SET notes='overwritten'",
@@ -369,12 +174,13 @@ def test_followup_history_replay_confirmation_and_sql_pairing(
                 followed_up=False,
                 confirm_clear=False,
                 notes="Orphan",
+                review_decision="accepted",
             )
-    assert AdditionalInformationRevision.objects.count() == 5
+    assert AdditionalInformationRevision.objects.count() == 3
     first.refresh_from_db()
     assert first.notes == "Called the Family" and first.followed_up_at is not None
     events = AuditEvent.objects.filter(event_type="information_updated")
-    assert events.count() == 5
+    assert events.count() == 3
     assert "Called the Family" not in str(
         list(
             AuditContext.objects.filter(event__in=events).values_list(

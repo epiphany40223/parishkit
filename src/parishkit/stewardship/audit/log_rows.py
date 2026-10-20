@@ -428,6 +428,7 @@ UNGROUPED_REASONS = {
         "census_handling_corrected",
         "chair_review_decided",
         "information_updated",
+        "limitation_reviewed",
         "ministry_request_updated",
         "ministry_followup_bulk_applied",
         "ministry_roster_entered",
