@@ -277,6 +277,14 @@ def test_the_page_offers_and_records_the_correction(response_service, google):
         "item": [f"{change.pk}:{change.version}"],
     }
     assert search(browser, ROUTE, bulk)[0].status_code == 400
+    # A blank correction is refused at the field too.
+    response, body = search(
+        browser, ROUTE, decide(change, "entered_by_hand", value_member=" ")
+    )
+    assert response.status_code == 400
+    blank = json.loads(body)
+    assert [error["field_id"] for error in blank["errors"]] == ["value_member"]
+    assert blank["refusal"]["fix"] == "Correct the Member ID, then record it again."
     # The census guard admits a final change's update only from the web
     # login (as Production's web runs), so this post runs on it.
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
