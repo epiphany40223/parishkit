@@ -152,7 +152,7 @@ def _principal(request, store, *, read_only=False):
 def _linked_ministry(value, principal):
     """A Ministry number from a link (#533), checked against this person's scope.
 
-    Links from Home's My Ministries panel and the counts on Ministry
+    Links from a leader's My review work (#1690) and the counts on Ministry
     requests (#1133) open the queue for one Ministry by GET, so Back and
     reload work; only closed values may travel in a URL (search stays
     private POST state). A malformed number is a 400; a
@@ -368,7 +368,7 @@ def _queue_query(request, principal, parameters):
 
     A query string carries either the token of a remembered view ("Return
     to Ministry requests", #534) or closed link filters: one Ministry, from
-    Home's My Ministries panel (#533) or with a request type and stage from
+    a leader's My review work (#1690) or with a request type and stage from
     a count on By Ministry (#1133), or a Stage alone, from Home's Ministry
     requests to enter by hand card (R39 finding 2). Search and every other
     filter stay private POST state (``parameters``, the POST body less any

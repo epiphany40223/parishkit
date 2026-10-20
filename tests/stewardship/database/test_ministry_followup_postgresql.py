@@ -1301,7 +1301,7 @@ def test_users_read_through_the_actor_and_domain_rules_grant_nothing(
     the address-rule projection, each user one row, as the application
     resolves a users configuration. Each Principal here is the application's
     own resolution (current_principal), so the report, the follow-up queue,
-    the leader's My Ministries panel and the menu count all read what they
+    the leader's My review work cards and the menu count all read what they
     did when the application passed the scope; the actor() Administrator
     shows that path is unchanged too. A hosted-domain rule still in a
     sign-in-rules configuration grants nothing in SQL any more, even for a
@@ -1550,7 +1550,7 @@ def test_requests_for_members_no_longer_in_parishsoft_leave_leaders_work(
     items = [SimpleNamespace(name="ministry_report", url="/admin/follow-up/")]
 
     def counts(principal):
-        """The menu count and, for the leader, My Ministries' join count."""
+        """The menu count and, for the leader, the per-Ministry join count."""
         with (
             task_login(ServiceRole.WEB, exact=True, reconnect=True),
             transaction.atomic(),

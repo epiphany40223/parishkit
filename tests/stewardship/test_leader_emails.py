@@ -141,8 +141,8 @@ def test_a_recorded_ministry_has_a_closed_shape(value):
         LeaderMinistry.from_fact(value)
 
 
-def test_the_counts_read_as_home_words_them():
-    """The My Ministries panel's words, "No open requests" for none."""
+def test_the_counts_read_in_plain_words():
+    """A Ministry's open requests in plain words, "No open requests" for none."""
     assert counts_text(LeaderMinistry(1, "A", 0, 0)) == "No open requests"
     assert counts_text(LeaderMinistry(1, "A", 1, 0)) == (
         "1 asking to join · 0 asking to leave"
