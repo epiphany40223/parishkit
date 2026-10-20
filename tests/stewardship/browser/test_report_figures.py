@@ -154,6 +154,25 @@ def test_unavailable_figures_come_back_by_themselves(page, component_origin):
     assert page_reads[0][1] == "passive"
 
 
+def test_slow_retry_pace_never_speeds_up_past_the_hour(page, component_origin):
+    """Past the hour's limit a watch slows to every 30 seconds, but a
+    region whose own pace is slower, here the unavailable figures' 60
+    seconds, keeps it."""
+    opened(page, component_origin, UNAVAILABLE)
+    reads = statuses(page, component_origin, FIGURES_RETRY)
+    # One jump past the limit fires the pending check once.
+    page.clock.fast_forward(61 * 60 * 1000)
+    recorded(page, reads, 1)
+    # Let its answer arrive, so the next check is scheduled from now.
+    page.wait_for_timeout(500)
+    page.clock.fast_forward(31000)
+    page.evaluate("() => true")  # One round trip after the clock jump.
+    page.wait_for_timeout(300)
+    assert len(reads) == 1
+    page.clock.fast_forward(30000)
+    recorded(page, reads, 2)
+
+
 def test_figures_status_pauses_while_hidden_and_catches_up(page, component_origin):
     """A hidden tab's figures status is never read; shown again, it is read
     at once."""

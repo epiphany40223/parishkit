@@ -58,7 +58,9 @@
 // A region may also set data-live-give-up="<ms>" (at most 3 hours) to
 // replace the one-hour limit; the limit then counts from the last poll that
 // brought new content, so a long send watched from well before it starts
-// keeps its pace. Past the limit the region is checked every SLOW_MS.
+// keeps its pace. Past the limit the region is checked every SLOW_MS, or
+// at its own fixed pace when that is slower (a figures status retrying
+// figures it could not read, every 60 s, #1586): slowing never speeds up.
 //
 // A region may hold an element marked [data-live-keep="<name>"] for a control
 // that must sit inside the status it answers but that a poll must never
@@ -382,14 +384,15 @@
     }
 
     function schedule() {
-      // The next check: the region's pace, or SLOW_MS once the watch has
-      // passed its limit. Nothing is scheduled while the tab is hidden; the
-      // visibilitychange and pageshow listeners below check again at once.
+      // The next check: the region's pace, or SLOW_MS (or a slower fixed
+      // pace) once the watch has passed its limit. Nothing is scheduled while
+      // the tab is hidden; the visibilitychange and pageshow listeners below
+      // check again at once.
       window.clearTimeout(timer);
       if (stopped || gone() || document.visibilityState !== "visible") return;
       const slow = asked - started > giveUp;
-      timer = window.setTimeout(check,
-        slow ? SLOW_MS : fixed || DELAYS[Math.min(attempt, DELAYS.length - 1)]);
+      timer = window.setTimeout(check, slow
+        ? Math.max(SLOW_MS, fixed) : fixed || DELAYS[Math.min(attempt, DELAYS.length - 1)]);
       attempt += 1;
     }
 
