@@ -109,9 +109,10 @@ def result(rows):
     }
 
 
-def document():
+def document(roster=False, **changes):
     """A queue export with a join, a leave, a request without details and a
-    Member the Family added on the form."""
+    Member the Family added on the form; ``roster`` is a Staff reader's file
+    (the roster-entry columns), ``changes`` override the third row."""
     rows = [
         row(JOIN, last_contact_at=CONTACTED),
         row(
@@ -134,6 +135,7 @@ def document():
             stage_label="To enter by hand",
             decision_label="Accepted (edited)",
             reviewed_ministry_name="Food pantry",
+            **changes,
         ),
         row(PROPOSED, member_name="New, Kid", member_duid=None),
     ]
@@ -149,12 +151,14 @@ def document():
         parish_name="Example Parish",
         requested_at=SUBMITTED,
         zone=CHICAGO,
+        roster=roster,
     )
 
 
 def test_the_file_holds_the_queue_columns_then_the_contact_details():
     """The worklist's columns in the pipeline's words (Stage, Decision and
-    Reviewer's value, #1684), then contacts; no Submitted.
+    Reviewer's value, #1684) with the roster-entry columns (R39 finding 2),
+    then contacts; no Submitted.
 
     The Administrator asked for the file without the Submitted time
     (2026-10-13), as the queue has no such column; the request page still
@@ -163,14 +167,20 @@ def test_the_file_holds_the_queue_columns_then_the_contact_details():
     """
     built = document()
     assert built.headings == HEADINGS
-    assert HEADINGS[:8] == (
+    assert HEADINGS[:14] == (
         "Member",
         "Member DUID",
+        "ParishSoft status",
+        "Family",
+        "Family DUID",
         "Ministry",
         "Request",
         "Stage",
         "Decision",
         "Reviewer's value",
+        "Replaced by a later response",
+        "Entered by",
+        "Entered at",
         "Last contact",
     )
     assert HEADINGS[-1] == "Current Ministry role"
@@ -211,6 +221,64 @@ def test_the_file_holds_the_queue_columns_then_the_contact_details():
     assert bare["Email"] == bare["Phones"] == bare["Age"] == "Unavailable"
     assert bare["Current Ministry role"] == ""
     assert proposed["Member DUID"] == "New Member"
+    # A Ministry leader's file (no ``roster``) leaves the roster-entry
+    # columns blank.
+    assert all(
+        line[name] == ""
+        for line in (joined, left, bare, proposed)
+        for name in ("Family", "Family DUID", "Entered by", "Entered at")
+    )
+
+
+def test_a_staff_file_carries_the_roster_entry_columns():
+    """Staff's file names each request's Family and, for a roster change,
+    whether a later response replaced it and who marked it entered, and
+    when; a Member no longer in ParishSoft has their status (R39 finding 2,
+    the retired Roster changes to enter file's columns)."""
+    marked = datetime(2054, 10, 9, 15, 0, tzinfo=UTC)
+    built = document(
+        roster=True,
+        family_name="Gone, Old and Ann",
+        family_duid=4321,
+        latest=False,
+        roster_entered=True,
+        roster_by="",
+        roster_at=marked,
+        source_mark=("Deceased in ParishSoft", "reason"),
+    )
+    joined, _left, bare, _proposed = (
+        dict(zip(HEADINGS, line, strict=True)) for line in built.rows
+    )
+    assert (bare["Family"], bare["Family DUID"]) == ("Gone, Old and Ann", "4321")
+    assert bare["ParishSoft status"] == "Deceased in ParishSoft"
+    assert bare["Replaced by a later response"] == "Yes"
+    assert bare["Entered by"] == "Former portal user"
+    assert bare["Entered at"] == marked.astimezone(CHICAGO)
+    assert joined["Replaced by a later response"] == joined["Entered by"] == ""
+
+
+def test_a_leader_file_blanks_the_roster_entry_cells_the_rows_carry():
+    """A Ministry leader's file (``roster=False``) leaves every roster-entry
+    cell blank even when its rows carry the values (R39 review): Family,
+    Family DUID, Replaced by a later response, Entered by and Entered at."""
+    built = document(
+        family_name="Gone, Old and Ann",
+        family_duid=4321,
+        latest=False,
+        roster_entered=True,
+        roster_by="staff@example.org",
+        roster_at=datetime(2054, 10, 9, 15, 0, tzinfo=UTC),
+    )
+    bare = dict(zip(HEADINGS, built.rows[2], strict=True))
+    assert bare["Stage"] == "To enter by hand"
+    for name in (
+        "Family",
+        "Family DUID",
+        "Replaced by a later response",
+        "Entered by",
+        "Entered at",
+    ):
+        assert bare[name] == "", name
 
 
 def test_the_file_names_its_scope_and_privacy_but_no_internal_reference():
@@ -631,7 +699,7 @@ def test_the_file_reads_the_queues_own_selection(monkeypatch):
     Members no longer in ParishSoft must stay out of the file (Administrator,
     2026-10-13). The queue's selection leaves them out by default (#1217), so
     the export must read it exactly as the queue does: never with
-    ``every_member``, which Roster changes to enter alone uses to list them.
+    ``every_member``, which only the roster rows use to list them.
     """
     calls = []
 

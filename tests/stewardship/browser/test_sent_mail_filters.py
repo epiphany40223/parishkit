@@ -92,29 +92,26 @@ def open_list(page, component_origin, width=1280, height=700):
 
 
 def test_the_bar_fits_one_row_and_wraps_on_a_phone(page, component_origin):
-    """At 1280 px every field and the button share one row; at 390 px the bar
-    wraps inside the screen and the page never scrolls sideways."""
+    """At 1280 px every field shares one row; at 390 px the bar wraps
+    inside the screen and the page never scrolls sideways.
+
+    Apply filters and Clear filters take the first of ui-conventions'
+    three steps that fits (#1776, ``test_filter_actions_place``): at
+    1280 px the five filters leave too little room beside them, so they
+    take a row of their own below.
+    """
     open_list(page, component_origin)
     # The fields line up at their tops (a date control can be a little
-    # taller than a text box), and Apply sits in the same row.
+    # taller than a text box).
     boxes = page.evaluate(
         """() => [...document.querySelectorAll(
-            '#table-filters > div, #table-filters > button')]
+            '#table-filters > div:not(.filter-actions)')]
             .map(node => { const box = node.getBoundingClientRect();
                 return [Math.round(box.top), Math.round(box.bottom)]; })"""
     )
-    assert len(boxes) == 6
-    tops = [top for top, _ in boxes[:5]]
+    assert len(boxes) == 5
+    tops = [top for top, _ in boxes]
     assert max(tops) - min(tops) <= 2, boxes
-    assert boxes[5][0] < min(bottom for _, bottom in boxes[:5]), boxes
-    # Apply filters lines up with the fields' controls, not their labels;
-    # Clear filters may wrap under it in the same cell (#1651).
-    apply_top, field_top = page.evaluate(
-        """() => ['#table-filters .filter-actions button', '#delivery-recipient']
-            .map(selector => Math.round(
-                document.querySelector(selector).getBoundingClientRect().top))"""
-    )
-    assert abs(apply_top - field_top) <= 4, (apply_top, field_top)
     # Every label, the Recipient's with its toggletip too, shares one line.
     labels = page.evaluate(
         """() => [...document.querySelectorAll(

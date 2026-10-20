@@ -79,7 +79,7 @@ LEADER_9 = dict(roles=("ministry_leader",), scope=(9,))
 
 def own_bodies(cursor):
     """Put 0119's own bodies back, in the caller's rolled-back transaction:
-    0144 (#1718) has since replaced both selections again."""
+    0140 (#1718) has since replaced both selections again."""
     for name in REPLACED:
         cursor.execute(definition(MIGRATION, name))
 

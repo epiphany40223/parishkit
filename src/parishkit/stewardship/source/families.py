@@ -382,9 +382,17 @@ def reconcile_source_families(
             reconcile_ministry_requests,
         )
         from parishkit.stewardship.responses.reconciliation import reconcile_proposals
+        from parishkit.stewardship.responses.refresh_checks import (
+            record_refresh_checks,
+        )
 
         reconcile_proposals(snapshot, corpus, campaign_id=campaign_id)
         reconcile_ministry_requests(snapshot, corpus, campaign_id=campaign_id)
+        # After reconciliation, so a request it just resolved is Confirmed
+        # already: the refresh re-evaluation of final and decided items.
+        record_refresh_checks(
+            snapshot, corpus, campaign_id=campaign_id, full=claim.phase == "full"
+        )
         # A Member the Family added, now in ParishSoft (#1670): the snapshot
         # is current, so its evidence is the one the link's guard checks.
         link_added_members(snapshot, campaign_id=campaign_id)

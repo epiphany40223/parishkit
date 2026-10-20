@@ -84,7 +84,9 @@ def _unchanged(snapshot, corpus, execution, claim, *, suppressions):
       generation raises here exactly as promotion would;
     - proposals and Ministry requests: reconciliation would change none
       (``proposals_current``, ``ministry_requests_current``), so a new
-      submission or a staff edit does not force a promotion;
+      submission or a staff edit does not force a promotion, and no final
+      or decided item's refresh check would change
+      (``refresh_checks_current``, #1689);
     - added Member links (#1670): none is waiting to be recorded
       (``added_members_current``, against the current snapshot, whose
       corpus equals this one).
@@ -101,6 +103,7 @@ def _unchanged(snapshot, corpus, execution, claim, *, suppressions):
         ministry_requests_current,
     )
     from parishkit.stewardship.responses.reconciliation import proposals_current
+    from parishkit.stewardship.responses.refresh_checks import refresh_checks_current
 
     from .families import family_statuses
     from .snapshot_models import SourceCurrent
@@ -121,6 +124,7 @@ def _unchanged(snapshot, corpus, execution, claim, *, suppressions):
     return (
         proposals_current(corpus, campaign_id=campaign.pk)
         and ministry_requests_current(corpus, campaign_id=campaign.pk)
+        and refresh_checks_current(snapshot, corpus, campaign_id=campaign.pk)
         and added_members_current(current.snapshot_id, campaign_id=campaign.pk)
         and population_current(
             campaign,

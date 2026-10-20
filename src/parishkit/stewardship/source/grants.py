@@ -153,6 +153,14 @@ def add_refresh_worker_grants(tables, columns):
     # Whether a proposal's conflict was resolved at its current ParishSoft
     # value (the accepted base), read by reconciliation and publication.
     tables["stewardship_proposal_review"] = {"SELECT"}
+    # The ParishSoft Member ID a New Member's mark recorded, which the refresh
+    # checks confirm it by (#1749): the mark's identity and the ID, never
+    # who made it or the note. The table is the users swap's closure table
+    # (runtime_grants.CLOSURE_TABLES), made again with its new column, so
+    # the column needs no CLOSURE_COLUMNS entry.
+    columns["stewardship_proposal_resolution"] = {
+        "SELECT": {"proposal_id", "expected_version", "action", "member_duid"}
+    }
     # Added Member links (#1670): promotion records them; its guard admits
     # INSERT alone, and only for a link the snapshot's evidence supports.
     # The worker also reads them through the Ministry selections.

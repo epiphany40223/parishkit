@@ -300,8 +300,8 @@ INFORMATION_TABLE = [
     (("current_actionable", True, False), Placement(Stage.TO_HANDLE, A)),
     (("current_actionable", True, True), Placement(Stage.HANDLED, A)),
     (("current_actionable", False, True), Placement(Stage.HANDLED, A)),
-    # The default cannot be told from a Staff choice: To review until
-    # #1685's migration records the Staff decision.
+    # The default cannot be told from a Staff choice: To review unless the
+    # latest Staff revision ignored it (#1685).
     (("current_actionable", False, False), Placement(Stage.TO_REVIEW)),
     (("current_actionable", False, False, True), Placement(Stage.IGNORED, IG)),
     (("superseded", True, True), Placement(Stage.HISTORY)),
@@ -324,9 +324,39 @@ def test_information_refuses_unknown_state():
 
 
 def test_live_answer_streams_start_to_review():
-    """Pledges and cannot-participate answers have no stored decision yet."""
+    """Pledges and undecided cannot-participate answers are To review."""
     assert pipeline.financial_placement() == Placement(Stage.TO_REVIEW)
     assert pipeline.cannot_participate_placement() == Placement(Stage.TO_REVIEW)
+
+
+CANNOT_PARTICIPATE_TABLE = [
+    ((None, False), Placement(Stage.TO_REVIEW)),
+    (("none", True), Placement(Stage.TO_REVIEW)),
+    (("accepted", True), Placement(Stage.TO_HANDLE, A)),
+    (("handled", True), Placement(Stage.HANDLED, A)),
+    (("ignored", True), Placement(Stage.IGNORED, IG)),
+    # A decision the Family's later answer broke holds no more (#1685).
+    (("accepted", False), Placement(Stage.TO_REVIEW)),
+    (("handled", False), Placement(Stage.TO_REVIEW)),
+    (("ignored", False), Placement(Stage.TO_REVIEW)),
+]
+
+
+@pytest.mark.parametrize(("state", "expected"), CANNOT_PARTICIPATE_TABLE)
+def test_cannot_participate_state_to_stage(state, expected):
+    """Each latest review decision, in force or not, reaches the spec's stage."""
+    decision, in_force = state
+    placement = pipeline.cannot_participate_placement(
+        decision=decision, in_force=in_force
+    )
+    assert placement == expected
+
+
+@pytest.mark.parametrize(("decision", "in_force"), [("approved", True), (None, 1)])
+def test_cannot_participate_refuses_unknown_state(decision, in_force):
+    """An unknown decision or a non-boolean in-force flag is refused."""
+    with pytest.raises(ValueError):
+        pipeline.cannot_participate_placement(decision=decision, in_force=in_force)
 
 
 # The spec's role-specific actions table, written out independently of the
@@ -595,3 +625,98 @@ def test_refresh_refuses_stages_it_does_not_re_evaluate(stage):
     """Closed stages and data ParishSoft does not hold have nothing to compare."""
     with pytest.raises(ValueError):
         refresh(stage, "new", "old", "new")
+
+
+# A final census change's latest refresh check (#1689): (decision,
+# execution, check) -> expected placement.
+CENSUS_CHECK_TABLE = [
+    (
+        ("approved", "resolved_external", None),
+        Placement(Stage.ENTERED_BY_HAND, Decision.ACCEPTED),
+    ),
+    (
+        ("approved", "resolved_external", "unchanged"),
+        Placement(Stage.ENTERED_BY_HAND, Decision.ACCEPTED),
+    ),
+    (
+        ("approved", "resolved_external", "confirmed"),
+        Placement(Stage.CONFIRMED, Decision.ACCEPTED),
+    ),
+    (
+        ("unreviewed", "resolved_external", "confirmed"),
+        Placement(Stage.CONFIRMED, Decision.ACCEPTED),
+    ),
+    (
+        ("approved", "resolved_external", "entered_incorrectly"),
+        Placement(Stage.ENTERED_INCORRECTLY, Decision.ACCEPTED),
+    ),
+    (
+        ("approved", "published", "confirmed"),
+        Placement(Stage.CONFIRMED, Decision.ACCEPTED),
+    ),
+    # A published change cannot be Entered incorrectly; an open one's check
+    # is not read (it has none).
+    (
+        ("approved", "published", "entered_incorrectly"),
+        Placement(Stage.UPDATED, Decision.ACCEPTED),
+    ),
+    (
+        ("approved", "pending", "confirmed"),
+        Placement(Stage.TO_ENTER_BY_HAND, Decision.ACCEPTED),
+    ),
+]
+
+
+@pytest.mark.parametrize(("state", "expected"), CENSUS_CHECK_TABLE)
+def test_census_refresh_check_moves_a_final_change(state, expected):
+    """Confirmed and Entered incorrectly come from the latest check, keeping
+    the decision; an unchanged check leaves the stage."""
+    decision, execution, check = state
+    assert (
+        pipeline.census_placement(
+            decision=decision,
+            execution=execution,
+            handling="manual",
+            entity_kind="member",
+            admin_value_set=False,
+            check=check,
+        )
+        == expected
+    )
+
+
+def test_census_refuses_an_unknown_check():
+    """A check outcome the census stream never stores is refused."""
+    with pytest.raises(ValueError):
+        pipeline.census_placement(
+            decision="approved",
+            execution="resolved_external",
+            handling="manual",
+            entity_kind="member",
+            admin_value_set=False,
+            check="ignored_now_matches",
+        )
+
+
+def test_ministry_refresh_confirmation_keeps_the_acceptance():
+    """A person's accepted request a refresh check Confirmed is Confirmed with
+    its Accepted; a refresh-resolved one has no reviewer."""
+    confirmed = pipeline.ministry_placement(
+        state="resolved",
+        outcome="joined",
+        source_resolved=False,
+        roster_entered=True,
+        confirmed=True,
+    )
+    assert confirmed == Placement(Stage.CONFIRMED, Decision.ACCEPTED, outcome="joined")
+    assert ministry("resolved", "joined", source=True) == Placement(
+        Stage.CONFIRMED, outcome="joined"
+    )
+    with pytest.raises(ValueError):
+        pipeline.ministry_placement(
+            state="resolved",
+            outcome="joined",
+            source_resolved=False,
+            roster_entered=False,
+            confirmed="yes",
+        )

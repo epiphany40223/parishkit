@@ -24,7 +24,7 @@ which the page and file say, rather than failing.
 A request is read under its current Ministry (``current_ministry``): the one
 review's Edit carried forward (#1684), whose leaders now decide it, else the
 Family's. Both selections list an edited request with its details under that
-Ministry only (frozen migration 0144, #1718), so a leader of only the
+Ministry only (frozen migration 0140, #1718), so a leader of only the
 carried-forward Ministry gets its details and a leader of only the Family's
 Ministry, who sees it read only, does not.
 

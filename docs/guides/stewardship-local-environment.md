@@ -100,6 +100,7 @@ never needs a copy of the repository.
 | `status` | The VM, every service's state and health, Docker disk use, VM disk use, and the `snapshot list` summary. |
 | `down` | Stop the services (90-second grace per container; a container Docker had to kill is named). Data is never removed. |
 | `sign-in --email E` | Print a one-time local test sign-in link for an Administrator address. |
+| `fake-parishsoft ...` | Change the fake ParishSoft's data, show it, or run a full refresh of it ([below](#changing-parishsoft-data)). Refused after `deploy --parishsoft real`. |
 | `ca` | Save Caddy's local root certificate to `~/.parishkit-local/caddy-root.crt` and print the `security add-trusted-cert` command. The script never changes trust itself. |
 
 Environment variables: `PARISHKIT_LOCAL_VM` (instance name),
@@ -395,6 +396,79 @@ testing --replace` keeps the migrated copy. `reset NAME` is still the way back
 to a snapshot's image and data together. Snapshots are full copies of the
 runtime root, a few hundred MB each: `snapshot delete NAME` removes one you no
 longer need.
+
+## Changing ParishSoft data
+
+pk-local's ParishSoft is the fake, serving the synthetic parish, so its data
+does not change by itself. To exercise what a refresh does when the office
+has changed something in ParishSoft (the review pipeline's
+[refresh re-evaluation](../specs/stewardship/review-pipeline/spec.md#baseline-refresh-re-evaluation):
+Confirmed, Entered incorrectly, Not seen in ParishSoft, Conflict, Not in
+ParishSoft), change the fake's data with `fake-parishsoft`, then refresh. The
+[specification](../specs/stewardship/local-environment/spec.md#fake-parishsoft-edits)
+has the details.
+
+Find the ids first. `show family ID` lists a Family's Members (with their
+ids) and pledges, `show member ID` a Member's fields and Ministries, and
+`show ministry ID` a roster:
+
+```sh
+tools/stewardship-local.sh fake-parishsoft show family 100003
+tools/stewardship-local.sh fake-parishsoft show member 500010
+```
+
+Then make the change ParishSoft should hold. Each command checks the edit
+against the parish (unknown records and fields, and values ParishSoft could
+not hold, are refused), records it and restarts the fake in a few seconds.
+The late-added Family the seed releases cannot be edited:
+
+```sh
+# A Member's census fields (an empty value clears a field; dates YYYY-MM-DD)
+tools/stewardship-local.sh fake-parishsoft member 500010 email=new@example.test mobile=555-010-2000 suffix=Jr.
+# A death (ParishSoft records both)
+tools/stewardship-local.sh fake-parishsoft member 500010 death=2026-10-01 status=Deceased
+# A move to another Family
+tools/stewardship-local.sh fake-parishsoft member 500010 family=100007
+# The Family's email opt-out, or another Family field
+tools/stewardship-local.sh fake-parishsoft family 100003 no_mail=true
+# Ministry joins and leaves (role=Member, Chairperson or Staff)
+tools/stewardship-local.sh fake-parishsoft roster add 9003 500010
+tools/stewardship-local.sh fake-parishsoft roster remove 9003 500010
+# The upcoming year's pledge (default: the campaign's pledge fund and its
+# financial period start; fund=ID and start=YYYY-MM-DD choose another), or
+# none to remove it
+tools/stewardship-local.sh fake-parishsoft pledge 100003 1800
+```
+
+`fake-parishsoft show` lists the recorded edits, `undo` drops the last one and
+`clear` all of them. Then run the full refresh, as Refresh from ParishSoft in
+the Admin portal would (pressing that button works too):
+
+```sh
+tools/stewardship-local.sh fake-parishsoft refresh
+```
+
+It waits until the refresh and the work it starts have finished. Only a full
+refresh sees an edit: the fake's change feed stays empty, as Production's
+does, so the scheduled quick updates find nothing.
+
+To produce each refresh outcome for an item a Family submitted (value A in
+ParishSoft before, C the answer being carried forward):
+
+- **Confirmed**: set ParishSoft to C (the Family's answer, or the
+  reviewer's edited value), then `refresh`.
+- **Entered incorrectly**: mark the item Entered by hand, set ParishSoft to a
+  third value, then `refresh`.
+- **Not seen in ParishSoft**: mark the item Entered by hand and change
+  nothing; `refresh` twice (the default number of full refreshes).
+- **Conflict**: leave the item To review or reviewed, set ParishSoft to a
+  third value, then `refresh`.
+- **Not in ParishSoft**: move the Member to another Family or record a death,
+  then `refresh`.
+
+Edits live in the fake's configuration file, which snapshots carry: `reset
+--seeded` (or a switch) brings back that snapshot's data, edits and all, so
+one pull request's edits never leak into the next check.
 
 ## Rehearsing a bulk send
 
