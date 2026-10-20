@@ -1743,6 +1743,19 @@ around it, two gates keep it in place instead:
   [activity groups](../admin-portal/spec.md#activity-groups).
   `data-locked-when` (#957) must match its rule the same way (`anyValue` in
   `ui-v1.js`) when it lands.
+- A `data-show-when` group may sit inside another, and a control is sent
+  only while every group around it is shown (#1785): showing the outer group
+  never enables a control its inner rule hides. Two controls in groups whose
+  rules exclude each other may share a name, so exactly one is sent; a
+  server refusal naming that field marks the one shown. A rule may also mark
+  a span (such as one wording of a label), which it hides or shows. Uses:
+  the census address editor's State, a drop-down for the United States and
+  free text otherwise, inside Add's "What changed" group, with its "ZIP
+  code" or "Postal code" label
+  ([Census changes](../reports/spec.md#automatic-census-review)); and Resolve
+  held messages' types Cancel cannot take, inside its Message types group,
+  where the server never offers Clear while such a type is held, so the rule
+  changes nothing there.
 - Every gate compares a value the same way (`sameValue` in `ui-v1.js`): a
   number field's value is read as a number, as the server reads it, so
   `04321` matches a rule's `4321` and an empty number field matches no
