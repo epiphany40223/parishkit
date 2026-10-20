@@ -218,10 +218,10 @@ def load_timeline(request, *, general, store):
     snapshot = request.timeline_snapshot
     family = snapshot.family
     code = None
-    # Every requester is an Administrator (the export's SQL and service
-    # admit no one else), and Administrators hold FAMILY_CODES, so this is
-    # true today; it stays so the file follows the page's own rule if a role
-    # without codes may ever export.
+    # Every requester is an Administrator or Staff (the export's SQL and
+    # service admit no one else, #1799), and both hold FAMILY_CODES, so this
+    # is true today; it stays so the file follows the page's own rule if a
+    # role without codes may ever export.
     hidden = not allows(
         current_principal(store, request.requester_id), Capability.FAMILY_CODES
     )
