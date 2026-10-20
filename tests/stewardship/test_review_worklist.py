@@ -637,3 +637,25 @@ def test_a_row_with_its_own_entered_fields_gets_its_own_dialog():
     plain = made(shown=[rows()[0] | {"by_hand": True}]).rows[0]
     assert not plain["offers_entered"]
     assert {icon["dialog"] for icon in plain["icons"]} >= {"census-decide-dialog"}
+
+
+def test_a_terminal_undo_says_where_the_item_goes():
+    """Back to review's dialog on a terminal stage names the step and stage.
+
+    Updated in ParishSoft is undone in the portal only, which it says
+    (#1840).
+    """
+
+    entered = Placement(Stage.ENTERED_BY_HAND, Decision.ACCEPTED)
+    assert worklist.undo_body("census", entered, by_hand=True) == (
+        "Entered by hand is undone: the item goes back to To enter by hand, "
+        "with its decision kept. Say why."
+    )
+    assert worklist.undo_body("ministry", Placement(Stage.CONFIRMED)) == (
+        "Confirmed is undone: the item goes back to To review. Say why."
+    )
+    updated = worklist.undo_body("census", Placement(Stage.UPDATED, Decision.ACCEPTED))
+    assert updated.startswith(
+        "Updated in ParishSoft is undone: the item goes back to Ready to update"
+    )
+    assert "Nothing is written to ParishSoft" in updated

@@ -534,11 +534,35 @@ ROLE_ACTIONS = MappingProxyType(
 )
 LEADER_SCOPED = frozenset({Stream.MINISTRY})
 
+# Stages an item reaches by a step after its decision (spec, "Undoing a
+# terminal stage", #1840). None is final: Back to review undoes the step,
+# with a required note, for Staff and Administrators only, and the item
+# returns to the stage it held just before it (``undo_stage``). Updating
+# (a run in flight) is not terminal and offers nothing.
+TERMINAL_STAGES = frozenset(
+    {
+        Stage.ENTERED_BY_HAND,
+        Stage.ENTERED_INCORRECTLY,
+        Stage.HANDLED,
+        Stage.UPDATED,
+        Stage.CONFIRMED,
+    }
+)
+# The streams whose services and SQL guards already record that undo. Each
+# stream's slice of #1840 adds itself here, so a page never offers an undo
+# its stream's guard would refuse; Census changes' Entered incorrectly
+# already had its Back to review (#1737) before.
+TERMINAL_UNDO_STREAMS = frozenset()
+# Roles that may undo a terminal step: Ministry leaders never see those
+# stages (spec, "Role-specific actions").
+_TERMINAL_ROLES = frozenset({"staff", "administrator"})
+
 # What each stage offers before the reader's role is considered. Edit,
 # Accept and Ignore decide an undecided item (a Conflict is decided again
 # against ParishSoft's new value); Back to review undoes a decision before
-# its update starts. Entered by hand on a To review census row accepts and
-# marks in one step (decision 2). Start update is the run over Ready items.
+# its update starts, and a terminal step after it. Entered by hand on a To
+# review census row accepts and marks in one step (decision 2). Start
+# update is the run over Ready items.
 _STAGE_ACTIONS = MappingProxyType(
     {
         Stage.TO_REVIEW: frozenset({Action.ACCEPT, Action.EDIT, Action.IGNORE}),
@@ -552,8 +576,46 @@ _STAGE_ACTIONS = MappingProxyType(
             {Action.BACK_TO_REVIEW, Action.ENTERED_BY_HAND}
         ),
         Stage.TO_HANDLE: frozenset({Action.BACK_TO_REVIEW, Action.HANDLED}),
+        Stage.ENTERED_BY_HAND: frozenset({Action.BACK_TO_REVIEW}),
+        Stage.HANDLED: frozenset({Action.BACK_TO_REVIEW}),
+        Stage.UPDATED: frozenset({Action.BACK_TO_REVIEW}),
+        Stage.CONFIRMED: frozenset({Action.BACK_TO_REVIEW}),
     }
 )
+
+
+def undo_stage(stream, placement, *, by_hand=False):
+    """Where Back to review sends an item at ``placement`` (spec, #1840).
+
+    Before a terminal step it undoes the decision: To review. On a terminal
+    stage it undoes only the step, so the decision behind it stays in force
+    and the item returns to the stage that decision gives: To handle after
+    Handled, Ready to update after Updated in ParishSoft, otherwise To enter
+    by hand, or Ready to update for a census change the update run carries
+    (``by_hand`` is ``census_by_hand``). An item no decision was behind (a
+    change ParishSoft already held, a Ministry request the refresh
+    resolved) returns to To review.
+    """
+    stage = placement.stage
+    if stage not in TERMINAL_STAGES or placement.decision is None:
+        return Stage.TO_REVIEW
+    if stage is Stage.HANDLED:
+        return Stage.TO_HANDLE
+    if stage is Stage.UPDATED or (Stream(stream) is Stream.CENSUS and not by_hand):
+        return Stage.READY_TO_UPDATE
+    return Stage.TO_ENTER_BY_HAND
+
+
+def undo_needs_note(stream, stage):
+    """Whether Back to review from ``stage`` of ``stream`` needs a note.
+
+    Reopening an Ignored item always did; undoing a terminal step does too
+    (spec, "Undoing a terminal stage"), on every stream that records it.
+    """
+    stage = Stage(stage)
+    return stage is Stage.IGNORED or (
+        stage in TERMINAL_STAGES and Stream(stream) in TERMINAL_UNDO_STREAMS
+    )
 
 
 def role_actions(stream, roles, *, leads=False):
@@ -582,9 +644,16 @@ def stage_actions(stream, stage, *, by_hand=False):
     one step (decision 2).
     """
     stage = Stage(stage)
+    stream = Stream(stream)
     actions = _STAGE_ACTIONS.get(stage, frozenset())
-    if Stream(stream) is Stream.CENSUS and stage is Stage.TO_REVIEW and by_hand:
+    if stream is Stream.CENSUS and stage is Stage.TO_REVIEW and by_hand:
         actions |= {Action.ENTERED_BY_HAND}
+    if (
+        stage in TERMINAL_STAGES
+        and stream not in TERMINAL_UNDO_STREAMS
+        and not (stream is Stream.CENSUS and stage is Stage.ENTERED_INCORRECTLY)
+    ):
+        actions -= {Action.BACK_TO_REVIEW}
     return actions
 
 
@@ -594,8 +663,11 @@ def allowed_actions(stream, stage, roles, *, leads=False, by_hand=False):
     Actions a role does not allow are not shown at all (not disabled), so
     a leader and Staff see different icon sets on the same table. The
     server and database still enforce each action where the stream's rules
-    are enforced today; this only decides what is offered.
+    are enforced today; this only decides what is offered. A terminal
+    step's undo is Staff's and Administrators', never a leader's.
     """
+    if Stage(stage) in TERMINAL_STAGES:
+        roles = set(roles) & _TERMINAL_ROLES
     return stage_actions(stream, stage, by_hand=by_hand) & role_actions(
         stream, roles, leads=leads
     )

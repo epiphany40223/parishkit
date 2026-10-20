@@ -27,6 +27,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SPEC = ROOT / "docs/specs/stewardship/review-pipeline/spec.md"
 
 A, AE, IG = Decision.ACCEPTED, Decision.ACCEPTED_EDITED, Decision.IGNORED
+ADD = Decision.ADDED
 
 
 def spec_vocabulary():
@@ -490,6 +491,56 @@ def test_row_actions_are_stage_and_role(stream, stage, roles, manual, expected):
         pipeline.allowed_actions(stream, stage, roles, leads=True, by_hand=manual)
         == expected
     )
+
+
+# (stream, placement, by_hand) -> where Back to review sends the item (#1840).
+UNDO_TABLE = [
+    ("census", Placement(Stage.TO_ENTER_BY_HAND, A), True, Stage.TO_REVIEW),
+    ("census", Placement(Stage.IGNORED, IG), True, Stage.TO_REVIEW),
+    ("census", Placement(Stage.ENTERED_BY_HAND, A), True, Stage.TO_ENTER_BY_HAND),
+    ("census", Placement(Stage.ENTERED_INCORRECTLY, AE), True, Stage.TO_ENTER_BY_HAND),
+    ("census", Placement(Stage.CONFIRMED, A), True, Stage.TO_ENTER_BY_HAND),
+    ("census", Placement(Stage.CONFIRMED, A), False, Stage.READY_TO_UPDATE),
+    ("census", Placement(Stage.CONFIRMED), False, Stage.TO_REVIEW),
+    ("census", Placement(Stage.UPDATED, A), False, Stage.READY_TO_UPDATE),
+    ("census", Placement(Stage.ENTERED_BY_HAND, ADD), True, Stage.TO_ENTER_BY_HAND),
+    ("ministry", Placement(Stage.ENTERED_BY_HAND, A), False, Stage.TO_ENTER_BY_HAND),
+    ("ministry", Placement(Stage.CONFIRMED), False, Stage.TO_REVIEW),
+    ("financial", Placement(Stage.CONFIRMED, AE), False, Stage.TO_ENTER_BY_HAND),
+    ("financial", Placement(Stage.CONFIRMED), False, Stage.TO_REVIEW),
+    ("cannot_participate", Placement(Stage.HANDLED, A), False, Stage.TO_HANDLE),
+    ("additional_information", Placement(Stage.HANDLED, A), False, Stage.TO_HANDLE),
+]  # fmt: skip
+
+
+@pytest.mark.parametrize(("stream", "placement", "manual", "expected"), UNDO_TABLE)
+def test_back_to_review_returns_to_the_stage_before_the_step(
+    stream, placement, manual, expected
+):
+    """A terminal step's undo keeps the decision; a decision's undo reviews."""
+    assert pipeline.undo_stage(stream, placement, by_hand=manual) is expected
+
+
+@pytest.mark.parametrize("stage", sorted(pipeline.TERMINAL_STAGES))
+def test_terminal_undo_is_offered_once_a_stream_records_it(monkeypatch, stage):
+    """Back to review on a terminal stage: Staff and Administrators, a note.
+
+    A stream offers it only once its service and guard record it
+    (``TERMINAL_UNDO_STREAMS``), and never to a Ministry leader.
+    """
+    monkeypatch.setattr(pipeline, "TERMINAL_UNDO_STREAMS", frozenset(Stream))
+    for stream in Stream:
+        offered = pipeline.allowed_actions(stream, stage, STAFF, by_hand=True)
+        assert Action.BACK_TO_REVIEW in offered
+        assert pipeline.undo_needs_note(stream, stage)
+        leader = pipeline.allowed_actions(
+            stream, stage, {"ministry_leader"}, leads=True, by_hand=True
+        )
+        assert leader == set()
+    monkeypatch.setattr(pipeline, "TERMINAL_UNDO_STREAMS", frozenset())
+    assert not pipeline.undo_needs_note("financial", stage)
+    assert pipeline.undo_needs_note("financial", Stage.IGNORED)
+    assert not pipeline.undo_needs_note("financial", Stage.TO_ENTER_BY_HAND)
 
 
 def test_confirmable_covers_the_handling_registry():

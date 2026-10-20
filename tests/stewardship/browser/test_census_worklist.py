@@ -145,8 +145,8 @@ def test_entered_by_hand_on_a_to_review_row_is_one_step(page, component_origin):
     has_text(dialog.locator("h2"), f"Mark {name(1)} entered by hand?")
     has_text(
         dialog.locator("[data-confirm-body]"),
-        "Record that you typed this into ParishSoft. Check ParishSoft first: "
-        "this is final.",
+        "Record that you typed this into ParishSoft. Check ParishSoft first; "
+        "Back to review undoes the mark.",
     )
     dialog.get_by_role("button", name="Record").click()
     has_text(page.locator("#census-notice"), ENTERED_NOTICE)
@@ -442,8 +442,8 @@ def test_a_new_members_entered_by_hand_asks_for_its_member_id(
     )
     has_text(
         dialog.locator("[data-confirm-body]"),
-        "Record that you typed this into ParishSoft. Check ParishSoft first: "
-        "this is final.",
+        "Record that you typed this into ParishSoft. Check ParishSoft first; "
+        "Back to review undoes the mark.",
     )
     member_id = dialog.get_by_label("ParishSoft Member ID (optional)")
     assert member_id.input_value() == ""

@@ -35,6 +35,8 @@ from parishkit.stewardship.pipeline import (
     allowed_actions,
     may_add,
     role_actions,
+    undo_needs_note,
+    undo_stage,
 )
 from parishkit.stewardship.web.refusals import Refusal
 
@@ -190,18 +192,21 @@ NOW_MATCHES = "ParishSoft now matches the Family's answer."
 EVERY_STAGE = "all"
 
 
-# What a row's dialog says about each action. A decision can be undone with
-# Back to review until the item's update starts; a mark is final.
-DECIDE_BODY = (
-    "Record this decision. Back to review undoes it until the item's update starts."
-)
+# What a row's dialog says about each action. Back to review undoes a
+# decision, and a mark or other terminal step after it (spec, "Undoing a
+# terminal stage", #1840): nothing is final.
+DECIDE_BODY = "Record this decision. Back to review undoes it."
 BODIES = {
     Action.ENTERED_BY_HAND: (
-        "Record that you typed this into ParishSoft. Check ParishSoft first: "
-        "this is final."
+        "Record that you typed this into ParishSoft. Check ParishSoft first; "
+        "Back to review undoes the mark."
     ),
-    Action.HANDLED: "Record that this was handled. This is final.",
-    Action.BACK_TO_REVIEW: "The item goes back to To review, to be decided again.",
+    Action.HANDLED: "Record that this was handled. Back to review undoes it.",
+    Action.BACK_TO_REVIEW: (
+        "A decided item goes back to To review, to be decided again; a marked, "
+        "handled or confirmed one goes back to the stage before that step, "
+        "with its decision kept."
+    ),
 }
 # What an Entered incorrectly row's dialogs say (#1737): the two ways to fix
 # it, as the review pipeline spec names them.
@@ -216,6 +221,15 @@ INCORRECT_BODIES = {
     ),
 }
 REOPEN_BODY = "The ignored item goes back to To review. Say why it is reopened."
+# What Back to review on a terminal stage says (#1840): which step it undoes
+# and where the item goes. Updated in ParishSoft is undone in this portal
+# only, which the dialog must say.
+UNDO_BODY = "{step} is undone: the item goes back to {stage}{kept}. Say why."
+UNDO_KEPT = ", with its decision kept"
+UNDO_PORTAL_ONLY = (
+    " Nothing is written to ParishSoft: only this portal's record changes, and "
+    "a later update reads ParishSoft again first."
+)
 REOPEN = "reopen"
 # The choice of an action whose decision records no note (a Ministry roster
 # tick has none): its dialog hides the note (ui-v1.js data-note-field), and
@@ -248,6 +262,24 @@ def selected_actions(placement):
     if placement.stage in MARK_ICON:
         chosen.add(MARK_ICON[placement.stage])
     return chosen
+
+
+def undo_body(stream, placement, *, by_hand=False):
+    """What Back to review's dialog says on a terminal stage (#1840).
+
+    It names the step undone and the stage the item returns to
+    (``pipeline.undo_stage``), and, for Updated in ParishSoft, that
+    nothing is written to ParishSoft.
+    """
+    stage = undo_stage(stream, placement, by_hand=by_hand)
+    body = UNDO_BODY.format(
+        step=placement.stage.label,
+        stage=stage.label,
+        kept=UNDO_KEPT if stage is not Stage.TO_REVIEW else "",
+    )
+    if placement.stage is Stage.UPDATED:
+        body += UNDO_PORTAL_ONLY
+    return body
 
 
 def _selected_title(action, placement, undo):
@@ -338,9 +370,10 @@ def bulk_buttons(stream, roles, *, items="items", silent=frozenset()):
                 "done_one": "{name} " + words.done,
                 "done_many": f"{{count}} {items} {words.done}",
                 "body": BODIES.get(action, BULK_BODY),
-                # Reopening an ignored item needs a reason (spec, "Reviewed
-                # stage"): the note is required while a ticked row is
-                # Ignored (its box's data-confirm-choice).
+                # Reopening an ignored item, or undoing a terminal step,
+                # needs a reason (spec, "Reviewed stage", "Undoing a
+                # terminal stage"): the note is required while a ticked
+                # row needs one (its box's data-confirm-choice).
                 "choice": NO_NOTE
                 if action in silent
                 else REOPEN
@@ -499,7 +532,8 @@ def _decorate(stream, row, roles, prefix, columns, silent=frozenset()):
         )
     )
     key = uuid4()
-    reopen = placement.stage is Stage.IGNORED
+    # Reopening an Ignored item, and undoing a terminal step, need a note.
+    reopen = undo_needs_note(stream, placement.stage)
     own_entered = bool(row.get("entered_template"))
     for icon in icons:
         if icon["selected"]:
@@ -525,9 +559,14 @@ def _decorate(stream, row, roles, prefix, columns, silent=frozenset()):
         bodies = (
             INCORRECT_BODIES if placement.stage is Stage.ENTERED_INCORRECTLY else BODIES
         )
-        icon["body"] = (
-            REOPEN_BODY if icon["choice"] else bodies.get(action, DECIDE_BODY)
-        )
+        if back and placement.stage is Stage.IGNORED:
+            icon["body"] = REOPEN_BODY
+        elif back and reopen:
+            icon["body"] = undo_body(
+                stream, placement, by_hand=row.get("by_hand", False)
+            )
+        else:
+            icon["body"] = bodies.get(action, DECIDE_BODY)
     remark = row.get("remark")
     if remark is not None and any(
         icon["action"] == Action.ENTERED_BY_HAND and icon["selected"] for icon in icons
@@ -541,7 +580,8 @@ def _decorate(stream, row, roles, prefix, columns, silent=frozenset()):
         if not icon["selected"] and not icon.get("remark")
     ]
     row["kinds"] = " ".join(kind for kind in kinds if Action(kind) in BULK)
-    # A bulk Back to review asks for a note while a ticked row is Ignored.
+    # A bulk Back to review asks for a note while a ticked row is Ignored
+    # or at a terminal stage.
     row["choice"] = REOPEN if reopen else ""
     # Each identity cell: its value, its column and the item page it opens
     # (its column's ``link``), if any.

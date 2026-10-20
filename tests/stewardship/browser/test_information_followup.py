@@ -142,7 +142,7 @@ def test_accept_then_handled_in_place(page, component_origin):
     icon(page, 0, "Mark", " handled").click()
     has_text(
         dialog.locator("[data-confirm-body]"),
-        "Record that this was handled. This is final.",
+        "Record that this was handled. Back to review undoes it.",
     )
     dialog.get_by_role("button", name="Record").click()
     has_text(page.locator("#information-notice"), HANDLED_NOTICE)
