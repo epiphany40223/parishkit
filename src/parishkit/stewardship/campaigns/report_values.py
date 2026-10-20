@@ -67,7 +67,8 @@ def _date(value):
         parsed = date.fromisoformat(value)
     except (TypeError, ValueError):
         invalid()
-    if parsed.isoformat() != value or parsed == date.max:
+    # The first and last dates leave no room for the day before or after.
+    if parsed.isoformat() != value or parsed in (date.min, date.max):
         invalid()
     return parsed
 
@@ -258,6 +259,27 @@ def report_values(values):
         invalid()
     skip_dates(values["skip_dates"])
     _pauses(values["paused_ranges"])
+    return values
+
+
+def schedule_fields(values):
+    """Validate only what a report's sends depend on; return the values.
+
+    The schedule, slot basis, skip dates and pause intervals. The schedule
+    evaluator checks just these, so a later change to the block registry or
+    the content rules (checked in full on save) can never stop a stored
+    report's sends from being planned.
+    """
+    if type(values) is not dict or values.get("kind") != "report":
+        invalid()
+    try:
+        _schedule(values["schedule"])
+        if values["slot_basis"] not in SLOT_BASES:
+            invalid()
+        skip_dates(values["skip_dates"])
+        _pauses(values["paused_ranges"])
+    except KeyError:
+        invalid()
     return values
 
 

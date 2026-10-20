@@ -135,6 +135,7 @@ def change(values, path, value):
         (("schedule", "weekdays"), [0]),
         (("schedule", "from"), "campaign_end"),
         (("schedule", "until"), "2026-02-30"),
+        (("schedule", "from"), "0001-01-01"),
         (("schedule", "time"), "7:00"),
         (("schedule", "time"), "07:00:00+00:00"),
         (("as_of",), "now"),
