@@ -807,8 +807,7 @@ open the [active parishioner family directory](../reports/spec.md#active-parishi
 directory's search query (the Family name with its heads of household, DUID
 and address) and its permission checks, so results show only Families the role
 may already see, and a result opens that Family's
-[Timeline](../reports/spec.md#timeline) (the summary only for
-Staff). It searches by a CSRF-protected POST, never a GET, so the search text
+[Timeline](../reports/spec.md#timeline). It searches by a CSRF-protected POST, never a GET, so the search text
 stays out of URLs, logs and browser history, as the directory's code search
 does.
 Results appear in place under the box as the reader types: a search starts
@@ -1171,7 +1170,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `ministry_followup_item` | Follow-up request | Ministry requests | Administrator, Staff, Ministry leader | Ministry follow-up (one request) | `/admin/reports/ministries/follow-up/<request>/` | (same) | Return to the queue keeps its filters and page. Status, notes and outcome only; no Assign to (#552). Shows the Member's contact details (#1157). A resolved join or leave's Entered in ParishSoft tick posts to `follow-up/<request>/roster/` (#528). |
 | `ministry_roster` | (retired) | (retired) | Administrator, Staff | Roster changes to enter (#528, #1660) | `/admin/reports/ministries/follow-up/roster/` | (retired; 404) | Folded into Ministry requests with no redirect (R39 finding 2): its rows are Ministry requests' Stages To enter by hand and Entered by hand ([roster entry](#roster-entry-on-ministry-requests)). |
 | `family_directory` | Active parishioner family directory | Menu: Active parishioner family directory | Administrator, Staff | (same) | `/admin/reports/families/` | (same) |  |
-| `timeline` | Timeline | Active parishioner family directory | Administrator, Staff | (new, #477; renamed from Family timeline, #1570) | `/admin/reports/families/<family>/` | (same) | One Family's [Timeline](../reports/spec.md#timeline); opened from every Family name the shared `family_link` helper draws (directory rows, Find a Family, NAV-19, and every other Admin table that names a Family; see the [Timeline](../reports/spec.md#timeline) for the list); `<family>` is the opaque campaign record id. Staff see the summary only. It is the Family's [information hub](#family-information-hub): a header strip above tabs (`?tab=`), on this one address. |
+| `timeline` | Timeline | Active parishioner family directory | Administrator, Staff | (new, #477; renamed from Family timeline, #1570) | `/admin/reports/families/<family>/` | (same) | One Family's [Timeline](../reports/spec.md#timeline); opened from every Family name the shared `family_link` helper draws (directory rows, Find a Family, NAV-19, and every other Admin table that names a Family; see the [Timeline](../reports/spec.md#timeline) for the list); `<family>` is the opaque campaign record id. Staff see the full timeline too (#1774); only Administrators export it. It is the Family's [information hub](#family-information-hub): a header strip above tabs (`?tab=`), on this one address. |
 | `emailed_reports` | Emailed reports | Menu: Emailed reports | Administrator, Staff | (new) | `/admin/reports/emailed/` | (same) | New page (decision 7, ADM-12.17): the current campaign's daily reports (and weekly reports for Administrators), newest first, each linking its page; Send a weekly report now is on it and returns to it, linking the report it produced. Retired with no redirect by [Report emails](../report-emails/spec.md#delivery-plan) delivery PR 5 (#1786); until it lands this page is current, and the Report emails page replaces it. |
 | `weekly_digest_manual` | Send a weekly report now | Emailed reports | Administrator | Request a manual information report; Manual information report | `/admin/reports/emailed/weekly/new/` | (same) | Was the Manual information report menu entry; now a button on Emailed reports, where it ends, linking the report it produced (or its background task until it is ready). Its address named the campaign until #865; that old address is gone, with no redirect (#864). Retired with no redirect by [Report emails](../report-emails/spec.md#delivery-plan) delivery PR 5 (#1786); until it lands this page is current, and the Report emails page replaces it. |
 | `weekly_digest_snapshot` | Weekly report | Report emails | Administrator, Staff | Weekly information report; Weekly summary | `/admin/reports/emailed/weekly/<snapshot>/` | (same) | Its old address, which weekly report emails sent before NAV-12 link, is gone, with no redirect (#864). |
@@ -7133,13 +7132,11 @@ neither submits, signs out nor reaches a step further than before leaves the
 value where it was. For Administrators the value comes from the lines the
 Timeline already reads, so it adds no statement.
 
-Administrators and Staff both see it (Administrator decision, 2026-10-18).
-Staff still see only the Timeline's summary, not the full timeline
-([Timeline](../reports/spec.md#timeline) access): for them the page reads
-the sign-ins, session ends and engagement record the value comes from, and
-keeps only the lines that can be the Last portal action, so no other line of
-the timeline reaches their page. The About panel explains the value to both
-roles.
+Administrators and Staff both see it (Administrator decision, 2026-10-18),
+and since 2026-10-19 both see the full timeline it comes from
+([Timeline](../reports/spec.md#timeline) access,
+[#1774](https://github.com/epiphany40223/parishkit/issues/1774)). The About
+panel explains the value to both roles.
 
 ### Hub tabs
 
@@ -7148,8 +7145,9 @@ roles.
 information", with the tabs in this order:
 
 1. **Timeline**: everything the Timeline page showed before the hub (its
-   summary, its timeline table with the filter bar and its export), for each
-   role as before. It is the first tab, so an address without `?tab=` opens
+   summary, its timeline table with the filter bar and its export), with
+   the review lines added and Staff seeing the full timeline (#1774). It is
+   the first tab, so an address without `?tab=` opens
    it, and its filters, When sort and export work inside its panel, in place,
    exactly as before. Its filters stay its own: a tab's link carries only
    `tab`.
@@ -7181,8 +7179,10 @@ more; a Member tab in a campaign with Ministry stewardship but no census
 opens on its Ministry joins and leaves.
 
 Administrators and Staff both see every tab, since both review these
-streams; Ministry leaders cannot open the page. Within the Timeline tab each
-role sees what it saw before.
+streams; Ministry leaders cannot open the page. Both roles see the whole
+Timeline tab, with its
+[review lines](../reports/spec.md#timeline-review-lines), except its
+export, which stays Administrator-only for now (#1774).
 
 ### Hub content tabs
 
