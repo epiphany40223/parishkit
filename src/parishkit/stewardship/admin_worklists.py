@@ -310,11 +310,9 @@ def _recorded(stream, action):
 
     if stream is INFORMATION:
         from .responses.information import records
-
-        return records(Action(action))
-    from .responses.limitation_review import DECISIONS
-
-    return [{"decision": DECISIONS[Action(action)][0]}]
+    else:
+        from .responses.limitation_review import records
+    return records(Action(action))
 
 
 def _model(stream):
@@ -463,13 +461,6 @@ def _decide(stream, service, actor, decision, note):
         raise InvalidFollowup([problem("note", undo)]) from None
     except ReopenNeedsNote:
         raise InvalidFollowup([problem("note", reopen)]) from None
-    except ValueError:
-        # Limitations refuses a reopening with no note as a plain
-        # ValueError; every other input was checked before, so only an
-        # empty note can be refused here.
-        if stream is LIMITATIONS and not note:
-            raise InvalidFollowup([problem("note", reopen)]) from None
-        raise
 
 
 def decide(stream, caller, service, versions, *, action, note, request_key, context):

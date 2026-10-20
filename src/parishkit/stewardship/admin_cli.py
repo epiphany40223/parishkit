@@ -7662,9 +7662,9 @@ def _worklist_decide(stream, args, context, runtime):
     The page's own role check comes first, so a Ministry leader is
     ``denied`` before any input or prompt. Without ``--request-key`` a new
     key is made and written to standard error before anything is done.
-    Handled is final, so, as a decision that cannot be undone, it asks
-    first (or takes ``--yes``); the others can be changed again and ask
-    nothing.
+    Every decision can be changed again, Handled too (Back to review with a
+    note, #1840), so none asks first; ``--yes`` is still accepted, and a
+    note read from standard input needs it.
     """
     from . import admin_worklists
     from .web.review_worklist import MAX_NOTE
@@ -7680,14 +7680,6 @@ def _worklist_decide(stream, args, context, runtime):
     # Refused before the prompt: nothing is asked about a decision the page
     # could not post (too many items, a malformed item, a long note).
     admin_worklists.check_choice(stream, versions, note)
-    if args.action == "handled":
-        confirm(
-            context,
-            (
-                f"Mark {len(versions)} {stream.items} handled.",
-                "Handled is final: it cannot be undone.",
-            ),
-        )
     return admin_worklists.decide(
         stream,
         context["caller"],
@@ -7770,7 +7762,7 @@ def _decide_options(chosen, source):
             "--action",
             required=True,
             choices=DECIDE_ACTIONS,
-            help="accept, ignore, back_to_review or handled (final)",
+            help="accept, ignore, back_to_review or handled",
         )
         parser.add_argument(
             "--item",
@@ -7784,8 +7776,9 @@ def _decide_options(chosen, source):
         parser.add_argument(
             "--note",
             default="",
-            help="an optional note (required to reopen an ignored item), or - "
-            "to read it from standard input (which then needs --yes)",
+            help="an optional note (required to reopen an ignored item or to "
+            "undo Handled), or - to read it from standard input (which then "
+            "needs --yes)",
         )
         _request_key_option(parser)
 
@@ -7797,8 +7790,7 @@ def _worklist_specs():
 
     ``information list`` is a passive read any session may run, as
     ``followup information-show``; the ``decide`` commands are keyed and
-    full scope, and neither privileged nor asking except for Handled, as on
-    the pages.
+    full scope, and neither privileged nor asking, as on the pages.
     """
     from .admin_worklists import InformationList, WorklistDecide
 
@@ -7825,7 +7817,8 @@ def _worklist_specs():
             WorklistDecide.field_names(),
             11,
             options=(_decide_options(_chosen_request, "information list"),),
-            # Only Handled, which is final, asks.
+            # Nothing asks (Handled can be undone, #1840); --yes stays, as a
+            # note read from standard input needs it.
             prompts=True,
             request_key=True,
         ),

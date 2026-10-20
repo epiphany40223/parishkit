@@ -721,6 +721,168 @@ def test_limitation_decisions_follow_the_resubmission_rule(response_service, goo
             cursor.execute(statement, [again.pk])
 
 
+def answer_undo_row(actor, family, note):
+    """Handled's undo of Member 3's answer written directly, at its version."""
+    latest = (
+        LimitationReview.objects.filter(family_id=family.pk, kind="member")
+        .order_by("-expected_version")
+        .first()
+    )
+    return LimitationReview.objects.create(
+        actor_id=actor,
+        family_id=family.pk,
+        submission_id=FamilyCampaign.objects.get(pk=family.pk).effective_submission_id,
+        kind="member",
+        member_key="3",
+        expected_version=latest.expected_version + 1,
+        request_key=uuid4(),
+        decision="accepted",
+        note=note,
+    )
+
+
+def test_back_to_review_undoes_a_handled_answer(response_service, google):
+    """Handled's undo (#1840): an accepted row with a note, To handle again.
+
+    The service and the guard both need a note; a Ministry leader and a
+    stale version are refused. The undo is one more immutable row, so the
+    history keeps the Handled one, the answer's version advances and the
+    counts place it as To handle; Handled again marks it afresh, and an
+    answer given again unchanged keeps its Handled, which can be undone
+    the same way. A repeat of the undo's key replays it.
+    """
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.accounts import admin_context
+    from parishkit.stewardship.accounts.policy import Principal
+    from parishkit.stewardship.reports.limitation_worklist import (
+        answer_rows,
+        at_stage,
+    )
+
+    from .test_census_resolution_postgresql import leader
+
+    harness = response_service
+    start(harness)
+    harness = activate_response_service(harness)
+    first = submit_live(harness, cannot_serve=True)
+    actor = staff_actor()
+    family = FamilyCampaign.objects.get(pk=first.family_id)
+    member = answer_id(family.family_duid, "member", "3")
+    decide_answer(harness, actor, Action.ACCEPT, member, 0)
+    (handled,) = decide_answer(harness, actor, Action.HANDLED, member, 1)
+    assert limitation_stage(handled).stage is Stage.HANDLED
+    for note in ("", "  "):
+        with pytest.raises(UndoNeedsNote):
+            decide_answer(harness, actor, Action.BACK_TO_REVIEW, member, 2, note=note)
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        pytest.raises(DatabaseError, match="Limitation review lacks"),
+        work_transaction(),
+    ):
+        answer_undo_row(actor, family, " ")
+    head = leader(harness, actor)
+    with pytest.raises(PermissionError):
+        decide_answer(harness, head, Action.BACK_TO_REVIEW, member, 2, note="Oops")
+    with (
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        pytest.raises(DatabaseError, match="Limitation review lacks"),
+        work_transaction(),
+    ):
+        answer_undo_row(head, family, "Oops")
+    with pytest.raises(StaleItem):
+        decide_answer(harness, actor, Action.BACK_TO_REVIEW, member, 1, note="Oops")
+    key = uuid4()
+    (undone,) = decide_answer(
+        harness, actor, Action.BACK_TO_REVIEW, member, 2, note="Not yet", key=key
+    )
+    assert (undone.decision, undone.note) == ("accepted", "Not yet")
+    assert limitation_stage(undone).stage is Stage.TO_HANDLE
+    assert AuditEvent.objects.filter(
+        event_type="limitation_reviewed", subject_id=undone.pk
+    ).exists()
+    assert list(
+        LimitationReview.objects.filter(family_id=family.pk, kind="member")
+        .order_by("expected_version")
+        .values_list("decision", flat=True)
+    ) == ["accepted", "handled", "accepted"]
+    (replay,) = decide_answer(
+        harness, actor, Action.BACK_TO_REVIEW, member, 2, note="Not yet", key=key
+    )
+    assert replay.pk == undone.pk
+    (row,) = limitation_rows(harness)["members"]
+    assert (row["decision"], row["in_force"], row["version"]) == ("accepted", True, 3)
+    # Counted as To handle on the page; the menu counts To review only, so
+    # only the Family's cannot-attend answer is in it.
+    _, counts = at_stage(answer_rows(limitation_rows(harness)), "to_handle")
+    assert (counts.get("to_handle"), counts.get("to_review")) == (1, 1)
+    items = [
+        SimpleNamespace(name="limitations_report", url="/admin/reports/limitations/")
+    ]
+    reader = Principal(actor, frozenset({"staff"}), frozenset())
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        menu = admin_context._open_counts(
+            SimpleNamespace(), reader, items, harness.campaign
+        )
+    assert menu.get("limitations_report") == 1
+    # Handled again, kept by an unchanged answer, and undone again.
+    decide_answer(harness, actor, Action.HANDLED, member, 3)
+    resubmit(harness, cannot_serve=True)
+    (row,) = limitation_rows(harness)["members"]
+    assert (row["decision"], row["in_force"]) == ("handled", True)
+    (again,) = decide_answer(
+        harness, actor, Action.BACK_TO_REVIEW, member, 4, note="Still not done"
+    )
+    assert limitation_stage(again).stage is Stage.TO_HANDLE
+
+
+def test_migration_0215_check_refuses_the_previous_guard(response_service, google):
+    """0215's DO block passes as installed and fails on 0126's guard, which
+    refused any step from Handled; rolled back, the installed guard admits
+    the undo again."""
+    harness = response_service
+    start(harness)
+    harness = activate_response_service(harness)
+    first = submit_live(harness, cannot_serve=True)
+    actor = staff_actor()
+    family = FamilyCampaign.objects.get(pk=first.family_id)
+    member = answer_id(family.family_duid, "member", "3")
+    decide_answer(harness, actor, Action.ACCEPT, member, 0)
+    decide_answer(harness, actor, Action.HANDLED, member, 1)
+    text = (MIGRATIONS / "migrations/0215_limitation_handled_undo.sql").read_text(
+        encoding="utf-8"
+    )
+    check = text[text.index("DO $check$") : text.index("$check$;") + len("$check$;")]
+    old = (MIGRATIONS / "migrations/0126_information_limitation_review.sql").read_text(
+        encoding="utf-8"
+    )
+    start_at = old.index(
+        "CREATE FUNCTION public.stewardship_limitation_review_guard_v1()"
+    )
+    previous = (
+        "CREATE OR REPLACE FUNCTION"
+        + old[start_at + len("CREATE FUNCTION") : old.index("END $$;", start_at) + 7]
+    )
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(check)  # The installed definition passes.
+        with pytest.raises(DatabaseError, match="Migration 0215"), transaction.atomic():
+            cursor.execute(previous)
+            cursor.execute(check)
+        with transaction.atomic():
+            cursor.execute(previous)
+            with (
+                pytest.raises(DatabaseError, match="Limitation review lacks"),
+                work_transaction(),
+            ):
+                answer_undo_row(actor, family, "Not yet")
+            transaction.set_rollback(True)
+        cursor.execute(check)  # Rolled back to the installed definition.
+        with work_transaction():
+            answer_undo_row(actor, family, "Not yet")  # The new guard admits it.
+            transaction.set_rollback(True)
+        transaction.set_rollback(True)
+
+
 def submit_everyone(harness):
     """A live response in which Member 3, a Member the Family adds on the
     form and the Family itself each give their limitation."""

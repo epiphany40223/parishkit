@@ -29,22 +29,34 @@ from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.models import FamilyCampaign
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.pipeline import Action as Decide
-from parishkit.stewardship.pipeline import Stage, cannot_participate_placement
+from parishkit.stewardship.pipeline import (
+    Stage,
+    Stream,
+    cannot_participate_placement,
+    undo_needs_note,
+    undo_stage,
+)
 from parishkit.stewardship.reports.export_services import admit_campaign
 from parishkit.stewardship.web.content import bounded_text
 
 from .census_review import KeyRebound, bulk_key_for
-from .information import MAX_BULK, MAX_NOTE, StaleItem
+from .information import MAX_BULK, MAX_NOTE, ReopenNeedsNote, StaleItem, UndoNeedsNote
 from .models import LimitationReview, Submission
 
 # What each worklist decision records and the stages it is offered at
-# (review pipeline spec, "Role-specific actions"). Handled is final.
+# (review pipeline spec, "Role-specific actions"). Back to review's record
+# depends on the stage it leaves (``recorded``).
 DECISIONS = {
     Decide.ACCEPT: ("accepted", {Stage.TO_REVIEW}),
     Decide.IGNORE: ("ignored", {Stage.TO_REVIEW}),
-    Decide.BACK_TO_REVIEW: ("none", {Stage.TO_HANDLE, Stage.IGNORED}),
+    Decide.BACK_TO_REVIEW: ("none", {Stage.TO_HANDLE, Stage.IGNORED, Stage.HANDLED}),
     Decide.HANDLED: ("handled", {Stage.TO_HANDLE}),
 }
+# What Back to review records for the stage it returns an answer to
+# (``pipeline.undo_stage``): a decision's undo goes to To review; Handled's
+# undo (#1840) removes only the mark, so the answer is To handle again,
+# still accepted.
+UNDO_DECISIONS = {Stage.TO_REVIEW: "none", Stage.TO_HANDLE: "accepted"}
 KIND_LETTERS = {"member": "m", "proposed_member": "p", "family": "f"}
 LETTER_KINDS = {letter: kind for kind, letter in KIND_LETTERS.items()}
 # A Member DUID, or a proposed Member's local id (canonical UUID text).
@@ -107,6 +119,30 @@ def limitation_stage(review):
     return cannot_participate_placement(decision=review.decision, in_force=in_force)
 
 
+def recorded(action, placement):
+    """The decision ``action`` records on an answer at ``placement``.
+
+    Back to review records the stage ``pipeline.undo_stage`` returns the
+    answer to (``UNDO_DECISIONS``); every other action one fixed decision.
+    """
+    if action is Decide.BACK_TO_REVIEW:
+        return UNDO_DECISIONS[undo_stage(Stream.CANNOT_PARTICIPATE, placement)]
+    return DECISIONS[action][0]
+
+
+def records(action):
+    """Every row ``action`` can store, as the fields a repeat must match.
+
+    A replayed request key is checked against these, since the answer has
+    moved on since its first post. Handled's undo stores ``accepted``, as
+    Accept does; the row's version and answer still have to match, so a key
+    replayed for another answer or version is still refused.
+    """
+    if action is Decide.BACK_TO_REVIEW:
+        return [{"decision": decision} for decision in UNDO_DECISIONS.values()]
+    return [{"decision": DECISIONS[action][0]}]
+
+
 def authorize_limitations(store, actor_id):
     """Reload current policy: Staff and Administrators, never Ministry leaders."""
     principal = current_principal(store, actor_id)
@@ -134,7 +170,6 @@ def _decide_one(family, answer, actor_id, action, version, key, note, parish):
     current response no longer gives, or whose version or stage moved since
     the page was drawn, is ``StaleItem``.
     """
-    decision, stages = DECISIONS[action]
     previous = LimitationReview.objects.filter(
         actor_id=actor_id, request_key=key
     ).first()
@@ -143,7 +178,7 @@ def _decide_one(family, answer, actor_id, action, version, key, note, parish):
             (previous.family_id, previous.kind, previous.member_key)
             != (family.pk, answer.kind, answer.member_key)
             or previous.expected_version != version
-            or previous.decision != decision
+            or {"decision": previous.decision} not in records(action)
         ):
             raise KeyRebound("This request key is already bound.")
         return previous
@@ -156,13 +191,22 @@ def _decide_one(family, answer, actor_id, action, version, key, note, parish):
         raise StaleItem(answer.id)
     latest = _latest(family, answer)
     current = 0 if latest is None else latest.expected_version + 1
-    stage = limitation_stage(latest).stage
-    if current != version or stage not in stages:
+    placement = limitation_stage(latest)
+    stage = placement.stage
+    if current != version or stage not in DECISIONS[action][1]:
         raise StaleItem(answer.id)
-    if stage is Stage.IGNORED and not note.strip():
-        # Reopening an ignored answer needs a reason (review pipeline spec,
-        # "Reviewed stage"); the dialog asks for it first.
-        raise ValueError("Reopening an ignored answer needs a note.")
+    if (
+        action is Decide.BACK_TO_REVIEW
+        and undo_needs_note(Stream.CANNOT_PARTICIPATE, stage)
+        and not note.strip()
+    ):
+        # Reopening an ignored answer, or undoing Handled, needs a reason
+        # (review pipeline spec, "Reviewed stage", "Undoing a terminal
+        # stage"); the dialog asks for it first.
+        if stage is Stage.HANDLED:
+            raise UndoNeedsNote("Undoing a handled answer needs a note.")
+        raise ReopenNeedsNote("Reopening an ignored answer needs a note.")
+    decision = recorded(action, placement)
     review = LimitationReview.objects.create(
         actor_id=actor_id,
         family_id=family.pk,

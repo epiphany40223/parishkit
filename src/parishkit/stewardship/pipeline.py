@@ -560,6 +560,7 @@ TERMINAL_UNDO_STREAMS = frozenset(
         Stream.MINISTRY,
         Stream.FINANCIAL,
         Stream.ADDITIONAL_INFORMATION,
+        Stream.CANNOT_PARTICIPATE,
     }
 )
 # Roles that may undo a terminal step: Ministry leaders never see those

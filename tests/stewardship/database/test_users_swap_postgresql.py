@@ -1048,6 +1048,13 @@ CLOSURE_REPLACED = {
         ("stewardship_responses", "0025_information_handled_undo"),
         "Undoing a handled request needs a note",
     ),
+    # 0215 (#1840, provisional number) replaces 0126's limitation review
+    # guard, which 0126's file (CLOSURE_CREATED) makes again; it creates
+    # nothing, so its file runs again whole.
+    "public.stewardship_limitation_review_guard_v1()": (
+        ("stewardship_responses", "0026_limitation_handled_undo"),
+        "WHEN 'handled' THEN NEW.decision='accepted'",
+    ),
 }
 
 

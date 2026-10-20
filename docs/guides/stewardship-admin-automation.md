@@ -2988,11 +2988,11 @@ pk-admin limitations decide --action handled --item m41-3:1
 Each takes `--action` (`accept`, `ignore`, `back_to_review` or `handled`),
 one `--item ID:VERSION` for each item (up to 100, all or none), `--note TEXT`
 (at most 2,000 characters; `-` reads standard input, which then needs
-`--yes`) and `--request-key`. Handled is final, so it asks for `yes` first
-(see [Confirmations](#confirmations)), or takes `--yes`; the others ask
-nothing, as they can be changed again. Taking an Ignored item back to
-review needs a `--note` saying why (for a request, a new one, not its
-current notes) (exit 1, `invalid`, naming `note`,
+`--yes`) and `--request-key`. None asks first, as every decision can be
+changed again, Handled too; `--yes` is still accepted. Taking an Ignored
+item back to review, or a Handled one (which returns it to To handle,
+with its Accept kept), needs a `--note` saying why (for a request, a new
+one, not its current notes) (exit 1, `invalid`, naming `note`,
 otherwise). An item someone decided since, or that the Family answered
 again, is exit 1 (`stale_version`): list or export again. An action the
 item's stage does not offer is `stale_version` too, as on the page. A

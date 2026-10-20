@@ -909,7 +909,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
     options = {option["name"]: option for option in edit["options"]}
     assert {"--value", "--clear"} <= set(options)
     # information decide and limitations decide (#1735): keyed, full scope,
-    # not fresh-gated; they prompt, but only for Handled, which is final.
+    # not fresh-gated; nothing asks since Handled can be undone (#1840), but
+    # they keep --yes, which a note read from standard input needs.
     # Each chosen item carries its own version, so there is no
     # --expected-version.
     for name in ("information decide", "limitations decide"):

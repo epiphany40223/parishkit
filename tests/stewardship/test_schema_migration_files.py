@@ -480,6 +480,9 @@ FROZEN = {
     "0214_information_handled_undo.sql": (
         "151a03f5d72dcdee07f84fe9affc368bb04c1dab9aedd1df6ce48f3979bb0922"
     ),
+    "0215_limitation_handled_undo.sql": (
+        "f8396ef92c3a0096bf01b11dcb38582a01c18562a7b6a83f1059bea1181d2379"
+    ),
 }
 
 

@@ -145,14 +145,13 @@ def test_each_record_is_the_csv_row_with_its_item_version_and_actions():
 
 
 def test_handled_offers_back_to_review_and_history_offers_nothing():
-    """Handled is undone by Back to review (#1840) once its stream records
-    the undo, and a request in History takes no decision."""
+    """Handled is undone by Back to review (#1840), and a request in
+    History takes no decision."""
     placement = Placement(Stage.HANDLED, Decision.ACCEPTED)
-    for stream, expected in (
-        (Stream.ADDITIONAL_INFORMATION, ["back_to_review"]),
-        (Stream.CANNOT_PARTICIPATE, []),
-    ):
-        assert admin_worklists.row_actions(stream, placement, True) == expected
+    for stream in (Stream.ADDITIONAL_INFORMATION, Stream.CANNOT_PARTICIPATE):
+        assert admin_worklists.row_actions(stream, placement, True) == [
+            "back_to_review"
+        ]
     history = Placement(Stage.HISTORY)
     assert (
         admin_worklists.row_actions(Stream.ADDITIONAL_INFORMATION, history, True) == []
