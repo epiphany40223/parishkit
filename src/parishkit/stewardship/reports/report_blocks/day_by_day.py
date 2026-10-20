@@ -96,6 +96,14 @@ def draw(document, frame, options):
 MAX_DAYS = 14
 
 
+def capture(document, options):
+    """The table's headings and rows, as the snapshot keeps them."""
+    return {
+        "headings": headings(document),
+        "rows": [list(row) for row in digest_rows(document, options["days"])],
+    }
+
+
 def check(options):
     """Refuse a "days shown" value other than a whole number from 1 to 14."""
     days = options.get("days", TABLE_DAYS)
@@ -116,4 +124,5 @@ BLOCK = Block(
     empty="No campaign day has ended yet.",
     options={"days": TABLE_DAYS},
     check=check,
+    capture=capture,
 )

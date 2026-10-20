@@ -7,12 +7,12 @@ Each block module declares one ``Block``; ``REGISTRY`` (in the package's
 a block needs its module, its spec section and its tests, never a schema
 change.
 
-This first slice holds what the compiler needs to draw today's Daily and
-Weekly digests: the declarations and the email renderer. The snapshot
-capture, saved copy renderer, editor form, Testing behaviour declaration
-and preview flag arrive with the report pipeline, the Report emails page
-and Preview (report-emails spec, "Delivery plan"); today each block's
-Testing behaviour lives in its renderer.
+It holds what the compiler needs to draw today's Daily and Weekly digests
+and the report pipeline's snapshots: the declarations, the email renderer,
+the option check and the snapshot capture. The saved copy renderer, editor
+form, Testing behaviour declaration and preview flag arrive with the
+Report emails page and Preview (report-emails spec, "Delivery plan"); today
+each block's Testing behaviour lives in its renderer.
 """
 
 from collections.abc import Callable
@@ -51,7 +51,7 @@ class Frame:
     """What the compiler hands every block besides the report's document.
 
     ``public_origin`` is the portal's public origin; ``dashboard_url`` the
-    Response dashboard's address (None in a report with no fact block);
+    Response dashboard's address (None in a report with no opening line);
     ``copy_url`` the send's saved copy (None when the report has none).
     """
 
@@ -77,8 +77,13 @@ class Block:
     runs inside the compiler's pinned date format. ``options`` are the
     block's defaults; ``empty`` is the one line it will draw when it has
     nothing to show ("" for a block the spec leaves out instead, or that
-    always draws something). Nothing draws it yet: today's digests never
-    send an empty block.
+    always draws something). The compiler draws it for a report email whose
+    source has nothing for the block (``ReportDocument.drawable``); today's
+    digests never send an empty block.
+
+    ``capture(document, options)`` returns the block's data as the report
+    snapshot keeps it (JSON values only), read from the same source the
+    email is drawn from, inside the same pinned date format.
 
     ``check(options)`` raises ``ValueError`` for an option value the block
     cannot draw; a report's stored options are checked with it on save.
@@ -99,6 +104,19 @@ class Block:
     options: dict = field(default_factory=dict)
     check: Callable[[dict], None] = no_options
     version: int = 1
+    capture: Callable[[Any, dict], Any] = None
+
+    def has_content(self, data):
+        """Whether captured ``data`` counts as content (spec, decision 16).
+
+        A list block has content when it lists an item; a status block
+        always has, even drawing its empty statement, except a block left
+        out entirely (Compared with past campaigns without imported years),
+        whose data is None.
+        """
+        if self.kind == LIST:
+            return bool(data and data["items"])
+        return data is not None or self.empty != ""
 
     def __post_init__(self):
         """Reject a declaration outside the contract's closed values."""

@@ -607,11 +607,15 @@ opens straight into its content, in this order:
    October 6, 2026 (EDT)." (end of the previous day), "Here is the report
    for October 4, 2026 through October 6, 2026; all data is as of …" (a
    recovery range), or "Here is the report; all data is as of 7:00 AM,
-   October 7, 2026 (EDT)." (when the email is made). The zone abbreviation
-   is the one in force at that moment. The text part lists the dashboard
-   link on the next line.
+   October 7, 2026 (EDT)." (when the email is made). A report day
+   [held](#as-of) at the campaign's last day reads "Here is the report;
+   all data is as of the end of …", since it is not yesterday's. The zone
+   abbreviation is the one in force at that moment. The text part lists
+   the dashboard link on the next line.
 4. The **blocks**, in the report's order, except that a block placed
-   [after the button](#block-contract) follows the button.
+   [after the button](#block-contract) follows the button. A block with
+   nothing to show draws its label as a heading and its empty statement
+   under it (in the text part, the label and the statement on two lines).
 5. The **closing button**: "Open the Response dashboard" when the report
    has a fact block (the text part repeats the link line), otherwise "Open
    protected report", linking the send's [saved copy](#saved-copies) (the
