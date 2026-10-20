@@ -171,6 +171,18 @@ def test_testing_mode_leads_to_go_live_readiness(auth_service, google):
     browser, _ = signed_in()
     _opened(browser, "delivery_control", navigation.PRODUCTION_ONLY, "go_live")
     _opened(browser, "production_progress", navigation.NOT_CONFIRMED, "go_live")
+    # A self-updating page's status read (live-status-v1.js: a fetch() sent
+    # with Accept text/html) gets the JSON refusal it settles on (#1805).
+    watcher = {"HTTP_ACCEPT": "text/html", "HTTP_SEC_FETCH_MODE": "cors"}
+    read = browser.get(f"/admin/{_path('production_progress')}", **watcher)
+    assert read.status_code == 409
+    data = read.json()
+    assert [error["code"] for error in data["errors"]] == ["not_available"]
+    assert data["refusal"]["message"] == f"{navigation.NOT_CONFIRMED}."
+    assert data["refusal"]["link"] == {
+        "url": f"/admin/{_path('go_live')}",
+        "label": f"Go to {navigation.PAGES['go_live'].label}",
+    }
     # HEAD is answered the same way, without the page's body.
     assert browser.head(f"/admin/{_path('delivery_control')}", **PAGE).status_code == (
         409

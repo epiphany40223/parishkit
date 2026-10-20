@@ -4511,6 +4511,12 @@ outcome.
      preparation runs, every 30 seconds while a Retry waits or the campaign
      is scheduled (so its start, or a cancellation, shows), and not at all
      once nothing can change by itself. A reload draws the same state.
+     When go-live is cancelled in another tab or by another Administrator,
+     the page becomes an unavailable menu page; the next update replaces
+     its status and Cancel go-live with the menu's reason and **Go to Go
+     live**, and stops
+     ([a watched page that becomes unavailable
+     settles](../ui-conventions/spec.md#unavailable-menu-pages)).
    - **Cancel go-live dialog** (a full review), in place of the separate
      page. Its Review shows the cancellation counts (scheduled mail runs
      recorded and to cancel, unsent messages to cancel, failed runs and

@@ -304,3 +304,102 @@ def test_a_refused_apply_names_the_change_inside_the_dialog(
     dialog.get_by_role("button", name="Keep it scheduled", exact=True).click()
     hidden(dialog)
     assert page.url == component_origin + "/production-scheduled"
+
+
+def answer_reads(page, component_origin, status, body):
+    """Answer every later GET of /production-scheduled (the region's status
+    read) with ``status`` and the JSON ``body``; the first load goes
+    through."""
+    loaded = []
+
+    def read(route):
+        """Pass the page load; answer each status read after it."""
+        if route.request.method != "GET" or not loaded:
+            loaded.append(route.request.url)
+            route.continue_()
+            return
+        route.fulfill(status=status, body=body, content_type="application/json")
+
+    page.route(component_origin + "/production-scheduled", read)
+
+
+def greyed_answer():
+    """The access gate's answer to a status read once go-live was cancelled:
+    the real 409 not_available refusal with the menu's reason and its way
+    forward (admin_context.greyed_page, #1128)."""
+    from parishkit.stewardship.accounts import admin_navigation
+    from parishkit.stewardship.web.refusals import unavailable_response
+
+    greyed = admin_navigation.Greyed(
+        "Production activation",
+        admin_navigation.NOT_CONFIRMED,
+        ("Go live", GO_LIVE),
+    )
+    return unavailable_response(greyed.refusal()).content.decode()
+
+
+def test_a_cancellation_elsewhere_settles_the_watched_page(page, component_origin):
+    """Go-live cancelled in another tab: the next status read is the greyed
+    page's 409 (#1805). The region settles with the menu's reason and a link
+    to Go live, the stale Cancel go-live goes (focus on it moves to the
+    link), the reason is read out, no retrying line is shown, and no
+    further read is made."""
+    from playwright.sync_api import expect
+
+    page.clock.install()
+    answer_reads(page, component_origin, 409, greyed_answer())
+    reads = []
+    page.on(
+        "request",
+        lambda request: (
+            reads.append(request.url)
+            if request.url.endswith("/production-scheduled")
+            else None
+        ),
+    )
+    page.goto(component_origin + "/production-scheduled")
+    region = page.locator("#production-status")
+    # Focus on Cancel go-live (as after Keep it scheduled) does not hold the
+    # settle, and moves to the way forward rather than to the page.
+    region.get_by_role("button", name="Cancel go-live").focus()
+    page.clock.fast_forward(31_000)
+    line = region.locator("[data-live-unavailable]")
+    expect(line).to_contain_text(
+        "Production has not been confirmed for this campaign; start at Go live."
+    )
+    expect(region.get_by_role("link", name="Go to Go live")).to_have_attribute(
+        "href", GO_LIVE
+    )
+    assert region.get_by_role("button", name="Cancel go-live").count() == 0
+    focused(region.get_by_role("link", name="Go to Go live"))
+    assert region.get_attribute("data-live-pending") is None
+    expect(page.locator('[data-live-announcer="production-status"]')).to_contain_text(
+        "Production has not been confirmed"
+    )
+    expect(page.get_by_text("Couldn't check for updates")).to_have_count(0)
+    settled = len(reads)
+    page.clock.fast_forward(120_000)
+    assert len(reads) == settled
+
+
+def test_another_409_is_still_retried(page, component_origin):
+    """A status read refused 409 for any other reason (a stale page) is no
+    unavailable page: the region and its Cancel go-live stay and the page
+    says it is retrying."""
+    from playwright.sync_api import expect
+
+    from parishkit.stewardship.web.contracts import (
+        ErrorCode,
+        FieldError,
+        validation_response,
+    )
+
+    stale = validation_response([FieldError(ErrorCode.STALE)], status=409)
+    page.clock.install()
+    answer_reads(page, component_origin, 409, stale.content.decode())
+    page.goto(component_origin + "/production-scheduled")
+    region = page.locator("#production-status")
+    page.clock.fast_forward(31_000)
+    expect(page.get_by_text("Couldn't check for updates — retrying.")).to_be_visible()
+    visible(region.get_by_role("button", name="Cancel go-live"))
+    assert region.locator("[data-live-unavailable]").count() == 0
