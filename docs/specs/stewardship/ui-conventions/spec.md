@@ -1192,8 +1192,9 @@ the reviewed Families cannot be sent: test codes not ready, campaign work in
 progress, a Family that cannot be sent a test, or more Families than the
 remaining allowance. Check these Families waits for a DUID. On the Off-site backups page,
 Test access is unavailable until Google Workspace mail is set up, since the
-check signs in as its mailbox user, and always in the local environment,
-which never reaches Google Drive. In the Pages and emails editor, "Remove
+check signs in as its mailbox user, and in the local environment whenever
+it does not reach Google Drive (without a mail redirect, or under the fake
+clock). In the Pages and emails editor, "Remove
 this selected content" is unavailable, with its reason as the box's help,
 while nothing is saved there or while mail schedules still send the email.
 The box is an action, not a setting, so its reason stays visible rather than

@@ -41,9 +41,11 @@ VM from your checkout, including uncommitted edits to tracked files. The
 application services have the same route out to the Internet as on a
 production host; Caddy, Mailpit and the fake ParishSoft have none. Code
 checks keep mail on Mailpit (`http://localhost:8025`), so nothing can email a
-real person. Admin sign-in is the local test sign-in, with a stand-in OAuth
-client, unless you install a real localhost-only one
-([below](#signing-in-with-google)). ParishSoft is a fake
+real person, unless you set a mail redirect and install a test mailbox's
+key: then every message goes to that one address only
+([below](#sending-real-mail-to-one-address)). Admin sign-in is the local
+test sign-in, with a stand-in OAuth client, unless you install a real
+localhost-only one ([below](#signing-in-with-google)). ParishSoft is a fake
 service with a synthetic parish unless you choose the real ParishSoft API
 with `deploy --parishsoft real`; pk-local then reads real parish data,
 which stays on the laptop and must never be committed, and it never writes
@@ -83,6 +85,7 @@ never needs a copy of the repository.
 | `start` | Start a stopped deployment's services (after `down` or a VM restart) in the recorded clock mode. |
 | `deploy [--schema-change]` | Build the image from this checkout, then upgrade the running deployment to it, data and all, by the Production upgrade's steps (`tools/stewardship-upgrade-host.sh` in local mode; [below](#testing-a-pull-request-on-seeded-data)). `--schema-change` is what `STEWARDSHIP_SCHEMA_CHANGE=1` is to Production: without it, a build whose upgrade check expects migration or grant changes is refused before anything stops. Refuses unless a snapshot exists to return to. |
 | `deploy --bulk on\|off` / `deploy --smtp-latency-ms N` | The same deploy, rendering the bulk Family send on or off, or the modeled Gmail latency of `N` milliseconds (0–5000; 0 turns it off). Each carries over to later deploys until changed. For [rehearsing a bulk send](#rehearsing-a-bulk-send). |
+| `deploy --mail-redirect ADDRESS\|off` | The same deploy, rendering the forced mail redirect: every message, whatever its recipients, routing or campaign mode, goes only to `ADDRESS`. A real Google Workspace key is admitted only while it is set ([below](#sending-real-mail-to-one-address)). It carries over to later deploys until changed; `off` removes it, and a `deploy --rollback` drops it (a real key is then refused). |
 | `deploy --parishsoft real\|fake` | The same deploy, reading the real ParishSoft API or the fake (the default). It carries over to later deploys until changed, and a `deploy --rollback` goes back to the fake. With the real API, install a real `parishsoft` key for the real organization (Integrations); the synthetic parish's key and organization belong to the fake. That key can write contact fields; pk-local's code refuses every ParishSoft write, but treat the key as Production's. Use a normal-clock deployment (a seeded one, or after `seed --testing`): under the fake clock the services check ParishSoft's certificate against a date about 17 days ago, and the deploy warns. The key and the real data it reads stay on the laptop, but every `snapshot` copies them, so delete snapshots you no longer need. When you switch back with `--parishsoft fake`, reinstall the fake key and organization `up` printed (Integrations). |
 | `deploy --rollback` | The upgrade's image-only rollback to the image the last `deploy` replaced; refused when the schema or a grant changed in between (then `reset --seeded`). |
 | `snapshot [--seeded]` | Stop the services, copy the runtime root to `/opt/parishkit-snapshots/post-setup` (or `seeded`) with numeric ownership and modes preserved, start again. Replaces the earlier copy. |
@@ -688,6 +691,56 @@ snapshot switch puts back the client that snapshot holds. When you are done,
 delete the snapshots taken with the real client, delete the saved file, and
 delete the test client in Google Cloud.
 
+## Sending real mail to one address
+
+pk-local normally sends everything to Mailpit. To exercise the real Gmail
+path (Family mail, reminders, alerts, samples, `smoke --send-to`) and the
+off-site Drive copies, install a key for a test mailbox beside a mail
+redirect. The redirect replaces every recipient of every message with one
+address and rewrites `To` to it, so nothing can reach anyone else, in
+Testing or Production mode, for any kind of mail. With real ParishSoft data
+the messages carry real names, gifts, codes and links, which is allowed
+only to the one redirect address (Administrator decision, 2026-10-17).
+
+1. In the parish Google Workspace, use a separate test mailbox and a
+   separate service account for it with domain-wide delegation of
+   `https://mail.google.com/` (and `https://www.googleapis.com/auth/drive`
+   for the Drive copies), as the
+   [deployment runbook](stewardship-deployment-runbook.md) describes for
+   Production. Never use Production's key.
+2. Save the JSON key outside every git checkout, readable only by you, for
+   example `~/.parishkit-local/credentials/google-workspace.json` with the
+   directory at mode 0700 and the file at mode 0600.
+3. Use a deployment on the normal clock (`run/local/clock/mode` says
+   `normal`; see [Clock mode](#clock-mode)): the Integrations page, smoke
+   and the Drive copies refuse a real key under the fake clock, as web
+   refuses a real OAuth client.
+4. Set the redirect to your Testing recipient:
+   `tools/stewardship-local.sh deploy --mail-redirect you@example.org`. The
+   deploy prints "every message goes only to the mail redirect …". The
+   address can be set only this way, never from the Admin portal.
+5. On **Integrations › Google Workspace mail**, change the delegated user,
+   sender and reply-to to the test mailbox and paste the key into the key
+   field. Saving checks the key with Google before it is applied. Without
+   the redirect, or under the fake clock, the key is refused as invalid.
+6. Check it from a mail sender:
+   `limactl shell parishkit-local -- sudo docker exec parishkit-local-worker-1 pk-stewardship smoke --target google_workspace --config /opt/parishkit/config/services/worker.yaml --delegated-email <test mailbox> --send-to you@example.org`.
+   The one fixed smoke message reaches the redirect address.
+
+The modeled latency (`--smtp-latency-ms`) applies only to Mailpit; real
+Gmail has its own. With the redirect and the key in place, **Off-site
+backups** can also be set to a test Drive folder: the copies are sealed to
+the backup recipient key, so the folder holds nothing readable, and they are
+tagged with this deployment, so they never mix with another deployment's.
+Use a separate test folder. Copies from before a `reset --reinstall` or a
+snapshot switch are never pruned; delete old set folders there by hand.
+
+To go back, put the mail-catcher document back on the same page (its
+contents are `{"type": "parishkit-mail-catcher"}`), then
+`deploy --mail-redirect off`. The key stays on the laptop, but every
+`snapshot` copies it, so delete snapshots taken with it when you are done,
+delete the saved file, and delete the key in Google Cloud.
+
 ## The documented VM run
 
 The specification's
@@ -756,7 +809,7 @@ specification's
 for why a LOCAL deployment cannot email a real Family, and what each
 integration can reach.
 
-Slack is the one real provider the VM can reach. Install only a separate
+Slack is one of the real providers the VM can reach. Install only a separate
 test bot token whose Slack app is in a test channel, never the production
 token: nothing in the code can tell them apart, and the local environment's
 alerts carry no environment label, so with the production token they would
