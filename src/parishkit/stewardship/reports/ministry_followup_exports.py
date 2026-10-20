@@ -7,19 +7,20 @@ applied filters, search and sort select (not just the page shown), with each
 Member's contact details as the request page shows them, leader-scoped
 exactly as the queue is.
 
-The file is rendered on request, as Roster changes to enter and Census
-changes are, rather than queued as a stored export: a stored capture would
-need a schema change, since the export capture trigger accepts only one
-Ministry's join or leave list or a packet. The rows come from the queue's
+The file is rendered on request, as Census changes is, rather than queued
+as a stored export: a stored capture would need a schema change, since
+the export capture trigger accepts only one Ministry's join or leave list
+or a packet. The rows come from the queue's
 own selection read whole (``followup_page``) and the details from
 ``ministry_contacts``, all inside one guarded read; the file uses the same
 document and writers as the retired lists' exports, so its Report
 information sheet, PDF report card and privacy line are theirs.
 
 Like those exports it is not privileged (only the directory, postal,
-financial and timeline files are, #547), and it asks for a time zone because
-it holds exact times (Last contact). Each download is audited
-with its count, the sorted Ministry DUIDs in the file and whether the
+financial and timeline files are, #547). It holds exact times (Last
+contact), so it asks for no time zone: it writes them in the browser's zone
+and states that zone in the file (#1679). Each download is audited with its
+count, the sorted Ministry DUIDs in the file and whether the
 contacts were operational or publish-restricted; never names, contact
 values, filters or search text.
 """
@@ -64,7 +65,15 @@ from .ministry_contacts import request_contacts
 from .ministry_documents import MinistryDocument, new_member_labels
 from .ministry_followup import EXPORT_PDF_LIMIT, STATES, FollowupQuery, followup_page
 from .ministry_followup_views import _error, _principal
-from .ministry_worklist import WorklistQuery, chosen, place, read_rows, reviewer_value
+from .ministry_roster_views import family_keys
+from .ministry_worklist import (
+    WorklistQuery,
+    chosen,
+    is_leader,
+    place,
+    read_rows,
+    reviewer_value,
+)
 from .read_admission import admit_report_read
 
 FORMATS = {
@@ -79,14 +88,25 @@ TITLE = "Ministry follow-up requests"
 # request page (UX conventions, Downloaded files). The join-only and
 # leave-only details are blank on the other kind's rows. The file has no
 # Submitted column, as the queue has none (Administrator, 2026-10-13, #1157).
+# The roster-entry columns of the retired Roster changes to enter file follow
+# (R39 finding 2): the Member's ParishSoft status and Family beside the
+# Member, and whether a later response replaced the request and who marked
+# it entered, and when, after the Reviewer's value. A Ministry leader's
+# file leaves the Family and the marks blank, as their page shows neither.
 HEADINGS = (
     "Member",
     "Member DUID",
+    "ParishSoft status",
+    "Family",
+    "Family DUID",
     "Ministry",
     "Request",
     "Stage",
     "Decision",
     "Reviewer's value",
+    "Replaced by a later response",
+    "Entered by",
+    "Entered at",
     "Last contact",
     "Email",
     "Phones",
@@ -99,8 +119,9 @@ HEADINGS = (
 NO_CONTACT = "None recorded"
 UNAVAILABLE = "Unavailable"
 PRIVACY = "Sensitive parish information. Share only with authorized recipients."
-# The fix for a PDF above EXPORT_PDF_LIMIT requests; the queue's export line
-# says the same while its filters select more (ministry-followup.html).
+# The fix for a PDF above EXPORT_PDF_LIMIT requests; the line below the
+# queue's export row says the same while its filters select more
+# (ministry-followup.html).
 PDF_TOO_LARGE_FIX = _("Choose CSV or XLSX, or narrow the filters.")
 
 
@@ -166,14 +187,18 @@ def _contact_values(details, action):
     )
 
 
-def queue_document(result, contacts, query, *, parish_name, requested_at, zone):
+def queue_document(
+    result, contacts, query, *, parish_name, requested_at, zone, roster=False
+):
     """The file's one detached document: report details and one row a request.
 
     ``result`` is the queue's whole filtered selection (``followup_page``),
     ``contacts`` the details by request id (``request_contacts``) and
-    ``zone`` the chosen display ``ZoneInfo``. Every value is text or an
-    aware time placed in ``zone``, so the CSV, XLSX and PDF writers render
-    the same cells.
+    ``zone`` the chosen display ``ZoneInfo``. ``roster`` fills the
+    roster-entry columns (Staff and Administrators; the rows then carry
+    their Family keys, ``family_keys``). Every value is text or an aware
+    time placed in ``zone``, so the CSV, XLSX and PDF writers render the
+    same cells.
     """
 
     def instant(value):
@@ -198,12 +223,17 @@ def queue_document(result, contacts, query, *, parish_name, requested_at, zone):
         request = "Join" if row["action"] == "join" else "Leave"
         if row["action"] == "leave" and row.get("cannot_serve"):
             request += " (cannot participate)"
+        entered = roster and row.get("roster_entered")
         lines.append(
             (
                 row["member_name"],
                 str(row["member_duid"])
                 if row["member_duid"]
                 else new_members.get(proposed, "New Member"),
+                # Blank while ParishSoft lists the Member; else #1216's phrase.
+                row["source_mark"][0] if row.get("source_mark") else "",
+                row.get("family_name", "") if roster else "",
+                str(row["family_duid"]) if roster and row.get("family_duid") else "",
                 row["ministry_name"],
                 request,
                 # The review pipeline's words (#1684), as the worklist shows
@@ -211,6 +241,9 @@ def queue_document(result, contacts, query, *, parish_name, requested_at, zone):
                 row["stage_label"],
                 row["decision_label"],
                 reviewer_value(row),
+                "Yes" if roster and row.get("latest") is False else "",
+                (row["roster_by"] or "Former portal user") if entered else "",
+                instant(row["roster_at"]) if entered else "",
                 instant(row["last_contact_at"]) or NO_CONTACT,
             )
             + _contact_values(details, row["action"])
@@ -261,7 +294,10 @@ def queue_document(result, contacts, query, *, parish_name, requested_at, zone):
                     "ParishSoft data, not from when each version was submitted.",
                 ),
             )
-            if query.history == "all"
+            # The command line's FollowupQuery may ask for every revision;
+            # Staff's worklist view lists replaced roster rows (R39).
+            if getattr(query, "history", "current") == "all"
+            or any(row.get("latest") is False for row in rows)
             else ()
         ),
     )
@@ -281,7 +317,9 @@ def _choices(parameters):
 
     The form posts the applied queue view's filters, search and sort (the
     page and page size only window the screen, so they are ignored), the
-    format and the time zone; anything else, or a repeated value, is a 400.
+    format and the browser's zone, posted unasked (an explicit ``timezone``
+    from an older tab or ``pk-admin`` wins, #1679); anything else, or a
+    repeated value, is a 400.
     So is any Status choice but the queue's own statuses: a Member no longer
     in ParishSoft never goes into the file (Administrator, 2026-10-13), even
     from the Staff-only Status choice that lists them (#1217).
@@ -297,11 +335,15 @@ def _choices(parameters):
             "csrfmiddlewaretoken",
             "format",
             "timezone",
+            "browser_timezone",
             *kind.__dataclass_fields__,
         },
     )
     values.pop("csrfmiddlewaretoken", None)
-    fmt, zone = values.pop("format", ""), values.pop("timezone", "")
+    fmt = values.pop("format", "")
+    zone = dates.download_zone(
+        values.pop("timezone", None), values.pop("browser_timezone", None)
+    )
     if fmt not in FORMATS or (zone != "UTC" and zone not in timezone_names()):
         raise ValueError("Invalid follow-up export choice.")
     query = kind.parse(values)
@@ -374,6 +416,11 @@ def export_body(campaign_id, query, principal, fmt, zone, progress):
     if fmt == "pdf" and count > EXPORT_PDF_LIMIT:
         raise PdfTooLarge("Too many requests for one PDF.")
     contacts = request_contacts(campaign_id, principal, result["rows"])
+    # The roster-entry columns are Staff's and Administrators' (R39 finding
+    # 2): one read each for the rows' Family DUIDs and names.
+    roster = not is_leader(principal)
+    if roster:
+        family_keys(result["rows"])
     parish = (
         SystemConfiguration.objects.select_related("active_configuration__parish")
         .get()
@@ -386,6 +433,7 @@ def export_body(campaign_id, query, principal, fmt, zone, progress):
         parish_name=parish.name,
         requested_at=database_now(),
         zone=zone,
+        roster=roster,
     )
     output = io.BytesIO()
     # The PDF dates itself in the parish's date format, lent explicitly, as

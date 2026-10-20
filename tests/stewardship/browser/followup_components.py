@@ -108,6 +108,19 @@ LEADER, SORTED, SEARCHED, NOTHING = (
     "/ministry-requests-nothing",
 )
 GATED_REQUESTS = "/ministry-requests-gated"
+# Ministry requests at To enter by hand (R39 finding 2, which folded Roster
+# changes to enter into it): an accepted join, one for a Member ParishSoft
+# lists as deceased and one a later response replaced; then the same view
+# after the first was marked, and after the first and last were marked in
+# bulk.
+ENTRY, ENTRY_MARKED, ENTRY_BULKED = (
+    "/ministry-requests-entry",
+    "/ministry-requests-entry-marked",
+    "/ministry-requests-entry-bulked",
+)
+ENTRY_IDS = tuple(str(UUID(int=number)) for number in (130, 131, 132))
+ENTRY_NOTICE = "Accepted <Member> — Example <Ministry> marked entered by hand."
+ENTRY_BULK_NOTICE = "2 requests marked entered by hand."
 # A packet limit of one Ministry, so ticking both choices passes it (#1332).
 PACKET_LIMIT = "/ministry-requests-packet-limit"
 # A packet the server refused for ticking too many (#1332), under the same
@@ -132,6 +145,11 @@ LONG_MINISTRY = "105-Religious Education Catechists and Aides"
 
 STAFF = Principal(UUID(int=97), frozenset({"staff"}))
 LEADS = Principal(UUID(int=98), frozenset({"ministry_leader"}), frozenset({9}))
+
+
+# The sample requests' Family record, whose hub a Member name opens.
+FAMILY = UUID(int=81)
+HUB = f"/admin/reports/families/{FAMILY}/"
 
 
 def _worklist(rows, *, query=None, principal=STAFF, mutable=True, marks=None):
@@ -177,7 +195,11 @@ def _worklist(rows, *, query=None, principal=STAFF, mutable=True, marks=None):
         action=reverse("admin:ministry_report"),
         decisions={},
         asked={},
+        # Every shown request's Family, for the Member name's hub link.
+        families={str(row["id"]): FAMILY for row in shaped},
     ) | {
+        # The page's viewer, whose role decides the Family hub link.
+        "request": SimpleNamespace(principal=principal),
         "query": query,
         "mutable": mutable,
         "can_tick": "staff" in principal.roles,
@@ -272,8 +294,8 @@ def components(context, admin):
         channels=CHANNELS,
         future_message=REFUSALS["contact_future"][0],
         metadata=dict(name="Sample campaign", source_as_of=moment, timezone="UTC"),
-        # Export these requests (#1157): the zone choices.
-        export_timezones=["America/Detroit", "UTC"],
+        # Export these requests (#1157): the applied view and zone choices.
+        export_fields=query.form_values(),
         export_pdf_limit=1000,
         # Ministry requests' overview (#1133): By Ministry and the packet's
         # choices, every Ministry in scope.
@@ -461,6 +483,19 @@ def components(context, admin):
             source_mark=MEMBER_STATUS_MARKS["deceased"],
         ),
     ]
+    entry_query = WorklistQuery(stage="to_enter_by_hand")
+    entry_rows = [
+        accepted | dict(id=ENTRY_IDS[0]),
+        accepted
+        | dict(
+            id=ENTRY_IDS[1],
+            member_name="Deceased <Member>",
+            member_status="deceased",
+            source_mark=MEMBER_STATUS_MARKS["deceased"],
+        ),
+        accepted | dict(id=ENTRY_IDS[2], member_name="Replaced <Member>", latest=False),
+    ]
+    mark = {"entered": True, "sequence": 1, "by": "staff@example.org", "at": moment}
     counted = WorklistQuery(ministry="9", kind="join", stage="all")
     sorted_query = WorklistQuery(sort="ministry")
     nothing_query = WorklistQuery(search="No such Member")
@@ -484,6 +519,17 @@ def components(context, admin):
         )
         | dict(notice=DECIDED_NOTICE),
         STAGES: requests_page | _worklist(staged, query=every, marks=ticked),
+        ENTRY: requests_page | _worklist(entry_rows, query=entry_query),
+        ENTRY_MARKED: requests_page
+        | _worklist(entry_rows, query=entry_query, marks={ENTRY_IDS[0]: mark})
+        | dict(notice=ENTRY_NOTICE),
+        ENTRY_BULKED: requests_page
+        | _worklist(
+            entry_rows,
+            query=entry_query,
+            marks={ENTRY_IDS[0]: mark, ENTRY_IDS[2]: mark},
+        )
+        | dict(notice=ENTRY_BULK_NOTICE),
         # A leader of one Ministry: one line, no marks or campaign help.
         LEADER: requests_page
         | _worklist([row], principal=LEADS)

@@ -21,6 +21,9 @@ checks"):
   death and the Family's email opt-out each its own way (#1738), and the
   Family's home address and a New Member by the ParishSoft Member ID
   recorded at its mark (#1749);
+- decided pledges get checks of their own (``reports.pledge_refresh``,
+  #1704), written here with the others and judged by the same run lengths
+  (``summaries``) and repeat rule (``owed``);
 - an Updated in ParishSoft change ParishSoft no longer holds gets a
   ``conflict`` check on a full refresh, and ``record_refresh_checks``
   moves it to Conflict, To review again, in the same promotion (#1749).
@@ -148,12 +151,12 @@ class CheckState:
         )
 
 
-def _start():
+def start_row():
     """The Not seen start row, or None (deleting it turns the flag off)."""
     return RefreshCheckStart.objects.filter(singleton=True).first()
 
 
-def _summaries(checks, start, marks):
+def summaries(checks, start, marks):
     """Each item's ``CheckState`` from its checks, keyed by item id.
 
     ``checks`` are ``(item_id, created_at, outcome, full_refresh, observed)``
@@ -193,7 +196,7 @@ def check_states(*, proposals=(), requests=(), marks=None, versions=None):
     proposals, requests = list(proposals), list(requests)
     if not proposals and not requests:
         return {}
-    start = _start()
+    start = start_row()
     rows = (
         RefreshCheck.objects.filter(
             Q(proposal_id__in=proposals) | Q(request_id__in=requests)
@@ -218,7 +221,7 @@ def check_states(*, proposals=(), requests=(), marks=None, versions=None):
     ticked = {
         key: mark["at"] for key, mark in (marks or {}).items() if mark.get("entered")
     }
-    return _summaries(checks, start, ticked)
+    return summaries(checks, start, ticked)
 
 
 def _census_same(kind):
@@ -241,7 +244,7 @@ def entered_incorrectly(proposal):
     Only a change Entered by hand can be, and only while its latest refresh
     check at its current version says so: the two fixes (Entered by hand
     again and Back to review) are offered and recorded then alone, as the
-    resolution guard (migration 0140, provisional number) also requires. One
+    resolution guard (migration 0133, provisional number) also requires. One
     query, for an entered change only.
     """
     if proposal.execution != "resolved_external" or replaced(proposal):
@@ -257,7 +260,7 @@ def replaced(proposal):
     A final change is never superseded (``proposals``): the Family's next
     answer makes a change of its own, and the earlier one is history. Such a
     change gets no refresh check and takes no fix (#1737), as the refresh
-    check and resolution guards (migration 0140, provisional) require.
+    check and resolution guards (migration 0133, provisional) require.
     ``proposal.submission`` must be loaded. One query.
     """
     submission = proposal.submission
@@ -279,7 +282,7 @@ def _remarked(rows):
     again over Entered incorrectly (#1737), and then by one. So a check at
     the version before an entered change's current one means that mark was
     made, and the latest such check's ParishSoft value is the value recorded
-    at it. The refresh check guard (migration 0140, provisional number)
+    at it. The refresh check guard (migration 0133, provisional number)
     reads it the same way. One query, when any change is entered.
     """
     wanted = {
@@ -300,7 +303,7 @@ def _remarked(rows):
     return found
 
 
-def _owed(stored, state, *, full, marked, moved=False):
+def owed(stored, state, *, full, marked, moved=False):
     """Whether a check with outcome ``stored`` is owed for an item now.
 
     When the outcome changed (an item with no check reads as unchanged); for
@@ -326,7 +329,7 @@ def census_source(row, corpus):
 
     ``row`` is annotated with its Family's ``family_duid``. None means the
     data gives no evidence either way, so the change gets no check (rule
-    4: it keeps its stage). Migration 0141's
+    4: it keeps its stage). Migration 0137's
     ``stewardship_refresh_census_source_v1`` reads the same, and the check's
     guard requires it:
 
@@ -662,7 +665,7 @@ def _census_checks(snapshot, corpus, campaign_id, full, start):
         moved = state.observed is None or not same(
             KnownValue(True, state.observed.get("value")), current
         )
-        if stored is None or not _owed(
+        if stored is None or not owed(
             stored, state, full=full, marked=entered, moved=moved
         ):
             continue
@@ -757,7 +760,7 @@ def _ministry_checks(snapshot, corpus, campaign_id, full, start):
             not_seen_after=threshold if threshold is not None else float("inf"),
         )
         stored = STORED[result]
-        if not _owed(stored, state, full=full, marked=ticked):
+        if not owed(stored, state, full=full, marked=ticked):
             continue
         yield RefreshCheck(
             snapshot_id=snapshot.pk,
@@ -768,11 +771,23 @@ def _ministry_checks(snapshot, corpus, campaign_id, full, start):
         )
 
 
-def _checks(snapshot, corpus, campaign_id, full):
-    """Every check one promotion of ``corpus`` owes, census then Ministry."""
-    start = _start()
+def _checks(snapshot, corpus, campaign_id, full, *, evidence=None):
+    """Every check one promotion of ``corpus`` owes: census, Ministry, pledges.
+
+    The pledge checks (#1704) are the reports app's
+    (``reports.pledge_refresh``), imported here, as promotion imports this
+    module, so loading the source worker does not load the reports app.
+    They read the pledges of ``evidence`` (a snapshot id), ``snapshot``'s
+    own unless given; census and Ministry judge from ``corpus``.
+    """
+    from parishkit.stewardship.reports.pledge_refresh import pledge_checks
+
+    start = start_row()
     yield from _census_checks(snapshot, corpus, campaign_id, full, start)
     yield from _ministry_checks(snapshot, corpus, campaign_id, full, start)
+    yield from pledge_checks(
+        snapshot, corpus, campaign_id, full, start, evidence=evidence
+    )
 
 
 def record_refresh_checks(snapshot, corpus, *, campaign_id, full):
@@ -786,7 +801,10 @@ def record_refresh_checks(snapshot, corpus, *, campaign_id, full):
     """
     require_work_order()
     checks = list(_checks(snapshot, corpus, campaign_id, full))
-    RefreshCheck.objects.bulk_create(checks)
+    # One insert per kind of check: census and Ministry checks share a table,
+    # pledge checks (#1704) have their own.
+    for model in {type(check) for check in checks}:
+        model.objects.bulk_create([check for check in checks if type(check) is model])
     for check in checks:
         if check.outcome == CONFLICT:
             _to_conflict(snapshot, check)
@@ -836,5 +854,16 @@ def refresh_checks_current(snapshot, corpus, *, campaign_id):
     """Whether a quick update's promotion of ``corpus`` would record no check.
 
     A quick update is never full, so only a changed outcome would be owed.
+    ``corpus`` equals the current snapshot's, but the staging ``snapshot``
+    is not staged yet (no pledge rows, no cursor), so the pledge checks read
+    the current snapshot's pledges and giving proof, which a delta keeps.
     """
-    return next(_checks(snapshot, corpus, campaign_id, False), None) is None
+    from parishkit.stewardship.source.snapshot_models import SourceCurrent
+
+    current = (
+        SourceCurrent.objects.filter(singleton=True)
+        .values_list("snapshot_id", flat=True)
+        .first()
+    )
+    found = _checks(snapshot, corpus, campaign_id, False, evidence=current)
+    return next(found, None) is None

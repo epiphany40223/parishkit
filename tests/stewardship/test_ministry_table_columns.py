@@ -79,7 +79,6 @@ def ministry_page(rows=(), *, summaries=(), packet_choices=(), roles=None, **ext
         "add_ministries": [],
         "add_replaceable": [],
         "export_fields": query.form_values(),
-        "export_timezones": ["UTC"],
         "export_pdf_limit": 1000,
         "by_ministry": list(summaries),
         # As Staff or an Administrator sees it: with the ParishSoft and

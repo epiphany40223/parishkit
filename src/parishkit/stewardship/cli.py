@@ -142,7 +142,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     ``pk-stewardship admin <area> <verb> …`` (the Admin automation command
     line) has its own subparser tree in ``admin_cli`` and its own options, so
     it is handed over before this flat parser sees any of them, as is
-    ``pk-stewardship archive-check <file>…``, which takes file arguments.
+    ``pk-stewardship archive-check <file>…``, which takes file arguments,
+    and ``pk-stewardship fake-parishsoft-edit <word>…`` (#1780), which
+    takes command words.
     """
     arguments = list(sys.argv[1:] if argv is None else argv)
     if arguments[:1] == ["admin"]:
@@ -155,6 +157,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         from .archive.check import main as archive_check_main
 
         return archive_check_main(arguments[1:])
+    if arguments[:1] == ["fake-parishsoft-edit"]:
+        # pk-local only in effect: it rewrites the fake ParishSoft's
+        # configuration document from stdin to stdout and opens nothing.
+        from .local.fake_edits import execute as fake_edit_main
+
+        return fake_edit_main(arguments[1:])
     parser = StewardshipArgumentParser(
         "pk-stewardship",
         description="Stewardship application commands",
@@ -165,6 +173,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                     *_COMMAND_OPTIONS,
                     "admin (first word only)",
                     "archive-check (first word only)",
+                    "fake-parishsoft-edit (first word only)",
                 ]
             ),
             "--profile": "--profile requires a valid value; choose "

@@ -203,7 +203,7 @@ def selection_filters(query, *, every_member=False):
     selection's ``presence`` filter with any status; every other choice
     lists only Members still current there. ``every_member`` lists both,
     for Staff and Administrators only (the selection gives a leader only
-    current ones): Roster changes to enter, whose roster work may still be
+    current ones): the roster rows, whose roster work may still be
     real.
     """
     values = query.form_values() | {"assignee": "any", "presence": "current"}
@@ -390,7 +390,7 @@ def followup_page(
     different error. Python's scope is a pre-check and a cross-check. No
     contact, address or financial column is selected. ``whole`` reads every
     matching row (no LIMIT), for a list that is filtered and paged in memory
-    (Roster changes to enter, #528). ``every_member`` also lists requests
+    (the roster rows, #528). ``every_member`` also lists requests
     for Members no longer in ParishSoft, marked (``selection_filters``).
     ``empty`` admits a campaign with no Ministry for Staff and
     Administrators (``_admit``).

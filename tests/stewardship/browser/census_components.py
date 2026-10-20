@@ -17,8 +17,13 @@ from parishkit.stewardship.reports.census_change_views import (
     ROUTE_LABELS,
     SORTING,
 )
-from parishkit.stewardship.reports.census_changes import CensusQuery, select, shape
-from parishkit.stewardship.reports.census_worklist import worklist_page
+from parishkit.stewardship.reports.census_changes import (
+    CensusQuery,
+    select,
+    shape,
+    shape_addition,
+)
+from parishkit.stewardship.reports.census_worklist import add_fields, worklist_page
 from parishkit.stewardship.responses.comparison import phone_record
 from parishkit.stewardship.responses.refresh_checks import CheckState
 from parishkit.stewardship.web.tables import paginate
@@ -47,12 +52,14 @@ BULKED = "/census-changes-bulked"
 BULK_NOTICE = "2 changes accepted."
 STALE = "/census-changes-stale"
 STALE_NOTICE = (
-    "Mobile phone for Member DUID 100 in Family DUID 1000 was changed by "
-    "someone else first, so nothing was recorded. The list shows its current "
-    "state."
+    "Mobile phone for Member DUID 100 in Family DUID 1000: not recorded, "
+    "changed by someone else."
 )
 EDITED = "/census-changes-edited"
 EDITED_NOTICE = "Home address for the Family in Family DUID 1002 accepted (edited)."
+# Add (#1710): the page after an Add, with the added row (id "add-a1").
+ADDED = "/census-changes-added"
+ADDED_NOTICE = "Nickname for Member DUID 103 in Family DUID 1003 added."
 # Row 3 Entered incorrectly (#1737): a refresh found ParishSoft at a third
 # value, and the pages after each of its two fixes.
 INCORRECT = "/census-changes-incorrect"
@@ -64,6 +71,11 @@ REENTERED_NOTICE = (
 RETURNED = "/census-changes-returned"
 RETURNED_NOTICE = (
     "Mobile phone for Member DUID 103 in Family DUID 1003 sent back to review."
+)
+# The page after an Edit of row 0's mobile phone (R38 finding 4).
+EDITED_PHONE = "/census-changes-edited-phone"
+EDITED_PHONE_NOTICE = (
+    "Mobile phone for Member DUID 100 in Family DUID 1000 accepted (edited)."
 )
 # Row 4 a New Member (#1749), whose Entered by hand asks for the ParishSoft
 # Member ID; row 5 an Updated in ParishSoft change a refresh put back in
@@ -79,16 +91,19 @@ def components(context, admin):
     """The page at each table choice and after each decision the tests take."""
     when = datetime(2054, 10, 5, 12, tzinfo=UTC)
 
-    def shaped(index, accepted=(), entered=(), incorrect=(), added=False):
+    def shaped(
+        index, accepted=(), entered=(), incorrect=(), edited=(), new_members=False
+    ):
         """One shaped row: To review unless ``accepted`` (approved, one
         version on), ``entered`` (Entered by hand) or ``incorrect`` (Entered
-        by hand, then found at a third value) holds its index. With
-        ``added``, row 4 is a New Member and row 5 a refresh Conflict."""
+        by hand, then found at a third value) holds its index; ``edited``
+        rows carry a reviewer's value. With ``new_members``, row 4 is a New
+        Member and row 5 a refresh Conflict."""
         family = index == 2
         entered = set(entered) | set(incorrect)
-        if added and index == 4:
+        if new_members and index == 4:
             return shape(new_member(index, entered=index in entered))
-        if added and index == 5:
+        if new_members and index == 5:
             return shape(
                 row(index)
                 | {
@@ -106,7 +121,33 @@ def components(context, admin):
                 accepted=accepted,
                 entered=entered,
                 incorrect=incorrect,
+                edited=edited,
             )
+        )
+
+    def addition():
+        """The parish-added row: Member 03's nickname, To enter by hand."""
+        return shape_addition(
+            {
+                "id": "a1",
+                "entity_kind": "member",
+                "entity_key": "103",
+                "field": "nickname",
+                "value": '"Bo"',
+                "in_place_of": None,
+                "created_at": when + timedelta(hours=1),
+                "baseline": None,
+                "family_duid": 1003,
+                "family_name": "Family 03",
+                "member_name": "Member 03",
+                "snapshot_id": None,
+                "added_by": "staff@example.org",
+                "added_note": "Phoned in",
+                "step": None,
+                "step_note": None,
+                "step_at": None,
+                "step_by": None,
+            }
         )
 
     def new_member(index, *, entered):
@@ -129,7 +170,7 @@ def components(context, admin):
             "member_status": None,
         }
 
-    def row(index, *, family=False, accepted=(), entered=(), incorrect=()):
+    def row(index, *, family=False, accepted=(), entered=(), incorrect=(), edited=()):
         """Row ``index``'s query columns, as ``shaped`` describes them."""
         return {
             "id": str(index),
@@ -144,8 +185,8 @@ def components(context, admin):
             ),
             "current_available": not family,
             "current_value": None if family else "555-0100",
-            "admin_value_set": False,
-            "admin_value": None,
+            "admin_value_set": index in edited,
+            "admin_value": phone_record("555-9999") if index in edited else None,
             "handling": "api" if index == 0 else "manual",
             "decision": "approved" if index in accepted else "unreviewed",
             "execution": "resolved_external" if index in entered else "pending",
@@ -160,24 +201,28 @@ def components(context, admin):
             "resolution_at": None,
             "resolution_by": None,
             "reopened": False,
-            # Member 01 moved to another Family (#1738): the change keeps
-            # its stage and the Who cell shows the shared badge.
-            "member_status": "moved" if index == 1 else None,
             "check": CheckState(
                 "entered_incorrectly", {"available": True, "value": WRONG}
             )
             if index in incorrect
             else None,
+            # Member 01 moved to another Family (#1738): the change keeps
+            # its stage and the Who cell shows the shared badge.
+            "member_status": "moved" if index == 1 else None,
         }
 
-    def page(paging, notice=None, *, stage="all", rows=ROWS, **changes):
+    def page(paging, notice=None, *, stage="all", rows=ROWS, added=False, **changes):
         """Render the page with the table paged and sorted as ``paging`` says,
         the Stage filter at ``stage``, ``notice`` above the table, and
-        ``changes`` (``shaped``'s) applied, for a Staff reader."""
+        ``changes`` (``shaped``'s) applied, for a Staff reader; ``added``
+        puts the parish-added row first."""
         query = CensusQuery(stage=stage)
-        found = [shaped(index, **changes) for index in range(rows)]
+        found = [addition()] * added + [
+            shaped(index, **changes) for index in range(rows)
+        ]
         result = select(found, query, administrator=False)
         result["roles"] = frozenset({"staff"})
+        result["replacements"] = {}
         table = paginate(
             result["rows"],
             paging,
@@ -198,11 +243,14 @@ def components(context, admin):
                     "query_fields": query.form_values(),
                     "route_choices": ROUTE_LABELS.items(),
                     "kind_choices": KIND_LABELS.items(),
-                    "export_timezones": ["UTC", "America/Detroit"],
                     "notice": notice,
                     "mutable": True,
                     "administrator": False,
                     "edit_today": "2054-10-06",
+                    "add_fields": add_fields(),
+                    "add_replaceable": [
+                        ("9", "Mobile phone for Member 09, Family DUID 1009")
+                    ],
                 },
             ),
         )
@@ -218,11 +266,15 @@ def components(context, admin):
         BULKED: page(size, BULK_NOTICE, accepted={0, 1}),
         STALE: page(size, STALE_NOTICE),
         EDITED: page(size, EDITED_NOTICE, accepted={2}),
-        NEW_MEMBER: page(size, added=True),
-        MEMBER_ENTERED: page(size, MEMBER_ENTERED_NOTICE, added=True, entered={4}),
+        ADDED: page(size, ADDED_NOTICE, added=True),
+        NEW_MEMBER: page(size, new_members=True),
+        MEMBER_ENTERED: page(
+            size, MEMBER_ENTERED_NOTICE, new_members=True, entered={4}
+        ),
         INCORRECT: page(size, incorrect={3}),
         REENTERED: page(size, REENTERED_NOTICE, entered={3}),
         RETURNED: page(size, RETURNED_NOTICE),
+        EDITED_PHONE: page(size, EDITED_PHONE_NOTICE, accepted={0}, edited={0}),
         # No changes at all, and none at the stage chosen.
         "/census-changes-none": page(size, rows=0),
         "/census-changes-none-stage": page(size, rows=0, stage="to_review"),

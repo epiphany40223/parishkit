@@ -1347,6 +1347,8 @@ def test_users_read_through_the_actor_and_domain_rules_grant_nothing(
         assert summary["authorization_scope"]["operational"] is (principal is not head)
         assert [row["duid"] for row in summary["summaries"]] == duids
         assert sorted(row["ministry_duid"] for row in queue["rows"]) == duids
+        # Staff's To enter by hand count (R39) is Home's, not the menu's.
+        counts.pop(admin_context.ENTRY_COUNT, None)
         assert queue["total"] == total and counts == {"ministry_report": total}
         if principal is head:
             assert [(m["duid"], m["join"]) for m in mine["ministries"]] == [(9, 1)]
@@ -1718,7 +1720,7 @@ def test_queue_pages_mark_and_refuse_members_no_longer_in_parishsoft(
         assert post(browser, update, single).status_code == 409
         response, body = search(browser, route, bulk_form)
         assert response.status_code == 200
-        assert b"A chosen item was changed by someone else first" in body
+        assert b"A chosen item: not recorded, changed by someone else." in body
         # Staff: the default queue leaves them out too; the choice lists them.
         _, body = get(clerk, route)
         assert option in body and str(join.pk).encode() not in body
@@ -1741,8 +1743,7 @@ def test_queue_pages_mark_and_refuse_members_no_longer_in_parishsoft(
         response, body = search(clerk, route, bulk_form | {"bulk_key": str(uuid4())})
         assert response.status_code == 200
         assert (
-            "Example, Member — Food pantry was changed by someone else first, "
-            "so nothing was recorded."
+            "Example, Member — Food pantry: not recorded, changed by someone else."
         ).encode() in body
     assert MinistryWorkflowRevision.objects.count() == 0
 

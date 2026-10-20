@@ -13,7 +13,7 @@ from urllib.parse import parse_qs
 import pytest
 from django.http import QueryDict
 
-from parishkit.stewardship.reports.information import InformationQuery
+from parishkit.stewardship.reports.information_worklist import WorklistQuery
 from parishkit.stewardship.reports.ministries import MinistryQuery
 
 from .information_components import DATED_ZONE
@@ -78,9 +78,11 @@ def test_dates_are_days_in_the_browser_zone(
             body.pop("ministry", None)
             query = MinistryQuery.parse(body, detail=True)
         else:
-            # The queue's view takes the rows-per-page choice off first.
-            body.pop("size", None)
-            query = InformationQuery.parse(body)
+            # The worklist's view (#1685) takes the table choices off first,
+            # and reads the dates through the selection's own parse.
+            for name in ("size", "page", "sort"):
+                body.pop(name, None)
+            query = WorklistQuery.parse(body).information
         assert (query.start, query.end, query.zone) == (
             "2026-11-01",
             "2026-11-02",

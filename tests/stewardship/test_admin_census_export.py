@@ -109,8 +109,8 @@ def test_actions_follow_the_reader_s_capabilities():
 @pytest.mark.parametrize(
     ("values", "decisions"),
     [
-        # To review: Approve or Ignore; an approved one Ignore or back.
-        ({}, ["approved", "ignored"]),
+        # To review: Accept or Ignore; an accepted one Ignore or back.
+        ({}, ["accepted", "ignored"]),
         ({"decision": "approved"}, ["ignored", "unreviewed"]),
         ({"execution": "failed", "decision": "approved"}, ["ignored", "unreviewed"]),
         # A Conflict is never approved; it may be ignored or sent back.

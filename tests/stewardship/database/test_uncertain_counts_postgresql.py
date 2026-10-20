@@ -199,22 +199,23 @@ def test_each_status_link_lists_exactly_what_it_counts(system, uncertain, here, 
     if mode == "testing":
         assert step is None
         return
-    links = dict(
-        (text, href)
-        for href, text in re.findall(r'<a href="([^"]+)">([^<]*)</a>', step)
-    )
+    # Each link by its name: its text without tags, spaces collapsed.
+    links = {
+        " ".join(re.sub(r"<[^>]+>", " ", text).split()): unescape(href)
+        for href, text in re.findall(r'<a [^>]*href="([^"]+)">(.*?)</a>', step)
+    }
+    main = f"Sent mail {here} may not have arrived" if here else "Sent mail"
     if here:
-        assert f"Sent mail</a> — {here} may not have arrived" in step
-        assert len(rows(browser, links["Sent mail"])) == here
-        assert f"mode={mode}" in links["Sent mail"]
+        assert len(rows(browser, links[main])) == here
+        assert f"mode={mode}" in links[main]
     else:
-        assert links["Sent mail"] == "/admin/mail/sent/"
+        assert links[main] == "/admin/mail/sent/"
     other_text = f"{other} in {OTHER_NAMES[other_mode]} may not have arrived"
     if other:
         assert f"mode={other_mode}" in links[other_text]
         assert len(rows(browser, links[other_text])) == other
     else:
-        assert set(links) == {"Sent mail"}
+        assert set(links) == {main}
 
 
 def test_archived_campaign_uncertain_emails_need_no_review(system):
@@ -262,8 +263,8 @@ def test_system_health_retries_count_each_mode_apart(system):
 
 
 def home_step(html):
-    """Home's Sent mail next step, as its list item's markup, or None."""
-    for item in re.findall(r"<li data-next-step>(.*?)</li>", html, re.S):
-        if ">Sent mail</a>" in item:
+    """Home's Sent mail link card, as its list item's markup, or None."""
+    for item in re.findall(r"<li [^>]*data-link-card>(.*?)</li>", html, re.S):
+        if '<span class="link-card-label">Sent mail</span>' in item:
             return item
     return None

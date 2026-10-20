@@ -5,7 +5,7 @@ Entered incorrectly (#1689). Staff fix it on its row (review pipeline spec,
 "Entered incorrectly stage" and "Refresh checks"): **Entered by hand
 again** records a new mark whose value is ParishSoft's in the check that
 found it, so the next refreshes compare with that value; **Back to review**
-reopens it for an Edit to ParishSoft's value. Migration 0140 (provisional
+reopens it for an Edit to ParishSoft's value. Migration 0133 (provisional
 number) admits both only while the latest check says Entered incorrectly,
 and checks every census refresh check against the value recorded at the
 mark. The changes are made through the real service on the web login and

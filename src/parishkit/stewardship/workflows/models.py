@@ -328,7 +328,7 @@ class RefreshCheck(ImmutableRecord):
     Exactly one of ``proposal`` and ``request`` is set. Only the source
     worker writes one, inside the promotion of ``snapshot_id`` and for the
     item at ``item_version``; SQL checks each of these and keeps the rows
-    immutable (schema/migrations/0136_refresh_checks.sql).
+    immutable (schema/migrations/0132_refresh_checks.sql).
     """
 
     snapshot_id = models.UUIDField()
@@ -376,7 +376,7 @@ class RefreshCheck(ImmutableRecord):
 class RefreshCheckStart(models.Model):
     """When Not seen in ParishSoft starts counting, and after how many refreshes.
 
-    One row, written once by migration 0136, audited on an upgrade (#1689): Not
+    One row, written once by migration 0132, audited on an upgrade (#1689): Not
     seen counts only the full refreshes recorded after ``started_at``, so
     marks made before the release are not all flagged by its first refresh.
     ``not_seen_after`` is the spec's configurable number of full refreshes

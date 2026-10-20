@@ -4,10 +4,10 @@ The ParishSoft API cannot change Ministry rosters, so a join or leave that a
 person resolved (*joined* or *leave confirmed*) is entered in ParishSoft by
 hand. Staff and Admin record that, or clear a mistaken mark, here: each set
 or clear is one immutable ``MinistryRosterEntry`` row, and the latest row is
-the current state. Roster changes to enter's bulk bar marks several at once
-(``mark_many_entered``, #879), each exactly as a single tick is recorded. A
-request resolved because the ParishSoft roster already
-showed the change (it has a resolution source) needs no tick. The request
+the current state. Ministry requests' bulk Entered by hand marks several
+at once (``mark_many_entered``, #879), each exactly as a single tick is
+recorded. A request resolved because the ParishSoft roster already showed
+the change (it has a resolution source) needs no tick. The request
 itself is a closed outcome and never changes. SQL checks the actor, the
 request, the sequence and the audit again
 (``schema/migrations/0061_roster_entries.sql``).
@@ -217,7 +217,7 @@ class RosterStale(StaleRecordError):
 def mark_many_entered(store, actor_id, sequences, *, bulk_key):
     """Mark many requests Entered in ParishSoft at once, all or none.
 
-    The bulk bar of Roster changes to enter (#879): ``sequences`` maps each
+    A bulk Entered by hand (#879): ``sequences`` maps each
     chosen request id to its tick's next sequence as the list showed it.
     Each request gets its own entry and audit event, exactly as a single
     tick does (``_record``), in one transaction under the shared work order,

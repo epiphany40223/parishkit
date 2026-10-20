@@ -57,6 +57,7 @@ from .automation_sessions import (
     display_code,
     live_sessions,
     normalized_code,
+    open_notices,
     own_sessions,
     revoke,
 )
@@ -300,6 +301,8 @@ def access_view(request):
     table of this Administrator's sessions that ended in the last 30 days,
     never offered Revoke. Both tables sort by their headings (``live_sort``
     and ``ended_sort``), and every control refreshes the page in place.
+    This Administrator's unacknowledged automation notices come first
+    (#1673); Home links here with their count.
 
     """
     try:
@@ -316,6 +319,9 @@ def access_view(request):
                 if not row["live"]
             ]
         context = access_context(state, actor.identity, live_sessions(), ended)
+        # This Administrator's automation notices to acknowledge (ADM-11),
+        # here beside the sessions they name since #1673; Home counts them.
+        context["notices"] = open_notices(actor)
         response = render(request, "stewardship/automation-access.html", context)
         response["Cache-Control"] = "no-store"
         return response
@@ -357,7 +363,11 @@ def sessions_view(request):
 
 @require_POST
 def notices_view(request):
-    """Acknowledge one notice, or all of them, on this Administrator's dashboard."""
+    """Acknowledge one notice, or all of them, for this Administrator.
+
+    The answer is Automation access, where the notices are listed (#1673),
+    so the in-place form takes its region from that page.
+    """
     try:
         service = runtime()
         actor = _administrator(request, service)
@@ -367,6 +377,8 @@ def notices_view(request):
         notices = None if value in (None, "all") else [UUID(value)]
         with transaction.atomic():
             acknowledge_notices(actor, notices)
-        return HttpResponseRedirect(reverse("admin:index") + "#automation-notices")
+        return HttpResponseRedirect(
+            reverse("admin:automation_access") + "#automation-notices"
+        )
     except REFUSALS as error:
         return error_response(error)

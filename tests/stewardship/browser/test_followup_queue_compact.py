@@ -27,8 +27,11 @@ MAX_FILTER_HEIGHT = 220
 # 320 to 1,170 px tall each (about 19,400 px in all), since the cells were
 # squeezed until they broke between letters; one line each, they are about
 # 43 px each (about 1,075 px in all). Since #1136 the 12 rows with a long
-# Ministry name take two lines, about 67 px each.
-MAX_ROWS_HEIGHT = 1800
+# Ministry name take two lines, about 67 px each. On the review worklist
+# (#1684) a row's Stage chip with its decision line and the Actions icons
+# make even a one-line row about 70 px; 25 rows took about 1,810 px with
+# Linux's wider fonts (CI, R38 and R39 integration).
+MAX_ROWS_HEIGHT = 1900
 FIELDS = (
     "#requests-stage",
     "#followup-search",
@@ -36,7 +39,9 @@ FIELDS = (
     "#filter-action",
     "#filter-members",
 )
-CONTROLS = FIELDS + (f"{FILTERS} button[type=submit]",)
+# Apply filters, not the Clear filters beside it (#1651).
+APPLY = f"{FILTERS} button[type=submit]:not([data-clear-filters])"
+CONTROLS = FIELDS + (APPLY,)
 AXE = """async () => (await axe.run(document, {
     runOnly: {type: 'tag', values: ['wcag2a','wcag2aa','wcag21aa','wcag22aa']}
 })).violations.map(({id,impact}) => ({id,impact}))"""
@@ -106,7 +111,7 @@ def test_queue_is_compact_at_laptop_width(page, component_origin, axe_source):
     assert len(rows_of_fields) <= 2, tops
     # Apply filters ends the last row, its bottom level with the fields'.
     last = [box for box in fields if box["y"] >= rows_of_fields[-1] - 1]
-    apply = page.locator(f"{FILTERS} button[type=submit]").bounding_box()
+    apply = page.locator(APPLY).bounding_box()
     assert apply["x"] > max(box["x"] for box in last)
     assert abs((apply["y"] + apply["height"]) - (last[0]["y"] + last[0]["height"])) <= 1
     rows = page.evaluate(ROWS)
@@ -191,7 +196,10 @@ def test_queue_clipped_member_name_tip(page, component_origin):
     whole = "Member0 Bartholomew-Fitzgerald <Example>"
     assert link.text_content() == whole
     assert link.get_attribute("title") is None
-    assert link.evaluate("e => e.scrollWidth > e.clientWidth")
+    # The name's own box is the one cut short; the shared name link (the
+    # Family hub's, R38 finding 13) wraps it.
+    clipped = link.locator("[data-clip-tip]")
+    assert clipped.evaluate("e => e.scrollWidth > e.clientWidth")
     link.focus()
     tip = page.locator(".admin-tip.is-shown")
     expect(tip).to_have_text(whole)

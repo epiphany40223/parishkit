@@ -136,10 +136,9 @@ HOSTED = {
     # Sent mail's bulk review region (#382 M4): Confirm and Continue
     # sit inside it, and the bulk panel draws it.
     "delivery-bulk-review.html": ("delivery-bulk.html",),
-    # The roster tick (#528): on the request page, and on each row of
-    # Roster changes to enter.
+    # The roster tick (#528) on the request page; Ministry requests
+    # marks through its review worklist (#1687).
     "roster-tick.html": ("ministry-followup.html",),
-    "roster-tick-row.html": ("ministry-roster.html",),
     # By Ministry's count links on Ministry requests apply their filters to
     # the review worklist's table region, which the shared component draws
     # (#1684).
@@ -272,14 +271,14 @@ def region_body(text, region):
 
 
 def test_follow_up_saves_are_in_place():
-    """Save follow-up on a Ministry follow-up request and on an information
-    item saves in place (#519 PR 2): each form is a data-in-place POST whose
-    action lands on the request's panel, which holds the form and its
-    history, with a key to refocus the fresh Save button and the message the
-    live region reads. Both wait for their prerequisites before Save."""
+    """Save follow-up on a Ministry follow-up request saves in place (#519
+    PR 2): its form is a data-in-place POST whose action lands on the
+    request's panel, which holds the form and its history, with a key to
+    refocus the fresh Save button and the message the live region reads. It
+    waits for its prerequisites before Save. (An information request has no
+    form since it moved to the review worklist, #1685.)"""
     for name, region, key in (
         ("ministry-followup.html", "followup-item", "followup-save"),
-        ("information.html", "information-item", "information-save"),
     ):
         text = (TEMPLATES / name).read_text()
         form = re.search(r'<form method="post"[^>]*_update[^>]*>', text).group(0)
@@ -379,23 +378,6 @@ def test_backup_test_access_is_in_place():
     follow = re.search(r"<a hidden data-live-follow[^>]*>", lines).group(0)
     assert "data-in-place data-in-place-quiet" in follow
     assert 'href="{{ follow_url }}#integration-status"' in follow
-
-
-def test_information_reopen_confirmation_shows_only_when_unticking():
-    """The confirmation to reopen completed follow-up is shown, and required
-    before Save, only once "Follow-up completed" is unticked."""
-    text = (TEMPLATES / "information.html").read_text()
-    group = re.search(r'<div data-show-when="followed_up!=yes"[^>]*>', text).group(0)
-    assert 'data-required-when-shown="confirm_clear"' in group
-    assert "data-missing-hint=" in group
-    # Save names its hint, and also the locked notice while other campaign
-    # work holds edits (#563).
-    assert (
-        'aria-describedby=mutable|yesno:"information-save-hint,'
-        'information-save-hint information-locked"' in text
-    )
-    hint = '<p class="help" id="information-save-hint" data-complete-hint hidden>'
-    assert hint in text
 
 
 # The history and report pagers (#519 PR 6): template, region, whether the
@@ -545,7 +527,6 @@ def test_live_status_pages_update_themselves_and_dismiss_in_place():
     Retry) brings a fresh one live-status-v1.js watches. An integration's
     Dismiss acts in place (#519 PR 7a)."""
     for name, region in (
-        ("credential-status.html", "credential-progress"),
         ("family-email-progress.html", "send-progress"),
         ("campaign-mail-families.html", "family-tests"),
     ):
@@ -695,7 +676,10 @@ def test_share_options_review_in_the_dialog():
     # A compact review (#1356): the button says Save, the dialog asks the
     # question and its lines describe it.
     assert 'translate "Change an option to save it." as option_hint' in text
-    assert "review-changes-button.html' with hint=option_hint label=save_label" in text
+    assert (
+        'review-changes-button.html\' with describedby="share-complete-hint" '
+        "hint=option_hint label=save_label"
+    ) in text
     assert 'translate "Save" as save_label' in text
     assert 'translate "Save the share options?" as review_title' in text
     assert 'describedby="share-review-summary" %}' in text
@@ -1064,9 +1048,42 @@ def test_no_manual_page_refresh_controls():
         text = path.read_text()
         assert "data-live-restart" not in text, path.name
         assert "data-live-refresh-label" not in text, path.name
-        # The periodic re-read's own link is never a visible control.
-        for tag in re.findall(r"<a\b[^>]*\bdata-reread-every\b[^>]*>", text):
+        # The periodic re-read's own link, and a figures status's follow-up
+        # link, are never visible controls.
+        for tag in re.findall(r"<a\b[^>]*\bdata-reread(?:-every)?\b[^>]*>", text):
             assert re.search(r"(?<![\w-])hidden(?![\w-])", tag), path.name
+
+
+# Text telling the reader to reload the page by hand to see background work
+# progress (#1586 slice 3): a page that waits on work follows it instead.
+REFRESH_THIS_PAGE = re.compile(r"refresh\s+this\s+page", re.IGNORECASE)
+# Python modules of the go-live pages the go-live redesign converts (#1585).
+GO_LIVE_MODULES = {"activation_progress.py"}
+
+
+def test_no_refresh_this_page_instructions():
+    """No page tells the reader to "refresh this page" to check on work in
+    progress (UX conventions, "Pages that update themselves", #1586): no
+    template, Python message or script says it, other than the go-live
+    pages slice 2 converts (#1585)."""
+    scripts = sorted((TEMPLATES.parents[1] / "static/stewardship").glob("*.js"))
+    modules = [
+        path
+        for path in sorted(PACKAGE.rglob("*.py"))
+        if not {"migrations", "tests"} & set(path.parts)
+        and path.name not in GO_LIVE_MODULES
+    ]
+    pages = [
+        path
+        for path in sorted(TEMPLATES.rglob("*.html"))
+        if path.name not in GO_LIVE_REFRESH
+    ]
+    found = {
+        path.name
+        for path in (*pages, *modules, *scripts)
+        if REFRESH_THIS_PAGE.search(path.read_text())
+    }
+    assert found == set()
 
 
 @pytest.mark.parametrize(

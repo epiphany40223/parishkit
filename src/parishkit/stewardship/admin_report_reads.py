@@ -57,6 +57,7 @@ REPORT_COMMANDS = {
     "response_dashboard": ("report responses", "report participation"),
     "campaign_comparison": ("report comparison",),
     "financial_report": ("report financial",),
+    "pledges_to_enter": ("report pledges",),
     "limitations_report": ("report limitations",),
     "census_changes": ("report census",),
     "information_queue": ("report information",),
@@ -180,22 +181,33 @@ class LimitationsReport(ReadModel):
     """The Limitations report's summary, without its rows (#970).
 
     ``cannot_serve`` counts Members who cannot participate in ministries and
-    ``cannot_attend`` Families who cannot attend Mass or prayer services.
+    ``cannot_attend`` Families who cannot attend Mass or prayer services,
+    both at the worklist ``stage`` (``all`` for every answer, #1735);
+    ``stages`` counts every answer by stage, zeros included.
     """
 
     campaign_id: UUID
     cannot_serve: int
     cannot_attend: int
+    stage: str
+    stages: dict
 
 
 @dataclass(frozen=True)
 class InformationReport(ReadModel):
-    """How many information queue items match the page's filters."""
+    """How many information queue items match the page's filters.
+
+    With a worklist ``stage`` (#1735), ``matching`` is the requests at it
+    and ``stages`` each stage's count, History's too; both are None
+    without one.
+    """
 
     campaign_id: UUID
     filters: dict
     source_as_of: str
     matching: int
+    stage: str | None = None
+    stages: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -843,21 +855,33 @@ def read_financial(caller, service):
 # --------------------------------------------------------- limitations
 
 
-def limitations_model(campaign_id, result):
-    """The command's projection of ``limitations_report``'s summary."""
-    summary = result["summary"]
+def limitations_model(campaign_id, result, stage="all"):
+    """The command's projection of ``limitations_report``'s summary.
+
+    The summary is of the answers at ``stage`` (the page's own
+    ``at_stage``); ``stages`` counts every answer by stage.
+    """
+    from .reports.limitations import STAGES, at_stage
+
+    counts = {choice.value: 0 for choice in STAGES}
+    for row in result.get("members", []) + result.get("families", []):
+        counts[row["placement"].stage.value] += 1
+    summary = at_stage(result, stage)["summary"]
     return LimitationsReport(
         campaign_id=campaign_id,
         cannot_serve=summary["cannot_serve"],
         cannot_attend=summary["cannot_attend"],
+        stage=stage,
+        stages=counts,
     )
 
 
-def read_limitations(caller, service):
+def read_limitations(caller, service, stage="all"):
     """``report limitations``: the Limitations report's summary (#970).
 
     Reads the page's ``limitations_report`` without filters
-    (``LimitationsQuery()``) and prints its summary only. Records the
+    (``LimitationsQuery()``) and prints its summary only, at the worklist
+    ``stage`` (#1735; ``all``, the default, is every answer). Records the
     page's ``talents_report_viewed`` once the read ends, with ``count`` 0
     (no Member or Family row is displayed) and the page's ``audit_choices``:
     the default filter and, when it held still during the read, the
@@ -869,6 +893,14 @@ def read_limitations(caller, service):
     from .reports.limitations import LimitationsQuery, limitations_report
     from .source.snapshot_names import current_snapshot
 
+    def admit(actor, campaign_id):
+        """The worklist's Stage check, before anything is recorded."""
+        from .admin_worklists import LIMITATION_STAGES
+
+        if stage not in LIMITATION_STAGES:
+            _recheck(caller, service.store, actor)
+            raise ValueError("Invalid Limitations stage.")
+
     def read(guard, actor, campaign_id):
         """The page's read, with the page's default filters."""
         Campaign.objects.only("pk").get(pk=campaign_id)
@@ -876,9 +908,11 @@ def read_limitations(caller, service):
         # As the page: the snapshot is named only when no refresh promoted
         # another between the statements of the read.
         before = current_snapshot()
-        result = limitations_report(campaign_id, query, actor)
+        # Only the summary is printed, so Pledges' rows are not read.
+        result = limitations_report(campaign_id, query, actor, contributions=False)
         snapshot = before if current_snapshot() == before else None
-        return limitations_model(campaign_id, result), audit_choices(query, snapshot)
+        model = limitations_model(campaign_id, result, stage)
+        return model, audit_choices(query, snapshot)
 
     return _report(
         caller,
@@ -893,6 +927,7 @@ def read_limitations(caller, service):
             0,
             values or audit_choices(LimitationsQuery(), None),
         ),
+        admit=admit,
         shaping=True,
     )
 
@@ -900,18 +935,22 @@ def read_limitations(caller, service):
 # --------------------------------------------------------- information
 
 
-def read_information(caller, service, filters):
+def read_information(caller, service, filters, stage=None):
     """``report information``: how many information items match the filters.
 
     ``filters`` are the queue's non-identifying filters (``disposition``,
     ``needed``, ``completed``, ``start``, ``end`` and the ``zone`` the days fall
     in, required with them (#558); None when not given),
     parsed by the page's ``InformationQuery`` (a refusal is ``invalid``).
+    With a worklist ``stage`` (#1735) the worklist's own read counts the
+    requests by stage instead (``read_information_stages``).
     Records the page's ``information_viewed``, started and then succeeded.
     """
     from .reports.information import InformationQuery, information_page
     from .reports.information_views import _audit, _principal
 
+    if stage is not None:
+        return read_information_stages(caller, service, filters, stage)
     query = InformationQuery.parse(
         {key: value for key, value in filters.items() if value is not None}
     )
@@ -943,6 +982,55 @@ def read_information(caller, service, filters):
         ),
         started=True,
     )
+
+
+def read_information_stages(caller, service, filters, stage):
+    """``report information --stage``: the worklist's requests, counted (#1735).
+
+    The worklist reads every request (``information_worklist.requests``)
+    with only the dates of ``filters``; the old queue's follow-up filters
+    stand for stages there, so naming one beside ``stage`` is ``invalid``.
+    ``matching`` is the requests at ``stage`` and ``stages`` every stage's
+    count, History's too. Records the page's ``information_viewed``.
+    """
+    from .admin_worklists import information_filters, information_query
+    from .reports.information_views import _audit, _principal
+    from .reports.information_worklist import STAGES, requests
+
+    if any(filters.get(name) is not None for name in FOLLOWUP_FILTERS):
+        raise ValueError("--stage replaces --disposition, --needed and --completed.")
+    query = information_query(
+        stage, {name: filters.get(name) for name in ("start", "end", "zone")}
+    )
+
+    def read(guard, actor, campaign_id):
+        """The worklist's placed rows, reduced to their counts."""
+        metadata, rows, counts = requests(campaign_id, query)
+        stages = [choice.value for choice in STAGES] + ["history"]
+        model = InformationReport(
+            campaign_id=campaign_id,
+            filters=information_filters(query),
+            source_as_of=_instant(metadata["source_as_of"]),
+            matching=len(rows),
+            stage=query.stage,
+            stages={choice: counts.get(choice, 0) for choice in stages},
+        )
+        return model, None
+
+    return _report(
+        caller,
+        service,
+        principal=_principal,
+        read=read,
+        audit=lambda actor, campaign_id, outcome, values: _audit(
+            actor, campaign_id, outcome
+        ),
+        started=True,
+    )
+
+
+# The old queue's follow-up filters, which a worklist Stage stands for.
+FOLLOWUP_FILTERS = ("disposition", "needed", "completed")
 
 
 # ------------------------------------------------------------ ministry

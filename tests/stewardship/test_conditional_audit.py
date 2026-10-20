@@ -111,7 +111,10 @@ def test_the_weekly_report_in_progress_is_shown_unavailable():
         # The Response dashboard's export button (#1537), and its unavailable
         # stand-in without a chart, which then names both reasons.
         ("response-dashboard.html", "participation-export-locked", 2, 1),
-        ("information.html", "information-locked", 4, 1),
+        # Additional information's notice (#1685): its worklist offers no
+        # decision while held, and its export pane's button names the notice.
+        ("information.html", "information-locked", 0, 1),
+        ("information-worklist-export.html", "information-locked", 1, 0),
         # A request page's Save and Save and next (both of its branches).
         ("ministry-followup.html", "followup-locked", 3, 1),
         # The review worklist (#1684) draws no action while the page is held,
@@ -155,16 +158,16 @@ def test_a_held_roster_tick_is_shown_unavailable_with_why(entered):
 
 
 def test_participation_exports_without_their_data_are_shown_unavailable():
-    """With no chart the Response dashboard's export button is drawn
+    """With no chart the Response dashboard's export buttons are drawn
     disabled, named by the sentence that says why, and also by the locked
     notice while other campaign work holds exports."""
     text = (TEMPLATES / "response-dashboard.html").read_text()
     reason = "participation-chart-export-unavailable"
     assert text.count(f'id="{reason}"') == 1
     assert (
-        '{% button type="submit" enabled=False aria-describedby=export_allowed'
+        '{% export_actions "csv" "xlsx" "pdf" name="participation" '
+        "zone_value=query.timezone enabled=False describedby=export_allowed"
         f'|yesno:"{reason},{reason} participation-export-locked" %}}'
-        '{% translate "Generate export" %}'
     ) in text
 
 
