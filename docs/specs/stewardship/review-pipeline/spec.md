@@ -959,10 +959,16 @@ derivation), where the design leaves a choice:
   item whose relevant inputs did not change (a census field's ParishSoft
   value, a Member's roster and the offered Ministries, the pledge's
   financial inputs), and only while the Family's response it answers is
-  still the latest; otherwise it takes fresh entries.
+  still the latest; otherwise it takes fresh entries. A form drawn before
+  the release keeps the earlier rule on a refresh only while it answers the
+  same response; after another session's response it is drawn as the
+  reviewed form.
 - **Ministry withdrawal and replacement.** A decided request the Family
   replaced or withdrew keeps no outcome or Edit on its row, as the table
-  requires (its revisions keep the decision's history). An undo of a
+  requires (its revisions keep the decision's history). One Staff ticked
+  Entered in ParishSoft is never replaced or withdrawn by the Family: a
+  changed answer adds a new request beside it, and the refresh judges the
+  entered one. An undo of a
   request the parish added or Staff ticked Entered in ParishSoft is kept and
   shown on the row ("Family unticked", "Family chose to continue"). An
   Ignored New Member's Ministry requests are judged as before the reviewed
