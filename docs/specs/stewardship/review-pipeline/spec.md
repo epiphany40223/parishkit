@@ -321,7 +321,8 @@ The rule, for every stream and every terminal stage:
   review again and Edit. Entered by hand again stays its other fix.
 - The undo is a stream audit event (versions and counts only), and the
   Family's [Timeline](../reports/spec.md#timeline-review-lines) lists it as
-  a Back to review line with its note.
+  a Back to review line; like every Timeline line it shows no note (notes
+  can hold personal detail), which the item's own row keeps.
 - The same undo is in `pk-admin` wherever the stream's Back to review is
   ([admin automation](../admin-automation/spec.md)), with the required
   `--note`; no command asks "cannot be undone" for these marks any more.
