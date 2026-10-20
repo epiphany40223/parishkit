@@ -252,7 +252,7 @@ DESCRIPTIONS = {
     ),
     "admin_cmd_census_review": _(
         "An automation session reviewed an automatic census change "
-        "(approved, ignored or sent back to To review), as the row's "
+        "(accepted, ignored or sent back to To review), as the row's "
         "actions on the Census changes page do."
     ),
     "admin_cmd_followup_update": _(
@@ -269,9 +269,23 @@ DESCRIPTIONS = {
         "changes page's Edit value does."
     ),
     "admin_cmd_census_resolve_conflict": _(
-        "An automation session approved an automatic census change over "
+        "An automation session accepted an automatic census change over "
         "ParishSoft's current value, as the Census changes page's Use the "
         "Family's value anyway does."
+    ),
+    "admin_cmd_census_update_check": _(
+        "An automation session asked to check ParishSoft for the census "
+        "changes Ready to update, as Update ParishSoft's Check ParishSoft "
+        "does."
+    ),
+    "admin_cmd_census_update_confirm": _(
+        "An automation session confirmed writing a check's census changes "
+        "to ParishSoft, as Update ParishSoft's Update does."
+    ),
+    "admin_cmd_census_update_rerun": _(
+        "An automation session asked to run an update of ParishSoft again "
+        "for the Members it did not finish, as Update ParishSoft's Run "
+        "again does."
     ),
     "admin_cmd_followup_roster_entered": _(
         "An automation session set or cleared a Ministry request's Entered "

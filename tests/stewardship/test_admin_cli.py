@@ -188,6 +188,11 @@ def test_the_catalog_lists_every_command_with_its_flags():
         # Its Edit value and Use the Family's value anyway (#1434).
         "census edit",
         "census resolve-conflict",
+        # Update ParishSoft's check, plan, Update and Run again (#1755).
+        "census update-check",
+        "census update-plan",
+        "census update-confirm",
+        "census update-rerun",
         "export census",
         "export limitations",
         "export roster",
@@ -306,6 +311,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
                 "integration key replace",
                 "integration backup-key confirm",
                 "send confirm",
+                # Update ParishSoft's Update (#1755).
+                "census update-confirm",
             }
         ), name
         # A prompting command, and only one, takes --yes. Other branches add
@@ -869,7 +876,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert review["arguments"] == ["PROPOSAL_ID"]
     assert review["result_fields"] == ["created", "request_key", "review", "proposal"]
     options = {option["name"]: option for option in review["options"]}
-    assert options["--decision"]["choices"] == ["approved", "ignored", "unreviewed"]
+    assert options["--decision"]["choices"] == ["accepted", "ignored", "unreviewed"]
     assert options["--decision"]["required"]
     assert options["--expected-version"]["required"]
     assert not options["--note"]["required"]
@@ -1050,6 +1057,10 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_limitations_decide",
         # Pledges' decisions (#1733).
         "admin_cmd_pledges_decide",
+        # Update ParishSoft's Check ParishSoft, Update and Run again (#1755).
+        "admin_cmd_census_update_check",
+        "admin_cmd_census_update_confirm",
+        "admin_cmd_census_update_rerun",
     ]
     for event in events:
         assert Action(event) and event in DESCRIPTIONS, event
