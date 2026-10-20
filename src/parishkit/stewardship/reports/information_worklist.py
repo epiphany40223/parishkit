@@ -41,6 +41,7 @@ from parishkit.stewardship.web.review_worklist import (
     Column,
     StaleDecision,
     build,
+    page_address,
 )
 from parishkit.stewardship.web.tables import Sorting
 
@@ -285,7 +286,9 @@ def worklist_page(counts, query, table, action, *, mutable):
     worklist's rows. ``mutable`` is false while other campaign work holds
     the campaign: the reader is then offered no action, as the service
     would refuse them. History is a Stage choice of its own, which Every
-    stage does not count.
+    stage does not count. The view's address carries its Stage alone
+    (To review is the plain address), the one choice its GET takes
+    (#1818), so a reload after an in-place answer draws the same Stage.
     """
     rows = worklist_rows(table.rows)
     table = replace(table, rows=rows, method="post", action=action)
@@ -308,6 +311,10 @@ def worklist_page(counts, query, table, action, *, mutable):
         },
         filters_template="stewardship/information-worklist-filters.html",
         export_template="stewardship/information-worklist-export.html",
+        address=page_address(
+            action,
+            [("stage", "" if query.stage == Stage.TO_REVIEW.value else query.stage)],
+        ),
     )
     history = Stage.HISTORY.value
     worklist.stage_choices.insert(
