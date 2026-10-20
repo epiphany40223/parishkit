@@ -610,6 +610,7 @@ GOLDEN = {
             "total": 3,
             "stages": {
                 "to_review": 2,
+                "conflict": 0,
                 "to_enter_by_hand": 0,
                 "entered_by_hand": 0,
                 "entered_incorrectly": 0,
