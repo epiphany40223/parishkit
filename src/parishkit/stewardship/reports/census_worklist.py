@@ -280,6 +280,12 @@ def worklist_rows(rows):
                 "stage_note": _stage_note(row),
                 "entered_template": _entered_template(row),
                 "remark": _remark(row),
+                # A Family's reviewed form (#1705) shows ParishSoft's value
+                # for an Ignored change of a Member's field or request; it
+                # cannot show a Family address or the email opt-out from
+                # ParishSoft, so it shows the Family's own answer for those,
+                # and it leaves an Ignored New Member out.
+                "shown_baseline": row["entity_kind"] == "member",
             }
         )
     return found

@@ -116,10 +116,14 @@ ORDER BY (s.answers->'family'->'home_address') IS NOT NULL DESC,
 LIMIT 1
 """
 # The change rows in force (``effective.proposal_index``): the census
-# response's own rows, and for a Member's request fields the newest row of
-# any live response, the census response's first. Report-only rows belong
-# to other streams. Takes %(family)s, %(campaign)s, %(submission)s (a UUID)
-# and %(terminal)s (``TERMINAL``, a list).
+# response's own rows, for a Member's request fields the newest row of any
+# live response, the census response's first, and the changes a response
+# drawn as the reviewed form (#1705) showed and left as shown, which stay
+# on their earlier response (``effective._shown_still_answered``): an
+# Ignored one shown as the baseline whatever the answer, any other only
+# while the answer is the value shown. Report-only rows belong to other
+# streams. Takes %(family)s, %(campaign)s, %(submission)s (a UUID) and
+# %(terminal)s (``TERMINAL``, a list).
 PROPOSALS = """
 SELECT DISTINCT ON (p.entity_kind, p.entity_key, p.field)
     p.entity_kind, p.entity_key, p.field, p.baseline_available,
@@ -130,7 +134,22 @@ JOIN stewardship_submission s ON s.id=p.submission_id
 WHERE s.family_id=%(family)s AND s.campaign_id=%(campaign)s AND s.mode='live'
     AND p.handling<>'report-only'
     AND (s.id=%(submission)s OR (p.entity_kind='member'
-        AND p.field = ANY(%(terminal)s)))
+        AND p.field = ANY(%(terminal)s))
+        OR EXISTS (SELECT 1 FROM stewardship_submission c
+            CROSS JOIN LATERAL jsonb_array_elements(c.shown_items) e
+            WHERE c.id=%(submission)s AND c.reviewed_view
+              AND e->>'stream'='census' AND e->>'item'=p.id::text
+              AND p.execution NOT IN ('cancelled','superseded')
+              AND (e->>'shown'='baseline'
+                OR stewardship_response_comparison_v1(p.field,
+                    c.answers #> CASE p.entity_kind
+                        WHEN 'family' THEN ARRAY['family',p.field]
+                        WHEN 'member' THEN ARRAY['members',p.entity_key,p.field]
+                        ELSE ARRAY['proposed_members',p.entity_key] END)
+                  IS NOT DISTINCT FROM stewardship_response_comparison_v1(p.field,
+                    CASE WHEN e->>'shown'='family' THEN p.submitted_value
+                    ELSE (SELECT v.admin_value FROM stewardship_proposal_review v
+                        WHERE v.id::text=e->>'decision') END))))
 ORDER BY p.entity_kind, p.entity_key, p.field,
     s.id=%(submission)s DESC, s.family_version DESC
 """

@@ -73,6 +73,9 @@ def test_web_cannot_change_outcome_without_new_response(response_service, execut
     assert proposal.execution == "pending"
 
 
+# The rule before the reviewed Family form (#1705): forms drawn before
+# its release, as one open across the deploy is.
+@pytest.mark.usefixtures("earlier_rule")
 def test_same_intent_can_carry_verified_review_decision(live_response_service):
     """A revisit carries, but cannot invent, a parish reviewer decision."""
     harness = live_response_service
@@ -268,6 +271,9 @@ def test_terminal_old_intent_starts_from_current_source(live_response_service):
     assert proposal.decision == "unreviewed" and proposal.execution == "pending"
 
 
+# The rule before the reviewed Family form (#1705): forms drawn before
+# its release, as one open across the deploy is.
+@pytest.mark.usefixtures("earlier_rule")
 def test_web_cannot_label_a_carried_conflict_pending(
     live_response_service, monkeypatch
 ):

@@ -1,14 +1,14 @@
-"""What each Family form showed: storage only (#1705 slice 1, migration 0143).
+"""What each Family form showed: its storage (#1705, migration 0143).
 
 The baseline records ``reviewed_view`` and ``shown_items`` and the submit
-copies them, unchanged, to the immutable Submission. Nothing sets them yet,
-so no form is drawn as the reviewed form and the Family form is unchanged;
-these tests force a reviewed baseline to prove the copy.
+copies them, unchanged, to the immutable Submission. These tests run in a
+Testing session, which is never drawn as the reviewed form (decision 3),
+and force a reviewed baseline's fields to prove the storage and the copy;
+``test_reviewed_form_postgresql`` covers what a live form records.
 """
 
 import json
 from contextlib import contextmanager
-from functools import partial
 from pathlib import Path
 
 import pytest
@@ -17,6 +17,7 @@ from django.db import DatabaseError, IntegrityError, connection, transaction
 from parishkit.config import ConfigError
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.deployment import ServiceRole
+from parishkit.stewardship.responses import baselines
 from parishkit.stewardship.responses.models import FamilyFormBaseline, Submission
 from parishkit.stewardship.runtime_grants import runtime_grants
 
@@ -32,17 +33,27 @@ FROZEN = (
 )
 TABLES = ("stewardship_family_form_baseline", "stewardship_submission")
 COLUMNS = ("reviewed_view", "shown_items")
-# Entries in the shape the spec names (stream, identity, item version,
-# decision row, which value); slice 2 defines them, storage keeps any array.
+# Entries in the shape ``responses.reviewed`` records (stream, identity,
+# item, item version, decision row, which value), naming no real item, so
+# the submit judges every answer as new; storage keeps any array.
 SHOWN = [
     {
         "stream": "census",
-        "identity": ["member", "3", "first_name"],
+        "entity": "member",
+        "key": "3",
+        "field": "first_name",
+        "item": "00000000-0000-4000-8000-000000000001",
         "version": 2,
         "decision": None,
-        "value": "family",
+        "shown": "family",
     },
-    {"stream": "pledge", "identity": ["family"], "version": 1, "value": "baseline"},
+    {
+        "stream": "financial",
+        "item": "00000000-0000-4000-8000-000000000002",
+        "version": 1,
+        "decision": None,
+        "shown": "family",
+    },
 ]
 
 
@@ -54,20 +65,15 @@ def check_block():
 
 @contextmanager
 def reviewed_baselines(monkeypatch, shown_items):
-    """Issue baselines as a reviewed form would record them.
+    """Issue baselines with these fields, as a reviewed form records them.
 
-    Nothing sets the columns until slice 6 turns the reviewed form on, so
-    this adds them to the real issue's one ``create`` call; everything else
-    about the baseline is the production path.
+    A Testing session is never drawn as the reviewed form, so this replaces
+    only the issue's choice of the two fields (``baselines._shown``);
+    everything else about the baseline is the production path.
     """
-    manager = FamilyFormBaseline.objects
     # A nested context undoes only this patch, not the test's other ones.
     with monkeypatch.context() as patch:
-        patch.setattr(
-            manager,
-            "create",
-            partial(manager.create, reviewed_view=True, shown_items=shown_items),
-        )
+        patch.setattr(baselines, "_shown", lambda *args: (True, shown_items))
         yield
 
 
@@ -158,8 +164,8 @@ def test_check_refuses_an_existing_reviewed_row(response_service, monkeypatch):
         cursor.execute(check_block())
 
 
-def test_todays_form_and_response_record_nothing(response_service):
-    """Today no form is drawn as the reviewed form, nor is its response."""
+def test_testing_form_and_response_record_nothing(response_service):
+    """A Testing form is not drawn as the reviewed form, nor is its response."""
     form, answers = form_and_answers(response_service)
     assert (form.baseline.reviewed_view, form.baseline.shown_items) == (False, None)
     row = submit(response_service, form, answers).submission
@@ -196,12 +202,7 @@ def test_baseline_refuses_unpaired_fields(
     response_service, monkeypatch, reviewed_view, shown_items
 ):
     """Off records no entries; on records a JSON array (possibly empty)."""
-    manager = FamilyFormBaseline.objects
-    monkeypatch.setattr(
-        manager,
-        "create",
-        partial(manager.create, reviewed_view=reviewed_view, shown_items=shown_items),
-    )
+    monkeypatch.setattr(baselines, "_shown", lambda *args: (reviewed_view, shown_items))
     with pytest.raises(IntegrityError, match="family_baseline_shown_shape"):
         form_and_answers(response_service)
 

@@ -32,6 +32,7 @@ from parishkit.stewardship.storage import StorageInvariantError
 
 from .inputs import FORM_SCHEMA, PROJECTION_VERSION, CensusInputs, FormInputsUnavailable
 from .models import FamilyFormBaseline, Submission
+from .reviewed import carry_over, shown_items
 from .source_inputs import load_census_inputs
 
 
@@ -131,12 +132,39 @@ def cancel_session_baselines(session_ids):
         end_baseline(row, state="cancelled")
 
 
-def issue_baseline(request, service):
+def _shown(mode, family, prior, inputs, replacing):
+    """``(reviewed_view, shown_items)`` for a baseline about to be issued.
+
+    A live form is drawn as the reviewed form (#1705), and records the
+    shown items it draws; a Testing form never is (decision 3). A form
+    that replaces an open one after a refresh (``replacing``, the open
+    form's ``BaselineValidation``) keeps that form's rule, so a form drawn
+    before the reviewed form shipped stays on the earlier rule and draws the
+    Family's own answers, and a reviewed one keeps each untouched item's
+    earlier shown item (``reviewed.carry_over``) while the Family's
+    response it answers is still the latest.
+    """
+    if mode != "live" or (
+        replacing is not None and not replacing.baseline.reviewed_view
+    ):
+        return False, None
+    entries = shown_items(inputs, prior, family)
+    if replacing is not None and replacing.baseline.prior_submission_id == (
+        prior.pk if prior else None
+    ):
+        entries = carry_over(
+            replacing.baseline.shown_items, entries, replacing.reviewed, inputs
+        )
+    return True, entries
+
+
+def issue_baseline(request, service, *, replacing=None):
     """Atomically bind current reviewed inputs to this session, never to a draft.
 
     The baseline's mode and rehearsal epoch come from the admitted session, so a
     Testing baseline can never back a live submission; no separate Testing
-    acknowledgment is collected (#243). The baseline contains no answers.
+    acknowledgment is collected (#243). The baseline contains no answers; a
+    live one records what its reviewed form shows (``_shown``, #1705).
     """
     with work_transaction():
         configuration, campaign, family, session = admitted_family(request, service)
@@ -166,6 +194,7 @@ def issue_baseline(request, service):
             parish_name=configuration.active_configuration.parish.name,
         )
         prior = effective_submission(family, session)
+        reviewed_view, shown = _shown(mode, family, prior, inputs, replacing)
         # Pin the replacement before releasing the old protection. Compaction
         # cannot interleave with either this snapshot lock or the work order.
         baseline = FamilyFormBaseline.objects.create(
@@ -182,6 +211,8 @@ def issue_baseline(request, service):
             definition_digest=inputs.definition_digest,
             expires_at=session.expires_at,
             actor_id=family.pk,
+            reviewed_view=reviewed_view,
+            shown_items=shown,
         )
         pin_snapshot(
             snapshot.pk,

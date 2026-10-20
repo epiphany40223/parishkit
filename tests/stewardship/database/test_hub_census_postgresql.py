@@ -155,10 +155,14 @@ def test_before_a_response_each_member_has_a_marked_tab(
 
 
 def test_a_second_response_keeps_each_change_once(live_response_service):
-    """A Family answering again: the newest rows, an added Member last."""
+    """A Family answering again: the changes in force, an added Member last.
+
+    The second answer left the first one's changes as its reviewed form
+    showed them (#1705), so they stay in force on the first response and no
+    row is replaced; the hub still shows each once."""
     harness = live_response_service
     added = answer_twice(harness)
-    assert ProposedChange.objects.filter(execution="superseded").count() == 2
+    assert ProposedChange.objects.filter(execution="superseded").count() == 0
     family_id = ProposedChange.objects.values_list(
         "submission__family_id", flat=True
     ).first()
