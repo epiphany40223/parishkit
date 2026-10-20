@@ -850,8 +850,25 @@ the daily chart's facts, all inside the report's one
 recheck. When the statistics or the daily facts cannot be read from their
 inputs, the Production view still shows the Summary's Families by stage
 row and, instead of the other rows and panels, one line saying they are unavailable right
-now, with no zero assumed; a database or guard failure still answers the
-report's unavailable page. A view records `response_dashboard_viewed` with
+now, with no zero assumed, and that they appear by themselves; a database or
+guard failure still answers the report's unavailable page. The line never
+tells the reader to reload the page
+([pages that update themselves](../ui-conventions/spec.md#pages-that-update-themselves),
+[#1586](https://github.com/epiphany40223/parishkit/issues/1586)): the
+page's figures status stays beside it and keeps watching, through the same
+passive, unaudited status read as the **Updating** notice, at a fixed
+60-second pace and with no Updating notice of its own (its address carries
+`retry=1`, the only value `retry` takes, and only for the dashboard; any
+other is refused with 400). Once a generation other than the newest one
+when the page was drawn is ready (any ready one, when there was none), the
+page re-reads itself once, as it does for newer figures. So when only the
+ParishSoft data is missing ("They appear here by themselves after the
+first ParishSoft update completes"), the page waits for the generation that
+update builds; when the daily facts could not be read (a busy generation is
+already passed over for the next candidate, so what is left seldom clears
+by itself), the page waits for a different generation too, rather than
+re-reading itself, and recording an automatic view, about once a minute
+while nothing has changed. A view records `response_dashboard_viewed` with
 its outcome, and a Production view also `participation_viewed`, started and
 then succeeded or failed (failed, too, when its panels were unavailable);
 neither copies a reported value. The browser draws the charts; a
