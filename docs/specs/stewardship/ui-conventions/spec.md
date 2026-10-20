@@ -1727,11 +1727,14 @@ use the dialog too (#750): an ordinary settings edit is a compact review, a
 refresh schedule change keeps its full review, and setting up Off-site
 backups by its folder, removing Slack, turning off off-site copies, a key
 change and Finish switching to the new key are confirmations (#1568); the
-Backup encryption key change still uses its separate
-Review page. The in-place review panel of #532 is retired
+[Backup encryption key](../admin-portal/spec.md#parish-and-integration-configuration)
+change, once its code is proved, is a compact review (its proof steps act in
+place). The in-place review panel of #532 is retired
 ([#1429](https://github.com/epiphany40223/parishkit/issues/1429),
-[in-place controls](#in-place-controls)); the other editors use separate
-Review and Change status pages.
+[in-place controls](#in-place-controls)); Pages and emails' editor still uses
+its separate Review and Change status pages, as does Copy campaign, which
+refuses every request until
+[#145](https://github.com/epiphany40223/parishkit/issues/145).
 [#750](https://github.com/epiphany40223/parishkit/issues/750) tracks the
 conversion.
 

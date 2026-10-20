@@ -6,19 +6,35 @@
   the key"; keep them in step. Never show a posted value back except the
   sealed challenge and fingerprints; the pasted key travels in the intent
   only encrypted.
+
+  Every step acts in place (UX conventions, "In-place controls" and "Review
+  dialog", #750). The step shown is one in-place region (backup-key-change):
+  Continue (form[data-in-place]) and Start over (a[data-in-place]) swap it,
+  a refused paste is swapped in with its error summary, and after Continue
+  the challenge's heading takes focus (data-in-place-focus). The code form
+  opens the shared review dialog at the end of the page
+  (data-review-open): a wrong code is a field refusal (status 400, this
+  form again), so the dialog stays shut and the field is marked; a proved
+  code answers with integration-review.html's compact review, whose Apply
+  posts the signed preview here and follows the change. Once it is
+  applied, both regions (the key in use, and the change back at its first
+  step) are redrawn from this page's address, and the status line at the
+  end of the change region says what was applied. A refused paste draws
+  the field empty on purpose: the pasted text, which may be a private key,
+  is never shown back.
 {% endcomment %}
 {% block title %}{{ label }}{% endblock %}
 {% block content %}
 <h1>{{ label }}</h1>
 {% aboutpage "backup-key" %}<p>{% translate "Every backup is encrypted with a public key before it is written. Only the matching private key, which your parish keeps off this server, can open it." %}</p>{% endaboutpage %}
 <p class="notice">{% translate "Never give this server the private key." %}</p>
-<section class="panel" aria-labelledby="current-key">
+<div id="backup-key-current" data-in-place-region><section class="panel" aria-labelledby="current-key">
 <h2 id="current-key">{% translate "Key in use" %}</h2>
 {% if current.source == 'configured' %}<p>{% translate "Fingerprint:" %} <code>{{ current.fingerprint }}</code>. {% translate "Set on this page. The next backup uses it." %}</p>
 {% elif current.source == 'installed' %}<p>{% translate "Fingerprint:" %} <code>{{ current.fingerprint }}</code>. {% translate "Installed on the server with the deployment; this is the key the newest backup used, on" %} <time datetime="{{ current.backup_at|instant }}" data-local-instant>{{ current.backup_at|instant }}</time>.</p>
 {% else %}<p>{% translate "The key installed on the server with the deployment. No backup has run yet, so its fingerprint is not known here; it appears here after the first backup runs." %}</p>{% endif %}
 <p>{% translate "Compare the fingerprint with the one recorded next to your private key. If they differ, the backups cannot be opened with the key you kept." %}</p>
-</section>
+</section></div>
 <details class="panel"><summary>{% translate "Before you replace the key" %}</summary>
 <ul>
 <li>{% translate "Backups already made stay encrypted with the old key. Keep the old private key, and every copy of it, until all of those backups have been deleted by retention (about a year: 30 daily and 12 monthly backups are kept)." %}</li>
@@ -27,29 +43,30 @@
 <li>{% translate "The new key is used from the next backup. After it runs, open that backup with the new private key, as the restore drill does." %}</li>
 </ul>
 </details>
-{% if challenge %}
+<div id="backup-key-change" data-in-place-region data-refresh-url="{{ page_url }}">{% if challenge %}
 <section class="panel" aria-labelledby="prove-key">
-<h2 id="prove-key">{% translate "Prove you have the new private key" %}</h2>
+<h2 id="prove-key" tabindex="-1" data-in-place-focus>{% translate "Prove you have the new private key" %}</h2>
 <p>{% translate "New key fingerprint:" %} <code>{{ new_fingerprint }}</code></p>
 <ol>
 <li>{% translate "Copy this whole line. It is a code sealed to the new public key:" %}<br><code>{{ challenge }}</code></li>
 <li>{% translate "On the key machine, run backup-prove with the new private key and paste the line when it waits for input:" %}<br><code>docker run --rm -i --network none --user "$(id -u):$(id -g)" --read-only --cap-drop ALL --security-opt no-new-privileges:true --mount type=bind,source=KEY_DIRECTORY,target=/keys,readonly IMAGE backup-prove --key /keys/NEW_PRIVATE_KEY_FILE</code></li>
 <li>{% translate "Type the code it prints below. The code proves the private key opens what is sealed to this public key; the private key itself never leaves your machine." %}</li>
 </ol>
-{# Each step waits for a well-formed entry (data-require-complete and a pattern the server's rule also admits, #563), with the hint after the button; a refusal is shown at its field. The code is read leniently (any case, spaces or dashes), as normalize_code reads it. #}<form method="post" autocomplete="off" data-require-complete>{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="intent" value="{{ intent }}">
+{# Each step waits for a well-formed entry (data-require-complete and a pattern the server's rule also admits, #563), with the hint after the button; a refusal is shown at its field. The code is read leniently (any case, spaces or dashes), as normalize_code reads it. #}<form method="post" action="{{ page_url }}" id="backup-key-proof" autocomplete="off" data-require-complete data-review-open="backup-key-review">{% csrf_token %}<input type="hidden" name="action" value="preview"><input type="hidden" name="intent" value="{{ intent }}">
 <div><label for="backup-key-code">{% translate "Code from backup-prove" %}</label>
 <input type="text" id="backup-key-code" name="code" maxlength="40" autocomplete="off" spellcheck="false" required pattern="[\s\-]*(?:[0-9A-Za-z][\s\-]*){12}" data-missing-hint="{% translate 'Type the 12-character code backup-prove printed.' %}"{% if code_error %} aria-invalid="true" aria-describedby="backup-key-code-error"{% endif %}>
-{% if code_error %}<ul class="errorlist" id="backup-key-code-error"><li>{{ code_error }}</li></ul>{% endif %}</div>
-{% button type="submit" aria-describedby="backup-key-code-hint" %}{% translate "Check code and review" %}{% endbutton %}<p class="help" id="backup-key-code-hint" data-complete-hint hidden></p></form>
-<p><a href="{% url 'admin:integration_settings' 'backup_key' %}">{% translate "Start over" %}</a></p>
+{# The code's error line is always drawn (hidden without an error), so a wrong code answered to the review dialog fills this line where the server draws it (ui-v1.js showFieldErrors) rather than adding one above the field. #}<ul class="errorlist" id="backup-key-code-error"{% if not code_error %} hidden{% endif %}>{% if code_error %}<li>{{ code_error }}</li>{% endif %}</ul></div>
+{% button type="submit" aria-describedby="backup-key-code-hint" %}{% translate "Check code and continue" %}{% endbutton %}<p class="help" id="backup-key-code-hint" data-complete-hint hidden></p></form>
+<p><a href="{{ page_url }}#backup-key-change" data-in-place="backup-key-start-over">{% translate "Start over" %}</a></p>
 </section>
 {% else %}
-<form method="post" class="panel" autocomplete="off" data-require-complete>{% csrf_token %}<input type="hidden" name="action" value="challenge">
+<form method="post" action="{{ page_url }}#backup-key-change" class="panel" id="backup-key-form" autocomplete="off" data-require-complete data-in-place="backup-key-continue">{% csrf_token %}<input type="hidden" name="action" value="challenge">
 <h2>{% translate "Replace the key" %}</h2>
 <div><label for="backup-key-public">{% translate "New public key" %}</label>
 <input type="text" id="backup-key-public" name="public_key" maxlength="200" autocomplete="off" spellcheck="false" required pattern="\s*[A-Za-z0-9+\/]{43}=\s*" data-missing-hint="{% translate 'Paste the public_key value: one line of 44 characters ending in =.' %}" aria-describedby="backup-key-public-help{% if key_error %} backup-key-public-error{% endif %}"{% if key_error %} aria-invalid="true"{% endif %}>
 <p class="help" id="backup-key-public-help">{% translate "The public_key value from backup-keygen: one line of 44 characters ending in =. Never paste the private key." %}</p>
 {% if key_error %}<ul class="errorlist" id="backup-key-public-error"><li>{{ key_error }}</li></ul>{% endif %}</div>
 {% button type="submit" aria-describedby="backup-key-public-hint" %}{% translate "Continue" %}{% endbutton %}<p class="help" id="backup-key-public-hint" data-complete-hint hidden></p></form>
-{% endif %}
+{% endif %}{# The status line of the change applied in the review dialog, under the step that made it; written after this region is redrawn. #}{% include 'stewardship/components/review-outcome.html' with outcome_id="backup-key-outcome" %}</div>
+{% translate "Replace the backup encryption key" as review_title %}{% include "stewardship/components/confirm-dialog.html" with review=True dialog_id="backup-key-review" title=review_title apply_url=page_url outcome_id="backup-key-outcome" fallback="backup-key-form" %}
 {% endblock %}

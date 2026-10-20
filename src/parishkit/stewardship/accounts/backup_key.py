@@ -26,6 +26,7 @@ from uuid import uuid4
 
 from django.core import signing
 from django.shortcuts import render
+from django.urls import reverse
 from django.utils.crypto import constant_time_compare, salted_hmac
 from django.utils.translation import gettext_lazy as _
 from django.views.decorators.debug import sensitive_variables
@@ -277,6 +278,9 @@ def _render(request, configuration, *, status=200, **context):
             "breadcrumb_label": LABEL,
             "current": key_status(configuration),
             "errors": errors,
+            # Every step posts to, and the review dialog's Apply redraws
+            # from, the page's own address (#750).
+            "page_url": reverse("admin:integration_settings", args=[TARGET]),
             **context,
         },
         status=status,
@@ -325,17 +329,20 @@ def review_change(service, configuration, actor, text):
 
 
 def _review(request, service, configuration, actor, text):
-    """Show the proved change for confirmation: old and new key IDs."""
+    """The review dialog's answer to a proved code: the key change to apply.
+
+    ``integration-review.html``'s compact review (#750): the old and new key
+    fingerprints, and the signed preview the dialog's Apply posts back to
+    this page. It is a fragment the dialog shows, never a page of its own.
+    """
     before, after, token = review_change(service, configuration, actor, text)
-    admin_navigation.place(request, flow="change", step="review")
     return render(
         request,
-        "stewardship/integration-preview.html",
+        "stewardship/integration-review.html",
         {
+            "kind": "backup_key",
             "target": TARGET,
             "label": LABEL,
-            "breadcrumb_label": LABEL,
-            "configuration": configuration,
             "changes": [
                 {
                     "label": _("Key fingerprint"),
@@ -353,7 +360,8 @@ def backup_key_page(request, service, actor):
 
     - GET shows the key in use and the field for a new public key.
     - ``challenge`` checks the pasted key and shows its sealed code.
-    - ``preview`` checks the typed code and shows the change to confirm.
+    - ``preview`` checks the typed code and answers the review dialog with
+      the change to apply (#750).
     - ``confirm`` records the configuration request, like any settings
       change.
     """

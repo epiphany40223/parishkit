@@ -260,13 +260,12 @@ UNNAMED_RETURNS = {
 # "Return to {{ … }}" links, by template, and the variable each names its
 # target with. Each variable holds a registry label: the trail's parent
 # crumb (admin_chrome.back), the page a test email was opened from
-# (refusals.return_link), the integration's name (integration_views.LABELS)
-# and the export's report page (export_ui's report_name). A new one must
-# be added here once its variable is known to hold a page's name.
+# (refusals.return_link) and the export's report page (export_ui's
+# report_name). A new one must be added here once its variable is known to
+# hold a page's name.
 VARIABLE_RETURNS = {
     ("campaign-mail.html", "return_link.label"),
     ("configuration-request.html", "admin_chrome.back.label"),
-    ("integration-preview.html", "label"),
     ("report-export.html", "report_name"),
 }
 VARIABLE_RETURN = re.compile(

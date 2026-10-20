@@ -2039,6 +2039,16 @@ credential file, and only the one-shot `backup-worker` profile reads it
   the proof) never reaches the page source. Only then is the change offered
   for review and confirmation; the review shows the old and new
   fingerprints.
+- **On the page (#750).** The paste step's **Continue** and the challenge's
+  **Start over** act [in place](../ui-conventions/spec.md#in-place-controls),
+  and the challenge's heading ("Prove you have the new private key") takes
+  focus. **Check code and continue** opens the
+  [review dialog](../ui-conventions/spec.md#review-dialog) with a compact
+  review, "Replace the backup encryption key?": "Key fingerprint: old →
+  new" ("Not known yet" before the first backup) and a sentence that
+  backups already made still need the old private key. A wrong code is the
+  code field's error, with the same challenge. Once applied, the key in use
+  and the change, back at its paste step, are redrawn in place.
 - **Authority and audit.** Only Administrators with the Configure capability
   may use the page; neither starting a change nor confirming it checks the
   sign-in's age ([#1547](https://github.com/epiphany40223/parishkit/issues/1547)).

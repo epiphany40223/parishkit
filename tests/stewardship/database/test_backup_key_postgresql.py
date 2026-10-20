@@ -117,7 +117,12 @@ def test_admin_replaces_the_key_after_proving_the_private_key(auth_service, goog
         backup_sealing.open_proof(challenge_of(page), other)
     review = replace_key(browser, private, public)
     assert review.status_code == 200, review.content
-    assert flow_steps(review.content) == (STEPS, "Review")
+    # The review is the review dialog's answer (#750), never a page: the
+    # compact review of the fingerprints with the signed preview.
+    assert b"data-review-answer" in review.content and b"<html" not in review.content
+    assert b'data-review-title="Replace the backup encryption key?"' in review.content
+    assert b'name="preview"' in review.content
+    assert b'name="intent"' not in review.content
     fingerprint = backup_sealing.parse_public_key(public).fingerprint
     assert fingerprint.encode() in review.content
     assert b"keep it until they have all been deleted" in review.content
