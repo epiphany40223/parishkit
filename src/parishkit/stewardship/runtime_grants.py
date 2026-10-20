@@ -662,6 +662,19 @@ CLOSURE_TABLES = {
     # A pledge's review history (0127, provisional number, #1686), which
     # web records and reads.
     "stewardship_pledge_review": ("stewardship_reports", "0032_pledge_review"),
+    # The report email pipeline (0156, #1786): web records
+    # Send now requests, the scheduler allocates preparations, the worker
+    # captures and fans them out, and mail dispatch reads the snapshots.
+    **dict.fromkeys(
+        (
+            "stewardship_report_email_manual_request",
+            "stewardship_report_email_preparation",
+            "stewardship_report_email_snapshot",
+            "stewardship_report_email_recipient",
+            "stewardship_report_email_completion_ready",
+        ),
+        ("stewardship_reports", "0033_report_pipeline"),
+    ),
 }
 
 
@@ -1187,6 +1200,9 @@ def runtime_grants(role, *, target=None):
         from .jobs.leader_email_grants import add_leader_email_web_grants
 
         add_leader_email_web_grants(tables, columns)
+        from .reports.report_email_grants import add_report_email_web_grants
+
+        add_report_email_web_grants(tables, columns)
         from .reports.archive_grants import add_archive_web_grants
 
         add_archive_web_grants(tables, columns)

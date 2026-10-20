@@ -364,6 +364,12 @@ from .export_models import (  # noqa: E402,F401
     MinistryExportSnapshot,
 )
 from .pledge_models import PledgeReview  # noqa: E402,F401
+from .report_email_models import (  # noqa: E402,F401
+    ReportEmailManualRequest,
+    ReportEmailPreparation,
+    ReportEmailRecipient,
+    ReportEmailSnapshot,
+)
 from .verification_models import (  # noqa: E402,F401
     FactVerificationRequest,
     FactVerificationResult,

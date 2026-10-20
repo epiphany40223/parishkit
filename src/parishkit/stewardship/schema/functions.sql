@@ -10425,6 +10425,7 @@ CREATE FUNCTION public.stewardship_task_type_login_v1(task_type text) RETURNS te
             'production_cleanup',
             'production_token_cleanup',
             'production_tokens',
+            'report_email_prepare',
             'report_exact_export',
             'report_export',
             'report_export_cleanup',
