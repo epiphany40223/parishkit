@@ -4351,8 +4351,9 @@ outcome.
      was not started."). Every problem still blocks except one: a full
      refresh that is merely older than `source_stale_seconds`
      (`full_refresh_stale`), which Start waives because it queues the
-     go-live's own full refresh in the same transaction. A missing full
-     refresh (`full_refresh_required`), a tenant or scope change
+     go-live's own full refresh in the same transaction; Check does not
+     list it either, so no one has to refresh just before Start. A missing
+     full refresh (`full_refresh_required`), a tenant or scope change
      (`source_scope_changed`), a Family population that does not match the
      current data, and every other problem refuse Start inside the dialog.
      An accepted Apply creates the request, acquires the gate, queues
@@ -4586,8 +4587,9 @@ the current instant is before the hold end. This is deliberately looser
 than today's rule, which expires 30 minutes (`source_stale_seconds`) after
 the full refresh started: during the hold no scheduled refresh can change
 the data, so the go-live may take up to an hour after its refresh, or three
-hours in all. `source_stale_seconds` itself is unchanged and still governs
-readiness before Start. Confirm Production's readiness re-check and
+hours in all. `source_stale_seconds` itself is unchanged; before Start,
+Check and Start waive a full refresh that is merely older than it (see the
+Start go-live dialog above). Confirm Production's readiness re-check and
 deadline follow this rule since #1585 slice 4; a request with no attempt
 (started before slice 3) keeps the `source_stale_seconds` rule, and once
 the hold end has passed, readiness reports `go_live_hold_ended`.

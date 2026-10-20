@@ -66,14 +66,12 @@ The page's design is the admin-portal specification's
 [withdrawal](stewardship-production-withdrawal.md) guides are the historical
 implementation records of the server side it reuses.
 
-**Timing.** One clock remains before Start: Check accepts a **full**
-ParishSoft refresh only for 30 minutes (the default source-staleness window)
-from the moment it *started*, and Start go-live checks it again, so apply
-Start go-live within that window
-([#1812](https://github.com/epiphany40223/parishkit/issues/1812) would
-remove it). After Start, no click has to be timed against the ParishSoft
-refresh schedule. Start go-live queues the go-live's own full ParishSoft
-refresh, and from then on the scheduled refreshes
+**Timing.** No click has to be timed against the ParishSoft refresh
+schedule. Check and Start go-live need a completed **full** ParishSoft
+refresh for the current organization and campaign, but not a recent one
+([#1812](https://github.com/epiphany40223/parishkit/issues/1812)): Start
+go-live queues the go-live's own full ParishSoft refresh, and every later
+step uses that one. From then on the scheduled refreshes
 [wait for the go-live](../specs/stewardship/background-processing/spec.md#refreshes-wait-for-go-live):
 they hold until 60 minutes after that refresh has finished and the Testing
 cleanup has completed, and never longer than 3 hours after Start (or after
@@ -122,17 +120,18 @@ the Family links were prepared makes the system prepare them again.
    it. Clear them beforehand: every provider credential must have a current
    check; a selected Family test email must have been previewed and sent
    successfully with the current configuration; no Testing delivery may be
-   unfinished or unknown; and no configuration change may be pending. Then
-   start the full refresh with **Refresh now** on the home page and wait for
-   it to finish: the home page link opens the **Refresh from ParishSoft**
-   page (`/admin/parish/parishsoft-refresh/`), and that page's **Refresh
-   now** button starts it. One line says what going live now
-   would do: make the campaign active at once (its initial mail is then
-   prepared and sent) or schedule it for its start. The Family and Admin
+   unfinished or unknown; and no configuration change may be pending. A
+   full ParishSoft refresh must have completed since the campaign's dates
+   and financial periods were last changed; if Check says one is needed, use
+   **Refresh now** on the **Refresh from ParishSoft** page
+   (`/admin/parish/parishsoft-refresh/`) and wait for it to finish. An older
+   full refresh needs nothing: Start go-live refreshes again. One line says
+   what going live now would do: make the campaign active at once (its
+   initial mail is then prepared and sent) or schedule it for its start.
+   The Family and Admin
    mail counts and the Testing cleanup counts are in a disclosure under it.
    Then choose **Check readiness and public web address**; its result shows
-   in place. Checking changes nothing. Go on to step 3 within the 30-minute
-   window above.
+   in place. Checking changes nothing.
 3. **Administrator: Start go-live.** Once Check says **Everything is
    ready.**, choose **Start go-live**. The dialog "Start going live?" says
    what happens next, shows the Testing data to be deleted (with a link to

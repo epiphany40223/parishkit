@@ -901,3 +901,142 @@ def test_a_refused_attempt_start_rolls_back_start_go_live_entirely(
     (transition,) = ProductionTransitionRequest.objects.all()
     assert len(attempts(transition)) == 1
     assert CampaignCredentialState.objects.get(campaign=campaign).go_live_gate
+
+
+def _stale_source(monkeypatch):
+    """Make the current full refresh older than ``source_stale_seconds``.
+
+    The policy allows no window under 60 seconds, so readiness sees a
+    zero-second window instead: every full refresh is then merely stale.
+    """
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        "parishkit.stewardship.source.readiness.configured_policy",
+        lambda: SimpleNamespace(source_stale_seconds=0),
+    )
+
+
+def test_start_go_live_waives_a_merely_stale_full_refresh(
+    ready_cleanup, settings, real_limiter, monkeypatch
+):
+    """A stale full refresh neither blocks Check nor Start's Apply (#1812).
+
+    Start queues the go-live's own full refresh with attempt 1, so Check
+    offers Start go-live and Apply starts the request, attempt 1 and its
+    refresh. The refresh's age is not in the inputs digest, so a refresh
+    turning stale while Check is open needs no new check.
+    """
+    from django.test import Client
+
+    from parishkit.stewardship.accounts.authentication import AuthRuntime
+    from parishkit.stewardship.source.refresh_models import SourceRefreshCommand
+
+    from .test_setup_views_postgresql import post
+
+    request, service, campaign = ready_cleanup
+    settings.STEWARDSHIP_AUTH_RUNTIME = AuthRuntime(
+        service.store, real_limiter, setup_is_complete
+    )
+    browser = Client(enforce_csrf_checks=True)
+    browser.cookies["pk_admin"] = request.session.session_key
+    path = reverse("admin:go_live")
+    refreshes = SourceRefreshCommand.objects.count()
+    with web_login():
+        fresh, _, _ = go_live_commands.verify_preview(request, service, campaign.pk)
+        assert fresh.source.reason == "ready"
+        assert browser.get(path).status_code == 200
+        assert post(browser, path, {"action": "verify"}).status_code == 303
+    _stale_source(monkeypatch)
+    with web_login():
+        stale, verified, token = go_live_commands.verify_preview(
+            request, service, campaign.pk
+        )
+        assert stale.source.reason == "full_refresh_stale"
+        assert not stale.problems, stale.problems
+        assert verified and token
+        assert stale.digest == fresh.digest
+        # The check kept before the refresh turned stale still counts.
+        check = browser.get(path)
+        assert check.status_code == 200
+        assert check.context["state"] == "passed"
+        review = post(browser, path, {"action": "review"})
+        assert review.status_code == 200
+        values = {
+            "action": "confirm",
+            "preview_token": review.context["start"]["token"],
+        }
+        assert post(browser, path, values).status_code == 303
+    (transition,) = ProductionTransitionRequest.objects.all()
+    assert len(attempts(transition)) == 1
+    assert SourceRefreshCommand.objects.count() == refreshes + 1
+    assert CampaignCredentialState.objects.get(campaign=campaign).go_live_gate
+
+
+def test_a_stale_full_refresh_still_refuses_cleanup_without_an_attempt(
+    ready_cleanup, monkeypatch
+):
+    """Only Start go-live's own refresh replaces the freshness rule (#1812).
+
+    Cleanup started without an attempt (the local seeding tool) queues no
+    refresh, so a stale full refresh still refuses it, changing nothing.
+    """
+    from parishkit.stewardship.storage import StaleRecordError
+
+    request, service, campaign = ready_cleanup
+    _stale_source(monkeypatch)
+    with web_login():
+        _, _, token = go_live_commands.verify_preview(request, service, campaign.pk)
+        with pytest.raises(StaleRecordError, match="expired during preview"):
+            go_live_commands.start_cleanup(
+                request, service, campaign.pk, preview_token=token, acknowledge=True
+            )
+    assert not ProductionTransitionRequest.objects.exists()
+    assert not CampaignCredentialState.objects.get(campaign=campaign).go_live_gate
+
+
+@pytest.mark.parametrize(
+    "reason", ["full_refresh_required", "source_scope_changed", "tenant_unavailable"]
+)
+def test_a_missing_refresh_or_scope_change_still_refuses_start(
+    ready_cleanup, monkeypatch, reason
+):
+    """Only a merely stale refresh is waived: these still block (#1812).
+
+    Check lists the problem and offers no Start, and an Apply prepared
+    before the source changed is refused, changing nothing.
+    """
+    from dataclasses import replace
+
+    from parishkit.stewardship.accounts import go_live_inputs
+    from parishkit.stewardship.source.refresh_models import SourceRefreshCommand
+    from parishkit.stewardship.storage import StaleRecordError
+
+    request, service, campaign = ready_cleanup
+    refreshes = SourceRefreshCommand.objects.count()
+    with web_login():
+        _, _, token = go_live_commands.verify_preview(request, service, campaign.pk)
+    real = go_live_inputs.source_readiness
+    monkeypatch.setattr(
+        go_live_inputs,
+        "source_readiness",
+        lambda scope: replace(real(scope), reason=reason),
+    )
+    with web_login():
+        inputs, _, refused = go_live_commands.verify_preview(
+            request, service, campaign.pk
+        )
+        assert reason in inputs.problems
+        assert refused is None
+        with pytest.raises(StaleRecordError, match="Review current readiness"):
+            go_live_commands.start_cleanup(
+                request,
+                service,
+                campaign.pk,
+                preview_token=token,
+                acknowledge=True,
+                attempt=True,
+            )
+    assert not ProductionTransitionRequest.objects.exists()
+    assert not CampaignCredentialState.objects.get(campaign=campaign).go_live_gate
+    assert SourceRefreshCommand.objects.count() == refreshes
