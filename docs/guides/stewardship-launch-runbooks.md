@@ -708,7 +708,7 @@ to the unresolved rows. The
 owns the policy for each kind:
 [invitations and reminders](../specs/stewardship/background-processing/spec.md#family-invitations-and-reminders),
 [receipts](../specs/stewardship/background-processing/spec.md#submission-confirmation)
-and [Admin reports](../specs/stewardship/background-processing/spec.md#administrator-digests).
+and [Admin reports](../specs/stewardship/background-processing/spec.md#administrator-report-emails).
 The guides linked in step 3 own each kind's resolution workflow.
 
 On **Sent mail**, choose the Delivery filter **Needs attention** (or **Not
