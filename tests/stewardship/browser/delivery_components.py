@@ -88,7 +88,10 @@ def components(now):
         id=uuid4(),
         family_id=uuid4(),
         family__family_duid=12345,
-        # Recipient lists everything sent to this Family (#1562).
+        # Recipient lists everything sent to this Family (#1562). With no
+        # timeline_family_id this models a Production Family the current
+        # campaign has no record of, so it keeps the in-place filter; the
+        # Timeline link is checked in test_sent_mail_postgresql.
         recipient_fields=[("recipient", "12345"), ("mode", "production")],
         # The Family's name beside its DUID (#931), long enough to wrap.
         family_name="Castellanos, Maximiliana and Bartholomew",

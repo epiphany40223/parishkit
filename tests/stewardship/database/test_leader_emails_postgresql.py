@@ -526,6 +526,67 @@ def test_production_emails_go_to_each_leader_with_the_kept_content(production):
         assert result.state.value == "delivered"
 
 
+def sent_mail(browser, path="/admin/mail/sent/", **query):
+    """A Sent mail page as the web login serves it: (status, HTML).
+
+    A query naming a Recipient is posted, as the page's filter form posts
+    it (the Recipient is private filter state, #1562); any other is a GET.
+    """
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        if "recipient" in query:
+            token = browser.cookies["pk_admin_csrf"].value
+            response = browser.post(path, {"csrfmiddlewaretoken": token, **query})
+        else:
+            response = browser.get(path, query)
+    return response.status_code, response.content.decode()
+
+
+def test_sent_mail_lists_ministry_leader_emails(production):
+    """Sent mail lists the Ministry leader emails (#1562): each is named by
+    its leader's Users-page Name, its Recipient lists that leader's emails
+    in place, the Purpose filter names the kind, and its own page says
+    whom it was for, never its content, and offers no resolution."""
+    harness, browser = production
+    rows = prepared(
+        harness.service.store, ["leader-9@example.org", "leader-4-9@example.org"]
+    )
+    ids = {address: str(row.outbox_id) for address, row in rows.items()}
+    status, html = sent_mail(browser, purpose="leader_email")
+    assert status == 200
+    for address, name in (
+        ("leader-9@example.org", "Nine, Leader"),
+        ("leader-4-9@example.org", "Both, Leader"),
+    ):
+        assert f'href="/admin/mail/sent/{ids[address]}/"' in html
+        assert (
+            f'<input type="hidden" name="recipient" value="{address}">'
+            '<input type="hidden" name="mode" value="production">'
+        ) in html
+        assert f'id="recipient-{ids[address]}">{name}</button>' in html
+    assert (
+        '<option value="leader_email" selected>Ministry leader email</option>' in html
+    )
+    # Listed by default too, beside every other kind.
+    status, html = sent_mail(browser)
+    assert status == 200 and all(f"/admin/mail/sent/{i}/" in html for i in ids.values())
+    # By the leader's address, in any case: that leader's email only.
+    status, html = sent_mail(browser, recipient="Leader-9@Example.org")
+    assert status == 200
+    assert f"/admin/mail/sent/{ids['leader-9@example.org']}/" in html
+    assert f"/admin/mail/sent/{ids['leader-4-9@example.org']}/" not in html
+    # Not an email anyone resolves: Needs attention never lists one.
+    status, html = sent_mail(browser, state="needs_attention")
+    assert status == 200 and not any(i in html for i in ids.values())
+    status, own = sent_mail(browser, f"/admin/mail/sent/{ids['leader-9@example.org']}/")
+    assert status == 200
+    assert "<h1>Ministry leader email</h1>" in own
+    assert "<p>Ministry leader email</p>" in own
+    assert "leader-9@example.org" in own
+    assert "Resolve this email" not in own and 'name="action"' not in own
+    # Whom it was for, never what it said.
+    assert rows["leader-9@example.org"].subject not in own
+
+
 def test_a_leader_who_is_no_longer_one_is_not_emailed(production):
     """A user demoted to Staff before the send: the unsent email is cancelled."""
     harness, _browser = production

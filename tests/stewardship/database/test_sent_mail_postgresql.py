@@ -507,3 +507,77 @@ def test_recipient_names_take_one_read_and_one_query(response_service, google):
     by_address = {row["recipient_address"]: row["recipient_name"] for row in named}
     assert by_address["morgan@example.org"] == "Morgan Administrator"
     assert by_address["admin@example.org"] == (admin_name or None)
+
+
+def test_a_production_family_recipient_opens_its_timeline(response_service, google):
+    """A Production Family email's Recipient is the shared Family-name link
+    to that Family's Timeline (#1562, #1570), its record id read once for
+    the page however many rows; a Testing email's Family keeps the in-place
+    recipient filter, since the Timeline shows only Production records."""
+    from django.utils.html import escape
+
+    from parishkit.stewardship.source.snapshot_models import SourceCurrent
+    from parishkit.stewardship.source.snapshot_names import snapshot_family_names
+    from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
+
+    from .family_link_checks import link_reads, timeline_link
+
+    testing = family_message(response_service, mode="testing")
+    harness = activate_response_service(response_service)
+    browser, _ = signed_in()
+    emails = {family_message(harness), family_message(harness, purpose="reminder")}
+    snapshot = SourceCurrent.objects.values_list("snapshot_id", flat=True).first()
+    name = snapshot_family_names(snapshot, [1], NAME_NOT_RECORDED)[1]
+    assert name and name != NAME_NOT_RECORDED
+    with CaptureQueriesContext(connection) as queries:
+        status, html = sent_mail(browser)
+    assert status == 200 and listed(html, emails) == emails
+    assert len(link_reads(queries)) == 1
+    link = timeline_link(harness.campaign, 1, name)
+    assert html.count(f"<td>{link}</td>") == 2
+    # No in-place recipient filter for these rows: the link replaces it.
+    assert 'name="recipient" value="1"' not in html
+    assert "recipient-link" not in html
+    status, html = sent_mail(browser, mode="testing")
+    assert status == 200 and listed(html, {testing}) == {testing}
+    assert link not in html
+    assert (
+        '<input type="hidden" name="recipient" value="1">'
+        '<input type="hidden" name="mode" value="testing">'
+    ) in html
+    assert f">{escape(name)}</button></form></td>" in html
+
+
+@pytest.mark.parametrize("missing", ["record", "name"])
+def test_a_production_family_without_a_timeline_keeps_the_filter(
+    response_service, google, monkeypatch, missing
+):
+    """A Production Family email keeps the in-place recipient filter when
+    its Family has no Timeline link to draw (#1562): the current campaign
+    has no record of the Family, or the latest ParishSoft data no longer
+    has it (the shared link would draw only its badge)."""
+    from parishkit.stewardship.accounts.templatetags.stewardship import source_status
+    from parishkit.stewardship.jobs import delivery_views
+
+    harness = activate_response_service(response_service)
+    browser, _ = signed_in()
+    email = family_message(harness)
+    if missing == "record":
+        monkeypatch.setattr(delivery_views, "family_record_ids", lambda *_: {})
+    else:
+        named = delivery_views.with_family_names
+        monkeypatch.setattr(
+            delivery_views,
+            "with_family_names",
+            lambda *args: [row | {"family_name": None} for row in named(*args)],
+        )
+    status, html = sent_mail(browser)
+    assert status == 200 and listed(html, {email}) == {email}
+    assert "/admin/reports/families/" not in html.split("<tbody>")[1]
+    assert (
+        '<input type="hidden" name="recipient" value="1">'
+        '<input type="hidden" name="mode" value="production">'
+    ) in html
+    assert f'id="recipient-{email}"' in html
+    if missing == "name":
+        assert f">{source_status('missing')}</button></form></td>" in html

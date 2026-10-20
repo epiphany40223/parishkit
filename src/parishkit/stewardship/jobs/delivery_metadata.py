@@ -54,19 +54,21 @@ PURPOSES = (
     "weekly_digest",
 )
 # Sent mail lists every email of every kind (#1562): also the operational
-# and security notices, which belong to no campaign, so their page shows
-# their history but offers no resolution.
-LISTED_PURPOSES = PURPOSES + ("operational", "security_event")
+# and security notices and the Ministry leader emails (#1592), which belong
+# to no campaign, so their page shows their history but offers no
+# resolution.
+LISTED_PURPOSES = PURPOSES + ("operational", "security_event", "leader_email")
 # Sent mail is a log of emails (#931): it sorts on the server by When
 # (changed: the time of the email's current state, its last change; the
 # default, newest first), Recipient (name), Family DUID (duid), Purpose and
 # Delivery (state). The command line's --sort also takes the tokens of the
 # columns Sent mail no longer shows (#1562): Mode, Provider attempts
-# (attempts) and created (when the email was created). Emails to
-# Administrators, which have no Family, sort last under name and duid in
-# either direction, as do, under name, Families the latest ParishSoft data
-# no longer has; under name, the Administrators' emails then sort by the
-# Name or address Recipient shows (recipient_sort_key). Only the state filter is indexed
+# (attempts) and created (when the email was created). Emails to people
+# (Administrators' reports and notices, Ministry leader emails), which have
+# no Family, sort last under name and duid in either direction, as do,
+# under name, Families the latest ParishSoft data no longer has; under
+# name, the emails to people then sort by the Name or address Recipient
+# shows (recipient_sort_key). Only the state filter is indexed
 # (outbox_due, outbox_campaign_state); the orderings themselves are not, so
 # a page is a top-N sort of the filtered messages. The default "all" view
 # therefore scans the outbox, as its newest-first order always did; the
@@ -497,11 +499,12 @@ def needs_attention(selected):
 
 
 def recipient_sort_key(selected, actor):
-    """The Recipient sort's key for each Administrator email (#1562).
+    """The Recipient sort's key for each email to a person (#1562).
 
     Emails with no Family (reports and notices, to one Administrator
-    address each) have no Family name to sort by, so under the name sort
-    they come after every Family; among themselves they sort by what
+    address each, and Ministry leader emails, to one leader each) have no
+    Family name to sort by, so under the name sort they come after every
+    Family; among themselves they sort by what
     Recipient shows, the Users-page Name or else the address, case-folded.
     Those keys come from the definer read of their addresses
     (``delivery_reads.administrator_addresses``), so they are read in

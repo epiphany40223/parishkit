@@ -8,22 +8,20 @@ instead of Queued or Waiting to retry; workers hold messages only as they
 reach them, so while live delivery is paused some unheld messages still
 count as Queued.
 
-The counts cover every kind Sent mail lists (``LISTED_PURPOSES``), in that
-order, so a kind added to Sent mail appears here too, and the Ministry
-leader emails (#1592), which are queued today although Sent mail does not
-list them yet; their row joins Sent mail's order once it does (#1562).
-They come from one grouped count of the unsettled messages, which the
-``outbox_due (state, not_before)`` index finds without reading the settled
-majority of the outbox; every column read is one the web login already
-reads. Callers run it inside ``read_transaction`` (no lock), so watching
-the queue never slows a send.
+The counts cover every kind Sent mail lists (``LISTED_PURPOSES``), the
+Ministry leader emails (#1592) among them, in that order, so a kind added
+to Sent mail appears here too. They come from one grouped count of the
+unsettled messages, which the ``outbox_due (state, not_before)`` index
+finds without reading the settled majority of the outbox; every column
+read is one the web login already reads. Callers run it inside
+``read_transaction`` (no lock), so watching the queue never slows a send.
 """
 
 from dataclasses import dataclass, field
 
 from django.db.models import Count, Q
 
-from .delivery_metadata import LISTED_PURPOSES, PURPOSE_CHOICES
+from .delivery_metadata import LISTED_PURPOSES
 from .delivery_states import DeliveryState
 from .outbox_models import OutboxMessage
 
@@ -36,13 +34,9 @@ QUEUED_STATES = (
 COLUMNS = ("queued", "sending", "retry_wait", "paused")
 # The kinds the queue counts, one table row each, in Sent mail's order. A
 # purpose kept only so past emails stay listed (the digests, once #1786
-# replaces them) is left out here, so it draws no row. Ministry leader
-# emails are added until Sent mail lists them itself.
-QUEUE_PURPOSES = LISTED_PURPOSES + tuple(
-    purpose for purpose in ("leader_email",) if purpose not in LISTED_PURPOSES
-)
-# The kinds Sent mail's Purpose filter accepts: only these rows link it.
-LINKED_PURPOSES = frozenset(PURPOSE_CHOICES)
+# replaces them) is left out here, so it draws no row. Every kind here is
+# one Sent mail's Purpose filter accepts, so each row may link it.
+QUEUE_PURPOSES = LISTED_PURPOSES
 
 
 @dataclass(frozen=True)
@@ -57,8 +51,8 @@ class KindCounts:
 
     @property
     def linked(self):
-        """Whether the Kind links Sent mail: some email queued, and listed there."""
-        return bool(self.total) and self.purpose in LINKED_PURPOSES
+        """Whether the Kind links Sent mail: only while some email is queued."""
+        return bool(self.total)
 
     @property
     def counts(self):

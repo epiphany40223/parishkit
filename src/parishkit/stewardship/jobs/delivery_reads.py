@@ -385,8 +385,9 @@ def administrator_names(addresses):
     """The Users-page Name of each address, lower-cased, that has one (#1562).
 
     Reads the current configuration's users (``AddressRule``) in one query.
-    An address with no entry there (a former Administrator), or whose entry
-    has no Name, is left out, so the page shows the address itself.
+    An address with no entry there (a former Administrator, or a Ministry
+    leader with no user entry), or whose entry has no Name, is left out,
+    so the page shows the address itself.
     """
     from django.db.models import Subquery
     from django.db.models.functions import Lower
@@ -411,12 +412,13 @@ PAGE_RECIPIENTS_LIMIT = 500
 
 
 def administrator_addresses(ids, actor_id):
-    """``{message id: address}`` for emails with no Family (#1562).
+    """``{message id: address}`` for emails with no Family (#1562, #1592).
 
     Read through ``stewardship_delivery_page_recipients_v1`` (frozen
     migration 0116), one call per ``PAGE_RECIPIENTS_LIMIT`` ids: a page
-    makes one, the Recipient sort one per 500 such emails. A report or
-    notice goes to one address; the first is kept. Raises
+    makes one, the Recipient sort one per 500 such emails. A report, a
+    notice or a Ministry leader email goes to one address; the first is
+    kept. Raises
     ``PermissionError`` when the read refuses ``actor_id``.
     """
     ids = list(ids)
@@ -438,8 +440,9 @@ def with_recipients(rows, actor_id):
     """Each listed email with whom it is for, for Sent mail's Recipient (#1562).
 
     A Family email is named by its Family (``with_family_names``). An email
-    with no Family (a report or notice, sent to one Administrator address)
-    gains ``recipient_address``, read for the shown page through
+    with no Family (a report or notice, sent to one Administrator address,
+    or a Ministry leader's sign-in email, to one leader's address) gains
+    ``recipient_address``, read for the shown page through
     ``stewardship_delivery_page_recipients_v1`` (frozen migration 0116),
     and ``recipient_name``, that address's Users-page Name or None: one
     definer read and one query, however many rows, and none when the page
@@ -740,9 +743,9 @@ def read_detail(message_id, parameters):
     an unknown message.
 
     Every email Sent mail lists opens here, operational and security
-    notices too (#1562). Those belong to no campaign, and every resolution
-    and its admission is a campaign's, so they offer nothing and their
-    admission is not read.
+    notices and Ministry leader emails too (#1562). Those belong to no
+    campaign, and every resolution and its admission is a campaign's, so
+    they offer nothing and their admission is not read.
     """
     from parishkit.stewardship.campaigns.models import Campaign
 

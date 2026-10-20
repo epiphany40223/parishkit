@@ -3274,6 +3274,7 @@ DELIVERY_PURPOSES = (
     "weekly_digest",
     "operational",
     "security_event",
+    "leader_email",
 )
 # The resolutions ``delivery resolve`` offers (``admin_operations``); a test
 # keeps them equal.
