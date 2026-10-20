@@ -163,7 +163,7 @@ def _mutable(campaign_id):
 def decision_label(revision):
     """One history entry's decision, in the pipeline's words.
 
-    A revision saved before migration 0134 has no decision; the page words
+    A revision saved before migration 0126 has no decision; the page words
     it by its follow-up choices instead (None here).
     """
     if revision.review_decision == "accepted":

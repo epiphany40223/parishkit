@@ -28,11 +28,8 @@ FILTER_FORMS = {
     "delivery-refusals.html",
     "directory.html",
     "financial-report.html",
-    "information.html",
-    "limitations-report.html",
     "logs.html",
     "ministries.html",
-    "ministry-roster.html",
     "timeline.html",
 }
 # Hidden fields a filter form keeps when its filters are cleared: the

@@ -1,4 +1,4 @@
--- Frozen forward migration file 0134 (the repository-wide file sequence;
+-- Frozen forward migration file 0126 (the repository-wide file sequence;
 -- provisional until it is assigned in merge order): Additional information
 -- and Limitations adopt the review pipeline (#1685). This file is installed
 -- by its Django migration in the responses app and must never change once
@@ -68,7 +68,7 @@ BEGIN
     SELECT * INTO prior FROM stewardship_information_revision
         WHERE item_id=item.id ORDER BY expected_version DESC LIMIT 1;
     -- An Ignored request (its latest revision ignored it, or, saved before
-    -- migration 0134, left follow-up not needed) leaves Ignored, whether
+    -- migration 0126, left follow-up not needed) leaves Ignored, whether
     -- back to review or straight to follow-up, only with a new note saying
     -- why, as the review pipeline requires: the request's earlier notes,
     -- which a revision carries forward, are not one.

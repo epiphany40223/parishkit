@@ -272,11 +272,17 @@ LEDGER = {
     "daily_digest_chart": permanent(IMAGES),
     "daily_digest_download": permanent(IMAGES),
     "financial_report": command("report financial"),
-    # Pledges (#1686): its list, decisions and download get their
-    # commands in a later slice, through the same PledgeDecisions service.
-    "pledges_to_enter": pending("#1733", "report pledges", "pledges decide"),
-    "pledges_to_enter_export": pending("#1733", "export pledges"),
-    "limitations_report": command("report limitations"),
+    # Pledges (#1686, #1733): counts only, as its rows name
+    # Families and their pledges; its decisions go through the page's own
+    # PledgeDecisions service, and its rows with their ids and versions are
+    # export pledges --format jsonl's.
+    "pledges_to_enter": command("report pledges", "pledges decide"),
+    "pledges_to_enter_export": command("export pledges"),
+    # Limitations (#1685, #1735): counts by stage only, as its rows name
+    # Families and Members; its decisions go through the page's own
+    # LimitationDecisions service, and its rows with their ids and versions
+    # are export limitations --format jsonl's.
+    "limitations_report": command("report limitations", "limitations decide"),
     # Counts only (#463): its rows name Families and Members, so they are
     # export census's. A row's Entered in ParishSoft, Ignore and Reopen post
     # here too (#528): census resolve; so does an Automatic row's Review
@@ -296,11 +302,15 @@ LEDGER = {
         "#528 slice 4", "census publish-check", "census publish-plan"
     ),
     # Additional information's review worklist (#1685) posts its decisions
-    # to the page itself, where the retired request Save's
-    # ``followup information-update`` (#463 PR 11b) now belongs, until #1688
-    # renames the commands; ``followup information-show`` reads one request.
+    # to the page itself: ``information decide`` (#1735), through the page's
+    # own InformationDecisions service, with ``information list`` the rows'
+    # ids, versions and stages. The retired request Save's ``followup
+    # information-update`` (#463 PR 11b) stays here until #1688 renames the
+    # commands; ``followup information-show`` reads one request.
     "information_queue": command(
         "report information",
+        "information list",
+        "information decide",
         "followup information-show",
         "followup information-update",
     ),
@@ -316,9 +326,19 @@ LEDGER = {
     # queue itself is ``followup list``'s (#463 PR 11a). Its review worklist
     # (#1684) posts its bulk decisions to the page itself, where the
     # retired bulk outcome address's ``followup bulk`` now belongs, until
-    # #1688 renames the commands.
+    # #1688 renames the commands. Its To enter by hand Stage holds the
+    # roster changes to enter since Roster changes to enter was folded into
+    # it (R39 finding 2): ``report roster`` counts them, ``export roster``
+    # writes their file and ``followup roster-bulk`` is its bulk Entered by
+    # hand.
     "ministry_report": command(
-        "report ministry", "export ministry", "followup list", "followup bulk"
+        "report ministry",
+        "export ministry",
+        "followup list",
+        "followup bulk",
+        "report roster",
+        "export roster",
+        "followup roster-bulk",
     ),
     # A packet of the chosen Ministries' Members and contacts: an export.
     "ministry_packet": command("export ministry-packet"),
@@ -451,12 +471,6 @@ LEDGER = {
     # The roster Entered in ParishSoft tick and its list (#528), one at a
     # time or in bulk (#463 PR 11b).
     "ministry_followup_roster": command("followup show", "followup roster-entered"),
-    # Counts only (#463): its rows name Members, so they are export roster's.
-    "ministry_roster": command("report roster"),
-    # The page's download, through the page's own writer.
-    "ministry_roster_export": command("export roster"),
-    # The list's bulk Mark entered in ParishSoft (#879).
-    "ministry_roster_bulk": command("report roster", "followup roster-bulk"),
     # Integrations and credentials.
     "integrations": command("integration list"),
     # The settings page as it opens, its Save, its Remove, the backup

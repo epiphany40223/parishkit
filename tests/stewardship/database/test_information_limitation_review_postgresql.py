@@ -1,8 +1,8 @@
-"""Additional information and Limitations review decisions (#1685, migration 0134).
+"""Additional information and Limitations review decisions (#1685, migration 0126).
 
 The worklists' services record each decision as the stream's own immutable
 row under the real web login; SQL admits only what the services may record,
-and an Additional information revision saved before 0134 reads by its
+and an Additional information revision saved before 0126 reads by its
 follow-up flags.
 """
 
@@ -166,10 +166,10 @@ def test_ignore_needs_a_note_to_reopen(live_response_service, google):
 def test_new_revisions_state_a_decision_and_old_ones_read_by_flags(
     live_response_service, google
 ):
-    """The guard needs a decision; a revision saved before 0134 reads as Ignored.
+    """The guard needs a decision; a revision saved before 0126 reads as Ignored.
 
     The older revision is written with the triggers off, as only a database
-    from before migration 0134 holds one; its follow-up was left not needed,
+    from before migration 0126 holds one; its follow-up was left not needed,
     so it is Ignored, while a request no Staff member saved is To review.
     """
     harness = live_response_service

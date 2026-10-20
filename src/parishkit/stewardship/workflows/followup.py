@@ -236,12 +236,15 @@ def write_revision(actor_id, target, intent, request_key, system):
     return revision
 
 
-def _targets(store, actor_id, versions):
+def _targets(store, actor_id, versions, *, gone_ok=False):
     """Lock live requests in one stable order and authorize each Ministry.
 
     Then refuse the whole edit if any request's Member is no longer in
     ParishSoft (#1217, ``MemberNotInSource``): read after the locks and the
-    scope check, so it names only a request the actor may edit.
+    scope check, so it names only a request the actor may edit. ``gone_ok``
+    skips that refusal for the roster tick alone, whose work may still be
+    real for such a Member (admin-portal spec, "Roster entry on Ministry
+    requests").
     """
     rows = list(
         MinistryRequest.objects.select_for_update(of=("self",))
@@ -257,7 +260,11 @@ def _targets(store, actor_id, versions):
         authorize_ministry(store, actor_id, ministry)
     for campaign in {row.submission.campaign_id for row in rows}:
         admit_campaign(campaign, mutating=True)
-    gone = _not_in_source([row.pk for row in rows if row.entity_kind == "member"])
+    gone = (
+        []
+        if gone_ok
+        else _not_in_source([row.pk for row in rows if row.entity_kind == "member"])
+    )
     if gone:
         raise MemberNotInSource(gone[0])
     return rows

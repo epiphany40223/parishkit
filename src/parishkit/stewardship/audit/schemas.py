@@ -122,7 +122,7 @@ class Action(StrEnum):
     # once, by the migration, as a system event with no subject.
     CENSUS_HANDLING_CORRECTED = "census_handling_corrected"
     # The baseline refresh re-evaluation's Not seen start (#1689): written
-    # once, by migration 0136, as a system event with no subject.
+    # once, by migration 0132, as a system event with no subject.
     REFRESH_CHECKS_STARTED = "refresh_checks_started"
     MINISTRY_ROSTER_ENTERED = "ministry_roster_entered"
     # Publication to ParishSoft (#528, DAT-09.01): a preflight's plan (count:
@@ -373,12 +373,19 @@ class Action(StrEnum):
     # anyway (#1434, ADM-09.03).
     ADMIN_CMD_CENSUS_RESOLVE_CONFLICT = "admin_cmd_census_resolve_conflict"
     # followup roster-entered and followup roster-bulk: a resolved request's
-    # Entered in ParishSoft tick and Roster changes to enter's bulk mark;
+    # Entered in ParishSoft tick and a bulk Entered by hand;
     # followup information-update: an Additional information item's Save
     # (#463 PR 11b).
     ADMIN_CMD_FOLLOWUP_ROSTER_ENTERED = "admin_cmd_followup_roster_entered"
     ADMIN_CMD_FOLLOWUP_ROSTER_BULK = "admin_cmd_followup_roster_bulk"
     ADMIN_CMD_FOLLOWUP_INFORMATION_UPDATE = "admin_cmd_followup_information_update"
+    # information decide and limitations decide: a worklist decision, one
+    # item or in bulk (#1735).
+    ADMIN_CMD_INFORMATION_DECIDE = "admin_cmd_information_decide"
+    ADMIN_CMD_LIMITATIONS_DECIDE = "admin_cmd_limitations_decide"
+    # pledges decide: a Pledges decision, one pledge or in bulk
+    # (#1733).
+    ADMIN_CMD_PLEDGES_DECIDE = "admin_cmd_pledges_decide"
 
 
 # Closed field identifiers are operational metadata, never census values.

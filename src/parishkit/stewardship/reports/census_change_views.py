@@ -34,6 +34,7 @@ from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
 from parishkit.stewardship.pipeline import Stage
+from parishkit.stewardship.responses.census_additions import AddRefusal
 from parishkit.stewardship.responses.census_review import (
     InvalidEdit,
     KeyRebound,
@@ -52,7 +53,7 @@ from parishkit.stewardship.web.exports import (
     download_headers,
     page_download,
 )
-from parishkit.stewardship.web.refusals import Refusal, with_status_code
+from parishkit.stewardship.web.refusals import Refusal, with_codes, with_status_code
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.review_worklist import read_decision, record
 from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
@@ -68,7 +69,7 @@ from .census_changes import (
     census_pdf,
     census_xlsx,
 )
-from .census_worklist import LINK_DEFAULTS, CensusDecisions, worklist_page
+from .census_worklist import LINK_DEFAULTS, CensusDecisions, add_fields, worklist_page
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .family_links import link_families
@@ -236,6 +237,20 @@ def _edit_refusal(error):
     return validation_response(fields, refusal=Refusal(str(error), EDIT_REFUSED))
 
 
+def _add_refusal(error):
+    """The page's answer to an Add, or a reopen, the reader can correct (#1710).
+
+    Its static reason and next step, shown in the dialog at the fields it
+    names (``AddRefusal.field_ids``), with its closed code for the refusal
+    log.
+    """
+    fields = [FieldError(ErrorCode.INVALID, name) for name in error.field_ids]
+    return with_codes(
+        validation_response(fields, refusal=Refusal(str(error), error.fix)),
+        error.code,
+    )
+
+
 def _respond(request, campaign_id, *, export, render):
     """Shared admission, purge protection, audit and failure handling.
 
@@ -282,6 +297,8 @@ def _respond(request, campaign_id, *, export, render):
             return validation_response(
                 [FieldError(ErrorCode.STALE)], status=409, refusal=REBOUND
             )
+        except AddRefusal as error:
+            return _add_refusal(error)
         except InvalidEdit as error:
             return _edit_refusal(error)
         except ValueError:
@@ -401,6 +418,10 @@ def report(request, campaign_id):
                     )
                 ).isoformat(),
                 "mutable": mutable,
+                # The Add dialog's choices (#1710): what may change, and the
+                # ignored changes an addition may be added in place of.
+                "add_fields": add_fields(),
+                "add_replaceable": result["replaceable"],
                 "administrator": result["administrator"],
                 # Publish to ParishSoft's link (#528, ADM-09), the
                 # Administrator's: unavailable, with its reason, while the

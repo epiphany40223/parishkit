@@ -178,7 +178,7 @@ def test_a_leaders_export_is_the_queue_view_in_their_scope(response_service, goo
         assert response.status_code == 200 and table(body) == []
         response, body = export(browser, format="xlsx", state="any")
         sheet = load_workbook(io.BytesIO(body))["Ministry requests"]
-        assert sheet["A1"].value == "Member" and sheet["C2"].value == "Food pantry"
+        assert sheet["A1"].value == "Member" and sheet["F2"].value == "Food pantry"
         response, body = export(browser, format="pdf", state="any")
         assert response.status_code == 200 and body.startswith(b"%PDF-")
         # The form grammar is closed, and a query string is refused.

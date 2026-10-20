@@ -16,6 +16,8 @@ from typing import NamedTuple
 from django.urls import reverse
 from django.utils.translation import gettext_lazy as _
 
+from parishkit.stewardship.pipeline import Stage
+
 from .admin_navigation import PAGES
 
 # Campaign states that read as "Closed or archived" in the spec's table.
@@ -29,11 +31,14 @@ _CLOSED = frozenset({"closed", "archived", "purging", "purge_cleanup_failed"})
 # emails is, and ``mail_problems`` is Sent mail filtered to emails that may
 # not have arrived, with their count.
 # The four lists Staff work through at campaign end (#1590), each with its
-# count, while the campaign runs and after it closes. The Response dashboard
-# is not a step: Home's campaign panel links it (#1673).
+# count, while the campaign runs and after it closes. ``ministry_entry`` is
+# Ministry requests at its To enter by hand Stage, the roster changes to
+# enter since Roster changes to enter was folded into it (R39 finding 2).
+# The Response dashboard is not a step: Home's campaign panel links it
+# (#1673).
 _WORK = (
     "census_changes",
-    "ministry_roster",
+    "ministry_entry",
     "information_queue",
     "ministry_report",
 )
@@ -46,7 +51,7 @@ _ACTIVE = {
 # and Conflict rows, Roster changes to enter's default view.
 _NOTES = {
     "census_changes": _("to do"),
-    "ministry_roster": _("not yet entered"),
+    "ministry_entry": _("to enter by hand"),
 }
 STEPS = {
     "testing": {
@@ -186,6 +191,8 @@ def next_steps(
             step = _test_email(menu.get("content_catalog"), test_email)
         elif name == "mail_problems":
             step = _mail_problems(menu.get("deliveries"), mail_unknown)
+        elif name == "ministry_entry":
+            step = _ministry_entry(menu.get("ministry_report"))
         else:
             entry = menu.get(name)
             step = entry and Step(
@@ -216,6 +223,27 @@ def _test_email(catalog, revision):
     if not catalog["url"]:
         return Step(label, None, catalog["reason"])
     return Step(label, reverse("admin:campaign_mail", args=[revision]))
+
+
+def _ministry_entry(entry):
+    """Ministry requests at its To enter by hand Stage, with that Stage's count.
+
+    It follows Ministry requests' menu entry, greyed with its reason as
+    that entry is. Only the Administrator's and Staff's lists hold it (a
+    Ministry leader never sees the update phase, #1160); when its count
+    could not be read (``entry_count`` None), the card shows no number.
+    """
+    if entry is None:
+        return None
+    url = entry["url"] and f"{entry['url']}?stage={Stage.TO_ENTER_BY_HAND.value}"
+    count = entry.get("entry_count")
+    return Step(
+        str(_("Ministry requests to enter by hand")),
+        url,
+        entry["reason"],
+        count,
+        _NOTES["ministry_entry"] if url and count is not None else None,
+    )
 
 
 def _mail_problems(deliveries, unknown):

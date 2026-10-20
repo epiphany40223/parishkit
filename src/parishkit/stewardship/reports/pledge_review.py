@@ -4,7 +4,7 @@ Each Family's current pledge answer is one item ([review pipeline spec,
 "Financial stream"](docs/specs/stewardship/review-pipeline/spec.md)). Its
 history is ``PledgeReview`` (one immutable row per decision), and its stage
 is derived from its latest row by the SQL selection
-``stewardship_pledge_review_states_v1`` (frozen migration 0135, provisional
+``stewardship_pledge_review_states_v1`` (frozen migration 0127, provisional
 number), which the page, the counts and the row guard all read, so none of
 them can disagree about whether a Family's new answer reopened its pledge.
 

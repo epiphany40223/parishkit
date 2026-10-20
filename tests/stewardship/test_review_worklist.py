@@ -302,6 +302,73 @@ def test_the_template_draws_selected_icons_and_the_filters_open():
     assert 'name="stage"' in html and "Every stage (1)" in html
 
 
+def test_a_silent_action_hides_its_note():
+    """``silent`` actions record no note (a Ministry roster tick, R39 finding
+    2): their row icons and bulk button carry the ``no_note`` choice, which
+    hides the dialog's note (ui-v1.js data-note-field); the others keep
+    theirs, and reopening an Ignored item still asks for one."""
+    shown = [
+        dict(
+            rows()[0],
+            id="0",
+            placement=Placement(Stage.TO_ENTER_BY_HAND, Decision.ACCEPTED),
+        ),
+        dict(rows()[1], id="1", placement=Placement(Stage.IGNORED, Decision.IGNORED)),
+    ]
+    built = made(shown=shown, silent={Action.ENTERED_BY_HAND})
+    entered, ignored = built.rows
+    choices = {
+        icon["action"]: icon["choice"]
+        for icon in entered["icons"]
+        if not icon["selected"]
+    }
+    assert choices == {"back_to_review": "", "entered_by_hand": "no_note"}
+    assert [i["choice"] for i in ignored["icons"] if not i["selected"]] == ["reopen"]
+    bulk = {button["value"]: button["choice"] for button in built.bulk}
+    assert bulk["entered_by_hand"] == "no_note"
+    assert bulk["back_to_review"] == "reopen" and bulk["accept"] == ""
+    # Without ``silent`` every action keeps its note.
+    plain = made(shown=shown)
+    assert {i["choice"] for i in plain.rows[0]["icons"] if not i["selected"]} == {""}
+
+
+def test_a_stream_family_column_links_anywhere():
+    """A Family column links its Timeline wherever it sits, not only first."""
+    from django.template.loader import render_to_string
+
+    shown = [
+        dict(
+            rows()[0],
+            family="Sample, Pat and Lee",
+            family_name="Sample, Pat and Lee",
+            family_id=UUID(int=5),
+        )
+    ]
+    columns = [Column("who", "Who"), Column("family", "Family")]
+    table = paginate(shown, {"size": "25"}, carry=[("stage", "all")])
+    built = build(
+        "census",
+        table.rows,
+        STAFF,
+        prefix="census",
+        action="/review",
+        columns=columns,
+        stage="all",
+        counts={},
+        stages=[],
+    )
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.accounts.policy import Principal
+
+    staff = SimpleNamespace(principal=Principal(UUID(int=1), frozenset({"staff"})))
+    html = render_to_string(
+        "stewardship/components/review-worklist.html",
+        {"worklist": built, "table": table, "csrf_token": "x", "request": staff},
+    )
+    assert ">Sample, Pat and Lee</a></td>" in html
+
+
 def test_read_decision_reads_a_row_add_and_bulk_post():
     """Each control's fields come out as one decision; the page's own
     fields stay for the view."""

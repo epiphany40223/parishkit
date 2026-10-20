@@ -59,6 +59,10 @@ def add_response_web_grants(tables, columns):
     # An Administrator's review of an Automatic change (#528, ADM-09) changes
     # its decision, admitted only with its paired stewardship_proposal_review.
     tables["stewardship_proposal_review"] = {"SELECT", "INSERT"}
+    # A census change the parish added (#1710) and its one later step;
+    # each guard admits INSERT only (migration 0129).
+    tables["stewardship_census_addition"] = {"SELECT", "INSERT"}
+    tables["stewardship_census_addition_resolution"] = {"SELECT", "INSERT"}
     # The guard sets resolved_at itself; Staff never write roster evidence.
     # An Edit's Ministry (#1684) changes only with its paired revision.
     columns["stewardship_ministry_request"] = {
@@ -104,7 +108,7 @@ def add_response_web_grants(tables, columns):
     }
     tables["stewardship_information_revision"] = {"SELECT", "INSERT"}
     # Review decisions on cannot-participate and cannot-attend answers
-    # (#1685, migration 0134), each admitted by its own guard.
+    # (#1685, migration 0126), each admitted by its own guard.
     tables["stewardship_limitation_review"] = {"SELECT", "INSERT"}
     columns["stewardship_family_campaign"]["UPDATE"].update(
         {"first_live_submission_id", "effective_submission_id"}

@@ -8,7 +8,7 @@ the worklist's decisions through ``responses.information``
 (``InformationDecisions``, the stream's ``DecisionService``). The stages,
 words and role actions are ``parishkit.stewardship.pipeline``'s; nothing here
 decides what is allowed: the service and its SQL guard (schema
-information_followup.sql, migration 0134) refuse what a reader may not do.
+information_followup.sql, migration 0126) refuse what a reader may not do.
 """
 
 from dataclasses import dataclass, replace

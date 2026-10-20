@@ -918,7 +918,7 @@ the [active parishioner family directory](#active-parishioner-family-directory)
 (each row), the header's Find a Family box (each match; see
 [Admin navigation](../admin-portal/spec.md#admin-navigation)), the
 [Financial stewardship](#financial-stewardship-detail) Family table, Census
-changes, Publish to ParishSoft's newest check, Roster changes to enter, both
+changes, Publish to ParishSoft's newest check, Ministry requests, both
 Limitations tables, Families on the form now, the Additional information
 request page's heading, each Weekly report item, Refused addresses and each
 Refused address page, and Families the form cannot open. The
@@ -1228,7 +1228,7 @@ To handle is "needed, not completed" and Handled is "completed". Each
 decision is one immutable Staff revision with its decision, note, actor and
 time, paired with the `information_updated` audit event, which names only
 the versions. A request whose latest revision was saved before schema
-migration 0134 with follow-up not needed reads as Ignored, since a Staff
+migration 0126 with follow-up not needed reads as Ignored, since a Staff
 member chose that; a request no Staff member has saved is To review.
 
 Each request's own page shows the submitted text in full, its disposition and
@@ -1236,7 +1236,7 @@ replacement link, whether a weekly digest already reported it, its Stage,
 the Family's **Contact details**
 ([#1595](https://github.com/epiphany40223/parishkit/issues/1595)) and the
 request's history, each entry worded by its decision (Accepted, Ignored,
-Back to review, Handled; an entry saved before migration 0134 by its
+Back to review, Handled; an entry saved before migration 0126 by its
 follow-up choices). Decisions are made on the worklist, not on this page;
 its link back opens the worklist. The Contact details are so Staff
 can reply without looking the Family up in ParishSoft: the Family record's
@@ -1777,12 +1777,13 @@ Ministry requests is the Ministry stream's
 [review worklist](../review-pipeline/spec.md#review-worklist): the shared
 component, its words and its selected-state icons, at the same address. It
 replaces the queue table, its Status and Outcome filters and its bulk
-outcomes; the request pages, Roster changes to enter, the remembered view,
+outcomes; the request pages, the remembered view,
 Export these requests and the packet stay. From the top, the page shows:
 
-1. The heading, the page help, the ParishSoft data date, the Roster changes
-   to enter link (Admin/Staff only), and the notice shown while other
-   campaign work locks edits.
+1. The heading, the page help, the ParishSoft data date and the notice
+   shown while other campaign work locks edits. (Roster changes to enter,
+   once linked here, is this page's To enter by hand Stage since R39;
+   [roster entry](../admin-portal/spec.md#roster-entry-on-ministry-requests).)
 2. **By Ministry**, a compact table described below. It stays above the
    worklist's filters, not between them and the table: its counts apply
    filters in place and the table's height changes with them, so anything
@@ -1925,7 +1926,8 @@ leave list.
 
 Neither list nor its export shows a resolved request's **Entered in
 ParishSoft** tick; it is read and set on
-[Roster changes to enter](../admin-portal/spec.md#roster-changes-to-enter).
+Ministry requests at its To enter by hand Stage
+([roster entry](../admin-portal/spec.md#roster-entry-on-ministry-requests)).
 Ministry leaders never see the tick anywhere
 ([follow-up workflows](../admin-portal/spec.md#follow-up-workflows)).
 The contact details are read through the installed selections (no schema
@@ -2383,7 +2385,7 @@ may change a proposal's decision only with such a row, and the row's own
 guard checks again that the actor may review, the campaign admits changes,
 the version is current, the change is open, and the decision or the edit
 changes. Migrations 0107 and 0108 added the edit and the accepted base.
-Forward migration 0131 (provisional number,
+Forward migration 0128 (provisional number,
 [#1683](https://github.com/epiphany40223/parishkit/issues/1683)) widens the
 guard for the pipeline: a current Staff member or Administrator; any census
 change the worklist lists, By hand ones included; a decision and an edit
@@ -2394,7 +2396,83 @@ record for a phone, an address of its six parts with a street line for an
 address, text otherwise, at most 1,024 bytes), must not be blank and must
 differ from the Family's answer, as the census compares values; moved,
 deceased, the email opt-out and a New Member take no edit. Clearing needs an
-edit to be set. The value's full rules stay in the service.
+edit to be set. The value's full rules stay in the service, except for an
+address: forward migration 0130 (provisional number,
+[#1719](https://github.com/epiphany40223/parishkit/issues/1719)) holds an
+edited Family address to the same SQL address rules as the Family's own
+answer (a known country; for a US address a state or territory and a ZIP or
+ZIP+4; a city; each part's length; normalized single-line text), so no
+writer can store an address the Family form would refuse.
+
+### Census Add
+
+**Add**, in the selection bar, records a census change no Family answer
+asked for ([Reviewed stage](../review-pipeline/spec.md#reviewed-stage),
+[#1710](https://github.com/epiphany40223/parishkit/issues/1710)). Staff and
+Administrators see it; it is gone while other campaign work holds the
+campaign, as every action is. Its dialog asks, in order, what changed (a
+Member field Edit takes a value for, or the Family's home or mailing
+address), the Family DUID, the Member DUID for a Member field, and the new
+value in the editor Edit draws for that field; only the controls the chosen
+field needs are shown. It may name the Family's ignored change it is added
+in place of, and takes the optional note.
+
+The server checks it as the [Edit](#automatic-census-review) checks a value,
+by the handling registry's handling for the field (a Family address by the
+Family form's address rules), and also that the Family responded in this
+campaign, that the current ParishSoft data lists the Member as current in
+that Family, that the field has no open change already (an open addition,
+or the Family's own change not ignored, which is decided with its own icons:
+an Edit corrects the Family's value), and that a change it is added in place
+of is that Family's ignored one. A refusal is shown in the dialog at the
+field it concerns, with its own code (`add_field`, `add_family`,
+`add_no_response`, `add_member`, `add_not_in_parishsoft`, `add_value`,
+`add_exists`, `add_in_place_of`); nothing is recorded. The same request key
+again with the same Add records nothing more, and with any other Family,
+field, value or replaced change is refused.
+
+An added change is a row of the worklist like any other: Who, What changed,
+the Reviewer's value (the added value) and no Family's answer, Submitted
+when it was added, and Last decision its creator, time and note. Its stage
+is *To enter by hand*, with *Added by the parish* under it and its Accept
+drawn selected, and *How it reaches ParishSoft* is *By hand*: until the
+update run is rebuilt
+([#1688](https://github.com/epiphany40223/parishkit/issues/1688)) nothing
+writes an addition to ParishSoft, whatever the handling registry says of its
+field. It offers only **Entered by hand** (final, as for any change) and
+**Back to review**, which withdraws it: it moves to *History*, and the field
+may be added again. Both are in the bulk bar too, together with the
+Family's own changes, all or none; the bulk dialog says a ticked added
+change is withdrawn. Each ignored change it replaced shows "Added in its
+place:" with the field and value of every addition made for it under its
+stage, and the added change says it was added in place of an ignored change.
+
+The field never has two open changes by the worklist's own decisions: while
+an addition of the field is open, an ignored change of the same field
+offers no Back to review, and one posted anyway is refused (`reopen_added`;
+withdraw the addition first), as is `pk-admin census review` or `census
+resolve` reopening it; the check runs under the work order. A later Family response may still ask for the
+same field again; the open addition then says the Family has an open change
+of this field too, so Staff decide that one and withdraw the addition if it
+is no longer needed. Its Baseline is ParishSoft's value of the field when it
+was added (blank where it cannot be read, as for every Family address),
+which the database records with the snapshot it came from: the baseline the
+refresh rules re-evaluate an open addition against once
+[#1689](https://github.com/epiphany40223/parishkit/issues/1689) ships. Until
+then a refresh leaves additions as they are. The downloads
+and `pk-admin report census` include additions; the other `pk-admin census`
+commands act on the Family's changes only.
+
+An addition is not a proposed change: proposals belong to the Family submit
+path, whose guards stay as they are, and the Family form never shows an
+addition. Forward migration 0129 (provisional number) adds two
+migration-owned tables, each INSERT only: the addition (who, when, the note,
+the Family, the Member or Family, the field, the value and the change it
+replaced) and its one later step (Entered by hand or withdrawn, at most one
+per addition). Their guards check the actor and campaign again and,
+for an addition, the rules above, the value's shape as 0128 checks an
+edit's, and record the baseline themselves. Each row is paired with a
+`census_change_updated` audit event naming only its id and version.
 
 ### Publish to ParishSoft
 
@@ -2792,6 +2870,19 @@ broken is refused at that field
 of order at its Through date or At most, with both ends marked. Its access
 audit ends denied.
 
+A reload keeps the view's closed choices
+([reload on a POST report](../ui-conventions/spec.md#pages-that-update-themselves),
+[#1586](https://github.com/epiphany40223/parishkit/issues/1586)): after each
+in-place answer it accepts, the address bar shows the page with Family status, Pledge
+amount, Frequency, Share method (a share option's identity, or none),
+the sort and the rows per page, each only when it differs from the default,
+and the page's GET draws that view. The search, the response dates and the
+pledge range stay in the POST body, so a reload clears them and shows the
+first page. A GET with any other parameter, a repeated one or a value
+the filter's form does not take is refused (400), as a POST's would be: a
+Share method is checked for an option identity's form, so one no longer
+offered matches no Family. A POST with a query string is refused too.
+
 This report stays the financial stream's statistics page. Reviewing each
 pledge and entering it in ParishSoft is on [Pledges](#pledges).
 
@@ -2867,7 +2958,7 @@ section is the page.
   check's amount, blank before any; a flagged row's Stage reads "Entered by
   hand, Not seen in ParishSoft".
 - **Audit.** Each decision is one immutable history row (frozen migration
-  0135, provisional number) with a `pledge_review_updated` event that names
+  0127, provisional number) with a `pledge_review_updated` event that names
   only versions; viewing and downloading the page are audited as a count only
   (`pledges_to_enter_viewed`, `pledges_to_enter_exported`).
 
@@ -2912,7 +3003,7 @@ Limitations item: it is decided once, on [Pledges](#pledges), so its Stage
 is its Pledges stage, its Last decision is Pledges' last decision, it has
 no box and no action icons, and its Actions cell is an "Open in Pledges"
 link that opens Pledges at that stage, named for screen readers by its row
-("Open in Pledges: the answer of <Family>", which starts with the visible
+("Open in Pledges: the answer of" and the Family's name, which starts with the visible
 text, so voice control finds it). It is listed for viewers who may
 open Pledges (Administrators and Staff) while the campaign has the
 financial module, only while Show is everything (the Show choices name the
@@ -2946,7 +3037,7 @@ allow. Handled is final. There is no Add.
 No item is stored when a Family submits: each row is a current live answer,
 as the report has always read it, so the Family's form and its submission do
 not change. Each decision is one immutable row
-(`stewardship_limitation_review`, schema migration 0134) naming the Family,
+(`stewardship_limitation_review`, schema migration 0126) naming the Family,
 the Member (or the Family itself, for cannot attend), the live response it
 was decided on, the decision, the note, who and when, paired with a
 `limitation_reviewed` audit event that names only versions. A decision stays
@@ -2961,7 +3052,7 @@ gives the answer, and its decision is still in force when it does again.
 Every decision is checked against the row's version, the number of
 decisions recorded for that answer, as the page showed it; a row someone
 else changed first is left as it is and the notice says so. The report reads
-through `stewardship_limitations_report_v2` (migration 0134), which returns
+through `stewardship_limitations_report_v2` (migration 0126), which returns
 what `stewardship_limitations_report_v1` (migration 0056) returns plus each
 row's answer key, Family record and latest decision, and whether that
 decision is still in force; it takes the same `search` and `show` values.

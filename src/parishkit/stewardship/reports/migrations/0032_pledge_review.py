@@ -1,7 +1,7 @@
 """Forward migration: the financial stream's review history (#1686).
 
-Its SQL is the frozen file ``schema/migrations/0135_pledge_review.sql``
-(prefix 0135 in the repository-wide file sequence, provisional until the
+Its SQL is the frozen file ``schema/migrations/0127_pledge_review.sql``
+(prefix 0127 in the repository-wide file sequence, provisional until the
 coordinator assigns it at merge), read whole and never parsed. It creates
 ``stewardship_pledge_review`` (one immutable row per Accept, Edit, Ignore,
 Back to review and Entered by hand on a Family's pledge), the pledge answer
@@ -12,7 +12,7 @@ needs its own forward migration, so, like the baseline, it has no reverse
 operation.
 
 It depends on the reports app's previous migration and on the migration that
-installs the previous frozen file (0124, in the accounts app), so the files
+installs the previous frozen file (0126, in the responses app), so the files
 apply in prefix order. That keeps it in the users swap's closure: its table
 is registered in ``runtime_grants.CLOSURE_TABLES``.
 """
@@ -32,7 +32,7 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0135_pledge_review.sql"
+    / "0127_pledge_review.sql"
 )
 ACTIONS = ("accept", "edit", "ignore", "back_to_review", "entered_by_hand")
 DECISIONS = ("accepted", "accepted_edited", "ignored")
@@ -43,12 +43,11 @@ class Migration(migrations.Migration):
     dependencies = [
         ("stewardship_reports", "0031_leader_request_contacts"),
         ("stewardship_campaigns", "0014_digest_skip_dates"),
-        # The migration that installs the previous frozen file (0134, the
+        # The migration that installs the previous frozen file (0126, the
         # Additional information and Limitations review, #1685, on which
         # this PR stacks), so the files apply in prefix order; it depends on
-        # the census (0131) and Ministry (0132) pipelines in turn.
-        ("stewardship_responses", "0014_information_limitation_review"),
-        ("stewardship_workflows", "0003_ministry_review_pipeline"),
+        # responses 0012 and on 0125's accounts 0030 in turn.
+        ("stewardship_responses", "0013_information_limitation_review"),
     ]
 
     operations = [
