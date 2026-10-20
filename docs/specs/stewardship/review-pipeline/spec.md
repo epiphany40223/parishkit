@@ -1759,7 +1759,10 @@ today. A Family resubmission that reopens or withdraws an item is a row with
 the Family (or the Staff member using Open form) as actor. A stage change
 by a refresh (Confirmed, Conflict, Entered incorrectly, Not seen) is
 recorded as such, with no actor. Each stream's history view lists the rows
-in order. New schema follows the
+in order, and the Family hub's Timeline lists one Family's rows across every
+stream as its [review lines](../reports/spec.md#timeline-review-lines), so a
+stream that stores a new kind of row adds it there too. New schema follows
+the
 [post-launch schema policy](../operations/spec.md#post-launch-schema-policy).
 
 ## Shared code

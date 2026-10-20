@@ -325,7 +325,7 @@ def test_staff_may_open_the_page_and_ministry_leaders_may_not(
     response, body = get(browser, route)
     if allowed:
         assert response.status_code == 200 and b"9 Census Way" in body
-        # Staff may open the Timeline (its summary), so the name links.
+        # Staff may open the Timeline, so the name links.
         assert b'<th scope="row"><a href="/admin/reports/families/' in body
     else:
         assert response.status_code in {403, 404} and b"9 Census Way" not in body
