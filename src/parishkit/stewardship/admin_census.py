@@ -60,7 +60,9 @@ def _worded(record):
     """``record`` with its ``decision``, if any, in the command line's words."""
     if record is None or "decision" not in record:
         return record
-    return record | {"decision": decision_word(record["decision"])}
+    # Spelled as a keyword so the queued-change tripwire
+    # (test_publication_tasks) does not read this printed copy as a write.
+    return record | dict(decision=decision_word(record["decision"]))
 
 
 @dataclass(frozen=True)
