@@ -7,6 +7,7 @@ only the commands add.
 """
 
 import json
+from dataclasses import replace
 from decimal import Decimal
 from uuid import uuid4
 from zoneinfo import ZoneInfo
@@ -17,7 +18,11 @@ from parishkit.stewardship import admin_cli, admin_pledges
 from parishkit.stewardship.accounts.policy import Principal
 from parishkit.stewardship.admin_followup import InvalidFollowup
 from parishkit.stewardship.reports import pledge_review_views as views
-from parishkit.stewardship.reports.pledge_review import RECORDED, bulk_key_for
+from parishkit.stewardship.reports.pledge_review import (
+    RECORDED,
+    bulk_key_for,
+    version_of,
+)
 from parishkit.stewardship.responses.financial import FREQUENCIES
 
 from .test_admin_cli import run
@@ -79,7 +84,8 @@ def test_each_record_is_the_csv_row_with_its_item_version_and_actions():
     """The cells are the files' under fixed keys; the item, version and the
     actions the reader's role and the row's stage offer are the row's."""
     entered = pledge_row()
-    fresh = pledge_row(item())
+    # A refresh check counts in the version, as on the page.
+    fresh = pledge_row(replace(item(), checks=2))
     found = records([entered, fresh], STAFF)
     cells = views.export_rows([entered, fresh], ZoneInfo("America/New_York"))
     for record, values, source in zip(found, cells, (entered, fresh), strict=True):
@@ -91,7 +97,8 @@ def test_each_record_is_the_csv_row_with_its_item_version_and_actions():
         }
         assert [record[key] for key in admin_pledges.JSONL_KEYS] == list(values)
         assert record["item_id"] == str(source["item"].submission_id)
-        assert record["version"] == source["item"].sequence
+        assert record["version"] == version_of(source["item"])
+    assert found[1]["version"] == 2
     assert found[0]["actions"] == ["back_to_review", "entered_by_hand"]
     assert found[1]["actions"] == ["accept", "edit", "ignore"]
     assert found[0]["annual_pledge_to_enter"] == "$1,300.00"

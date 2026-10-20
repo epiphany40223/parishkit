@@ -382,3 +382,33 @@ def test_bulk_decisions_are_all_or_none_and_a_key_is_used_once(
     code, document = decide(run, first, "entered_by_hand", "--amount", "1")
     assert code == 1 and document["error"]["code"] == "invalid", document
     assert (count(EVENT), count(UPDATED)) == (3, 5)
+
+
+def test_a_confirmed_pledge_is_undone_at_the_exported_version(
+    response_service,
+    google,
+    cli,  # noqa: F811
+):
+    """After a refresh Confirmed a pledge ParishSoft already held, JSON
+    Lines gives the page's version (with the check) and Back to review as
+    its action; ``pledges decide`` at that version needs the note, then
+    sends the pledge back to To review (#1840)."""
+    from .test_pledge_refresh_postgresql import ANSWER, refresh
+
+    harness, submission = pledged(response_service)
+    refresh(harness, ANSWER)
+    signed_in()
+    run = cli()
+    code, body, document = export(run, "--stage", "confirmed", "--format", "jsonl")
+    assert code == 0, document
+    [record] = [json.loads(line) for line in body.decode().splitlines()]
+    assert (record["version"], record["actions"]) == (1, ["back_to_review"])
+    version = record["version"]
+    code, document = decide(run, submission, "back_to_review", version=version)
+    assert code == 1 and document["error"]["code"] == "invalid", document
+    code, document = decide(
+        run, submission, "back_to_review", "--note", "Recheck", version=version
+    )
+    assert code == 0, document
+    assert document["result"]["decisions"][0]["decision"] is None
+    assert state(harness, submission).stage == "to_review"

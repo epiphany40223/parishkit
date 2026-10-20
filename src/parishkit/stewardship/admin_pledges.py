@@ -249,10 +249,12 @@ def pledges_jsonl(rows, zone, actor, *, mutable=True):
 
     Each cell is the CSV's text (``export_rows``), so the formats never
     disagree about a value; ``item_id``, ``version`` and ``actions`` come
-    from the row the cells were made from. ``mutable`` is the page's check
+    from the row the cells were made from. ``version`` is the page's own
+    (``version_of``: the sequence plus the refresh checks), which
+    ``pledges decide`` is compared with. ``mutable`` is the page's check
     that no other campaign work holds the campaign.
     """
-    from .reports.pledge_review import reader_roles
+    from .reports.pledge_review import reader_roles, version_of
     from .reports.pledge_review_views import export_rows
 
     roles = reader_roles(actor) if mutable else frozenset()
@@ -261,7 +263,7 @@ def pledges_jsonl(rows, zone, actor, *, mutable=True):
         record = dict(zip(JSONL_KEYS, cells, strict=True))
         record |= {
             "item_id": str(row["item"].submission_id),
-            "version": row["item"].sequence,
+            "version": version_of(row["item"]),
             "actions": row_actions(row, roles),
         }
         lines.append(json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n")
