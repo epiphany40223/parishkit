@@ -210,6 +210,10 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "export comparison",
         # The campaign archive workbook (#1018 part (a)).
         "export archive",
+        # Pledges' counts, download and decisions (#1733).
+        "report pledges",
+        "export pledges",
+        "pledges decide",
     }
     # The users commands (#952), in the users group (PR 11): the reads of
     # slice 2, the changes of slice 5 and the leaders import of slice 6.
@@ -311,6 +315,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
                 "export limitations",
                 "export roster",
                 "followup export",
+                "export pledges",
             }
         ), name
         if name in acknowledged:
@@ -735,6 +740,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "report ministry": "ministry_report_viewed",
         "report roster": "roster_changes_viewed",
         "report census": "census_changes_viewed",
+        "report pledges": "pledges_to_enter_viewed",
         "report source-form": "source_form_viewed",
         "report data-to-fix": "data_to_fix_viewed",
     }
@@ -875,6 +881,28 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert conflict["result_fields"] == review["result_fields"]
     options = {option["name"]: option for option in edit["options"]}
     assert {"--value", "--clear"} <= set(options)
+    # pledges decide (#1733): keyed, full scope, not fresh-gated; it
+    # prompts, but only for Entered by hand, which is final. Each chosen
+    # pledge carries its own version, so there is no --expected-version.
+    pledges = entries["pledges decide"]
+    assert pledges["scope"] == "full" and pledges["changes_state"]
+    assert pledges["request_key"] and not pledges["expected_version"]
+    assert pledges["prompts"] and not pledges["fresh_gated"]
+    assert pledges["audit_event"] == "admin_cmd_pledges_decide"
+    assert pledges["result_fields"] == ["created", "request_key", "decisions"]
+    options = {option["name"]: option for option in pledges["options"]}
+    assert options["--action"]["choices"] == [
+        "accept",
+        "edit",
+        "ignore",
+        "back_to_review",
+        "entered_by_hand",
+    ]
+    assert options["--action"]["required"] and options["--item"]["required"]
+    assert not options["--amount"]["required"] and not options["--note"]["required"]
+    export = entries["export pledges"]
+    assert export["scope"] == "full" and not export["changes_state"]
+    assert export["audit_event"] == "pledges_to_enter_exported"
 
 
 def test_every_state_change_has_a_registered_described_event():
@@ -962,6 +990,8 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_followup_roster_entered",
         "admin_cmd_followup_roster_bulk",
         "admin_cmd_followup_information_update",
+        # Pledges' decisions (#1733).
+        "admin_cmd_pledges_decide",
     ]
     for event in events:
         assert Action(event) and event in DESCRIPTIONS, event

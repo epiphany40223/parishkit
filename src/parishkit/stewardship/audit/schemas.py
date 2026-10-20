@@ -376,6 +376,9 @@ class Action(StrEnum):
     ADMIN_CMD_FOLLOWUP_ROSTER_ENTERED = "admin_cmd_followup_roster_entered"
     ADMIN_CMD_FOLLOWUP_ROSTER_BULK = "admin_cmd_followup_roster_bulk"
     ADMIN_CMD_FOLLOWUP_INFORMATION_UPDATE = "admin_cmd_followup_information_update"
+    # pledges decide: a Pledges decision, one pledge or in bulk
+    # (#1733).
+    ADMIN_CMD_PLEDGES_DECIDE = "admin_cmd_pledges_decide"
 
 
 # Closed field identifiers are operational metadata, never census values.

@@ -58,8 +58,8 @@ shares`` (PR 10, in ``admin_settings``), ``parish preview`` and
 ``parish confirm`` (PR 10, in ``admin_parish``), and ``events list`` and
 ``events acknowledge`` (PR 11, in ``admin_events``). A
 command that streams a file (``logs export``, ``export census``,
-``export limitations``, ``export roster``, ``followup export`` and
-``export download --stream``) writes the file's bytes, and nothing else,
+``export limitations``, ``export roster``, ``export pledges``, ``followup
+export`` and ``export download --stream``) writes the file's bytes, and nothing else,
 to standard output, and its document to standard error. Other areas join the same
 subparser tree in later pull requests, each listed in the catalog with the
 pull request that added it. ``report roster`` (in ``admin_roster``) counts
@@ -84,7 +84,10 @@ bulk`` (PR 11a, in ``admin_followup``) read and record Ministry follow-up.
 and ``followup information-update`` (PR 11b, in ``admin_information``)
 read and record Additional information follow-up. ``followup export``
 (PR 11c, in ``admin_followup_export``) is the queue's Export these
-requests, streamed as ``export roster`` is.
+requests, streamed as ``export roster`` is. ``report pledges``, ``export
+pledges`` and ``pledges decide`` (#1733, in ``admin_pledges``) count,
+download and decide Pledges through the page's own read, writer
+and ``PledgeDecisions`` service.
 """
 
 import argparse
@@ -7572,6 +7575,229 @@ def _followup_export_specs():
 # ------------------------------------------- end of follow-up export block
 
 
+# ---------------------------------------------- Pledges (#1733)
+#
+# ``report pledges``, ``export pledges`` and ``pledges decide`` (in
+# ``admin_pledges``): Pledges' counts, its download and its row
+# and bulk decisions, through the page's own read, writer and
+# ``PledgeDecisions`` service.
+
+# A pledge's frequencies (``responses.financial.FREQUENCIES``), spelled out
+# because the parser is built before Django is set up; a test keeps them
+# equal.
+PLEDGE_FREQUENCIES = ("weekly", "monthly", "quarterly", "annual")
+
+
+def report_pledges(args, preamble, runtime, context):
+    """Pledges, as counts by stage only (#1733)."""
+    from .admin_pledges import read_pledges
+
+    return read_pledges(context["caller"], runtime, stage=args.stage)
+
+
+def export_pledges(args, preamble, runtime, context):
+    """The Pledges download, streamed to standard output (#1733)."""
+    from .admin_pledges import export_pledges as export
+
+    return export(
+        context["caller"],
+        runtime,
+        stage=args.stage,
+        fmt=args.format,
+        zone_name=args.timezone,
+        context=context,
+    )
+
+
+def pledges_decide(args, preamble, runtime, context):
+    """Record one decision on one or several pledges, as the page does (#1733).
+
+    The page's own role check comes first, so a Ministry leader is
+    ``denied`` before any input or prompt. Without ``--request-key`` a new
+    key is made and written to standard error before anything is done.
+    Entered by hand is final, so, as a decision that cannot be undone, it
+    asks first (or takes ``--yes``); the others can be changed again and
+    ask nothing.
+    """
+    from . import admin_pledges
+    from .web.review_worklist import MAX_NOTE
+
+    admin_pledges.admit_decide(context["caller"], runtime)
+    versions = dict(args.item)
+    if len(versions) != len(args.item):
+        raise ValueError("A pledge was chosen twice.")
+    key = _request_key(args, context)
+    # The page strips the note it posts; so does a note read from standard
+    # input (``_input``).
+    note = _input(args.note, context, MAX_NOTE * 4).strip()
+    # Refused before the prompt: nothing is asked about a decision the page
+    # could not post (too many pledges, a long note, a value or option an
+    # Edit would refuse).
+    admin_pledges.check_choice(
+        versions, args.action, amount=args.amount, frequency=args.frequency, note=note
+    )
+    if args.action == "entered_by_hand":
+        confirm(
+            context,
+            (
+                f"Mark {len(versions)} pledge(s) entered by hand in ParishSoft.",
+                "Entered by hand is final: it cannot be undone.",
+            ),
+        )
+    return admin_pledges.decide_pledges(
+        context["caller"],
+        runtime,
+        versions,
+        action=args.action,
+        amount=args.amount,
+        frequency=args.frequency,
+        note=note,
+        request_key=key,
+        context=context,
+    )
+
+
+def _pledge_stage_option(parser):
+    """``--stage``: the page's Stage choice, To review by default."""
+    from .admin_pledges import DEFAULT_STAGE, STAGE_CHOICES
+
+    parser.add_argument(
+        "--stage",
+        choices=STAGE_CHOICES,
+        default=DEFAULT_STAGE,
+        help=f"default {DEFAULT_STAGE}; all is Every stage",
+    )
+
+
+def _export_pledges_options(parser):
+    """Options of ``export pledges``: the page's Stage, format and time zone.
+
+    The page's search is left out: no command takes text that names a
+    Family. The format choices are the page's own (``pledge_review_views.
+    FORMATS``, which a test keeps equal) and the command's ``jsonl``.
+    """
+    _pledge_stage_option(parser)
+    parser.add_argument(
+        "--format",
+        choices=("csv", "xlsx", "pdf", "jsonl"),
+        default=DEFAULT_EXPORT_FORMAT,
+        help=f"default {DEFAULT_EXPORT_FORMAT}; jsonl adds each pledge's item "
+        "id, version and actions",
+    )
+    parser.add_argument(
+        "--timezone",
+        default="UTC",
+        help="the time zone of the file's times (default UTC)",
+    )
+
+
+def _chosen_pledge(value):
+    """``--item ID:VERSION``: a pledge item and the version its row shows."""
+    identity, separator, version = value.partition(":")
+    if not separator:
+        raise argparse.ArgumentTypeError("not ID:VERSION")
+    try:
+        return _uuid(identity), _tick_version(version)
+    except argparse.ArgumentTypeError:
+        raise argparse.ArgumentTypeError("not ID:VERSION") from None
+
+
+def _pledges_decide_options(parser):
+    """Options of ``pledges decide``: a row's action or the bulk bar's."""
+    from .admin_pledges import DECIDE_ACTIONS
+
+    parser.add_argument(
+        "--action",
+        required=True,
+        choices=DECIDE_ACTIONS,
+        help="accept, edit (one pledge, with --amount), ignore, "
+        "back_to_review or entered_by_hand (final)",
+    )
+    parser.add_argument(
+        "--item",
+        required=True,
+        action="append",
+        type=_chosen_pledge,
+        metavar="ID:VERSION",
+        help="a pledge's item_id and version, as export pledges --format "
+        "jsonl prints them (repeat for each, up to 100)",
+    )
+    parser.add_argument(
+        "--amount",
+        help="edit: the annual pledge, as the Family form takes it",
+    )
+    parser.add_argument(
+        "--frequency",
+        choices=PLEDGE_FREQUENCIES,
+        help="edit: how often the Family gives (none for a zero pledge)",
+    )
+    parser.add_argument(
+        "--note",
+        default="",
+        help="an optional note (required to reopen an ignored pledge), or - "
+        "to read it from standard input (entered_by_hand then needs --yes)",
+    )
+    _request_key_option(parser)
+
+
+def _pledge_specs():
+    """Pledges' commands (#1733, ``admin_pledges``).
+
+    ``report pledges`` is a read-only count; ``export pledges`` needs full
+    scope, as every export and as the download's post records activity;
+    ``pledges decide`` is keyed and full scope, and neither privileged nor
+    asking except for Entered by hand, as on the page.
+    """
+    from .admin_pledges import PledgeDecide, PledgeExport, PledgeReport
+
+    return (
+        # Counts only: each row names a Family and its pledge.
+        CommandSpec(
+            "report pledges",
+            "Count the pledges on the Pledges page, by stage.",
+            report_pledges,
+            "read_only",
+            False,
+            PledgeReport.field_names(),
+            8,
+            options=(_pledge_stage_option,),
+            audit_event="pledges_to_enter_viewed",
+        ),
+        # The page's file, or JSON Lines with each pledge's item id,
+        # version and actions for ``pledges decide``.
+        CommandSpec(
+            "export pledges",
+            "Write the Pledges download to standard output.",
+            export_pledges,
+            "full",
+            False,
+            PledgeExport.field_names(),
+            8,
+            options=(_export_pledges_options,),
+            audit_event="pledges_to_enter_exported",
+            streams=True,
+        ),
+        # A row's Accept, Edit, Ignore, Back to review or Entered by hand,
+        # or the bulk bar's: the page's service, keyed.
+        CommandSpec(
+            "pledges decide",
+            "Record a decision on pledges, as Pledges' actions do.",
+            pledges_decide,
+            "full",
+            True,
+            PledgeDecide.field_names(),
+            8,
+            options=(_pledges_decide_options,),
+            # Only Entered by hand, which is final, asks.
+            prompts=True,
+            request_key=True,
+        ),
+    )
+
+
+# ------------------------------------------- end of Pledges block
+
+
 COMMANDS = (
     COMMANDS
     + _read_specs()
@@ -7594,6 +7820,7 @@ COMMANDS = (
     + _integration_specs()
     + _followup_more_specs()
     + _followup_export_specs()
+    + _pledge_specs()
 )
 BY_NAME = {spec.name: spec for spec in COMMANDS}
 
