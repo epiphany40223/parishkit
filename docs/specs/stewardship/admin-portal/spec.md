@@ -5180,15 +5180,13 @@ line the first rows start on a laptop screen with the help closed
   the address (Administrator decision, 2026-10-20). When several Members
   list the address, the name is the one the Users page offers as a new
   user's default Name: a Member of an active Family first, then a head of
-  household, then by name, then by Member DUID. Only the addresses the
-  Users page itself can name are looked up (the current configuration's
-  users and the people who have signed in), through the read-only definer
-  the Users page's upgrade preview uses, and only when a shown email to a
-  person has no Users-page Name, so a page of Family emails reads no
-  ParishSoft names this way. An address no longer a user that never
-  signed in (a removed Ministry leader, for example) is outside that set,
-  so it still shows the address; naming it too would take a new definer
-  read of the page's addresses. The addresses of a Family email are not
+  household, then by name, then by Member DUID. Every such address can be
+  named this way, whether or not it is a user or has ever signed in (a
+  removed Ministry leader, for example): the names are read through the
+  Administrator-only Member-name read of the page's addresses (below,
+  frozen migration 0220), and only for the shown addresses that have no
+  Users-page Name, so a page of Family emails or of named users reads no
+  ParishSoft names. The addresses of a Family email are not
   listed here: they are on its Mail message page, with what each address's
   latest attempt recorded. In Testing mode the Recipient is still the
   intended Family or person; the Mail message page names the Testing
@@ -5250,21 +5248,30 @@ was created), which the page does not offer as headings.
 **Filters.** One compact filter bar (one row on a desktop screen; it wraps on
 a phone, without sideways scrolling) holds:
 
-- **Recipient**: a Family DUID (with or without its thousands commas), an
-  email address, or a delivery ID. A DUID lists that Family's emails; an
-  address lists every email whose intended recipients include it, in either
-  case, across kinds (a Family member who is also an Administrator sees both
-  their Family's emails and their reports); a delivery ID lists that one
-  email (or, as before, the emails of the Family record with that id).
-  Anything else, a name included, is refused at the field
+- **Recipient**: a name, a Family DUID (with or without its thousands
+  commas), an email address, or a delivery ID. A DUID lists that Family's
+  emails; an address lists every email whose intended recipients include
+  it, in either case, across kinds (a Family member who is also an
+  Administrator sees both their Family's emails and their reports); a
+  delivery ID lists that one email (or, as before, the emails of the Family
+  record with that id). Any other text is a name
+  ([#1849](https://github.com/epiphany40223/parishkit/issues/1849),
+  Administrator decision 2026-10-20): it lists the emails whose Recipient
+  name contains it, ignoring case, as the other Admin list search boxes
+  match. A Family email matches by its Family's name in the latest
+  ParishSoft data (the surname and heads Recipient shows), and an email to
+  a person by the name Recipient shows for them (the Users-page Name, else
+  the ParishSoft Member name, else the address). Text of only digits and
+  commas that is not a whole DUID, or with an "@" that is not one email
+  address, is refused at the field
   ([field errors](../ui-conventions/spec.md#field-errors-and-live-checks)):
-  the field's pattern holds Apply filters while it cannot be one of these,
-  saying "Enter a Family DUID, an email address or a delivery ID, or clear
-  it. Names are not searched." in the bar's reserved hint row; a value the
-  pattern lets through that the server still refuses draws the page again
-  in place, answered 400, with the same words at the field and the list
-  for no filters, never an error page (R40b). A Testing email's
-  routed address (the Testing recipient) is not searched.
+  the field's pattern holds Apply filters while it is so, saying "Enter a
+  name, a whole Family DUID, one email address or a delivery ID, or clear
+  it." in the bar's reserved hint row; a value the pattern lets through
+  that the server still refuses draws the page again in place, answered
+  400, with the same words at the field and the list for no filters, never
+  an error page (R40b). A Testing email's routed address (the Testing
+  recipient) is not searched.
 - **Purpose**: All; Family invitations and reminders (Initial invitation
   and Reminder together, the Family email
   [System health](#system-health)'s Waiting to retry counts,
@@ -5329,7 +5336,8 @@ page 1. A link from Family email history that names a send
 (`send=<schedule>:<revision>:<mode>:<cycle>`) shows that send's mode unless
 it names a mode itself.
 
-The Recipient filter names a person (an email address or a Family DUID),
+The Recipient filter names a person (a name, an email address or a Family
+DUID),
 so it is private filter state
 ([Admin tables](../ui-conventions/spec.md#admin-tables)) and never reaches
 a URL: the filter form posts every filter in a CSRF-protected POST body,
@@ -5354,16 +5362,21 @@ nothing appears or vanishes under the pointer
 **Cost.** Purpose, mode, state, date and Family filters use the outbox's own
 columns. The address filter reads the matching email ids through an
 Administrator-only definer read over the renderings' intended recipients,
-backed by an index (below), then finds the emails by primary key. The
+backed by an index (below), then finds the emails by primary key. A name
+filter reads the Family DUIDs whose name in the current snapshot contains
+the text (one query over the snapshot's Families) and, as the Recipient
+sort does, the names of every email to a person the other filters match
+(one id query, the address definer read per 500 of them, the users and
+the Member-name read), then finds the emails by DUID and by id. The
 Recipient names of a page's emails to people take one definer read for
 the page's ids and one query of the current configuration's users,
-however many rows, plus one read of the ParishSoft Member names (which
-reads the current ParishSoft Members' contact records) only when one of
-them has no Users-page Name, and the Timeline links of its Production
+however many rows, plus one Member-name read of the addresses that have
+no Users-page Name (it reads the current ParishSoft Members' contact
+records), and the Timeline links of its Production
 Family emails take one query of the current campaign's Family records by DUID. The
 Recipient sort adds one query of the matching emails to people's ids, one
-definer read per 500 of them, one query of the users (and the Member
-names read when one of them has no Users-page Name), and then orders
+definer read per 500 of them, one query of the users (and one Member-name
+read per 500 addresses without a Users-page Name), and then orders
 by a JSON object of their keys. The orderings are not indexed, so a page is
 a top-N sort of
 the filtered emails, as before.
@@ -5383,6 +5396,18 @@ else:
   `(message, address)` for the intended addresses of the current rendering
   of each listed email that has no Family (a report or notice), at most 500
   ids per call; Family emails' addresses are not returned.
+
+**Member-name read (frozen migration 0220, provisional).**
+`stewardship_member_names_for_addresses_v1(addresses, actor)`, with the
+same caller and Administrator checks, returns `(address, name)`: for each
+given address (lower-cased and trimmed, at most 500 per call) that a
+ParishSoft Member's contact record lists in the current ParishSoft data,
+the one name the Users page would offer as that address's default Name
+("Surname, First name"; a Member of an active Family first, then a head of
+household, then by name, then by Member DUID), and nothing else of the
+Member, contact or Family. An address no Member lists is left out. It adds
+no audit of its own: the page's `delivery_viewed` record names the actor
+([data spec](../data/spec.md#outbox-recipient-reads)).
 
 An email whose delivery recorded a [refused address](#refused-addresses)
 that is still unresolved is marked in its Delivery cell, on a second line,
