@@ -29,8 +29,9 @@
 --       * a Family response drawn as the reviewed form may supersede or
 --         cancel a decided request (resolved or closed with no response)
 --         its shown items name, never one the parish added, a refresh
---         resolved or Staff ticked Entered in ParishSoft; the replaced
---         request keeps no outcome, and the guard clears its resolved_at.
+--         resolved or Staff ticked Entered in ParishSoft (no runtime login
+--         but the web one may make that move); the replaced request keeps
+--         no outcome, and the guard clears its resolved_at.
 -- A response not drawn as the reviewed form has reviewed_view false, so
 -- for it both bodies behave exactly as before. Neither function is SECURITY
 -- DEFINER, before or after, so there is no ALTER FUNCTION to repeat. No
@@ -169,7 +170,10 @@ BEGIN
                 OR (OLD.state='resolved' AND NEW.state='resolved'
                     AND NEW.outcome IS NOT DISTINCT FROM OLD.outcome
                     AND NEW.reviewed_ministry_duid IS NOT DISTINCT FROM OLD.reviewed_ministry_duid)))
-        AND NOT (current_user<>'pk_stewardship_worker'
+        -- Only the web login (the Family branch below checks its response)
+        -- or a login that is no runtime login at all (the schema owner).
+        AND NOT ((current_user='pk_stewardship_web'
+                  OR current_user NOT LIKE 'pk\_stewardship\_%')
             AND OLD.state IN ('resolved','closed_no_response')
             AND NEW.state IN ('superseded','cancelled') AND NOT OLD.parish_added))
        OR NEW.version<>OLD.version+1
@@ -363,6 +367,7 @@ BEGIN
     IF NOT EXISTS(SELECT 1 FROM pg_proc
             WHERE oid='public.stewardship_ministry_request_guard_v1()'::regprocedure
               AND prosrc LIKE '%AND NEW.state IN (''superseded'',''cancelled'') AND NOT OLD.parish_added))%'
+              AND prosrc LIKE '%OR current_user NOT LIKE %'
               AND prosrc LIKE '%AND later.reviewed_view AND NOT OLD.parish_added%'
               AND prosrc LIKE '%WHERE shown->>''stream''=''ministry'' AND shown->>''item''=OLD.id::text)%'
               AND prosrc LIKE '%A replaced Ministry request keeps no outcome%'

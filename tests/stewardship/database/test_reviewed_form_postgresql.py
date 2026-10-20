@@ -244,6 +244,67 @@ def test_a_moved_request_entered_by_hand_is_still_shown_and_kept(
     assert row.execution == "resolved_external"
 
 
+def test_an_ignored_move_is_shown_as_parishsoft_has_the_member(
+    live_response_service,
+):
+    """An Ignored move shows the Member as ParishSoft has them; answering the
+    Member as shown keeps it Ignored (rule 1), not withdrawn."""
+    from django.db.models import F
+
+    from parishkit.stewardship.campaigns.work_locks import work_transaction
+
+    from .test_response_http_postgresql import load_form
+
+    harness = live_response_service
+    with web_login():
+        form = load_form(harness)
+        answers = answers_for(form)
+        answers["members"]["3"] = {"moved_household": True, "confirmed": True}
+        respond(harness, form, answers)
+    with work_transaction():
+        ProposedChange.objects.filter(field="moved_household").update(
+            decision="ignored", version=F("version") + 1
+        )
+    form, _ = again(harness)
+    assert form["members"][0]["request"] is None
+    again(harness)
+    (row,) = rows_for("moved_household")
+    assert (row.decision, row.execution) == ("ignored", "pending")
+
+
+def test_a_refresh_while_open_keeps_an_untouched_items_shown_value(
+    response_service,
+):
+    """A refresh while the form is open asks the Family to review; the fresh
+    form keeps the value an untouched item showed, though Staff edited it
+    meanwhile, and sending it keeps the newer decision."""
+    from .test_ministry_responses_postgresql import ministry_source
+    from .test_source_families_postgresql import prepare, promote
+
+    harness, _, staff, rows = prepared(response_service)
+    with web_login():
+        form = revisit(harness)
+    decide(harness, staff, [rows["first_name"]], "edit", value="Edited meanwhile")
+    data = ministry_source()
+    data.members[3]["lastName"] = "Renamed"
+    snapshot, claim = prepare(data)
+    with task_login(ServiceRole.WORKER, exact=True):
+        promote(snapshot, claim, harness.campaign, harness.rings)
+    with web_login():
+        result = post(
+            harness.client,
+            "/family/submit",
+            {"baseline": form["baseline"], "answers": answers_for(form)},
+        )
+        assert result.status_code == 409
+        fresh_form = result.json()["form"]
+        assert member_field(fresh_form, "first_name")["value"] == "Requested"
+        respond(harness, fresh_form, answers_for(fresh_form))
+    kept = fresh(rows["first_name"])
+    assert (kept.decision, kept.admin_value) == ("approved", "Edited meanwhile")
+    assert len(rows_for("first_name")) == 1
+
+
 def test_a_form_drawn_before_the_release_keeps_the_earlier_rule(response_service):
     """A form open across the deploy shows the Family's own answers and is
     judged by the rule before the reviewed form (a same-answer successor
@@ -394,6 +455,23 @@ def test_an_edited_join_is_drawn_on_its_edit_and_reopens_on_its_own(
     assert (join.state, join.reviewed_ministry_duid) == ("superseded", None)
     successor = MinistryRequest.objects.get(pk=join.superseded_by_id)
     assert (successor.ministry_duid, successor.state) == (9, "new")
+
+
+def test_an_entered_edited_join_stays_when_the_family_reopens_it(
+    response_service,
+):
+    """An Edit into Choir that Staff entered stays when the Family chooses
+    Food pantry again: a new request To review beside it."""
+    harness, staff = ministry_setup(response_service)
+    join = current_requests()[9, "join"]
+    decide_request(harness, staff, "edit", join, value="11")
+    join.refresh_from_db()
+    decide_request(harness, staff, "entered_by_hand", join)
+    again(harness, set_choices([9, 11], [4]))
+    join.refresh_from_db()
+    assert (join.state, join.reviewed_ministry_duid) == ("resolved", 11)
+    new = MinistryRequest.objects.filter(ministry_duid=9, state="new")
+    assert new.count() == 1
 
 
 def test_an_ignored_join_is_not_drawn_and_ticking_it_reopens(response_service):
@@ -559,3 +637,30 @@ def test_the_payload_carries_no_pipeline_detail(response_service):
     assert page.status_code == 200
     for word in ("Accepted (edited)", "Reviewer's value", "Added by the parish"):
         assert word not in page.content.decode()
+
+
+def test_a_response_must_keep_what_its_form_showed(response_service, monkeypatch):
+    """The completeness check refuses a response whose shown items are not its
+    baseline's: the reviewed rules and guards trust them (frozen file 0230)."""
+    from django.db import IntegrityError
+
+    harness, _, _, _ = prepared(response_service)
+    manager = Submission.objects
+    original = manager.create
+    # No shown items, where the baseline names the Family's changes: the
+    # derivation then makes rows for them, and only the check refuses.
+    forged = []
+
+    def create(**values):
+        """The real create, with shown items other than the baseline's."""
+        return original(**(values | {"shown_items": forged}))
+
+    monkeypatch.setattr(manager, "create", create)
+    with web_login():
+        form = revisit(harness)
+        with pytest.raises(IntegrityError, match="must keep what its form showed"):
+            post(
+                harness.client,
+                "/family/submit",
+                {"baseline": form["baseline"], "answers": answers_for(form)},
+            )

@@ -144,14 +144,16 @@ def _shown(mode, family, prior, inputs, replacing):
     earlier shown item (``reviewed.carry_over``) while the Family's
     response it answers is still the latest.
     """
-    if mode != "live" or (
-        replacing is not None and not replacing.baseline.reviewed_view
-    ):
+    same_prior = replacing is not None and (
+        replacing.baseline.prior_submission_id == (prior.pk if prior else None)
+    )
+    # A form drawn before the reviewed form shipped keeps the earlier rule
+    # only while it answers the same response; once another session's
+    # response came in, that one's kept changes need the reviewed rule.
+    if mode != "live" or (same_prior and not replacing.baseline.reviewed_view):
         return False, None
     entries = shown_items(inputs, prior, family)
-    if replacing is not None and replacing.baseline.prior_submission_id == (
-        prior.pk if prior else None
-    ):
+    if same_prior:
         entries = carry_over(
             replacing.baseline.shown_items, entries, replacing.reviewed, inputs
         )

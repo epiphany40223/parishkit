@@ -258,13 +258,22 @@ def census_draw(field, entry, row, review):
     Ignored); a reviewer's value is marked changed when it differs from
     the baseline; a baseline is never marked.
     """
-    from .effective import effective_field
-    from .merge import merge_value
+    from .merge import PriorChange, merge_value
 
     if entry is None:
         return merge_value(field.kind, field.source)
     if entry["shown"] == Shown.FAMILY:
-        drawn = effective_field(field, row).effective
+        # The Family's own answer, merged without the row's reviewer's value:
+        # the entry showed the Family's answer, so the form never draws an
+        # Edit recorded since (``effective_field`` would, once entered).
+        drawn = merge_value(
+            field.kind,
+            field.source,
+            PriorChange(
+                KnownValue(row.baseline_available, row.baseline_value),
+                row.submitted_value,
+            ),
+        )
         if row.decision == "ignored":
             # An Ignored item shown as the Family's own answer (a Family
             # address, the email opt-out) is never marked.

@@ -141,7 +141,11 @@ WHERE s.family_id=%(family)s AND s.campaign_id=%(campaign)s AND s.mode='live'
               AND e->>'stream'='census' AND e->>'item'=p.id::text
               AND p.execution NOT IN ('cancelled','superseded')
               AND (e->>'shown'='baseline'
-                OR stewardship_response_comparison_v1(p.field,
+                OR (c.answers #> CASE p.entity_kind
+                        WHEN 'family' THEN ARRAY['family',p.field]
+                        WHEN 'member' THEN ARRAY['members',p.entity_key,p.field]
+                        ELSE ARRAY['proposed_members',p.entity_key] END) IS NOT NULL
+                AND stewardship_response_comparison_v1(p.field,
                     c.answers #> CASE p.entity_kind
                         WHEN 'family' THEN ARRAY['family',p.field]
                         WHEN 'member' THEN ARRAY['members',p.entity_key,p.field]

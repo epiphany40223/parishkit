@@ -4558,6 +4558,13 @@ BEGIN
        ) THEN
         RAISE EXCEPTION 'Submission requires atomic baseline, receipt and source protection' USING ERRCODE='23514';
     END IF;
+    -- What the form showed (#1705) is its baseline's, copied unchanged: the
+    -- reviewed rules below and the derived and Ministry guards trust it.
+    IF ROW(NEW.reviewed_view,NEW.shown_items) IS DISTINCT FROM (
+        SELECT ROW(baseline.reviewed_view,baseline.shown_items)
+        FROM public.stewardship_family_form_baseline baseline WHERE baseline.id=NEW.baseline_id) THEN
+        RAISE EXCEPTION 'Submission must keep what its form showed' USING ERRCODE='23514';
+    END IF;
     IF NEW.mode='live' AND (
         NOT EXISTS (SELECT 1 FROM public.stewardship_family_campaign family
             WHERE family.id=NEW.family_id
@@ -5816,7 +5823,10 @@ BEGIN
                 OR (OLD.state='resolved' AND NEW.state='resolved'
                     AND NEW.outcome IS NOT DISTINCT FROM OLD.outcome
                     AND NEW.reviewed_ministry_duid IS NOT DISTINCT FROM OLD.reviewed_ministry_duid)))
-        AND NOT (current_user<>'pk_stewardship_worker'
+        -- Only the web login (the Family branch below checks its response)
+        -- or a login that is no runtime login at all (the schema owner).
+        AND NOT ((current_user='pk_stewardship_web'
+                  OR current_user NOT LIKE 'pk\_stewardship\_%')
             AND OLD.state IN ('resolved','closed_no_response')
             AND NEW.state IN ('superseded','cancelled') AND NOT OLD.parish_added))
        OR NEW.version<>OLD.version+1

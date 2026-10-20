@@ -236,7 +236,9 @@ def _derive_reviewed(submission, previous, created):
     2. Changed again: re-choosing an Ignored request, or choosing the
        Family's own Ministry while an edit into another is in force, reopens
        it as a new request To review that replaces it. A carried-forward
-       Ministry still chosen beside it is a request of its own (rule 4).
+       Ministry still chosen beside it is a request of its own (rule 4). A
+       request already Entered in ParishSoft is not replaced: it stays for
+       the refresh to judge, beside the new one.
     3. Withdrawn: unticking a chosen request (or choosing to continue)
        withdraws it, whatever its stage, except one Entered in ParishSoft,
        which the refresh judges, and one the parish added, which keeps its
@@ -289,7 +291,10 @@ def _derive_reviewed(submission, previous, created):
                 submission, entry["entity"], entry["key"], own, request.action
             )
             created.append(new)
-            _close(request, "superseded", new)
+            # One Staff entered in ParishSoft stays in the history for the
+            # refresh to judge; only the new request is To review.
+            if str(request.pk) not in entered:
+                _close(request, "superseded", new)
         elif shown is None:
             continue
         elif shown in selected:

@@ -24,6 +24,9 @@
 --         shown items name, on any earlier response of the Family, as well
 --         as the newest change of its census anchor as before.
 --   stewardship_submission_effects_v1 (0128's body)
+--       * a response must carry its baseline's reviewed_view and
+--         shown_items unchanged, which the rules below and the derived and
+--         Ministry guards rely on;
 --       * an answer with no row of the response is admitted when its
 --         reviewed form showed a change in force, on an earlier response of
 --         the Family, with exactly this answer (the Family's answer, or the
@@ -537,6 +540,13 @@ BEGIN
        ) THEN
         RAISE EXCEPTION 'Submission requires atomic baseline, receipt and source protection' USING ERRCODE='23514';
     END IF;
+    -- What the form showed (#1705) is its baseline's, copied unchanged: the
+    -- reviewed rules below and the derived and Ministry guards trust it.
+    IF ROW(NEW.reviewed_view,NEW.shown_items) IS DISTINCT FROM (
+        SELECT ROW(baseline.reviewed_view,baseline.shown_items)
+        FROM public.stewardship_family_form_baseline baseline WHERE baseline.id=NEW.baseline_id) THEN
+        RAISE EXCEPTION 'Submission must keep what its form showed' USING ERRCODE='23514';
+    END IF;
     IF NEW.mode='live' AND (
         NOT EXISTS (SELECT 1 FROM public.stewardship_family_campaign family
             WHERE family.id=NEW.family_id
@@ -821,6 +831,7 @@ BEGIN
               AND prosrc LIKE '%IF NEW.reviewed_view AND EXISTS (%'
               AND prosrc LIKE '%WHERE shown->>''stream''=''census'' AND shown->>''item''=prior.id::text%'
               AND prosrc LIKE '%NEW.reviewed_source_id,NEW.family_id,prior.entity_key,prior.field) AS source) b%'
+              AND prosrc LIKE '%Submission must keep what its form showed%'
               -- 0128's resubmission rule, kept.
               AND prosrc LIKE '%WHERE latest.execution IN (''published'',''resolved_external'')%'
               AND prosrc LIKE '%Submitted census change requires atomic derived work%'
