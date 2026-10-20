@@ -504,8 +504,10 @@ def _join_egress(service):
     LOCAL joins the same services as Production (#1399), so pk-local runs the
     real integrations through Production's code. What a LOCAL service may
     reach is limited by code, not by the network: the mail transport admits
-    only the mail catcher, ParishSoft only the fake and Google sign-in only
-    the sentinel client (``mail_catcher.workspace_transport``,
+    only the mail catcher unless the mail redirect is set (#1399), ParishSoft
+    only the fake unless the real API was chosen, and Google sign-in only the
+    sentinel unless a real localhost client is installed
+    (``mail_catcher.workspace_transport``,
     ``parishsoft_http_worker.admitted_base_url``,
     ``runtime_web.parse_google_client``). Caddy, Mailpit and the fake
     ParishSoft never call this, so they stay off the egress network.

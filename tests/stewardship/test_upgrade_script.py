@@ -359,6 +359,10 @@ case "$*" in
                     # FAKE_RETARGET_NO_PARISHSOFT: a retarget that lost it.
                     [ -n "$FAKE_RETARGET_NO_PARISHSOFT" ] ||
                         latency="$latency"', "parishsoft_base_url": "'"${arg#*=}"'"' ;;
+                PARISHKIT_STEWARDSHIP_MAIL_REDIRECT=*)
+                    # FAKE_RETARGET_NO_REDIRECT: a retarget that lost it.
+                    [ -n "$FAKE_RETARGET_NO_REDIRECT" ] ||
+                        latency="$latency"', "mail_redirect": "'"${arg#*=}"'"' ;;
             esac
         done
         echo '{"services": {"web": {"image": "'"$last"'"}}}' >"$FAKE_COMPOSE"
@@ -1460,6 +1464,93 @@ def test_local_mode_refuses_an_unclear_parishsoft_choice(tmp_path):
         )
         assert "refusing" in output
         assert not any(" stop " in call for call in calls)
+
+
+# The forced mail redirect (#1399): carried over like the ParishSoft choice,
+# "off" removes it, and a rollback drops it (a real key is then refused).
+REDIRECT = "PARISHKIT_STEWARDSHIP_MAIL_REDIRECT=jeff@example.org"
+
+
+def rendered_redirect(root):
+    """The running worker document already carries a mail redirect."""
+    path = root / "config" / "services" / "worker.yaml"
+    document = json.loads(path.read_text())
+    document["deployment"]["mail_redirect"] = "jeff@example.org"
+    path.write_text(json.dumps(document))
+
+
+def test_local_mode_renders_the_mail_redirect(tmp_path):
+    """An address renders it; keep carries it; off and rollback drop it."""
+    calls, output, _ = run_host(
+        tmp_path / "set",
+        "upgrade",
+        profile="local",
+        env={"PARISHKIT_LOCAL_MAIL_REDIRECT": "jeff@example.org"},
+    )
+    assert REDIRECT in calls[first(calls, " retarget-image ")]
+    assert "every message goes only to the mail redirect jeff@example.org" in output
+    assert "NOT healthy" not in output
+    calls, output, _ = run_host(
+        tmp_path / "keep", "upgrade", profile="local", prepare=rendered_redirect
+    )
+    assert REDIRECT in calls[first(calls, " retarget-image ")]
+    assert "NOT healthy" not in output
+    for mode, env in (
+        ("upgrade", {"PARISHKIT_LOCAL_MAIL_REDIRECT": "off"}),
+        ("rollback", {}),
+    ):
+        calls, output, _ = run_host(
+            tmp_path / mode, mode, profile="local", prepare=rendered_redirect, env=env
+        )
+        assert "MAIL_REDIRECT" not in calls[first(calls, " retarget-image ")]
+        assert "NOT healthy" not in output
+    assert "mail redirect is not carried into a rollback" in output
+    # Unchanged from before the setting: nothing is rendered by default.
+    calls, _, _ = run_host(tmp_path / "default", "upgrade", profile="local")
+    assert "MAIL_REDIRECT" not in calls[first(calls, " retarget-image ")]
+
+
+def test_local_mode_reports_a_redirect_the_retarget_lost(tmp_path):
+    """The post-check names the mail redirect it did not find rendered."""
+    _, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        profile="local",
+        status=1,
+        env={
+            "PARISHKIT_LOCAL_MAIL_REDIRECT": "jeff@example.org",
+            "FAKE_RETARGET_NO_REDIRECT": "1",
+        },
+    )
+    assert "NOT healthy" in output
+    assert "worker: mail redirect is 'unset', not 'jeff@example.org'" in output
+
+
+@pytest.mark.parametrize(
+    "value", ["Jeff <jeff@example.org>", "a@example.org,b@example.org", "nobody"]
+)
+def test_local_mode_refuses_an_unclear_redirect(tmp_path, value):
+    """Anything but one plain address is refused before anything stops."""
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        profile="local",
+        status=1,
+        env={"PARISHKIT_LOCAL_MAIL_REDIRECT": value},
+    )
+    assert "The mail redirect must be one plain email address; refusing." in output
+    assert not any(" stop " in call for call in calls)
+
+
+def test_production_mode_never_reads_the_redirect(tmp_path):
+    """Production renders no redirect whatever the caller's environment says."""
+    calls, output, _ = run_host(
+        tmp_path,
+        "upgrade",
+        env={"PARISHKIT_LOCAL_MAIL_REDIRECT": "jeff@example.org"},
+    )
+    assert "MAIL_REDIRECT" not in calls[first(calls, " retarget-image ")]
+    assert "redirect" not in output and f"Upgraded to {TARGET} in" in output
 
 
 def test_host_half_names_the_real_parishsoft_api():

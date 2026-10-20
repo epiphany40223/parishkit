@@ -1980,8 +1980,11 @@ and removed through the same configuration-request path. It requires the
 Google Workspace mail integration, whose delegated user and key the copies
 use. Until Google Workspace mail is set up, **Test access** is shown
 unavailable, with that reason and a link to set it up. In the local
-environment, which never reaches Google Drive, it is always shown
-unavailable with that reason; the server still refuses it there. **Test access** queues a check that the Google Workspace credential
+environment it is shown unavailable with its reason whenever that
+environment does not reach Google Drive (without a mail redirect, or under
+the fake clock; see the
+[local-environment spec](../local-environment/spec.md#safety-guarantees));
+the server still refuses it there. **Test access** queues a check that the Google Workspace credential
 installer answers by writing and trashing one small file in the folder, as
 the applied delegated mailbox user only (the database refuses a check naming
 any other user, so the web process cannot make the installer impersonate

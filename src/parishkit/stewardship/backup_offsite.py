@@ -48,7 +48,7 @@ from .backup_drive import (
     with_retries,
     workspace_session,
 )
-from .deployment import DeploymentProfile
+from .mail_catcher import admit_real_workspace
 from .observability import Event, FailureKind, emit, emit_failure
 from .runtime_paths import RuntimeLayout, explicit_path, private_directory
 
@@ -157,16 +157,23 @@ def copy_offsite(
 
     Never raises once the destination is known: every failure is recorded
     and logged by category, and the backup command still reports the local
-    set as taken. LOCAL never copies (#1399): it reports ``not_configured``
+    set as taken. Where a real Workspace key may not be used (#1399,
+    ``mail_catcher.admit_real_workspace``: in LOCAL without a mail redirect,
+    or under the fake clock) it never copies: it reports ``not_configured``
     before reading the destination or the key, whatever the configuration
-    holds, until a real Workspace key is admitted there. The default session
-    is ``workspace_session`` bound to this deployment's profile, which
-    refuses LOCAL again.
+    holds. The default session is ``workspace_session`` bound to this
+    deployment's profile and redirect, which checks that again.
     """
-    if configuration.profile is DeploymentProfile.LOCAL:
+    try:
+        admit_real_workspace(configuration.profile, configuration.mail_redirect)
+    except ConfigError:
         return {"state": "not_configured"}
     if session_factory is None:
-        session_factory = partial(workspace_session, profile=configuration.profile)
+        session_factory = partial(
+            workspace_session,
+            profile=configuration.profile,
+            redirect=configuration.mail_redirect,
+        )
     options = {
         "session_factory": session_factory,
         "sleep": sleep,

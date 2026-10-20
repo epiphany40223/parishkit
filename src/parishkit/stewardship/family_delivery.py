@@ -665,11 +665,11 @@ class SmtpSession:
 
     The transport follows the installed document and the deployment profile
     (``mail_catcher.workspace_transport``, #476): a Google service account
-    under any profile but LOCAL authenticates to Gmail as above; the
-    mail-catcher document under LOCAL opens a plain, unauthenticated
-    connection to ``LOCAL_SMTP_ENDPOINT`` with no token at all. A document
-    that does not match the profile is a SYSTEMIC result before any
-    connection is opened, so a mismatched file can never send. ``redirect``
+    authenticates to Gmail as above (in LOCAL only beside a mail redirect,
+    #1399); the mail-catcher document under LOCAL opens a plain,
+    unauthenticated connection to ``LOCAL_SMTP_ENDPOINT`` with no token at
+    all. A document the profile does not admit is a SYSTEMIC result before
+    any connection is opened, so a mismatched file can never send. ``redirect``
     is the LOCAL deployment's mail redirect (#1399): every message's envelope
     goes through ``mail_catcher.envelope`` before it is sent.
     """
@@ -783,7 +783,9 @@ class SmtpSession:
         SYSTEMIC result, definitively unsent, with no connection opened.
         """
         try:
-            transport = workspace_transport(self.value, self.profile)
+            transport = workspace_transport(
+                self.value, self.profile, redirect=self.redirect
+            )
             to = envelope(
                 mail.recipients,
                 profile=self.profile,

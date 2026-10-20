@@ -28,9 +28,10 @@ It is:
   [#1399](https://github.com/epiphany40223/parishkit/issues/1399)); that
   real parish data may stay on the laptop but is never committed or copied
   off it, except as mail to the one [mail redirect](#safety-guarantees)
-  address once a later #1399 change admits a real mailbox. Either way it can never email a real Family or write to
-  ParishSoft, even after its campaign goes to Production (see
-  [safety guarantees](#safety-guarantees));
+  address through a real mailbox, and inside the sealed, unreadable
+  off-site backup copies ([Drive](#safety-guarantees)). Either way it can
+  never email a real Family or write to ParishSoft, even after its campaign
+  goes to Production (see [safety guarantees](#safety-guarantees));
 - **not CI.** Nothing here runs Docker in CI. CI covers the local profile with
   fast tests, timeline tests and database tests that need no fake clock, and by
   rendering the local topology. Seed tests run in the VM (see
@@ -42,11 +43,10 @@ It is:
 **Shared code paths.** The local environment and Production share as much
 code as possible, with as little LOCAL branching as possible
 ([#1399](https://github.com/epiphany40223/parishkit/issues/1399)). Differences
-come from configuration and installed credentials, with Testing mode (and,
-once real mail is allowed, a configured mail redirect) as the guard against
-reaching a real parishioner, not from code that refuses or disables an
-integration in LOCAL. A remaining LOCAL branch needs a reason stated in this
-specification; #1399 records the inventory of branches still being removed
+come from configuration and installed credentials, with Testing mode and the
+configured mail redirect as the guard against reaching a real parishioner,
+not from code that refuses or disables an integration in LOCAL. A
+remaining LOCAL branch needs a reason stated in this specification; #1399 records the inventory of branches still being removed
 and the order in which they go.
 
 ## Host virtual machine
@@ -222,7 +222,11 @@ LOCAL MUST NOT change Production. Specifically:
   Production mail parent never waits on purpose;
 - the [mail redirect](#safety-guarantees) is refused outside LOCAL, and
   unset it changes no rendered document, helper request, envelope or
-  message.
+  message;
+- the real Workspace key rule (`mail_catcher.admit_real_workspace`) admits
+  a Google service account, and off-site Drive copies, in every other
+  profile exactly as before; its redirect and clock terms apply only in
+  LOCAL.
 
 ## Safety guarantees
 
@@ -232,17 +236,33 @@ Production in either direction.
 
 - **Mail.** The mail-catcher credential is a small JSON document with a
   distinct type marker and no secret; the SMTP endpoint itself is the code
-  constant `LOCAL_SMTP_ENDPOINT = ("mailpit", 1025)`, never a document field. In
-  LOCAL, every intake of the Workspace credential accepts only that document
-  and refuses any Google service account; every other profile refuses the
-  mail-catcher document. The intakes are the `google_workspace` credential
-  installer and the setup wizard's credential step
-  (`accounts/setup_credentials.py`, `integration_candidates.workspace_info`).
-  Every Gmail call site (`family_delivery.SmtpSession`,
-  `readiness_delivery.deliver_sample`, `provider_check_worker`, `smoke.py`, and
-  the operational, report email and security delivery modules) selects its
-  transport from the installed document type and refuses a mismatch with the
-  profile.
+  constant `LOCAL_SMTP_ENDPOINT = ("mailpit", 1025)`, never a document field.
+  Every profile but LOCAL refuses the mail-catcher document. LOCAL admits it,
+  and admits a real Google service account (#1399) only when the deployment
+  sets the [mail redirect](#safety-guarantees) and the process runs on the
+  normal [clock](#fake-clock): one rule, `mail_catcher.admit_real_workspace`,
+  which `workspace_transport` applies at every intake and every use. The
+  intakes are the `google_workspace` credential installer's provider check,
+  the setup wizard's credential step and the Integrations page and
+  `pk-admin integration` key change (`accounts/setup_credentials.py`
+  `admit_candidate`, then `integration_candidates.workspace_info`). The uses
+  are every Gmail call site (`family_delivery.SmtpSession`,
+  `readiness_delivery.deliver_sample`, `provider_check_worker`, the
+  mail-dispatch mailbox check, `smoke.py`, and the operational, report email
+  and security delivery modules) and the off-site [Drive](#safety-guarantees)
+  copies. Each selects its transport from the installed document type and
+  refuses a document its profile, redirect and clock do not admit, before
+  any token or connection. A LOCAL helper request carries `mail_redirect`
+  beside `profile` only when it is set, so the environment-free helper
+  applies the same rule. The clock term is checked at the intakes and in the
+  faked processes that use the key in-process (web, the CLI, smoke and the
+  backup worker's Drive copies and Test access). The mail helpers start
+  with an empty environment and so always run on real time: a key installed
+  on the normal clock keeps sending, only to the redirect, if the
+  deployment later runs under the fake clock. That is correct, since the
+  helpers' Google checks use the real date; the clock term is about the
+  checks working, not about who is reached. With no redirect, a real key is
+  refused at the intake as an invalid key, as before #1399.
 - **Helper subprocesses.** Helpers start with `python -I` and an empty
   environment, so they cannot read the profile themselves. Each helper request
   MUST therefore carry an explicit `profile` field: `parishsoft_http_worker`
@@ -269,22 +289,23 @@ Production in either direction.
   on the data being synthetic: real addresses may be present once the
   developer reads the real ParishSoft. Real Families cannot be emailed
   because:
-  - Gmail and Google service-account credentials are refused in LOCAL, at
-    every intake and at every Gmail call site;
-  - all mail goes to Mailpit through the mail-catcher transport, and Mailpit
-    has no route out and renders no relay, so a real address in a message
-    reaches only Mailpit.
+  - without the [mail redirect](#safety-guarantees), a Google service
+    account is refused in LOCAL at every intake and every Gmail call site,
+    so all mail goes to Mailpit through the mail-catcher transport, and
+    Mailpit has no route out and renders no relay: a real address in a
+    message reaches only Mailpit;
+  - with the redirect, every SMTP submission's envelope holds only the
+    redirect address, whatever the transport, routing class or campaign
+    mode, so the real mailbox delivers to that one address alone.
 
-  These two code checks are the whole argument. Testing mode is not a
-  third guard: it is off after activation, and operational and security
-  alerts are exempt from it even before (see
-  [mode routing](../background-processing/spec.md#mode-routing)). The
-  forced mail redirect (below) is in place for the later #1399 change that
-  admits real mail in LOCAL: from then on it, not the two checks above, is
-  what keeps a real address from being reached.
+  These code checks are the whole argument. Testing mode is not a further
+  guard: it is off after activation, and operational and security alerts
+  are exempt from it even before (see
+  [mode routing](../background-processing/spec.md#mode-routing)).
 
   A test MUST show that, after LOCAL activation, every Family and
-  administrative message is sent only through the mail-catcher transport.
+  administrative message is sent only through the mail-catcher transport,
+  or with a redirect only to the redirect address.
 - **Mail redirect** (#1399). The deployment setting `mail_redirect`
   (`PARISHKIT_STEWARDSHIP_MAIL_REDIRECT`) is one bare address, the
   developer's Testing recipient. When it is set, every SMTP submission
@@ -317,27 +338,40 @@ Production in either direction.
   provisioning record.
 
   The redirect keeps real addresses from being reached; it does not keep
-  real content on the laptop. Once a real mailbox is admitted, every
-  redirected message (names, giving details, access codes and links) goes
-  through Google to the developer's inbox. The later #1399 change that
-  admits a real Workspace key in LOCAL MUST implement this Administrator
-  decision (2026-10-17), which says what may leave the laptop and how a
-  deployment that chose the real ParishSoft is handled: when LOCAL holds
-  real ParishSoft data, redirected mail MAY
-  go out through the real mail provider, but only to the one redirect
-  address, which the Administrator chooses. Every other recipient is still
-  refused, and the redirect stays mandatory for any transport other than
-  the mail catcher. Until that later change lands, LOCAL still refuses a
-  real Workspace key, so nothing leaves the laptop.
+  real content on the laptop. With a real mailbox, every redirected message
+  (names, giving details, access codes and links) goes through Google to
+  the redirect inbox. This follows the Administrator decision of
+  2026-10-17: when LOCAL holds real ParishSoft data, redirected mail MAY go
+  out through the real mail provider, but only to the one redirect address,
+  which the Administrator chooses. Every other recipient is still refused,
+  and the redirect stays mandatory for any transport other than the mail
+  catcher: LOCAL admits a real Workspace key only beside it (see Mail
+  above). The redirect is set only with the operator script's
+  `deploy --mail-redirect` (or the deployment YAML), never from the Admin
+  portal, so no Admin setting can widen it. It SHOULD be the developer's
+  Testing recipient, so Testing-mode mail and the redirect agree; the
+  envelope rule does not depend on it. A LOCAL Workspace key SHOULD be a
+  separate test service account for a test mailbox, never Production's.
+
+  The redirect requirement is LOCAL's alone. The `development` and `test`
+  profiles are plain-HTTP loopback profiles for unit tests and the Compose
+  scaffold; they never run a real Workspace key in normal use and have no
+  redirect requirement (#1448 review). They admit a service account and
+  send to its real recipients as Production does, so a developer who wants
+  real mail on a laptop uses LOCAL with the redirect, never those
+  profiles.
 - **Smoke tools.** `pk-stewardship smoke` (see the
   [smoke tools guide](../../../guides/stewardship-smoke-tools.md)) runs in
   LOCAL exactly as in Production, against whatever is installed: the fake
   ParishSoft, the mail catcher, the sentinel or a real OAuth client and a
-  test Slack token. It sends no mail: a `--send-to` goes over Gmail, so
-  without a [mail redirect](#safety-guarantees) it is refused before the key
-  is read or any provider is contacted, and with one it needs a Google
-  service account, which LOCAL still refuses. A Slack `--channel-id ... --send` posts the one
-  fixed smoke message to the named channel, as in Production.
+  test Slack token, a real Workspace key beside the
+  [mail redirect](#safety-guarantees). A `--send-to` goes over Gmail, so
+  without a redirect it is refused before the key is read or any provider
+  is contacted; with one and a real key it sends the one fixed smoke message
+  to the redirect address alone, whatever `--send-to` names. A
+  `backup_drive` check runs on the same terms as [Drive](#safety-guarantees)
+  below. A Slack `--channel-id ... --send` posts the one fixed smoke message
+  to the named channel, as in Production.
 - **Google sign-in.** `up` installs a sentinel `google_oauth` client
   document (`runtime_web.LOCAL_OAUTH_SENTINEL`) that holds no real client ID
   or secret. Every other profile refuses it, so it can never reach
@@ -412,27 +446,40 @@ Production in either direction.
   looking much like Production's own. A configured environment label on
   alerts belongs with the later #1399 configuration work. With no Slack
   token, operational alerts are recorded and emailed only (to Mailpit).
-- **Drive.** The Google Drive backup target is refused in LOCAL: off-site
-  copies sign in with the Workspace key, and LOCAL still admits only the
-  mail-catcher document. The refusal is repeated at use, whatever the
-  configuration or the credentials tree holds: the backup's off-site copy
-  (`backup_offsite.copy_offsite`) reports `not_configured` in LOCAL without
-  reading its destination or key, the Drive session
+- **Drive.** Off-site copies sign in with the Workspace key, so LOCAL
+  reaches Google Drive on exactly the terms of a real key (#1399): with a
+  mail redirect, on the normal clock (`mail_catcher.admit_real_workspace`).
+  That is safe with real data too: each copy is the backup set sealed to the
+  human-held recipient key plus a plaintext manifest of sizes and digests,
+  so the folder holds nothing a Drive reader could open, and each set folder
+  is tagged with the deployment's own runtime-row ID, so retention never
+  touches another deployment's sets, even in a shared folder. The off-site
+  folder SHOULD still be a separate test folder. Without those terms the
+  target is refused, at the Backup destination page and `pk-admin
+  integration` (reason `drive_not_in_local`, with what is missing), and again
+  at use, whatever the configuration or the credentials tree holds: the
+  backup's off-site copy (`backup_offsite.copy_offsite`) reports
+  `not_configured` without reading its destination or key, the Drive session
   (`backup_drive.workspace_session`, which every copy, Test access check and
-  smoke check builds with the caller's profile) refuses LOCAL before it
-  parses the key, and the `backup_drive` smoke check refuses LOCAL before it
-  reads anything.
+  smoke check builds with the caller's profile and redirect) refuses before
+  it parses the key, and the `backup_drive` smoke check refuses before it
+  reads anything. The mail-catcher document is never a Drive key. A
+  reinstall gives the deployment a new tag, and a snapshot switch can leave
+  complete set folders the restored database has no record of; retention
+  never removes those, so the developer clears old LOCAL set folders from
+  the test folder by hand.
 - **Egress.** LOCAL's application services have Production's route out (see
   [topology](#topology-and-web-differences)), so the guarantees above rest on
   the code checks, enforced at install and at use, and not on the network.
-  Until the later #1399 changes land, those checks keep mail on the mail
-  catcher, so the only real providers a LOCAL deployment can reach are
-  Slack, with a token the developer installs, ParishSoft's read endpoints,
-  when the developer chose the real API, and Google sign-in, when the
-  developer installed a real localhost-only OAuth client (see Google
-  sign-in above). A fast test lists each of those use-time checks and
-  asserts that LOCAL refuses its real provider, defaults to the fake
-  ParishSoft and never writes to ParishSoft.
+  The real providers a LOCAL deployment can reach are Slack, with a token
+  the developer installs, ParishSoft's read endpoints, when the developer
+  chose the real API, Google sign-in, when the developer installed a real
+  localhost-only OAuth client (see Google sign-in above), and Gmail and
+  Drive, when the developer set the mail redirect and installed a real
+  Workspace key (see Mail and Drive above). A fast test lists each of those
+  use-time checks and asserts that LOCAL refuses its real provider without
+  its configured guard, defaults to the fake ParishSoft and never writes to
+  ParishSoft.
   Under the [fake clock](#fake-clock), which never runs ahead of real time, a
   faked process checks a real provider's TLS certificate against that past
   time: it refuses a certificate issued since then and accepts one that has
@@ -445,9 +492,9 @@ Production in either direction.
   recommends the normal clock for real-API runs and the host half warns
   when the real API is rendered under the fake clock. A real Google OAuth
   client is refused under the fake clock outright (see Google sign-in
-  above). Before a real Google Workspace key is admitted in LOCAL, its
-  token assertion's timestamps and Google's TLS checks running on a past
-  clock MUST be dealt with in the same way.
+  above), and so is a real Google Workspace key, whose token assertion's
+  timestamps and Google's TLS checks cannot run on a past clock (see Mail
+  above).
 
 ## Mail catcher
 
@@ -476,8 +523,11 @@ deployment sends:
   about 0.6 seconds, so a timing rehearsal sets the deployment setting
   `local_smtp_latency_ms` (`PARISHKIT_STEWARDSHIP_LOCAL_SMTP_LATENCY_MS`,
   0–5000, default 0). A LOCAL mail parent waits that long before each
-  submission, outside every transaction, so the wait counts in `submit_ms`
-  as Gmail's would. The loader refuses any non-zero value outside LOCAL, and
+  submission to the mail catcher, outside every transaction, so the wait
+  counts in `submit_ms` as Gmail's would. It is tied to the mail catcher
+  (#1399): a submission through a real mailbox beside the
+  [mail redirect](#safety-guarantees) has Gmail's own latency and never
+  waits on top of it. The loader refuses any non-zero value outside LOCAL, and
   the rendered documents carry it only when it is non-zero (never in the
   provisioning record), so every other deployment's rendering is unchanged.
   It is set with `deploy --smtp-latency-ms` (below) for the
@@ -1440,7 +1490,7 @@ section is the contract.
 | `vm create` | Create the `parishkit-local` Lima instance with the [VM settings](#host-virtual-machine) and install Docker Engine |
 | `vm start` / `vm stop` | Start or stop the VM |
 | `up [--families N]` | First-time install (below), with a synthetic parish of `N` Families (default 100) |
-| `deploy [--schema-change] [--bulk on\|off] [--smtp-latency-ms N] [--parishsoft real\|fake]` | Build the image from the checkout and upgrade the running deployment to it by the Production upgrade's steps (below); `--schema-change` is that upgrade's `STEWARDSHIP_SCHEMA_CHANGE=1`; `--bulk` renders the bulk Family send on or off, `--smtp-latency-ms` the [modeled latency](#mail-catcher) and `--parishsoft` which [ParishSoft](#safety-guarantees) it reads, each carried over when not given |
+| `deploy [--schema-change] [--bulk on\|off] [--smtp-latency-ms N] [--parishsoft real\|fake] [--mail-redirect ADDRESS\|off]` | Build the image from the checkout and upgrade the running deployment to it by the Production upgrade's steps (below); `--schema-change` is that upgrade's `STEWARDSHIP_SCHEMA_CHANGE=1`; `--bulk` renders the bulk Family send on or off, `--smtp-latency-ms` the [modeled latency](#mail-catcher), `--parishsoft` which [ParishSoft](#safety-guarantees) it reads and `--mail-redirect` the one [mail redirect](#safety-guarantees) address (or `off`), each carried over when not given |
 | `deploy --rollback` | That upgrade's image-only rollback to the image the last `deploy` replaced (below) |
 | `snapshot [--seeded]` | Stop the services and save the runtime root as the post-setup snapshot, or with `--seeded` as the seeded snapshot, preserving numeric ownership and modes, then restart; each replaces its earlier copy |
 | `snapshot save NAME [--replace]` | Save the runtime root as the named snapshot (below), after the [disk guard](#operator-script); an existing `NAME` needs `--replace` |
@@ -1743,8 +1793,8 @@ the upload and that invocation. Local mode differs in exactly these ways:
   pulled and no registry digest is checked;
 - it uses project `parishkit-local` and the LOCAL rendering;
 - it requires the pre-upgrade backup to succeed (not best effort), accepting
-  an off-site copy state of `not_configured` (LOCAL refuses every off-site
-  target) alongside `uploaded`;
+  an off-site copy state of `not_configured` (LOCAL copies off site only
+  beside a mail redirect on the normal clock) alongside `uploaded`;
 - it keeps the services in the mode recorded by the
   [clock-mode marker](#fake-clock): the fake-clock override is applied when
   the marker says `fake`, and the derived fake-clock image of the new
@@ -1759,12 +1809,17 @@ the upload and that invocation. Local mode differs in exactly these ways:
   (`PARISHKIT_LOCAL_BULK_FAMILY_SEND=on|off` to the host half) and the
   [modeled latency](#mail-catcher) as `--smtp-latency-ms` chose
   (`PARISHKIT_LOCAL_SMTP_LATENCY_MS`), and the [ParishSoft](#safety-guarantees)
-  base URL as `--parishsoft` chose (`PARISHKIT_LOCAL_PARISHSOFT=real|fake`);
-  unset, each carries over. A rollback renders neither the latency nor the
-  real ParishSoft API, since the previous release may not know the setting;
-  before a `deploy` of a build older than the setting, the operator sets the
-  latency to 0 and the ParishSoft choice to `fake`. Production mode never
-  reads these variables.
+  base URL as `--parishsoft` chose (`PARISHKIT_LOCAL_PARISHSOFT=real|fake`),
+  and the [mail redirect](#safety-guarantees) as `--mail-redirect` chose
+  (`PARISHKIT_LOCAL_MAIL_REDIRECT=ADDRESS|off`, one plain address, checked
+  before anything stops and again after the retarget); unset, each carries
+  over, and a snapshot switch carries the running ones. A rollback renders
+  neither the latency, the real ParishSoft API nor the redirect, since the
+  previous release may not know the setting; without the redirect a real
+  Workspace key is refused, so the rollback fails closed. Before a `deploy`
+  of a build older than the setting, the operator sets the latency to 0,
+  the ParishSoft choice to `fake` and the redirect to `off`. Production mode
+  never reads these variables.
 
 Everything else is the Production upgrade: the advisory upgrade check (an
 answer other than `t` refuses unless `--schema-change` says the change is
@@ -1933,6 +1988,13 @@ The local environment adds:
   only the redirect; LOCAL beyond the mail catcher without one, and a
   redirect with any other profile, send nothing; and unset, requests,
   envelopes and messages are unchanged;
+- **real-key tests** for `admit_real_workspace` at every intake and use
+  (#1399): in LOCAL a Google service account is admitted only beside a
+  redirect on the normal clock, at the web intakes, the provider and
+  mailbox checks (whose helper requests carry the redirect only when set),
+  smoke and the off-site Drive copy, Test access and smoke check, and every
+  other profile is unchanged; the modeled latency waits only before the
+  mail catcher;
 - **absence tests** for the [local test sign-in](#local-test-sign-in);
 - `shellcheck` on `tools/stewardship-local.sh`;
 - **operator-script stand-in tests** (no VM) for the snapshot commands: name

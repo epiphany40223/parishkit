@@ -1187,8 +1187,9 @@ no longer a draft, Testing cleanup is unfinished, other inputs (such as a
 ParishSoft refresh) are not ready, earlier links still need Cancel, or
 cancelled links are still being discarded. On the Off-site backups page,
 Test access is unavailable until Google Workspace mail is set up, since the
-check signs in as its mailbox user, and always in the local environment,
-which never reaches Google Drive. In the Pages and emails editor, "Remove
+check signs in as its mailbox user, and in the local environment whenever
+it does not reach Google Drive (without a mail redirect, or under the fake
+clock). In the Pages and emails editor, "Remove
 this selected content" is unavailable, with its reason as the box's help,
 while nothing is saved there or while mail schedules still send the email.
 The box is an action, not a setting, so its reason stays visible rather than

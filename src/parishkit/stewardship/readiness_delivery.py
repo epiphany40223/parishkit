@@ -72,8 +72,9 @@ def deliver_sample(
 
     The transport follows the installed document and ``profile`` (see
     ``mail_catcher.workspace_transport``): Gmail with XOAUTH2 for a service
-    account outside LOCAL, the plain mail-catcher connection for the
-    mail-catcher document in LOCAL. A mismatch is definitively not sent.
+    account (in LOCAL only beside a mail redirect, #1399), the plain
+    mail-catcher connection for the mail-catcher document in LOCAL. A
+    document the profile does not admit is definitively not sent.
 
     The envelope is routed by ``mail_catcher.envelope`` (#1399) before
     anything is contacted: with a LOCAL ``redirect`` the sample goes to that
@@ -86,7 +87,7 @@ def deliver_sample(
     ):
         raise ValueError("The sample differs from its admitted mail context.")
     try:
-        transport = workspace_transport(value, profile)
+        transport = workspace_transport(value, profile, redirect=redirect)
         (recipient,) = envelope(
             (mail.recipient,), profile=profile, transport=transport, redirect=redirect
         )
