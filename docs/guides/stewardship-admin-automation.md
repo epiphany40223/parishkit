@@ -2362,8 +2362,8 @@ which `export census --format jsonl` prints (`proposal_id` and `version`,
 with the `actions` the change takes now; the page's own downloads leave
 them out). `--note` is optional, except to reopen (an ignored change, or a
 terminal step); `-` reads it from standard input, which keeps a note that
-names people out of shell history and the process list, and then needs
-`--yes`, as before. `--request-key` is made for you and
+names people out of shell history and the process list; `--yes` is still
+accepted and does nothing. `--request-key` is made for you and
 written to standard error when left out. Repeating the command with the
 same key returns the same resolution (`created` false) and records nothing
 new; the key used for another outcome or note is exit 1 (`invalid`). A
@@ -2987,8 +2987,8 @@ pk-admin limitations decide --action handled --item m41-3:1
 
 Each takes `--action` (`accept`, `ignore`, `back_to_review` or `handled`),
 one `--item ID:VERSION` for each item (up to 100, all or none), `--note TEXT`
-(at most 2,000 characters; `-` reads standard input, which then needs
-`--yes`) and `--request-key`. None asks first, as every decision can be
+(at most 2,000 characters; `-` reads standard input) and
+`--request-key`. None asks first, as every decision can be
 changed again, Handled too; `--yes` is still accepted. Taking an Ignored
 item back to review, or a Handled one (which returns it to To handle,
 with its Accept kept), needs a `--note` saying why (for a request, a new

@@ -102,7 +102,13 @@ ADMITTING_READ = {
 # Commands above that no longer prompt but still check the role before any
 # input: Entered by hand stopped being final (#1840), so ``pledges decide``
 # asks nothing, and its admission still comes first.
-NO_PROMPT = {"pledges decide"}
+# Commands that asked while a mark was final and ask nothing now (#1840).
+NO_PROMPT = {
+    "pledges decide",
+    "census resolve",
+    "information decide",
+    "limitations decide",
+}
 
 # Everything a handler may read, look up or prompt with after its role check.
 LATER = (

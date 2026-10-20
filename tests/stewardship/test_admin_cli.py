@@ -317,7 +317,12 @@ def test_the_catalog_lists_every_command_with_its_flags():
         # their own prompting commands, so this is not a closed list. A
         # command that stopped asking when its mark could be undone (#1840)
         # still takes --yes, ignored, so older scripts keep working.
-        kept_yes = name in {"pledges decide"}
+        kept_yes = name in {
+            "pledges decide",
+            "census resolve",
+            "information decide",
+            "limitations decide",
+        }
         assert ("--yes" in names) == (entry["prompts"] or kept_yes), name
         # Only the downloads stream a file to standard output.
         assert entry["streams"] == (
@@ -848,13 +853,13 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert options["--address"]["required"] and options["--note"]["required"]
     # census resolve: a Census changes row's Record outcome, keyed and
     # versioned, full scope, not fresh-gated, as its page asks for no recent
-    # sign-in. Every outcome can be undone now (#1840), so nothing asks, but
-    # it keeps its prompting shape: --yes is still accepted (and does
-    # nothing), so scripts that pass it keep working.
+    # sign-in. Every outcome can be undone now (#1840), so nothing asks;
+    # --yes is still accepted (and does nothing), so scripts that pass it
+    # keep working.
     census = entries["census resolve"]
     assert census["scope"] == "full" and census["changes_state"]
     assert census["request_key"] and census["expected_version"]
-    assert census["prompts"] and not census["fresh_gated"]
+    assert not census["prompts"] and not census["fresh_gated"]
     assert census["audit_event"] == "admin_cmd_census_resolve"
     assert census["arguments"] == ["PROPOSAL_ID"]
     assert census["result_fields"] == [
@@ -910,14 +915,14 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert {"--value", "--clear"} <= set(options)
     # information decide and limitations decide (#1735): keyed, full scope,
     # not fresh-gated; nothing asks since Handled can be undone (#1840), but
-    # they keep --yes, which a note read from standard input needs.
+    # they keep --yes, ignored, for older scripts.
     # Each chosen item carries its own version, so there is no
     # --expected-version.
     for name in ("information decide", "limitations decide"):
         decide = entries[name]
         assert decide["scope"] == "full" and decide["changes_state"], name
         assert decide["request_key"] and not decide["expected_version"], name
-        assert decide["prompts"] and not decide["fresh_gated"], name
+        assert not decide["prompts"] and not decide["fresh_gated"], name
         assert decide["audit_event"] == f"admin_cmd_{name.split()[0]}_decide"
         assert decide["result_fields"] == ["created", "request_key", "decisions"]
         options = {option["name"]: option for option in decide["options"]}

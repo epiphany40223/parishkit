@@ -2700,7 +2700,8 @@ def census_resolve(args, preamble, runtime, context):
     in ParishSoft, Entered incorrectly, Confirmed, Updated in ParishSoft;
     #1840) as the page's Back to review does, with the required note. So
     nothing asks first; ``--yes`` is still accepted, so scripts that pass it
-    keep working, and does nothing.
+    keep working, and does nothing; a note read from standard input needs
+    no ``--yes`` either.
     """
     from .accounts.policy import Capability
     from .admin_census import resolve_census
@@ -4455,7 +4456,12 @@ def _census_resolve_options(parser):
         "--note",
         default="",
         help="an optional note (required to reopen or undo), or - to read it "
-        "from standard input (needs --yes)",
+        "from standard input",
+    )
+    # A mark asked first while it was final; nothing asks now (#1840), but
+    # scripts written then may still pass --yes.
+    parser.add_argument(
+        "--yes", action="store_true", help="accepted for older scripts; ignored"
     )
     _request_key_option(parser)
 
@@ -6611,10 +6617,6 @@ def _report_specs():
             8,
             options=(_census_resolve_options,),
             # Nothing asks any more: every outcome can be undone (#1840).
-            # The command keeps its prompting shape, so --yes is still
-            # accepted (it does nothing) and a - note still needs it, as
-            # scripts written for it expect.
-            prompts=True,
             request_key=True,
             expected_version=True,
         ),
@@ -7663,8 +7665,8 @@ def _worklist_decide(stream, args, context, runtime):
     ``denied`` before any input or prompt. Without ``--request-key`` a new
     key is made and written to standard error before anything is done.
     Every decision can be changed again, Handled too (Back to review with a
-    note, #1840), so none asks first; ``--yes`` is still accepted, and a
-    note read from standard input needs it.
+    note, #1840), so none asks first; ``--yes`` is still accepted for older
+    scripts and does nothing.
     """
     from . import admin_worklists
     from .web.review_worklist import MAX_NOTE
@@ -7777,8 +7779,12 @@ def _decide_options(chosen, source):
             "--note",
             default="",
             help="an optional note (required to reopen an ignored item or to "
-            "undo Handled), or - to read it from standard input (which then "
-            "needs --yes)",
+            "undo Handled), or - to read it from standard input",
+        )
+        # A mark asked first while it was final; nothing asks now (#1840), but
+        # scripts written then may still pass --yes.
+        parser.add_argument(
+            "--yes", action="store_true", help="accepted for older scripts; ignored"
         )
         _request_key_option(parser)
 
@@ -7817,9 +7823,7 @@ def _worklist_specs():
             WorklistDecide.field_names(),
             11,
             options=(_decide_options(_chosen_request, "information list"),),
-            # Nothing asks (Handled can be undone, #1840); --yes stays, as a
-            # note read from standard input needs it.
-            prompts=True,
+            # Nothing asks (Handled can be undone, #1840).
             request_key=True,
         ),
         CommandSpec(
@@ -7833,7 +7837,7 @@ def _worklist_specs():
             options=(
                 _decide_options(_chosen_answer, "export limitations --format jsonl"),
             ),
-            prompts=True,
+            # Nothing asks (Handled can be undone, #1840).
             request_key=True,
         ),
     )

@@ -2856,8 +2856,8 @@ Confirmed, Updated in ParishSoft, Already in ParishSoft) as the page's Back
 to review does
 ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage),
 [#1840](https://github.com/epiphany40223/parishkit/issues/1840)), so no action asks first any more. The command keeps its
-`--yes` option, which does nothing except that a `-` note still needs it, as
-before, so scripts written for the prompt keep working. It admits as the page's post does (`census_change_views._principal`,
+`--yes` option, which does nothing, so scripts written for the prompt keep
+working. It admits as the page's post does (`census_change_views._principal`,
 recording activity), then in the page's command scope
 (`task_retries.command_scope`, that admission repeated around the effect)
 checks the current campaign as the page does (`admit_report_read`), finds
