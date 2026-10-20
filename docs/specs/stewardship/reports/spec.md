@@ -154,8 +154,10 @@ PDF is a summary (headline tiles, then full-width day-by-day charts that
 flow onto following pages) followed by its table, whose type is set
 smaller (`pdf_design.Table` scale) so its fifteen columns of figures fit. The
 [Timeline export](#timeline-export)'s PDF is an infographic sheet
-(`reports/timeline_pdf.py`): under the title, every page names the Family,
-its DUID, envelope number and mode. Page one shows one card per Summary line
+(`reports/timeline_pdf.py`): under the title, every page names the Family
+in a heading of its own, larger than the detail lines (#1841), then a line
+with its DUID, envelope number and any
+[mode detail](#timeline-export). Page one shows one card per Summary line
 in the page's order and words, the Family code's card set apart in the
 warning tint with a short sensitive-data notice (or the page's words when no
 code is shown), and one tile per kind of line (sign-ins and form opens,
@@ -211,8 +213,12 @@ wrapped, and a landscape print setup that fits one page wide, repeats the
 heading row and numbers the pages. Label/value blocks ("Report information"
 sheets and a packet's Ministry details) use one tinted label style; a
 packet's Ministry detail values span the width of the member table below
-them. Styling never changes a cell's value or type. Every report
-workbook's document properties (Excel's File > Info) name its report as its
+them. A sheet about one subject (a packet's Ministry, the
+[Timeline export](#timeline-export)'s Family) opens with title rows: the
+same label/value style above its table, a blank row, then the table, whose
+heading row stays the frozen and printed one, so a printed or forwarded
+sheet still says whom it is about (#1841). Styling never changes a cell's
+value or type. Every report workbook's document properties (Excel's File > Info) name its report as its
 PDF's page title does and "ParishKit Stewardship" as its author. Its
 creation time is a queued report's request time, or the download time of
 Limitations and Census changes, as its PDF's is, so a retried rendering
@@ -1170,10 +1176,17 @@ oldest first; the Family's identity line and the Summary panel are its report
 information, with the page's words in the page's order (Family, Family DUID,
 Envelope number, the mode, Counted at, Submitted, Last email, Family code,
 Reminders, Campaign email can reach this Family, Furthest step reached, Last
-seen). For a Family the data no longer has, Family is blank and a
+seen). The mode detail is there only for a Testing capture; a Production
+file states no mode, as the directory exports (#1841). The report
+information also names the campaign, from the request's configuration, so
+the PDF's frame shows it above the title as every Admin PDF does. The XLSX's
+Timeline sheet opens with [title rows](#file-design): Family, Family code,
+Campaign and Counted at, in the report information's words and time zone,
+then the table. For a Family the data no longer has, Family is blank and a
 ParishSoft status detail right after it reads
 [Not in ParishSoft](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft),
-which the PDF's line under the title shows in place of the name, as the
+which the PDF's Family heading and the XLSX's Family title row show in
+place of the name, as the
 page's heading shows its badge. As for every shared export, the CSV is the
 table alone; the XLSX's Report information sheet and the PDF's summary cards
 carry the rest, including the code. The PDF is an infographic sheet
