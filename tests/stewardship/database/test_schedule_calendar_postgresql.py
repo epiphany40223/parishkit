@@ -44,6 +44,15 @@ pytestmark = pytest.mark.django_db(transaction=True)
 CALENDAR = "/admin/campaign/schedules/calendar/"
 
 
+def post_forms(html):
+    """Each POST form's start tag, whatever order its attributes come in.
+
+    Shared components add attributes (such as an Apply form's id) over
+    time, so the tests match a form by what it does, not its exact markup.
+    """
+    return [tag for tag in re.findall(r"<form\b[^>]*>", html) if 'method="post"' in tag]
+
+
 def test_calendar_lists_each_send_and_changes_nothing(auth_service, google):
     """Every send by date, linked to Edit; reading it records no change."""
     store = auth_service.store
@@ -67,9 +76,11 @@ def test_calendar_lists_each_send_and_changes_nothing(auth_service, google):
     # Its only forms are Move…'s, which posts to a send's Edit page once the
     # script names it, and the review dialog's Apply, which confirms on the
     # list as Edit's does (#1521).
-    assert re.findall(
-        r'<form method="post" action="(/admin/campaign/[^"]*)"', page
-    ) == [LIST]
+    assert [
+        re.search(r'\baction="([^"]*)"', tag)[1]
+        for tag in post_forms(page)
+        if 'action="/admin/campaign/' in tag
+    ] == [LIST]
     assert flow_steps(response.content) is None
     # The trail is the way back (navigation rule 3), not a link of its own
     # (#521).
@@ -383,7 +394,10 @@ def test_the_calendar_offers_move_on_dated_sends_with_edits_review_dialog(
     review = page[page.index('<dialog id="schedule-review"') :]
     assert 'data-review-return=""' in review
     assert 'data-review-outcome="schedules-outcome"' in review
-    assert f'<form method="post" action="{LIST}" data-review-apply>' in review
+    assert any(
+        f'action="{LIST}"' in tag and " data-review-apply" in tag
+        for tag in post_forms(review)
+    )
 
 
 def test_a_move_is_edits_own_review_and_keeps_the_browser_local_time(
