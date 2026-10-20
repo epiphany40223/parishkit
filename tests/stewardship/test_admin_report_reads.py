@@ -612,6 +612,8 @@ GOLDEN = {
                 "to_review": 2,
                 "to_enter_by_hand": 0,
                 "entered_by_hand": 0,
+                "entered_incorrectly": 0,
+                "confirmed": 0,
                 "ignored": 1,
             },
         },

@@ -338,6 +338,7 @@ def test_the_files_name_every_column_once():
         "Reviewer's frequency": "Monthly",
         "Annual pledge to enter": "$1,300.00",
         "Frequency to enter": "Monthly",
+        "ParishSoft annual pledge": "",
         "Stage": "To enter by hand",
         "Decision": "Accepted (edited)",
         "Entered by": "",

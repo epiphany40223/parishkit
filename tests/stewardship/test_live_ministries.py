@@ -116,6 +116,8 @@ def test_only_the_config_installer_may_read_the_catalog_function():
         "stewardship_source_snapshot_analyze_v1(uuid)",
         # The publication plans' audit answer (0087, #528).
         "stewardship_publication_audited_v1(text, uuid, uuid, jsonb)",
+        # The decided pledges a refresh re-evaluates (0134, #1704).
+        "stewardship_pledge_refresh_items_v1(uuid, uuid)",
         DEBUG_OFF_FUNCTION,
     }
     assert runtime_functions("download") == {LEADER_SCOPE_FUNCTION}

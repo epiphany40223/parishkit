@@ -15,6 +15,7 @@ from .pledges_components import (
     ACCEPTED,
     ACCEPTED_NOTICE,
     ADDRESS,
+    CHECKED,
     EDITED,
     EDITED_NOTICE,
     EVERY,
@@ -74,6 +75,8 @@ def test_the_worklist_lists_pledges_to_review(
         "To review (3)",
         "To enter by hand (1)",
         "Entered by hand (1)",
+        "Entered incorrectly (0)",
+        "Confirmed (0)",
         "Ignored (1)",
         "Every stage (6)",
     ]
@@ -234,3 +237,44 @@ def test_a_refused_edit_is_shown_at_its_field(page, component_origin):
     assert save.is_disabled()
     frequency.select_option("monthly")
     available(save)
+
+
+@pytest.mark.parametrize("width", [320, 1280])
+def test_refresh_checks_show_on_the_worklist(page, component_origin, axe_source, width):
+    """What a refresh found (#1704): Entered incorrectly in its danger chip
+    with ParishSoft now beside the Reviewer's value and no action; Not seen
+    in ParishSoft as a flag on Entered by hand, chosen on its own; Confirmed
+    with nothing offered; an Ignored pledge only noted. The page fits a
+    phone and has no WCAG violation."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + CHECKED)
+    stage = page.locator("#table-filters").get_by_label("Stage")
+    assert stage.locator("option").all_inner_texts() == [
+        "To review (0)",
+        "To enter by hand (0)",
+        "Entered by hand (1)",
+        "Entered incorrectly (1)",
+        "Confirmed (1)",
+        "Ignored (1)",
+        "Not seen in ParishSoft (1)",
+        "Every stage (4)",
+    ]
+    headings = page.locator("#table thead th").all_inner_texts()
+    assert "ParishSoft now" in [text.strip() for text in headings]
+    incorrect = row(page, 7)
+    chip = incorrect.locator(".stage-chip.status-error")
+    assert chip.inner_text().strip() == "Entered incorrectly"
+    assert "$1,100.00" in incorrect.inner_text()
+    assert incorrect.locator(".table-actions button:not([aria-disabled])").count() == 0
+    flagged = row(page, 8)
+    flag = flagged.locator(".stage-chip.status-warning")
+    assert flag.inner_text().strip() == "Not seen in ParishSoft"
+    assert "$0.00" in flagged.inner_text()
+    confirmed = row(page, 9)
+    assert confirmed.locator(".stage-chip").inner_text().strip() == "Confirmed"
+    assert confirmed.locator(".table-actions button:not([aria-disabled])").count() == 0
+    assert "ParishSoft now matches the Family's answer." in row(page, 6).inner_text()
+    assert page.evaluate(
+        "document.documentElement.scrollWidth <= document.documentElement.clientWidth"
+    )
+    assert_accessible(page, axe_source)

@@ -2325,8 +2325,8 @@ staff review and then enter in ParishSoft by hand. Like the page,
 Administrators and Staff may run it, from a session of any scope; a Ministry
 leader is refused (`denied`), and a campaign without Financial stewardship
 is exit 1 (`not_available`). `--stage` is the page's Stage filter:
-`to_review` (the default), `to_enter_by_hand`, `entered_by_hand`, `ignored`
-or `all`. It prints `stage`, `matching` (the pledges at that stage), `total`
+`to_review` (the default), `to_enter_by_hand`, `entered_by_hand`,
+`entered_incorrectly`, `confirmed`, `ignored` or `all`. It prints `stage`, `matching` (the pledges at that stage), `total`
 and `stages` (every pledge by stage, zeros included). Each row names a
 Family and its pledge, so the rows stay on the page and in `export pledges`.
 It records the page's "viewed" event with a count of 0.
@@ -2340,9 +2340,9 @@ does. It needs a full-scope session and takes the same `--stage`, plus
 object per pledge, the files' columns under the keys `family`,
 `family_duid`, `parishsoft_status`, `annual_pledge`, `frequency`,
 `share_methods`, `reviewer_annual_pledge`, `reviewer_frequency`,
-`annual_pledge_to_enter`, `frequency_to_enter`, `stage`, `decision`,
-`entered_by`, `entered_at`, `submitted`, `last_decision`, `last_decision_at`
-and `note`, plus `item_id` and `version`, which `pledges decide` takes, and
+`annual_pledge_to_enter`, `frequency_to_enter`, `parishsoft_annual_pledge`,
+`stage`, `decision`, `entered_by`, `entered_at`, `submitted`,
+`last_decision`, `last_decision_at` and `note`, plus `item_id` and `version`, which `pledges decide` takes, and
 `actions`, the decisions you may record on it now. The file names Families,
 so create it private and delete it once used; the wrapper refuses to write
 it to a terminal.
@@ -3974,3 +3974,8 @@ Each change is recorded in System logs as on the page
   TOKEN|-`, the Parish logos page's upload with its review and its Apply
   (full scope, Administrators only); they record
   `admin_cmd_branding_preview` and `admin_cmd_branding_confirm`.
+- `pk-admin/1` (#1704): additive. `report pledges` and `export pledges`
+  take the Pledges page's two new stages, `entered_incorrectly` and
+  `confirmed`, and `report pledges` counts them in `stages`; the
+  JSON Lines of `export pledges` gain `parishsoft_annual_pledge`, the
+  files' new ParishSoft annual pledge column.
