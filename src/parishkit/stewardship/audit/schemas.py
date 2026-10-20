@@ -332,6 +332,15 @@ class Action(StrEnum):
     ADMIN_CMD_PORTAL_MAINTENANCE_SET = "admin_cmd_portal_maintenance_set"
     # send confirm: Pause and resume mail's Confirm (ADM-11 PR 7b, #463).
     ADMIN_CMD_SEND_CONFIRM = "admin_cmd_send_confirm"
+    # The Go live page's actions (ADM-11 PR 12, #1809): Start go-live, a
+    # step's Retry, Refresh and prepare again, Stop go-live, Confirm
+    # Production and Cancel go-live.
+    ADMIN_CMD_GO_LIVE_START = "admin_cmd_go_live_start"
+    ADMIN_CMD_GO_LIVE_RETRY = "admin_cmd_go_live_retry"
+    ADMIN_CMD_GO_LIVE_REFRESH_AGAIN = "admin_cmd_go_live_refresh_again"
+    ADMIN_CMD_GO_LIVE_STOP = "admin_cmd_go_live_stop"
+    ADMIN_CMD_GO_LIVE_CONFIRM = "admin_cmd_go_live_confirm"
+    ADMIN_CMD_GO_LIVE_CANCEL = "admin_cmd_go_live_cancel"
     # system backup-now: System health's Take a backup now (ADM-13 PR 3b).
     ADMIN_CMD_SYSTEM_BACKUP_NOW = "admin_cmd_system_backup_now"
     # system debug-off: System health's Turn off debug logging (ADM-13 PR 6b).

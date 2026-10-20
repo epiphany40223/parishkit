@@ -4,8 +4,8 @@ The operator's procedures for the situations the
 [v1 launch scope](../plans/stewardship/v1-launch.md#launch-critical-remaining-work)
 (item 6, the launch portion of
 [OPS-08.05](../tasks/stewardship/operations.md#ops-08-observability-health-and-operational-runbooks))
-expects during the first live campaign: Production activation and
-withdrawal, a mail-provider outage, a ParishSoft outage, pausing and resuming
+expects during the first live campaign: Production activation, Stop
+go-live and Cancel go-live, a mail-provider outage, a ParishSoft outage, pausing and resuming
 delivery, and messages whose delivery is unknown. It also covers watching the
 HTTPS certificate and withdrawing published campaign artwork.
 Deployment, upgrade and rollback are the
@@ -50,43 +50,38 @@ monitor described in [certificate expiry](#certificate-expiry).
 
 ## Production activation
 
-Activation is an Administrator's portal workflow with one operator step at
-each end. It is irreversible in part: the Testing cleanup in step 4 deletes
-the rehearsal data for good, even if the transition is later cancelled or
-withdrawn. Plan it for a quiet hour, with the Administrator and the operator
-both available. The design is in the
+Activation is an Administrator's portal workflow, the four-step **Go live**
+page, with one operator step at each end. The Administrator acts twice, each
+time in a dialog: **Start go-live** and **Confirm Production**. The system
+does everything in between by itself. Going live is irreversible in part:
+Start go-live deletes the rehearsal (Testing) data for good, even if going
+live is later stopped or cancelled. Plan it for a quiet hour, with the
+Administrator and the operator both available. Every step updates itself;
+you can leave a step and come back, and a reload returns to the same step.
+The page's design is the admin-portal specification's
+[Go live page](../specs/stewardship/admin-portal/spec.md#go-live-page). The
 [go-live readiness](stewardship-go-live-readiness.md),
-[link preparation](stewardship-production-activation.md) (historical, but
-still the design record for preparation and disposal),
+[link preparation](stewardship-production-activation.md),
 [Production confirmation](stewardship-production-confirmation.md) and
-[withdrawal](stewardship-production-withdrawal.md) guides.
+[withdrawal](stewardship-production-withdrawal.md) guides are the historical
+implementation records of the server side it reuses.
 
-**Timing.** Two clocks govern steps 3 to 6, so do them in one sitting:
-
-- The readiness checks accept a **full** ParishSoft refresh only for 30
-  minutes (the default source-staleness window) from the moment it
-  *started*, and they are checked again when cleanup starts and at the final
-  confirmation. Start the full refresh with **Refresh now** on the home page
-  and finish step 6 within that window.
-- The prepared Family links of step 5 are bound to the ParishSoft data they
-  were prepared from, and the scheduled delta refresh runs every 15 minutes
-  (on the quarter hour), including during go-live; the scheduled full
-  refreshes (at the ParishSoft integration's listed times, 02:00 alone by
-  default) do the same, so avoid those hours. Any refresh that lands after
-  preparation makes it stale. Start step 5 just after a quarter-hour delta
-  has finished, and go straight on to step 6.
-- Plan for both: cleanup, the wait for a delta and preparation often use up
-  most of the 30 minutes. If cleanup finishes late in the window, start a
-  second full refresh once cleanup has completed and just after a
-  quarter-hour delta has finished, so that the full refresh, the Family
-  eligibility catch-up, preparation and confirmation all finish before the
-  next quarter hour. Refreshes never run side by side: a delta that comes
-  due while the full refresh runs starts right after it and makes the
-  preparation stale. Time a full refresh on the validation deployment
-  beforehand; if it takes most of fifteen minutes, this path does not fit and
-  the first full refresh must carry the whole procedure. Refresh is allowed
-  during cleanup's hold. The home page's last-refreshed time shows when a
-  refresh finished.
+**Timing.** One clock remains before Start: Check accepts a **full**
+ParishSoft refresh only for 30 minutes (the default source-staleness window)
+from the moment it *started*, and Start go-live checks it again, so apply
+Start go-live within that window
+([#1812](https://github.com/epiphany40223/parishkit/issues/1812) would
+remove it). After Start, no click has to be timed against the ParishSoft
+refresh schedule. Start go-live queues the go-live's own full ParishSoft
+refresh, and from then on the scheduled refreshes
+[wait for the go-live](../specs/stewardship/background-processing/spec.md#refreshes-wait-for-go-live):
+they hold until 60 minutes after that refresh has finished and the Testing
+cleanup has completed, and never longer than 3 hours after Start (or after
+**Refresh and prepare again**, which starts a new hold). Confirm
+Production within that hold. If it ends first, Confirm Production says "ParishSoft
+refreshes resumed while this waited" and offers **Refresh and prepare
+again**. Avoid **Refresh now** during a go-live: a refresh that lands after
+the Family links were prepared makes the system prepare them again.
 
 1. **Operator: back up and check debug logging.** Run the backup by hand and
    confirm its off-host copy, as the [backup runbook](stewardship-backup-runbook.md)
@@ -98,8 +93,10 @@ still the design record for preparation and disposal),
    lists every service that has it on, and **Turn off debug logging** turns
    it off in all of them within about a minute, without a restart
    ([deployment runbook](stewardship-deployment-runbook.md#turn-off-debug-logging-530)).
-   That leaves the setting on the server, so still remove it here.
-   Check again whenever a container is recreated later:
+   The Go live page's Check step also warns when the last backup completed
+   and while debug logging is on. That leaves the setting on the server, so
+   still remove it here. Check again whenever a container is recreated
+   later:
 
    ```sh
    for id in $(docker compose ... ps --quiet); do
@@ -118,86 +115,105 @@ still the design record for preparation and disposal),
    A service started with debug logging on also logs a WARNING
    `debug_logging_enabled` line right after `startup_validated`, so
    `docker compose ... logs SERVICE | grep debug_logging_enabled` finds it.
-2. **Administrator: clear readiness.** In the menu's Campaign setup group,
-   choose **Go-live readiness**
-   (`/admin/campaign/go-live/`). The page lists what still needs
-   attention, each item with its remedy. Clear these beforehand: every
-   provider credential must have a current check; a selected Family test
-   email must have been previewed and sent successfully with the current
-   configuration; no Testing delivery may be unfinished or unknown; and no
-   configuration change may be pending. Then start the full refresh with
-   **Refresh now** on the home page and wait for it to finish. **Refresh now**
-   is the full ParishSoft refresh: the home page link opens the **Refresh from
-   ParishSoft** page (`/admin/parish/parishsoft-refresh/`), and that page's **Refresh
-   now** button starts it. Reviewing and checking readiness change nothing;
-   only **Start Testing cleanup** in step 4 acts.
-3. **Administrator: check readiness and read the impact.** Choose **Check
-   readiness and public web address** in the **Public web address check**
-   panel. Read the Family and Admin report mail impact: the page says whether
-   confirming now would make the campaign active immediately (initial mail is
-   then prepared at once) or schedule it for its start date. Once the check
-   passes, the **Start irreversible Testing cleanup** panel appears with the
-   acknowledgement and the cleanup button for step 4.
-4. **Administrator: start the cleanup.** Within five minutes of the preview,
-   tick **I acknowledge that deleting the inventoried Testing data is
-   irreversible.** and choose **Start Testing cleanup**. Rehearsal codes and
-   links stop working and no new Testing work starts. Watch the progress page
-   until it says **Cleanup is complete.** A failed run offers **Retry failed
-   cleanup from its checkpoints**; cancelling releases the hold but restores
-   nothing.
-5. **Administrator: prepare the links.** Just after a quarter-hour delta
-   refresh has finished, choose **Prepare inactive Family links** on the
-   cleanup page, then again on the **Prepare Family links** page it opens,
-   and wait for **Inactive links are prepared. The campaign remains in
-   Testing.** Open or reload the links page only after the delta has
-   finished: until the Family eligibility catches up with the new data it
-   says the preparation inputs are unavailable, so wait a moment and reload.
-   Every button on the cleanup and links pages (prepare, cancel, retry) is
-   refused with "This preview is out of date." once its page has been open
-   for more than five minutes; choose **Review the changes again** to reload
-   the page, then try again. Preparation sends no email and changes no Family
-   code. If a
-   refresh lands first, the page says the preparation is cancelled or no
-   longer current. To prepare again, choose **Cancel and discard these
-   inactive links**, wait until its disposal worker finishes (**Retry failed
-   disposal** if it fails), and only then does **Prepare inactive Family
-   links** reappear. If the 30-minute window has also lapsed, run another full
-   refresh first, timed as in the timing notes above, then discard and
-   prepare again.
-6. **Administrator: confirm.** Choose **Review final Production
-   confirmation**, then **Verify final readiness and mail impact**, check the
-   exact preview (start and close dates, and immediate versus scheduled),
-   type `Production`, and choose **Confirm Production** within five minutes
-   of the preview. A changed input means a new preview, not a failure.
-7. **Administrator: watch the result.** The **Production activation
-   progress** page (`/admin/campaign/production/`) shows the
-   outcome. A campaign that became active prepares its initial mail in the
-   background until **Initial campaign mail preparation complete**; a
-   terminal failure offers **Retry failed mail preparation**, and nothing
-   rolls Production back. A campaign confirmed before its start is scheduled:
-   no initial preparation runs, and the ordinary schedule sends its mail from
-   the start date.
-8. **Operator: back up again.** Take a backup once the progress page is
-   settled, and again after each large send, so a restore loses as little as
-   possible.
+2. **Administrator: Check.** In the menu's Campaign setup group, choose
+   **Go live** (`/admin/campaign/go-live/`); the last step of Campaign setup
+   opens it too. The step bar reads "Step 1 of 4: Check". The page lists the
+   things to fix before going live, each with a link to the page that fixes
+   it. Clear them beforehand: every provider credential must have a current
+   check; a selected Family test email must have been previewed and sent
+   successfully with the current configuration; no Testing delivery may be
+   unfinished or unknown; and no configuration change may be pending. Then
+   start the full refresh with **Refresh now** on the home page and wait for
+   it to finish: the home page link opens the **Refresh from ParishSoft**
+   page (`/admin/parish/parishsoft-refresh/`), and that page's **Refresh
+   now** button starts it. One line says what going live now
+   would do: make the campaign active at once (its initial mail is then
+   prepared and sent) or schedule it for its start. The Family and Admin
+   mail counts and the Testing cleanup counts are in a disclosure under it.
+   Then choose **Check readiness and public web address**; its result shows
+   in place. Checking changes nothing. Go on to step 3 within the 30-minute
+   window above.
+3. **Administrator: Start go-live.** Once Check says **Everything is
+   ready.**, choose **Start go-live**. The dialog "Start going live?" says
+   what happens next, shows the Testing data to be deleted (with a link to
+   the Testing submissions) and the caution that deleted Testing data cannot
+   be restored and that Testing links and codes stop working now. **Apply**
+   is the acknowledgement; there is no separate tick box. Apply checks
+   readiness and the public web address again and refuses inside the dialog
+   if anything fails, naming why. An accepted Apply opens Prepare.
+4. **Administrator: watch Prepare.** Three boxes, **Delete Testing data**,
+   **Refresh ParishSoft data** and **Prepare Family links**, each read Not
+   started, In progress, Done or Failed, with one detail line for the
+   current box. While they run there is nothing to do. Preparing links sends
+   no email and changes no Family code. If ParishSoft data changes after the
+   links were prepared, the system prepares them again by itself and the
+   detail line says so. The step's one action, when there is one:
+   - **Retry** when a box is Failed after its automatic retries; it retries
+     the same task and changes no data.
+   - **Refresh and prepare again** when the go-live's refresh failed, when
+     ParishSoft data keeps changing, or when the refresh hold ended; it
+     starts a new refresh and prepares new links on it, without deleting
+     Testing data again.
+   - **Continue to Confirm Production** once all three boxes are Done.
+5. **Administrator: Confirm Production.** The step shows one impact
+   preview with its as-of time: whether the campaign becomes active now or
+   is scheduled (with its start time), the Families with and without an
+   eligible email, and the Family and report emails due at once. Check it,
+   then choose **Confirm Production**. In the dialog ("Go live now?" or
+   "Schedule the campaign?") type `Production` and choose **Apply**. If
+   anything shown changed in between (ParishSoft data, emails that fell due,
+   the start time passing, the public web address check), Apply confirms
+   nothing and says so inside the dialog: close it, review the updated
+   preview and confirm again. No step expires for the time it has been
+   open.
+6. **Administrator: watch Production activation.** Apply opens
+   **Production activation** (`/admin/campaign/production/`, the step bar's
+   Activation step). A campaign that became active shows three boxes:
+   **Go live** (Done), **Prepare initial emails** and **Sending**. Initial
+   mail is prepared in the background until the heading says **Campaign
+   active. Initial campaign mail is prepared.**; Sending then links to Sent
+   mail, where delivery is followed. If preparation fails after its
+   automatic retries, its box is Failed and the page offers **Retry**, which
+   repeats no work already done; nothing rolls Production back. A campaign
+   confirmed before its start says **Campaign scheduled.**: no initial
+   preparation runs, and the ordinary mail schedules send its mail from the
+   start.
+7. **Operator: back up again.** Take a backup once Production activation
+   is settled, and again after each large send, so a restore loses as
+   little as possible.
 
-**Cancel go-live** returns a *scheduled* campaign to draft in Testing, and is
+**Stop go-live** (on Prepare and Confirm Production, before Production is
+confirmed) stops the Testing cleanup at its next safe point and discards any
+prepared Family links. Its dialog says what stops; Apply opens Check, which
+says **Stopping go-live** until both have finished and then "Go-live stopped
+at" its time. Testing data already deleted is not restored, and the
+campaign stays a Testing draft. If stopping fails after its automatic
+retries, Check offers **Retry stopping go-live**; Start go-live is
+unavailable until stopping finishes.
+
+**Cancel go-live** returns a *scheduled* campaign to a Testing draft, and is
 possible only before its start: once the start passes, the campaign is active
-and stays live. Open **Cancel go-live** from the progress
-page, give a reason, tick **I understand that deleted Testing data cannot be
-restored.**, choose **Preview cancellation** and then **Confirm cancelling
-go-live**. If the preview reports work in flight or uncertain, the confirm
-button is withheld: resolve that work, then preview again and confirm within
-five minutes and before the start.
-Cancel go-live is refused while delivery is paused: the progress page then
-hides the Cancel go-live link, and the Cancel go-live page says go-live can't
-be cancelled, as it does for an active campaign. Resume first, which needs
-the sender test described below, so do not pause a scheduled campaign whose
-go-live you may cancel while the provider is down. After a cancellation, going live
-again needs the whole cycle above, including a new cleanup.
+and stays live. On Production activation, choose **Cancel go-live**. The
+dialog "Cancel go-live?" shows the scheduled mail runs and unsent messages it
+cancels and what stays in history, and the caution that Testing data deleted
+earlier is not restored. Enter the reason and choose **Apply**, which is the
+acknowledgement (no tick box). Mail that is being sent, of uncertain
+delivery or needing recovery blocks the cancellation: the dialog says so,
+with links to Pause and resume mail and Sent mail; resolve that work and try
+again before the start. A cancellation opens Check, which says "Go-live
+cancelled at" its time.
+Cancel go-live is not offered while delivery is paused: Production
+activation then says why instead of showing the button. Resume first, which
+needs the sender test described below, so do not pause a scheduled campaign
+whose go-live you may cancel while the provider is down. After a
+cancellation, going live again needs the whole cycle above, from Check,
+including a new Testing cleanup.
 
 The [review ledger](stewardship-activation-runbook-reviews.md) records how
-this procedure was checked against the code.
+this procedure was checked against the code before the Go live page
+replaced the separate readiness, cleanup, Family links, confirmation and
+Cancel go-live pages
+([#1585](https://github.com/epiphany40223/parishkit/issues/1585)).
 
 ## Measuring the launch send
 
@@ -256,7 +272,7 @@ record in the operators' notes:
   refusal pauses sending and resumes it by itself. Messages left in
   `delivery_unknown` need the [procedure below](#messages-in-delivery_unknown).
 
-Then take the backup that step 8 of the activation asks for.
+Then take the backup that step 7 of the activation asks for.
 
 ## Mail-provider outage
 
@@ -634,8 +650,8 @@ only for the current Production campaign.
       resolved. The resume controls are hidden entirely while an activation
       catch-up is incomplete, including one whose preparation has failed: if
       the **Production activation** page shows a failure, choose
-      **Retry failed mail preparation** there and wait for **Initial campaign
-      mail preparation complete**. A report preparation that has *failed* never
+      **Retry** there and wait for **Campaign active. Initial campaign
+      mail is prepared.** A report preparation that has *failed* never
       reaches its safe point by itself: find the failed daily or weekly
       report task on the Background work page (`/admin/system/background/`; the
       home page lists only the latest five failures of the past day), fix
@@ -917,7 +933,7 @@ are still skipped when sent.
 | Replace a provider credential | [Above](#replacing-a-provider-credential); design in the [credential installer guide](stewardship-credential-installers.md) |
 | Alert routing and windows | [Operational alerts guide](stewardship-operational-alerts.md) |
 | Measure the launch send | [Above](#measuring-the-launch-send), with the [mail send report](stewardship-mail-send-report.md) |
-| Production activation and withdrawal | [Above](#production-activation); design in the [go-live readiness](stewardship-go-live-readiness.md), [link preparation](stewardship-production-activation.md), [Production confirmation](stewardship-production-confirmation.md) and [withdrawal](stewardship-production-withdrawal.md) guides |
+| Production activation, Stop go-live and Cancel go-live | [Above](#production-activation); page design in the [Go live page](../specs/stewardship/admin-portal/spec.md#go-live-page) specification; server history in the [go-live readiness](stewardship-go-live-readiness.md), [link preparation](stewardship-production-activation.md), [Production confirmation](stewardship-production-confirmation.md) and [withdrawal](stewardship-production-withdrawal.md) guides |
 | HTTPS certificate expiry monitoring and renewal failures | [Above](#certificate-expiry) |
 | Withdraw published campaign artwork | [Above](#withdrawing-published-campaign-artwork) |
 | Keep a Family from getting Reminders | [Above](#keeping-a-family-from-getting-reminders) |

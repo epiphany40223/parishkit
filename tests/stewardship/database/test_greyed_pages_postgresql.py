@@ -165,7 +165,7 @@ def test_missing_module_leads_to_campaign_settings(auth_service, google):
 
 
 def test_testing_mode_leads_to_go_live_readiness(auth_service, google):
-    """Production-only pages in Testing mode point to Go-live readiness."""
+    """Production-only pages in Testing mode point to Go live."""
     store = auth_service.store
     add_draft(store, store.active(), uuid4())
     browser, _ = signed_in()
@@ -197,7 +197,7 @@ def test_structure_fixed_once_live(auth_service, google):
     refused = refused.content.decode()
     assert f"{navigation.STRUCTURE_FIXED}." in refused
     assert STALE.decode() not in refused
-    # The campaign went live, so Go-live readiness leads to its activation.
+    # The campaign went live, so Go live leads to its activation.
     _opened(browser, "go_live", navigation.ALREADY_LIVE, "production_progress")
 
 

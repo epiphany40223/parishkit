@@ -1,15 +1,24 @@
-"""Real Admin sessions, CSRF, restricted intake and maintained preparation workers."""
+"""The Family link preparation owner, its restricted intake and maintained workers.
+
+The Prepare Family links page retired with #1585 slice 3: the go-live
+producer prepares and discards the links, and the Go live page's Prepare
+step retries them, both through ``activation_progress`` as this file
+drives it. The page-level HTTP checks live with the Prepare step
+(test_go_live_prepare_postgresql.py).
+"""
 
 # ruff: noqa: F811 -- imported fixtures are injected by pytest name.
 
+from dataclasses import dataclass
 from uuid import uuid4
 
 import pytest
 from django.core import signing
+from django.core.signing import BadSignature
 from django.db.models import F
 from django.test import Client
-from django.urls import reverse
 
+from parishkit.stewardship.accounts import activation_progress
 from parishkit.stewardship.accounts.activation_progress import SALT
 from parishkit.stewardship.accounts.authentication import AuthRuntime
 from parishkit.stewardship.accounts.go_live_commands import (
@@ -33,11 +42,13 @@ from parishkit.stewardship.jobs.dispatch import execute_hint
 from parishkit.stewardship.jobs.models import TaskRun
 from parishkit.stewardship.jobs.queues import WorkQueue
 from parishkit.stewardship.jobs.storage import _status
+from parishkit.stewardship.storage import StaleRecordError
+from parishkit.stewardship.web.contracts import PageWindow
+from parishkit.stewardship.web.refusals import UserFacingStale
 
 from . import test_go_live_cleanup_postgresql as cleanup_tests
 from .credential_builders import keys
-from .preview_builders import assert_out_of_date, previews_aged
-from .test_admin_navigation_postgresql import GO_LIVE, flow_steps
+from .preview_builders import previews_aged
 from .test_background_grants_postgresql import task_login
 from .test_cleanup_tasks_postgresql import run
 from .test_go_live_cleanup_postgresql import (  # noqa: F401
@@ -47,15 +58,45 @@ from .test_go_live_cleanup_postgresql import (  # noqa: F401
     setup_service,
 )
 from .test_setup_mail_views_postgresql import web_login
-from .test_setup_views_postgresql import post
 from .test_taskrun_postgresql import act
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
+@dataclass(frozen=True)
+class Links:
+    """The link preparation owner for one go-live request, as a page calls it."""
+
+    login: object
+    service: object
+    campaign_id: object
+    request_id: object
+
+    def page(self):
+        """The owner's passive read: the preparations and their controls."""
+        return activation_progress.progress(
+            self.login,
+            self.service,
+            self.campaign_id,
+            self.request_id,
+            window=PageWindow(1, 25),
+        )
+
+    def act(self, token):
+        """Apply one of the owner's signed controls."""
+        return activation_progress.control(
+            self.login, self.service, self.campaign_id, self.request_id, token=token
+        )
+
+
 @pytest.fixture
 def ready_links(request, monkeypatch, settings, real_limiter):
-    """Share one actual setup/cleanup across each complete HTTP/worker scenario."""
+    """Share one actual setup/cleanup across each complete owner/worker scenario.
+
+    Returns ``(browser, links, ring, login)``: a signed-in Admin browser for
+    the pages that follow, the link owner (``Links``), the public key ring
+    and the Admin's login.
+    """
     rings = []
 
     def capture_keys():
@@ -78,68 +119,57 @@ def ready_links(request, monkeypatch, settings, real_limiter):
     )
     browser = Client(enforce_csrf_checks=True)
     browser.cookies["pk_admin"] = login.session.session_key
-    path = reverse("admin:go_live_links", args=[status.request_id])
-    return browser, path, rings[0], login
+    links = Links(login, service, campaign.pk, status.request_id)
+    return browser, links, rings[0], login
 
 
 def test_admin_prepares_retries_and_discards_without_activating(
     ready_links, monkeypatch
 ):
-    """An HTTP command records intent; only the separate maintained worker seals."""
-    browser, path, ring, login = ready_links
+    """A command records intent; only the separate maintained worker seals."""
+    _, links, ring, login = ready_links
     with web_login():
         activity = PortalSession.objects.get(
             pk=login.portal_session.pk
         ).last_activity_at
-        page = browser.get(path)
-        assert page.status_code == 200, page.content
-        assert page["Cache-Control"] == "no-store"
-        assert b"Preparation history pages" in page.content
-        assert flow_steps(page.content) == (GO_LIVE, "Family links")
-        assert page.context["table"].size == 25
-        assert page.context["prepare"]
+        page = links.page()
+        assert page["prepare"]
         assert not ProductionTokenPreparation.objects.exists()
+        # The read is passive: it never extends the sign-in's idle time.
         assert (
             PortalSession.objects.get(pk=login.portal_session.pk).last_activity_at
             == activity
         )
-        values = {"control": page.context["prepare"]}
-        forged = signing.loads(values["control"], salt=SALT)
+        forged = signing.loads(page["prepare"], salt=SALT)
         forged["inputs"]["source_generation"] += 1
-        assert (
-            post(
-                browser, path, {"control": signing.dumps(forged, salt=SALT)}
-            ).status_code
-            == 409
-        )
+        with pytest.raises(StaleRecordError):
+            links.act(signing.dumps(forged, salt=SALT))
         # An expired control is the plain out-of-date refusal (#398).
-        with previews_aged(monkeypatch):
-            assert_out_of_date(post(browser, path, values), path)
+        with previews_aged(monkeypatch), pytest.raises(UserFacingStale):
+            links.act(page["prepare"])
+        with pytest.raises(BadSignature):
+            links.act(page["prepare"] + "x")
         assert not ProductionTokenPreparation.objects.exists()
-        assert browser.post(path, values).status_code == 403
-        assert post(browser, path, values | {"actor": "other"}).status_code == 400
-        assert post(browser, path, values).status_code == 302
-        assert post(browser, path, values).status_code == 302
+        links.act(page["prepare"])
+        links.act(page["prepare"])
         assert ProductionTokenPreparation.objects.count() == 1
         preparation = ProductionTokenPreparation.objects.get()
         assert not FamilyAccessToken.objects.exists()
-        assert browser.get(path).context["prepare"] is None
+        assert links.page()["prepare"] is None
 
-    # Simulate one exhausted run using actual task transitions. The HTTP retry
+    # Simulate one exhausted run using actual task transitions. The retry
     # must create a child, not reopen this terminal execution or rebind its input.
     failed = act(
         act(_status(TaskRun.objects.get(pk=preparation.task_id)), "claim"),
         "permanent_failure",
     )
     with web_login():
-        page = browser.get(path)
-        retry = {"control": page.context["records"][0]["controls"]["retry"]}
-        other_retry = {
-            "control": browser.get(path).context["records"][0]["controls"]["retry"]
-        }
-        assert post(browser, path, retry).status_code == 302
-        assert post(browser, path, retry).status_code == 302
-        assert post(browser, path, other_retry).status_code == 409
+        retry = links.page()["records"][0]["controls"]["retry"]
+        other_retry = links.page()["records"][0]["controls"]["retry"]
+        links.act(retry)
+        links.act(retry)
+        with pytest.raises(StaleRecordError):
+            links.act(other_retry)
         task = TaskRun.objects.filter(root_id=preparation.task_id).latest(
             "retry_sequence"
         )
@@ -152,29 +182,25 @@ def test_admin_prepares_retries_and_discards_without_activating(
             handlers={TASK_TYPE: token_handler(public=ring.public)},
         )
     with web_login():
-        page = browser.get(path)
-        assert b"Inactive links are prepared" in page.content
-        assert page.context["records"][0]["task"].state == "succeeded"
-        assert page.context["total"] == (1, False) and b"Page 1 of 1" in page.content
-        cancel = {"control": page.context["records"][0]["controls"]["cancel"]}
-        other_cancel = {
-            "control": browser.get(path).context["records"][0]["controls"]["cancel"]
-        }
-        assert post(browser, path, cancel).status_code == 302
-        assert post(browser, path, cancel).status_code == 302
-        assert post(browser, path, other_cancel).status_code == 409
+        page = links.page()
+        assert page["records"][0]["task"].state == "succeeded"
+        assert page["records"][0]["generation"].state == "ready"
+        assert page["records"][0]["current"]
+        cancel = page["records"][0]["controls"]["cancel"]
+        other_cancel = links.page()["records"][0]["controls"]["cancel"]
+        links.act(cancel)
+        links.act(cancel)
+        with pytest.raises(StaleRecordError):
+            links.act(other_cancel)
         cancellation = ProductionTokenCancellation.objects.get()
     act(
         act(_status(TaskRun.objects.get(pk=cancellation.task_id)), "claim"),
         "permanent_failure",
     )
     with web_login():
-        page = browser.get(path)
-        retry_disposal = {
-            "control": page.context["records"][0]["controls"]["retry_cleanup"]
-        }
-        assert post(browser, path, retry_disposal).status_code == 302
-        assert post(browser, path, retry_disposal).status_code == 302
+        retry_disposal = links.page()["records"][0]["controls"]["retry_cleanup"]
+        links.act(retry_disposal)
+        links.act(retry_disposal)
         cleanup_task = TaskRun.objects.filter(root_id=cancellation.task_id).latest(
             "retry_sequence"
         )
@@ -187,15 +213,13 @@ def test_admin_prepares_retries_and_discards_without_activating(
         )
     assert not FamilyAccessToken.objects.filter(destroyed_at__isnull=True).exists()
     with web_login():
-        page = browser.get(path)
-        assert page.status_code == 200, page.content
-        assert not page.context["records"][0]["current"]
-        assert page.context["records"][0]["cleanup"].state == "succeeded"
-    # Neither a retained cookie nor a previously signed control survives revocation.
+        page = links.page()
+        assert not page["records"][0]["current"]
+        assert page["records"][0]["cleanup"].state == "succeeded"
+    # A previously signed control does not survive revocation.
     PortalUser.objects.update(disabled=True, version=F("version") + 1)
-    with web_login():
-        assert browser.get(path).status_code == 403
-        assert post(browser, path, values).status_code == 403
+    with web_login(), pytest.raises(PermissionError):
+        links.act(retry)
     assert ProductionTokenPreparation.objects.count() == 1
 
 
@@ -206,25 +230,21 @@ def test_new_preparation_fences_old_failed_retry_in_http_and_sql(ready_links):
     from parishkit.stewardship.campaigns.work_locks import work_transaction
     from parishkit.stewardship.jobs.storage import retry_failed
 
-    browser, path, _, login = ready_links
+    _, links, _, login = ready_links
     with web_login():
-        page = browser.get(path)
-        assert (
-            post(browser, path, {"control": page.context["prepare"]}).status_code == 302
-        )
+        links.act(links.page()["prepare"])
         preparation = ProductionTokenPreparation.objects.get()
     failed = act(
         act(_status(TaskRun.objects.get(pk=preparation.task_id)), "claim"),
         "permanent_failure",
     )
     with web_login():
-        page = browser.get(path)
-        retry = page.context["records"][0]["controls"]["retry"]
-        assert (
-            post(browser, path, {"control": page.context["prepare"]}).status_code == 302
-        )
-        assert post(browser, path, {"control": retry}).status_code == 409
-        rows = browser.get(path).context["records"]
+        page = links.page()
+        retry = page["records"][0]["controls"]["retry"]
+        links.act(page["prepare"])
+        with pytest.raises(StaleRecordError):
+            links.act(retry)
+        rows = links.page()["records"]
         old = next(row for row in rows if row["preparation"].pk == preparation.pk)
         assert "retry" not in old["controls"]
         with (
