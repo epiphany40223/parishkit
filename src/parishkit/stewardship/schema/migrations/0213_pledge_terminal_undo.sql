@@ -51,7 +51,9 @@ ALTER TABLE "stewardship_pledge_review" ADD CONSTRAINT "pledge_review_action_sta
 -- 0135's pledge review guard, with Back to review undoing a terminal step
 -- (#1840): on Entered by hand, Entered incorrectly or Confirmed it needs a
 -- note and keeps the decision in force with its values, or keeps none when
--- the item's rows give To review. Every other rule is 0135's, unchanged.
+-- the item's rows give To review. A note of nothing but white space
+-- (spaces, tabs, line breaks) is blank, for that undo and for reopening an
+-- ignored pledge alike. Every other rule is 0135's, unchanged.
 CREATE OR REPLACE FUNCTION public.stewardship_pledge_review_guard_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE family public.stewardship_family_campaign%ROWTYPE;
@@ -85,13 +87,13 @@ BEGIN
             -- needs a reason.
             WHEN item.stage='to_enter_by_hand' THEN NEW.decision IS NULL
             WHEN item.stage='ignored' THEN NEW.decision IS NULL
-                AND btrim(NEW.note)<>''
+                AND NEW.note ~ '\S'
             -- Undoing a terminal step (#1840) needs a reason and removes
             -- only the step: the decision its rows keep in force, with its
             -- values, stays (To enter by hand); with none behind it (a
             -- pledge ParishSoft already held) it keeps none (To review).
             WHEN item.stage IN ('entered_by_hand','entered_incorrectly','confirmed')
-                THEN btrim(NEW.note)<>'' AND CASE
+                THEN NEW.note ~ '\S' AND CASE
                     WHEN item.base_stage IN ('to_enter_by_hand','entered_by_hand')
                         THEN NEW.decision IS NOT NULL
                             AND ROW(NEW.decision,NEW.reviewed_annual_pledge,
@@ -165,6 +167,8 @@ BEGIN
               AND prosrc LIKE '%item.stage IN (''to_review'',''conflict'')%'
               AND prosrc LIKE '%WHEN item.stage=''to_enter_by_hand'' THEN NEW.decision IS NULL%'
               AND prosrc LIKE '%item.stage IN (''entered_by_hand'',''entered_incorrectly'',''confirmed'')%'
+              AND prosrc LIKE '%THEN NEW.note ~ ''\\S'' AND CASE%'
+              AND prosrc NOT LIKE '%btrim(NEW.note)%'
               AND prosrc LIKE '%WHEN item.base_stage IN (''to_enter_by_hand'',''entered_by_hand'')%'
               AND prosrc LIKE '%WHEN item.base_stage=''to_review'' THEN NEW.decision IS NULL%')
     THEN

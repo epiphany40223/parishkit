@@ -12,7 +12,9 @@
 -- decision accepted, with a note saying why. This re-creates
 -- stewardship_limitation_review_guard_v1 from its latest body (0126's, which
 -- created it; no baseline copy exists) plus one allowed step: from Handled,
--- accepted with a non-blank note (before, Handled allowed nothing). The
+-- accepted with a non-blank note (before, Handled allowed nothing); a note
+-- of nothing but white space (spaces, tabs, line breaks) is blank, for
+-- that step and for reopening an Ignored answer alike. The
 -- guard still admits only a current Staff member or Administrator
 -- (stewardship_export_authorized_v1), on the Family's effective live
 -- response, at the answer's current version, so a Ministry leader and a
@@ -62,9 +64,9 @@ BEGIN
        OR NOT (CASE state
            WHEN 'to_review' THEN NEW.decision IN ('accepted','ignored')
            WHEN 'to_handle' THEN NEW.decision IN ('none','handled')
-           WHEN 'ignored' THEN NEW.decision='none' AND btrim(NEW.note)<>''
+           WHEN 'ignored' THEN NEW.decision='none' AND NEW.note ~ '\S'
            -- Handled's undo (#1840) keeps the Accept: To handle again.
-           WHEN 'handled' THEN NEW.decision='accepted' AND btrim(NEW.note)<>''
+           WHEN 'handled' THEN NEW.decision='accepted' AND NEW.note ~ '\S'
            ELSE false END)
     THEN RAISE EXCEPTION 'Limitation review lacks current authority, version or state'
         USING ERRCODE='23514'; END IF;
@@ -77,8 +79,8 @@ DO $check$
 BEGIN
     IF NOT EXISTS(SELECT 1 FROM pg_proc
             WHERE oid='public.stewardship_limitation_review_guard_v1()'::regprocedure
-              AND prosrc LIKE '%WHEN ''handled'' THEN NEW.decision=''accepted'' AND btrim(NEW.note)<>''''%'
-              AND prosrc LIKE '%WHEN ''ignored'' THEN NEW.decision=''none'' AND btrim(NEW.note)<>''''%'
+              AND prosrc LIKE '%WHEN ''handled'' THEN NEW.decision=''accepted'' AND NEW.note ~ ''\\S''%'
+              AND prosrc LIKE '%WHEN ''ignored'' THEN NEW.decision=''none'' AND NEW.note ~ ''\\S''%'
               AND prosrc LIKE '%stewardship_export_authorized_v1(NEW.actor_id)%'
               AND prosrc LIKE '%pg_advisory_xact_lock(736220,1)%'
               AND NOT prosecdef
