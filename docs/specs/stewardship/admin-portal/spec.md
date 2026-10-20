@@ -6541,18 +6541,37 @@ Notes on the sections:
 
 ### Data to fix refresh and empty states
 
-- **Read on page load only.** Counts are read when the page loads and are
-  never polled or updated in place, as the menu's open counts are, so
-  nothing appears, changes size or moves under the pointer
-  ([no layout shift](../ui-conventions/spec.md#no-layout-shift)). The page
-  has no controls of its own; reloading it, or coming back from a detail
-  page, reads the counts again.
+- **Counts update by themselves.** The page
+  [updates itself](../ui-conventions/spec.md#pages-that-update-themselves)
+  ([#1859](https://github.com/epiphany40223/parishkit/issues/1859)): the
+  data line and the section blocks are one status region that reads a
+  passive status fragment, `/admin/parish/data-to-fix/status/` (URL name
+  `parishsoft_fixes_status`), every 60 seconds while the page is open
+  (paused while the tab is hidden, checked at once when it is shown again;
+  the pace is the
+  [UX conventions'](../ui-conventions/spec.md#pages-that-update-themselves)
+  exception for this page).
+  The fragment admits the same roles and runs the same section reads
+  (`read_sections`) as the page, rechecks the session and the restore
+  review before it answers, accepts no query key, records no audit event
+  and never extends the sign-in; only opening the page records
+  `data_to_fix_viewed`. The counts are not read out on each check; a
+  short sentence is announced only when it changes: how many problems
+  there are, or "Nothing to fix right now.", and, when a section's read
+  failed, that some could not be counted, so a section that failed is
+  never announced as a smaller number. Nothing on the page tells
+  the reader to reload it. The page has no controls of its own, and a
+  block keeps its place when its count changes, so nothing appears or
+  disappears under the pointer
+  ([no layout shift](../ui-conventions/spec.md#no-layout-shift)).
 - **Each section stands alone.** A section whose read fails, or that cannot
   run now (no current campaign, no promoted ParishSoft data, a campaign
   without the census), keeps its block and says why in place of the count,
   with its link greyed out as an
   [unavailable menu entry](#stable-menu-shape) is when its detail page
-  would refuse the visit too. The other sections still show. A failed read
+  would refuse the visit too. The other sections still show, and a failed
+  section is counted again by the next check. A failed read, on opening
+  the page or on a check,
   is logged as a `report_shaping_failed` warning whose shaping step names
   the section (`data_to_fix_<section>`), and the page is not an error
   page.
@@ -6561,7 +6580,8 @@ Notes on the sections:
   it has tried"). When every shown section is zero, the data line adds
   "Nothing to fix right now". An empty section never disappears, so the
   page keeps one shape for a role.
-- **Audit.** A view records one `data_to_fix_viewed` event whose count is
+- **Audit.** A view records one `data_to_fix_viewed` event (the status
+  fragment's checks record none, see above) whose count is
   the total of the section counts the viewer saw, never a name, address or
   value, as the detail pages' view events do. It is one total rather than
   a count per section because the audit context's fields are a closed list

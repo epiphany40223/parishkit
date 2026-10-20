@@ -874,7 +874,9 @@ the [in-place controls](#in-place-controls); no other mechanism.
 - **Pace.** While background work is pending a status region reads fast
   (2 s backing off to 10 s, or the fixed pace the page asks for). A page
   whose state changes without the reader's own action re-reads every 30
-  seconds (Background work, Families on the form now), and a report's
+  seconds (Background work, Families on the form now; Data to fix in
+  ParishSoft every 60 seconds, because each check runs every section's
+  read, [admin portal](../admin-portal/spec.md#data-to-fix-refresh-and-empty-states)), and a report's
   figures status checks every 30 seconds while its figures are current, so
   figures a new response or ParishSoft load makes out of date are noticed.
   A watch that passes its time limit (an hour, or the page's own) slows
