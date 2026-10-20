@@ -195,11 +195,7 @@ def _decide_one(family, answer, actor_id, action, version, key, note, parish):
     stage = placement.stage
     if current != version or stage not in DECISIONS[action][1]:
         raise StaleItem(answer.id)
-    if (
-        action is Decide.BACK_TO_REVIEW
-        and undo_needs_note(Stream.CANNOT_PARTICIPATE, stage)
-        and not note.strip()
-    ):
+    if action is Decide.BACK_TO_REVIEW and undo_needs_note(stage) and not note.strip():
         # Reopening an ignored answer, or undoing Handled, needs a reason
         # (review pipeline spec, "Reviewed stage", "Undoing a terminal
         # stage"); the dialog asks for it first.

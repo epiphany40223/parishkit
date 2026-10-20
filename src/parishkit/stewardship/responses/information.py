@@ -355,7 +355,7 @@ def _decide_one(item, actor_id, action, version, key, note):
         raise StaleItem(item.pk)
     if (
         action is Decide.BACK_TO_REVIEW
-        and undo_needs_note(Stream.ADDITIONAL_INFORMATION, stage)
+        and undo_needs_note(stage)
         and not new_note(note, latest)
     ):
         # Reopening an ignored request, or undoing Handled, needs a reason

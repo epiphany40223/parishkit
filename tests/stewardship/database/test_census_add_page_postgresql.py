@@ -12,7 +12,6 @@ from uuid import uuid4
 
 import pytest
 
-from parishkit.stewardship import pipeline
 from parishkit.stewardship.accounts.policy import current_principal
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.deployment import ServiceRole
@@ -135,14 +134,11 @@ def test_entered_by_hand_moves_the_version_and_withdraw_is_final(response_servic
 
 
 def test_bulk_back_to_review_undoes_an_entered_addition_and_withdraws_an_open_one(
-    response_service, monkeypatch
+    response_service,
 ):
     """Over an entered and an open addition, Back to review reopens the
     first (its mark undone, To enter by hand) and withdraws the second, all
     or none: without a note, nothing is recorded (#1840)."""
-    monkeypatch.setattr(
-        pipeline, "TERMINAL_UNDO_STREAMS", frozenset({pipeline.Stream.CENSUS})
-    )
     harness, _, staff, rows = prepared(response_service)
     campaign = campaign_of(rows)
     first, _ = add(harness, staff, campaign, member_form(rows, "nickname", "Bo"))

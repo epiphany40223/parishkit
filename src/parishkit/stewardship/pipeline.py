@@ -550,19 +550,6 @@ TERMINAL_STAGES = frozenset(
         Stage.CONFIRMED,
     }
 )
-# The streams whose services and SQL guards already record that undo. Each
-# stream's slice of #1840 adds itself here, so a page never offers an undo
-# its stream's guard would refuse; Census changes' Entered incorrectly
-# already had its Back to review (#1737) before.
-TERMINAL_UNDO_STREAMS = frozenset(
-    {
-        Stream.CENSUS,
-        Stream.MINISTRY,
-        Stream.FINANCIAL,
-        Stream.ADDITIONAL_INFORMATION,
-        Stream.CANNOT_PARTICIPATE,
-    }
-)
 # Roles that may undo a terminal step: Ministry leaders never see those
 # stages (spec, "Role-specific actions").
 _TERMINAL_ROLES = frozenset({"staff", "administrator"})
@@ -616,16 +603,14 @@ def undo_stage(stream, placement, *, by_hand=False):
     return Stage.TO_ENTER_BY_HAND
 
 
-def undo_needs_note(stream, stage):
-    """Whether Back to review from ``stage`` of ``stream`` needs a note.
+def undo_needs_note(stage):
+    """Whether Back to review from ``stage`` needs a note saying why.
 
-    Reopening an Ignored item always did; undoing a terminal step does too
-    (spec, "Undoing a terminal stage"), on every stream that records it.
+    Reopening an Ignored item always did; undoing a terminal step does too,
+    on every stream (spec, "Undoing a terminal stage").
     """
     stage = Stage(stage)
-    return stage is Stage.IGNORED or (
-        stage in TERMINAL_STAGES and Stream(stream) in TERMINAL_UNDO_STREAMS
-    )
+    return stage is Stage.IGNORED or stage in TERMINAL_STAGES
 
 
 def role_actions(stream, roles, *, leads=False):
@@ -654,16 +639,9 @@ def stage_actions(stream, stage, *, by_hand=False):
     one step (decision 2).
     """
     stage = Stage(stage)
-    stream = Stream(stream)
     actions = _STAGE_ACTIONS.get(stage, frozenset())
-    if stream is Stream.CENSUS and stage is Stage.TO_REVIEW and by_hand:
+    if Stream(stream) is Stream.CENSUS and stage is Stage.TO_REVIEW and by_hand:
         actions |= {Action.ENTERED_BY_HAND}
-    if (
-        stage in TERMINAL_STAGES
-        and stream not in TERMINAL_UNDO_STREAMS
-        and not (stream is Stream.CENSUS and stage is Stage.ENTERED_INCORRECTLY)
-    ):
-        actions -= {Action.BACK_TO_REVIEW}
     return actions
 
 

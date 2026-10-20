@@ -402,7 +402,7 @@ class MinistryDecisions:
             raise _stale(target)
         if (
             action is Action.BACK_TO_REVIEW
-            and undo_needs_note(Stream.MINISTRY, current.stage)
+            and undo_needs_note(current.stage)
             and not decision.note.strip()
         ):
             if current.stage is Stage.IGNORED:

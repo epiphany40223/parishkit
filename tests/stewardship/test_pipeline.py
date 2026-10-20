@@ -539,25 +539,23 @@ def test_back_to_review_returns_to_the_stage_before_the_step(
 
 
 @pytest.mark.parametrize("stage", sorted(pipeline.TERMINAL_STAGES))
-def test_terminal_undo_is_offered_once_a_stream_records_it(monkeypatch, stage):
+def test_every_stream_offers_the_terminal_undo(stage):
     """Back to review on a terminal stage: Staff and Administrators, a note.
 
-    A stream offers it only once its service and guard record it
-    (``TERMINAL_UNDO_STREAMS``), and never to a Ministry leader.
+    Every stream offers it (uniform handling, #1840), never to a Ministry
+    leader; reopening Ignored needs a note too, an accepted stage's undo
+    does not.
     """
-    monkeypatch.setattr(pipeline, "TERMINAL_UNDO_STREAMS", frozenset(Stream))
     for stream in Stream:
         offered = pipeline.allowed_actions(stream, stage, STAFF, by_hand=True)
         assert Action.BACK_TO_REVIEW in offered
-        assert pipeline.undo_needs_note(stream, stage)
         leader = pipeline.allowed_actions(
             stream, stage, {"ministry_leader"}, leads=True, by_hand=True
         )
         assert leader == set()
-    monkeypatch.setattr(pipeline, "TERMINAL_UNDO_STREAMS", frozenset())
-    assert not pipeline.undo_needs_note("financial", stage)
-    assert pipeline.undo_needs_note("financial", Stage.IGNORED)
-    assert not pipeline.undo_needs_note("financial", Stage.TO_ENTER_BY_HAND)
+    assert pipeline.undo_needs_note(stage)
+    assert pipeline.undo_needs_note(Stage.IGNORED)
+    assert not pipeline.undo_needs_note(Stage.TO_ENTER_BY_HAND)
 
 
 def test_confirmable_covers_the_handling_registry():

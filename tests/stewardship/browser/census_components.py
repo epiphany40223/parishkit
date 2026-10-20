@@ -8,12 +8,10 @@ it, as the view answers with its page redrawn.
 """
 
 from datetime import UTC, datetime, timedelta
-from unittest import mock
 
 from django.template.loader import render_to_string
 from django.urls import reverse
 
-from parishkit.stewardship import pipeline
 from parishkit.stewardship.reports.census_change_views import (
     KIND_LABELS,
     ROUTE_LABELS,
@@ -291,20 +289,13 @@ def components(context, admin):
         )
 
     def undo_pages(size):
-        """The added row Entered by hand, and after its undo (#1840).
-
-        Drawn as once Census changes record the undo of a terminal stage
-        (``pipeline.TERMINAL_UNDO_STREAMS``), which the census proposals'
-        slice of #1840 turns on for the stream; harmless after it.
-        """
-        streams = pipeline.TERMINAL_UNDO_STREAMS | {pipeline.Stream.CENSUS}
-        with mock.patch.object(pipeline, "TERMINAL_UNDO_STREAMS", streams):
-            return {
-                ADDED_ENTERED: page(size, added=True, step=("entered", 1)),
-                ADDED_REOPENED: page(
-                    size, ADDED_REOPENED_NOTICE, added=True, step=("reopened", 2)
-                ),
-            }
+        """The added row Entered by hand, and after its undo (#1840)."""
+        return {
+            ADDED_ENTERED: page(size, added=True, step=("entered", 1)),
+            ADDED_REOPENED: page(
+                size, ADDED_REOPENED_NOTICE, added=True, step=("reopened", 2)
+            ),
+        }
 
     size = {"size": "25"}
     return {

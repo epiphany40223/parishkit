@@ -383,7 +383,7 @@ def record_resolution(
     history = terminal and replaced(proposal)
     undo = terminal and allowed(proposal, action, replaced=history)
     stage = terminal_placement(proposal).stage if undo else None
-    if undo and undo_needs_note(Stream.CENSUS, stage) and not note.strip():
+    if undo and undo_needs_note(stage) and not note.strip():
         raise NoteRequired("Say why this census change goes back.")
     incorrect = entered_incorrectly(proposal)
     # A New Member's Member ID corrected (#1773): a mark made again over the

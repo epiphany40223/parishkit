@@ -336,7 +336,7 @@ class PledgeDecisions:
             # (#1840), need a reason; the guard requires it too.
             if (
                 decision.action is Action.BACK_TO_REVIEW
-                and undo_needs_note(Stream.FINANCIAL, stage)
+                and undo_needs_note(stage)
                 and not decision.note
             ):
                 raise ValueError(

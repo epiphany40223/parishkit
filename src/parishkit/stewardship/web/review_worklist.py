@@ -529,7 +529,7 @@ def _decorate(stream, row, roles, prefix, columns, silent=frozenset()):
     )
     key = uuid4()
     # Reopening an Ignored item, and undoing a terminal step, need a note.
-    reopen = undo_needs_note(stream, placement.stage)
+    reopen = undo_needs_note(placement.stage)
     own_entered = bool(row.get("entered_template"))
     for icon in icons:
         if icon["selected"]:

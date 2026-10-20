@@ -172,7 +172,7 @@ def _withheld(row):
     ParishSoft value is unknown, which waits for a refresh: Accept on a
     Conflict is decided against ParishSoft's current value. Back to review
     on a change an open addition covers, on a terminal change a later
-    response replaced, and on an entered addition.
+    response replaced.
     """
     withheld = set()
     if row["editor"] is None:
@@ -185,10 +185,6 @@ def _withheld(row):
     if row.get("replaced") and row["placement"].stage in TERMINAL_STAGES:
         # A terminal change a later response of the Family replaced is
         # history: it takes no undo (#1840), as the service refuses.
-        withheld.add(Action.BACK_TO_REVIEW)
-    if row.get("added") and row["placement"].stage is Stage.ENTERED_BY_HAND:
-        # An entered parish addition records no undo until #1840's addition
-        # slice (its one resolution per addition), so it offers none.
         withheld.add(Action.BACK_TO_REVIEW)
     return withheld
 

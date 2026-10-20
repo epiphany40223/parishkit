@@ -7,7 +7,6 @@ from html import unescape
 import pytest
 from django.template.loader import render_to_string
 
-from parishkit.stewardship import pipeline
 from parishkit.stewardship.pipeline import (
     Action,
     Decision,
@@ -445,14 +444,11 @@ def added(**values):
     )
 
 
-def test_an_entered_addition_is_undone_back_to_enter_by_hand(monkeypatch):
+def test_an_entered_addition_is_undone_back_to_enter_by_hand():
     """Back to review on an entered addition undoes the mark (#1840): its
     icon asks for a note and says where it goes, not that it is withdrawn;
     once reopened, it is To enter by hand, Added by the parish, at the next
     version, its last decision the undo with its note."""
-    monkeypatch.setattr(
-        pipeline, "TERMINAL_UNDO_STREAMS", frozenset({pipeline.Stream.CENSUS})
-    )
     entered = added(step="entered", step_sequence=1, step_at=SUBMITTED)
     assert (entered["stage"], entered["version"]) == ("entered_by_hand", 2)
     reopened = added(
@@ -575,11 +571,11 @@ def test_every_terminal_row_offers_back_to_review_with_a_note():
     assert back("held")["body"] == (
         "Confirmed is undone: the item goes back to To review. Say why."
     )
-    for name in ("entered", "one_step", "updated", "held"):
+    for name in ("entered", "one_step", "updated", "held", "add-a2"):
         assert back(name)["choice"] == "reopen", name
         assert rows[name]["kinds"] == "back_to_review", name
         assert rows[name]["choice"] == "reopen", name
-    for name in ("gone", "covered", "add-a2"):
+    for name in ("gone", "covered"):
         assert back(name) is None, name
 
 
