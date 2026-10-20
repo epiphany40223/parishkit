@@ -165,7 +165,10 @@ def test_add_on_a_day_opens_new_with_that_date_and_returns_here(
     dialog = page[page.index('<dialog id="schedule-review"') :]
     assert f'data-review-return="{CALENDAR}?month=2054-10"' in dialog
     assert 'data-review-outcome="schedules-outcome"' in dialog
-    assert f'<form method="post" action="{LIST}" data-review-apply>' in dialog
+    assert (
+        '<form id="schedule-review-apply" method="post" '
+        f'action="{LIST}" data-review-apply>' in dialog
+    )
     assert f'action="{NEW}" id="schedule-entry-form"' in page
     # Plain New is unchanged: blank, back to the list.
     plain = unescape(browser.get(NEW).content.decode())
