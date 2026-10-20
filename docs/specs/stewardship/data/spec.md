@@ -1099,7 +1099,11 @@ Every final click creates an immutable `Submission` version containing:
   that answers the financial questions and only when that snapshot's giving
   read is proven complete, else null (frozen migration 0136, provisional
   number; the review pipeline's A for the pledge,
-  [Financial stream](../review-pipeline/spec.md#financial-stream)).
+  [Financial stream](../review-pipeline/spec.md#financial-stream)); and
+- `reviewed_view` and `shown_items`, what the response's form showed, copied
+  unchanged from its form baseline
+  ([shown items](../review-pipeline/spec.md#shown-items); added by frozen
+  migration 0143).
 
 The current effective live response points to the latest accepted live version.
 Test versions are isolated from live calculations, response prefilling,
