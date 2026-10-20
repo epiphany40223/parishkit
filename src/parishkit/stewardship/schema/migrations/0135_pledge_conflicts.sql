@@ -1,11 +1,11 @@
--- Frozen forward migration file 0142 (the repository-wide file sequence;
+-- Frozen forward migration file 0135 (the repository-wide file sequence;
 -- provisional, the coordinator assigns the final number at merge): the
 -- refresh re-evaluation of To review and conflicting pledges (#1747, review
 -- pipeline). This file is installed by its Django migration in the reports
 -- app and must never change once released;
 -- tests/stewardship/test_schema_migration_files.py pins its digest.
 --
--- 0139 (#1704) re-evaluates only decided pledges, and records nothing for a
+-- 0134 (#1704) re-evaluates only decided pledges, and records nothing for a
 -- pledge ParishSoft holds at a third amount (a Conflict the stream could not
 -- show). The review pipeline (docs/specs/stewardship/review-pipeline/spec.md,
 -- "Financial stream", Pledge confirmation) now re-evaluates To review pledges
@@ -18,14 +18,14 @@
 --     (confirmed, a conflict, or unchanged), ParishSoft's amount and whether
 --     the refresh was full. It counts while the item is at that version and
 --     no later live response changes the pledge answer.
---   * stewardship_pledge_refresh_check (0139's): its outcomes gain conflict,
+--   * stewardship_pledge_refresh_check (0134's): its outcomes gain conflict,
 --     for an accepted pledge not yet marked.
 --   * stewardship_pledge_review.baseline_pledge (new column, NULL for every
 --     existing row): the item's A after the row, set by the guard. A decision
 --     taken on a Conflict records the Conflict's amount ("R becomes the
 --     item's new A"); Back to review and the mark carry it while the Family's
 --     pledge is unchanged. NULL reads as $0.00.
---   * stewardship_pledge_stages_v1 (new): 0135's selection with each item's
+--   * stewardship_pledge_stages_v1 (new): 0127's selection with each item's
 --     latest counting check of either kind, so the page, the counts, the
 --     pledge review guard and the worker's selection share Confirmed,
 --     Conflict and Entered incorrectly, with each item's A, the A a
@@ -37,10 +37,10 @@
 --     review, and the decided ones in force, never a Confirmed one) with C,
 --     A, the amount recorded at the mark (A when it recorded none) and the
 --     latest check. The worker still reads no response answers or decision
---     rows itself. 0139's v1 is left in place, called by nothing and no
+--     rows itself. 0134's v1 is left in place, called by nothing and no
 --     longer granted: its EXECUTE is revoked from the worker's login here
 --     (database-grants never revokes), so a later migration may drop it.
---   * 0139's pledge refresh check guard and 0135's pledge review guard,
+--   * 0134's pledge refresh check guard and 0127's pledge review guard,
 --     replaced in place: the check guard reads v2 and admits a Conflict
 --     (R differing from A and C) on an accepted pledge not yet marked, an
 --     unchanged check there only at A, and on a marked pledge an unchanged
@@ -65,10 +65,10 @@ ALTER TABLE "stewardship_pledge_refresh_check" ADD CONSTRAINT "pledge_refresh_ch
 
 ALTER TABLE "stewardship_pledge_review" ADD COLUMN "baseline_pledge" numeric(24, 2) NULL;
 
--- Each Family's pledge item with its final stage: 0135's selection (the
+-- Each Family's pledge item with its final stage: 0127's selection (the
 -- stage its decision rows give, here base_stage) moved on by the item's
 -- latest check that counts. A decided item's check counts while its decision
--- row is the latest and in force (0139); a To review item's while the item is
+-- row is the latest and in force (0134); a To review item's while the item is
 -- at the check's version and no live response since the checked one changes
 -- the pledge answer. ``baseline`` is the item's A: the in-force row's
 -- baseline_pledge, else $0.00. ``next_baseline`` is what a decision recorded
@@ -165,10 +165,10 @@ $$;
 ALTER FUNCTION public.stewardship_pledge_refresh_items_v2(uuid, uuid, uuid) SECURITY DEFINER;
 REVOKE ALL ON FUNCTION public.stewardship_pledge_refresh_items_v2(uuid, uuid, uuid) FROM PUBLIC;
 
--- 0139's check guard of a decided pledge, reading v2 (the same items, now
+-- 0134's check guard of a decided pledge, reading v2 (the same items, now
 -- with A): a Conflict on an accepted pledge not yet marked, an unchanged
 -- check there only at A, and on a marked pledge an unchanged check only at
--- the mark (#1747). Every other rule is 0139's, unchanged.
+-- the mark (#1747). Every other rule is 0134's, unchanged.
 CREATE OR REPLACE FUNCTION public.stewardship_pledge_refresh_check_guard_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE
@@ -177,7 +177,7 @@ BEGIN
     IF TG_OP<>'INSERT' THEN
         RAISE EXCEPTION 'Pledge refresh checks are immutable' USING ERRCODE='23514';
     END IF;
-    -- Inside the promotion of the current snapshot, as 0136's checks are:
+    -- Inside the promotion of the current snapshot, as 0132's checks are:
     -- the lease's phase says whether the refresh is full. Only the source
     -- worker's login holds INSERT.
     SELECT lease.phase INTO phase FROM stewardship_source_current current_source
@@ -280,10 +280,10 @@ CREATE TRIGGER stewardship_pledge_open_check_guard
     BEFORE INSERT OR UPDATE OR DELETE ON public.stewardship_pledge_open_check
     FOR EACH ROW EXECUTE FUNCTION public.stewardship_pledge_open_check_guard_v1();
 
--- 0139's pledge review guard, placing the item through stages_v1 (#1747):
+-- 0134's pledge review guard, placing the item through stages_v1 (#1747):
 -- no decision on a Confirmed pledge, Accept, Edit and Ignore on a Conflict,
 -- and the row's A (baseline_pledge) set here. Entered incorrectly still
--- offers nothing until #1737. Every other rule is 0139's, unchanged.
+-- offers nothing until #1737. Every other rule is 0134's, unchanged.
 CREATE OR REPLACE FUNCTION public.stewardship_pledge_review_guard_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
 DECLARE family public.stewardship_family_campaign%ROWTYPE;
@@ -352,7 +352,7 @@ END $$;
 
 -- The worker now reads v2 alone; database-grants never revokes, and the
 -- worker refuses to start holding EXECUTE on a definer it does not declare,
--- so an environment that granted 0139's v1 loses it here.
+-- so an environment that granted 0134's v1 loses it here.
 DO $revoke$
 BEGIN
     IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname='pk_stewardship_worker') THEN

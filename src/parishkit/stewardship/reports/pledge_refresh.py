@@ -7,9 +7,9 @@ Confirmed against ParishSoft's pledge for the upcoming stewardship year
 A pledge's stage is derived from its ``PledgeReview`` rows, so the refresh
 records what it found in a check row, in the same promotion transaction: a
 decided pledge's in a ``PledgeRefreshCheck`` naming its decision row (frozen
-migration 0139, provisional number), a To review pledge's in a
+migration 0134, provisional number), a To review pledge's in a
 ``PledgeOpenCheck`` naming the Family's current response and the item's
-version (0142, provisional). The shared selection
+version (0135, provisional). The shared selection
 ``stewardship_pledge_stages_v1`` places the pledge from its latest check.
 
 - ``pledge_checks`` yields the checks one promotion owes, which
@@ -58,7 +58,7 @@ from parishkit.stewardship.source.snapshot_models import SourceCurrent, SourceSn
 from .money import MoneyAmount
 from .pledge_models import PledgeOpenCheck, PledgeRefreshCheck
 
-# The stages (0135's, from the decision rows alone) whose check names a
+# The stages (0127's, from the decision rows alone) whose check names a
 # decision row; a To review pledge's check names its response (#1747).
 CHECKED_STAGES = frozenset({"to_enter_by_hand", "entered_by_hand", "ignored"})
 OPEN = "to_review"
@@ -76,7 +76,7 @@ UPCOMING = (
     "FROM unnest(%s::bigint[]) AS duid"
 )
 # The pledges a refresh re-evaluates, read through the source worker's
-# definer selection (0142), which the guards read too: the worker reads no
+# definer selection (0135), which the guards read too: the worker reads no
 # response answers or decision rows itself.
 ITEMS = (
     "SELECT family_id, family_duid, submission_id, review_id, sequence, "

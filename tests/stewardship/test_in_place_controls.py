@@ -136,10 +136,9 @@ HOSTED = {
     # Sent mail's bulk review region (#382 M4): Confirm and Continue
     # sit inside it, and the bulk panel draws it.
     "delivery-bulk-review.html": ("delivery-bulk.html",),
-    # The roster tick (#528): on the request page, and on each row of
-    # Roster changes to enter.
+    # The roster tick (#528) on the request page; Ministry requests
+    # marks through its review worklist (#1687).
     "roster-tick.html": ("ministry-followup.html",),
-    "roster-tick-row.html": ("ministry-roster.html",),
     # By Ministry's count links on Ministry requests apply their filters to
     # the review worklist's table region, which the shared component draws
     # (#1684).
@@ -677,7 +676,10 @@ def test_share_options_review_in_the_dialog():
     # A compact review (#1356): the button says Save, the dialog asks the
     # question and its lines describe it.
     assert 'translate "Change an option to save it." as option_hint' in text
-    assert "review-changes-button.html' with hint=option_hint label=save_label" in text
+    assert (
+        'review-changes-button.html\' with describedby="share-complete-hint" '
+        "hint=option_hint label=save_label"
+    ) in text
     assert 'translate "Save" as save_label' in text
     assert 'translate "Save the share options?" as review_title' in text
     assert 'describedby="share-review-summary" %}' in text

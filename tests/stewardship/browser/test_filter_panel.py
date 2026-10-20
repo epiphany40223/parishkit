@@ -115,9 +115,9 @@ def test_in_place_apply_updates_the_count_and_keeps_the_panel(page, component_or
 
 # The first data each report page shows (the Family directory opens Filters by
 # default, so it is not here): the summary of Financial stewardship, which
-# sits above its filters. Census changes (#1683) and the Additional
-# information and Limitations worklists (#1685) show their filters always
-# open, with no panel.
+# sits above its filters. Census changes (#1683), Additional information and
+# Limitations (#1685) are worklists: their filters are always open, with no
+# panel.
 FIRST_DATA = {
     "/financial-unfiltered": ".stat-tiles",
 }
@@ -202,8 +202,8 @@ def test_open_filters_are_a_compact_grid(page, component_origin, path):
     """On a laptop the filters share rows, so the open panel stays short.
 
     The panel's form is a grid of the fields (#1411): at least three fields
-    share its first row, and Apply sits beside the last field rather than on
-    a row of its own below them.
+    share its first row. Where Apply filters and Clear filters sit is
+    ``test_filter_actions_place``'s (#1776).
     """
     page.set_viewport_size(LAPTOP_VIEWPORT)
     page.goto(component_origin + path)
@@ -215,10 +215,6 @@ def test_open_filters_are_a_compact_grid(page, component_origin, path):
     cells = form.evaluate(CELLS)
     first_row = [left for left, bottom in cells if abs(bottom - cells[0][1]) <= 1]
     assert len(first_row) >= 3, cells
-    button = page.get_by_role("button", name="Apply filters").bounding_box()
-    last = form.locator(":scope > div:not(.filter-actions)").last.bounding_box()
-    assert button["x"] > last["x"], (button, last)
-    assert button["y"] < last["y"] + last["height"], (button, last)
 
 
 @pytest.mark.parametrize("path", OPEN_PANELS)

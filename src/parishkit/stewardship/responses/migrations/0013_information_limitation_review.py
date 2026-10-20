@@ -1,7 +1,7 @@
 """Forward migration: Additional information and Limitations reviews (#1685).
 
 Its SQL is the frozen file
-``schema/migrations/0134_information_limitation_review.sql`` (number 0134,
+``schema/migrations/0126_information_limitation_review.sql`` (number 0126,
 provisional until it is assigned in merge order), read whole and never
 parsed. It adds each Additional information Staff revision's review
 decision and replaces the revision guard so every new revision states one
@@ -30,18 +30,17 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0134_information_limitation_review.sql"
+    / "0126_information_limitation_review.sql"
 )
 
 
 class Migration(migrations.Migration):
     dependencies = [
-        # This app's previous migration, so the app keeps one leaf (the
-        # census pipeline's, which installs frozen file 0131), and the
-        # migration that installs the previous frozen file (0132, the
-        # Ministry review pipeline), so the files apply in prefix order.
-        ("stewardship_responses", "0013_census_pipeline_review"),
-        ("stewardship_workflows", "0003_ministry_review_pipeline"),
+        # This app's previous migration, so the app keeps one leaf, and the
+        # migration that installs the previous frozen file (0125), so the
+        # files apply in prefix order.
+        ("stewardship_responses", "0012_gender_by_hand"),
+        ("stewardship_accounts", "0030_secret_request_session"),
     ]
 
     operations = [

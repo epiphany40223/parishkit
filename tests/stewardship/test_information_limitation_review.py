@@ -30,7 +30,7 @@ def revision(decision):
     ],
 )
 def test_staff_ignored_reads_old_revisions_by_their_flags(latest, ignored):
-    """No revision is To review; a pre-0134 one left not needed is Ignored."""
+    """No revision is To review; a pre-0126 one left not needed is Ignored."""
     assert staff_ignored(latest) is ignored
 
 

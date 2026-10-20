@@ -275,6 +275,27 @@ def census_placement(
     return Placement(Stage.TO_ENTER_BY_HAND, accepted)
 
 
+CENSUS_ADDITION_STATES = frozenset({"open", "entered", "withdrawn"})
+
+
+def census_addition_placement(state):
+    """A parish-added census change's stage (``CensusAddition``, #1710).
+
+    ``state`` is ``open`` (no later step), ``entered`` or ``withdrawn``
+    (its ``CensusAdditionResolution``). An Add starts Accepted, shown as
+    Added by the parish (spec, "Reviewed stage"). Until the update run is
+    rebuilt (#1688) nothing writes an addition to ParishSoft, so every one
+    is To enter by hand, whatever the handling registry says of its field;
+    Back to review withdraws it, into History.
+    """
+    if state not in CENSUS_ADDITION_STATES:
+        raise ValueError("Unknown census addition state.")
+    if state == "withdrawn":
+        return Placement(Stage.HISTORY)
+    stage = Stage.ENTERED_BY_HAND if state == "entered" else Stage.TO_ENTER_BY_HAND
+    return Placement(stage, Decision.ADDED)
+
+
 # --- Ministry stream -------------------------------------------------------
 
 MINISTRY_OPEN_STATES = frozenset({"new", "assigned", "in_progress"})
@@ -341,7 +362,7 @@ def information_placement(
     defaults to false, so "Not needed" cannot be told from "never looked
     at": ``staff_ignored`` is whether the latest Staff revision ignored the
     item (``responses.information.staff_ignored``: its review decision, or,
-    for a revision saved before migration 0134, follow-up left not needed,
+    for a revision saved before migration 0126, follow-up left not needed,
     #1685). An item no Staff member has saved is To review, never silently
     Ignored.
     """

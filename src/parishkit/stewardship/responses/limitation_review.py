@@ -6,7 +6,7 @@ live response, as the Limitations report reads it. Each worklist decision
 ``LimitationReview`` row naming the answer and the response it was decided
 on, and stays in force while every later live response gives the same
 answer (``stewardship_limitation_in_force_v1``,
-schema/migrations/0134_information_limitation_review.sql). An answer's
+schema/migrations/0126_information_limitation_review.sql). An answer's
 version is the number of decisions recorded for it.
 
 An answer is named on the page by ``answer_id``: its kind's letter, the

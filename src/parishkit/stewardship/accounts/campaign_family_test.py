@@ -23,7 +23,12 @@ from parishkit.stewardship.campaigns.models import (
     ScheduleDefinition,
 )
 from parishkit.stewardship.campaigns.work_locks import work_transaction
-from parishkit.stewardship.jobs.delivery_metadata import family_duid
+from parishkit.stewardship.jobs.delivery_metadata import (
+    DUID_LONGEST,
+    DUID_TEXT,
+    NOT_A_DUID,
+    family_duid,
+)
 from parishkit.stewardship.jobs.family_mail_models import (
     FAMILY_TEST_LIMIT,
     FamilyMailTest,
@@ -36,6 +41,7 @@ from parishkit.stewardship.source.snapshot_models import SourceCurrent
 from parishkit.stewardship.source.snapshot_names import snapshot_family_names
 from parishkit.stewardship.source.source_status import NAME_NOT_RECORDED
 from parishkit.stewardship.storage import StaleRecordError
+from parishkit.stewardship.web.field_rules import SPACE
 from parishkit.stewardship.web.refusals import load_preview
 
 from .admin_editing import editable_configuration, principal
@@ -105,14 +111,39 @@ class FamilyTestPreview:
         }
 
 
+# Why a list of DUIDs is refused when it has too many or one twice.
+NOT_DISTINCT = "Enter up to ten distinct Family DUIDs."
+
+
 def parse_family_duids(value):
-    """Accept at most ten distinct exact DUIDs, whitespace-separated; never names."""
+    """Accept at most ten distinct exact DUIDs, whitespace-separated; never names.
+
+    The Test with Families page reads a list the same way as it is typed
+    (``duid_list_rules``, ui-v1.js's data-duid-list); the shared case table
+    runs one set of examples through both.
+    """
     if type(value) is not str or len(value) > 400:
         raise ValueError("Enter up to ten Family DUIDs.")
     duids = [family_duid(token) for token in value.split()]
     if len(duids) > FAMILY_TEST_LIMIT or len(set(duids)) != len(duids):
-        raise ValueError("Enter up to ten distinct Family DUIDs.")
+        raise ValueError(NOT_DISTINCT)
     return tuple(duids)
+
+
+def duid_list_rules():
+    """The rules parse_family_duids applies, for the page script's own check.
+
+    ``space`` is what ``str.split`` splits at (Python's whitespace), as a
+    class body both engines read.
+    """
+    return {
+        "space": SPACE,
+        "token": DUID_TEXT,
+        "longest": DUID_LONGEST,
+        "limit": FAMILY_TEST_LIMIT,
+        "exact": NOT_A_DUID,
+        "distinct": NOT_DISTINCT,
+    }
 
 
 def _choice(duid, row, population, current):

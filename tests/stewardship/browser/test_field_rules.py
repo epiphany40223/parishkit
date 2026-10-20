@@ -23,12 +23,24 @@ pytestmark = pytest.mark.parametrize(
 CASES = json.loads(
     (Path(__file__).parents[1] / "fixtures" / "field_rule_cases.json").read_text()
 )
-# Where each rule's field is drawn: the page and the field's label.
+# Where each rule's field (or dedicated check's) is drawn: the page and the
+# field's label.
 FIELDS = {
     "parish_phone": ("/setup-parish", "Parish telephone"),
     "parish_website": ("/setup-parish", "Parish website"),
     "online_giving_url": ("/setup-parish", "Online giving URL"),
     "slack_channel_id": ("/setup-slack", "Slack channel ID"),
+    "email_address": ("/setup-testing", "Testing email address"),
+    "email_lines": ("/setup-access", "Staff email addresses"),
+    "sender_name": ("/setup-mail", "From name"),
+    "parishsoft_key": ("/setup-credential", "ParishSoft API key"),
+    "slack_token": ("/setup-credential-slack", "Slack bot token"),
+    "email_subject": ("/content-settings", "Email subject"),
+    "share_label": ("/share-settings", "Option label"),
+    "family_test_duids": (
+        "/family-tests-check",
+        "Family DUIDs, one per line (at most ten)",
+    ),
 }
 PHONE_RULE = "Enter a ten-digit US telephone number, such as (212) 555-1234."
 # The browser's whole verdict on a field's current value.
@@ -63,18 +75,26 @@ def spot(locator):
 
 @pytest.mark.parametrize("name", sorted(FIELDS))
 def test_every_example_gets_the_servers_verdict(page, component_origin, name):
-    """The drawn pattern admits exactly the examples the server admits."""
+    """The drawn pattern (or the page script's own check, for a DUID
+    list) admits exactly the examples the server admits."""
     assert set(FIELDS) == set(CASES)
     failures = watch(page)
     address, label = FIELDS[name]
     page.goto(component_origin + address)
     if name == "slack_channel_id":
         page.get_by_label("Enable Slack notifications").check()
-    field = page.get_by_label(label)
+    field = page.get_by_label(label).first
+    multiline = field.evaluate("field => field.matches('textarea')")
     for verdict, values in CASES[name].items():
         for value in values:
+            if not multiline and ("\n" in value or "\r" in value):
+                # A text box drops line breaks from any value it is given,
+                # so it can never send one.
+                continue
             field.evaluate(ENTER, value)
-            assert field.input_value() == value
+            # A textarea holds each line break as "\n" (and sends "\r\n").
+            held = value.replace("\r\n", "\n").replace("\r", "\n")
+            assert field.input_value() == (held if multiline else value)
             assert field.evaluate(VALID) is (verdict == "accept"), (value, verdict)
     assert not failures
 
@@ -158,4 +178,146 @@ def test_unchanged_words_leave_the_live_region_alone(page, component_origin):
     phone.fill("(212) 555-1234")
     hidden(line)
     assert page.evaluate("window.ruleWrites") > 0
+    assert not failures
+
+
+def test_a_malformed_from_address_holds_save_and_continue(page, component_origin):
+    """Setup › Outgoing email: an address the browser's own email check
+    would take (a@b) but the server refuses keeps Save and continue
+    unavailable with the field's words, said at the field once left."""
+    failures = watch(page)
+    page.goto(component_origin + "/setup-mail")
+    page.get_by_label("Delegated mailbox").first.fill("mail@example.org")
+    page.get_by_label("Reply-to address").first.fill("mail@example.org")
+    sender = page.get_by_label("From address").first
+    save = page.get_by_role("button", name="Save and continue")
+    hint = page.locator("#setup-complete-hint")
+    sender.fill("parish@example")
+    assert save.is_disabled()
+    has_text(hint, "Enter a valid From address.")
+    sender.press("Tab")
+    has_text(page.locator("#id_sender_error"), "Enter a valid From address.")
+    sender.fill('"Parish\\ office"@example.org')
+    has_attribute(sender, "aria-invalid", "false")
+    hidden(page.locator("#id_sender_error"))
+    assert save.is_enabled()
+    assert not failures
+
+
+@pytest.mark.parametrize("value", ["\x85", "\x1c \u3000"])
+def test_only_pythons_whitespace_is_still_empty(page, component_origin, value):
+    """A required address holding only what the server strips (U+0085 and
+    U+001C included, which JavaScript's trim() keeps) is empty, so Save and
+    continue waits for it, as the server's required check refuses it."""
+    failures = watch(page)
+    page.goto(component_origin + "/setup-testing")
+    address = page.get_by_label("Testing email address").first
+    address.evaluate(ENTER, value)
+    assert page.get_by_role("button", name="Save and continue").is_disabled()
+    assert not failures
+
+
+def test_an_address_list_line_is_checked_at_its_field(page, component_origin):
+    """Setup › Access: a textarea of addresses follows the list rule as it
+    is typed; a malformed line is said at the field, and fixing it clears
+    the field's mark on the same keystroke."""
+    failures = watch(page)
+    page.goto(component_origin + "/setup-access")
+    staff = page.get_by_label("Staff email addresses").first
+    line = page.locator("#id_staff_addresses_error")
+    save = page.get_by_role("button", name="Save and continue")
+    staff.fill("a@example.org\nnot an address")
+    assert save.is_disabled()
+    staff.press("Tab")
+    has_text(line, "Enter one email address on each line, at most fifty.")
+    staff.fill("a@example.org\nb@example.org")
+    has_attribute(staff, "aria-invalid", "false")
+    hidden(line)
+    assert save.is_enabled()
+    assert not failures
+
+
+def test_check_these_families_waits_for_distinct_duids(page, component_origin):
+    """Test with Families: one Family twice (as 1,234 and 1234) keeps Check
+    these Families unavailable with the server's words; distinct DUIDs
+    release it."""
+    failures = watch(page)
+    page.goto(component_origin + "/family-tests-check")
+    field = page.get_by_label("Family DUIDs, one per line (at most ten)")
+    check = page.get_by_role("button", name="Check these Families")
+    hint = page.locator("#family-test-check-hint")
+    field.fill("1,234\n1234")
+    assert check.is_disabled()
+    has_text(hint, "Enter up to ten distinct Family DUIDs.")
+    field.fill("1,234 x")
+    has_text(hint, "Use an exact Family DUID.")
+    field.fill("1,234\n5678")
+    assert check.is_enabled()
+    assert not failures
+
+
+def test_a_financial_period_end_must_be_one_year_on(page, component_origin):
+    """Campaign settings: a financial period's end may only be the day
+    before its start's first anniversary; that day is its min and max."""
+    failures = watch(page)
+    page.goto(component_origin + "/campaign-settings")
+    page.locator("#id_financial_enabled").check()
+    page.get_by_label("Upcoming financial period start").fill("2028-02-29")
+    end = page.get_by_label("Upcoming financial period end")
+    has_attribute(end, "min", "2029-02-27")
+    has_attribute(end, "max", "2029-02-27")
+    end.fill("2029-02-28")
+    assert end.evaluate("field => field.validity.rangeOverflow")
+    end.fill("2029-02-27")
+    assert end.evaluate(VALID)
+    assert not failures
+
+
+def test_an_empty_logo_file_is_refused_at_once(page, component_origin):
+    """Parish logos: a 0-byte file is refused as soon as it is chosen, in
+    the server's words, in the field's reserved line, and Upload waits."""
+    failures = watch(page)
+    page.goto(component_origin + "/branding-settings")
+    logo = page.get_by_label("Parish logo").first
+    logo.set_input_files({"name": "logo.png", "mimeType": "image/png", "buffer": b""})
+    line = page.locator("#id_logo_error")
+    has_text(line, "The chosen file is empty (0 bytes). Choose another file.")
+    assert page.get_by_role("button", name="Upload and review logos").is_disabled()
+    assert not failures
+
+
+def test_an_unknown_subject_placeholder_holds_preview(page, component_origin):
+    """Pages and emails: a subject naming a placeholder that doesn't exist
+    keeps Preview changes unavailable with the subject rule's words."""
+    failures = watch(page)
+    page.goto(component_origin + "/content-settings")
+    subject = page.get_by_label("Email subject").first
+    preview = page.get_by_role("button", name="Preview changes")
+    subject.fill("Thanks, {{ nope }}")
+    assert preview.is_disabled()
+    has_text(
+        page.locator("#content-complete-hint"),
+        "Use only the documented placeholders, on one line.",
+    )
+    subject.fill("Thanks, {{ parish_name }}")
+    assert preview.is_enabled()
+    assert not failures
+
+
+def test_a_private_share_label_placeholder_holds_save(page, component_origin):
+    """Share options: a label naming a Family's code keeps Save unavailable
+    with the label rule's words."""
+    failures = watch(page)
+    page.goto(component_origin + "/share-settings")
+    label = page.get_by_label("Option label").first
+    save = page.get_by_role("button", name="Save", exact=True)
+    label.fill("Code {{ family_code }}")
+    assert save.is_disabled()
+    has_text(
+        page.locator("#share-complete-hint"),
+        "Use visible text and parish_name, pronoun, campaign_year, "
+        "financial_period, financial_start or financial_end placeholders.",
+    )
+    label.fill("Other gift to {{ parish_name }}")
+    assert save.is_enabled()
     assert not failures
