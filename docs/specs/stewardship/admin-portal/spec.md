@@ -6968,10 +6968,10 @@ The hub is built in slices, each its own pull request; each subsection below
 says which slice delivers it:
 
 1. **Slice 1:** the header strip, the tab row and the Timeline tab.
-2. **Slice 2:** the Family tab and the Member tabs' census fields. The
-   Member tabs' Ministry joins and leaves follow in a later slice.
-3. **Slice 3:** the Financial tab.
-4. **Slice 4:** the Cannot participate and Additional information tab.
+2. **Slice 2:** the Family tab and the Member tabs' census fields.
+3. **Slice 3:** the [Financial tab](#hub-financial-tab).
+4. **Slice 4:** the [Additional tab](#hub-additional-tab), and the Member
+   tabs' [Ministry joins and leaves](#member-tabs-ministry-joins-and-leaves).
 
 ### Hub header strip
 
@@ -7042,23 +7042,21 @@ information", with the tabs in this order:
    Members come from it ([Family and Member tabs](#family-and-member-tabs)).
 4. **Financial**: the Family's financial information. Shown when Financial
    stewardship is part of the campaign.
-5. **Cannot participate and Additional information**. Shown when Ministry
-   stewardship (where the cannot-participate answers are given) or
-   Additional information is part of the campaign.
+5. **Additional**: the cannot-participate answers and Additional
+   information. Shown when Ministry stewardship (where the
+   cannot-participate answers are given) or Additional information is part
+   of the campaign.
 
 A tab whose subject is not part of the campaign is left out, not greyed
 ([conditional fields](../ui-conventions/spec.md#conditional-fields)).
 
-**Until each slice lands**, a tab that applies to the campaign but is not
-built yet is drawn as an
+While the slices were landing, a tab that applied to the campaign but was
+not built yet was drawn as an
 [unavailable tab](../ui-conventions/spec.md#tabs) with the reason "Coming
-soon", rather than left out. The Administrator, the hub's main reader, sees
-its whole shape from the first slice, and each later slice only turns its
-tabs on. Member tabs are the exception: naming each Member needs the census
-read that slice 2 adds, so slice 1 draws none, and slice 2 adds them. In a
-campaign with Ministry stewardship but no census, each Member tab is drawn
-unavailable ("Coming soon") until the slice that shows Ministry joins and
-leaves lands.
+soon", so the Administrator saw the hub's whole shape from the first slice.
+Since slice 4 every tab is built, so no hub tab is drawn "Coming soon" any
+more; a Member tab in a campaign with Ministry stewardship but no census
+opens on its Ministry joins and leaves.
 
 Administrators and Staff both see every tab, since both review these
 streams; Ministry leaders cannot open the page. Within the Timeline tab each
@@ -7126,12 +7124,13 @@ history. Member tabs always show (Administrator, R39 finding 8): before the
 Family's first response with census answers, there is one tab per active,
 living Member of the Family in the current ParishSoft data, by Member DUID,
 labelled with the ParishSoft name, and the Family tab says it has no census
-answers yet. Such a tab shows only its mark: **No submission yet** when the
-Family has no response, saying the Member's answers appear once the Family
-submits, or **No census answers yet** when the Family answered before census
-joined the campaign, saying they appear once the Family answers again. Once
-a response gives Member tabs, the tabs follow that response: a Member who
-appears in ParishSoft after it has no tab until the Family answers again.
+answers yet. Such a tab shows no census part, only its mark: **No
+submission yet** when the Family has no response, saying the Member's
+answers appear once the Family submits, or **No census answers yet** when
+the Family answered before census joined the campaign, saying they appear
+once the Family answers again. Once a response gives Member tabs, the tabs
+follow that response: a Member who appears in ParishSoft after it has no tab
+until the Family answers again.
 
 **Marks.** Each panel opens with its subject's name as a heading, so a
 panel fetched after the Family answered again (which can renumber the
@@ -7180,6 +7179,140 @@ data for those tabs; a Family with no response skips the changes. All use
 the web login's
 existing grants, and the page's one audited view covers them; nothing new is
 audited.
+
+### Member tabs' Ministry joins and leaves
+
+**Slice 4.** In a campaign with Ministry stewardship each Member tab also
+shows the Member's Ministry joins and leaves, after its census fields (alone,
+in a campaign without census), read through the
+[Ministry stream](../review-pipeline/spec.md#ministry-stream)'s stage
+mapping (`pipeline.ministry_placement`), the mapping
+[Ministry requests](../reports/spec.md#ministry-change-summary) uses.
+
+**Which requests.** For each Ministry, the Member's newest request among the
+Family's live responses: the rule the Family form uses
+(`responses.ministry_requests.request_index`), restated in the read because
+that function takes the response work lock. A request that is superseded or
+cancelled is kept only for history and is not shown. A Member the Family
+added is matched by its local identity, as its requests are. A Member with
+no tab of its own (ParishSoft no longer lists the Member in the Family and no
+census request keeps it) has no hub row. A No submission yet tab (the
+Family has no response) shows only its mark, with no Ministry part and no
+read; a No census answers yet tab (a response from before census joined)
+still shows its Ministry joins and leaves after the mark. Ministry
+requests leaves out, by default, a request whose Member ParishSoft no longer
+lists as current in the Family (#1217) and lists it only with Status set to Members no longer in
+ParishSoft; the hub still shows such a request on the Member's tab, with its
+stage, and its note says so (the Member's standing is read as Ministry
+requests reads it, `stewardship_ministry_request_member_status_v1`).
+
+**Columns.** One table, **Ministry joins and leaves**: **Ministry** (its name
+in the current catalog, or the shared "Ministry" and DUID fallback),
+**Baseline** ("In this Ministry" for a leave, "Not in this Ministry" for a
+join: the roster the Family answered from), **Family's answer** (**Join** or
+**Leave**) and **Stage**, the stage's chip and word as on the other tabs,
+followed for a decided request by its outcome in the words Ministry requests
+uses (for example "Stayed in the Ministry"), or by the note above for a
+Member no longer current in ParishSoft. The table lists only the
+changes the Family asked for: the Ministries a Member stays in are not
+requests, so there is no Show unchanged list (each Ministry's roster is on
+the Ministry pages). A Member with no request says "No Ministry joins or
+leaves requested." The panel links to Ministry requests, where the requests
+are handled.
+
+**Reads.** Only the chosen Member tab reads them, so they add nothing to the
+other tabs: one statement for the Member's requests, each with its latest
+Entered in ParishSoft tick (the tick `workflows.roster.roster_marks` reads
+for Roster changes to enter), and, when there is a request, the Ministry
+names from the current catalog (`accounts.leader_import.ministry_names`, two
+statements). They use the web login's existing grants; nothing new is
+audited.
+
+### Hub Financial tab
+
+**Slice 3.** The Financial tab shows the Family's current live pledge (its
+effective live response's financial answers) exactly as
+[Financial stewardship detail](../reports/spec.md#financial-stewardship-detail)
+reads and words it: the same selection (`stewardship_financial_report_v1`,
+unpaged and narrowed by the Family's DUID, keeping the Family's own row) and
+the same completeness proof before any ParishSoft money is shown
+(`reports.financial.giving_proof`).
+
+A pledge is one item of the
+[financial stream](../review-pipeline/spec.md#financial-stream), not one per
+field, so its stage (`pipeline.financial_placement`: To review, since no
+decision is stored yet,
+[#1686](https://github.com/epiphany40223/parishkit/issues/1686)) is shown
+once, above its table, as a New Member's addition is. The table has
+**Field**, **Baseline** and **Family's answer**:
+
+- **Annual pledge**: the Baseline is the Family's pledges recorded in
+  ParishSoft for the campaign's comparison period (the report's ParishSoft
+  Pledged; the field reads "Annual pledge (ParishSoft 2026)" with the
+  period's years), "Unavailable" when the giving read is not proven
+  complete; the answer is the annual amount, or "Cannot contribute
+  financially".
+- **Frequency**: the frequency with its installment ("Monthly ($100.00
+  each)"), or the report's frequency words alone when there is no
+  installment ("No frequency", "Cannot contribute"). The Baseline is "(not
+  read)": ParishSoft's pledge frequency is not compared yet (the financial
+  stream's frequency rule).
+- **Share methods**: each chosen method with the Family's own words for any
+  Other method, or "None chosen". The Baseline is "(not read)": ParishSoft
+  holds no share method.
+
+A line below the table gives the ParishSoft contributions for the same
+period (the report's Contributed), as context for the pledge. Every row
+belongs to the pledge item, so the tab has no Show unchanged list, and no
+Reviewer's value column: a pledge cannot be edited yet. A Family whose
+current response has no financial answers says "This Family has not answered
+the financial questions yet." The panel links to Financial stewardship.
+
+**Reads.** Only the Financial tab reads them: the proof's two statements
+(the current or pinned snapshot and its giving cursor), the selection and
+the configurations the Family's response was answered under (for the share
+methods' words), four statements in all. The page's one audited view covers
+them; nothing new is audited.
+
+### Hub Additional tab
+
+**Slice 4.** The last tab, named **Additional** for short (Administrator,
+2026-10-19), shows the answers of the
+[cannot participate](../review-pipeline/spec.md#cannot-participate-stream)
+and [Additional information](../review-pipeline/spec.md#additional-information-stream)
+streams from the Family's effective live response, the response the
+[Limitations](../reports/spec.md#limitations) and
+[Additional information](../reports/spec.md#additional-information) pages
+read:
+
+- **Cannot attend Mass or prayer services**, the Family's welcome-page
+  answer, and, in a campaign with Ministry stewardship, **Cannot participate
+  in ministries** for each Member, labelled with the Member's name as its
+  tab is and in tab order. A Yes is an item, staged by
+  `pipeline.cannot_participate_placement` (To review until decisions are
+  stored, [#1685](https://github.com/epiphany40223/parishkit/issues/1685));
+  a No is unchanged. The Baseline is "(not read)": ParishSoft holds none.
+- In a campaign with Additional information, the Family's current item (its
+  newest current, actionable one), with its text as the Family's answer,
+  staged by `pipeline.information_placement` from its follow-up needed and
+  followed-up state (To review, To handle or Handled; Ignored waits for the
+  one-time migration of #1685). A superseded or withdrawn item is kept only
+  for history and is not shown. A Family with no current item lists
+  Additional information as "None given" under Show unchanged.
+
+The changed rows are one table (**Field**, **Baseline**, **Family's
+answer**, **Stage**), with the unchanged ones in a closed **Show unchanged**
+disclosure (**Field**, **Value**), as on the census tabs. The panel links to
+Limitations (with Ministry stewardship) and, with Additional information, to
+the Family's Additional information item, or its queue when the Family has
+no current item, where these answers are handled; a campaign without
+Additional information never mentions it on this tab. A Family with no
+response yet says so.
+
+**Reads.** Only this tab reads them: one statement for the effective live
+response's answers and the Family's current Additional information item.
+Member names come from the census read the page already makes. The page's
+one audited view covers them; nothing new is audited.
 
 ## System health
 
