@@ -432,8 +432,8 @@ FROZEN = {
     "0133_entered_incorrectly_fixes.sql": (
         "a482e1594c86f1c27820c4901171c055f1b3490615f92da97b76d4eca904e312"
     ),
-    "0139_pledge_refresh_checks.sql": (
-        "9f5b4d3c66b4490d52f2a407bef7ad0c7f47d1a8b853341982a3f91652df78a7"
+    "0134_pledge_refresh_checks.sql": (
+        "18c6c6c4053ce6470a3db4586f486bfd76716417e34903a695e7aff871eed912"
     ),
 }
 

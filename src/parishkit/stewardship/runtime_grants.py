@@ -455,7 +455,7 @@ PUBLICATION_AUDITED_FUNCTION = (
 # owner-run discard functions (reports.export_cleanup.produce_discards); a
 # batch of 0 only asks whether any is due.
 EXPORT_DISCARD_FUNCTION = "stewardship_export_discard_due_v1(integer)"
-# The decided pledges a refresh re-evaluates (0139, #1704), with each one's
+# The decided pledges a refresh re-evaluates (0134, #1704), with each one's
 # carried-forward and marked amounts: the source worker's one read of them,
 # so it is granted no response answers or decision rows.
 PLEDGE_REFRESH_ITEMS_FUNCTION = "stewardship_pledge_refresh_items_v1(uuid, uuid)"
@@ -551,7 +551,7 @@ CLOSURE_FUNCTIONS = {
     ),
     # The Email Ministry leaders review (0120, #1592).
     LEADER_EMAILS_FUNCTION: ("stewardship_jobs", "0035_leader_emails"),
-    # The decided pledges a refresh re-evaluates (0139, provisional, #1704).
+    # The decided pledges a refresh re-evaluates (0134, provisional, #1704).
     PLEDGE_REFRESH_ITEMS_FUNCTION: (
         "stewardship_reports",
         "0033_pledge_refresh_checks",
@@ -671,7 +671,7 @@ CLOSURE_TABLES = {
     # A pledge's review history (0127, provisional number, #1686), which
     # web records and reads.
     "stewardship_pledge_review": ("stewardship_reports", "0032_pledge_review"),
-    # A decided pledge's refresh checks (0139, provisional number, #1704),
+    # A decided pledge's refresh checks (0134, provisional number, #1704),
     # which the worker records in promotion and web and the worker read.
     "stewardship_pledge_refresh_check": (
         "stewardship_reports",

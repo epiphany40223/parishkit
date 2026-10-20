@@ -5,7 +5,7 @@ against ParishSoft's pledge for the upcoming stewardship year (review
 pipeline spec, "Financial stream", Pledge confirmation), as
 ``responses.refresh_checks`` does for census changes and Ministry requests.
 A pledge's stage is derived from its ``PledgeReview`` rows, so the refresh
-records what it found in a ``PledgeRefreshCheck`` (frozen migration 0139,
+records what it found in a ``PledgeRefreshCheck`` (frozen migration 0134,
 provisional number), in the same promotion transaction:
 
 - ``pledge_checks`` yields the checks one promotion owes, which
@@ -62,7 +62,7 @@ UPCOMING = (
     "FROM unnest(%s::bigint[]) AS duid"
 )
 # The decided pledges in force, read through the source worker's definer
-# selection (0139), which the guard reads too: the worker reads no response
+# selection (0134), which the guard reads too: the worker reads no response
 # answers or decision rows itself.
 ITEMS = (
     "SELECT family_duid, review_id, sequence, decision, entered, carried, marked "

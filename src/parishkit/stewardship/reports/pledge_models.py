@@ -161,7 +161,7 @@ class PledgeReview(ImmutableRecord):
         ]
 
 
-# The outcomes a refresh records for a pledge, as 0136's census and Ministry
+# The outcomes a refresh records for a pledge, as 0132's census and Ministry
 # refresh checks name them (``workflows.models.REFRESH_OUTCOMES``).
 PLEDGE_REFRESH_OUTCOMES = (
     "confirmed",
@@ -183,7 +183,7 @@ class PledgeRefreshCheck(ImmutableRecord):
     counts only while its row is still the item's latest and in force. Only
     the source worker writes one, inside the promotion of ``snapshot_id``;
     SQL checks the item, the amount and the outcome and keeps the rows
-    immutable (schema/migrations/0139_pledge_refresh_checks.sql).
+    immutable (schema/migrations/0134_pledge_refresh_checks.sql).
     """
 
     snapshot_id = models.UUIDField()

@@ -814,7 +814,7 @@ maps a Family's ParishSoft pledge for the upcoming year to the pipeline item:
   hand, Entered by hand, Ignored). Each gets a **pledge refresh check**,
   written as a census change's [refresh check](#refresh-checks) is: an
   immutable row per refresh and item in `stewardship_pledge_refresh_check`
-  (frozen migration 0139, provisional number), naming the decision row in
+  (frozen migration 0134, provisional number), naming the decision row in
   force, with the outcome, R and whether the refresh was full. A check
   counts only while its decision row is the item's latest and in force, so
   any later decision, or the Family changing its pledge, leaves it behind.
@@ -834,7 +834,7 @@ maps a Family's ParishSoft pledge for the upcoming year to the pipeline item:
   not marked would be a Conflict, which the stream cannot show yet: it
   records nothing ([#1747](https://github.com/epiphany40223/parishkit/issues/1747)).
 - **Entered by hand** records ParishSoft's upcoming-year amount from the
-  current snapshot when its giving read is proven complete (0139 lets the
+  current snapshot when its giving read is proven complete (0134 lets the
   pledge review guard admit it, and checks it against the snapshot);
   otherwise the mark records none, and the refresh reads it as A, $0.00.
 - Frequency is compared only after a human-run, read-only smoke check on the
