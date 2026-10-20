@@ -9872,7 +9872,9 @@ every `'<prefix>_'||` an installed audit-writing function builds to be a
   `admin_cmd_users_import_leaders`), and the operator's one-time conversion
   of sign-in rules into users, `operator_users_upgraded`), the command
   line's parish profile changes (`admin_cmd_parish_confirm`) and Campaign
-  image removals (`admin_cmd_artwork_remove`), email template deletions
+  image removals (`admin_cmd_artwork_remove`), parish logo uploads and
+  their Apply (`admin_cmd_branding_preview`, `admin_cmd_branding_confirm`),
+  email template deletions
   (`admin_cmd_content_confirm`), No-reminders WorkGroup changes
   (`admin_cmd_workgroup_confirm`), Campaign settings changes
   (`admin_cmd_campaign_confirm`), Share options changes

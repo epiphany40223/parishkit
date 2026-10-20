@@ -215,6 +215,8 @@ ACTIVITY_TYPES = {
         "admin_cmd_users_confirm",
         "admin_cmd_parish_confirm",
         "admin_cmd_artwork_remove",
+        "admin_cmd_branding_preview",
+        "admin_cmd_branding_confirm",
         "admin_cmd_content_confirm",
         "admin_cmd_integration_confirm",
         "admin_cmd_integration_backup_probe",
