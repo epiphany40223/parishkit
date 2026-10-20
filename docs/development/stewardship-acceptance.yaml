@@ -534,6 +534,7 @@ sections:
     "Reported stage": [RPT-08, RPT-01]
     "Confirmed stage": [DAT-08]
     "Entered incorrectly stage": [DAT-08, RPT-08]
+    "Undoing a terminal stage": [DAT-08, RPT-08]
     "One working change set": [FAM-06, DAT-06]
     "Resubmission before the reviewed form": [FAM-06, DAT-08]
     "Family resubmission": [FAM-06, DAT-08]

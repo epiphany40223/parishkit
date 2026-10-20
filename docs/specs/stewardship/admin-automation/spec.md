@@ -2850,10 +2850,12 @@ lists the fields.
 ([#463](https://github.com/epiphany40223/parishkit/issues/463)) is a Census
 changes row's Mark entered in ParishSoft, Ignore and Reopen
 ([#528](https://github.com/epiphany40223/parishkit/issues/528)): full scope,
-keyed, and not fresh-gated, as the page's action is not privileged. Entered
-in ParishSoft cannot be undone and the page asks first, so `--action
-entered` [prompts by default](#mitigations) (or takes `--yes`; `--note -`
-then needs `--yes`); Ignore and Reopen ask nothing, as on the page. It admits as the page's post does (`census_change_views._principal`,
+keyed, and not fresh-gated, as the page's action is not privileged. Reopen
+also undoes a terminal outcome (Entered by hand, Entered incorrectly,
+Confirmed, Updated in ParishSoft) as the page's Back to review does
+([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage),
+[#1840](https://github.com/epiphany40223/parishkit/issues/1840)), so no action asks first any more; `--action entered` keeps its
+`--yes` option, which does nothing. It admits as the page's post does (`census_change_views._principal`,
 recording activity), then in the page's command scope
 (`task_retries.command_scope`, that admission repeated around the effect)
 checks the current campaign as the page does (`admit_report_read`), finds
@@ -2969,9 +2971,10 @@ event.
 [--request-key KEY]`
 ([#1733](https://github.com/epiphany40223/parishkit/issues/1733)) is a
 Pledges row's action or its bulk bar: full scope, keyed and not
-fresh-gated. Entered by hand is final, so `entered_by_hand` [prompts by
-default](#mitigations) (or takes `--yes`); the others can be changed again
-and ask nothing, as on the page. It checks the page's admission first, so a
+fresh-gated. Every action can be changed again, Entered by hand too
+([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage),
+[#1840](https://github.com/epiphany40223/parishkit/issues/1840)), so none asks first (`--yes` is kept and does nothing);
+`back_to_review` of a terminal stage needs `--note`, as on the page. It checks the page's admission first, so a
 Ministry leader is `denied` before any input or prompt, and refuses a choice
 the page could not post (more than 100 pledges, an Edit of more than one, a
 note over 2,000 characters, or an Edit value the Family form would refuse)
@@ -3175,9 +3178,11 @@ the two cannot drift.
   checks its page's admission first (a Ministry leader is `denied` before
   any input or prompt) and refuses before any prompt a choice the page
   could not post (too many items, a malformed item id, a note over 2,000
-  characters or with text the page refuses). Handled is final, so
-  `handled` [prompts by default](#mitigations) (or takes `--yes`); the
-  others can be changed again and ask nothing. In the page's command
+  characters or with text the page refuses). Every action can be changed
+  again, Handled too
+  ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage),
+  [#1840](https://github.com/epiphany40223/parishkit/issues/1840)), so none asks first (`--yes` is kept and does nothing);
+  `back_to_review` of a Handled item needs `--note`, as on the page. In the page's command
   scope it checks the current campaign as the page does, finds every item
   in it (a request that is not a Live one of the campaign, or an answer
   whose Family is not in it, is `not_available`), and builds the
@@ -3807,7 +3812,11 @@ pages' own pieces.
   `stale_version`. A request that takes no tick (only a join or leave a
   person resolved as joined or leave confirmed does) is `invalid` at
   `request`; a tick that already says so `invalid` at `set` or `clear`.
-  It asks nothing, as the page's tick does not.
+  It asks nothing, as the page's tick does not. `--clear` is the request's
+  Back to review of the mark
+  ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage),
+  [#1840](https://github.com/epiphany40223/parishkit/issues/1840)) and needs `--note TEXT|-`, as the page's dialog does; without one
+  it is `invalid` at `note`.
 - **Bulk mark.** `followup roster-bulk --request ID:VERSION ... [--yes]`
   admits with the list's own `ministry_roster_views._principal`
   (Administrators and Staff) before any input or prompt, refuses more than

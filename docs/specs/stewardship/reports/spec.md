@@ -1367,8 +1367,11 @@ Staff and Administrators decide each request as the pipeline's
 allow: on a To review request, **Accept** (the parish will follow it up: To
 handle) or **Ignore** (nothing to follow up); on a To handle request,
 **Handled** once the follow-up is done, or **Back to review**; on an
-Ignored request, Back to review, which needs a note saying why. Handled is
-final. Each decision takes an optional note, which becomes the request's
+Ignored request, Back to review, which needs a note saying why; on a
+Handled request, Back to review, which needs a note too and returns it to
+To handle, clearing its completion (who and when) and keeping the history
+([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage)).
+Each decision takes an optional note, which becomes the request's
 Staff notes (the export's and the search's); a decision with no note keeps
 the notes as they were. The bulk bar records
 Accept, Ignore, Back to review or Handled on every ticked row, all or none.
@@ -2431,13 +2434,15 @@ a box) records that someone typed it into ParishSoft (execution
 and marks it in one step, so Staff working through a list are not slowed
 down. Before #1683 these rows were *To do* and went straight to Entered in
 ParishSoft or Ignore; the page's help says that they are now To review. A
-Conflict By hand row is accepted first, then entered. Entered by hand is
-final, as every resolved outcome is: a mistaken mark is corrected in
-ParishSoft, and a later different Family answer creates a new row (the same
-answer again keeps the entered change,
+Conflict By hand row is accepted first, then entered. A mistaken mark is
+undone by Back to review, with a required note, which returns the change to
+the stage before the mark, To enter by hand with its decision kept (one
+accepted and marked in one step stays Accepted), as every terminal outcome is
+([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage),
+[#1840](https://github.com/epiphany40223/parishkit/issues/1840)); a later different Family answer creates a new row (the same answer
+again keeps the entered change,
 [resubmission](../review-pipeline/spec.md#resubmission-before-the-reviewed-form)).
-Its dialog says it
-is final and to check ParishSoft first. Who, when and the note are kept as
+Its dialog says to check ParishSoft first. Who, when and the note are kept as
 history.
 
 Before #528 the web role could change a proposal only after a later Family
@@ -2830,9 +2835,12 @@ changed, **ParishSoft at the check**, **Will write**, and **Outcome**:
   so ParishSoft at the check and Will write both show that value (the
   reviewer's value, else the Family's answer). Nothing is written, and the
   change is marked *Already in ParishSoft* (`resolved_upstream`) at the
-  check, so it is *Confirmed* (Production mode only). The mark is final:
-  Back to review on Census changes cannot undo it (see the
-  [data workflow](../data/spec.md#review-and-publication), step 4).
+  check, so it is *Confirmed* (Production mode only). Back to review on
+  Census changes undoes the mark, with a required note, and returns the
+  change to Ready to update
+  ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage)).
+  Nothing in ParishSoft changes, so the next run finds it Already in
+  ParishSoft again.
 - **Conflict**: ParishSoft changed since the Family answered. Nothing for
   this Member is written until the change is decided again on Census
   changes (Accept against ParishSoft's value once the next refresh shows
@@ -3226,11 +3234,13 @@ section is the page.
   pledge, such as a Conflict found or ParishSoft's amount moving under one,
   is refused as someone else's change and the page is redrawn); an Ignored
   row Back to review, with a required
-  note; a To enter by hand row Entered by hand and Back to review; an Entered by
-  hand row nothing (the mark is final), and neither does an Entered
-  incorrectly row until its fixes land
-  ([#1737](https://github.com/epiphany40223/parishkit/issues/1737)) or a
-  Confirmed one; a Confirmed row with no decision says "Already in
+  note; a To enter by hand row Entered by hand and Back to review; an Entered
+  by hand, Entered incorrectly or Confirmed row Back to review, with a
+  required note, which returns it to the stage before its mark (To enter by
+  hand, or To review for a pledge ParishSoft already held;
+  [undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage));
+  Entered by hand again on Entered incorrectly waits for
+  [#1737](https://github.com/epiphany40223/parishkit/issues/1737); a Confirmed row with no decision says "Already in
   ParishSoft." under its stage, or "Nothing to enter: ParishSoft holds no
   pledge." when both the Family's answer and ParishSoft are $0.00. An
   Ignored row ParishSoft now matches says "ParishSoft now matches the
@@ -3340,7 +3350,10 @@ it), Ignore, mark Handled, and send a decision Back to review (a note is
 needed to reopen an Ignored answer), one row at a time or in bulk, all or
 none, as the pipeline's
 [role-specific actions](../review-pipeline/spec.md#role-specific-actions)
-allow. Handled is final. There is no Add.
+allow. Back to review of a Handled answer needs a note too and returns it
+to To handle
+([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage)).
+There is no Add.
 
 No item is stored when a Family submits: each row is a current live answer,
 as the report has always read it, so the Family's form and its submission do
