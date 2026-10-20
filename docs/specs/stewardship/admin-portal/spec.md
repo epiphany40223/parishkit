@@ -5188,7 +5188,9 @@ line the first rows start on a laptop screen with the help closed
   the current campaign's record for the Family's DUID, read for the shown
   page in one query. Every other Recipient (a Testing email, whose Family's
   Testing records the Production-only Timeline does not show; a Family the
-  current campaign has no record of; and an email to a person, until
+  current campaign has no record of; a Family the latest ParishSoft data no
+  longer has, for which the shared link draws only its badge, never a
+  link; and an email to a person, until
   [#1570](https://github.com/epiphany40223/parishkit/issues/1570) gives
   people their own Timeline) redraws this list in place filtered to that
   recipient (the Family's DUID, or the person's address) in the same mode,
