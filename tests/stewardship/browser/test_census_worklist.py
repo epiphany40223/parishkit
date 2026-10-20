@@ -6,7 +6,8 @@ region shows the page never reloaded. The shared worklist's general
 behaviour (selected icons, bulk gates, the reopen note) is tested on its
 own fixture page (``test_review_worklist``); these tests check what Census
 changes adds: its filters and sorts, By hand rows reviewed like the rest,
-Entered by hand, the address editor and a refusal at its fields.
+Entered by hand, Entered incorrectly's two fixes, the address editor and
+a refusal at its fields.
 """
 
 import json
@@ -24,9 +25,15 @@ from .census_components import (
     EDITED_PHONE_NOTICE,
     ENTERED,
     ENTERED_NOTICE,
+    INCORRECT,
     PATH,
+    REENTERED,
+    REENTERED_NOTICE,
+    RETURNED,
+    RETURNED_NOTICE,
     STALE,
     STALE_NOTICE,
+    WRONG,
 )
 from .test_bulk_bar import assert_accessible
 from .test_table_sorting import MARK, MARKED, fulfil_post_with, sort_heading
@@ -352,6 +359,80 @@ def test_the_page_fits_and_has_no_wcag_violation(
     icon(page, 2, "Edit").click()
     visible(page.locator("#census-edit-dialog-2"))
     assert_accessible(page, axe_source)
+
+
+def actions(page, index):
+    """Row ``index``'s icons: (action, pressed) in drawing order."""
+    return [
+        (node.get_attribute("data-row-action"), node.get_attribute("aria-pressed"))
+        for node in row(page, index).locator(".table-actions button").all()
+    ]
+
+
+def test_entered_by_hand_again_on_an_entered_incorrectly_row(page, component_origin):
+    """An Entered incorrectly row shows ParishSoft's value and offers its two
+    fixes beside the Accept in force (#1737): the mark is worded "again", its
+    dialog says the next refresh checks it, and the redrawn row is Entered by
+    hand, in place."""
+    page.goto(component_origin + INCORRECT)
+    page.evaluate(MARK)
+    sent = posts(page, component_origin, REENTERED)
+    has_text(row(page, 3).locator(".stage-chip"), "Entered incorrectly")
+    visible(row(page, 3).get_by_text(WRONG, exact=True))
+    assert actions(page, 3) == [
+        ("accept", "true"),
+        ("back_to_review", None),
+        ("entered_by_hand", "false"),
+    ]
+    # Both fixes are bulk kinds of its box.
+    assert (
+        row(page, 3)
+        .locator("input[data-select-row]")
+        .get_attribute("data-confirm-kind")
+        == "back_to_review entered_by_hand"
+    )
+    icon(page, 3, "Mark").click()
+    dialog = page.locator("#census-decide-dialog")
+    has_text(dialog.locator("h2"), f"Mark {name(3)} entered by hand again?")
+    has_text(
+        dialog.locator("[data-confirm-body]"),
+        "Record that you corrected this in ParishSoft. Check ParishSoft first: "
+        "the next refresh checks it again.",
+    )
+    available(dialog.get_by_role("button", name="Record"))
+    dialog.get_by_role("button", name="Record").click()
+    has_text(page.locator("#census-notice"), REENTERED_NOTICE)
+    hidden(dialog)
+    assert "decide=entered_by_hand" in sent[-1] and "item=3" in sent[-1]
+    assert "version=2" in sent[-1]
+    has_text(row(page, 3).locator(".stage-chip .status-word"), "Entered by hand")
+    assert page.evaluate(MARKED) == "kept"
+
+
+def test_back_to_review_on_an_entered_incorrectly_row(page, component_origin):
+    """Back to review on an Entered incorrectly row needs no note; its dialog
+    says to edit the item to ParishSoft's value (no confirmation is promised:
+    a refresh before the Edit makes it a Conflict), and the redrawn row is
+    To review, in place."""
+    page.goto(component_origin + INCORRECT)
+    page.evaluate(MARK)
+    sent = posts(page, component_origin, RETURNED)
+    icon(page, 3, "Send").click()
+    dialog = page.locator("#census-decide-dialog")
+    has_text(dialog.locator("h2"), f"Send {name(3)} back to review?")
+    has_text(
+        dialog.locator("[data-confirm-body]"),
+        "The item goes back to To review. If ParishSoft's value is right, edit "
+        "the item to that value.",
+    )
+    record = dialog.get_by_role("button", name="Record")
+    available(record)
+    record.click()
+    has_text(page.locator("#census-notice"), RETURNED_NOTICE)
+    hidden(dialog)
+    assert "decide=back_to_review" in sent[-1] and "item=3" in sent[-1]
+    has_text(row(page, 3).locator(".stage-chip .status-word"), "To review")
+    assert page.evaluate(MARKED) == "kept"
 
 
 @pytest.mark.parametrize("width", [390, 1280])
