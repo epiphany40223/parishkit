@@ -2597,19 +2597,20 @@ Apply while the panel and its form keep their elements. A report's export is
 not a disclosure: it is the compact row of
 [export buttons](#downloaded-files) below the page's table, always shown, which
 takes one line (#1679, replacing #227's closed export disclosure). The Family
-directory, Financial stewardship and Ministry requests follow the Filters
-panel rule (#227). Census changes, a worklist, keeps its filters always open,
-as Additional information and Limitations do since they became review
-worklists ([#1685](https://github.com/epiphany40223/parishkit/issues/1685))
+directory and Financial stewardship follow the Filters panel rule (#227).
+Census changes, a worklist, keeps its filters always open, as Additional
+information and Limitations do since they became review worklists
+([#1685](https://github.com/epiphany40223/parishkit/issues/1685))
 ([its filters and downloads](../reports/spec.md#census-change-filters-and-downloads),
 [#1682](https://github.com/epiphany40223/parishkit/issues/1682)). Ministry requests keeps its
 compact filter bar rather than a Filters panel: its By Ministry counts apply
 a Ministry and request into the filters in place, and a closed panel would
 hide what the link just applied. System logs keeps its filter bar for the
 same reason: each entry's Related icons apply a filter into the form in
-place. Limitations and the [Timeline](../reports/spec.md#timeline) keep a
-one-row filter bar, too short to need a panel, and Roster changes to enter
-moves to the shared review worklist, whose filters are always open
+place. The [Timeline](../reports/spec.md#timeline) keeps a one-row filter
+bar, too short to need a panel, and Roster changes keeps its
+filter bar until it moves to the shared review worklist, whose filters are
+always open
 ([#1687](https://github.com/epiphany40223/parishkit/issues/1687)). No page
 is left to convert
 ([#1828](https://github.com/epiphany40223/parishkit/issues/1828)).
