@@ -2978,10 +2978,10 @@ fresh-gated. Every action can be changed again, Entered by hand too
 ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage),
 [#1840](https://github.com/epiphany40223/parishkit/issues/1840)), so none asks first (`--yes` is kept and does nothing);
 `back_to_review` of a terminal stage needs `--note`, as on the page. It checks the page's admission first, so a
-Ministry leader is `denied` before any input or prompt, and refuses a choice
+Ministry leader is `denied` before any input, and refuses a choice
 the page could not post (more than 100 pledges, an Edit of more than one, a
 note over 2,000 characters, or an Edit value the Family form would refuse)
-before the prompt. In the page's command scope it checks the current
+before any transaction. In the page's command scope it checks the current
 campaign as the page does (one without Financial stewardship is
 `not_available`), finds every item as a Live response of it (any other is
 `not_available`), and builds the `WorklistDecision` the page would
@@ -2989,8 +2989,8 @@ post (one item with the key itself, several as the bulk bar with each item's
 key derived from it) for the page's `pledge_review.PledgeDecisions`, so every
 rule is the page's, in Python and in the SQL guard of the
 [financial stream](../review-pipeline/spec.md): the role, the item's version,
-the actions its stage offers, a note to reopen an ignored pledge, and an
-Edit's amount and frequency checked as the Family form checks them. All or
+the actions its stage offers, a note to reopen an ignored pledge or to undo
+a terminal stage, and an Edit's amount and frequency checked as the Family form checks them. All or
 none: an item someone decided first, or that the Family answered again since,
 is `stale_version`; anything else refused is `invalid`, an Edit value at its
 option (`amount`, `frequency`) with the service's static reason, never the

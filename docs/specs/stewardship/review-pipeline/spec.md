@@ -1392,9 +1392,11 @@ its $0.00 words). That replaces rule 3's withdrawal, because the pledge item
 is the Family's current answer and stays listed, and rule 4's To review for
 a first answer ParishSoft already holds, so no reviewer accepts a pledge
 that would then be entered twice. If any earlier version of the Family's
-pledge was ever marked Entered by hand (even one later reopened), the new
-answer stays To review instead (its row says the Family changed its pledge),
-so Staff see it and can undo the entry, and the refresh judges it; rule 3's
+pledge was ever marked Entered by hand (even one later reopened, or a mark
+undone with Back to review, since the amount may have been typed before the
+undo), the new answer stays To review instead (its row says the Family
+changed its pledge), so Staff see it and can undo the entry, and the refresh
+judges it; rule 3's
 "Withdrawn by the Family after it was entered" note is not shown. Without a
 recorded amount the pledge is To review, as before. Pledges and funds are
 read-only in ParishSoft's API, so the stream never has Ready to update.
