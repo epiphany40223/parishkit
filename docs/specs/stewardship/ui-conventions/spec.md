@@ -3682,7 +3682,29 @@ selection.
 A **worklist** (a table a reader works through, such as the review
 pipeline's [review worklist](../review-pipeline/spec.md#review-worklist)) has its filters
 always open, never behind a disclosure, above the table, and its export
-buttons below the table. A table's create action (the review worklist's
+buttons below the table. Its filters sit in rows that wrap, each field
+13rem wide (on a phone, the whole row), and its Apply filters and
+Clear filters follow the last field as every filter form's do
+([Clear filters](#clear-filters)), with no line between that field and
+them (R38). Its view is in its address, so a reload re-renders the same
+view: after every in-place answer the address bar shows the page's own
+address with the Stage, the closed filters and the table's sort, size and
+page (`a[data-page-address]`), and the page draws that view from it. A
+private value (a name search) never reaches the address, as on the
+[POST reports](#admin-tables), so a reload clears only it (R38). The
+answer to the reader's own last decision
+(a review worklist's notice) sits under the filters, just above the table,
+on one reserved line (two on a phone, where it can wrap) that is kept
+while empty, so a notice appearing never
+moves the table (no layout shift); a notice longer than its lines (a long
+item name, or a computer's wider fonts) is cut short with an ellipsis, as
+the review dialog's status line is, and screen readers still hear it
+whole. Nothing else reserves room above the filters (R38). On a worklist, a Family's or Member's name opens the
+Family hub (the Family's Timeline page) for the viewers who may open it,
+through the shared Family-name link, and is plain text for the others,
+such as Ministry leaders; the cell naming the item (Ministry requests'
+Ministry) opens the item's own page, where it has one, for every viewer
+(an Administrator decision, R38). A table's create action (the review worklist's
 **Add**) sits in its selection bar, shown only to readers allowed to add
 there ([#1680](https://github.com/epiphany40223/parishkit/issues/1680)).
 
@@ -3722,7 +3744,11 @@ inventory on #879 lists.
 - **Actions column.** The last column holds each row's actions as small icon
   buttons (`table_actions`), all the same square size: Edit, a link to the
   item's own page, and Delete. Each has an accessible name and a matching
-  tooltip that name the row ("Edit Reminder 2", "Delete Reminder 2"), and the
+  tooltip that name the row ("Edit Reminder 2", "Delete Reminder 2"). An
+  icon's tooltip is one short phrase, never more than one sentence, with
+  no full stop, as these are; a selected icon's names its state and undo
+  in one phrase ("Accepted; choose Back to review to change it"), and a
+  guard checks every review worklist tooltip (R38). The
   icons are drawn inline, so they need no request and stay inside the
   content security policy. A destructive action with another name uses its
   own word and icon in Delete's place and works the same way; so far only
@@ -3734,17 +3760,32 @@ inventory on #879 lists.
   undo arrow). An action that carries a note opens the confirmation dialog
   instead, which holds the note, with an ordinary confirm button unless the
   action cannot be undone; so far only Census changes ([#879](https://github.com/epiphany40223/parishkit/issues/879)), whose
-  decisions take an optional note and Reopen a required one. A row shows
-  only the actions that apply to it; a row with none shows nothing there.
+  decisions take an optional note and Reopen a required one. A note field
+  shared by several actions is labelled by the action chosen: "Note
+  (optional)", and "Note (required)" only while that action needs one,
+  changing in place as the dialog opens (the review worklist, R38). An
+  editor that records a corrected value (the review worklist's Edit) holds
+  its Save until the value differs from the one it opened with, saying so
+  in its reserved line, since saving the same value records no edit (R38).
+  A row
+  shows only the actions that apply to it; a row with none shows nothing
+  there.
 - **Selected state.** On a table whose row actions record a state (a
   review decision, a mark), the icon of the state in force is drawn
-  **selected**: filled with that state's status colour, with a white
-  glyph, and `aria-pressed="true"`; the row's other icons are drawn
+  **selected**: filled with that state's status colour, with the glyph in
+  `--paper` (white on the light scheme, and dark on the dark scheme, where
+  white on the lighter status colours would fail the 3:1 icon contrast),
+  and `aria-pressed="true"`; the row's other icons are drawn
   unselected (outline, `aria-pressed="false"`). Choosing the selected icon
   again is not an undo; the row's own undo action (the review pipeline's
-  Back to review) is. So the decision shows on the icons, not only in a
+  Back to review) is, so the selected icon is unavailable
+  (`aria-disabled="true"`) and its tooltip names the state and the undo
+  in one phrase.
+  So the decision shows on the icons, not only in a
   status column ([review pipeline](../review-pipeline/spec.md#selected-state-icons),
-  [#1680](https://github.com/epiphany40223/parishkit/issues/1680)).
+  [#1680](https://github.com/epiphany40223/parishkit/issues/1680)). **Shared
+  code.** `components/review-worklist.html` and `web/review_worklist.py`
+  ([#1681](https://github.com/epiphany40223/parishkit/issues/1681)).
 - **By role.** Row actions the reader's role does not allow are not shown,
   not shown disabled, so a Ministry leader and Staff may see different icon
   sets on the same table; the server and database still refuse them. The

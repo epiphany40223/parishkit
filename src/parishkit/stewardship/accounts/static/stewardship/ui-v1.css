@@ -666,6 +666,19 @@ input[data-time-entry=list] { max-width: 24rem; }
    never moves the table under the pointer. */
 .action-status { min-height: 3.2em; min-height: 2lh; margin-block: .5rem; font-weight: 600; }
 .action-status > p { margin: 0; }
+/* A review worklist's notice (#1681) sits between its filters and its
+   table and is one line, kept while empty (R38 finding 10): it answers the
+   reader's own last decision, so it needs no second line, and its margins
+   are the gap the table would have under the filters anyway. */
+/* A longer notice (a long item name; Linux's wider fonts wrapped the
+   overtaken-decision notice at 700 and 1024 px) is cut short with an
+   ellipsis rather than taking another line, as .review-outcome is; the
+   live region still holds the whole text for screen readers. */
+.action-status.worklist-notice { min-height: 1.6em; min-height: 1lh; margin-block: 0 .5rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* On a phone a notice naming its item can wrap (Linux's wider fonts wrap
+   it at 390 px), so the line keeps two lines there, still with no margin
+   above it. */
+@media (max-width: 40rem) { .action-status.worklist-notice { min-height: 3.2em; min-height: 2lh; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; white-space: normal; } }
 /* A status line that wraps keeps the lines it can take (#757): two, or
    three on a phone, where a long sentence in a wide font needs a third. Its
    emptying then never moves the buttons below it. */
@@ -1793,6 +1806,34 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
 .icon-button .action-icon { width: 1.15rem; height: 1.15rem; }
 .icon-button-danger { color: var(--error-ink); border-color: var(--error-border); }
 .icon-button-danger:not(:disabled):hover { background: var(--error-bg); color: var(--error-ink); }
+/* The review worklist (#1681; UX conventions, "Row actions and
+   confirmation"): the icon of a decision or mark in force is drawn selected,
+   filled with its status look's line colour (.status-working for an
+   accepted decision or a mark, .status-unknown for Ignored) with the glyph
+   in --paper (white on the light scheme, dark on the dark one, so it keeps
+   its contrast). It is aria-disabled, never an undo, so it keeps the
+   ordinary pointer rather than the busy one and no hover. */
+.icon-button.is-selected, .icon-button.is-selected:not(:disabled):hover { background: var(--status-line); border-color: var(--status-line); color: var(--paper); cursor: default; }
+/* The Stage column's chip: a plain badge, or for a needs-correction stage
+   (Entered incorrectly) and the Not seen in ParishSoft flag the Error and
+   Warning looks with their icon (UX conventions, "Status indicators"). */
+.stage-chip { display: inline-flex; align-items: center; gap: .3rem; padding: .1rem .55rem; border: 1px solid var(--border); border-radius: 999px; background: var(--paper-soft); color: var(--ink); font-size: .8125rem; font-weight: 600; white-space: nowrap; }
+.stage-chip:is(.status-error, .status-warning) { border-color: var(--status-line); background: var(--status-bg); color: var(--status-ink); }
+/* A worklist's filters are always open (no Filters disclosure), in rows
+   that wrap: each field cell is 13rem and does not grow, so the room left
+   at a row's end is kept for the buttons. Apply filters and Clear filters
+   (.filter-actions) are placed by the shared three-step rule like every
+   filter form's (#table-filters rules above, ui-conventions "Clear
+   filters"). A wrapping row, not the Filters panel's equal grid columns,
+   because a grid cell can be narrower than the pair with Linux's or
+   WebKit's wider fonts. On a phone each field takes the whole row. The
+   reserved hint takes its own row. */
+.worklist-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .5rem 1rem; margin-block: .5rem; }
+.worklist-filters label { margin: 0 0 .25rem; font-size: .925rem; }
+.worklist-filters > div:not(.filter-actions) { flex: 0 1 13rem; margin: 0; }
+.worklist-filters > div > :is(input, select) { max-width: none; }
+.worklist-filters > :is(p, [data-complete-hint]) { flex-basis: 100%; margin: 0; }
+@media (max-width: 40rem) { .worklist-filters > div:not(.filter-actions) { flex-basis: 100%; } }
 .button-danger { background: var(--error-border); border-color: var(--error-border); color: var(--paper); }
 .button-danger:not(:disabled):hover { background: var(--error-ink); border-color: var(--error-ink); }
 .confirm-dialog { margin: 12vh auto auto; width: min(34rem, calc(100vw - 2rem)); padding: 1.25rem 1.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--paper); color: var(--ink); box-shadow: var(--shadow); }
