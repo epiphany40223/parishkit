@@ -632,7 +632,7 @@ class ProposalReview(ImmutableRecord):
 
 
 ADDITION_ENTITIES = ("family", "member")
-ADDITION_ACTIONS = ("entered", "withdrawn")
+ADDITION_ACTIONS = ("entered", "withdrawn", "reopened")
 
 
 class CensusAddition(ImmutableRecord):
@@ -647,8 +647,9 @@ class CensusAddition(ImmutableRecord):
     Family's ignored change it was added in place of (``in_place_of``),
     and the database records ParishSoft's value of the field at that moment
     (``baseline``).
-    Who, when and the note are the row's own; its one later step (Entered
-    by hand or withdrawn) is a ``CensusAdditionResolution``. SQL checks the
+    Who, when and the note are the row's own; its later steps (Entered by
+    hand, withdrawn, or reopened by Back to review) are
+    ``CensusAdditionResolution`` rows. SQL checks the
     actor, the campaign, the Family, the field and the value's shape again
     (schema/migrations/0129_census_additions.sql).
     """
@@ -693,18 +694,24 @@ class CensusAddition(ImmutableRecord):
 
 
 class CensusAdditionResolution(ImmutableRecord):
-    """The one later step of a parish-added census change (#1710).
+    """One later step of a parish-added census change (#1710, #1840).
 
     ``entered`` records that a person typed it into ParishSoft (Entered by
-    hand); ``withdrawn`` is its Back to review, which withdraws an added
-    change (review pipeline spec, "Reviewed stage"). Either is final: one
-    row per addition, so a second step (another reader's, at the same
-    time) is refused by the unique addition.
+    hand); ``withdrawn`` is Back to review on an open addition, which
+    withdraws it (review pipeline spec, "Reviewed stage"), and is final;
+    ``reopened`` is Back to review on an entered one, which undoes the mark
+    with a required note, so the addition is To enter by hand again (spec,
+    "Undoing a terminal stage"). Each addition's steps are numbered from 1
+    (``sequence``), so its version is its latest sequence plus one, and
+    two readers' steps at the same time cannot both be recorded (the
+    unique sequence). SQL checks which step may follow which
+    (schema/migrations/0211_census_addition_undo.sql).
     """
 
-    addition = models.OneToOneField(
-        CensusAddition, on_delete=models.PROTECT, related_name="resolution"
+    addition = models.ForeignKey(
+        CensusAddition, on_delete=models.PROTECT, related_name="resolutions"
     )
+    sequence = models.IntegerField()
     action = models.CharField(max_length=12)
     request_key = models.UUIDField()
     note = models.TextField(default="", blank=True)
@@ -716,12 +723,33 @@ class CensusAdditionResolution(ImmutableRecord):
                 fields=("actor_id", "request_key"),
                 name="census_addition_resolution_replay",
             ),
+            models.UniqueConstraint(
+                fields=("addition", "sequence"),
+                name="census_addition_resolution_sequence",
+            ),
             models.CheckConstraint(
                 condition=models.Q(actor_id__isnull=False)
-                & models.Q(action__in=ADDITION_ACTIONS),
+                & models.Q(action__in=ADDITION_ACTIONS)
+                & models.Q(sequence__gte=1),
                 name="census_addition_resolution_identity",
             ),
         ]
+
+
+def open_additions():
+    """The parish-added census changes still To enter by hand (#1710, #1840).
+
+    Open means no later step yet, or a latest step that reopened it; an
+    entered or withdrawn one is not open.
+    """
+    latest = (
+        CensusAdditionResolution.objects.filter(addition=models.OuterRef("pk"))
+        .order_by("-sequence")
+        .values("action")[:1]
+    )
+    return CensusAddition.objects.annotate(last_step=models.Subquery(latest)).filter(
+        models.Q(last_step__isnull=True) | models.Q(last_step="reopened")
+    )
 
 
 class SubmissionReceiptOccurrence(ImmutableRecord):

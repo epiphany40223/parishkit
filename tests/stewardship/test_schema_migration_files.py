@@ -468,6 +468,9 @@ FROZEN = {
     "0210_census_terminal_undo.sql": (
         "8102c45a865e2fc1c0acde77121eede09ed0ee6c320f502925596d52732320db"
     ),
+    "0211_census_addition_undo.sql": (
+        "348087874420f97e25e0530effa59e7c0fc302150f7137bc7b47f3e819c54f4f"
+    ),
 }
 
 

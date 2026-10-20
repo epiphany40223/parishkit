@@ -7,6 +7,7 @@ from html import unescape
 import pytest
 from django.template.loader import render_to_string
 
+from parishkit.stewardship import pipeline
 from parishkit.stewardship.pipeline import (
     Action,
     Decision,
@@ -438,9 +439,54 @@ def added(**values):
             "step_note": None,
             "step_at": None,
             "step_by": None,
+            "step_sequence": None,
         }
         | values
     )
+
+
+def test_an_entered_addition_is_undone_back_to_enter_by_hand(monkeypatch):
+    """Back to review on an entered addition undoes the mark (#1840): its
+    icon asks for a note and says where it goes, not that it is withdrawn;
+    once reopened, it is To enter by hand, Added by the parish, at the next
+    version, its last decision the undo with its note."""
+    monkeypatch.setattr(
+        pipeline, "TERMINAL_UNDO_STREAMS", frozenset({pipeline.Stream.CENSUS})
+    )
+    entered = added(step="entered", step_sequence=1, step_at=SUBMITTED)
+    assert (entered["stage"], entered["version"]) == ("entered_by_hand", 2)
+    reopened = added(
+        id="a2",
+        step="reopened",
+        step_sequence=2,
+        step_note="Typo",
+        step_at=SUBMITTED,
+        step_by="staff@example.org",
+    )
+    assert (reopened["stage"], reopened["version"]) == ("to_enter_by_hand", 3)
+    assert reopened["placement"] == Placement(Stage.TO_ENTER_BY_HAND, Decision.ADDED)
+    assert (reopened["resolution_action"], reopened["resolution_note"]) == (
+        "reopened",
+        "Typo",
+    )
+    worklist, _ = page([entered, reopened], replacements={})
+    rows = {row["id"]: row for row in worklist.rows}
+    (undo,) = [
+        icon
+        for icon in rows["add-a1"]["icons"]
+        if icon["action"] == "back_to_review" and not icon["selected"]
+    ]
+    assert undo["body"] == (
+        "Entered by hand is undone: the item goes back to To enter by hand, "
+        "with its decision kept. Say why."
+    )
+    assert rows["add-a1"]["choice"] == "reopen"
+    (withdraw,) = [
+        icon
+        for icon in rows["add-a2"]["icons"]
+        if icon["action"] == "back_to_review" and not icon["selected"]
+    ]
+    assert withdraw["body"].startswith("The added change is withdrawn")
 
 
 def test_additions_are_tied_to_the_familys_changes_of_their_field():

@@ -70,9 +70,9 @@ from parishkit.stewardship.web.contracts import check_version
 
 from .models import (
     RESOLUTION_ACTIONS,
-    CensusAddition,
     ProposalResolution,
     ProposedChange,
+    open_additions,
 )
 from .refresh_checks import check_states, entered_incorrectly, replaced
 
@@ -207,17 +207,20 @@ class ReopenCovered(ValueError):
 def covered_by_addition(proposal):
     """Whether an open parish addition covers ``proposal``'s field (#1710).
 
-    The same Family, Member (or Family) and field, with no later step.
-    The callers hold the work order, so no Add can slip in between this
-    check and their write.
+    The same Family, Member (or Family) and field, with no later step or
+    one Back to review reopened (#1840). The callers hold the work order,
+    so no Add can slip in between this check and their write.
     """
-    return CensusAddition.objects.filter(
-        family_id=proposal.submission.family_id,
-        entity_kind=proposal.entity_kind,
-        entity_key=proposal.entity_key,
-        field=proposal.field,
-        resolution__isnull=True,
-    ).exists()
+    return (
+        open_additions()
+        .filter(
+            family_id=proposal.submission.family_id,
+            entity_kind=proposal.entity_kind,
+            entity_key=proposal.entity_key,
+            field=proposal.field,
+        )
+        .exists()
+    )
 
 
 OPEN_EXECUTIONS = frozenset({"pending", "conflict"})

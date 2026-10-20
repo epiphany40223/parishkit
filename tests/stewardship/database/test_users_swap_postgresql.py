@@ -463,6 +463,10 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # them) to the form baseline and the Submission. While the swap is pending
 # ``before_reviewed_form_shown_items`` drops the four columns (their checks
 # go with them), and ``CLOSURE_ALTERED`` runs the file again afterwards.
+# 0211 (#1840, provisional number) creates nothing: it alters 0129's
+# resolution table (in CLOSURE_TABLES, so made again by 0129's file) and
+# replaces 0129's three guards in place; every statement can run again, so
+# ``CLOSURE_REPLACED`` runs its file again after 0129's.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -1001,6 +1005,14 @@ CLOSURE_REPLACED = {
     "public.stewardship_refresh_check_guard_v1()": (
         ("stewardship_responses", "0017_entered_incorrectly_fixes"),
         "k.item_version=change.version-1",
+    ),
+    # 0211 (#1840, provisional number) alters 0129's resolution table and
+    # replaces its three guards, which 0129's reinstall (CLOSURE_CREATED)
+    # brings back without the undo; it creates nothing, and each statement
+    # can run again, so its file runs again whole.
+    "public.stewardship_census_addition_resolution_guard_v1()": (
+        ("stewardship_responses", "0024_census_addition_undo"),
+        "Census addition step does not follow its latest step",
     ),
 }
 

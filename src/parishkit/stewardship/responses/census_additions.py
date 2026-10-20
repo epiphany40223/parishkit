@@ -15,11 +15,13 @@ An addition is its own immutable ``CensusAddition`` row, never a proposal:
 proposals belong to the Family submit path, whose guards and derived rows
 stay exactly as they are. Until the update run is rebuilt (#1688) nothing
 writes an addition to ParishSoft, so each is To enter by hand
-(``pipeline.census_addition_placement``); its one later step is a
-``CensusAdditionResolution``: Entered by hand, or withdrawn by Back to
-review. SQL checks the actor, the campaign, the Family, the Member, the field
-and the value's shape again, and pairs each row with its audit event
-(``schema/migrations/0129_census_additions.sql``).
+(``pipeline.census_addition_placement``); each later step is a
+``CensusAdditionResolution``: Entered by hand; Back to review, which
+withdraws an open one and reopens an entered one (with a required note,
+#1840), so it can be entered again or withdrawn. SQL checks the actor, the
+campaign, the Family, the Member, the field and the value's shape again,
+which step may follow which, and pairs each row with its audit event
+(``schema/migrations/0129_census_additions.sql``, ``0211_census_addition_undo.sql``).
 """
 
 from uuid import UUID
@@ -51,10 +53,10 @@ from .census_review import (
 )
 from .comparison import ADDRESS_COMPONENTS
 from .models import (
-    ADDITION_ACTIONS,
     CensusAddition,
     CensusAdditionResolution,
     ProposedChange,
+    open_additions,
 )
 
 # What an Add may be for: the fields the worklist's Edit takes a value for,
@@ -225,13 +227,16 @@ def _no_open_change(family, entity_kind, entity_key, field):
     An open addition, or the Family's own change that is not ignored, is
     decided with its own icons (an Edit corrects the Family's value).
     """
-    added = CensusAddition.objects.filter(
-        family=family,
-        entity_kind=entity_kind,
-        entity_key=entity_key,
-        field=field,
-        resolution__isnull=True,
-    ).exists()
+    added = (
+        open_additions()
+        .filter(
+            family=family,
+            entity_kind=entity_kind,
+            entity_key=entity_key,
+            field=field,
+        )
+        .exists()
+    )
     asked = (
         ProposedChange.objects.filter(
             submission__family=family,
@@ -362,24 +367,61 @@ def add_census_change(store, actor_id, campaign_id, add, *, note, request_key):
         return addition, True
 
 
+# The later steps a worklist decision records on an addition: Entered by
+# hand, or Back to review, which withdraws an open addition and reopens an
+# entered one (#1840).
+ADDITION_DECISIONS = ("entered", "back_to_review")
+
+
+def addition_state(latest):
+    """An addition's state from its latest step (None: no step yet).
+
+    ``open`` (none yet, or reopened), ``entered`` or ``withdrawn``: the
+    states ``pipeline.census_addition_placement`` places.
+    """
+    if latest is None or latest.action == "reopened":
+        return "open"
+    return latest.action
+
+
+def addition_version(latest):
+    """An addition's version: 1 before any step, else its latest sequence + 1."""
+    return 1 if latest is None else latest.sequence + 1
+
+
+def _step(state, decision):
+    """The step ``decision`` records on an addition in ``state``, else None.
+
+    Entered by hand marks an open addition; Back to review withdraws an
+    open one, or undoes an entered one's mark (``reopened``).
+    """
+    if decision == "entered":
+        return "entered" if state == "open" else None
+    return {"open": "withdrawn", "entered": "reopened"}.get(state)
+
+
 def resolve_census_additions(
     store, actor_id, campaign_id, versions, action, *, note, request_key, bulk=False
 ):
-    """Mark additions Entered by hand, or withdraw them, all or none.
+    """Mark additions Entered by hand, or send them back, all or none.
 
-    ``versions`` maps each addition id to the version its row showed (1
-    while open); ``action`` is ``entered`` or ``withdrawn``. Each gets its
-    own resolution row and audit event, its request key derived from the
-    page's bulk key for ``bulk`` (``bulk_key_for``), so a repeated post
-    records nothing more. One already resolved, or shown at another
-    version, raises ``BulkStale`` naming it. Nestable inside the caller's
-    work transaction, so a bulk decision over proposals and additions
-    together is all or none. Returns the resolutions in id order.
+    ``versions`` maps each addition id to the version its row showed
+    (``addition_version``); ``action`` is ``entered`` or ``back_to_review``
+    (``ADDITION_DECISIONS``). Back to review withdraws an open addition and
+    reopens an entered one, To enter by hand again, which needs a note
+    (review pipeline spec, "Undoing a terminal stage"). Each gets its own
+    resolution row, at the addition's next sequence, and audit event, its
+    request key derived from the page's bulk key for ``bulk``
+    (``bulk_key_for``), so a repeated post records nothing more. One whose
+    state does not take the step, or shown at another version, raises
+    ``BulkStale`` naming it. Nestable inside the caller's work transaction,
+    so a bulk decision over proposals and additions together is all or
+    none. Returns the resolutions in id order.
     """
     if (
         not isinstance(actor_id, UUID)
         or not isinstance(request_key, UUID)
-        or action not in ADDITION_ACTIONS
+        or action not in ADDITION_DECISIONS
         or not isinstance(versions, dict)
         or not 1 <= len(versions) <= MAX_BULK
         or any(
@@ -409,18 +451,29 @@ def resolve_census_additions(
                 actor_id=actor_id, request_key=key
             ).first()
             if previous is not None:
-                if (previous.addition_id, previous.action) != (addition.pk, action):
+                # A replay: the step this key recorded, which the decision
+                # gives for the state the addition had before it.
+                again = _step(
+                    "entered" if previous.action == "reopened" else "open", action
+                )
+                if (previous.addition_id, previous.action) != (addition.pk, again):
                     raise KeyRebound("This request key is already bound.")
                 recorded.append(previous)
                 continue
-            done = CensusAdditionResolution.objects.filter(addition=addition).exists()
-            if done or versions[addition.pk] != 1:
+            latest = addition.resolutions.order_by("-sequence").first()
+            step = _step(addition_state(latest), action)
+            if step is None or versions[addition.pk] != addition_version(latest):
                 raise BulkStale(addition.pk)
+            if step == "reopened" and not note.strip():
+                # Undoing a mark needs a reason, as reopening Ignored does.
+                raise ValueError("Undoing Entered by hand needs a note.")
+            sequence = addition_version(latest)
             resolution = CensusAdditionResolution.objects.create(
                 actor_id=actor_id,
                 request_key=key,
                 addition=addition,
-                action=action,
+                sequence=sequence,
+                action=step,
                 note=note,
             )
             record_action(
@@ -432,8 +485,8 @@ def resolve_census_additions(
                 campaign_id=campaign_id,
                 context={
                     "outcome": Outcome.CHANGED,
-                    "before_version": 1,
-                    "after_version": 2,
+                    "before_version": sequence,
+                    "after_version": sequence + 1,
                 },
             )
             recorded.append(resolution)

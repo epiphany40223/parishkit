@@ -286,7 +286,9 @@ def census_addition_placement(state):
     Added by the parish (spec, "Reviewed stage"). Until the update run is
     rebuilt (#1688) nothing writes an addition to ParishSoft, so every one
     is To enter by hand, whatever the handling registry says of its field;
-    Back to review withdraws it, into History.
+    Back to review withdraws an open one, into History, and undoes an
+    entered one's mark (#1840), which records ``reopened`` and leaves it
+    ``open`` again.
     """
     if state not in CENSUS_ADDITION_STATES:
         raise ValueError("Unknown census addition state.")

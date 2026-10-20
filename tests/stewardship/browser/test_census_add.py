@@ -4,16 +4,25 @@ In Chromium and WebKit. The real page is served by ``census_components``;
 each POST is answered with the fixture page after it. A mark outside every
 region shows the page never reloaded. Add shows only the controls the
 chosen field needs, sends only those, waits until they are complete, shows
-a refusal at its field, and the added row offers only its own steps.
+a refusal at its field, and the added row offers only its own steps; once
+Entered by hand, its Back to review undoes the mark with a required note
+(#1840).
 """
 
 import json
 
 import pytest
 
-from .census_components import ADDED, ADDED_NOTICE, PATH
+from .census_components import (
+    ADDED,
+    ADDED_ENTERED,
+    ADDED_NOTICE,
+    ADDED_REOPENED,
+    ADDED_REOPENED_NOTICE,
+    PATH,
+)
 from .test_bulk_bar import assert_accessible
-from .test_table_sorting import MARK, MARKED
+from .test_table_sorting import MARK, MARKED, fulfil_post_with
 from .waits import available, has_text, hidden, visible
 
 pytestmark = pytest.mark.parametrize(
@@ -139,6 +148,44 @@ def test_an_add_posts_its_fields_and_answers_in_place(page, component_origin):
         "The added change is withdrawn: nothing is entered in ParishSoft, and it "
         "moves to History.",
     )
+    assert page.evaluate(MARKED) == "kept"
+
+
+def test_back_to_review_undoes_an_added_changes_mark_in_place(page, component_origin):
+    """An added change Entered by hand offers Back to review (#1840): its
+    dialog says the mark is undone and the change goes back to To enter by
+    hand, and Record waits for the required note; the redrawn row is To
+    enter by hand again, in place."""
+    page.goto(component_origin + ADDED_ENTERED)
+    page.evaluate(MARK)
+    sent = []
+
+    def answer(request):
+        """Keep the body; answer with the page after the undo."""
+        sent.append(request.post_data)
+        return ADDED_REOPENED
+
+    fulfil_post_with(page, "**" + PATH, component_origin, answer)
+    added = page.locator("#census-row-add-a1")
+    has_text(added.locator(".stage-chip .status-word"), "Entered by hand")
+    added.locator('[data-row-action="back_to_review"]').click()
+    dialog = page.locator("#census-decide-dialog")
+    has_text(dialog.locator("h2"), "Send Nickname for Member 03 back to review?")
+    has_text(
+        dialog.locator("[data-confirm-body]"),
+        "Entered by hand is undone: the item goes back to To enter by hand, with "
+        "its decision kept. Say why.",
+    )
+    record = dialog.get_by_role("button", name="Record")
+    assert record.is_disabled()
+    dialog.get_by_label("Note (required)").fill("Typo")
+    available(record)
+    record.click()
+    has_text(page.locator("#census-notice"), ADDED_REOPENED_NOTICE)
+    hidden(dialog)
+    assert "decide=back_to_review" in sent[-1] and "note=Typo" in sent[-1]
+    assert "item=add-a1" in sent[-1] and "version=2" in sent[-1]
+    has_text(added.locator(".stage-chip .status-word"), "To enter by hand")
     assert page.evaluate(MARKED) == "kept"
 
 
