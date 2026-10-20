@@ -339,7 +339,10 @@ def test_script_lets_a_region_renew_its_own_watching_limit():
     judged from when the latest check was sent, so a clock jump while a check
     is in flight still leaves one fresh check at the region's pace (#425).
     Past the limit the watch slows to every 30 seconds instead of stopping,
-    and names no Refresh link, since pages have none (#1586).
+    and names no Refresh link, since pages have none (#1586). Slowing never
+    speeds a region up: one whose own fixed pace is slower (at most 60 s)
+    keeps it. browser/test_report_figures.py's
+    test_slow_retry_pace_never_speeds_up_past_the_hour checks that timing.
     """
     source = SCRIPT.read_text()
     assert "const GIVE_UP_MS = 60 * 60 * 1000;" in source
@@ -348,5 +351,13 @@ def test_script_lets_a_region_renew_its_own_watching_limit():
     assert "if (renews) started = Date.now();" in source
     assert "const slow = asked - started > giveUp;" in source
     assert "const SLOW_MS = 30 * 1000;" in source
-    assert "slow ? SLOW_MS : fixed" in source
+    # The next check's delay: past the limit the slower of SLOW_MS and the
+    # region's fixed pace (0 when it has none, so SLOW_MS), else the fixed
+    # pace or the back-off.
+    delay = re.search(
+        r"window\.setTimeout\(check,\s*slow\s*\?\s*(.+?)\s*:\s*(.+?)\);", source
+    )
+    assert delay is not None
+    assert delay.group(1) == "Math.max(SLOW_MS, fixed)"
+    assert delay.group(2) == "fixed || DELAYS[Math.min(attempt, DELAYS.length - 1)]"
     assert "refreshLabel" not in source and "Use ${" not in source

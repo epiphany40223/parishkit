@@ -77,6 +77,10 @@ def test_dashboard_for_admin_and_staff_in_both_modes(
         # rows and panels are unavailable, rather than refusing the page
         # (#1537); the activity chart is gone.
         assert b'id="production-unavailable"' in body
+        # They come back by themselves: the figures status keeps watching
+        # beside the line at its slow retry pace (#1586).
+        assert b"appear here by themselves" in body
+        assert b'data-live-interval="60000"' in body and b"retry=1" in body
         assert b'aria-label="Active population"' not in body
         assert b'id="response-activity-spec"' not in body
         # The rehearsal's sign-in, form and submission are Testing evidence.
