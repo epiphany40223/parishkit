@@ -2448,12 +2448,14 @@ already says "Here is yesterday’s report" (#1532). An intro still holding
 an earlier default, current or retired ("Here is yesterday’s report.",
 whose saved text is kept until the Administrator resets it), is left out
 of the email when it is sent, so the sentence is not said twice; an edited
-intro is kept. **Campaign totals** follow, two rows per
-figure: its label on a row of its own, then a bar drawn with table cells (so
-it shows in every mail program, with images off too) and the exact value, for
-example "Families that have responded — 10 out of 93 (10.8%)". The value
-breaks only before its parenthesis, so with four-digit counts the totals
-still fit a 320px phone without scrolling sideways
+intro is kept. **Campaign totals** follow, one line per
+figure on a desktop: its label (which never wraps), a bar drawn with table
+cells (so it shows in every mail program, with images off too) and the exact
+value, for example "Families that have responded — 10 out of 93 (10.8%)"
+([#1844](https://github.com/epiphany40223/parishkit/issues/1844)). On a
+phone the label moves above its bar and value, and the value breaks only
+before its parenthesis, so with four-digit counts the totals still fit a
+320px phone without scrolling sideways
 ([#1564](https://github.com/epiphany40223/parishkit/issues/1564)). Families that have responded are
 drawn against the Families they are out of, and "First submissions that day"
 against the busiest campaign day so far, which is stated beside the number; a
@@ -2463,11 +2465,17 @@ names no zone), with alt text carrying the same totals, then the day-by-day
 table of the last five campaign days (every covered date of a recovery
 digest, however many), and an "Open the Response dashboard" button, drawn
 like the Admin portal's primary button (its accent colour, radius, padding
-and bold label, as a table cell so every mail program shows it). The table
-gives each day two rows: the date across the table, then that day's first
-submissions, participation and pledges under their column headings, so it
-fits a 320px phone without scrolling sideways, which mail programs cannot
-do for a table ([#1559](https://github.com/epiphany40223/parishkit/issues/1559)).
+and bold label, as a table cell so every mail program shows it). On a desktop the
+table gives each day one row, its date first (never wrapped), then that
+day's first submissions, participation and pledges (#1844). On a phone each
+day takes two rows instead: the date across the table, then its values under
+their column headings, so the table fits a 320px phone without scrolling
+sideways, which mail programs cannot do for a table
+([#1559](https://github.com/epiphany40223/parishkit/issues/1559)). The
+phone layouts come from the email's style block, as the
+[UX conventions](../ui-conventions/spec.md#devices-and-browsers) require;
+a mail program that drops it shows the desktop layout, which needs about
+560px with four-digit values and so scrolls sideways on a phone there.
 The text part keeps one line per day. Both
 dashboard links go to the
 [Response dashboard](../reports/spec.md#response-dashboard), its Testing

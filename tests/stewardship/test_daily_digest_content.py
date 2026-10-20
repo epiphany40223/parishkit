@@ -127,10 +127,10 @@ def test_daily_digest_keeps_exact_values_and_accessible_inline_chart():
         assert jargon not in result.text
     assert ">Day by day</caption>" in result.html
     assert "Historical as of day" not in result.html
-    # Each day's date heads its own row (#1559); "Campaign date" stays in
-    # the text part, whose rows keep the four columns.
-    assert ">Campaign date</th>" not in result.html
-    assert ">Nov 2, 2026</th>" in result.html
+    # Each day's date leads its row (#1844), and a phone's date row repeats
+    # it (#1559).
+    assert result.html.count(">Campaign date</th>") == 1
+    assert result.html.count(">Nov 2, 2026</th>") == 2
     assert f"cid:{CHART_ID}" in result.html
     # Visuals first (#720): the as-of caption, then one line per total with
     # its bar, then the chart; the ParishSoft line is small print at the end.
@@ -229,8 +229,12 @@ def day_table(html):
 
 
 @pytest.mark.parametrize(("financial", "span"), [(True, "3"), (False, "2")])
-def test_day_table_gives_each_day_a_date_row_then_its_values(financial, span):
-    """Two rows per day fit a phone without losing a value (#1559)."""
+def test_day_table_gives_each_day_one_row_led_by_its_date(financial, span):
+    """A day is one desktop row, its date first and never wrapped (#1844).
+
+    A hidden date row above it spans the value columns; a phone shows it
+    and hides the date column instead (#1559).
+    """
     value = long_document(12)
     if not financial:
         chart = replace(value.participation, financial_enabled=False)
@@ -238,26 +242,30 @@ def test_day_table_gives_each_day_a_date_row_then_its_values(financial, span):
         value = replace(value, participation=chart, statistics=statistics)
     table = day_table(render(value).html)
     headings = re.findall(
-        r'<th scope="col" align="(?:left|right)" style="([^"]+)">([^<]+)<', table
+        r'<th scope="col" align="(left|right)"( class="pk-wide")? style="([^"]+)">'
+        r"([^<]+)<",
+        table,
     )
-    expected = ["First submissions", "Cumulative participation"]
+    expected = ["Campaign date", "First submissions", "Cumulative participation"]
     expected += ["Cumulative annual pledges (USD)"] if financial else []
-    assert [label for _style, label in headings] == expected
-    # Only the first column has no gap before it, so the table starts flush.
-    assert [style for style, _label in headings] == [STYLES["th-lead"]] + [
-        STYLES["th"]
-    ] * (len(expected) - 1)
+    assert [heading[3] for heading in headings] == expected
+    # Only the date column is left-aligned with no gap before it, and only
+    # it hides on a phone.
+    assert headings[0][:3] == ("left", ' class="pk-wide"', STYLES["th-lead"])
+    assert {heading[:3] for heading in headings[1:]} == {("right", "", STYLES["th"])}
+    assert "white-space:nowrap;" in STYLES["day-lead"]
     for row in digest_rows(value):
         date, *figures = row
         cells = "".join(
-            f'<td align="{"right" if index else "left"}" '
-            f'style="{STYLES["td-lead" if index == 0 else "td"]}">'
-            f"{figure}</td>"
-            for index, figure in enumerate(figures)
+            f'<td align="right" style="{STYLES["td"]}">{figure}</td>'
+            for figure in figures
         )
         assert (
-            f'<tbody><tr><th scope="rowgroup" colspan="{span}" align="left" '
-            f'style="{STYLES["day"]}">{date}</th></tr><tr>{cells}</tr></tbody>'
+            f'<tbody><tr class="pk-narrow" style="{STYLES["day-row"]}">'
+            f'<th scope="rowgroup" colspan="{span}" align="left" '
+            f'style="{STYLES["day-narrow"]}">{date}</th></tr>'
+            f'<tr><th scope="row" align="left" class="pk-wide" '
+            f'style="{STYLES["day-lead"]}">{date}</th>{cells}</tr></tbody>'
         ) in table
     assert table.count("<tbody>") == len(digest_rows(value)) == 5
 
@@ -269,10 +277,34 @@ def test_day_table_is_a_data_table_with_headers_and_no_role():
     assert table_open.startswith('<table width="100%"')
     assert "role=" not in table_open[: table_open.index(">")]
     table = day_table(html)
-    # Column headings, then per day one row-group heading and one value row.
-    assert table.count('<th scope="col"') == 3
+    # Column headings, then per day a (phone) row-group heading and a value
+    # row led by its row heading.
+    assert table.count('<th scope="col"') == 4
     assert table.count('<th scope="rowgroup"') == table.count("<tbody>") == 5
+    assert table.count('<th scope="row"') == 5
     assert table.count("<td ") == 15
+
+
+def test_retained_reports_with_the_two_row_day_table_still_validate():
+    """A report compiled with the two-row day table (#1559) still delivers."""
+    result = render(document())
+    old = (
+        '<table width="100%" cellpadding="0" cellspacing="0" '
+        f'border="0" style="{STYLES["table"]}"><caption '
+        f'style="{STYLES["table-caption"]}">Day by day</caption><thead><tr>'
+        f'<th scope="col" align="left" style="{STYLES["th-lead"]}">First '
+        "submissions</th></tr></thead>"
+        f'<tbody><tr><th scope="rowgroup" colspan="3" align="left" '
+        'style="padding:10px 0 2px;font-size:14px;font-weight:bold;'
+        'color:#1b2a31;">Nov 2, 2026</th></tr><tr><td align="left" '
+        'style="padding:2px 0 8px 0px;font-size:14px;color:#1b2a31;'
+        'border-bottom:1px solid #e4e7ec;">1</td></tr></tbody></table>'
+    )
+    html = result.html
+    end = html.index("</table>", html.index("Day by day</caption>")) + len("</table>")
+    start = html.rindex("<table", 0, html.index("Day by day</caption>"))
+    html = html[:start] + old + html[end:]
+    validate_digest_body(html, result.text, result.chart.data, result.images)
 
 
 def test_retained_reports_with_the_four_column_day_table_still_validate():
@@ -313,12 +345,12 @@ def totals_table(html):
     return html[start : html.index("<h2", start)]
 
 
-def test_totals_give_each_figure_a_label_row_then_its_bar_and_value():
-    """Two rows per figure fit a phone with four-digit counts (#1564).
+def test_totals_put_each_figure_on_one_row_with_its_bar_and_value():
+    """Label, bar and value share one desktop row (#1844).
 
-    The label spans the table; the bar and the exact value share the next
-    row. The value breaks only before its parenthesis; the text part keeps
-    plain spaces.
+    The label never wraps; a phone stacks the label cell above the cell of
+    its bar and value (``pk-stack``), where the value breaks only before its
+    parenthesis (#1564). The text part keeps plain spaces.
     """
     value = document()
     chart = value.participation
@@ -335,32 +367,81 @@ def test_totals_give_each_figure_a_label_row_then_its_bar_and_value():
     result = render(value)
     table = totals_table(result.html)
 
-    def label(text):
-        """A figure's label row."""
-        return f'<tr><td colspan="2" style="{STYLES["total-label"]}">{text}</td></tr>'
-
-    def figure(cells):
-        """The bar and value cells' opening tags."""
+    def row(label, bar_html):
+        """A figure's row up to its value's text."""
         return (
-            f'<tr><td width="55%" style="{STYLES["total-bar"]}">{cells}</td>'
-            f'<td width="45%" align="right" style="{STYLES["total-value"]}">'
+            f'<tr><td width="34%" class="pk-stack" style="{STYLES["total-name"]}">'
+            f'{label}</td><td width="66%" class="pk-stack" '
+            f'style="{STYLES["total-figure"]}"><table role="presentation" '
+            'width="100%" cellpadding="0" cellspacing="0" border="0" '
+            f'style="{STYLES["track"]}"><tbody><tr><td width="60%" '
+            f'style="{STYLES["bar"]}">{bar_html}</td><td width="40%" '
+            f'align="right" class="pk-wrap" style="{STYLES["value"]}">'
         )
 
-    assert table.count("<tr><td colspan") == 3
-    responded = table.index(label("Families that have responded"))
-    first = table.index(label("First submissions that day"))
-    pledges = table.index(label("Cumulative annual pledges (USD)"))
-    assert responded < first < pledges
-    bar_cell = f'<tr><td width="55%" style="{STYLES["total-bar"]}"><table '
-    assert responded < table.index(bar_cell, responded) < first
-    assert "<strong>1,234&nbsp;out&nbsp;of&nbsp;2,345 (52.6%)</strong>" in table
-    assert "<strong>1,088</strong> (busiest&nbsp;day:&nbsp;1,088)" in table
+    assert "white-space:nowrap;" in STYLES["total-name"]
+    assert "white-space:nowrap;" in STYLES["value"]
+    assert "colspan" not in table
+    # Each drawn bar (a nested table of bgcolor cells) reads as "BAR".
+    table = re.sub(
+        r"<table [^>]+><tbody><tr>(?:<td [^>]+bgcolor[^>]+>&nbsp;</td>)+"
+        r"</tr></tbody></table>",
+        "BAR",
+        table,
+    )
+    rows = table.split("</table></td></tr>")[:-1]
+    assert len(rows) == 3
+    assert row("Families that have responded", "BAR") in rows[0]
+    assert rows[0].endswith(
+        "<strong>1,234&nbsp;out&nbsp;of&nbsp;2,345 (52.6%)</strong></td></tr></tbody>"
+    )
+    assert row("First submissions that day", "BAR") in rows[1]
+    assert rows[1].endswith(
+        "<strong>1,088</strong> (busiest&nbsp;day:&nbsp;1,088)</td></tr></tbody>"
+    )
     # Pledges have no bar: an empty bar cell keeps the value on the right.
-    assert figure("") + "<strong>$3,234.56</strong></td></tr>" in table
-    assert "white-space" not in table.replace(STYLES["track"], "")
+    assert rows[2].endswith(
+        row("Cumulative annual pledges (USD)", "")
+        + "<strong>$3,234.56</strong></td></tr></tbody>"
+    )
     assert "Families that have responded: 1,234 out of 2,345 (52.6%)" in result.text
     assert "First submissions that day: 1,088\n" in result.text
     assert "&nbsp;" not in result.text
+
+
+def test_retained_reports_with_two_rows_per_total_still_validate():
+    """A report compiled with the two-row totals (#1564, v1.19.0) delivers."""
+    result = render(document())
+    old = (
+        '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+        f'border="0" style="{STYLES["rows"]}"><tbody>'
+        '<tr><td colspan="2" style="padding:8px 0 4px;font-size:16px;'
+        'color:#1b2a31;">First submissions that day</td></tr>'
+        '<tr><td width="55%" style="padding:0 16px 8px 0;"></td>'
+        '<td width="45%" align="right" style="padding:0 0 8px;font-size:16px;'
+        'color:#1b2a31;"><strong>1</strong> (busiest&nbsp;day:&nbsp;1)</td></tr>'
+    )
+    html = result.html
+    start = html.index("<table", html.index("Campaign totals</h2>"))
+    end = html.index("<h2", start)
+    html = html[:start] + old + "</tbody></table>" + html[end:]
+    validate_digest_body(html, result.text, result.chart.data, result.images)
+
+
+@pytest.mark.parametrize(
+    ("tag", "attribute", "value", "admitted"),
+    [
+        ("td", "class", "pk-stack", True),
+        ("tr", "class", "pk-narrow", True),
+        ("th", "class", "pk-wide", True),
+        ("td", "class", "pk-stack pk-wrap", False),
+        ("td", "class", "hidden", False),
+        ("th", "scope", "row", True),
+    ],
+)
+def test_report_classes_are_a_closed_set(tag, attribute, value, admitted):
+    """Only the phone restacking classes are admitted, one per cell (#1844)."""
+    assert (layout_attribute(tag, attribute, value) == value) is admitted
 
 
 def test_retained_reports_with_one_row_per_total_still_validate():
