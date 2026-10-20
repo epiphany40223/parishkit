@@ -68,7 +68,7 @@
 </div>
 {% comment %}Technical details sit outside the self-updating region: an update replaces the region's content, which would close an open disclosure under the reader. Like Send progress's, it says it is as of when the page was opened. It is drawn only for a direct activation (the case with stage boxes).{% endcomment %}
 {% if boxes %}<details class="technical-details"><summary>{% translate "Technical details" %}</summary><dl><dt>{% translate "Worker task state" %}</dt><dd><code>{{ task.state }}</code></dd><dt>{% translate "Preparation phase" %}</dt><dd><code>{{ demand.phase }}</code></dd><dt>{% translate "Committed groups" %}</dt><dd>{{ demand.groups_completed|number }}</dd></dl>
-<p>{% translate "These values are as of when this page was opened; reload the page to update." %}</p></details>{% endif %}
+<p>{% translate "These values are as of when this page was opened." %}</p></details>{% endif %}
 {% include 'stewardship/components/review-outcome.html' with outcome_id="production-outcome" %}
 <p class="setup-sr-only" data-live-announcer="production-status" role="status"></p>
 <p><a href="{% url 'admin:campaign_settings' %}">{% translate "Review Campaign settings" %}</a></p>
