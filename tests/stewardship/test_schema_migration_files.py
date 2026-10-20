@@ -474,6 +474,9 @@ FROZEN = {
     "0212_ministry_terminal_undo.sql": (
         "26e01493568c5c74cd4fe11e69c8700b471944ada053fa305b94f753cfbe71b5"
     ),
+    "0213_pledge_terminal_undo.sql": (
+        "d053b4d59e1dddb4c39930320fb378f8e1d74f90488b621ef2057f987a52891b"
+    ),
 }
 
 

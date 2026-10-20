@@ -1033,6 +1033,14 @@ CLOSURE_REPLACED = {
         ("stewardship_workflows", "0007_ministry_terminal_undo"),
         "NEW.resolution_source_id := NULL;",
     ),
+    # 0213 (#1840, provisional number) replaces 0135's pledge review guard
+    # and widens 0127's state check, both of which 0127's and 0135's reruns
+    # (CLOSURE_CREATED) bring back older; it creates nothing, so its file
+    # runs again whole.
+    "public.stewardship_pledge_review_guard_v1()": (
+        ("stewardship_reports", "0038_pledge_terminal_undo"),
+        "item.stage IN ('entered_by_hand','entered_incorrectly','confirmed')",
+    ),
 }
 
 

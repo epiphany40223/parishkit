@@ -484,6 +484,13 @@ ALLOWED_TABLE = [
     ("ministry", Stage.ENTERED_BY_HAND, {"ministry_leader"}, False, set()),
     ("ministry", Stage.CONFIRMED, {"ministry_leader"}, False, set()),
     ("financial", Stage.TO_REVIEW, STAFF, False, DECIDE),
+    ("financial", Stage.TO_ENTER_BY_HAND, STAFF, False, MARK),
+    # Back to review undoes a pledge's terminal step (#1840), Staff and
+    # Administrators only.
+    ("financial", Stage.ENTERED_BY_HAND, STAFF, False, {"back_to_review"}),
+    ("financial", Stage.ENTERED_INCORRECTLY, ADMIN, False, MARK),
+    ("financial", Stage.CONFIRMED, ADMIN, False, {"back_to_review"}),
+    ("financial", Stage.CONFIRMED, {"ministry_leader"}, False, set()),
     ("cannot_participate", Stage.TO_REVIEW, STAFF, False, {"accept", "ignore"}),
     ("cannot_participate", Stage.TO_HANDLE, STAFF, False, HANDLE),
     ("additional_information", Stage.TO_REVIEW, ADMIN, False, {"accept", "ignore"}),

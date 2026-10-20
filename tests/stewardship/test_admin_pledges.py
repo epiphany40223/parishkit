@@ -104,10 +104,28 @@ def test_each_record_is_the_csv_row_with_its_item_version_and_actions():
     assert records([], STAFF) == []
 
 
-def test_an_entered_pledge_offers_no_action():
-    """Entered by hand is final: its row offers nothing."""
-    row = pledge_row(item("entered_by_hand", review("accepted", entered=True)))
-    assert records([row], STAFF)[0]["actions"] == []
+def test_a_terminal_pledge_offers_back_to_review():
+    """Entered by hand, Entered incorrectly and Confirmed offer Back to review
+    (#1840), as the page does; Entered by hand again stays withheld (#1737),
+    and a leader is offered nothing."""
+    marked = review("accepted", entered=True)
+    rows = [
+        pledge_row(item("entered_by_hand", marked)),
+        pledge_row(
+            item(
+                "entered_incorrectly",
+                marked,
+                base="entered_by_hand",
+                check="entered_incorrectly",
+                observed="900",
+            )
+        ),
+        pledge_row(item("confirmed", None, base="to_review", check="confirmed")),
+    ]
+    assert [record["actions"] for record in records(rows, STAFF)] == [
+        ["back_to_review"]
+    ] * 3
+    assert all(not record["actions"] for record in records(rows, LEADER))
 
 
 @pytest.mark.parametrize(

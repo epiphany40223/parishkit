@@ -44,6 +44,8 @@ from parishkit.stewardship.pipeline import (
     Stream,
     allowed_actions,
     financial_placement,
+    undo_needs_note,
+    undo_stage,
 )
 from parishkit.stewardship.responses.financial import (
     FREQUENCIES,
@@ -63,7 +65,8 @@ STATES = (
     "FROM stewardship_pledge_stages_v1(%s, %s)"
 )
 # What each worklist action records: the stored action, and the decision
-# the row leaves in force (Entered by hand keeps the one it marks).
+# the row leaves in force (Entered by hand keeps the one it marks, and so
+# does Back to review when it undoes a terminal step, #1840).
 RECORDED = {
     Action.ACCEPT: ("accept", "accepted"),
     Action.EDIT: ("edit", "accepted_edited"),
@@ -172,14 +175,14 @@ def reader_roles(principal):
     return frozenset(principal.roles) & frozenset(ROLES)
 
 
-# Actions a stage offers that the stream withholds: Entered incorrectly's two
-# fixes (Entered by hand again, Back to review) come with #1737; until then a
-# refresh confirms the pledge once ParishSoft holds the reviewer's amount.
-WITHHELD = {
-    Stage.ENTERED_INCORRECTLY: frozenset(
-        {Action.BACK_TO_REVIEW, Action.ENTERED_BY_HAND}
-    )
-}
+# Actions a stage offers that the stream withholds: Entered incorrectly's
+# Entered by hand again comes with #1737; until then a refresh confirms the
+# pledge once ParishSoft holds the reviewer's amount. Its Back to review
+# undoes the mark like any terminal step's (#1840).
+WITHHELD = {Stage.ENTERED_INCORRECTLY: frozenset({Action.ENTERED_BY_HAND})}
+# Why a Back to review needing a note was refused without one.
+REOPEN_NEEDS_NOTE = "Reopening an ignored pledge needs a note."
+UNDO_NEEDS_NOTE = "Undoing a pledge's mark or confirmation needs a note."
 
 
 def offered(stage, roles):
@@ -329,12 +332,16 @@ class PledgeDecisions:
             stage = placement(item).stage
             if decision.action not in offered(stage, roles):
                 raise ValueError("That decision is not offered for this pledge.")
+            # Reopening an Ignored pledge, and undoing a terminal step
+            # (#1840), need a reason; the guard requires it too.
             if (
                 decision.action is Action.BACK_TO_REVIEW
-                and stage is Stage.IGNORED
+                and undo_needs_note(Stream.FINANCIAL, stage)
                 and not decision.note
             ):
-                raise ValueError("Reopening an ignored pledge needs a note.")
+                raise ValueError(
+                    REOPEN_NEEDS_NOTE if stage is Stage.IGNORED else UNDO_NEEDS_NOTE
+                )
             action = decision.action
             if action is Action.EDIT and value == family_value(responses[item_id]):
                 action, matched = Action.ACCEPT, True
@@ -353,23 +360,34 @@ class PledgeDecisions:
         ).exists()
 
     def _record(self, actor, item, action, value, key, note):
-        """Insert one decision row and its audit event; the guard checks both."""
+        """Insert one decision row and its audit event; the guard checks both.
+
+        Entered by hand, and Back to review of a terminal step (#1840),
+        carry the decision in force forward with its values: the mark keeps
+        it, and the undo removes only the step after it, so the pledge goes
+        back to To enter by hand (``pipeline.undo_stage``; a Confirmed
+        pledge no decision was behind goes back to To review with none).
+        """
         stored, decision = RECORDED[action]
         reviewed = (None, None)
         entered = False
         marked = None
+        keeps = action is Action.ENTERED_BY_HAND or (
+            action is Action.BACK_TO_REVIEW
+            and undo_stage(Stream.FINANCIAL, placement(item)) is not Stage.TO_REVIEW
+        )
         if action is Action.EDIT:
             reviewed = value
-        elif action is Action.ENTERED_BY_HAND:
-            # The mark keeps the decision in force and its values, and
-            # records ParishSoft's upcoming-year amount when the current
-            # snapshot proves it (#1704), which the refresh then compares
-            # with; the guard checks it against the same snapshot.
+        elif keeps:
             decision = item.review.decision
             reviewed = (
                 item.review.reviewed_annual_pledge,
                 item.review.reviewed_frequency,
             )
+        if action is Action.ENTERED_BY_HAND:
+            # The mark records ParishSoft's upcoming-year amount when the
+            # current snapshot proves it (#1704), which the refresh then
+            # compares with; the guard checks it against the same snapshot.
             entered = True
             marked = marked_pledge(self.campaign_id, item.family_duid)
         review = PledgeReview.objects.create(

@@ -231,11 +231,16 @@ def _mutable(campaign_id):
 
 
 def row_actions(row, roles):
-    """The decisions ``roles`` may record on ``row`` now, as its row offers them."""
-    from .pipeline import Stream, allowed_actions
+    """The decisions ``roles`` may record on ``row`` now, as its row offers them.
+
+    The page's own offer (``pledge_review.offered``), so an action the
+    stream withholds (Entered by hand again on Entered incorrectly, #1737)
+    is listed by neither.
+    """
+    from .reports.pledge_review import offered
     from .web.review_worklist import ROW_ORDER
 
-    allowed = allowed_actions(Stream.FINANCIAL, row["placement"].stage, roles)
+    allowed = offered(row["placement"].stage, roles)
     return [action.value for action in ROW_ORDER if action in allowed]
 
 
@@ -517,9 +522,10 @@ def decide_pledges(
     (``not_available`` otherwise), and the page's ``PledgeDecisions``
     records the decision: someone else's decision or a newer answer from
     the Family first is ``stale_version``; an action the stage does not
-    offer, a missing note to reopen an ignored pledge, or an Edit value the
-    Family form would refuse (at ``amount`` or ``frequency``) is
-    ``invalid``. A new key records ``admin_cmd_pledges_decide`` once.
+    offer, a missing note to reopen an ignored pledge or to undo a terminal
+    step (#1840), or an Edit value the Family form would refuse (at
+    ``amount`` or ``frequency``) is ``invalid``. A new key records
+    ``admin_cmd_pledges_decide`` once.
     """
     from .admin_followup import _record_command
     from .admin_report_reads import _current, _refusal, _refusals, _require_module
