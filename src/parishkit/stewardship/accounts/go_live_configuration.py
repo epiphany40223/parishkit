@@ -59,7 +59,12 @@ def configuration_readiness(document, campaign_id, *, ministries, funds):
         for slot, reference in campaign["content_versions"].items()
     ):
         problems.append("page_reference_unavailable")
-    if any(not _template_matches(row, content) for row in schedules):
+    # A report email (#1786) compiles its own body and selects no template.
+    if any(
+        not _template_matches(row, content)
+        for row in schedules
+        if row["kind"] != "report"
+    ):
         problems.append("mail_template_unavailable")
     if set(campaign["ministry_duids"]) - ministries:
         problems.append("ministry_mapping_unavailable")

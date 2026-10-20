@@ -48,7 +48,11 @@ def _prepare(message, *, general, public, public_origin):
         # Cleanup at go-live deletes it, so leaving it unsettled has no cost
         # beyond blocking cleanup until an Admin records the outcome.
         raise PermissionError("Family tests cannot be resent or retried.")
-    if message is not None and message.purpose in {"daily_digest", "weekly_digest"}:
+    if message is not None and message.purpose in {
+        "daily_digest",
+        "weekly_digest",
+        "admin_report",
+    }:
         return _prepare_digest(message)
     if (
         not isinstance(general, GeneralKeyring)
@@ -138,6 +142,7 @@ def _prepare_digest(message):
     queries = {
         "daily_digest": "SELECT stewardship_daily_dispatch_live_v1(%s,%s)",
         "weekly_digest": "SELECT stewardship_weekly_dispatch_live_v1(%s,%s)",
+        "admin_report": "SELECT stewardship_report_email_dispatch_live_v1(%s,%s)",
     }
     with connection.cursor() as cursor:
         cursor.execute(

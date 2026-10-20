@@ -5,7 +5,7 @@ from uuid import uuid4
 
 import pytest
 
-from parishkit.stewardship.reports import digest_finalization as finalization
+from parishkit.stewardship.reports import report_email_finalization as finalization
 
 
 @pytest.fixture
@@ -53,30 +53,12 @@ def test_expiry_does_not_bypass_persisted_task_binding(monkeypatch):
         )
 
 
-@pytest.mark.parametrize("kind", ["daily", "weekly"])
-def test_finalization_producers_keep_distinct_closed_task_namespaces(kind):
-    producer = (
-        finalization.DailyDigestFinalizeProducer
-        if kind == "daily"
-        else finalization.WeeklyDigestFinalizeProducer
-    )(uuid4())
-    assert producer.kind == kind
-    assert producer.task_type == f"{kind}_digest_finalize"
+def test_finalization_producer_has_one_closed_task_type():
+    """Daily, Weekly and every other report share one finalizer task (#1786)."""
+    assert finalization.TASK_TYPE == "report_email_finalize"
+    assert finalization.ReportEmailFinalizeProducer(uuid4()).worker_id
 
 
-@pytest.mark.parametrize("task_type", ["", "outbox_delivery", "weekly", "x;SELECT 1"])
-def test_finalization_rejects_uncompiled_sql_owner_names(task_type):
-    with pytest.raises(TypeError, match="identity and kind"):
-        finalization.DigestFinalizeProducer(uuid4(), task_type=task_type)
-
-
-@pytest.mark.parametrize(
-    "producer",
-    [
-        finalization.DailyDigestFinalizeProducer,
-        finalization.WeeklyDigestFinalizeProducer,
-    ],
-)
-def test_finalization_requires_service_uuid(producer):
-    with pytest.raises(TypeError, match="identity and kind"):
-        producer("not-a-service-identity")
+def test_finalization_requires_service_uuid():
+    with pytest.raises(TypeError, match="scheduler identity"):
+        finalization.ReportEmailFinalizeProducer("not-a-service-identity")

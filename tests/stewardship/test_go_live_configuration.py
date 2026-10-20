@@ -63,6 +63,18 @@ def test_complete_configuration_resolves_selected_family_template():
     assert result.family_templates == (document["sections"]["content"][0]["id"],)
 
 
+def test_a_report_email_needs_no_email_template():
+    """A report email (#1786) compiles its own body, so it selects none."""
+    from .test_report_schedule import report
+
+    document, owner = configured()
+    document["sections"]["schedules"].append(
+        {"id": str(uuid4()), "values": report(campaign_id=owner)}
+    )
+    result = check(document, owner)
+    assert result.ready, result.problems
+
+
 def test_deployment_owned_google_login_need_not_be_duplicated_in_campaign():
     """Real first setup installs provider integrations, not another OAuth setting."""
     document, owner = configured()

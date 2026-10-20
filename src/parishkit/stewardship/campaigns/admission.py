@@ -47,6 +47,7 @@ def validate_installation(document, *, request_id=None):
     from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
     from parishkit.stewardship.accounts.schedule_preview import work_summary
 
+    from .configuration import DIGEST_KINDS
     from .models import (
         Campaign,
         CampaignConfigurationIntent,
@@ -226,7 +227,13 @@ def validate_installation(document, *, request_id=None):
         .values_list("record_id", "campaign_id", "kind")
         .distinct()
     ):
-        if identities[str(identifier)] != (str(campaign_id), kind):
+        proposed_owner, proposed_kind = identities[str(identifier)]
+        # The report conversion (#1786) retypes a digest in place; a change
+        # cannot add a digest (configuration.validate_campaign_change).
+        retyped = proposed_kind == "report" and kind in DIGEST_KINDS
+        if proposed_owner != str(campaign_id) or (
+            proposed_kind != kind and not retyped
+        ):
             raise ConfigError("Logical schedule identities cannot be repurposed.")
 
 

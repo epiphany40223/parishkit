@@ -54,8 +54,17 @@ EMAIL_LABELS = {
     "initial": _("Initial invitation"),
     "reminder": _("Reminder"),
     "confirmation": _("Confirmation email"),
-    "daily_digest": _("Daily Admin digest"),
-    "weekly_digest": _("Weekly Admin digest"),
+    # The converted Daily and Weekly report emails (#1786), which the
+    # schedule editors still show as these two mail types.
+    "daily_digest": _("Daily report"),
+    "weekly_digest": _("Weekly report"),
+}
+# The emails Pages and emails offers: report emails replaced the two digests
+# (#1786), whose saved templates stay only for the saved copies that name them.
+OFFERED_EMAIL_LABELS = {
+    slot: label
+    for slot, label in EMAIL_LABELS.items()
+    if slot not in {"daily_digest", "weekly_digest"}
 }
 # Retired email slots (#913) label applied history only and are never offered
 # for editing: operational alerts use fixed text (jobs/operational_content),
@@ -419,7 +428,10 @@ def applicable_slots(campaign):
     """Every (kind, slot) a campaign's enabled modules can show or send."""
     return [
         (kind, slot)
-        for kind, labels in (("page", page_slots(campaign)), ("email", EMAIL_LABELS))
+        for kind, labels in (
+            ("page", page_slots(campaign)),
+            ("email", OFFERED_EMAIL_LABELS),
+        )
         for slot in labels
     ]
 
@@ -678,7 +690,8 @@ def revision_patch(document, campaign, previous, values):
         )
     if previous:
         for schedule in document["sections"].get("schedules", []):
-            if schedule["values"]["template_version"] != previous["id"]:
+            # A report email (#1786) sends no email template.
+            if schedule["values"].get("template_version") != previous["id"]:
                 continue
             if values is None:
                 raise UserFacingError(

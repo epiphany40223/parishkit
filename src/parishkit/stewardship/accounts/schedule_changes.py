@@ -26,6 +26,7 @@ from . import admin_editing, digest_skips, schedule_local
 from .admin_editing import sign_preview
 from .campaign_views import _state
 from .content_forms import EMAIL_LABELS
+from .report_rows import planned, translate
 from .request_patch import build_candidate
 from .schedule_preview import fingerprint, work_summary
 from .schedule_reads import refuse_archived
@@ -127,7 +128,8 @@ def describe(values, campaign):
     """
     if values is None:
         return None
-    page = preview_slots(values, campaign)
+    # A converted report's digest view previews the report's own sends.
+    page = preview_slots(planned(values), campaign)
     return values | {
         "skipped_sends": digest_skips.skipped_sends(values, campaign),
         "weekday_label": WEEKDAYS[values["weekday"]]
@@ -261,8 +263,16 @@ def build_preview(
     remembered.extend(series_changes)
     # A new timezone or digest date window also replaces unchanged civil mail
     # fields. Include their existing work in the reviewed cancellation inventory.
+    # Only the record's id and values: a converted report's row also
+    # carries its report values (``report_rows.view_rows``), which are no
+    # part of a change.
     patch.extend(
-        {"operation": "update", "section": "schedules", **row}
+        {
+            "operation": "update",
+            "section": "schedules",
+            "id": row["id"],
+            "values": row["values"],
+        }
         for row in schedules.previous
         if row["id"] not in explicit
         and schedule_window_changed(
@@ -312,7 +322,10 @@ def build_preview(
     # intent. The review lists only the schedule changes.
     patch.extend(upkeep(base.document(), patch))
     try:
-        build_candidate(base, patch, candidate_id=uuid4())
+        # The candidate is checked as it will be recorded: a converted
+        # report's change in its own values (#1786, ``admin_editing.sign_preview``
+        # translates the signed patch the same way).
+        build_candidate(base, translate(base.document(), patch), candidate_id=uuid4())
     except (ConfigError, ValueError):
         # With an added email, the email is the likelier cause (#446).
         window.add_error(

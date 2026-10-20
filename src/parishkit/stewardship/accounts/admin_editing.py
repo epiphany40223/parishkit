@@ -176,6 +176,12 @@ def sign_preview(
     still ahead at review; confirmation refuses once any has passed
     (``refuse_passed_sends``, #1464). A preview without any carries no key.
     """
+    from .report_rows import translate
+
+    # A schedule editor's change to a converted report (#1786) is recorded
+    # in the report's own values; no other change needs the document.
+    if any(item.get("section") == "schedules" for item in patch):
+        patch = translate(configuration.active_configuration.canonical_document, patch)
     intent = {
         "actor": str(actor.identity),
         "key": str(key or uuid4()),

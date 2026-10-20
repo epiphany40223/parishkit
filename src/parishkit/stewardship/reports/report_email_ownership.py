@@ -25,6 +25,7 @@ from parishkit.stewardship.campaigns.models import (
     ActivationCatchUpDemand,
     CampaignConfiguration,
     CampaignWorkGate,
+    RestoreDeliveryHold,
 )
 from parishkit.stewardship.campaigns.schedule_models import ScheduleDefinition
 from parishkit.stewardship.campaigns.work_locks import (
@@ -235,6 +236,79 @@ class ReportEmailProducer:
         if not isinstance(worker_id, UUID):
             raise ValueError("Report production requires a scheduler identity.")
         self.worker_id = worker_id
+        # Per report revision and namespace, the last slot known covered, so
+        # a loop pass reads at most one page of slots per report (#715).
+        self.cursors = {}
+
+    def _uncovered(self, definition, scope, epoch_id):
+        """Whether a send of ``definition`` due by now has no occurrence yet.
+
+        The report's own preparation creates its occurrences (spec, "Report
+        pipeline"), so the producer allocates one when the evaluator gives a
+        due slot with no fulfillment, restore hold, post-close resolution or
+        occurrence of the current revision. Pages of at most 100 candidate
+        sends; the cursor passes only fully covered pages, and is forgotten
+        whenever the revision, namespace or restore holds change.
+        """
+        from parishkit.stewardship.campaigns.postclose_coverage import resolved_slots
+        from parishkit.stewardship.campaigns.schedule_evaluation import SchedulePlan
+        from parishkit.stewardship.campaigns.schedule_models import (
+            ScheduleFulfillment,
+            ScheduleOccurrence,
+        )
+
+        mode = scope.runtime.mode
+        cycle = scope.campaign.production_cycle if mode == "production" else 0
+        holds = RestoreDeliveryHold.objects.filter(
+            definition=definition, mode=mode, target="admins"
+        )
+        key = (
+            definition.current_revision_id,
+            mode,
+            cycle,
+            epoch_id,
+            scope.campaign.active_configuration_id,
+            tuple(holds.order_by("id").values_list("id", "version")),
+        )
+        plan = SchedulePlan.from_values(
+            definition.current_revision.values,
+            scope.campaign.active_configuration.values,
+        )
+        after = self.cursors.get(key)
+        while True:
+            page = plan.page(through=scope.instant, after=after, limit=100)
+            keys = {slot.key for slot in page.slots}
+            covered = set(
+                ScheduleFulfillment.objects.filter(
+                    definition=definition, mode=mode, target="admins", slot__in=keys
+                ).values_list("slot", flat=True)
+            )
+            covered |= set(
+                holds.filter(
+                    slot__in=keys, state__in=("unreviewed", "assumed_delivered")
+                ).values_list("slot", flat=True)
+            )
+            # Only this Production cycle's occurrences cover a slot, as in
+            # the dates phase (report_email_planning._excluded): a withdrawn
+            # cycle's retired sends are owed again after the next go-live.
+            covered |= set(
+                ScheduleOccurrence.objects.filter(
+                    revision_id=definition.current_revision_id,
+                    mode=mode,
+                    target="admins",
+                    slot__in=keys,
+                    production_cycle=cycle,
+                ).values_list("slot", flat=True)
+            )
+            covered |= {
+                item["slot"] for item in resolved_slots(definition.pk, mode, slots=keys)
+            }
+            if keys - covered:
+                return True
+            if page.cursor is not None:
+                self.cursors[key] = after = page.cursor
+            if page.exhausted:
+                return False
 
     def _due(self, campaign_id, scope, epoch):
         """The first report definition with a send to prepare, or None."""
@@ -249,7 +323,8 @@ class ReportEmailProducer:
             .values("definition_id")
         )
         definitions = (
-            ScheduleDefinition.objects.filter(
+            ScheduleDefinition.objects.select_related("current_revision")
+            .filter(
                 campaign_id=campaign_id,
                 kind="report",
                 current_revision__isnull=False,
@@ -272,6 +347,8 @@ class ReportEmailProducer:
                 )
                 if cursor.fetchone()[0]:
                     return definition
+            if self._uncovered(definition, scope, epoch_id):
+                return definition
         return None
 
     def __call__(self, guard, *, settings=None):

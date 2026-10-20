@@ -294,6 +294,15 @@ class ReportPlan:
             ),
         )
 
+    @property
+    def one_time_due(self):
+        """The one-time send's instant, or None for a repeating report.
+
+        ``SchedulePlan``'s field of the same name, which the schedule table
+        reads for every row, a converted Daily or Weekly report's included.
+        """
+        return None if self.once is None else self._due(self.once)
+
     def _candidate(self, send):
         """Whether ``send`` is a send date of the rule, before any exclusion."""
         if self.once is not None:

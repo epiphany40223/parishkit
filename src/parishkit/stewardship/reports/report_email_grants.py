@@ -9,8 +9,8 @@
 - Mail dispatch reads a recipient's snapshot, whose kept email is what it
   sends; the scheduler's dispatch reads see only bindings.
 
-Every write is admitted by the tables' own guards (frozen file 0156).
-Nothing exercises these until the conversion admits report schedules.
+Every write is admitted by the tables' own guards (frozen file 0156);
+the conversion (0191, #1786) admits report schedules.
 """
 
 PREPARATION = "stewardship_report_email_preparation"
@@ -20,7 +20,8 @@ MANUAL = "stewardship_report_email_manual_request"
 COMPLETION = "stewardship_report_email_completion_ready"
 TABLES = (MANUAL, PREPARATION, SNAPSHOT, RECIPIENT, COMPLETION)
 # The columns that bind a snapshot or recipient without its content.
-SNAPSHOT_BINDING = {"id", "preparation_id", "campaign_id", "has_content"}
+# When its email was made is a binding too: Emailed reports lists the sends.
+SNAPSHOT_BINDING = {"id", "preparation_id", "campaign_id", "has_content", "created_at"}
 RECIPIENT_BINDING = {"id", "snapshot_id", "outbox_id", "disposition"}
 
 
@@ -59,7 +60,18 @@ def add_report_email_dispatch_grants(tables, columns, *, private):
     _columns(columns, RECIPIENT, RECIPIENT_BINDING)
 
 
+# What a saved copy shows (#1786's interim page, report_email_copy_views):
+# the email as sent, its images, and the blocks' listed request ids.
+COPY_COLUMNS = {"subject", "html", "images", "blocks"}
+
+
 def add_report_email_web_grants(tables, columns):
-    """Record Send now; read sends by their bindings, never their content."""
+    """Record Send now; read sends by their bindings, and saved copies."""
     tables.setdefault(MANUAL, set()).update({"SELECT", "INSERT"})
     add_report_email_dispatch_grants(tables, columns, private=False)
+    _columns(columns, SNAPSHOT, COPY_COLUMNS)
+    # Sent mail's retry admission and a retry's seed (the report branches
+    # 0191 gave stewardship_delivery_retry_admitted_v1 and the retry render)
+    # ask whether the recipient is still one of the report's, by its kind,
+    # reference and address, as the digests' retry reads did.
+    _columns(columns, RECIPIENT, {"kind", "ref", "address"})

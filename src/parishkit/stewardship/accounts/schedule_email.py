@@ -31,7 +31,7 @@ from parishkit.stewardship.web.admin_forms import AdminForm
 
 from . import setup_help
 from .content_forms import ContentForm, default_values, text_is_generated
-from .schedule_forms import KINDS
+from .schedule_forms import DIGEST_KINDS, KINDS
 
 # The page's checkbox, and the email fields it shows (unprefixed, so the
 # shared "Generate plain text from HTML" script in ui-v1.js serves them as it
@@ -121,9 +121,12 @@ def editor(data, records, schedule, campaign_id):
         kind = schedule["values"]["kind"]
         kinds = (kind,)
     else:
+        # New offers Family mail only: report emails replaced the digests
+        # (#1786), so none can be added.
+        offered = tuple(each for each in KINDS if each not in DIGEST_KINDS)
         posted = data.get(KIND) if data is not None else None
-        kind = posted if posted in KINDS else None
-        kinds = KINDS
+        kind = posted if posted in offered else None
+        kinds = offered
     defaults = {
         each: default_values("email", each, campaign_id=campaign_id) for each in kinds
     }

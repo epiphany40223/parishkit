@@ -117,6 +117,8 @@ OBJECT_NAMED = {
     "content_revision",
     "integration_settings",
     "report_export",
+    # A report send's saved copy is named by its subject (#1786).
+    "report_email_send",
 }
 # Pages whose heading the view supplies. The reports root renders the "no
 # campaign" page named after the report opened (checked below), and a daily

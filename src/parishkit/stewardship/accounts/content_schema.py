@@ -172,9 +172,12 @@ def validate_content_change(before, after):
         for row in after["sections"].get("campaigns", [])
         for reference in row["values"]["content_versions"].values()
     }
+    # A report email (#1786) carries its own subject and introduction and
+    # names no template.
     references.update(
         row["values"]["template_version"]
         for row in after["sections"].get("schedules", [])
+        if "template_version" in row["values"]
     )
     if removed & references:
         invalid()

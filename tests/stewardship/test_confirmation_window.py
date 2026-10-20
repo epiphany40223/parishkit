@@ -37,6 +37,24 @@ def test_next_due_slot_expires_preview_before_five_minutes(kind):
     assert deadline(due, [rule]) == due + 5 * MINUTE
 
 
+def test_a_report_email_send_expires_the_preview():
+    """A report email's next send (#1786) bounds the preview like other mail."""
+    from parishkit.stewardship.campaigns.schedule_evaluation import SchedulePlan
+
+    from .campaign_factory import campaign
+    from .test_report_schedule import report
+
+    owner = campaign()
+    rule = SchedulePlan.from_values(report(campaign_id=owner["id"]), owner["values"])
+    observed = datetime(2054, 10, 10, 12, tzinfo=UTC)
+    due = next(
+        slot.due_at
+        for slot in rule.page(through=observed + timedelta(days=8)).slots
+        if slot.due_at > observed
+    )
+    assert deadline(due - 2 * MINUTE, [rule]) == due
+
+
 @pytest.mark.parametrize("boundary", ["source", "start", "close", "lifetime"])
 def test_nearest_non_schedule_boundary_expires_preview(boundary):
     """Crossing the start changes scheduled/active even without any due mail."""

@@ -339,6 +339,10 @@ def configure_web_runtime(configuration):
 
     # Once users ship, never serve sign-ins from unconverted rules (#952).
     require_users_form(runtime)
+    from .accounts.reports_upgrade import require_reports_converted
+
+    # Nor any page from unconverted Daily and Weekly digests (#1786).
+    require_reports_converted(runtime)
     for name in ("reports", "media"):
         private_directory(configuration.paths[name])
     settings.STEWARDSHIP_MEDIA_ROOT = configuration.paths["media"]

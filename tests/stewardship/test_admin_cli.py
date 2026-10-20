@@ -445,6 +445,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
     assert listed["audit_event"] is None and not listed["prompts"]
     assert listed["result_fields"] == [
         "campaign_id",
+        "reports",
         "daily",
         "weekly",
         "weekly_request_available",

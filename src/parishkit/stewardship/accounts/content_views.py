@@ -51,6 +51,7 @@ from .campaign_wizard_models import CampaignSetupReview, item_key
 from .content_defaults import default_initial
 from .content_forms import (
     EMAIL_LABELS,
+    OFFERED_EMAIL_LABELS,
     ContentForm,
     matches_default,
     page_slots,
@@ -134,7 +135,7 @@ def editor_content(configuration, campaign, kind, slot, revision_id=None):
     labels = (
         page_slots(campaign.active_configuration.values)
         if kind == "page"
-        else EMAIL_LABELS
+        else OFFERED_EMAIL_LABELS
     )
     if (
         kind not in {"page", "email"}
@@ -178,15 +179,20 @@ def campaign_email_usage(configuration, campaign_id):
     email lists use, so both pages name a sender the same way (#446).
     """
     # The same records schedule_reads.campaign_schedules reads; that module
-    # imports this one, so it is not imported here.
+    # imports this one, so it is not imported here. A converted report
+    # (#1786) sends no email template, so it uses none.
+    from .report_rows import view_rows
+
     return email_usage(
         sorted(
-            (
-                row
-                for row in configuration.active_configuration.canonical_document[
-                    "sections"
-                ].get("schedules", [])
-                if row["values"]["campaign_id"] == str(campaign_id)
+            view_rows(
+                [
+                    row
+                    for row in configuration.active_configuration.canonical_document[
+                        "sections"
+                    ].get("schedules", [])
+                    if row["values"]["campaign_id"] == str(campaign_id)
+                ]
             ),
             key=schedule_order,
         )
@@ -266,7 +272,7 @@ def catalog_entries(configuration, campaign):
     # one can be removed.
     usage = campaign_email_usage(configuration, campaign.pk)
     emails = []
-    for slot, label in EMAIL_LABELS.items():
+    for slot, label in OFFERED_EMAIL_LABELS.items():
         rows = [
             row
             for row in records

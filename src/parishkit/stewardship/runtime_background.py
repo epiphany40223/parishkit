@@ -161,11 +161,6 @@ def scheduler_handlers():
     from .jobs.family_mail_test_tasks import TASK_TYPE as FAMILY_MAIL_TEST
     from .jobs.family_mail_test_tasks import family_test_handler
     from .jobs.queues import WorkQueue
-    from .reports.digest_finalization import TASK_TYPE as DAILY_FINALIZE
-    from .reports.digest_finalization import WEEKLY_TASK_TYPE as WEEKLY_FINALIZE
-    from .reports.digest_finalization import finalization_handler
-    from .reports.digest_ownership import TASK_TYPE as DAILY_PREPARE
-    from .reports.digest_tasks import daily_handler
     from .reports.exact_services import TASK_TYPE as EXACT_EXPORT
     from .reports.exact_tasks import exact_handler
     from .reports.export_cleanup import TASK_TYPE as EXPORT_CLEANUP
@@ -174,12 +169,12 @@ def scheduler_handlers():
     from .reports.export_tasks import export_handler
     from .reports.fact_tasks import TASK_TYPE as REPORT_FACTS
     from .reports.fact_tasks import fact_handler
+    from .reports.report_email_finalization import TASK_TYPE as REPORT_EMAIL_FINALIZE
+    from .reports.report_email_finalization import finalization_handler
     from .reports.report_email_ownership import TASK_TYPE as REPORT_EMAIL_PREPARE
     from .reports.report_email_tasks import report_email_handler
     from .reports.verification_production import TASK_TYPE as VERIFY_FACTS
     from .reports.verification_tasks import verification_handler
-    from .reports.weekly_ownership import TASK_TYPE as WEEKLY_PREPARE
-    from .reports.weekly_tasks import weekly_handler
     from .source.outcomes import admit_refresh_metadata, recovery_plan
     from .source.requests import TASK_TYPE
     from .source.setup_admission import TASK_TYPE as SETUP_LOAD
@@ -198,12 +193,9 @@ def scheduler_handlers():
 
     return {
         **publication_scheduler_handlers(unavailable),
-        DAILY_PREPARE: daily_handler(scheduler=True),
-        DAILY_FINALIZE: finalization_handler(scheduler=True),
-        WEEKLY_PREPARE: weekly_handler(scheduler=True),
-        WEEKLY_FINALIZE: finalization_handler(scheduler=True),
-        # Report emails (#1786): nothing creates one until the conversion.
+        # Report emails (#1786), which replaced the Daily and Weekly digests.
         REPORT_EMAIL_PREPARE: report_email_handler(scheduler=True),
+        REPORT_EMAIL_FINALIZE: finalization_handler(scheduler=True),
         FAMILY_MAIL_PREPARE: preparation_handler(scheduler=True),
         FAMILY_MAIL_TEST: family_test_handler(scheduler=True),
         REPORT_EXPORT: export_handler(scheduler=True),
@@ -329,6 +321,10 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
         # Once users ship, no worker or scheduler runs on unconverted
         # sign-in rules (#952).
         require_users_form(active)
+        from .accounts.reports_upgrade import require_reports_converted
+
+        # Nor, once report emails ship, on unconverted digests (#1786).
+        require_reports_converted(active)
     if (
         role is ServiceRole.WORKER
         and "parishsoft" not in loaded
@@ -379,11 +375,6 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
         from .jobs.family_mail_tasks import preparation_handler
         from .jobs.family_mail_test_tasks import TASK_TYPE as FAMILY_MAIL_TEST
         from .jobs.family_mail_test_tasks import family_test_handler
-        from .reports.digest_finalization import TASK_TYPE as DAILY_FINALIZE
-        from .reports.digest_finalization import WEEKLY_TASK_TYPE as WEEKLY_FINALIZE
-        from .reports.digest_finalization import finalization_handler
-        from .reports.digest_ownership import TASK_TYPE as DAILY_PREPARE
-        from .reports.digest_tasks import daily_handler
         from .reports.exact_services import TASK_TYPE as EXACT_EXPORT
         from .reports.exact_tasks import exact_handler
         from .reports.export_cleanup import TASK_TYPE as EXPORT_CLEANUP
@@ -392,14 +383,16 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
         from .reports.export_tasks import export_handler
         from .reports.fact_tasks import TASK_TYPE as REPORT_FACTS
         from .reports.fact_tasks import fact_handler
+        from .reports.report_email_finalization import (
+            TASK_TYPE as REPORT_EMAIL_FINALIZE,
+        )
+        from .reports.report_email_finalization import finalization_handler
         from .reports.report_email_ownership import (
             TASK_TYPE as REPORT_EMAIL_PREPARE,
         )
         from .reports.report_email_tasks import report_email_handler
         from .reports.verification_production import TASK_TYPE as VERIFY_FACTS
         from .reports.verification_tasks import verification_handler
-        from .reports.weekly_ownership import TASK_TYPE as WEEKLY_PREPARE
-        from .reports.weekly_tasks import weekly_handler
         from .source.effects import refresh_reconciler, refresh_unchanged
         from .source.execution import refresh_handler
         from .source.requests import TASK_TYPE
@@ -409,14 +402,11 @@ def configure_background(configuration, *, stop, heartbeat, queues=None):
         from .source.setup_execution import setup_source_handler
 
         handlers = {
-            DAILY_PREPARE: daily_handler(public_origin=configuration.public_origin),
-            DAILY_FINALIZE: finalization_handler(),
-            WEEKLY_PREPARE: weekly_handler(public_origin=configuration.public_origin),
-            WEEKLY_FINALIZE: finalization_handler(),
-            # Report emails (#1786): nothing creates one until the conversion.
+            # Report emails (#1786), which replaced the Daily and Weekly digests.
             REPORT_EMAIL_PREPARE: report_email_handler(
                 public_origin=configuration.public_origin
             ),
+            REPORT_EMAIL_FINALIZE: finalization_handler(),
             FAMILY_MAIL_PREPARE: preparation_handler(
                 general=rings["general_encryption"],
                 mac=rings["family_code_mac"],

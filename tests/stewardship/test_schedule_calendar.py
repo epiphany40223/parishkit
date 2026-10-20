@@ -147,7 +147,7 @@ def test_sends_at_one_moment_keep_the_tables_sending_order():
     sends = calendar_sends(rows, VALUES, {}, BEFORE)
     assert [send.label for send in sends[:2]] == [
         "Initial invitation",
-        "Weekly Admin digest",
+        "Weekly report",
     ]
     assert sends[0].due == sends[1].due
 

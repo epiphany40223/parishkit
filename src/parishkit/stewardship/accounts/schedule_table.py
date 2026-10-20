@@ -210,7 +210,8 @@ def schedule_rows(previous, campaign, summary, now, names=None):
     ):
         values = record["values"]
         kind = values["kind"]
-        plan = SchedulePlan.from_values(values, campaign)
+        # A converted report (#1786) plans by its own rule.
+        plan = SchedulePlan.from_values(record.get("report", values), campaign)
         counts = summary.get(str(record["id"]), {})
         slot = plan.next_slot(after=now) if kind in DIGESTS else None
         rows.append(

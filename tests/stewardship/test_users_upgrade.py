@@ -510,16 +510,19 @@ def test_only_admin_recovery_and_web_read_identities_and_member_names():
     from parishkit.stewardship.runtime_grants import (
         DEBUG_OFF_CLEAR_FUNCTION,
         DEBUG_OFF_FUNCTION,
+        DIGEST_WORK_FUNCTION,
         MEMBER_NAMES_FUNCTION,
         PORTAL_IDENTITIES_FUNCTION,
         runtime_functions,
     )
 
     upgrade = {PORTAL_IDENTITIES_FUNCTION, MEMBER_NAMES_FUNCTION}
-    # Admin recovery also reads and clears the debug-off switch (0078, #530).
+    # Admin recovery also reads and clears the debug-off switch (0078, #530)
+    # and asks what holds the report email conversion back (0191, #1786).
     assert runtime_functions(ServiceRole.ADMIN_RECOVERY) == upgrade | {
         DEBUG_OFF_FUNCTION,
         DEBUG_OFF_CLEAR_FUNCTION,
+        DIGEST_WORK_FUNCTION,
     }
     assert upgrade <= runtime_functions(ServiceRole.WEB)
     for role in (

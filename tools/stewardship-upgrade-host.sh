@@ -782,9 +782,26 @@ if [ "$mode" = upgrade ]; then
                 echo "If the release notes announce the users upgrade, repeat the run with the" >&2
                 echo "STEWARDSHIP_USERS_* variables (runbook, Users upgrade)." >&2
             fi
+            # Report emails' migration refuses while digest work is open.
+            echo "If it refused because a Daily or Weekly digest send is unfinished, see the" >&2
+            echo "operations specification, Report email conversion." >&2
             exit 1
         fi
         grants grants
+    fi
+    # Report emails (#1786): the offline conversion of the Daily and Weekly
+    # digests, after the migrations and grants of the release that brings
+    # them. It takes no inputs, does nothing once nothing is left to
+    # convert, and resumes an interrupted run, so it runs on every upgrade,
+    # even one whose check answered t. Until it succeeds the services
+    # refuse to start, so a failure stops here with the maintenance page up.
+    step "4. Report email conversion"
+    if ! oneoff 900 "the report email conversion" reports-upgrade admin-recovery upgrade-reports \
+        --config "$services/admin-recovery.yaml" --confirm-deployment "$uuid"; then
+        echo "The report email conversion did not complete; the services stay stopped." >&2
+        echo "Fix the cause and repeat the run (operations specification, Report email" >&2
+        echo "conversion)." >&2
+        exit 1
     fi
 else
     step "4. Migration: not repeated by a rollback"

@@ -241,9 +241,10 @@ def prepare_digest(demand, claim, scope, definition, cursor):
         ScheduleOccurrence.objects.filter(pk=row.pk, version=row.version).update(
             state="coalesced",
             replacement=selected,
-            reason="missed_daily_recovery"
-            if definition.kind == "daily_digest"
-            else "missed_weekly_recovery",
+            reason={
+                "daily_digest": "missed_daily_recovery",
+                "weekly_digest": "missed_weekly_recovery",
+            }.get(definition.kind, "missed_report_recovery"),
             version=row.version + 1,
             actor_id=claim.worker_id,
             correlation_id=correlation,

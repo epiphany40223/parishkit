@@ -145,7 +145,8 @@ class ScheduleRevision(ImmutableRecord):
                 condition=(
                     models.Q(kind__in=["initial", "reminder"], due_at__isnull=False)
                     | models.Q(
-                        kind__in=["daily_digest", "weekly_digest"], due_at__isnull=True
+                        kind__in=["daily_digest", "weekly_digest", "report"],
+                        due_at__isnull=True,
                     )
                 ),
                 name="schedule_revision_due_kind",
