@@ -2657,11 +2657,15 @@ drawn selected, and *How it reaches ParishSoft* is *By hand*: until the
 update run is rebuilt
 ([#1688](https://github.com/epiphany40223/parishkit/issues/1688)) nothing
 writes an addition to ParishSoft, whatever the handling registry says of its
-field. It offers only **Entered by hand** (final, as for any change) and
-**Back to review**, which withdraws it: it moves to *History*, and the field
-may be added again. Both are in the bulk bar too, together with the
-Family's own changes, all or none; the bulk dialog says a ticked added
-change is withdrawn. Each ignored change it replaced shows "Added in its
+field. It offers only **Entered by hand** and **Back to review**, which
+withdraws it: it moves to *History*, and the field may be added again. Once
+Entered by hand, Back to review undoes the mark instead, with a required
+note, as on every terminal stage
+([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage)):
+the added change is *To enter by hand* again, at its next version, and may
+be entered again or withdrawn; every step stays in its history. Both are in
+the bulk bar too, together with the Family's own changes, all or none; the
+bulk dialog says a ticked added change still to enter by hand is withdrawn. Each ignored change it replaced shows "Added in its
 place:" with the field and value of every addition made for it under its
 stage, and the added change says it was added in place of an ignored change.
 
