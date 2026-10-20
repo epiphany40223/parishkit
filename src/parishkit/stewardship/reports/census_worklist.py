@@ -29,6 +29,7 @@ from parishkit.stewardship.pipeline import (
     census_by_hand,
     census_placement,
     may_add,
+    role_actions,
 )
 from parishkit.stewardship.responses.capabilities import capability
 from parishkit.stewardship.responses.census import (
@@ -43,7 +44,10 @@ from parishkit.stewardship.responses.census_additions import (
     parse_add,
     resolve_census_additions,
 )
-from parishkit.stewardship.responses.census_resolution import ReopenCovered
+from parishkit.stewardship.responses.census_resolution import (
+    ReopenCovered,
+    member_correctable,
+)
 from parishkit.stewardship.responses.census_review import (
     FIELDS,
     BulkStale,
@@ -54,6 +58,7 @@ from parishkit.stewardship.responses.comparison import ADDRESS_COMPONENTS, Value
 from parishkit.stewardship.responses.models import (
     CensusAddition,
     CensusAdditionResolution,
+    ProposalResolution,
     ProposedChange,
 )
 from parishkit.stewardship.responses.refresh_checks import (
@@ -67,6 +72,7 @@ from parishkit.stewardship.web.review_worklist import (
     NOT_SEEN,
     WORDS,
     Column,
+    Remark,
     StaleDecision,
     build,
     page_address,
@@ -100,6 +106,28 @@ MEMBER_TEMPLATE = "stewardship/census-worklist-member.html"
 # mark named.
 REFRESH_CONFLICT = "ParishSoft no longer holds the update."
 MEMBER_ID = "ParishSoft Member ID {}."
+# A New Member Entered by hand and not Confirmed may have its ParishSoft
+# Member ID corrected, or added when its mark named none (#1773): the mark
+# made again, one row at a time, in a dialog of its own asking for the ID.
+CORRECT_TEMPLATE = "stewardship/census-worklist-member-correct.html"
+CORRECT_BODY = (
+    "Record the ID of the Member you added. Check the Member in "
+    "ParishSoft first: the next refresh checks the entry again."
+)
+CORRECT_MEMBER_ID = Remark(
+    icon="edit",
+    label="Correct the ParishSoft Member ID of {name}",
+    title_one="Correct the ParishSoft Member ID of {name}?",
+    done="had its ParishSoft Member ID corrected.",
+    body=CORRECT_BODY,
+)
+ADD_MEMBER_ID = Remark(
+    icon="edit",
+    label="Add the ParishSoft Member ID of {name}",
+    title_one="Add the ParishSoft Member ID of {name}?",
+    done="had its ParishSoft Member ID added.",
+    body=CORRECT_BODY,
+)
 
 
 def _family(row):
@@ -179,6 +207,36 @@ def _new_member(row):
     return row["entity_kind"] == "proposed_member" and row["field"] == "new_member"
 
 
+def _correctable(row):
+    """Whether a New Member row may have its ParishSoft Member ID corrected.
+
+    Entered by hand (no refresh confirmed it at its current version) and no
+    later response replaced it; the page's half of
+    ``census_resolution.member_correctable``, from the shaped row.
+    """
+    return (
+        _new_member(row)
+        and row["placement"].stage is Stage.ENTERED_BY_HAND
+        and not row.get("replaced")
+    )
+
+
+def _remark(row):
+    """The row's Member ID correction (#1773): Correct when its mark names an
+    ID, Add when it names none; None when the row offers neither."""
+    if not _correctable(row):
+        return None
+    return CORRECT_MEMBER_ID if row.get("resolution_member") else ADD_MEMBER_ID
+
+
+def _entered_template(row):
+    """The row's own Entered by hand fields: a New Member's Member ID for a
+    first mark (#1749), or for its correction (#1773); None for any other."""
+    if not _new_member(row):
+        return None
+    return CORRECT_TEMPLATE if _correctable(row) else MEMBER_TEMPLATE
+
+
 def worklist_rows(rows):
     """The review worklist's rows for one page of shaped census rows.
 
@@ -207,7 +265,8 @@ def worklist_rows(rows):
                 "decided_at": decided_at,
                 "note": note or "",
                 "stage_note": _stage_note(row),
-                "entered_template": MEMBER_TEMPLATE if _new_member(row) else None,
+                "entered_template": _entered_template(row),
+                "remark": _remark(row),
             }
         )
     return found
@@ -444,6 +503,32 @@ def _made_again(resolution):
     ).exists()
 
 
+def _correction(resolution):
+    """The ``Remark`` a New Member's Member ID correction (#1773) is worded
+    by (Correct, or Add over a mark that named none), or None.
+
+    A first mark never follows an ``entered`` resolution at the version
+    before it; only a mark made again does, and a New Member is never
+    Entered incorrectly, so for one that is the correction. Read from the
+    recorded rows, so a replay is worded alike.
+    """
+    if resolution.member_duid is None:
+        return None
+    earlier = list(
+        ProposalResolution.objects.filter(
+            proposal_id=resolution.proposal_id,
+            expected_version=resolution.expected_version - 1,
+            action="entered",
+            proposal__entity_kind="proposed_member",
+            proposal__field="new_member",
+        ).values_list("member_duid", flat=True)[:1]
+    )
+    if not earlier:
+        return None
+    (earlier,) = earlier
+    return ADD_MEMBER_ID if earlier is None else CORRECT_MEMBER_ID
+
+
 class CensusDecisions:
     """The census stream's worklist decisions, one campaign's (``DecisionService``).
 
@@ -513,7 +598,7 @@ class CensusDecisions:
             if allows(principal, capability)
         )
 
-    def _offered(self, principal, action, versions, proposals, added=()):
+    def _offered(self, principal, action, versions, proposals, added=(), *, bulk=False):
         """Refuse an action a chosen change's stage does not offer this reader.
 
         The services and their guards allow some decisions the worklist does
@@ -523,7 +608,10 @@ class CensusDecisions:
         the ``DecisionService`` contract asks. A change whose version moved
         since the page was drawn is left to the service, which answers with
         the stale notice rather than a refusal. ``added`` are the open
-        additions' placements, which offer only their own later steps.
+        additions' placements, which offer only their own later steps. A New
+        Member Entered by hand also offers Entered by hand again, one row at a
+        time, to correct its ParishSoft Member ID
+        (``census_resolution.member_correctable``, #1773).
         """
         roles = self._roles(principal)
         # A final change is placed by its latest refresh check at its
@@ -550,13 +638,22 @@ class CensusDecisions:
                     check=checks[str(pk)].outcome if str(pk) in checks else None,
                 ).stage,
                 census_by_hand(proposal.handling, proposal.entity_kind),
+                proposal,
             )
             for pk, proposal in proposals.items()
             if proposal.version == versions[pk]
-        ] + [(placement.stage, True) for placement in added]
-        for stage, by_hand in stages:
+        ] + [(placement.stage, True, None) for placement in added]
+        for stage, by_hand, proposal in stages:
             offered = allowed_actions(Stream.CENSUS, stage, roles, by_hand=by_hand)
-            if action not in offered:
+            correction = (
+                proposal is not None
+                and action is Action.ENTERED_BY_HAND
+                and Action.ENTERED_BY_HAND in role_actions(Stream.CENSUS, roles)
+                and stage is Stage.ENTERED_BY_HAND
+                and not bulk
+                and member_correctable(proposal)
+            )
+            if action not in offered and not correction:
                 raise ValueError("This census change does not offer that action now.")
 
     def _add(self, principal, decision):
@@ -601,6 +698,7 @@ class CensusDecisions:
                 for pk in additions
                 if pk not in resolved and addition_ids[pk] == 1
             ],
+            bulk=decision.bulk,
         )
         value = member = None
         if decision.action is Action.EDIT:
@@ -683,6 +781,15 @@ class CensusDecisions:
                 return f"{addition_name(addition)} withdrawn."
             return f"{addition_name(addition)} {words}"
         (proposal,) = proposals.values()
+        correction = (
+            _correction(recorded[0])
+            if decision.action is Action.ENTERED_BY_HAND
+            else None
+        )
+        if correction is not None:
+            # A New Member's Member ID corrected or added (#1773), also on a
+            # replay.
+            return f"{notice_name(proposal)} {correction.done}"
         if decision.action in INCORRECT_WORDS and _made_again(recorded[0]):
             # Entered incorrectly's mark made again (#1737), worded as its
             # icon was, also when the answer is a replay.
