@@ -2,10 +2,10 @@
 
 Process admission is replaced by the test's own Django assembly; everything
 after it is the real command line on the restricted web login. The command
-reads the page's own ``listing``: the current campaign's ready daily
-reports and, for an Administrator, its weekly reports, by id and date only,
-and the page's ``?requested=`` request. As the page's read, it records no
-event.
+reads the page's own ``listing``: the current campaign's report email
+sends (#1786) and the daily digests sent before them and, for an
+Administrator, its weekly digests, by id, name and date only, and the page's
+``?requested=`` request. As the page's read, it records no event.
 """
 
 from dataclasses import replace
@@ -21,30 +21,32 @@ from parishkit.stewardship.accounts.policy import current_principal
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.models import AuditEvent
 from parishkit.stewardship.deployment import ServiceRole
-from parishkit.stewardship.reports.weekly_models import (
-    WeeklyDigestRecipient,
-    WeeklyManualRequest,
+from parishkit.stewardship.reports.report_email_models import (
+    ReportEmailManualRequest,
 )
 
 from .auth_builders import signed_in
 from .automation_builders import paired
 from .campaign_builders import campaign_clock
+from .report_builders import (
+    DAILY_INSTANT,
+    WEEKLY_INSTANT,
+    settle_messages,
+    weekly_allocated,
+)
+from .report_builders import allocated as daily_allocated
 from .test_admin_export_cli_postgresql import read_only_session
 from .test_admin_report_cli_postgresql import cli  # noqa: F401
 from .test_admin_test_sample_cli_postgresql import runner
 from .test_background_grants_postgresql import task_login
-from .test_daily_digest_dispatch_postgresql import allocated as daily_allocated
-from .test_daily_digest_planning_postgresql import INSTANT as DAILY_INSTANT
 from .test_family_mail_preparation_postgresql import family_mail  # noqa: F401
-from .test_weekly_capture_postgresql import INSTANT as WEEKLY_INSTANT
-from .test_weekly_coverage_postgresql import accepted
-from .test_weekly_dispatch_postgresql import allocated as weekly_allocated
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
 # Documents are printed with sorted keys, so members are compared as sets.
 FIELDS = {
     "campaign_id",
+    "reports",
     "daily",
     "weekly",
     "weekly_request_available",
@@ -60,14 +62,14 @@ def revoke(service, secret):
     automation.revoke(row.pk, actor, reason="revoked_by_owner")
 
 
-def test_the_daily_list_matches_the_page_and_records_nothing(
+def test_the_report_list_matches_the_page_and_records_nothing(
     family_mail,  # noqa: F811
     google,
     cli,  # noqa: F811
 ):
-    """The page's ready daily report, by id; any session; no event."""
+    """The page's report email send, by id; any session; no event."""
     with campaign_clock(DAILY_INSTANT):
-        ready = daily_allocated(family_mail)
+        preparation = daily_allocated(family_mail)
         browser, _ = signed_in()
         run = cli()
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
@@ -79,19 +81,16 @@ def test_the_daily_list_matches_the_page_and_records_nothing(
         result = document["result"]
         assert set(result) == FIELDS
         assert result["campaign_id"] == str(family_mail.campaign.pk)
-        [daily] = result["daily"]
-        assert daily["snapshot_id"] == str(ready.snapshot_id)
-        assert set(daily) == {
-            "snapshot_id",
-            "through_date",
-            "covered_dates",
-            "observed_at",
-        }
-        # The page links the same report.
-        link = reverse("admin:daily_digest_snapshot", args=[ready.snapshot_id])
+        [sent] = result["reports"]
+        assert sent["send_id"] == str(preparation.pk)
+        assert sent["name"] == "Daily report" and sent["how"] == "scheduled"
+        assert set(sent) == {"send_id", "name", "how", "made_at"}
+        # The page links the same send.
+        link = reverse("admin:report_email_send", args=[preparation.pk])
         assert link.encode() in page.content
-        # An Administrator's weekly list: none captured yet, and no schedule.
-        assert result["weekly"] == [] and not result["weekly_request_available"]
+        # No digest was sent before report emails, and no Weekly report.
+        assert result["daily"] == [] and result["weekly"] == []
+        assert not result["weekly_request_available"]
         assert result["requested"] is None and result["shown"] == 60
         assert "@" not in str(document)
         # A read-only session reads it too, and neither read is recorded.
@@ -113,29 +112,29 @@ def test_weekly_reports_and_a_requested_report(
     google,
     cli,  # noqa: F811
 ):
-    """The weekly list, the schedule flag and ``--requested`` as the page's."""
+    """The Weekly report's sends, its flag and ``--requested`` as the page's."""
     harness = live_response_service
     with campaign_clock(WEEKLY_INSTANT):
-        retained = weekly_allocated(harness)
+        preparation = weekly_allocated(harness)
+        # Send now waits for the scheduled send's email to be delivered.
+        settle_messages()
         browser, _ = signed_in()
         run = cli()
         code, document = run("digest", "list")
         assert code == 0, document
-        [weekly] = document["result"]["weekly"]
-        assert weekly["snapshot_id"] == str(retained.pk) and not weekly["manual"]
-        assert set(weekly) == {"snapshot_id", "manual", "observed_at"}
-        # This campaign has its Weekly Admin digest schedule.
+        [sent] = document["result"]["reports"]
+        assert sent["send_id"] == str(preparation.pk)
+        assert sent["name"] == "Weekly report"
+        # This campaign has its Weekly report.
         assert document["result"]["weekly_request_available"]
 
-        # Once the emailed report is resolved, a manual request names its
-        # task.
-        accepted(WeeklyDigestRecipient.objects.get(snapshot=retained))
+        # A manual request names its task until its email is made.
         key = uuid4()
         code, document = run(
             "digest", "weekly-request", "--yes", "--request-key", str(key)
         )
         assert code == 0, document
-        manual = WeeklyManualRequest.objects.get(pk=key)
+        manual = ReportEmailManualRequest.objects.get(pk=key)
         code, document = run("digest", "list", "--requested", str(key))
         assert code == 0, document
         result = document["result"]
@@ -149,9 +148,10 @@ def test_weekly_reports_and_a_requested_report(
         code, document = run("digest", "list", "--requested", str(uuid4()))
         assert code == 0 and document["result"]["requested"] is None
 
-        # A Staff reader sees the daily list only, as on the page: ``weekly``
-        # is null, with no request and no Send a weekly report now, even with
-        # this weekly report, schedule and request in the database. Pairing
+        # A Staff reader sees the report emails and the daily list only, as
+        # on the page: ``weekly`` is null, with no request and no Send a
+        # weekly report now, even with this report and request in the
+        # database. Pairing
         # needs an Administrator, so the command's own admission is the
         # only stand-in: it returns the session's principal as Staff.
         real = admin_digests._admit
@@ -169,6 +169,7 @@ def test_weekly_reports_and_a_requested_report(
         # The same campaign and daily list as the Administrator's.
         assert staff["campaign_id"] == result["campaign_id"]
         assert staff["daily"] == result["daily"]
+        assert staff["reports"] == result["reports"]
 
 
 def test_a_missing_configuration_row_fails_closed(auth_service, google, monkeypatch):
@@ -206,6 +207,7 @@ def test_no_current_campaign(auth_service, google, monkeypatch):
     assert code == 0, document
     assert document["result"] == {
         "campaign_id": None,
+        "reports": [],
         "daily": [],
         "weekly": [],
         "weekly_request_available": False,

@@ -16,14 +16,19 @@ from parishkit.stewardship.campaigns.schedule_models import ScheduleDefinition
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.jobs.dispatch import Handler
 from parishkit.stewardship.jobs.models import TaskRun
-from parishkit.stewardship.jobs.outbox_models import OutboxMessage
 from parishkit.stewardship.jobs.scanning import collect_hints
 
 from .campaign_builders import campaign_clock, complete_empty_catchup
+from .report_builders import (
+    DAILY_INSTANT,
+    WEEKLY_INSTANT,
+    add_digest,
+    execute,
+    messages,
+    produce,
+)
 from .response_builders import activate_response_service
 from .test_background_grants_postgresql import task_login
-from .test_daily_digest_dispatch_postgresql import allocated as daily_allocated
-from .test_daily_digest_planning_postgresql import INSTANT as DAILY_INSTANT
 from .test_family_mail_dispatch_postgresql import prepare as prepare_family_mail
 from .test_family_mail_preparation_postgresql import (
     allocate,
@@ -39,8 +44,6 @@ from .test_operational_routing_postgresql import routing  # noqa: F401
 from .test_receipt_dispatch_postgresql import receipt
 from .test_security_dispatch_postgresql import allocated as security_allocated
 from .test_source_requests_postgresql import command
-from .test_weekly_capture_postgresql import INSTANT as WEEKLY_INSTANT
-from .test_weekly_dispatch_postgresql import allocated as weekly_allocated
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -166,24 +169,38 @@ def test_production_submission_receipt(live_response_service):
     assert message.task_id in sweep(live_response_service.service.store)
 
 
-def test_daily_digest(family_mail):  # noqa: F811
-    """Per-Admin daily digest deliveries."""
+def report_sweep(harness, *, weekly):
+    """A report send's preparation, then its per-Administrator deliveries.
+
+    The real producer allocates the send of a report shaped as the
+    converted Daily (or Weekly); a scan hints its preparation task, and
+    after the worker prepares it, each recipient's message.
+    """
+    store, campaign = harness.service.store, harness.campaign
+    add_digest(store, campaign, weekly=weekly)
+    if campaign.state == "active":
+        # A live campaign's sends wait for its activation catch-up.
+        complete_empty_catchup(campaign, uuid4())
+    statuses = produce()
+    assert statuses
+    assert {status.run_id for status in statuses} <= sweep(store)
+    for status in statuses:
+        execute(status)
+    assert messages().exists()
+    hinted = sweep(store)
+    assert {message.task_id for message in messages()} <= hinted
+
+
+def test_daily_report_email(family_mail):  # noqa: F811
+    """A report shaped as the converted Daily, in Testing mode."""
     with campaign_clock(DAILY_INSTANT):
-        daily_allocated(family_mail)
-        messages = OutboxMessage.objects.filter(purpose="daily_digest")
-        assert messages.exists()
-        hinted = sweep(family_mail.service.store)
-    assert {message.task_id for message in messages} <= hinted
+        report_sweep(family_mail, weekly=False)
 
 
-def test_weekly_digest(live_response_service):
-    """Per-Admin weekly digest deliveries."""
+def test_weekly_report_email(live_response_service):
+    """A report shaped as the converted Weekly, in Production mode."""
     with campaign_clock(WEEKLY_INSTANT):
-        weekly_allocated(live_response_service)
-        messages = OutboxMessage.objects.filter(purpose="weekly_digest")
-        assert messages.exists()
-        hinted = sweep(live_response_service.service.store)
-    assert {message.task_id for message in messages} <= hinted
+        report_sweep(live_response_service, weekly=True)
 
 
 def test_operational_and_security_alerts(routing):  # noqa: F811

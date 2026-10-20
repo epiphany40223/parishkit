@@ -60,9 +60,11 @@ pytestmark = pytest.mark.parametrize(
 )
 MONDAYS = [5, 12, 19, 26]
 # Every email by date's rows (#1656): every send (three one-time schedules,
-# the weekly digest's Mondays and the daily one's 31 days), and the upcoming
-# ones, without the sent invitation and the daily digest's four past days.
-ALL_ROWS = 3 + len(MONDAYS) + 31
+# the weekly report's Mondays, its first Monday after the close (November 2:
+# the converted Weekly sends until then, #1786) and the daily one's 31
+# days), and the upcoming ones, without the sent invitation and the daily
+# report's four past days.
+ALL_ROWS = 3 + len(MONDAYS) + 1 + 31
 UPCOMING_ROWS = ALL_ROWS - 5
 
 
@@ -109,16 +111,16 @@ def test_calendar_draws_each_send_on_its_local_day(
     reminder = cell(page, 10).get_by_role("link", name="6:00 AM Reminder 1")
     assert reminder.get_attribute("href").startswith("/admin/campaign/schedules/")
     for monday in MONDAYS:
-        assert "Weekly Admin digest" in cell(page, monday).inner_text()
+        assert "Weekly report" in cell(page, monday).inner_text()
     assert "Campaign closes" in cell(page, 31).inner_text()
     # A daily digest day that has passed is muted, unlinked and read as Past;
     # a later one links to the digest's Edit page.
     past = cell(page, 3).locator("li")
-    assert past.inner_text().startswith("4:00 AM Daily Admin digest")
+    assert past.inner_text().startswith("4:00 AM Daily report")
     assert past.get_attribute("class") == "schedule-past"
     assert past.get_by_role("link").count() == 0
     assert past.locator(".visually-hidden").inner_text() == ", Past"
-    visible(cell(page, 6).get_by_role("link", name="4:00 AM Daily Admin digest"))
+    visible(cell(page, 6).get_by_role("link", name="4:00 AM Daily report"))
     # A phone scrolls the grid inside its region; the page never scrolls sideways.
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert axe_violations(page, axe_source) == []
@@ -128,14 +130,14 @@ def test_calendar_draws_each_send_on_its_local_day(
     assert grids.locator("caption").all_inner_texts() == ["November 2054"]
     november = cell(page, 1)
     assert grids.locator("tbody td").first.inner_text().startswith("1")
-    visible(november.get_by_role("link", name="4:00 AM Daily Admin digest"))
+    visible(november.get_by_role("link", name="4:00 AM Daily report"))
     assert "Campaign" not in november.inner_text()
     # The table lists the same sends as text, with compact times: by default
     # the upcoming ones (not the sent invitation or four past digest days).
     rows = page.locator("table.calendar-sends tbody tr")
     assert rows.count() == UPCOMING_ROWS
     assert rows.first.locator("time").inner_text() == "Oct 5, 2054 6:00 AM"
-    assert rows.first.locator("th").inner_text() == "Weekly Admin digest"
+    assert rows.first.locator("th").inner_text() == "Weekly report"
     visible(page.get_by_role("link", name="Edit Reminder 1"))
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert axe_violations(page, axe_source) == []
@@ -165,8 +167,8 @@ def test_a_zone_a_day_ahead_moves_each_send_to_its_own_day(
             .startswith("2:00 AM Initial invitation")
         )
         for monday in MONDAYS:
-            assert "Weekly Admin digest" in cell(page, monday + 1).inner_text()
-            assert "Weekly Admin digest" not in cell(page, monday).inner_text()
+            assert "Weekly report" in cell(page, monday + 1).inner_text()
+            assert "Weekly report" not in cell(page, monday).inner_text()
         assert not failures
     finally:
         context.close()
@@ -273,7 +275,7 @@ def test_a_keyboard_reaches_a_day_add_and_opens_new_with_that_date(
     add_link(page, 11).focus()
     tab_to_next(page)
     assert page.evaluate("document.activeElement.textContent") == (
-        "4:00 AM Daily Admin digest"
+        "4:00 AM Daily report"
     )
     tab_to_next(page)
     assert page.evaluate("document.activeElement.getAttribute('aria-label')") == (
@@ -443,7 +445,7 @@ def test_edit_links_carry_the_month_shown(page, component_origin):
     assert table.get_attribute("href").endswith("/?calendar=2054-11")
     # A digest send also names its own slot (#1658): the daily digest sent on
     # November 1 reports on October 31.
-    digest = cell(page, 1).get_by_role("link", name="4:00 AM Daily Admin digest")
+    digest = cell(page, 1).get_by_role("link", name="4:00 AM Daily report")
     assert digest.get_attribute("href").endswith("/?send=2054-10-31&calendar=2054-11")
 
 
@@ -540,7 +542,8 @@ def test_show_and_sort_refresh_the_table_in_place(
     expect(page.locator("th[data-sort-column=when]")).to_have_attribute(
         "aria-sort", "descending"
     )
-    assert first_row(page) == ("Nov 1, 2054 4:00 AM", "Daily Admin digest")
+    # The newest is the converted Weekly's send after the close (#1786).
+    assert first_row(page) == ("Nov 2, 2054 6:00 AM", "Weekly report")
     assert table_rows(page).count() == ALL_ROWS
     # Schedule: the schedules in sending order, each one's sends by time.
     page.locator("th[data-sort-column=schedule] a.sort-link").click()

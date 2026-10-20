@@ -51,7 +51,7 @@ def test_table_lists_schedules_in_sending_order(
         "Initial invitation",
         "Reminder 1",
         "Reminder 2",
-        "Weekly Admin digest",
+        "Weekly report",
     ]
     first = rows(page).nth(0)
     assert first.get_attribute("data-schedule-state") == "sent"
@@ -69,11 +69,13 @@ def test_table_lists_schedules_in_sending_order(
     for label in ("Initial invitation", "Reminder 1", "Reminder 2"):
         hidden(editor(page, label))
     visible(page.locator("fieldset[data-schedule-row] legend", has_text="New schedule"))
-    # Each saved row keeps its real saved email selected (not an unresolved
-    # placeholder), so nothing differs from the server and nothing opens.
-    for index in range(4):
+    # Each saved Family mail row keeps its real saved email selected (not an
+    # unresolved placeholder), so nothing differs from the server and
+    # nothing opens. The weekly report (row 4) sends no email (#1786).
+    for index in range(3):
         email = page.locator(f'[name="schedules-{index}-template_version"]')
         assert email.input_value()
+    assert page.locator('[name="schedules-3-template_version"]').input_value() == ""
     assert "unresolved" not in page.inner_text("main")
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert axe_violations(page, axe_source) == []

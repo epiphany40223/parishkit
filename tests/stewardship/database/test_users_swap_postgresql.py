@@ -901,6 +901,17 @@ CLOSURE_CREATED = {
         ),
         ("stewardship_reports", "0040_report_pipeline"),
     ),
+    # 0191 (provisional, #1786) creates these two and replaces many base
+    # and closure functions and views in place (``before_report_conversion``
+    # puts those back while the swap is pending), so its file installs
+    # whole again after 0156's.
+    **dict.fromkeys(
+        (
+            "public.stewardship_digest_work_open_v1()",
+            "public.stewardship_report_slots_v1(uuid,timestamp with time zone)",
+        ),
+        ("stewardship_reports", "0034_report_conversion"),
+    ),
 }
 
 
@@ -1612,6 +1623,176 @@ def before_submission_upcoming_pledge():
     ]
 
 
+# 0191 (provisional, #1786) replaces, in place, functions and views of the
+# base and of earlier closure files so that they read 0156's report email
+# tables and functions, which ``swap_pending`` drops; 0156's table drops take
+# many of those views with them. While the swap is pending each gets the
+# definition it had before 0156, from the frozen copy ``PRE_CONVERSION``
+# (``before_report_conversion``), as a database at the users upgrade's base
+# has them, and every view a drop took is made again. Afterwards 0191's file
+# runs whole again after 0156's (its two new functions are in
+# ``CLOSURE_CREATED``), and any view still missing is made again from its
+# current definition (``restore_views``).
+REPORT_CONVERSION = MIGRATIONS / "migrations/0191_report_conversion.sql"
+REPORT_PIPELINE = MIGRATIONS / "migrations/0156_report_pipeline.sql"
+PRE_CONVERSION = Path(__file__).with_name("pre_report_conversion_definitions.sql")
+
+
+def schema_sources():
+    """Each SQL text a fresh install applies, in order.
+
+    The baseline's schema files (migration 0001) come first, then every
+    frozen migration file in prefix order.
+    """
+    import importlib
+
+    initial = importlib.import_module(
+        "parishkit.stewardship.accounts.migrations.0001_initial_schema"
+    )
+    files = sorted((MIGRATIONS / "migrations").glob("*.sql"))
+    return [("0001", initial.schema_sql())] + [
+        (path.name, path.read_text(encoding="utf-8")) for path in files
+    ]
+
+
+def _statement(text, start, *, view):
+    """The whole CREATE statement that begins at ``start``.
+
+    A function ends at the first ``;`` after its dollar-quoted body (which
+    a trailing LANGUAGE clause may follow); a view, which has no body
+    quote, at the first ``;`` that ends a line.
+    """
+    if view:
+        return text[start : re.compile(r";[ \t]*$", re.M).search(text, start).end()]
+    quote = re.compile(r"\bAS\s+(\$\w*\$)").search(text, start)
+    close = text.index(quote[1], quote.end()) + len(quote[1])
+    return text[start : text.index(";", close) + 1]
+
+
+def latest_definitions(names, sources):
+    """Each named function or view's latest definition among ``sources``.
+
+    ``names`` maps a name to ``FUNCTION`` or ``VIEW``; one no source
+    defines (0156's own, which ``swap_pending`` drops and the file makes
+    again) is left out. The result keeps the order in which the
+    definitions appear, so a view comes after the views it reads. A
+    baseline file may leave out the ``public.`` qualifier.
+    """
+    found = {}
+    for name, kind in names.items():
+        pattern = re.compile(
+            rf"^CREATE (?:OR REPLACE )?{kind} (?:public\.)?{name}\b", re.M
+        )
+        hits = [
+            (index, match.start(), text)
+            for index, (label, text) in enumerate(sources)
+            for match in pattern.finditer(text)
+        ]
+        if not hits:
+            continue
+        index, start, text = hits[-1]
+        found[name] = (
+            (index, start),
+            kind,
+            _statement(text, start, view=kind == "VIEW").replace(
+                f"CREATE {kind}", f"CREATE OR REPLACE {kind}", 1
+            ),
+        )
+    return {
+        name: (kind, statement)
+        for name, (_, kind, statement) in sorted(
+            found.items(), key=lambda item: item[1][0]
+        )
+    }
+
+
+def public_views(cursor):
+    """The names of the views in the public schema."""
+    cursor.execute("SELECT viewname FROM pg_views WHERE schemaname='public'")
+    return {name for (name,) in cursor.fetchall()}
+
+
+def create_views(cursor, definitions):
+    """Create each view, retrying those whose inputs a later one makes.
+
+    Each attempt runs in a savepoint; a pass that makes no view fails the
+    test with the first refusal, rather than looping.
+    """
+    pending = dict(definitions)
+    while pending:
+        made, refusal = [], None
+        for name, statement in pending.items():
+            try:
+                with transaction.atomic():
+                    cursor.execute(statement)
+                made.append(name)
+            except DatabaseError as error:
+                refusal = refusal or error
+        if not made:
+            raise refusal
+        for name in made:
+            del pending[name]
+
+
+def before_report_conversion(cursor, views_before):
+    """Put back what 0191 replaced as it was before 0156; remake lost views.
+
+    Functions keep their grants (CREATE OR REPLACE) and their SECURITY
+    DEFINER, which 0191's file repeats for the three the baseline alters.
+    """
+    text = REPORT_CONVERSION.read_text(encoding="utf-8")
+    names = {
+        name: kind
+        for kind, name in re.findall(
+            r"^CREATE OR REPLACE (FUNCTION|VIEW) public\.(\w+)\b", text, re.M
+        )
+    }
+    definitions = latest_definitions(
+        names, [("frozen", PRE_CONVERSION.read_text(encoding="utf-8"))]
+    )
+    cursor.execute(
+        "SELECT proname FROM pg_proc WHERE pronamespace='public'::regnamespace "
+        "AND prosecdef AND proname=ANY(%s)",
+        [list(definitions)],
+    )
+    definers = {name for (name,) in cursor.fetchall()}
+    views = {
+        name: statement
+        for name, (kind, statement) in definitions.items()
+        if kind == "VIEW"
+    }
+    for name in views:
+        cursor.execute(f"DROP VIEW IF EXISTS public.{name} CASCADE")
+    create_views(cursor, views)
+    # As a fresh install does: a body is checked when it runs, so a SQL
+    # function may name what a later statement makes.
+    cursor.execute("SET LOCAL check_function_bodies = false")
+    for name, (kind, statement) in definitions.items():
+        if kind == "FUNCTION":
+            cursor.execute(statement)
+            if name in definers:
+                cursor.execute(f"ALTER FUNCTION public.{name} SECURITY DEFINER")
+    cursor.execute("SET LOCAL check_function_bodies = true")
+    # The views 0156 and 0191 create stay absent, as on the base.
+    created = {
+        name
+        for path in (REPORT_CONVERSION, REPORT_PIPELINE)
+        for name in re.findall(
+            r"^CREATE VIEW public\.(\w+)\b", path.read_text(encoding="utf-8"), re.M
+        )
+    }
+    restore_views(cursor, views_before - created, sources=schema_sources())
+
+
+def restore_views(cursor, views_before, *, sources):
+    """Make again each view of ``views_before`` now missing, from ``sources``."""
+    missing = views_before - public_views(cursor)
+    definitions = latest_definitions(dict.fromkeys(missing, "VIEW"), sources)
+    create_views(
+        cursor, {name: statement for name, (_, statement) in definitions.items()}
+    )
+
+
 def before_ministry_review_pipeline():
     """The statements that put Ministry requests back as they were before 0131.
 
@@ -1674,6 +1855,9 @@ def swap_pending():
     charts as they were before 0083 (``before_digest_funnel_charts``), and
     form baselines and submissions as they were before 0143
     (``before_reviewed_form_shown_items``).
+    charts as they were before 0083 (``before_digest_funnel_charts``), and
+    the functions and views 0191 replaced as they were before 0156
+    (``before_report_conversion``).
     """
     from django.db.migrations.loader import MigrationLoader
 
@@ -1692,6 +1876,7 @@ def swap_pending():
     assert {key for key, _ in CLOSURE_REPLACED_ONLY.values()} <= set(closure)
     removed = []
     with transaction.atomic(), connection.cursor() as cursor:
+        views_before = public_views(cursor)
         for app, name in closure:
             cursor.execute(
                 "DELETE FROM django_migrations WHERE app=%s AND name=%s "
@@ -1726,6 +1911,7 @@ def swap_pending():
             *before_reviewed_form_shown_items(),
         ):
             cursor.execute(statement)
+        before_report_conversion(cursor, views_before)
     try:
         yield
     finally:
@@ -1781,6 +1967,7 @@ def swap_pending():
                     module = sys.modules[loader.disk_migrations[key].__module__]
                     text = Path(module.FROZEN_SQL).read_text(encoding="utf-8")
                     cursor.execute(_replaced(text, function))
+            restore_views(cursor, views_before, sources=schema_sources())
             for app, name, applied in removed:
                 # A test that ran the full migration recorded the row again.
                 cursor.execute(

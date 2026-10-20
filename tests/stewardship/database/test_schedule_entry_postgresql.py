@@ -33,6 +33,7 @@ from ..content_factory import content
 from ..policy_factory import address
 from .auth_builders import signed_in
 from .campaign_builders import add_draft, change
+from .report_builders import add_digest
 from .test_admin_navigation_postgresql import STEPS, flow_steps
 from .test_campaign_views_postgresql import apply, post
 from .test_content_views_postgresql import assert_lacks_capability
@@ -303,8 +304,12 @@ def test_a_repeat_with_one_date_keeps_the_full_review(auth_service, google):
     ("kind", "fields"),
     [("daily_digest", {}), ("weekly_digest", {"weekday": "1"})],
 )
-def test_a_new_digest_keeps_the_full_review(auth_service, google, kind, fields):
-    """A digest's send times are resolved, so it is not a confirmation."""
+def test_new_scheduled_email_cannot_add_a_digest(auth_service, google, kind, fields):
+    """Report emails replaced the digests (#1786): New offers Family mail only.
+
+    A posted Daily or Weekly digest, which the page no longer offers, is
+    refused for its fields (400) and records no change.
+    """
     store = auth_service.store
     row = campaign_record()
     setup(store, row)
@@ -317,50 +322,35 @@ def test_a_new_digest_keeps_the_full_review(auth_service, google, kind, fields):
     )
     assert added.state == "applied"
     browser, _ = signed_in()
-    review = post(
+    before = ConfigurationChangeRequest.objects.count()
+    refused = post(
         browser,
         NEW,
         entry(store, kind=kind, time="07:00", template_version=digest["id"], **fields),
     )
-    assert review.status_code == 200, review.content
-    assert "data-review-title" not in review.content.decode()
+    assert refused.status_code == 400, refused.content
+    assert "data-error-summary" in refused.content.decode()
+    assert ConfigurationChangeRequest.objects.count() == before
 
 
 def test_an_applied_digest_is_listed_at_its_next_send(
     auth_service, google, monkeypatch
 ):
-    """A new Daily Admin digest sorts among the dated sends (#1652).
+    """A converted Daily report sorts among the dated sends (#1652, #1786).
 
-    Added through New scheduled email and Apply, as an Administrator would.
+    Added as a configuration change, shaped as the converted Daily digest.
     At 9 AM in New York on October 10 its 9:30 AM send is next, after the
     Initial invitation (October 1) and before Reminder 1 (October 25), in
     both directions of the When heading; it is not listed last.
     """
     monkeypatch.setattr(campaign_wizard, "shown", lambda *_, **__: False)
     store = auth_service.store
-    row = campaign_record()
-    setup(store, row)
-    digest = content(row["id"], kind="email", slot="daily_digest", subject="Digest")
-    added = change(
-        store,
-        store.active(),
-        uuid4(),
-        [{"operation": "add", "section": "content", **digest}],
-    )
-    assert added.state == "applied"
+    campaign, _ = setup(store)
+    add_digest(store, campaign, time="09:30:00")
     browser, _ = signed_in()
-    review = post(
-        browser,
-        NEW,
-        entry(store, kind="daily_digest", time="09:30", template_version=digest["id"]),
-    )
-    assert review.status_code == 200, review.content
-    accepted = post(browser, LIST, {"action": "confirm", "preview": token(review)})
-    apply(store, accepted)
-    assert definition("daily_digest")
     now = datetime(2054, 10, 10, 13, tzinfo=UTC)
     monkeypatch.setattr(schedule_views, "timezone", SimpleNamespace(now=lambda: now))
-    order = ["Initial invitation", "Daily Admin digest", "Reminder 1"]
+    order = ["Initial invitation", "Daily report", "Reminder 1"]
     for path, expected in ((LIST, order), (f"{LIST}?sort=-when", order[::-1])):
         response = browser.get(path)
         assert response.status_code == 200

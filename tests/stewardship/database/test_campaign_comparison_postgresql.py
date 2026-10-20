@@ -467,7 +467,7 @@ def test_migration_check_refuses_a_missing_or_widened_function():
     put back first (rolled back with the test).
     """
     # Imported here: that module imports this one's ACL_NOW the same way.
-    from .test_daily_digest_comparison_postgresql import CHECK_0072
+    from .test_digest_comparison_checks_postgresql import CHECK_0072
 
     text = LATEST.read_text(encoding="utf-8")
     check = text[text.index("DO $check$") : text.index("$check$;") + len("$check$;")]

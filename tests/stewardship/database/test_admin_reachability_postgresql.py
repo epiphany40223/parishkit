@@ -46,8 +46,8 @@ from ..policy_factory import address
 from .auth_builders import signed_in
 from .campaign_builders import add_draft, campaign_clock, change, command
 from .leader_builders import make_leader
-from .test_daily_digest_dispatch_postgresql import allocated
-from .test_daily_digest_planning_postgresql import INSTANT
+from .report_builders import DAILY_INSTANT as INSTANT
+from .report_builders import allocated
 from .test_debug_production_banner_postgresql import force_mode
 from .test_family_mail_preparation_postgresql import family_mail  # noqa: F401
 from .test_hosted_files_postgresql import media  # noqa: F401
@@ -387,8 +387,10 @@ def test_a_census_backed_campaign_is_navigable_without_naming_the_campaign(
 ):
     """A campaign with a complete ParishSoft capture, so the reports open too."""
     with campaign_clock(INSTANT):
-        allocated(family_mail)
+        # Signed in first: the report email needs the users form, which the
+        # sign-in's conversion makes (#1786).
         browser = _sign_in(family_mail.service.store, google, role)
+        allocated(family_mail)
         reached = _check(browser, f"census {role}")
     assert {"response_dashboard", "family_directory", "timeline"} <= reached
     assert ("update_parishsoft" in reached) == (role == "administrator")

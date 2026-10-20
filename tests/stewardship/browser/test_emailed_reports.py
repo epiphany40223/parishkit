@@ -18,7 +18,7 @@ def test_send_a_weekly_report_now_is_in_view_on_arrival(
 ):
     """Above sixty daily reports, the button is in the first screen.
 
-    With a Weekly Admin digest schedule it links the request page.
+    With a Weekly report (#1786) it links the request page.
     """
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + "/emailed-reports")
@@ -35,7 +35,11 @@ def test_send_a_weekly_report_now_is_in_view_on_arrival(
 def test_without_a_weekly_schedule_the_button_says_what_it_needs(
     page, component_origin, axe_source, width
 ):
-    """Unavailable, not hidden: the hint after it links Dates and mail schedules."""
+    """Unavailable, not hidden: the hint after it says what it needs.
+
+    No page can add a Weekly report until the Report emails page ships
+    (#1786), so the hint links nowhere.
+    """
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + "/emailed-reports-no-schedule")
     button = page.get_by_role("button", name=NAME)
@@ -44,11 +48,8 @@ def test_without_a_weekly_schedule_the_button_says_what_it_needs(
     assert button.bounding_box()["y"] < 900
     hint = page.locator("#weekly-now-reason")
     assert button.get_attribute("aria-describedby") == "weekly-now-reason"
-    assert "Available once the campaign has a Weekly Admin digest schedule." in (
-        hint.inner_text()
-    )
-    link = hint.get_by_role("link", name="Add one under Dates and mail schedules")
-    assert link.get_attribute("href") == "/admin/campaign/schedules/"
+    assert hint.inner_text() == "Available when the campaign has a Weekly report."
+    assert hint.get_by_role("link").count() == 0
     assert page.get_by_role("link", name=NAME).count() == 0
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert axe_violations(page, axe_source) == []

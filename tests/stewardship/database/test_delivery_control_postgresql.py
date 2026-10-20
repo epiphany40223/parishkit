@@ -36,8 +36,8 @@ from ..content_factory import content
 from . import test_setup_preview_postgresql as preview_inputs
 from .campaign_builders import advance, campaign_clock
 from .preview_builders import assert_out_of_date, previews_aged
+from .report_builders import add_digest
 from .test_campaign_mail_postgresql import deliver
-from .test_digest_schedule_planning_postgresql import add_digest
 from .test_outbox_postgresql import claim
 from .test_setup_mail_views_postgresql import web_login
 from .test_setup_preparation_postgresql import stage
@@ -449,8 +449,8 @@ def test_failed_initial_defers_only_its_family_not_campaign_resume(
         from parishkit.stewardship.deployment import ServiceRole
         from parishkit.stewardship.jobs.family_mail_dispatch import FamilyDeliveryHeld
 
+        from .report_builders import begin
         from .test_background_grants_postgresql import task_login
-        from .test_daily_digest_dispatch_postgresql import begin
         from .test_family_mail_dispatch_postgresql import claim as claim_delivery
 
         held_reminder = OutboxMessage.objects.get(pk=waiting.message_id)

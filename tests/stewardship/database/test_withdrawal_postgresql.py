@@ -368,6 +368,19 @@ def test_withdrawal_direct_sql_rechecks_session_inventory_and_lock_order(schedul
             )
 
 
+def report_sends(*, production_cycle):
+    """Each report's scheduled sends in ``production_cycle``: (report, slot)."""
+    from parishkit.stewardship.campaigns.schedule_models import ScheduleOccurrence
+
+    return sorted(
+        ScheduleOccurrence.objects.filter(
+            definition__kind="report", production_cycle=production_cycle
+        )
+        .exclude(slot__startswith="manual:")
+        .values_list("definition_id", "slot")
+    )
+
+
 @pytest.mark.parametrize("failed", [False, True])
 def test_next_go_live_requires_new_test_cleanup_links_and_confirmation(
     scheduled, tmp_path, failed
@@ -384,49 +397,41 @@ def test_next_go_live_requires_new_test_cleanup_links_and_confirmation(
     from parishkit.stewardship.campaigns.confirmation_models import (
         ProductionConfirmation,
     )
-    from parishkit.stewardship.campaigns.digest_schedule_planning import (
-        DigestScheduleProducer,
-    )
     from parishkit.stewardship.campaigns.family_schedule_planning import plan_family
     from parishkit.stewardship.campaigns.production_models import (
         ProductionTransitionRequest,
     )
-    from parishkit.stewardship.campaigns.schedule_models import ScheduleOccurrence
+    from parishkit.stewardship.campaigns.schedule_models import (
+        ScheduleDefinition,
+        ScheduleOccurrence,
+    )
     from parishkit.stewardship.campaigns.schedules import occurrence_key
     from parishkit.stewardship.deployment import ServiceRole
     from parishkit.stewardship.jobs.dispatch import execute_hint
     from parishkit.stewardship.jobs.queues import WorkQueue
     from parishkit.stewardship.jobs.scheduler import scheduler_session
-    from parishkit.stewardship.reports.weekly_manual import request_manual_report
+    from parishkit.stewardship.reports.report_email_manual import request_send_now
 
     from .production_cycle_checks import reject_retired_cycle
+    from .report_builders import add_digest, execute, prepare_due
     from .test_background_grants_postgresql import task_login
     from .test_campaign_mail_postgresql import deliver
     from .test_cleanup_tasks_postgresql import run
-    from .test_daily_digest_fanout_postgresql import configure_content as daily_content
-    from .test_digest_schedule_planning_postgresql import add_digest
-    from .test_weekly_fanout_postgresql import configure_content as weekly_content
     from .test_withdrawal_work_postgresql import fail_retained, future_message
 
     item = scheduled
     login, service, campaign_id = item.arguments
     for weekly in (False, True):
         add_digest(service.store, item.campaign, weekly=weekly)
-    harness = SimpleNamespace(service=service, campaign=item.campaign)
-    daily_content(harness)
-    weekly_content(harness)
     previous, old_message = future_message(item)
     if failed:
         old_message = fail_retained(previous, old_message)
     cutoff = item.campaign.active_configuration.starts_at + timedelta(days=9)
-    producer = DigestScheduleProducer(uuid4())
-    with (
-        campaign_clock(cutoff),
-        task_login(ServiceRole.SCHEDULER, exact=True, reconnect=True),
-        scheduler_session() as guard,
-    ):
-        first_reports = producer(guard) + producer(guard)
-        assert all(report.created for report in first_reports)
+    with campaign_clock(cutoff):
+        # Each report's due sends, by the real producer and worker.
+        assert prepare_due()
+    first_sends = report_sends(production_cycle=0)
+    assert first_sends
     with web_login():
         _, token = commands.preview(
             *item.arguments, reason="Revise before opening", acknowledged=True
@@ -499,20 +504,25 @@ def test_next_go_live_requires_new_test_cleanup_links_and_confirmation(
     assert item.campaign.production_cycle == 1
     with campaign_clock(previous.due_at):
         reject_retired_cycle(item, previous, old_message, failed=failed)
+        weekly = ScheduleDefinition.objects.filter(kind="report").order_by("id")[1]
         with web_login():
             command = uuid4()
-            request_manual_report(
+            sent_now = request_send_now(
                 service.store,
                 login.portal_session.principal_id,
                 campaign_id,
+                weekly.pk,
+                weekly.current_revision_id,
                 command_id=command,
                 configuration_id=SystemConfiguration.objects.get().active_configuration_id,
             )
-        manual = ScheduleOccurrence.objects.get(pk=command)
+        manual = ScheduleOccurrence.objects.get(slot=f"manual:{command}")
         assert manual.production_cycle == 1
         assert manual.occurrence_key == occurrence_key(
             manual.revision_id, "production", "admins", manual.slot, production_cycle=1
         )
+        # The Send now runs, so its report is free for its scheduled sends.
+        execute(sent_now)
     with (
         campaign_clock(previous.due_at),
         task_login(ServiceRole.SCHEDULER, exact=True, reconnect=True),
@@ -532,28 +542,20 @@ def test_next_go_live_requires_new_test_cleanup_links_and_confirmation(
     assert replacement.state == "pending"
     assert replacement.occurrence_key != previous.occurrence_key
     assert replacement.slot == previous.slot
-    with (
-        campaign_clock(cutoff),
-        task_login(ServiceRole.SCHEDULER, exact=True, reconnect=True),
-        scheduler_session() as guard,
-    ):
-        # Reuse the same long-lived producer, not just a clean process cursor.
-        next_reports = producer(guard) + producer(guard)
-        assert [report.created for report in next_reports] == [
-            report.created for report in first_reports
-        ]
-    assert (
-        ScheduleOccurrence.objects.filter(
-            definition__kind__in=("daily_digest", "weekly_digest"),
-            production_cycle=0,
-        )
-        .exclude(state="skipped", reason="production_withdrawn")
-        .count()
-        == 0
+    with campaign_clock(cutoff):
+        assert prepare_due()
+    # The withdrawn cycle's sends are all retired: each one still owed is
+    # skipped, and the new cycle makes it again under its own occurrence
+    # key. A slot coalesced into a send keeps its coalesced fulfillment, so
+    # it is not owed again.
+    retired = ScheduleOccurrence.objects.filter(
+        definition__kind="report", production_cycle=0
+    ).exclude(slot__startswith="manual:")
+    assert not retired.exclude(state="skipped", reason="production_withdrawn").exclude(
+        state="coalesced"
     )
-    assert ScheduleOccurrence.objects.filter(
-        definition__kind__in=("daily_digest", "weekly_digest"),
-        production_cycle=1,
-    ).exclude(slot__startswith="manual:").count() == sum(
-        report.created for report in first_reports
+    withdrawn = sorted(
+        retired.filter(state="skipped").values_list("definition_id", "slot")
     )
+    assert withdrawn and set(withdrawn) <= set(first_sends)
+    assert report_sends(production_cycle=1) == withdrawn

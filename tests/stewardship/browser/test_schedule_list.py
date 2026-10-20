@@ -120,7 +120,7 @@ def test_list_has_one_line_of_dates_and_actions_only_on_unsent_rows(
     # The weekly digest sits at its next send (that Monday), not last (#1652).
     assert names(page) == [
         "Initial invitation",
-        "Weekly Admin digest",
+        "Weekly report",
         "Reminder 1",
         "Reminder 2",
     ]
@@ -171,7 +171,7 @@ def test_when_heading_sorts_the_table_in_place(page, component_origin):
     assert names(page) == [
         "Reminder 2",
         "Reminder 1",
-        "Weekly Admin digest",
+        "Weekly report",
         "Initial invitation",
     ]
     assert "sort=-when" in page.url
@@ -179,7 +179,7 @@ def test_when_heading_sorts_the_table_in_place(page, component_origin):
     has_attribute(page.locator('th[data-sort-column="when"]'), "aria-sort", "ascending")
     assert names(page) == [
         "Initial invitation",
-        "Weekly Admin digest",
+        "Weekly report",
         "Reminder 1",
         "Reminder 2",
     ]
@@ -223,7 +223,7 @@ def test_delete_asks_in_a_dialog_then_redraws_the_table_in_place(
     # Applied: the table is redrawn without that reminder, nothing reloads.
     has_count(rows(page), 3)
     hidden(dialog(page))
-    assert names(page) == ["Initial invitation", "Weekly Admin digest", "Reminder 1"]
+    assert names(page) == ["Initial invitation", "Weekly report", "Reminder 1"]
     assert page.locator(f'button[value="{identifier}"]').count() == 0
     eventually(page, "document.activeElement.id === 'schedule-table-title'")
     visible(page.locator("main > [role=status]", has_text="Deleted Reminder 1."))
@@ -252,7 +252,7 @@ def test_delete_selected_names_the_count(page, component_origin):
         dialog(page).get_by_role("button", name="Delete", exact=True).click()
     assert len(posted(sent.value)["schedule_id"]) == 2
     has_count(rows(page), 2)
-    assert names(page) == ["Initial invitation", "Weekly Admin digest"]
+    assert names(page) == ["Initial invitation", "Weekly report"]
     visible(
         page.locator("main > [role=status]", has_text="Deleted 2 scheduled emails.")
     )
@@ -739,7 +739,7 @@ def test_new_waits_for_a_known_browser_zone(page, component_origin, reported):
     assert save.is_disabled()
     assert "schedule-zone-missing" in save.get_attribute("aria-describedby")
     # Typing a readable time does not make it available.
-    choose(page, "kind", "daily_digest")
+    choose(page, "kind", "initial")
     page.locator('[name="schedule-time"]').fill("9am")
     page.locator('[name="schedule-time"]').blur()
     assert save.is_disabled()
@@ -1277,7 +1277,7 @@ def test_new_offers_the_email_of_the_chosen_mail_type(page, component_origin):
 
     Ticked, the fields fill from the chosen reminder email; another mail type
     narrows Email to send to nothing chosen, which empties the unedited
-    fields rather than leave a reminder's text for a digest; Reset fills the
+    fields rather than leave a reminder's text for an invitation; Reset fills the
     chosen type's default, and edited text then stays while the type
     changes. The fields post with New's schedule.
     """
@@ -1310,17 +1310,17 @@ def test_new_offers_the_email_of_the_chosen_mail_type(page, component_origin):
     visible(subject)
     assert subject.input_value() == "reminder mail"
     # Another mail type leaves no email chosen: the unedited fields empty.
-    kind.select_option("daily_digest")
+    kind.select_option("initial")
     assert choice.input_value() == ""
     assert (subject.input_value(), html.input_value()) == ("", "")
     reset.click()
-    assert "{{ family_code }}" not in html.input_value()
-    digest = subject.input_value()
-    assert digest
+    invitation = subject.input_value()
+    assert invitation
     # Reset text is the reader's: changing the type keeps it.
     kind.select_option("reminder")
-    assert subject.input_value() == digest
+    assert subject.input_value() == invitation
     reset.click()
+    assert subject.input_value() != invitation
     assert "{{ family_code }}" in html.input_value()
     # Clearing the mail type unticks the box and closes the fields.
     kind.select_option("")
@@ -1681,7 +1681,7 @@ def test_the_test_waits_for_an_email_and_for_an_open_campaign(page, component_or
         choice.locator('option[data-kind="reminder"]').first.get_attribute("value")
     )
     assert button.is_enabled() and status.inner_text() == ""
-    page.locator('[name="schedule-kind"]').select_option("daily_digest")
+    page.locator('[name="schedule-kind"]').select_option("initial")
     assert choice.input_value() == ""
     assert button.is_disabled()
     assert status.inner_text() == "Choose an email to send first."

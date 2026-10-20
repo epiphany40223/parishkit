@@ -55,10 +55,10 @@ from ..test_outbox_validation import rendering
 from .auth_builders import signed_in
 from .campaign_builders import campaign_clock, change
 from .family_link_checks import link_reads, timeline_link
+from .report_builders import DAILY_INSTANT as DIGEST_INSTANT
+from .report_builders import allocated as daily_allocated
 from .response_builders import activate_response_service, response_source
 from .test_background_grants_postgresql import task_login
-from .test_daily_digest_dispatch_postgresql import allocated as daily_allocated
-from .test_daily_digest_planning_postgresql import INSTANT as DIGEST_INSTANT
 from .test_family_mail_dispatch_postgresql import claim, prepare
 from .test_family_mail_preparation_postgresql import family_mail  # noqa: F401
 from .test_outbox_postgresql import change as change_outbox
@@ -280,14 +280,15 @@ def test_outgoing_mail_names_reports_and_families_no_longer_in_the_data(
     family_mail,  # noqa: F811
     google,
 ):
-    """#931, #1562: an Administrator digest names its Administrator's address
-    (no Users-page Name here), and a Family the latest ParishSoft data no
-    longer has is said so, through the real snapshot read, which takes at
-    most two queries however many rows."""
+    """#931, #1562: an Administrator's report email names its user by the
+    Users page Name (report emails exist only in the users form, #1786),
+    and a Family the latest ParishSoft data no longer has is said so,
+    through the real snapshot read, which takes at most two queries however
+    many rows."""
     message = uncertain(family_mail)
     with campaign_clock(DIGEST_INSTANT):
         daily_allocated(family_mail)
-    digest = OutboxMessage.objects.get(purpose="daily_digest")
+    digest = OutboxMessage.objects.get(purpose="admin_report")
     browser, _ = signed_in()
     with task_login(ServiceRole.WEB, exact=True):
         response = browser.get("/admin/mail/sent/", {"mode": "testing"})
@@ -297,7 +298,7 @@ def test_outgoing_mail_names_reports_and_families_no_longer_in_the_data(
         '<input type="hidden" name="recipient" value="admin@example.org">'
         '<input type="hidden" name="mode" value="testing">'
     ) in html
-    assert ">admin@example.org</button></form></td>" in html
+    assert ">admin</button></form></td>" in html
     assert escape(family_name(message)) in html
 
     # The listed rows, plus one whose Family DUID the snapshot lacks.
@@ -334,7 +335,7 @@ def test_outgoing_mail_names_reports_and_families_no_longer_in_the_data(
             assert response.status_code == 200
             html = response.content.decode()
             assert html.index(escape(family_name(message))) < html.index(
-                "admin@example.org</button>"
+                ">admin</button>"
             )
 
 

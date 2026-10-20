@@ -68,18 +68,21 @@ def test_a_live_campaign_says_why_there_is_no_test_link(page, component_origin):
 
 
 def test_a_new_schedule_describes_the_email_it_chooses(page, component_origin):
-    """The summary follows the choice in place, and clears with it."""
+    """The summary follows the choice in place, and clears with it.
+
+    New offers Family mail only (#1786); the invitation's email is the one
+    the saved Initial invitation sends.
+    """
     page.goto(component_origin + PATH)
     row = page.locator("fieldset[data-schedule-row]").filter(
         has=page.locator("legend", has_text="New schedule")
     )
-    row.locator('[name="schedules-4-kind"]').select_option("daily_digest")
+    row.locator('[name="schedules-4-kind"]').select_option("initial")
     email = row.locator('[name="schedules-4-template_version"]')
     assert summary(row).inner_text().strip() == ""
     email.select_option(index=1)
     text = summary(row).inner_text()
-    assert "No saved schedule sends this email yet." in text
-    assert "changes it for every schedule" not in text
+    assert "Sent by: Initial invitation" in text
     visible(summary(row).get_by_role("link", name="Edit this email"))
     email.select_option(index=0)
     assert summary(row).inner_text().strip() == ""

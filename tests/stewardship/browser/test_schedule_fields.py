@@ -17,13 +17,11 @@ pytestmark = pytest.mark.parametrize(
 # The blank new row follows the one saved initial invitation.
 NEW = "schedules-1-"
 FIELDS = ("date", "time", "weekday", "template_version", "comparison")
+# A new row is Family mail only: report emails replaced the digests (#1786).
 SHOWN = {
     "": set(),
     "initial": {"date", "time", "template_version"},
     "reminder": {"date", "time", "template_version"},
-    # The comparison section's checkbox is the daily digest's alone (#1018).
-    "daily_digest": {"time", "template_version", "comparison"},
-    "weekly_digest": {"weekday", "time", "template_version"},
 }
 
 
@@ -54,7 +52,10 @@ def offered(page):
 def test_rows_show_only_the_fields_of_their_mail_type(
     page, component_origin, axe_source, width
 ):
-    """Before a type is chosen only the type shows; switching clears stale values."""
+    """Before a type is chosen only the type shows; switching clears stale values.
+
+    New offers only the Family mail types (#1786).
+    """
     page.set_viewport_size({"width": width, "height": 900})
     failures = []
     page.on("pageerror", lambda error: failures.append(str(error)))
@@ -69,7 +70,10 @@ def test_rows_show_only_the_fields_of_their_mail_type(
     assert shown(page, "schedules-0-") == SHOWN["initial"]
     assert shown(page) == set()
     kind = page.locator(f'[name="{NEW}kind"]')
-    for choice in ("weekly_digest", "initial", "reminder", "daily_digest"):
+    assert kind.locator("option").evaluate_all(
+        "options => options.map(option => option.value)"
+    ) == ["", "initial", "reminder"]
+    for choice in ("initial", "reminder"):
         kind.select_option(choice)
         assert shown(page) == SHOWN[choice], choice
         assert offered(page) == ["", choice]
@@ -77,30 +81,18 @@ def test_rows_show_only_the_fields_of_their_mail_type(
             "document.documentElement.scrollWidth <= window.innerWidth"
         )
         assert axe_violations(page, axe_source) == []
-    # Values a mail type does not use are cleared when their field is hidden.
-    kind.select_option("weekly_digest")
-    page.locator(f'[name="{NEW}weekday"]').select_option("0")
-    page.locator(f'[name="{NEW}time"]').fill("08:30:00")
+    # The email chosen for another type is no longer offered or selected;
+    # the date and time both types use are kept.
+    kind.select_option("reminder")
+    page.locator(f'[name="{NEW}time"]').fill("08:30")
+    page.locator(f'[name="{NEW}date"]').fill("2054-10-05")
     template = page.locator(f'[name="{NEW}template_version"]')
     template.select_option(index=1)
-    kind.select_option("reminder")
-    assert page.locator(f'[name="{NEW}weekday"]').input_value() == ""
-    # The email chosen for another type is no longer offered or selected.
+    kind.select_option("initial")
     assert template.input_value() == ""
-    assert page.locator(f'[name="{NEW}time"]').input_value() == "08:30:00"
-    page.locator(f'[name="{NEW}date"]').fill("2054-10-05")
-    kind.select_option("daily_digest")
-    assert page.locator(f'[name="{NEW}date"]').input_value() == ""
-    # The daily digest's comparison checkbox, labelled, is unticked when
-    # another type hides it, so it is never posted for that type.
-    comparison = page.get_by_label("Include Compared with past campaigns").last
-    assert not comparison.is_checked()
-    comparison.check()
-    kind.select_option("weekly_digest")
-    hidden(group(page, "comparison"))
-    assert not page.locator(f'[name="{NEW}comparison"]').is_checked()
-    kind.select_option("daily_digest")
-    assert not comparison.is_checked()
+    assert page.locator(f'[name="{NEW}time"]').input_value() == "08:30"
+    assert page.locator(f'[name="{NEW}date"]').input_value() == "2054-10-05"
+    # Values no type uses yet are cleared when every field is hidden.
     kind.select_option("")
     assert shown(page) == set()
     assert page.locator(f'[name="{NEW}time"]').input_value() == ""
@@ -120,7 +112,7 @@ def test_a_reported_field_stays_visible_until_the_type_changes(
     assert page.locator(f'[name="{prefix}weekday"]').input_value() == "0"
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert axe_violations(page, axe_source) == []
-    page.locator(f'[name="{prefix}kind"]').select_option("daily_digest")
+    page.locator(f'[name="{prefix}kind"]').select_option("reminder")
     page.locator(f'[name="{prefix}kind"]').select_option("initial")
     hidden(weekday)
     assert page.locator(f'[name="{prefix}weekday"]').input_value() == ""
@@ -167,26 +159,26 @@ def test_add_and_remove_new_schedule_rows_before_saving(
     assert total.input_value() == str(first + 2)
     # Mail-type show/hide applies to the added rows too.
     assert shown(page, two) == set()
-    page.locator(f'[name="{two}kind"]').select_option("weekly_digest")
-    assert shown(page, two) == SHOWN["weekly_digest"]
-    page.locator(f'[name="{two}weekday"]').select_option("0")
+    page.locator(f'[name="{two}kind"]').select_option("reminder")
+    assert shown(page, two) == SHOWN["reminder"]
+    page.locator(f'[name="{two}date"]').fill("2054-10-05")
     page.locator(f'[name="{two}time"]').fill("08:30:00")
-    page.locator(f'[name="{one}kind"]').select_option("daily_digest")
-    assert shown(page, one) == SHOWN["daily_digest"]
+    page.locator(f'[name="{one}kind"]').select_option("initial")
+    assert shown(page, one) == SHOWN["initial"]
     assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth")
     assert axe_violations(page, axe_source) == []
     # Removing the first added row renumbers the second into its place.
     page.get_by_role("button", name="Remove this new schedule").first.click()
     assert page.evaluate("document.activeElement.dataset.scheduleAdd") == ""
     assert total.input_value() == str(first + 1)
-    assert page.locator(f'[name="{one}kind"]').input_value() == "weekly_digest"
+    assert page.locator(f'[name="{one}kind"]').input_value() == "reminder"
     assert page.locator(f'[name="{two}kind"]').count() == 0
-    assert shown(page, one) == SHOWN["weekly_digest"]
+    assert shown(page, one) == SHOWN["reminder"]
     fields = posted(page, component_origin, path)
     assert fields["schedules-TOTAL_FORMS"] == str(first + 1)
-    assert fields[one + "kind"] == "weekly_digest"
+    assert fields[one + "kind"] == "reminder"
     # The typed time was rewritten in its canonical form as focus left (#631).
-    assert fields[one + "weekday"] == "0" and fields[one + "time"] == "08:30"
+    assert fields[one + "date"] == "2054-10-05" and fields[one + "time"] == "08:30"
     assert not any(name.startswith(two) for name in fields)
     assert not any("__prefix__" in name for name in fields)
     assert not failures

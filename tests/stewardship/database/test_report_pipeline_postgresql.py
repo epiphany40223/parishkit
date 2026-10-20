@@ -327,15 +327,17 @@ def test_the_task_maps_and_the_inert_mail_trigger():
     assert scalar(
         "SELECT stewardship_task_type_creators_v1(%s)", ["report_email_prepare"]
     ) == ["pk_stewardship_scheduler", "pk_stewardship_web"]
+    # The metadata finalizer came with the conversion (0191).
     assert (
         scalar("SELECT stewardship_task_type_login_v1(%s)", ["report_email_finalize"])
-        is None
+        == "pk_stewardship_worker"
     )
     definition = scalar(
         "SELECT pg_get_constraintdef(oid) FROM pg_constraint "
         "WHERE conname='outbox_purpose'",
         [],
     )
-    assert "admin_report" not in definition
+    # The conversion (0191) admits the report purposes.
+    assert "'admin_report'" in definition and "'admin_report_test'" in definition
     # No send exists, so none is skipped as empty.
     assert scalar("SELECT stewardship_report_email_skipped_v1(%s)", [uuid4()]) is False

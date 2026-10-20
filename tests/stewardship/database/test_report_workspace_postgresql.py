@@ -13,13 +13,14 @@ from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.audit.models import AuditContext, AuditEvent
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.reports.export_models import ExportPublication, ExportRequest
+from parishkit.stewardship.reports.report_email_models import ReportEmailSnapshot
 
 from ..export_urls import export_action
 from .auth_builders import signed_in
 from .campaign_builders import campaign_clock
+from .report_builders import DAILY_INSTANT as INSTANT
+from .report_builders import allocated
 from .test_background_grants_postgresql import task_login
-from .test_daily_digest_dispatch_postgresql import allocated
-from .test_daily_digest_planning_postgresql import INSTANT
 from .test_export_views_postgresql import post, restricted_download_pool
 from .test_family_mail_preparation_postgresql import family_mail  # noqa: F401
 from .test_report_selection_postgresql import pointer
@@ -31,9 +32,11 @@ pytestmark = pytest.mark.django_db(transaction=True)
 def http_scenario(family_mail, google):  # noqa: F811
     """Use a complete census capture, not the storage-only fact fixture."""
     with campaign_clock(INSTANT):
-        ready = allocated(family_mail)
+        # A Daily report's send pins a complete fact set (#1786).
+        preparation = allocated(family_mail)
+        facts = ReportEmailSnapshot.objects.get(preparation=preparation).fact_set
         browser, _ = signed_in()
-        yield (family_mail.service.store, None, ready.fact_set, None), browser
+        yield (family_mail.service.store, None, facts, None), browser
 
 
 def read(browser, path, **headers):
@@ -384,19 +387,13 @@ def test_native_export_creation_status_cancel_and_restricted_download(
 
 def test_staff_report_access_then_ministry_role_and_revocation(http_scenario, google):
     """An actual role replacement blocks the report, image and retained export."""
-    from ..policy_factory import address
-    from .campaign_builders import change
+    from .report_builders import set_user
 
     setup, admin = http_scenario
     store, _, facts, _ = setup
     pointer(facts)
-    rule = address("reader@example.org", roles=("staff", "ministry_leader"))
-    change(
-        store,
-        store.active(),
-        uuid4(),
-        [{"operation": "add", "section": "login_rules", **rule}],
-    )
+    # The fixture's report email made this deployment users-form (#1786).
+    set_user(store, "reader@example.org", "staff")
     google[0]["email"] = "reader@example.org"
     browser, _ = signed_in()
     path = reverse("admin:response_dashboard")
@@ -415,24 +412,7 @@ def test_staff_report_access_then_ministry_role_and_revocation(http_scenario, go
         )
         assert response.status_code == 302
         job_path = response["Location"]
-    change(
-        store,
-        store.active(),
-        uuid4(),
-        [
-            {
-                "operation": "update",
-                "section": "login_rules",
-                "id": rule["id"],
-                "values": {
-                    "roles": ["ministry_leader"],
-                    "grants": {
-                        "ministry_leader": rule["values"]["grants"]["ministry_leader"]
-                    },
-                },
-            }
-        ],
-    )
+    set_user(store, "reader@example.org", "ministry_leader")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         for url in (reverse("admin:reports"), path, job_path):
             response, _ = read(browser, url)
@@ -528,21 +508,14 @@ def test_figures_status_refuses_signed_out_and_unauthorized_readers(
     is audited as a report view."""
     from django.test import Client
 
-    from ..policy_factory import address
-    from .campaign_builders import change
+    from .report_builders import set_user
 
     setup, _ = http_scenario
     store, _, facts, _ = setup
     pointer(facts)
     status = reverse("admin:response_dashboard_status")
     query = f"?view=dashboard&scope=historical&shown={facts.pk}"
-    rule = address("leader@example.org", roles=("ministry_leader",))
-    change(
-        store,
-        store.active(),
-        uuid4(),
-        [{"operation": "add", "section": "login_rules", **rule}],
-    )
+    set_user(store, "leader@example.org", "ministry_leader")
     google[0]["email"] = "leader@example.org"
     leader, _ = signed_in()
     events = AuditEvent.objects.filter(

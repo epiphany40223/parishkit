@@ -18,18 +18,15 @@ import pytest
 from parishkit.stewardship.accounts import delivery_control_commands as commands
 from parishkit.stewardship.admin_delivery_control import controls_model
 from parishkit.stewardship.audit.models import AuditEvent
-from parishkit.stewardship.deployment import ServiceRole
 
 from .automation_builders import as_staff, paired
 from .campaign_builders import add_draft, campaign_clock, close_campaign
+from .report_builders import weekly_allocated
 from .test_admin_digest_list_cli_postgresql import revoke
 from .test_admin_go_live_cli_postgresql import approved
 from .test_admin_test_sample_cli_postgresql import runner
-from .test_background_grants_postgresql import task_login
 from .test_delivery_closed_postgresql import submit_while_paused
 from .test_setup_mail_views_postgresql import web_login
-from .test_weekly_tasks_postgresql import execute as execute_weekly
-from .test_weekly_tasks_postgresql import queued as queue_weekly
 from .test_withdrawal_postgresql import (  # noqa: F401
     bootstrapped,
     config_role,
@@ -204,9 +201,8 @@ def test_a_paused_closed_campaign_offers_its_resolution(
         submit_while_paused(item, settings)
     with campaign_clock(starts + timedelta(days=9)):
         harness = SimpleNamespace(campaign=item.campaign, service=service)
-        status = queue_weekly(harness)
-        with task_login(ServiceRole.WORKER, exact=True):
-            execute_weekly(status)
+        # A Weekly report's send, held by the pause (#1786).
+        weekly_allocated(harness)
         close_campaign(item.campaign, uuid4())
     command = runner(service, monkeypatch)
     secret = approved(service, login, scope="read-only")
@@ -221,7 +217,7 @@ def test_a_paused_closed_campaign_offers_its_resolution(
         assert result["available"] and result["paused"]
         assert result["resolve_available"] and not result["resume_available"]
         kinds = {row["kind"]: row for row in result["inventory"]["types"]}
-        assert kinds["receipt"]["held"] == 1 and kinds["weekly_digest"]["held"] == 2
+        assert kinds["receipt"]["held"] == 1 and kinds["admin_report"]["held"] == 2
         assert result["inventory"]["held"] >= 3
         resolution = result["resolution"]
         assert resolution["types"] == [
@@ -232,8 +228,8 @@ def test_a_paused_closed_campaign_offers_its_resolution(
                 "cancellable": True,
             },
             {
-                "kind": "weekly_digest",
-                "name": "Weekly Admin reports",
+                "kind": "admin_report",
+                "name": "Report emails",
                 "held": 2,
                 "cancellable": True,
             },

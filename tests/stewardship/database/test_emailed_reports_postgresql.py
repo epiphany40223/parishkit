@@ -1,32 +1,34 @@
 """Emailed reports lists each role's past reports and ends Send a weekly report now.
 
-The page (ADM-12.17) links the current campaign's daily reports for
-Administrators and Staff and its weekly reports for Administrators only;
-Send a weekly report now returns to it and names the request it made.
+The page (ADM-12.17) links the current campaign's report email sends (#1786)
+and its daily digests for Administrators and Staff, and its weekly digests
+for Administrators only; Send a weekly report now, Send now of the Weekly
+report, returns to it and names the request it made.
 """
 
 from uuid import uuid4
 
 import pytest
-from django.db import connection
 from django.urls import reverse
 
-from parishkit.stewardship.accounts import admin_navigation as navigation
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.deployment import ServiceRole
-from parishkit.stewardship.reports.weekly_models import WeeklyManualRequest
+from parishkit.stewardship.reports.report_email_models import (
+    ReportEmailManualRequest,
+)
 
 from ..policy_factory import address, assignment
-from .auth_builders import signed_in, unguarded
+from .auth_builders import signed_in
 from .campaign_builders import campaign_clock, change
+from .report_builders import (
+    DAILY_INSTANT,
+    WEEKLY_INSTANT,
+    add_digest,
+    weekly_allocated,
+)
+from .report_builders import allocated as daily_allocated
 from .test_background_grants_postgresql import task_login
-from .test_daily_digest_dispatch_postgresql import allocated as daily_allocated
-from .test_daily_digest_planning_postgresql import INSTANT as DAILY_INSTANT
-from .test_digest_schedule_planning_postgresql import add_digest
 from .test_family_mail_preparation_postgresql import family_mail  # noqa: F401
-from .test_weekly_capture_postgresql import INSTANT as WEEKLY_INSTANT
-from .test_weekly_dispatch_postgresql import allocated as weekly_allocated
-from .test_weekly_fanout_postgresql import configure_content
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -34,7 +36,10 @@ PAGE = "admin:emailed_reports"
 
 
 def _sign_in_as(store, google, email, roles, *records):
-    """Add a sign-in rule for ``email`` with ``roles`` and sign in as it."""
+    """Add a sign-in rule for ``email`` with ``roles`` and sign in as it.
+
+    For the sign-in rules form, as before users; see ``_sign_in_user``.
+    """
     change(
         store,
         store.active(),
@@ -49,14 +54,26 @@ def _sign_in_as(store, google, email, roles, *records):
     return browser
 
 
-def test_daily_reports_are_listed_for_administrators_and_staff(
+def _sign_in_user(store, google, email, role):
+    """Add a users-form user for ``email`` with ``role`` and sign in as it."""
+    from parishkit.stewardship.accounts.user_changes import plan_changes
+
+    records = store.active().document()["sections"]["login_rules"]
+    _, patch = plan_changes(records, [{"email": email, "name": "Staff", "role": role}])
+    assert change(store, store.active(), uuid4(), patch).state == "applied"
+    google[0]["email"] = email
+    browser, _ = signed_in()
+    return browser
+
+
+def test_report_emails_are_listed_for_administrators_and_staff(
     family_mail,  # noqa: F811
     google,
 ):
-    """Each role that may open a daily report sees it linked; weekly is Admin only."""
+    """Each role that may open a report email sees it linked; weekly is Admin only."""
     with campaign_clock(DAILY_INSTANT):
-        ready = daily_allocated(family_mail)
-        link = reverse("admin:daily_digest_snapshot", args=[ready.snapshot_id])
+        preparation = daily_allocated(family_mail)
+        link = reverse("admin:report_email_send", args=[preparation.pk])
         admin, _ = signed_in()
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             page = admin.get(reverse(PAGE))
@@ -64,8 +81,8 @@ def test_daily_reports_are_listed_for_administrators_and_staff(
         assert link.encode() in page.content
         assert b"Weekly reports" in page.content
         assert b"data-weekly-now" in page.content
-        staff = _sign_in_as(
-            family_mail.service.store, google, "staff@example.org", ("staff",)
+        staff = _sign_in_user(
+            family_mail.service.store, google, "staff@example.org", "staff"
         )
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             page = staff.get(reverse(PAGE))
@@ -89,14 +106,14 @@ def test_a_ministry_leader_is_refused(response_service, google):
 
 
 def test_weekly_reports_are_listed_for_administrators(live_response_service, google):
-    """A captured weekly report is linked on the page for an Administrator."""
+    """A Weekly report's send is linked on the page for an Administrator."""
     with campaign_clock(WEEKLY_INSTANT):
-        snapshot = weekly_allocated(live_response_service)
+        preparation = weekly_allocated(live_response_service)
         admin, _ = signed_in()
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             page = admin.get(reverse(PAGE))
         assert page.status_code == 200
-        link = reverse("admin:weekly_digest_snapshot", args=[snapshot.pk])
+        link = reverse("admin:report_email_send", args=[preparation.pk])
         assert link.encode() in page.content
         # Only a closed request id is accepted in the address.
         assert admin.get(reverse(PAGE) + "?search=x").status_code == 400
@@ -105,11 +122,11 @@ def test_weekly_reports_are_listed_for_administrators(live_response_service, goo
 def test_send_a_weekly_report_now_leads_the_page_and_waits_for_its_schedule(
     response_service, google
 ):
-    """The button is always there for an Administrator, above both lists.
+    """The button is always there for an Administrator, above every list.
 
-    Without a Weekly Admin digest schedule it is unavailable, with a hint after
-    it linking Dates and mail schedules; once the schedule exists it links the
-    request page.
+    Without a Weekly report it is unavailable, with a hint after it (no
+    page can add one until the Report emails page ships, #1786); once the
+    report exists it links the request page.
     """
     harness = response_service
     with campaign_clock(WEEKLY_INSTANT):
@@ -119,6 +136,7 @@ def test_send_a_weekly_report_now_leads_the_page_and_waits_for_its_schedule(
         action = page.index("data-weekly-now")
         assert (
             action
+            < page.index('id="report-emails"')
             < page.index('id="daily-reports"')
             < page.index('id="weekly-reports"')
         )
@@ -127,13 +145,12 @@ def test_send_a_weekly_report_now_leads_the_page_and_waits_for_its_schedule(
             '<button type="button" disabled aria-describedby="weekly-now-reason"'
             in (page)
         )
-        assert "Available once the campaign has a Weekly Admin digest schedule." in page
-        assert f'href="{reverse("admin:schedule_settings")}"' in page
+        assert "Available when the campaign has a Weekly report." in page
         add_digest(harness.service.store, harness.campaign, weekly=True)
         with task_login(ServiceRole.WEB, exact=True, reconnect=True):
             page = browser.get(reverse(PAGE)).content.decode()
         assert f'href="{reverse("admin:weekly_digest_manual")}"' in page
-        assert page.index("data-weekly-now") < page.index('id="daily-reports"')
+        assert page.index("data-weekly-now") < page.index('id="report-emails"')
         assert "weekly-now-reason" not in page
 
 
@@ -142,7 +159,6 @@ def test_send_a_weekly_report_now_returns_to_emailed_reports(response_service, g
     harness = response_service
     with campaign_clock(WEEKLY_INSTANT):
         add_digest(harness.service.store, harness.campaign, weekly=True)
-        configure_content(harness)
         configuration = SystemConfiguration.objects.get().active_configuration_id
         browser, _ = signed_in()
         command = uuid4()
@@ -162,7 +178,7 @@ def test_send_a_weekly_report_now_returns_to_emailed_reports(response_service, g
             assert response["Location"] == f"{reverse(PAGE)}?requested={command}"
             page = browser.get(response["Location"])
         assert page.status_code == 200
-        task = WeeklyManualRequest.objects.get(pk=command).task_id
+        task = ReportEmailManualRequest.objects.get(pk=command).task_id
         assert reverse("admin:background_task_page", args=[task]).encode() in (
             page.content
         )
@@ -172,23 +188,3 @@ def test_send_a_weekly_report_now_returns_to_emailed_reports(response_service, g
             other = browser.get(f"{reverse(PAGE)}?requested={uuid4()}")
         assert other.status_code == 200
         assert b"Your weekly report" not in other.content
-
-
-def test_an_archived_campaign_greys_the_add_a_schedule_link(response_service, google):
-    """An archived campaign's hint greys its Dates and mail schedules link (#1261).
-
-    The menu greys Dates and mail schedules for an archived campaign and every
-    page under it refuses (#1258), so the hint after the unavailable Send a
-    weekly report now shows the link text as the shared greyed-out control
-    with the menu's reason, never a link to the refusal.
-    """
-    with campaign_clock(WEEKLY_INSTANT):
-        browser, _ = signed_in()
-        with unguarded(), connection.cursor() as cursor:
-            cursor.execute("UPDATE public.stewardship_campaign SET state='archived'")
-        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-            page = browser.get(reverse(PAGE)).content.decode()
-        assert "Available once the campaign has a Weekly Admin digest schedule." in page
-        assert f'href="{reverse("admin:schedule_settings")}"' not in page
-        assert 'aria-describedby="schedule-settings-link-tip"' in page
-        assert f"{navigation.ARCHIVED}</span>" in page
