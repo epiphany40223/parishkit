@@ -164,6 +164,7 @@ from .report_components import SLOW_GETS as REPORT_SLOW_GETS
 from .report_components import components as report_components
 from .response_dashboard_components import components as dashboard_components
 from .restore_review_components import components as restore_review_components
+from .review_work_components import components as review_work_components
 from .review_worklist_components import components as review_worklist_components
 from .schedule_list_components import POSTS as SCHEDULE_LIST_POSTS
 from .schedule_list_components import components as schedule_list_components
@@ -2285,6 +2286,7 @@ def component_origin():
     responses.update(campaign_create_components(context, admin))
     responses.update(menu_components(context, admin))
     responses.update(my_ministries_components(context, admin))
+    responses.update(review_work_components(context, admin))
     responses.update(home_steps_components(context, admin))
     responses.update(home_overview_components(context, admin))
     responses.update(automation_components(context, admin))

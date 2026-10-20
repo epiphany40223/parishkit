@@ -641,12 +641,13 @@ rule ([navigation rule 10](../ui-conventions/spec.md#navigation-rules),
 The menu is grouped by what an Administrator is doing during a campaign, in
 the order a campaign runs: set it up, send it, review the responses and read
 the reports, then the parish data, users and system pages that change rarely.
-The sidebar starts with Home, then these groups, each listing the entries the
-viewer's role may open:
+The sidebar starts with Home for Administrators (Staff and Ministry leaders
+have My review work first in Review work instead; see the notes below), then
+these groups, each listing the entries the viewer's role may open:
 
 | Group | Entry | URL | Roles | Unavailable when (the reason shown) |
 | --- | --- | --- | --- | --- |
-| (top) | Home | `/admin/` | Administrator, Staff, Ministry leader | Never |
+| (top) | Home | `/admin/` | Administrator | Never |
 | Campaign setup | Campaign settings | `/admin/campaign/settings/` | Administrator | No current campaign |
 | Campaign setup | Pages and emails | `/admin/campaign/content/` | Administrator | No current campaign, or it is archived |
 | Campaign setup | Campaign images | `/admin/campaign/images/` | Administrator | No current campaign, or it is archived |
@@ -661,6 +662,7 @@ viewer's role may open:
 | Mail and Family portal | Sent mail | `/admin/mail/sent/` | Administrator | Never |
 | Mail and Family portal | Family portal availability | `/admin/mail/family-portal/` | Administrator | Never |
 | Mail and Family portal | Families on the form now | `/admin/mail/presence/` | Administrator | Never |
+| Review work | My review work | `/admin/` | Staff, Ministry leader (not Administrators) | Never |
 | Review work | Census changes | `/admin/reports/census/` | Administrator, Staff | The campaign does not include the census |
 | Review work | Ministry requests | `/admin/reports/ministries/` | Administrator, Staff, Ministry leader | The campaign has no Ministry module |
 | Review work | Pledges | `/admin/reports/financial/pledges/` | Administrator, Staff | The campaign has no financial module |
@@ -688,6 +690,20 @@ viewer's role may open:
 
 Notes on the groups:
 
+- **Review work** comes before **Reports and queries** (the Administrator,
+  R39 findings 1 and 4, 2026-10-19): one group holds the
+  [review pipeline](../review-pipeline/spec.md)'s worklists, the daily work
+  while a campaign runs, in the order Census changes, Ministry requests,
+  Additional information, Limitations; the other holds the read-only reports
+  and queries. Until the split this was one group, Responses and reports.
+  Both groups' pages keep their `/admin/reports/` addresses (see
+  [URL scheme](#url-scheme)), so no address changed.
+- For Staff and Ministry leaders who are not Administrators, `/admin/` is
+  [My review work](../review-pipeline/spec.md#role-views), and it is the
+  first entry of Review work instead of a Home entry above the groups (R39
+  finding 4): their landing sits with the worklists it counts. Their trail's
+  root still names it, as for Home. Administrators keep Home at the top and
+  have no My review work entry.
 - **Review work** comes before **Reports and queries** (the Administrator,
   R39 findings 1 and 4, 2026-10-19): one group holds the
   [review pipeline](../review-pipeline/spec.md)'s worklists, the daily work
@@ -948,9 +964,10 @@ and links, and the detail lives on the linked pages. In order, Home shows:
    population, all active Families (below). With no current campaign the
    panel says so, or offers Create the campaign.
 5. **My Ministries**, for a Ministry leader (below).
-6. **Next steps**, drawn as
+6. The **Review work** panel (Administrators; see below).
+7. **Next steps**, drawn as
    [link cards](../ui-conventions/spec.md#overview-pages).
-7. The **Ministry catalog changes** notice, when there is one: detail, so
+8. The **Ministry catalog changes** notice, when there is one: detail, so
    it comes after the overview.
 
 What left Home in #1673, and where it stays: the problem sentences and the
@@ -967,6 +984,15 @@ opposed to all Families, are on the Response dashboard; Refresh now is in
 the menu (Home keeps it, under "ParishSoft data as of", while there is no
 current campaign, which is how ParishSoft data is first loaded before
 Create the campaign).
+
+Home is the Administrator's. Staff and Ministry leaders who are not
+Administrators sign in to **My review work** instead
+([review pipeline, role views](../review-pipeline/spec.md#role-views),
+[#1690](https://github.com/epiphany40223/parishkit/issues/1690)), which
+replaces Home for them; Home's Review work panel shows an Administrator the
+same counts. So the Staff and Ministry leader columns of the table below,
+the My Ministries panel and its Today line are no longer shown to anyone;
+[#1726](https://github.com/epiphany40223/parishkit/issues/1726) removes them.
 
 Home is a starting point, not only a status page. Its heading is "Home"; the
 parish name and the current campaign's name and state are its data line.
@@ -1132,7 +1158,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 
 | Page | Name | Reached from | Roles | Current names | Current URL | New URL | Notes |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `index` | Home | Menu: Home | Administrator, Staff, Ministry leader | Campaign administration | `/admin/` | (same) | Heading becomes Home; parish and campaign shown as the data line. |
+| `index` | Home | Menu: Home | Administrator, Staff, Ministry leader | Campaign administration | `/admin/` | (same) | Heading becomes Home; parish and campaign shown as the data line. For Staff and Ministry leaders who are not Administrators the page is [My review work](../review-pipeline/spec.md#role-views) (#1690): its heading, its menu entry (the first of Review work), the trail's root and a "Return to" it all say My review work. |
 | `configuration_request` | Change status | Settings page the change came from (else Home) | Administrator | Configuration change status; Configuration change | `/admin/changes/<request>/` | (same) |  |
 | `campaign_settings` | Campaign settings | Menu: Campaign settings | Administrator | (same) | `/admin/campaign/settings/` | (same) |  |
 | `campaign_create` | Create the campaign | Home | Administrator | (new, #142) | `/admin/campaign/first/` | (same) | Offered on Home only while the deployment has never had a campaign; refused once one exists. Not linked from a change's status page. |
