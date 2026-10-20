@@ -21,7 +21,6 @@ from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.deployment import ServiceRole
 from parishkit.stewardship.pipeline import Decision, Stage
 from parishkit.stewardship.reports.census_changes import census_rows
-from parishkit.stewardship.reports.ministry_roster_views import roster_rows
 from parishkit.stewardship.reports.ministry_worklist import (
     WorklistQuery,
     chosen,
@@ -56,7 +55,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 def started():
     """The Not seen start row, which each test's flush removes again.
 
-    Migration 0136 writes it once; a later insert is stamped now, so only
+    Migration 0132 writes it once; a later insert is stamped now, so only
     refreshes promoted after it count, as after the release.
     """
     with connection.cursor() as cursor:
@@ -277,18 +276,17 @@ def test_an_accepted_request_is_confirmed_and_cannot_go_back(response_service):
     )
 
     def to_enter():
-        """Roster changes to enter's Not yet entered rows and menu count."""
-        with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-            rows, _ = roster_rows(campaign.pk, staff, "todo")
-            every, _ = roster_rows(campaign.pk, staff, "all")
-        return len(rows), roster_count(staff, campaign), every
+        """Ministry requests' To enter by hand rows (where Roster changes to
+        enter was folded, R39 finding 2) and Home's count of them."""
+        rows = view(harness, staff).values()
+        todo = sum(row["stage"] == Stage.TO_ENTER_BY_HAND.value for row in rows)
+        return todo, roster_count(staff, campaign)
 
-    assert to_enter()[:2] == (1, 1)
+    assert to_enter() == (1, 1)
     refresh(harness, joins=(9,))
-    # Already in ParishSoft: nothing left to enter, still listed under All.
-    todo, count, every = to_enter()
-    assert (todo, count) == (0, 0)
-    assert [row["confirmed"] for row in every] == [True]
+    # Already in ParishSoft: nothing left to enter; Every stage lists it as
+    # Confirmed (below).
+    assert to_enter() == (0, 0)
     join.refresh_from_db()
     assert (join.state, join.resolution_source_id) == ("resolved", None)
     assert checks(request=join) == ["confirmed"]
@@ -390,7 +388,7 @@ def test_the_worker_login_records_checks_in_promotion(response_service):
 
 
 def test_the_migration_records_the_start_with_its_audit(response_service):
-    """Run on a database holding live responses, 0136's start block writes
+    """Run on a database holding live responses, 0132's start block writes
     the start row and its count-only audit event (a fresh install, with no
     response, writes the row alone)."""
     from pathlib import Path
@@ -400,7 +398,7 @@ def test_the_migration_records_the_start_with_its_audit(response_service):
     prepared(response_service)
     sql = (
         Path(__file__).resolve().parents[3]
-        / "src/parishkit/stewardship/schema/migrations/0136_refresh_checks.sql"
+        / "src/parishkit/stewardship/schema/migrations/0132_refresh_checks.sql"
     ).read_text(encoding="utf-8")
     block = sql[sql.index("DO $start$") : sql.index("$start$;") + len("$start$;")]
     RefreshCheckStart.objects.all().delete()

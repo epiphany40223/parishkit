@@ -69,7 +69,7 @@ def test_overview_counts_link_their_pages(page, component_origin):
     )
     steps = page.get_by_role("list", name="Next steps")
     roster = steps.get_by_role(
-        "link", name="Roster changes to enter 12 not yet entered"
+        "link", name="Ministry requests to enter by hand 12 to enter by hand"
     )
     expect(roster).to_be_visible()
     assert "link-card-attention" in roster.locator("..").get_attribute("class")

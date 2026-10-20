@@ -93,6 +93,7 @@ TEMPLATES = {
     "logs": "logs.html",
     "campaign_comparison": "campaign-comparison.html",
     "financial_report": "financial-report.html",
+    "pledges_to_enter": "pledges-to-enter.html",
     "limitations_report": "limitations-report.html",
     "census_changes": "census-changes.html",
     "update_parishsoft": "update-parishsoft.html",
@@ -105,7 +106,6 @@ TEMPLATES = {
     # Ministry requests is the follow-up queue's page (#1133).
     "ministry_report": "ministry-requests.html",
     "ministry_followup_item": "ministry-followup.html",
-    "ministry_roster": "ministry-roster.html",
     "family_directory": "directory.html",
     "emailed_reports": "emailed-reports.html",
     "timeline": "timeline.html",
@@ -287,7 +287,8 @@ def test_return_links_name_a_page(template):
     source = _source(template)
     # The Census changes worklist's "Back to To review" is a review decision,
     # not a link back to a page (see ALLOWED), as is the review pipeline's
-    # Back to review on Ministry requests (#1684).
+    # Back to review on Ministry requests (#1684), Additional information
+    # and Limitations (#1685).
     if template not in {"census-changes.html", *REVIEW_PIPELINE_PAGES}:
         assert "Back to " not in source
     for target in re.findall(r'"Return to ([^"]+)"', source):
@@ -480,9 +481,17 @@ RETIRED = (
 
 # Legitimate uses, as (path relative to the package, retired name), each
 # with the reason it is not a page name.
-# The Ministry stream's review pipeline pages (#1684), whose help names the
+# The review pipeline's worklist pages (#1684, #1685), whose help names the
 # decision Back to review.
-REVIEW_PIPELINE_PAGES = frozenset({"ministry-requests.html", "ministry-followup.html"})
+REVIEW_PIPELINE_PAGES = frozenset(
+    {
+        "ministry-requests.html",
+        "ministry-followup.html",
+        # Additional information and Limitations (#1685).
+        "information.html",
+        "limitations-report.html",
+    }
+)
 ALLOWED = {
     # "Back to edit" steps back inside the Family form, outside the Admin
     # portal and its page names.
@@ -492,6 +501,12 @@ ALLOWED = {
     ("accounts/templates/stewardship/census-changes.html", "Back to "),
     # The review pipeline's decision Back to review (#1684), named in the
     # help of Ministry requests and of its request pages.
+    *(
+        (f"accounts/templates/stewardship/{template}", "Back to ")
+        for template in sorted(REVIEW_PIPELINE_PAGES)
+    ),
+    # The review pipeline's decision Back to review (#1685), named in the
+    # help of Additional information and Limitations.
     *(
         (f"accounts/templates/stewardship/{template}", "Back to ")
         for template in sorted(REVIEW_PIPELINE_PAGES)

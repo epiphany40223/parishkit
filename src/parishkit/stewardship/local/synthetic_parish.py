@@ -461,6 +461,28 @@ def is_child(member, anchor):
     return age_at(date.fromisoformat(born[:10]), anchor) < 18
 
 
+def contact_row(member, family):
+    """The contact-list row for one Member, derived from its Member and Family rows.
+
+    Module level so the fake's operator edits (``fake_edits``) rebuild the
+    contact list exactly as the generator builds it.
+    """
+    return {
+        "memberDUID": member["memberDUID"],
+        "familyDUID": member["familyDUID"],
+        "middleName": member["middleName"],
+        "nickName": member["nickName"],
+        "maidenName": member["maidenName"],
+        "dateOfBirth": member["birthdate"],
+        "dateOfDeath": member["dateOfDeath"],
+        "gender": member["sex"],
+        "emailAddress": member["emailAddress"],
+        "homePhone": family["familyHomePhone"],
+        "cellPhone": member["mobilePhone"],
+        "workPhone": member["workPhone"],
+    }
+
+
 class _Generator:
     """One deterministic pass; every random draw comes from ``self.rng`` in order."""
 
@@ -656,23 +678,6 @@ class _Generator:
         emails = [head["emailAddress"] for head in heads if head["emailAddress"]]
         family["eMailAddress"] = "; ".join(emails) if emails else None
 
-    def _contact(self, member, family):
-        """The contact-list and household-member-list row for one Member."""
-        return {
-            "memberDUID": member["memberDUID"],
-            "familyDUID": member["familyDUID"],
-            "middleName": member["middleName"],
-            "nickName": member["nickName"],
-            "maidenName": member["maidenName"],
-            "dateOfBirth": member["birthdate"],
-            "dateOfDeath": member["dateOfDeath"],
-            "gender": member["sex"],
-            "emailAddress": member["emailAddress"],
-            "homePhone": family["familyHomePhone"],
-            "cellPhone": member["mobilePhone"],
-            "workPhone": member["workPhone"],
-        }
-
     def build_households(self):
         """Families, Members and the data-quality cases the specification lists."""
         sizes = []
@@ -739,7 +744,7 @@ class _Generator:
             self._finish_family(family)
         by_family = {family["familyDUID"]: family for family in self.families}
         self.contacts = [
-            self._contact(member, by_family[member["familyDUID"]])
+            contact_row(member, by_family[member["familyDUID"]])
             for member in self.members
         ]
 

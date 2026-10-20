@@ -16,6 +16,15 @@ Since the review pipeline (#1683) the Census changes worklist records only
 in one step); its Ignore and Back to review are reviews
 (``census_review``). The ``ignored`` and ``reopened`` actions remain for
 ``pk-admin census resolve``.
+
+A change a refresh found Entered incorrectly (#1689) takes the same two
+actions as its fixes (#1737): ``entered`` again marks it Entered by hand
+once more, and ``reopened`` sends it Back to review (pending, no decision).
+On the worklist both are Staff's as well as an Administrator's
+(``pk-admin census resolve`` keeps Reopen the Administrator's, with a
+note). SQL admits them only while its latest refresh check says Entered
+incorrectly and no later response of the Family answered the field again
+(``schema/migrations/0133_entered_incorrectly_fixes.sql``, provisional).
 """
 
 from uuid import UUID
@@ -31,7 +40,13 @@ from parishkit.stewardship.reports.export_services import admit_campaign
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import check_version
 
-from .models import RESOLUTION_ACTIONS, ProposalResolution, ProposedChange
+from .models import (
+    RESOLUTION_ACTIONS,
+    CensusAddition,
+    ProposalResolution,
+    ProposedChange,
+)
+from .refresh_checks import entered_incorrectly
 
 MAX_NOTE = 2000
 
@@ -43,6 +58,31 @@ class KeyRebound(ValueError):
     same drawn form (or bulk key) is sent again with other choices, so the
     page offers a reload rather than a generic refusal (a 409).
     """
+
+
+class ReopenCovered(ValueError):
+    """An ignored change an open parish addition covers cannot be reopened.
+
+    The addition stands in for it (#1710): reopening it would leave two
+    open changes of one field. Nothing was saved; withdraw the addition
+    first.
+    """
+
+
+def covered_by_addition(proposal):
+    """Whether an open parish addition covers ``proposal``'s field (#1710).
+
+    The same Family, Member (or Family) and field, with no later step.
+    The callers hold the work order, so no Add can slip in between this
+    check and their write.
+    """
+    return CensusAddition.objects.filter(
+        family_id=proposal.submission.family_id,
+        entity_kind=proposal.entity_kind,
+        entity_key=proposal.entity_key,
+        field=proposal.field,
+        resolution__isnull=True,
+    ).exists()
 
 
 OPEN_EXECUTIONS = frozenset({"pending", "conflict"})
@@ -58,8 +98,18 @@ def by_hand(proposal):
     return proposal.handling != "api" or proposal.entity_kind == "family"
 
 
-def allowed(proposal, action):
-    """Whether ``action`` may start from the proposal's current state."""
+def allowed(proposal, action, *, incorrect=False):
+    """Whether ``action`` may start from the proposal's current state.
+
+    ``incorrect`` is whether the change is Entered incorrectly now
+    (``refresh_checks.entered_incorrectly``): it then takes only its two
+    fixes, Entered by hand again and Back to review (#1737).
+    """
+    if incorrect:
+        return proposal.execution == "resolved_external" and action in {
+            "entered",
+            "reopened",
+        }
     if proposal.execution not in OPEN_EXECUTIONS or proposal.handling == "report-only":
         return False
     if action == "reopened":
@@ -114,16 +164,22 @@ def record_resolution(
             raise KeyRebound("This request key is already bound.")
         return previous
     check_version(proposal, expected_version)
-    if not allowed(proposal, action):
+    incorrect = entered_incorrectly(proposal)
+    if not allowed(proposal, action, incorrect=incorrect):
         raise ValueError("This census change cannot be resolved that way now.")
+    if action == "reopened" and covered_by_addition(proposal):
+        raise ReopenCovered("An open addition covers this census change.")
     resolution = ProposalResolution.objects.create(
         actor_id=actor_id, request_key=request_key, **intent
     )
-    change = (
-        {"execution": "resolved_external"}
-        if action == "entered"
-        else {"decision": "ignored" if action == "ignored" else "unreviewed"}
-    )
+    if action == "entered":
+        change = {"execution": "resolved_external"}
+    elif incorrect:
+        # Back to review from Entered incorrectly (#1737): the change is open
+        # again, with no decision, for reconciliation and an Edit.
+        change = {"decision": "unreviewed", "execution": "pending"}
+    else:
+        change = {"decision": "ignored" if action == "ignored" else "unreviewed"}
     ProposedChange.objects.filter(pk=proposal.pk).update(
         version=F("version") + 1, **change
     )

@@ -67,7 +67,8 @@ def turn_page(page, origin, region, name, shown, message, focused, address):
             INFORMATION_ITEM,
             INFORMATION_OLDER,
             INFORMATION_NEWER,
-            "#staff-notes",
+            # A request page has no form since the review worklist (#1685).
+            None,
             "information-history",
             "Older <edit>",
         ),
@@ -76,14 +77,15 @@ def turn_page(page, origin, region, name, shown, message, focused, address):
 def test_follow_up_history_pages_in_place(
     page, component_origin, item, older, newer, notes, region, shown
 ):
-    """Older and Newer history page only the history: the Save follow-up
-    form above it, and the notes the reader has typed but not saved, stay as
-    they are. On the last page Older history is gone, so focus goes to Newer
+    """Older and Newer history page only the history: a Save follow-up form
+    above it, and the notes the reader has typed but not saved, stay as they
+    are. On the last page Older history is gone, so focus goes to Newer
     history, and back again."""
     page.set_viewport_size(VIEWPORT)
     page.goto(component_origin + item)
     page.evaluate(MARK)
-    page.locator(notes).fill(TYPED)
+    if notes:
+        page.locator(notes).fill(TYPED)
     turn_page(
         page,
         component_origin,
@@ -94,20 +96,20 @@ def test_follow_up_history_pages_in_place(
         "Newer history",
         older,
     )
-    assert page.locator(notes).input_value() == TYPED
+    assert not notes or page.locator(notes).input_value() == TYPED
     turn_page(
         page,
         component_origin,
         region,
         "Newer history",
-        "Version 2"
+        "Version 2: Handled"
         if region == "information-history"
         else "Left a <private> voicemail",
         "Newer history shown.",
         "Older history",
         newer,
     )
-    assert page.locator(notes).input_value() == TYPED
+    assert not notes or page.locator(notes).input_value() == TYPED
 
 
 def test_follow_up_save_after_paging_refreshes_the_history(page, component_origin):

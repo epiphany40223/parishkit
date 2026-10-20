@@ -59,11 +59,11 @@ def publish(target, *, material=b"s" * 32):
                 "GRANT SELECT,INSERT ON stewardship_public_credential_handoff "
                 f'TO "{role}"'
             )
-            # As database-grants does (runtime_functions: #1547's ended
-            # automation check and #530's debug-off switch read).
+            # As database-grants does (runtime_functions: #1763's named
+            # automation session check and #530's debug-off switch read).
             cursor.execute(
                 "GRANT EXECUTE ON FUNCTION public."
-                "stewardship_automation_instant_ended_v1(uuid, timestamptz), "
+                "stewardship_automation_request_live_v1(uuid, uuid, timestamptz), "
                 f'public.stewardship_debug_logging_off_v1() TO "{role}"'
             )
             cursor.execute(f'SET SESSION AUTHORIZATION "{role}"')
