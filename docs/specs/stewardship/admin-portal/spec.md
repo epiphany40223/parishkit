@@ -5185,7 +5185,10 @@ line the first rows start on a laptop screen with the help closed
   users and the people who have signed in), through the read-only definer
   the Users page's upgrade preview uses, and only when a shown email to a
   person has no Users-page Name, so a page of Family emails reads no
-  ParishSoft names this way. The addresses of a Family email are not
+  ParishSoft names this way. An address no longer a user that never
+  signed in (a removed Ministry leader, for example) is outside that set,
+  so it still shows the address; naming it too would take a new definer
+  read of the page's addresses. The addresses of a Family email are not
   listed here: they are on its Mail message page, with what each address's
   latest attempt recorded. In Testing mode the Recipient is still the
   intended Family or person; the Mail message page names the Testing
@@ -5345,9 +5348,10 @@ Administrator-only definer read over the renderings' intended recipients,
 backed by an index (below), then finds the emails by primary key. The
 Recipient names of a page's emails to people take one definer read for
 the page's ids and one query of the current configuration's users,
-however many rows, plus one read of the ParishSoft Member names only when
-one of them has no Users-page Name, and the Timeline links of its Production Family emails
-take one query of the current campaign's Family records by DUID. The
+however many rows, plus one read of the ParishSoft Member names (which
+reads the current ParishSoft Members' contact records) only when one of
+them has no Users-page Name, and the Timeline links of its Production
+Family emails take one query of the current campaign's Family records by DUID. The
 Recipient sort adds one query of the matching emails to people's ids, one
 definer read per 500 of them, one query of the users (and the Member
 names read when one of them has no Users-page Name), and then orders
