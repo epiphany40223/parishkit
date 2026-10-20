@@ -3303,8 +3303,9 @@ metadata only (no recipient address, Family DUID or Family id; a
 `delivery list` row adds `refused`, the count of its unresolved refused
 addresses that Sent mail marks, from the page's own query, #1004), a
 resolution note only its time and action, and a refusal only its id, time,
-resolution and the source version to verify; a DUID or an email address is
-accepted as `delivery list --recipient` input, never echoed in the document
+resolution and the source version to verify; a DUID, an email address, a
+delivery ID or part of a name is accepted as `delivery list --recipient`
+input, never echoed in the document
 ([#1562](https://github.com/epiphany40223/parishkit/issues/1562)). A
 DUID- or address-filtered read still links that Family to its delivery or refusal facts
 (counts, states, times); that is intended, for sessions only Administrators

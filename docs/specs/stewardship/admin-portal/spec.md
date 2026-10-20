@@ -5258,10 +5258,11 @@ a phone, without sideways scrolling) holds:
   name contains it, ignoring case, as the other Admin list search boxes
   match. A Family email matches by its Family's name in the latest
   ParishSoft data (the surname and heads Recipient shows), and an email to
-  a person by the name Recipient shows for them (the Users-page Name, else
-  the ParishSoft Member name, else the address). Text of only digits and
-  commas that is not a whole DUID, or with an "@" that is not one email
-  address, is refused at the field
+  a person by what Recipient shows for them (the Users-page Name, else
+  the ParishSoft Member name, else the address, so part of an unnamed
+  person's address matches too). Text of only digits, commas and spaces
+  that is not a whole DUID, or with an "@" that is not one email address,
+  is refused at the field
   ([field errors](../ui-conventions/spec.md#field-errors-and-live-checks)):
   the field's pattern holds Apply filters while it is so, saying "Enter a
   name, a whole Family DUID, one email address or a delivery ID, or clear
