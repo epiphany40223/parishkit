@@ -863,9 +863,10 @@ them unnotified; the Administrator accepted that (decision 13).
 Every event also appears in the [system logs](../admin-portal/spec.md#logs).
 Nothing carries the secret, digests or Family data.
 
-A row applies once a command can take its action. On `main` no command yet
-confirms Production, withdraws or runs Testing cleanup (PR 12), so nothing
-records an `irreversible` notice or observes `automation_irreversible` yet.
+A row applies once a command can take its action. `go-live start` (Testing
+cleanup), `go-live confirm` (the Production confirmation) and `go-live
+cancel` (the pre-start withdrawal, Cancel go-live) record the `irreversible`
+notice and observe `automation_irreversible` (PR 12).
 `users confirm`'s high-impact changes, `integration confirm`'s Slack changes
 and removals, `integration key finish-switching`, `integration key
 replace` and `integration backup-key confirm` record the `policy_change`
@@ -1265,7 +1266,7 @@ session** runs these commands, with no browser step:
   ([#1018](https://github.com/epiphany40223/parishkit/issues/1018) part (a));
 - integration setting changes (PR 10's `integration confirm`, including
   removing an integration) and starting Testing cleanup (PR 12's `go-live
-  cleanup`)
+  start`)
   ([#547](https://github.com/epiphany40223/parishkit/issues/547)).
 
 In Python, `sign_in_instant` (in `accounts.sessions`) takes the caller. For a
@@ -1573,7 +1574,8 @@ new context keys:
   one still records its own notice and incident. Testing cleanup's gate
   (#547, in `go_live_commands.start_cleanup`) is not marked
   irreversible, so it records `fresh_gated`; its `irreversible` notice and
-  incident are recorded by the cleanup command itself (PR 12).
+  incident are recorded by the cleanup command itself (`go-live start`'s
+  `record` hook, in the same transaction, PR 12).
 - **Read commands** record exactly the view events the page records (for
   example `delivery_viewed`, `system_logs_viewed`), and
   no others.
@@ -1821,12 +1823,20 @@ signatures:
   download's read and writer into a request-free
   `ministry_followup_exports.export_body` and its file name into
   `export_file_name`, which the page's view now calls.
-- **PR 12:** `go_live_commands` and `go_live_views.testing_families`, cleanup
-  retry and cancel, the link preparation controls (`activation_progress`, which
-  the Go live page's Prepare step calls),
-  `confirmation_views._fresh_after_cleanup`, `confirmation_commands`, the
-  Production preparation retry (`confirmation_progress.retry`) and
-  `withdrawal_commands`.
+- **PR 12:** the Go live page's actions. The three review dialogs' Apply
+  moved into request-free functions the views now call and the commands
+  call too: `go_live_views.start_reviewed` (Start go-live, whose
+  session-kept check and its failure memo stay with the view as
+  callbacks), `go_live_confirm_views.apply_review` (Confirm Production) and
+  `confirmation_views.review_cancel` and `apply_cancel` (Cancel go-live).
+  Their owners (`go_live_commands.start_cleanup`,
+  `confirmation_commands.confirm`, `withdrawal_commands.withdraw`) gained a
+  `record` hook for the command's own event. The Prepare step's controls
+  (`go_live_prepare_views._retry`, `_again`, `_stop`), Check's retry of a
+  failed stop (`go_live_views._retry_stop`) and the Production preparation
+  retry (`confirmation_progress.retry_shown`, which now takes a caller)
+  already took one. The Testing submissions list reads
+  `cleanup_preview.cleanup_families`, as its page does.
 
 ### Read models
 
@@ -2495,31 +2505,25 @@ Administrator confirmation.
 
 | URL names | Command or exemption |
 | --- | --- |
-| `go_live` | `go-live readiness` (PR 3b); `go-live preview` with the DNS check, `go-live cleanup --token …` (PR 12) |
-| `go_live_families` | `go-live families`, an export (PR 12) |
-| `go_live_prepare` | `go-live cleanup-status --watch`, `go-live cleanup-retry`, `go-live cleanup-cancel`, `go-live links`, `go-live links-status --watch`, `go-live links-retry`, `go-live links-cancel` (cancel or discard the preparation) (PR 12); the Go live page's Prepare step (#1585 slice 3) replaced the Testing cleanup and Prepare Family links pages |
-| `production_confirmation` | `go-live confirm-preview`, `go-live confirm --token …` (PR 12) |
-| `production_progress` | `go-live progress --watch` (PR 3b); the page's **Retry failed mail preparation** (PR 12) |
-| `production_withdrawal` | `go-live withdraw-preview --reason …`, `go-live withdraw --token …` (PR 12) |
+| `go_live` | `go-live readiness` (PR 3b); `go-live preview` (Check readiness and public web address: the DNS check, printing the start token) and `go-live start --token …` (Start go-live) (PR 12); `go-live retry` also retries a failed stop (Retry stopping go-live) |
+| `go_live_families` | `go-live families`, a streamed file (PR 12) |
+| `go_live_prepare` | `go-live status --watch` (the step's three boxes), `go-live retry` (a failed box's Retry, which retries the same task and changes no data), `go-live refresh-again` (Refresh and prepare again, which starts a new attempt) and `go-live stop` (Stop go-live) (PR 12) |
+| `go_live_confirm` | `go-live confirm-preview` (the Confirm Production dialog's review) and `go-live confirm --token …` (its Apply); its Stop go-live is `go-live stop` and its Refresh and prepare again `go-live refresh-again` (PR 12) |
+| `production_progress` | `go-live progress --watch` (PR 3b); `go-live retry` (mail preparation's **Retry**), and `go-live cancel-preview --reason …` and `go-live cancel --token …` (the Cancel go-live dialog's review and Apply) (PR 12) |
 
-Cleanup, cleanup cancel, link preparation discard, confirmation and withdrawal
-ask at the [prompt](#command-line-confirmation) unless `--yes` is given. See
+The rows follow the four-step
+[Go live page](../admin-portal/spec.md#go-live-page) of
+[#1585](https://github.com/epiphany40223/parishkit/issues/1585), which
+replaced the readiness, Testing cleanup, Family links, final confirmation and
+Cancel go-live pages; the cleanup and links commands planned for those pages
+retired with them. See
 [Production transition](../admin-portal/spec.md#production-transition).
-These steps matter again only for the next campaign. The go-live redesign in
-[#462](https://github.com/epiphany40223/parishkit/issues/462) changes them to
-match the [Go live page](../admin-portal/spec.md#go-live-page):
-`go-live readiness` and `go-live preview` as today (the preview runs the DNS
-check and prints the start token); `go-live start --token …` (Start
-go-live); `go-live status --watch` (the Prepare step); `go-live retry`
-(a failed stage's Retry, which retries the same task and changes no data);
-`go-live refresh-again` (Refresh and prepare again, which starts a new
-attempt); `go-live confirm-preview` and `go-live confirm --token …` (Confirm
-Production); and `go-live stop` (Stop go-live). Start, refresh-again,
-confirm and stop ask at the [prompt](#command-line-confirmation) unless
-`--yes` is given. The cleanup and links commands retire with their pages.
-The URL-name rows above change with the slices that rename the pages, since
-`test_admin_page_names` checks them against the code. PR 12 follows
-whichever flow is current.
+These steps matter again only for the next campaign. The command names
+follow the page's labels (`go-live cancel` for Cancel go-live, formerly
+withdraw); the URL-name rows change with the pages, since
+`test_admin_page_names` checks them against the code. PR 12
+([#1809](https://github.com/epiphany40223/parishkit/issues/1809)) added
+every action.
 
 `go-live readiness` and `go-live progress` read the current campaign, or the
 campaign `--campaign` names, as `schedule show` does. Neither page records a
@@ -2535,10 +2539,144 @@ not the current Production campaign (a Testing draft included) is `denied`
 problems as their stored codes and never the Admin report recipients.
 A `go-live progress` watch stops once there is no initial mail to prepare,
 once preparation is complete, or once its task has stopped: a failed task
-changes nothing until the page's retry, which the document reports as
-`retry_available` without its signed control. The **Retry failed mail
-preparation** control was missing from this inventory; it is assigned to
-PR 12 (default, pending Administrator confirmation).
+changes nothing until **Retry** (`go-live retry`), which the document
+reports as `retry_available` without its signed control.
+
+The action commands (PR 12) act on the current campaign only, as the Go live
+page does; no current campaign is `not_available`. Each runs the request-free
+function the page's own view runs, with the command's caller, so every rule
+the page and its owners enforce applies unchanged: the go-live gate, the
+public web address check run again before anything starts or reaches
+Families, the SQL cleanup, confirmation and withdrawal guards, the reason,
+the pre-start-only and not-while-paused rule of Cancel go-live, and the
+request keys that make each action happen once. A preview and its confirming
+command mirror the page's review dialog: the preview records what it showed
+in a signed (not encrypted) token; the confirming command builds it all
+again, refuses when anything it showed changed (`stale_version`), and only
+then mints the owner's 5-minute token itself, so no command is refused for
+its preview's age (default, pending Administrator confirmation). A step
+that is not in the state an action needs, a control the page does not offer
+now, and a change found under the owners' locks are all `stale_version`:
+read `go-live status` (or `go-live progress`) and act again. An altered token
+is `invalid` before any prompt; another Administrator's token is `denied`.
+Start, refresh-again, stop, confirm and cancel ask at the
+[prompt](#command-line-confirmation) unless `--yes` is given, after the role
+check and the token's signature check and before any transaction; the
+prompt repeats the page dialog's own sentences and counts. Every
+state-changing command records its `admin_cmd_go_live_<verb>` event in the
+action's own transaction, so nothing is recorded when the action is not.
+
+- **`go-live preview`** is Check readiness and public web address: it runs
+  the DNS and origin check outside any transaction, then reads readiness as
+  `go-live readiness` does, and prints `campaign_id`, `origin_verified`,
+  `startable` (no readiness problem and the check passed), `readiness`
+  (`go-live readiness`'s document) and `preview.token`, the Start go-live
+  dialog's own signed preview (null unless `startable`), so a token from
+  either channel starts on the other. It records activity as the page's
+  post does, so it needs a full-scope session, and records no event.
+- **`go-live start --token T`** is the Start go-live dialog's Apply, and the
+  prompt is the acknowledgement that Testing cleanup cannot be undone. Before
+  the prompt it refuses another Administrator's token (`denied`), another
+  Administrator's go-live or a stop still running or failed, and a changed
+  readiness (`stale_version`). The same token again, or go-live this
+  Administrator already started, is no refusal and asks nothing: it starts
+  nothing more (`created` false), and since nothing was asked, a new request
+  it would begin is refused and rolled back. Then, as the dialog does: a
+  closed campaign, any readiness problem or a changed inputs digest is
+  `stale_version`; the public web address check runs again, and its failure
+  is `stale_version`. Only then is cleanup started, with attempt 1, by
+  `start_cleanup`, which re-reads everything under the work lock. It is
+  [fresh-gated](#fresh-gated-actions-from-the-command-line) (the
+  `automation_fresh_gate` event and `fresh_gated` notice) and irreversible
+  (the `irreversible` notice and `automation_irreversible` incident, which
+  its `record` hook adds with `admin_cmd_go_live_start`). It prints
+  `created`, `request_id` and `status`, `go-live status`'s document after
+  the commit.
+- **`go-live status`** is the Prepare step's read, for any session, passive
+  and recording nothing; `--watch` follows it until it is no longer
+  `running` and Check's stop is no longer `stopping`. It prints `campaign_id`, `state` (`running`, `failed`, `again`,
+  `ready`, `closed`, `stopped`, `not_started` or `confirmed`), `reason` (the
+  page's cause code for `running`, `failed` and `again`), `request_id`,
+  `boxes` (each `key`: `cleanup`, `refresh`, `links`, and its `state`),
+  `done`, `total`, `preparation` and `max_preparations` (the detail line's
+  counts), `prepared_id`, `failed_at`, `stop_kind`, `stopped_by_other`, the
+  offered actions `retry_available`, `again_available`, `stop_available`
+  and `confirm_available` (never their signed controls), and `stopping`,
+  Check's stop still running or failed (`state` `stopping` or
+  `stop_failed`, `kind`, `done`, `total`, `retry_available`), else null.
+- **`go-live retry`** retries the one failed task the current step offers a
+  **Retry** for, through the page's own control minted now: on Production
+  activation, mail preparation (`confirmation_progress.retry_shown`); on
+  Prepare, failed cleanup, link preparation or the discard of earlier links
+  (the Prepare step's `_retry`); on Check, the failed discard of a stopped
+  go-live's links (Retry stopping go-live, `go_live_views._retry_stop`). It
+  changes no data and does not prompt, as the page's Retry has no dialog.
+  Nothing to retry is `not_available`, so an exact repeat starts no second
+  retry. It prints `step` (`activation`, `prepare` or `check`), `retried`
+  (`mail_preparation`, `cleanup`, `links`, `links_discard` or
+  `stop`) and `status` (`go-live progress`'s document for `activation`,
+  else `go-live status`'s).
+- **`go-live refresh-again`** is Refresh and prepare again, on Prepare and on
+  Confirm Production after the refresh hold ended: it begins the next
+  attempt, a full ParishSoft refresh after which new Family links are
+  prepared; it does not delete Testing data again. **`go-live stop`** is
+  Stop go-live: it discards the Family links and stops Testing cleanup, in
+  one transaction through their owners; Testing data already deleted is not
+  restored. Each reads the step, prompts with the page's words, then acts
+  only if the step still offers the same control (the page's own unchanged
+  check) and prints `status` (`go-live status`'s document after the commit;
+  refresh-again also `attempt`, the attempt it began).
+- **`go-live confirm-preview`** is the Confirm Production dialog's Review:
+  the step must be `ready`. It prints `campaign_id`, `request_id`,
+  `preparation_id`, `target_state` (`active` or `scheduled`), `starts_at`,
+  `start_passed`,
+  `reprepared`, `counts` (the counts the confirmation binds:
+  `active_families`, `eligible_families`, `no_email_families`,
+  `family_messages`, `daily_messages`, `weekly_messages`,
+  `coalesced_slots`) and `preview.token`, the dialog's own binding, signed
+  without a time. It records activity as the page's post does and records
+  no event.
+- **`go-live confirm --token T`** is its Apply. The prompt asks for the typed
+  word `Production`, as the dialog does (`--yes` answers it). Then the
+  dialog's checks, in its order: the same token again opens nothing new
+  (`created` false); the step must still be ready on the same links; the
+  public web address check runs again; the preview is built again and its
+  problems, target, inputs digest and counts must match the token's (counts
+  change when a send falls due since the review). Only then is the
+  confirmation token minted and Production confirmed by
+  `confirmation_commands.confirm`, which passes `sign_in_instant`
+  irreversibly (the `irreversible` notice and `automation_irreversible`
+  incident) and records `admin_cmd_go_live_confirm` through its `record`
+  hook. It prints `created`, `confirmation_id`, `target_state` and
+  `progress`, `go-live progress`'s document after the commit.
+- **`go-live cancel-preview --reason TEXT|-`** is the Cancel go-live dialog's
+  Review with its reason (more than spaces, at most 2,000 characters, else
+  `invalid`). Cancel go-live is available only for a scheduled campaign
+  before its start, while live delivery is not paused, and only once;
+  otherwise `stale_version`. It prints `campaign_id`, `confirmation_id`,
+  the `reason`, `inventory` (`occurrences`, `cancellable`, `messages`,
+  `failed`, `delivered` and `blocking`, the counts the dialog shows),
+  `cancellable` (nothing blocks it) and `preview.token` (null when mail
+  blocks it: resolve that mail first, as the dialog says), which binds the
+  dialog's own review binding and the reason, signed without a time. It
+  records activity as the page's post does and records no event.
+- **`go-live cancel --token T`** is its Apply. The prompt is the
+  acknowledgement that deleted Testing data is not restored. Then the
+  dialog's checks: the same token again cancels nothing new (`created`
+  false); the cancellation is built again with the review's request key
+  and must still be available, on the same confirmation, with the same
+  counts and nothing blocking. Only then is its intent minted and go-live
+  cancelled by `withdrawal_commands.withdraw`, which passes
+  `sign_in_instant` irreversibly and records `admin_cmd_go_live_cancel`
+  through its `record` hook. It prints `created`, `withdrawal_id` and
+  `campaign_id`; the campaign is a Testing draft again, and Check starts
+  over from readiness.
+- **`go-live families`** streams the Testing submissions list (each
+  Testing Family's `duid` and `name`, by DUID) as CSV to standard output,
+  with its document (`campaign_id`, `count`, `file_name`, `content_type`,
+  `size`, `sha256`) on standard error, as other streamed files are. Only
+  the current Testing draft has one (else `stale_version`). Any session may
+  run it; the page records no event, so neither does the command.
 
 ### Family email sends and delivery controls
 
@@ -4350,8 +4488,8 @@ carry the schema changes, and PR 10 handles secrets; all three get
 security-focused reviews, and none is deployed to Production without the
 Administrator's approval of that deploy.
 
-On `main`, PR 0 to PR 7, PR 8a to PR 8f and PR 9 have landed; PR 8g,
-PR 10, PR 11 and PR 12 have not, so their commands are pending exemptions in
+On `main`, PR 0 to PR 7, PR 8a to PR 8f, PR 9 and PR 12 have landed;
+PR 8g, PR 10 and PR 11 have not, so their commands are pending exemptions in
 the [action inventory](#action-inventory), and the
 [ADM-11 checklist](../../../tasks/stewardship/admin-portal.md#adm-11-admin-automation-interface)
 records each landed part's evidence. `pk-stewardship admin commands` lists
@@ -4435,11 +4573,13 @@ exactly the commands that exist.
   [users commands](#users-and-follow-up), which its slices land with their
   routes, ahead of the rest of PR 11; the event acknowledgements
   (`events list`, `events acknowledge`) land ahead of it too.
-- **PR 12, go-live and withdrawal:** the verified readiness preview, cleanup
-  with retry and cancel, link preparation with retry and cancel,
-  confirmation, the Production preparation retry and withdrawal; after
-  [#462](https://github.com/epiphany40223/parishkit/issues/462) if that has
-  landed.
+- **PR 12, go-live and Cancel go-live:** the
+  [Go live page's actions](#production-transition-and-withdrawal): the
+  verified readiness preview and Start go-live, the Prepare step's status,
+  retry, refresh-again and stop, Confirm Production, the Production
+  preparation retry and Cancel go-live
+  ([#1809](https://github.com/epiphany40223/parishkit/issues/1809)), and
+  the Testing submissions list as a streamed file.
 
 ## Decisions
 

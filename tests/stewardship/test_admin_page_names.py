@@ -10,10 +10,7 @@ the setup wizard; NAV-5b adds Responses and reports.
 
 import ast
 import re
-from datetime import UTC, datetime
 from pathlib import Path
-from types import SimpleNamespace
-from uuid import uuid4
 
 import pytest
 from django.template import Context, Template
@@ -57,9 +54,8 @@ TEMPLATES = {
     "go_live": "go-live-check.html",
     "go_live_families": "go-live-families.html",
     "go_live_prepare": "go-live-prepare.html",
-    "production_confirmation": "production-confirmation.html",
+    "go_live_confirm": "go-live-confirm.html",
     "production_progress": "production-progress.html",
-    "production_withdrawal": "production-withdrawal.html",
     "delivery_control": "delivery-control.html",
     "family_email_progress": "family-email-progress.html",
     "family_email_sends": "family-email-sends.html",
@@ -605,62 +601,26 @@ def test_retired_page_names_are_not_shown():
     assert found >= ALLOWED, sorted(ALLOWED - found)
 
 
-def test_cancel_go_live_sits_under_production_activation():
-    """The trail runs Home › Campaign setup › Production activation › Cancel go-live."""
-    progress = reverse("admin:production_progress")
-    items = [
-        navigation.MenuItem(
-            "campaign", "production_progress", "Production activation", progress
-        )
-    ]
-    match = SimpleNamespace(
-        url_name="production_withdrawal",
-        namespace=navigation.NAMESPACE,
-        kwargs={},
-    )
-    _, trail = navigation.build(match, items)
-    assert [(crumb["label"], crumb["url"]) for crumb in trail][1:] == [
-        ("Campaign setup", progress),
-        ("Production activation", progress),
-        ("Cancel go-live", None),
-    ]
-
-
 def test_cancel_go_live_blocking_message_links_the_pages_it_names():
-    """Work in flight names Pause and resume mail and Sent mail as links."""
-    campaign = SimpleNamespace(
-        pk=uuid4(),
-        active_configuration=SimpleNamespace(
-            name="Annual campaign", starts_at=datetime(2054, 10, 1, tzinfo=UTC)
-        ),
-    )
+    """Work in flight names Pause and resume mail and Sent mail as links.
+
+    Cancel go-live is a review dialog on Production activation (#1585
+    slice 5): mail that blocks it is a refusal inside the dialog, which
+    offers no Apply (no signed review).
+    """
     inventory = dict.fromkeys(
         ("occurrences", "cancellable", "messages", "failed", "delivered"), 0
     )
     html = render_to_string(
-        "stewardship/production-withdrawal.html",
-        {
-            "admin_chrome": None,
-            "campaign": campaign,
-            "available": True,
-            "preview": {
-                "reason": "Fix a date",
-                "inventory": inventory | {"blocking": 1},
-            },
-        },
+        "stewardship/production-cancel-review.html",
+        {"refused": "blocking", "inventory": inventory | {"blocking": 1}},
     )
     controls = reverse("admin:delivery_control")
     outgoing = reverse("admin:deliveries")
     assert f'<a href="{controls}">Pause and resume mail</a>' in html
     assert f'<a href="{outgoing}">Sent mail</a>' in html
-    assert "<h1>Cancel go-live</h1>" in html
-    # Confirm is shown unavailable, named by the blocking message (#563),
-    # with no form that could post it.
-    assert 'value="confirm"' not in html
-    assert (
-        'disabled aria-describedby="withdrawal-blocked">Confirm cancelling go-live'
-        in html
-    )
+    assert "data-review-refusal" in html and "data-review-preview" not in html
+    assert "1 item of mail is being sent right now" in html
 
 
 @pytest.mark.parametrize("key", sorted(SETUP))

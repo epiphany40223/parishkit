@@ -1,0 +1,42 @@
+{% load i18n stewardship %}{% comment %}
+  The Confirm Production dialog's answers (admin-portal spec, "Go live
+  page", Confirm Production; #1585 slice 4), drawn by
+  go_live_confirm_views._answer into the shared review dialog of
+  go-live-confirm.html, never a page of its own.
+
+  - ``review``: a full review. The answer sets the dialog's question ("Go
+    live now?" or "Schedule the campaign?", data-review-title) and repeats
+    only the target, the two headline counts and the caution, then the
+    field "Type Production to confirm". The field posts with Apply (its
+    form attribute names the dialog's Apply form), and Apply is unavailable
+    until it holds the word, ignoring spaces around it (data-review-require,
+    ui-v1.js), saying why in the line under the buttons. Apply posts the
+    signed binding (data-review-preview), not the confirmation token: that
+    is minted at Apply, from the preview built again then.
+  - ``refused``: why Review or Apply was refused, marked data-review-refusal
+    so the dialog shows it as drawn, naming the change and the way on: the
+    typed word missing;
+    ParishSoft data or the target changed since the review, or emails fell
+    due since it (``due``); the hold ended;
+    the campaign closed; the links being prepared again; another problem;
+    another Administrator's stop or confirmation; or the public web address
+    check, run again at Apply, failed.
+{% endcomment %}{% if review %}<div data-review-answer data-review-done="{% translate 'Production confirmed.' %}" data-review-title="{% if shown.target == 'scheduled' %}{% translate 'Schedule the campaign?' %}{% else %}{% translate 'Go live now?' %}{% endif %}" data-review-describedby="go-live-confirm-summary">
+{% with readiness=shown.preview.readiness %}<p id="go-live-confirm-summary">{% if readiness.target_state == 'scheduled' %}{% translate "The campaign is scheduled to start" %} <time data-local-instant datetime="{{ readiness.campaign.active_configuration.starts_at|instant }}">{{ readiness.campaign.active_configuration.starts_at|instant }}</time>{% translate "; nothing is sent until then." %}{% else %}{% translate "The campaign becomes active at once, and the emails due at once are sent." %}{% endif %}</p>{% endwith %}
+<dl><dt>{% translate "Families with an eligible email address" %}</dt><dd>{{ email_eligibility|out_of }}</dd>
+<dt>{% translate "Family emails due at once" %}</dt><dd>{{ families.messages|number }}</dd></dl>
+<p class="notice">{% translate "Families can open the form and emails start being sent. This cannot be undone after the campaign starts." %}</p>
+<p><label for="go-live-confirm-typed">{% translate "Type Production to confirm" %}</label><br><input id="go-live-confirm-typed" name="typed" form="go-live-confirm-review-apply" required pattern="\s*Production\s*" autocomplete="off" spellcheck="false" data-review-require data-missing-hint="{% translate 'Type Production exactly as shown to confirm.' %}"></p>
+<input type="hidden" name="review" value="{{ review }}" data-review-preview>
+</div>
+{% else %}<div data-review-refusal>{% if refused == "typed" %}<p data-go-live-confirm-refused="typed">{% translate "Type Production exactly as shown to confirm. Nothing was confirmed." %}</p>
+{% elif refused == "target" %}<p data-go-live-confirm-refused="target">{% translate "The campaign start time has passed, so it will become active at once. Review the updated preview: close this, then select Confirm Production again." %}</p>
+{% elif refused == "due" %}<p data-go-live-confirm-refused="due">{% translate "Emails fell due since this preview, so the counts changed and nothing was confirmed. Review the updated preview: close this, then select Confirm Production again." %}</p>
+{% elif refused == "hold_ended" %}<p data-go-live-confirm-refused="hold_ended">{% translate "ParishSoft refreshes resumed while this waited, so nothing was confirmed. Close this, then select Refresh and prepare again." %}</p>
+{% elif refused == "closed" %}<p data-go-live-confirm-refused="closed">{% translate "The campaign has ended, so it cannot go live. Nothing was confirmed." %}</p>
+{% elif refused == "moved" %}<p data-go-live-confirm-refused="moved">{% translate "ParishSoft data changed, so new Family links are being prepared and nothing was confirmed." %}</p><p><a href="{{ prepare_url }}">{% translate "Open Prepare" %}</a></p>
+{% elif refused == "problems" %}<p data-go-live-confirm-refused="problems">{% translate "Something needs attention before going live, so nothing was confirmed. Close this to see what to fix." %}</p>
+{% elif refused == "stopped" %}<p data-go-live-confirm-refused="stopped">{% if shown.prepare.stopped_by_other %}{% translate "Another Administrator stopped go-live." %}{% else %}{% translate "Go-live was stopped." %}{% endif %} {% translate "Nothing was confirmed." %}</p><p><a href="{{ check_url }}">{% translate "Open Check" %}</a></p>
+{% elif refused == "confirmed" %}<p data-go-live-confirm-refused="confirmed">{% translate "Another Administrator already confirmed Production." %}</p><p><a href="{% url 'admin:production_progress' %}">{% translate "Open Production activation" %}</a></p>
+{% elif refused == "origin_unverified" %}<p data-go-live-confirm-refused="origin_unverified">{% translate "The public web address check failed or timed out, so nothing was confirmed. Check the site's configured URL and its DNS record, then select Confirm Production again." %}</p>
+{% else %}<p data-go-live-confirm-refused="changed">{% translate "ParishSoft data changed since this preview, so nothing was confirmed. Review the updated preview: close this, then select Confirm Production again." %}</p>{% endif %}</div>{% endif %}

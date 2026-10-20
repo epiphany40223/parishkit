@@ -67,17 +67,36 @@ def test_bar_on_prepare_opens_confirm_production_once_the_links_are_ready():
     assert waiting.current.key == "prepare" and waiting.current.number == 2
     assert str(waiting.next.label) == "Confirm Production"
     assert waiting.completed == 1 and waiting.step("confirm").url is None
-    ready = go_live_check.bar(
-        "started", current="prepare", prepared=True, confirm_url="/confirm/"
-    )
+    ready = go_live_check.bar("started", current="prepare", prepared=True)
     assert ready.completed == 2 and ready.step("prepare").state == "done"
-    assert ready.step("confirm").url == "/confirm/"
+    assert ready.step("confirm").url == "/admin/campaign/go-live/confirmation/"
+    # On Confirm Production itself: Activation is next and still waits.
+    confirm = go_live_check.bar("started", current="confirm", prepared=True)
+    assert confirm.current.number == 3 and str(confirm.next.label) == "Activation"
+    assert confirm.step("activate").state == "blocked"
     # Not started: Prepare is current but unavailable, with Check's reason.
     idle = go_live_check.bar("idle", current="prepare")
     assert idle.current.state == "blocked" and idle.current.url is None
     assert str(idle.current.status) == (
         "Not available yet: Start go-live on the Check step first."
     )
+
+
+@pytest.mark.parametrize("current", ["prepare", "confirm"])
+def test_bar_once_production_is_confirmed_completes_three_steps(current):
+    """Prepare and Confirm Production after the confirmation: Check, Prepare
+    and Confirm Production completed, Activation in progress and linked; no
+    step says to start go-live first."""
+    shown = SimpleNamespace(state="confirmed", started=False)
+    bar = go_live_check.bar(go_live_check.bar_state(shown), current=current)
+    assert bar.completed == 3 and bar.total == 4
+    assert [step.state for step in bar.steps] == ["done", "done", "done", "todo"]
+    assert bar.step("check").url is None
+    assert bar.step("activate").url == reverse("admin:production_progress")
+    assert str(bar.step("activate").status) == "In progress"
+    assert all("Start go-live" not in str(step.status) for step in bar.steps)
+    stopped = SimpleNamespace(state="stopped", started=False)
+    assert go_live_check.bar_state(stopped) == "idle"
 
 
 def test_retry_control_is_the_same_on_every_read_of_one_failure():

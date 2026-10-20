@@ -77,8 +77,8 @@ def collect_inputs(caller, service, campaign_id):
 
     ``caller`` is an ``AdminCaller``: the Go live page's Check step and the
     ``go-live readiness`` command (ADM-11) read through this one function.
-    Until PR 12 moves them, ``go_live_commands`` still pass their request,
-    which ``principal`` converts.
+    The page's views still pass ``go_live_commands`` their request, which
+    ``principal`` converts; ``pk-admin`` passes its caller (#1809).
     """
     with work_transaction():
         principal(caller, service, passive=True)

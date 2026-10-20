@@ -57,20 +57,32 @@ def in_place_form(text, key):
             "A new ParishSoft refresh was requested.",
             None,
         ),
+        # Confirm Production's Refresh and prepare again posts Prepare's own
+        # control; Prepare's answer has no region of this page, so the page
+        # opens it (#1585 slice 4).
+        (
+            "go-live-confirm.html",
+            "go-live-confirm-again",
+            "{% url 'admin:go_live_prepare' %}#go-live-confirm",
+            "A new ParishSoft refresh was requested.",
+            None,
+        ),
+        # Production activation's Retry (#1585 slice 5): once taken, focus
+        # goes to the step's heading, as on Prepare.
         (
             "production-progress.html",
             "production-retry",
             "{% url 'admin:production_progress' %}#production-status",
             "Mail preparation retry started.",
-            "refresh",
+            None,
         ),
     ],
 )
 def test_go_live_commands_post_in_place(name, key, action, message, fallback):
     """Each command is a data-in-place POST to its own page's region, with
-    the message the live region reads. Where the button goes away once its
-    request is taken (cleanup and Production retries), focus falls back to
-    the page's Refresh link just below instead of the region's heading."""
+    the message the live region reads. Where a page names a fallback, focus
+    falls back to it once the button goes away; the Go live steps name none,
+    so focus goes to the step's heading."""
     text = (TEMPLATES / name).read_text()
     form = in_place_form(text, key)
     assert 'method="post"' in form
@@ -84,12 +96,13 @@ def test_go_live_commands_post_in_place(name, key, action, message, fallback):
 
 
 def test_every_go_live_post_form_is_in_place_or_opens_the_dialog():
-    """No same-page command on these pages reloads any more. Start go-live
-    and Stop go-live open their review dialogs (#1585), whose Apply opens
-    the page that follows."""
+    """No same-page command on these pages reloads any more. Start go-live,
+    Stop go-live, Confirm Production and Cancel go-live open their review
+    dialogs (#1585), whose Apply opens the page that follows."""
     for name in (
         "go-live-check.html",
         "go-live-prepare.html",
+        "go-live-confirm.html",
         "production-progress.html",
     ):
         text = (TEMPLATES / name).read_text()

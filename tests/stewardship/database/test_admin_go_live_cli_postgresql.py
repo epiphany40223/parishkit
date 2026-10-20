@@ -310,7 +310,7 @@ def test_readiness_of_a_draft_ready_to_go_live(
     ]
     # Never the Admin report recipients or a Testing Family.
     assert "@" not in json.dumps(document)
-    # A cleanup started from the command line is PR 12; nothing started one.
+    # Readiness is a read: it started nothing.
     assert not ProductionTransitionRequest.objects.exists()
 
 
@@ -415,10 +415,8 @@ def test_progress_of_an_active_confirmation_is_followed(request, monkeypatch):
     with web_login():
         page = browser.get(state.path)
         assert page.context["control"]
-        assert (
-            post(browser, state.path, {"control": page.context["control"]}).status_code
-            == 302
-        )
+        retry = {"action": "retry", "control": page.context["control"]}
+        assert post(browser, state.path, retry).status_code == 303
     latest = TaskRun.objects.filter(root_id=demand.task_root_id).latest(
         "retry_sequence"
     )

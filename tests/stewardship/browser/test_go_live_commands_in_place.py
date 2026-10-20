@@ -1,12 +1,12 @@
 """The go-live command buttons act in place (#519 PR 7c-3).
 
 The Go live page's Prepare step's Retry and Refresh and prepare again
-(#1585 slice 3) and Production activation's Retry failed mail preparation
-each post to their own page. The pages are
-served at their real addresses (go_live_components). A route answers each
-POST with the page after the command, as the view's redirect back would show
-it; Retry failed mail preparation instead goes through the fixture server's
-real 303, so the followed redirect and the replaced address are checked too.
+(#1585 slice 3) and Production activation's Retry (slice 5) each post to
+their own page. The pages are served at their real addresses
+(go_live_components). A route answers each POST with the page after the
+command, as the view's redirect back would show it; Production
+activation's Retry instead goes through the fixture server's real 303, so
+the followed redirect and the replaced address are checked too.
 
 Each test sets a mark outside every region, which only a full page load could
 lose, wheels the page so the button is below the fold (the mouse wheel, since
@@ -184,24 +184,26 @@ def test_prepare_commands_are_in_place(
 
 
 def test_production_retry_follows_its_redirect_in_place(page, component_origin):
-    """Retry failed mail preparation posts once, a double click included,
-    follows the view's redirect back to Production activation and swaps it
-    in: no reload, not sent to the top, focus on Refresh Production progress
-    now that Retry is gone, the message read out, and the address the
-    redirect's with the region's fragment."""
+    """Production activation's Retry (#1585 slice 5) posts once, a double
+    click included, follows the view's redirect back to Production
+    activation and swaps it in: no reload, not sent to the top, focus on the
+    state's heading now that Retry is gone, the message read out, and the
+    address the redirect's with the region's fragment."""
     page.set_viewport_size(VIEWPORT)
     page.goto(component_origin + PRODUCTION)
     page.evaluate(MARK)
     posts = count_requests(page, "POST", PRODUCTION)
-    button = page.get_by_role("button", name="Retry failed mail preparation")
+    button = page.get_by_role("button", name="Retry", exact=True)
     offset = wheel_to(page, button)
     button.dblclick()
     announced(page, "Mail preparation retry started.")
     stayed(page, offset)
     visible(
-        page.get_by_role("heading", name="Initial campaign mail preparation complete")
+        page.get_by_role(
+            "heading", name="Campaign active. Initial campaign mail is prepared."
+        )
     )
     hidden(button)
-    focused(page.get_by_role("link", name="Refresh Production progress"))
+    focused(page.locator("#production-state"))
     assert posts == [component_origin + PRODUCTION]
     assert page.url == component_origin + PRODUCTION_RETRIED + "#production-status"

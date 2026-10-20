@@ -19,8 +19,9 @@ from django.urls import reverse
 from parishkit.stewardship.accounts.authentication import runtime
 from parishkit.stewardship.accounts.confirmation_commands import confirm, verify_preview
 from parishkit.stewardship.accounts.confirmation_preview import collect_preview
+from parishkit.stewardship.accounts.confirmation_progress import PAGE_SALT
 from parishkit.stewardship.accounts.confirmation_readiness import collect_readiness
-from parishkit.stewardship.accounts.models import PortalSession, PortalUser
+from parishkit.stewardship.accounts.models import PortalUser
 from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 from parishkit.stewardship.accounts.sessions import database_now
 from parishkit.stewardship.campaigns.activation_models import ProductionTokenPreparation
@@ -43,7 +44,7 @@ from parishkit.stewardship.storage import StaleRecordError
 
 from . import test_setup_preparation_postgresql as setup_inputs
 from .auth_builders import unguarded
-from .preview_builders import assert_out_of_date, previews_aged
+from .preview_builders import previews_aged
 from .test_activation_views_postgresql import (  # noqa: F401
     bootstrapped,
     config_role,
@@ -51,7 +52,7 @@ from .test_activation_views_postgresql import (  # noqa: F401
     ready_links,
     setup_service,
 )
-from .test_admin_navigation_postgresql import GO_LIVE, flow_steps
+from .test_admin_navigation_postgresql import flow_steps
 from .test_background_grants_postgresql import task_login
 from .test_setup_mail_views_postgresql import web_login
 from .test_setup_views_postgresql import post
@@ -193,31 +194,14 @@ def test_confirmation_atomically_activates_and_replays(request, monkeypatch, act
     login = arguments[0]
     campaign = preparation.transition.campaign
     request_id = preparation.transition.pk
-    path = reverse("admin:production_confirmation", args=[request_id, preparation.pk])
+    # The owner the Go live page's Confirm Production dialog calls (#1585
+    # slice 4; its HTTP flow is test_go_live_confirm_postgresql.py).
     with web_login():
         settings_path = "/admin/campaign/settings/"
         # The menu offers Production activation only once Production is
         # confirmed; Campaign settings' body no longer links it (#1118).
         progress_href = f'href="{reverse("admin:production_progress")}"'.encode()
         assert progress_href not in browser.get(settings_path).content
-        activity = PortalSession.objects.get(
-            pk=login.portal_session.pk
-        ).last_activity_at
-        page = browser.get(path)
-        assert page.status_code == 200, page.content
-        assert page["Cache-Control"] == "no-store"
-        assert page.context["preview"] is None
-        assert flow_steps(page.content) == (GO_LIVE, "Confirm Production")
-        assert browser.head(path).status_code == 200
-        assert (
-            PortalSession.objects.get(pk=login.portal_session.pk).last_activity_at
-            == activity
-        )
-        assert browser.post(path, {"action": "verify"}).status_code == 403
-        assert (
-            post(browser, path, {"action": "verify", "actor": "other"}).status_code
-            == 400
-        )
         preview, verified, token = verify_preview(*arguments)
         assert verified and token and not preview.problems
     # The Admin's only sign-in predates cleanup's completion, which no longer
@@ -234,19 +218,14 @@ def test_confirmation_atomically_activates_and_replays(request, monkeypatch, act
         confirm(*arguments, token=token, typed="Production")
     assert not ProductionConfirmation.objects.exists()
     with web_login():
-        page = post(browser, path, {"action": "verify"})
-        assert page.status_code == 200, page.content
-        token = page.context["confirmation_token"]
-        values = {"action": "confirm", "preview": token, "typed": "Production"}
-        assert post(browser, path, values | {"typed": "Testing"}).status_code == 400
-        # An expired preview is the plain out-of-date refusal (#398).
-        with previews_aged(monkeypatch):
-            assert_out_of_date(post(browser, path, values), path)
+        _, _, token = verify_preview(*arguments)
+        with pytest.raises(ValueError, match="Type Production"):
+            confirm(*arguments, token=token, typed="Testing")
+        # An expired token is the plain out-of-date refusal (#398).
+        with previews_aged(monkeypatch), pytest.raises(StaleRecordError):
+            confirm(*arguments, token=token, typed="Production")
         assert not ProductionConfirmation.objects.exists()
-        response = post(browser, path, values)
-        assert response.status_code == 302, response.content
-        assert post(browser, path, values).status_code == 302
-        receipt = ProductionConfirmation.objects.get()
+        receipt = confirm(*arguments, token=token, typed="Production")
         assert receipt.authenticated_at == login.portal_session.authenticated_at
         assert confirm(*arguments, token=token, typed="Production").pk == receipt.pk
         with monkeypatch.context() as patch:
@@ -255,16 +234,23 @@ def test_confirmation_atomically_activates_and_replays(request, monkeypatch, act
                 signing.loads(
                     token, salt="stewardship-production-confirmation-v1", max_age=300
                 )
-            assert post(browser, path, values).status_code == 302
+            # A committed replay needs no unexpired token.
+            assert confirm(*arguments, token=token, typed="Production").pk == (
+                receipt.pk
+            )
             assert ProductionConfirmation.objects.count() == 1
         with override_settings(STEWARDSHIP_PUBLIC_ORIGIN="http://localhost:8001"):
             assert confirm(*arguments, token=token, typed="Production").pk == receipt.pk
-        progress_path = response["Location"]
+        progress_path = reverse("admin:production_progress")
         page = browser.get(progress_path)
         assert page.status_code == 200, page.content
         assert page["Cache-Control"] == "no-store"
         assert (b"Campaign active" if active else b"Campaign scheduled") in page.content
-        assert flow_steps(page.content) == (GO_LIVE, "Activation")
+        # The Go live step bar only while a direct activation's initial
+        # mail is being prepared (#1585 slice 5); no numbered flow list.
+        assert flow_steps(page.content) is None
+        assert (b"Step 4 of 4:" in page.content) == active
+        assert b"Refresh Production progress" not in page.content
         assert progress_href in browser.get(settings_path).content
     campaign.refresh_from_db()
     preparation.transition.refresh_from_db()
@@ -285,17 +271,34 @@ def test_confirmation_atomically_activates_and_replays(request, monkeypatch, act
             )
         with web_login():
             page = browser.get(progress_path)
-            assert b"Preparing initial campaign mail" in page.content
-            retry = {"control": page.context["control"]}
+            assert b"Initial campaign mail failed." in page.content
+            retry = {"action": "retry", "control": page.context["control"]}
             assert retry["control"]
-            competing = {"control": browser.get(progress_path).context["control"]}
+            # Signed without a time: every read of one failure draws the
+            # same control, so the self-updating region stays unchanged.
+            assert browser.get(progress_path).context["control"] == retry["control"]
             runs = TaskRun.objects.filter(root_id=demand.task_root_id).count()
+            forged = retry | {"control": retry["control"] + "x"}
+            assert post(browser, progress_path, forged).status_code == 400
+            assert post(browser, progress_path, {"action": "retry"}).status_code == 400
+            # Another sign-in's control (signed for another Administrator).
+            other = signing.Signer(salt=PAGE_SALT).unsign_object(retry["control"])
+            other["actor"] = str(uuid4())
+            stolen = retry | {
+                "control": signing.Signer(salt=PAGE_SALT).sign_object(other)
+            }
+            assert post(browser, progress_path, stolen).status_code == 403
+            # No page age reaches the Administrator: the owner's own
+            # 5-minute control is minted at the click (#1585 slice 5).
             with previews_aged(monkeypatch):
-                assert_out_of_date(post(browser, progress_path, retry), progress_path)
-            assert TaskRun.objects.filter(root_id=demand.task_root_id).count() == runs
-            assert post(browser, progress_path, retry).status_code == 302
-            assert post(browser, progress_path, retry).status_code == 302
-            assert post(browser, progress_path, competing).status_code == 409
+                response = post(browser, progress_path, retry)
+            assert response.status_code == 303, response.content
+            assert response["Location"] == progress_path
+            count = TaskRun.objects.filter(root_id=demand.task_root_id).count()
+            assert count == runs + 1
+            # A resend after the retry no longer names the failure shown: no-op.
+            assert post(browser, progress_path, retry).status_code == 303
+            assert TaskRun.objects.filter(root_id=demand.task_root_id).count() == count
             assert not browser.get(progress_path).context["complete"]
         # Current eligibility can change after confirmation. Freeze the group's
         # actual result, not a later recomputation against mutable Family data.
@@ -330,4 +333,3 @@ def test_confirmation_atomically_activates_and_replays(request, monkeypatch, act
     PortalUser.objects.update(disabled=True, version=F("version") + 1)
     with web_login():
         assert browser.get(progress_path).status_code == 403
-        assert post(browser, path, values).status_code == 403

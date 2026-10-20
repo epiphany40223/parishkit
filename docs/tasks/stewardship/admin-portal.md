@@ -324,7 +324,7 @@ Specification: [Admin automation interface](../../specs/stewardship/admin-automa
 - [x] ADM-11.10 — PR 9: add task retry, delivery and refusal commands.
 - [ ] ADM-11.11 — PR 10: add the remaining configuration commands, including secret replacement.
 - [ ] ADM-11.12 — PR 11: add acknowledgement (`events list`, `events acknowledge`) and follow-up (`followup …`) commands. The users commands (`users list`, `users preview-upgrade`, `users preview`, `users confirm`, `users import-leaders`, including high-impact changes) move to the #952 slices; rule and assignment commands are retired by #952 and #922.
-- [ ] ADM-11.13 — PR 12: add go-live and withdrawal commands.
+- [x] ADM-11.13 — PR 12: add go-live and withdrawal commands (#1809, PR #1816: the Go live page's actions, `admin_go_live`, `test_admin_go_live_actions_cli_postgresql.py`).
 
 Since #1547 an automation session no longer stands in for a recent sign-in,
 because nothing needs one; privileged commands still need a live full-scope

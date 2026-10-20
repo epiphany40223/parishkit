@@ -4543,6 +4543,24 @@
     dialog.querySelector("[data-confirm-cancel]")?.addEventListener("click", () => {
       if (!confirming?.busy) dialog.close();
     });
+    // A review answer's typed field (data-review-require, the Confirm
+    // Production dialog's "Type Production to confirm", #1585) is gated
+    // while it is edited, and Enter in it is Apply, never a native submit of
+    // the Apply form it names: Apply always posts from acceptReview. The
+    // Enter that commits an input method's composition is not Apply.
+    dialog.addEventListener("input", (event) => {
+      if (event.target instanceof Element && event.target.matches("[data-review-require]")) gateReview(dialog);
+    });
+    dialog.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" || event.isComposing || !(event.target instanceof Element)
+        || !event.target.matches("[data-review-require]")) return;
+      event.preventDefault();
+      const accept = dialog.querySelector("[data-confirm-accept]");
+      if (accept && !accept.disabled && !accept.hidden) accept.click();
+    });
+    dialog.querySelector("form[data-review-apply]")?.addEventListener("submit", (event) => {
+      event.preventDefault();
+    });
     dialog.querySelector("[data-confirm-accept]")?.addEventListener("click", (event) => {
       // A dialog with fields makes Confirm its form's submit button, so the
       // form's complete gate holds it (confirm-dialog.html fields_template);
@@ -5160,6 +5178,33 @@
     wireSummaryLinks(placed.parentElement);
     placed.focus();
   };
+  // Hold a review dialog's Apply until every field of its answer marked
+  // data-review-require is valid (prerequisite gates): the Confirm
+  // Production dialog's typed word, whose pattern ignores spaces around it,
+  // as the server does (#1585). While it holds, the reserved status line
+  // under the buttons says what is missing (the field's data-missing-hint)
+  // and describes Apply, so nothing moves when it clears. Not while Apply
+  // runs or after a refusal, which keeps Apply unavailable itself.
+  const gateReview = (dialog) => {
+    const fields = [...dialog.querySelectorAll("[data-review-body] [data-review-require]")];
+    const accept = dialog.querySelector("[data-confirm-accept]");
+    const status = dialog.querySelector("[data-confirm-status]");
+    if (!accept) return;
+    if (!fields.length) {
+      // Another answer in the same dialog: Apply no longer names the line.
+      if (status.id && accept.getAttribute("aria-describedby") === status.id) {
+        accept.removeAttribute("aria-describedby");
+      }
+      return;
+    }
+    if (confirming?.dialog !== dialog || confirming.busy
+      || !dialog.querySelector("[data-confirm-error]").hidden) return;
+    const missing = fields.find((field) => !field.checkValidity());
+    accept.disabled = Boolean(missing);
+    status.textContent = missing ? missing.dataset.missingHint || "" : "";
+    if (missing && status.id) accept.setAttribute("aria-describedby", status.id);
+    else accept.removeAttribute("aria-describedby");
+  };
   const openReview = (dialog, form, opener, answer, refusal) => {
     wireDialog(dialog);
     const apply = dialog.querySelector("form[data-review-apply]");
@@ -5220,6 +5265,7 @@
         // setup step, #1404), in place of the dialog's own.
         back: answer?.getAttribute("data-review-return") || "",
         backOutcome: answer?.getAttribute("data-review-return-outcome") || ""}};
+    gateReview(dialog);
     dialog.showModal();
     if (refusal) refuseConfirm(confirming, refusal);
     // The title first, so the reader hears what is reviewed.

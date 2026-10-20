@@ -119,10 +119,9 @@ def _context(shown):
         "stage": shown,
         "campaign": shown.request.campaign if shown.request else None,
         "wizard": go_live_check.bar(
-            "started" if shown.started else "idle",
+            go_live_check.bar_state(shown),
             current="prepare",
             prepared=shown.state == "ready",
-            confirm_url=shown.confirm_url,
         ),
         # Work that moves by itself is followed closely; a step that waits
         # for the Administrator only re-reads now and then, for another tab.
@@ -188,14 +187,17 @@ def _retry(request, service, campaign_id, actor, row, value):
     or its discard's retry (``activation_progress``). Called inside
     ``_act``'s transaction, after the control matched the step read there;
     the task version the control names is checked again here so the
-    owner's control is minted for exactly that version.
+    owner's control is minted for exactly that version. Returns whether a
+    retry was asked for (``pk-admin go-live retry`` reports a no-op as
+    nothing to retry; the page ignores it).
     """
     if value["action"] == "retry_task":
         controls = go_live_progress.progress(request, service, campaign_id, row.pk)
         token = controls["controls"].get("retry")
-        if token:
-            go_live_progress.control(request, service, campaign_id, row.pk, token=token)
-        return
+        if not token:
+            return False
+        go_live_progress.control(request, service, campaign_id, row.pk, token=token)
+        return True
     with work_transaction():
         preparation = ProductionTokenPreparation.objects.get(
             pk=value["preparation"], transition=row
@@ -207,6 +209,7 @@ def _retry(request, service, campaign_id, actor, row, value):
             actor, row, value["action"], preparation=preparation, task=task
         )
     activation_progress.control(request, service, campaign_id, row.pk, token=token)
+    return True
 
 
 def _again(request, service, actor, row, number):

@@ -237,13 +237,8 @@ SLASHLESS_EXPECTED = {
     "/admin/campaign/go-live": "/admin/campaign/go-live/",
     "/admin/campaign/go-live/families": "/admin/campaign/go-live/families/",
     "/admin/campaign/go-live/preparing": "/admin/campaign/go-live/preparing/",
-    f"/admin/campaign/go-live/cleanup/{T}/links/{T}/confirmation": (
-        f"/admin/campaign/go-live/cleanup/{T}/links/{T}/confirmation/"
-    ),
+    "/admin/campaign/go-live/confirmation": "/admin/campaign/go-live/confirmation/",
     "/admin/campaign/production": "/admin/campaign/production/",
-    "/admin/campaign/production/cancellation": (
-        "/admin/campaign/production/cancellation/"
-    ),
     "/admin/mail/controls": "/admin/mail/controls/",
     "/admin/mail/family-progress": "/admin/mail/family-progress/",
     "/admin/mail/family-history": "/admin/mail/family-history/",
@@ -468,27 +463,33 @@ def test_test_email_pages_come_before_the_content_editor():
 def test_the_go_live_chain_names_no_campaign():
     """Each go-live step sits under Go live, with no campaign id.
 
-    The Prepare step names no request either (#1585 slice 3); the retired
-    Testing cleanup and Prepare Family links addresses are gone, so only
-    Confirm Production still carries the ids, until slice 4.
+    No step names a request or a preparation either (#1585 slices 3 and
+    4): the retired Testing cleanup, Prepare Family links and old Confirm
+    Production addresses are gone, with no redirect, as is the Cancel
+    go-live page (slice 5), now a dialog on Production activation.
     """
-    confirmation = reverse("admin:production_confirmation", args=[TASK, TASK])
     assert reverse("admin:go_live") == "/admin/campaign/go-live/"
     assert reverse("admin:go_live_prepare") == "/admin/campaign/go-live/preparing/"
-    assert confirmation.startswith("/admin/campaign/go-live/cleanup/")
-    assert confirmation.endswith("/confirmation/")
+    assert reverse("admin:go_live_confirm") == ("/admin/campaign/go-live/confirmation/")
     for retired in ("go_live_cleanup", "go_live_links"):
         with pytest.raises(NoReverseMatch):
             reverse(f"admin:{retired}", args=[TASK])
+    with pytest.raises(NoReverseMatch):
+        reverse("admin:production_confirmation", args=[TASK, TASK])
+    with pytest.raises(NoReverseMatch):
+        reverse("admin:production_withdrawal")
     for path in (
         f"/admin/campaign/go-live/cleanup/{TASK}/",
         f"/admin/campaign/go-live/cleanup/{TASK}/links/",
         f"/admin/campaign/go-live/cleanup/{TASK}",
+        f"/admin/campaign/go-live/cleanup/{TASK}/links/{TASK}/confirmation/",
+        f"/admin/campaign/go-live/cleanup/{TASK}/links/{TASK}/confirmation",
+        "/admin/campaign/production/cancellation/",
+        "/admin/campaign/production/cancellation",
     ):
         with pytest.raises(Resolver404):
             resolve(path)
-    withdrawal = reverse("admin:production_withdrawal")
-    assert withdrawal.startswith(reverse("admin:production_progress"))
+    assert reverse("admin:production_progress") == "/admin/campaign/production/"
 
 
 @pytest.mark.parametrize(

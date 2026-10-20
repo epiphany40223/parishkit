@@ -252,9 +252,7 @@ def test_signature_alone_cannot_admit_cleanup_with_missing_current_proofs(
     assert not ProductionTransitionRequest.objects.exists()
 
 
-def test_readiness_names_family_emails_by_rendered_subject(
-    campaign_test, monkeypatch
-):
+def test_readiness_names_family_emails_by_rendered_subject(campaign_test, monkeypatch):
     """Check's test-email links show the subject with values filled in (#1846)."""
     from types import SimpleNamespace
 

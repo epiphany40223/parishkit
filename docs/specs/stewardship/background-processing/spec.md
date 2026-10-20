@@ -1441,12 +1441,11 @@ unchanged.
 
 #### Refreshes wait for go-live
 
-> **Status:** the scheduler side is built (`campaigns/go_live_sequencing.py`:
-> the hold, its logging and the data-age shift), but it is idle: nothing
-> begins an attempt until the Go live page's **Start go-live** does, which is
-> the rest of [#462](https://github.com/epiphany40223/parishkit/issues/462)
-> (slice 3 of [#1585](https://github.com/epiphany40223/parishkit/issues/1585)).
-> The "waiting for go-live" health line below is not built yet either.
+> **Status:** built (`campaigns/go_live_sequencing.py`: the hold, its
+> logging and the data-age shift); the Go live page's **Start go-live**
+> begins attempt 1 since slice 3 of
+> [#1585](https://github.com/epiphany40223/parishkit/issues/1585). The
+> "waiting for go-live" health line below is not built yet.
 
 From the start of a go-live [attempt](../admin-portal/spec.md#go-live-page)
 (**Start go-live**, or **Refresh and prepare again**) until its hold end, the

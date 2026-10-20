@@ -501,6 +501,27 @@ STEP_REASONS = {
     # confirmed, since the step was drawn.
     "stopped": "stale_page",
     "confirmed": "stale_page",
+    # Its Confirm Production (#1585 slice 4): the target, the hold, the
+    # Family links or readiness changed since the step was drawn. The typed
+    # word missing (``typed``) is an incomplete form the page gates.
+    "target": "stale_page",
+    "hold_ended": "stale_page",
+    "moved": "stale_page",
+    "problems": "stale_page",
+    # The same inputs, but emails fell due since the Review, so the counts
+    # it showed are no longer the ones Apply would confirm.
+    "due": "stale_page",
+    "typed": "unexpected_fields",
+    # Production activation's Cancel go-live (#1585 slice 5): the reason
+    # missing is an incomplete form the dialog gates; mail being sent (or
+    # uncertain, or needing recovery) blocks it until resolved; live
+    # delivery was paused, or another Administrator cancelled, since the
+    # page was drawn. A start that passed is "started" and a changed count
+    # "changed", as above.
+    "no_reason": "unexpected_fields",
+    "blocking": "send_work_blocks",
+    "paused": "stale_page",
+    "cancelled": "stale_page",
 }
 
 
