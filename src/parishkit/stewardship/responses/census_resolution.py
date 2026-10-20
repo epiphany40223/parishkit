@@ -29,11 +29,11 @@ incorrectly and no later response of the Family answered the field again
 Marking a New Member entered may name the **ParishSoft Member ID** of the
 Member Staff added (#1749, ``member_ids``), which the refresh confirms the
 change by; SQL admits it only on such a mark, never a Member the Family's
-response listed (``schema/migrations/0150_published_refresh_conflicts.sql``,
+response listed (``schema/migrations/0138_published_refresh_conflicts.sql``,
 provisional). While no refresh has confirmed such a mark, Staff and
 Administrators may make it again with another Member ID (#1773,
 ``member_correctable``): a mistyped ID is corrected, or a mark made without
-one gains one (``schema/migrations/0273_new_member_id_correction.sql``,
+one gains one (``schema/migrations/0139_new_member_id_correction.sql``,
 provisional).
 """
 
@@ -153,7 +153,7 @@ def member_correctable(proposal):
     Only while the New Member is Entered by hand, no refresh has confirmed
     it at its current version (#1773), and no later response of the Family
     replaced it (``refresh_checks.replaced``). The resolution guard (migration
-    0273, provisional number) requires the same. ``proposal.submission``
+    0139, provisional number) requires the same. ``proposal.submission``
     must be loaded. At most three queries, for an entered New Member only.
     """
     if (

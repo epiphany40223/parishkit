@@ -447,8 +447,8 @@ FROZEN = {
     "0138_published_refresh_conflicts.sql": (
         "9e24ed6ab1b4a65d1c9081a976b562a2b7720e4fe383ef115548207d4df5759f"
     ),
-    "0273_new_member_id_correction.sql": (
-        "22fb10827c8e98ce1a40e5160ce22481eed29382f56d8bfcc2b3d00edf7f3464"
+    "0139_new_member_id_correction.sql": (
+        "6a6a5744da0c33c346213a5a178e55100141f073ac76cba98c04072b0200c8ae"
     ),
 }
 

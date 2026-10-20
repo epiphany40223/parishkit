@@ -4,7 +4,7 @@ A New Member Staff mark Entered by hand names the ParishSoft Member ID the
 refresh confirms it by (#1749). While no refresh has confirmed it, Staff
 correct a mistyped ID, or give one the mark lacked, by marking it Entered
 by hand again with another ID (review pipeline spec, "Refresh checks").
-Migration 0273 (provisional number) admits that resolution; the changes are
+Migration 0139 (provisional number) admits that resolution; the changes are
 made through the real service and page on the web login and re-evaluated by
 real promotions.
 """
@@ -46,7 +46,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 FROZEN = (
     Path(__file__).resolve().parents[3]
-    / "src/parishkit/stewardship/schema/migrations/0273_new_member_id_correction.sql"
+    / "src/parishkit/stewardship/schema/migrations/0139_new_member_id_correction.sql"
 )
 # A mistyped ParishSoft Member ID: no Member the data lists.
 WRONG = 8
@@ -351,14 +351,14 @@ def test_sql_refuses_a_stale_or_unpaired_correction(response_service):
 
 
 def _check():
-    """0273's closing DO block, as the file has it."""
+    """0139's closing DO block, as the file has it."""
     text = FROZEN.read_text(encoding="utf-8")
     return text[text.index("DO $check$") :]
 
 
 def test_do_block_refuses_the_old_definition(db):
     """The closing check passes as installed and raises once the guard is
-    put back to 0150's body."""
+    put back to 0138's body."""
     with transaction.atomic(), connection.cursor() as cursor:
         cursor.execute(_check())
     with (
@@ -368,7 +368,7 @@ def test_do_block_refuses_the_old_definition(db):
     ):
         cursor.execute(
             _body(
-                "0150_published_refresh_conflicts.sql",
+                "0138_published_refresh_conflicts.sql",
                 "stewardship_proposal_resolution_guard_v1",
             )
         )

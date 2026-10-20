@@ -1,4 +1,4 @@
--- Frozen forward migration file 0273 (the repository-wide file sequence;
+-- Frozen forward migration file 0139 (the repository-wide file sequence;
 -- provisional, the number is assigned centrally in merge order): correcting
 -- a New Member's ParishSoft Member ID (#1773). This file is installed by its
 -- Django migration in the responses app and must never change once
@@ -6,18 +6,18 @@
 -- digest.
 --
 -- A New Member Staff mark Entered by hand may name the ParishSoft Member ID
--- of the Member they added, which the refresh confirms the change by (0150,
+-- of the Member they added, which the refresh confirms the change by (0138,
 -- provisional number). The review pipeline
 -- (docs/specs/stewardship/review-pipeline/spec.md, "Refresh checks") now
 -- lets Staff and Administrators correct a mistyped ID, or give one the mark
 -- lacked: a new 'entered' resolution at the change's version, as Entered by
--- hand again is over Entered incorrectly (0140, provisional number), naming
+-- hand again is over Entered incorrectly (0133, provisional number), naming
 -- an ID other than the one the current mark names. The refresh check guard
 -- already reads the current mark (the resolution at the version before the
 -- change's current one), and the census guard's web branch already admits
 -- an 'entered' resolution on a change Entered by hand, keeping it entered,
 -- so neither changes.
--- Replaced, from its latest body (0150's), with this change and only this:
+-- Replaced, from its latest body (0138's), with this change and only this:
 --   * stewardship_proposal_resolution_guard_v1: also admits, for Staff or
 --     an Administrator, an 'entered' resolution of a New Member Entered by
 --     hand whose latest refresh check at its current version is not
@@ -147,7 +147,7 @@ BEGIN
               AND prosrc LIKE '%LIMIT 1),false)
         AND NOT replaced;%'
               AND prosrc LIKE '%replaced:=EXISTS (SELECT 1 FROM public.stewardship_proposed_change later%'
-              -- 0140's and 0150's rules, kept.
+              -- 0133's and 0138's rules, kept.
               AND prosrc LIKE '%k.outcome=''entered_incorrectly''%'
               AND prosrc LIKE '%NEW.action=''reopened'' AND NOT incorrect)%'
               AND prosrc LIKE '%OR (incorrect AND NEW.action NOT IN (''entered'',''reopened''))%'

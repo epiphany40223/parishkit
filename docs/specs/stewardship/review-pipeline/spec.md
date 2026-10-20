@@ -673,7 +673,7 @@ only when a value was recorded and ParishSoft holds another one.
   Member of the Family is entered as. Without an ID (marked in bulk, or
   left blank) nothing confirms the mark.
   [#1773](https://github.com/epiphany40223/parishkit/issues/1773) (migration
-  0273, provisional number) lets Staff and Administrators correct a
+  0139, provisional number) lets Staff and Administrators correct a
   mistyped ID, or give one the mark lacked: while the change is Entered by
   hand and not Confirmed (Not seen or not), its row offers the correction
   ([its icon and dialog](../reports/spec.md#manual-census-resolution)), one

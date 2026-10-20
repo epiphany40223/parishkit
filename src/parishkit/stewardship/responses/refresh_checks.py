@@ -284,7 +284,7 @@ def _remarked(rows):
     never reads this. So a check at the version before an entered change's
     current one means that mark was made, and the latest such check's
     ParishSoft value is the value recorded at it. The refresh check guard
-    (migration 0140, provisional number) reads it the same way. One query,
+    (migration 0133, provisional number) reads it the same way. One query,
     when any change is entered.
     """
     wanted = {

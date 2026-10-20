@@ -948,12 +948,12 @@ CLOSURE_REPLACED = {
     ),
     # 0133 (#1737) replaces 0060's resolution guard and 0132's refresh
     # check guard, which those files bring back; it creates nothing, so its
-    # file runs again whole. 0273 (#1773, provisional number) replaces the
-    # resolution guard last, on 0150's body (which keeps 0140's), after
-    # 0150's file runs again (``CLOSURE_CREATED``); it creates nothing
+    # file runs again whole. 0139 (#1773, provisional number) replaces the
+    # resolution guard last, on 0138's body (which keeps 0133's), after
+    # 0138's file runs again (``CLOSURE_CREATED``); it creates nothing
     # either, so its file runs again whole.
     "public.stewardship_proposal_resolution_guard_v1()": (
-        ("stewardship_responses", "0016_new_member_id_correction"),
+        ("stewardship_responses", "0020_new_member_id_correction"),
         "AND NOT again",
     ),
     "public.stewardship_refresh_check_guard_v1()": (
