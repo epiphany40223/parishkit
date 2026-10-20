@@ -1,0 +1,20 @@
+{% load i18n %}{% comment %}
+  The census worklist's address editor (#1785), shared by Edit
+  (census-worklist-value.html) and Add (census-worklist-add.html): an
+  address's parts, named value_<part>, in the Family form's order, Country
+  first (census.address_editor draws ``address``). For the United States,
+  State is a drop-down of the regions the server accepts and the postal
+  field reads "ZIP code"; for any other country, State is free text and the
+  postal field reads "Postal code". data-show-when swaps the two State
+  controls in place: both are named value_region, and only the shown one is
+  enabled and sent; each keeps its value while the other shows. A US region
+  the list does not offer is drawn as its own selected choice, so the
+  server refuses it at State instead of the editor dropping it. The server
+  checks every part with the Family form's address rules.
+{% endcomment %}<div><label for="{{ dialog_id }}-country">{% translate "Country" %}</label><select id="{{ dialog_id }}-country" name="value_country" data-confirm-reset required><option value=""></option>{% for code, name in address.countries %}<option value="{{ code }}"{% if code == address.country %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></div>
+<div><label for="{{ dialog_id }}-line1">{% translate "Street" %}</label><input id="{{ dialog_id }}-line1" name="value_line1" value="{{ address.parts.line1 }}" maxlength="{{ address.limits.line1 }}" required data-confirm-reset></div>
+<div><label for="{{ dialog_id }}-line2">{% translate "Street, second line (optional)" %}</label><input id="{{ dialog_id }}-line2" name="value_line2" value="{{ address.parts.line2 }}" maxlength="{{ address.limits.line2 }}" data-confirm-reset></div>
+<div><label for="{{ dialog_id }}-city">{% translate "City" %}</label><input id="{{ dialog_id }}-city" name="value_city" value="{{ address.parts.city }}" maxlength="{{ address.limits.city }}" required data-confirm-reset></div>
+<div data-show-when="value_country=US" data-missing-hint="{% translate 'Choose a state from the list.' %}"><label for="{{ dialog_id }}-region">{% translate "State" %}</label><select id="{{ dialog_id }}-region" name="value_region" data-confirm-reset required><option value="">{% translate "Select a state" %}</option>{% if address.unlisted_region %}<option value="{{ address.unlisted_region }}" selected>{{ address.unlisted_region }}</option>{% endif %}{% for code, name in address.regions %}<option value="{{ code }}"{% if code == address.us_region %} selected{% endif %}>{{ name }}</option>{% endfor %}</select></div>
+<div data-show-when="value_country!=US"><label for="{{ dialog_id }}-region-text">{% translate "State, province or region" %}</label><input id="{{ dialog_id }}-region-text" name="value_region" value="{{ address.text_region }}" maxlength="{{ address.limits.region }}" data-confirm-reset></div>
+<div><label for="{{ dialog_id }}-postal_code"><span data-show-when="value_country=US">{% translate "ZIP code" %}</span><span data-show-when="value_country!=US">{% translate "Postal code" %}</span></label><input id="{{ dialog_id }}-postal_code" name="value_postal_code" value="{{ address.parts.postal_code }}" maxlength="{{ address.limits.postal_code }}" data-confirm-reset></div>

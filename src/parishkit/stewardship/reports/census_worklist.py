@@ -31,9 +31,7 @@ from parishkit.stewardship.pipeline import (
 )
 from parishkit.stewardship.responses.capabilities import capability
 from parishkit.stewardship.responses.census import (
-    ADDRESS_LIMITS,
-    blank_address,
-    country_choices,
+    address_editor,
 )
 from parishkit.stewardship.responses.census_additions import (
     ADD_FIELDS,
@@ -315,7 +313,7 @@ def add_fields():
     with its label and its value control: a date, its census choices,
     text no longer than the field takes (as Edit limits it, by the handling
     registry's handling), or a Family address's parts. ``address`` is the
-    shared address editor's parts, limits and countries, and
+    shared address editor's (``census.address_editor``, a blank address), and
     ``address_fields`` the choice value that shows it (data-show-when).
     """
     fields = []
@@ -337,11 +335,7 @@ def add_fields():
     return {
         "fields": fields,
         "address_fields": "|".join(FAMILY_ADD_FIELDS),
-        "address": {
-            "parts": blank_address(),
-            "limits": dict(ADDRESS_LIMITS),
-            "countries": country_choices(),
-        },
+        "address": address_editor(),
     }
 
 

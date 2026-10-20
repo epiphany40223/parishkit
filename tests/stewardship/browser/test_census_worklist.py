@@ -218,7 +218,7 @@ def test_an_address_is_edited_part_by_part(page, component_origin):
     street = editor.get_by_label("Street", exact=True)
     assert street.input_value() == "9 Census Way"
     assert editor.get_by_label("Country").input_value() == "US"
-    zip_code = editor.get_by_label("ZIP or postal code")
+    zip_code = editor.get_by_label("ZIP code")
     zip_code.fill("402")
     editor.get_by_role("button", name="Save").click()
     has_text(
@@ -233,6 +233,109 @@ def test_an_address_is_edited_part_by_part(page, component_origin):
     save.click()
     has_text(page.locator("#census-notice"), EDITED_NOTICE)
     assert page.evaluate(MARKED) == "kept"
+
+
+def box(locator):
+    """The vertical place and height of ``locator`` on the page."""
+    found = locator.bounding_box()
+    return round(found["y"]), round(found["height"])
+
+
+def test_an_address_edit_asks_for_country_first(page, component_origin):
+    """The address editor asks for Country first, as the Family form does
+    (#1785): for the United States a State drop-down of named choices and a
+    ZIP code; for another country free text and a Postal code, swapped in
+    the same place, each State control keeping its value meanwhile. Only
+    the shown State is sent."""
+    page.goto(component_origin + PATH)
+    page.evaluate(MARK)
+    sent = posts(page, component_origin, EDITED)
+    icon(page, 2, "Edit").click()
+    editor = page.locator("#census-edit-dialog-2")
+    country = editor.get_by_label("Country")
+    labels = editor.locator("label:visible").all_inner_texts()
+    assert labels[:6] == [
+        "Country",
+        "Street",
+        "Street, second line (optional)",
+        "City",
+        "State",
+        "ZIP code",
+    ]
+    assert editor.get_by_role("textbox", name="ZIP code", exact=True).count() == 1
+    state = editor.get_by_label("State", exact=True)
+    assert state.evaluate("(node) => node.tagName") == "SELECT"
+    assert state.input_value() == "KY"
+    assert state.evaluate("(node) => node.selectedOptions[0].text") == "Kentucky (KY)"
+    postal = editor.locator('[name="value_postal_code"]')
+    before = (box(state), box(postal))
+    country.select_option("CA")
+    region = editor.get_by_label("State, province or region")
+    visible(region)
+    hidden(state)
+    assert region.input_value() == ""
+    # The postal code's accessible name is its shown wording only.
+    named = editor.get_by_role("textbox", name="Postal code", exact=True)
+    assert named.input_value() == "40223"
+    assert editor.get_by_role("textbox", name="ZIP code", exact=True).count() == 0
+    # The swap moves nothing: the State control and the postal code below
+    # it keep their places.
+    assert (box(region), box(postal)) == before
+    region.fill("ON")
+    country.select_option("US")
+    visible(state)
+    assert state.input_value() == "KY"
+    country.select_option("CA")
+    assert region.input_value() == "ON"
+    save = editor.get_by_role("button", name="Save")
+    available(save)
+    save.click()
+    has_text(page.locator("#census-notice"), EDITED_NOTICE)
+    assert sent[-1].count("value_region=") == 1
+    assert "value_region=ON" in sent[-1] and "value_country=CA" in sent[-1]
+    assert page.evaluate(MARKED) == "kept"
+
+
+def test_a_refused_state_is_marked_where_it_is_shown(page, component_origin):
+    """A refusal naming State (both State controls share its name) marks
+    the drop-down shown, never the hidden free text (#1785)."""
+    page.goto(component_origin + PATH)
+    refusal = {
+        "errors": [
+            {"code": "invalid", "field_id": "value_region", "message": "Check."}
+        ],
+        "refusal": {
+            "message": "Choose a state from the list.",
+            "fix": "Correct the value, then save it again.",
+            "link": None,
+        },
+    }
+    page.route(
+        "**" + PATH,
+        lambda route: (
+            route.continue_()
+            if route.request.method != "POST"
+            else route.fulfill(
+                status=400, content_type="application/json", body=json.dumps(refusal)
+            )
+        ),
+    )
+    icon(page, 2, "Edit").click()
+    editor = page.locator("#census-edit-dialog-2")
+    state = editor.get_by_label("State", exact=True)
+    state.select_option("IN")
+    editor.get_by_role("button", name="Save").click()
+    has_text(
+        editor.locator(".errorlist"),
+        "Choose a state from the list. Correct the value, then save it again.",
+    )
+    assert state.get_attribute("aria-invalid") == "true"
+    assert (
+        editor.locator('[name="value_region"]:not(select)').get_attribute(
+            "aria-invalid"
+        )
+        is None
+    )
 
 
 @pytest.mark.parametrize("width", [320, 1280])
