@@ -786,3 +786,74 @@ def test_ministry_refresh_confirmation_keeps_the_acceptance():
             roster_entered=False,
             confirmed="yes",
         )
+
+
+# --- The reviewed Family form (#1705) ---------------------------------------
+
+F, R, B = pipeline.Shown.FAMILY, pipeline.Shown.REVIEWER, pipeline.Shown.BASELINE
+AD = Decision.ADDED
+C, M, FI = Stream.CENSUS, Stream.MINISTRY, Stream.FINANCIAL
+CP, AI = Stream.CANNOT_PARTICIPATE, Stream.ADDITIONAL_INFORMATION
+
+# The spec's shown-value tables ("One working change set" and "What the
+# reviewed form shows") as rows: stream, placement, whether the form can
+# show the baseline as an answer, and the shown value (None: no shown item)
+# with whether the form may mark it changed.
+SHOWN_VALUES = [
+    (C, Placement(Stage.TO_REVIEW), True, (F, True)),
+    (C, Placement(Stage.CONFLICT, held_decision=A), True, (F, True)),
+    (C, Placement(Stage.READY_TO_UPDATE, A), True, (F, True)),
+    (C, Placement(Stage.READY_TO_UPDATE, AE), True, (R, True)),
+    (C, Placement(Stage.UPDATING, AE), True, (R, True)),
+    (C, Placement(Stage.UPDATED, A), True, (F, True)),
+    (C, Placement(Stage.TO_ENTER_BY_HAND, AE), True, (R, True)),
+    (C, Placement(Stage.ENTERED_BY_HAND, A), True, (F, True)),
+    (C, Placement(Stage.ENTERED_INCORRECTLY, AE), True, (R, True)),
+    (C, Placement(Stage.IGNORED, IG), True, (B, False)),
+    # A Family address or the email opt-out: no baseline the form can show.
+    (C, Placement(Stage.IGNORED, IG), False, (F, False)),
+    (C, Placement(Stage.CONFIRMED, A), True, None),
+    (C, Placement(Stage.CONFIRMED), True, None),
+    (C, Placement(Stage.HISTORY), True, None),
+    (M, Placement(Stage.TO_REVIEW), True, (F, True)),
+    (M, Placement(Stage.TO_ENTER_BY_HAND, A), True, (F, True)),
+    (M, Placement(Stage.TO_ENTER_BY_HAND, AE), True, (R, True)),
+    (M, Placement(Stage.TO_ENTER_BY_HAND, AD), True, (R, True)),
+    (M, Placement(Stage.ENTERED_BY_HAND, AD), True, (R, True)),
+    (M, Placement(Stage.IGNORED, IG), True, (B, False)),
+    (M, Placement(Stage.CONFIRMED, A), True, None),
+    (FI, Placement(Stage.TO_REVIEW), True, (F, False)),
+    (FI, Placement(Stage.CONFLICT, held_decision=AE), True, (F, False)),
+    (FI, Placement(Stage.TO_ENTER_BY_HAND, A), True, (F, False)),
+    (FI, Placement(Stage.TO_ENTER_BY_HAND, AE), True, (R, False)),
+    (FI, Placement(Stage.ENTERED_BY_HAND, AE), True, (R, False)),
+    # Ignored: a pledge has no baseline the form can prefill.
+    (FI, Placement(Stage.IGNORED, IG), True, (F, False)),
+    # The pledge stays the Family's answer after Confirmed.
+    (FI, Placement(Stage.CONFIRMED, AE), True, (R, False)),
+    (FI, Placement(Stage.CONFIRMED, A), True, (F, False)),
+    (FI, Placement(Stage.CONFIRMED), True, (F, False)),
+    (CP, Placement(Stage.TO_HANDLE, A), True, (F, False)),
+    (CP, Placement(Stage.IGNORED, IG), True, (F, False)),
+    (AI, Placement(Stage.HANDLED, A), True, (F, False)),
+    (AI, Placement(Stage.IGNORED, IG), True, (F, False)),
+    (AI, Placement(Stage.HISTORY), True, None),
+]
+
+
+@pytest.mark.parametrize(("stream", "placement", "showable", "expected"), SHOWN_VALUES)
+def test_shown_value_follows_the_specs_tables(stream, placement, showable, expected):
+    """Which value a reviewed form shows for an item, by stream and stage."""
+    found = pipeline.shown_value(stream, placement, baseline_shown=showable)
+    assert (found if found is None else (found.shown, found.markable)) == expected
+
+
+def test_shown_value_covers_every_stage_of_every_stream():
+    """Every stage of every stream has a shown value or deliberately none."""
+    for stream in Stream:
+        for stage in Stage:
+            found = pipeline.shown_value(stream, Placement(stage, A))
+            none = stage is Stage.HISTORY or (
+                stage is Stage.CONFIRMED and stream is not Stream.FINANCIAL
+            )
+            assert (found is None) is none, (stream, stage)
