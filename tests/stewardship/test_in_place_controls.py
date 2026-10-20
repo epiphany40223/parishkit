@@ -136,10 +136,13 @@ HOSTED = {
     # Sent mail's bulk review region (#382 M4): Confirm and Continue
     # sit inside it, and the bulk panel draws it.
     "delivery-bulk-review.html": ("delivery-bulk.html",),
-    # The roster tick (#528): on the request page, and on each row of
-    # Roster changes to enter.
+    # The roster tick (#528) on the request page; Ministry requests
+    # marks through its review worklist (#1687).
     "roster-tick.html": ("ministry-followup.html",),
-    "roster-tick-row.html": ("ministry-roster.html",),
+    # By Ministry's count links on Ministry requests apply their filters to
+    # the review worklist's table region, which the shared component draws
+    # (#1684).
+    "ministry-counts.html": ("components/review-worklist.html",),
     # Past campaigns' review region (#1018): Apply sits inside it.
     "past-campaigns-review.html": ("past-campaigns.html",),
     # The held-email table by send (#757): the Restore review page draws it

@@ -323,8 +323,23 @@ LEDGER = {
     # By Ministry counts. ``report ministry`` prints those counts, and
     # ``export ministry`` writes one Ministry's join or leave list, the file
     # the retired Members joining and leaving pages offered (#1157); the
-    # queue itself is ``followup list``'s (#463 PR 11a).
-    "ministry_report": command("report ministry", "export ministry", "followup list"),
+    # queue itself is ``followup list``'s (#463 PR 11a). Its review worklist
+    # (#1684) posts its bulk decisions to the page itself, where the
+    # retired bulk outcome address's ``followup bulk`` now belongs, until
+    # #1688 renames the commands. Its To enter by hand Stage holds the
+    # roster changes to enter since Roster changes to enter was folded into
+    # it (R39 finding 2): ``report roster`` counts them, ``export roster``
+    # writes their file and ``followup roster-bulk`` is its bulk Entered by
+    # hand.
+    "ministry_report": command(
+        "report ministry",
+        "export ministry",
+        "followup list",
+        "followup bulk",
+        "report roster",
+        "export roster",
+        "followup roster-bulk",
+    ),
     # A packet of the chosen Ministries' Members and contacts: an export.
     "ministry_packet": command("export ministry-packet"),
     # The Response dashboard shows the funnel and, since #1537, the
@@ -450,20 +465,12 @@ LEDGER = {
     # A Ministry request's page and its Save (#463 PR 11a).
     "ministry_followup_item": command("followup show"),
     "ministry_followup_update": command("followup show", "followup update"),
-    # Bulk outcomes on the queue (#1131): followup bulk (#463 PR 11a).
-    "ministry_followup_bulk": command("followup list", "followup bulk"),
     # Export these requests (#1157): the queue's filtered set with contacts,
     # through the page's own writer (#463 PR 11c).
     "ministry_followup_export": command("followup export"),
     # The roster Entered in ParishSoft tick and its list (#528), one at a
     # time or in bulk (#463 PR 11b).
     "ministry_followup_roster": command("followup show", "followup roster-entered"),
-    # Counts only (#463): its rows name Members, so they are export roster's.
-    "ministry_roster": command("report roster"),
-    # The page's download, through the page's own writer.
-    "ministry_roster_export": command("export roster"),
-    # The list's bulk Mark entered in ParishSoft (#879).
-    "ministry_roster_bulk": command("report roster", "followup roster-bulk"),
     # Integrations and credentials.
     "integrations": command("integration list"),
     # The settings page as it opens, its Save, its Remove, the backup

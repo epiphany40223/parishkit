@@ -124,9 +124,9 @@ FAMILY_NAME_PAGES = {
     "find-family-results.html": "Find a Family results",
     "financial-report.html": "Financial stewardship",
     "census-publication.html": "Publish to ParishSoft, newest check",
-    "ministry-roster.html": "Roster changes to enter",
     # The shared review worklist (#1681) draws the worklists' names: Census
-    # changes (#1683), Limitations (#1685) and the others on it.
+    # changes (#1683), Ministry requests (#1684), Limitations (#1685) and the
+    # others on it.
     "components/review-worklist.html": "Review worklists' Family column",
     "presence.html": "Families on the form now",
     "information.html": "Additional information request's heading",

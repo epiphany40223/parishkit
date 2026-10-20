@@ -429,6 +429,9 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # (0114's) and 0104's setup credential audit come back older from closure
 # files, so ``CLOSURE_REPLACED_ONLY`` runs 0124's replacements of those;
 # the rest (baseline guards no closure file installs again) survive.
+# 0132 (#1689, provisional number) creates the refresh check and start
+# tables (in CLOSURE_TABLES) with their two guards and replaces nothing; all
+# go, so its file installs whole again.
 # 0125 (#1763) adds a request column (IF NOT EXISTS, so its file runs again)
 # and a definer check granted to web and three installers
 # (runtime_grants.CLOSURE_FUNCTIONS, so ``closure_functions_absent`` drops it
@@ -698,6 +701,13 @@ CLOSURE_CREATED = {
         ),
         ("stewardship_jobs", "0035_leader_emails"),
     ),
+    **dict.fromkeys(
+        (
+            "public.stewardship_refresh_check_guard_v1()",
+            "public.stewardship_refresh_check_start_guard_v1()",
+        ),
+        ("stewardship_workflows", "0004_refresh_checks"),
+    ),
     # 0126 (#1685, provisional number) creates the Limitations review table
     # (in CLOSURE_TABLES) with its guard, deferred audit check, answer and
     # in-force reads and the report's v2 selection; all of them go, and the
@@ -786,6 +796,13 @@ CLOSURE_ALTERED = {
     ("stewardship_proposal_review", "accepted_base"): (
         "stewardship_responses",
         "0009_conflict_resolution",
+    ),
+    # 0131 (#1684, provisional number) adds five Ministry request and
+    # revision columns; one entry, so its file runs once
+    # (``before_ministry_review_pipeline`` drops them all).
+    ("stewardship_ministry_request", "reviewed_ministry_duid"): (
+        "stewardship_workflows",
+        "0003_ministry_review_pipeline",
     ),
 }
 
@@ -959,6 +976,13 @@ def rerun_old_bodies(cursor, migrations):
 # reruns; 0118's body keeps 0096's, 0108's, 0112's and 0113's rules, so only
 # the latest replacement runs.
 CLOSURE_REPLACED_ONLY = {
+    # 0131 (#1684) replaces the follow-up selection last; 0094's rerun
+    # (above) puts back its older body, and 0131 adds columns, so only its
+    # replacement statement runs again.
+    "stewardship_ministry_followup_v1": (
+        ("stewardship_workflows", "0003_ministry_review_pipeline"),
+        "AS reviewed_ministry_name",
+    ),
     "stewardship_response_derived_guard_v1": (
         ("stewardship_responses", "0012_gender_by_hand"),
         "'suffix','gender','marital_status'",
@@ -1249,6 +1273,26 @@ def before_leader_changes():
     return [body.replace("CREATE FUNCTION", "CREATE OR REPLACE FUNCTION", 1)]
 
 
+def before_ministry_review_pipeline():
+    """The statements that put Ministry requests back as they were before 0131.
+
+    #1684's 0131 adds the Edit's Ministry, the parish-added mark and the
+    request an addition replaces to ``stewardship_ministry_request``, and
+    the Edit's Ministry and the decision note to its revisions; dropping
+    the columns drops their checks and foreign key with them. The guards and
+    selection it replaced keep their 0131 bodies, which nothing on the
+    users upgrade's base calls; 0131's file (or the full migration) adds
+    the columns again.
+    """
+    return [
+        'ALTER TABLE "stewardship_ministry_request" '
+        'DROP COLUMN "reviewed_ministry_duid", DROP COLUMN "parish_added", '
+        'DROP COLUMN "added_in_place_of_id"',
+        'ALTER TABLE "stewardship_ministry_revision" '
+        'DROP COLUMN "reviewed_ministry_duid", DROP COLUMN "decision_note"',
+    ]
+
+
 def before_information_limitation_review():
     """The statement that puts the information revisions back as before 0126.
 
@@ -1331,6 +1375,7 @@ def swap_pending():
             *before_staff_entered(),
             *before_leader_changes(),
             *before_branding_bundle_mode(),
+            *before_ministry_review_pipeline(),
             *before_information_limitation_review(),
         ):
             cursor.execute(statement)
@@ -1596,6 +1641,10 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
                 ),
                 ("pk_stewardship_worker", "INSERT"),
             ),
+            # Refresh checks (0132, #1689): the worker records them in
+            # promotion and reads the start row; web only reads both.
+            "stewardship_refresh_check": ("pk_stewardship_worker", "INSERT"),
+            "stewardship_refresh_check_start": ("pk_stewardship_worker", "SELECT"),
         }
         for table in CLOSURE_TABLES:
             login, privilege = writers.get(table, ("pk_stewardship_web", "INSERT"))

@@ -1235,6 +1235,30 @@ the `assigned` state and their database rules remain, unused, for requests
 assigned before that decision, which a same-intent Family resubmission still
 carries forward until the next Staff edit clears them.
 
+The review pipeline adds three request fields
+([#1684](https://github.com/epiphany40223/parishkit/issues/1684), one
+additive forward migration; no existing row or value changes):
+`reviewed_ministry_duid`, the Ministry an Edit carries forward (set only on a
+request resolved as joined or leave confirmed, never its own Ministry, and
+cleared by Back to review), which every revision also records;
+`parish_added`, true for a request Staff added with no Family answer behind
+it, attached to the Family's latest live response; and
+`added_in_place_of`, the Ignored request of the same Member it was added
+in place of. Each revision also keeps its decision's note
+(`decision_note`). The SQL guards admit, besides today's edits: a revision
+that sends a resolved or closed request back to In progress (never one a
+refresh resolved or one ticked Entered in ParishSoft; reopening an ignored
+one needs a note), or that withdraws (cancels) a request the parish added;
+an Edit only by someone who may follow up both the request's Ministry and
+the one chosen, which must be another of the campaign's Ministries; and an
+added request only from a current Staff member or Administrator, for a
+Member of that Family's response and a campaign Ministry. A Family answer
+that repeats a decided request's action for the same Member and Ministry
+creates no new request: the submission's completeness check accepts the
+decided request in its place ("Family asked again"). Authority for a
+request is checked against its current Ministry: the edited one once
+edited.
+
 Manual census work uses proposed-change execution state rather than a separate
 workflow; each resolution's note, actor and time are an immutable resolution
 row ([Manual census resolution](../reports/spec.md#manual-census-resolution)).
@@ -2026,7 +2050,10 @@ Snapshot promotion performs these effects transactionally:
   applying provider-suppression records;
 - resolve proposals that now match upstream;
 - mark three-way conflicts;
-- resolve Ministry requests whose requested roster state is now current.
+- resolve Ministry requests whose requested roster state is now current;
+- re-evaluate final census changes and decided Ministry requests against
+  the new data, recording a refresh check for each whose outcome changed
+  ([refresh checks](../review-pipeline/spec.md#refresh-checks)).
 
 Promotion plans no mail itself. A Family that becomes active, eligible or
 deliverable changes its row's planning columns, which the

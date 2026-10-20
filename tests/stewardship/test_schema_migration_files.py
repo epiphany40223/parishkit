@@ -423,6 +423,12 @@ FROZEN = {
     "0130_census_address_guard.sql": (
         "3c1ede0cb9790113bffc6d57d71da1aa6371defc3ff28b754bd8acf6d04a0f9e"
     ),
+    "0131_ministry_review_pipeline.sql": (
+        "a2c82ffe3c9e967b4d0c0d1599cbcc93c8658fa97235cfe9c37246c67372926b"
+    ),
+    "0132_refresh_checks.sql": (
+        "850b796b28d7cd472fee463fc6e119b73c33150ca920c899d1d69d400f84ed9d"
+    ),
 }
 
 

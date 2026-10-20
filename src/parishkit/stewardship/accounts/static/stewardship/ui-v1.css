@@ -430,6 +430,15 @@ hr { border: 0; border-top: 1px solid var(--border); margin-block: 2rem; }
 .link-card > a.link-card-other:hover, .link-card > a.link-card-other:focus-visible { text-decoration: underline; }
 /* A card without a count leaves the count column empty, so it needs no gap beside it. */
 .link-card-off, .link-card > a:not(:has(> .link-card-count)) { column-gap: 0; }
+/* My review work (#1690) is an overview page, so all five stream panels fit a laptop window
+   (1366 x 768) without scrolling: each is one row, the stream's name beside its cards, as
+   tight as Home's panels; on a narrow window the cards wrap under the name. On Admin Home the
+   streams are h3 groups inside one panel, laid out the same way. */
+:where(.admin-body) .panel.review-work { padding: .75rem 1.25rem; margin-block: .5rem; }
+.review-work, .review-work-stream { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem 1rem; }
+.review-work > h2, .review-work-stream > h3 { flex: 0 0 10rem; margin: 0; }
+.review-work > .link-cards, .review-work-stream > .link-cards { flex: 1 1 32rem; }
+.review-work-stream + .review-work-stream { margin-top: .75rem; }
 /* Stat tiles (ui-conventions "Stat tiles", #1540), drawn by components/stat-tiles.html: a row of
    cards, wrapping, each its label, value and up to two explanation lines; a row's tiles stretch
    to one height. */
@@ -1795,7 +1804,7 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
 .table-actions { white-space: nowrap; }
 .table-actions .icon-button { margin: 0 .5rem 0 0; }
 .table-actions .icon-button:last-child { margin-inline-end: 0; }
-/* A row action that posts in place (Roster changes to enter's tick) sits in
+/* A row action that posts in place (a worklist's Entered by hand) sits in
    its own form, inline, so it lines up as a lone button does. */
 .table-actions form { display: inline; margin: 0; }
 /* A fixed square, not a minimum: a link (Edit) and a <button> (Delete) must
@@ -1910,6 +1919,48 @@ fieldset.editor-mode > legend { float: none; width: auto; margin: 0; padding: 0;
 .segmented-choice-options form { display: contents; }
 .segmented-choice-options button { border: 0; border-radius: 0; background: none; box-shadow: none; line-height: inherit; }
 .segmented-choice-options button:not(:disabled):hover:not([aria-current=page]) { background: none; border-color: var(--accent); color: var(--accent); box-shadow: none; }
+/* Tabs (ui-conventions "Tabs", #1712; components/tabs.html): a row of tabs
+   above one panel area, the chosen tab filled in the accent colour (a
+   selected state, independent of any primary button, #1713). Every tab is
+   bold and the same size whether chosen or not, so choosing one changes
+   only colours and moves nothing (no layout shift). The row never wraps
+   and never widens the page: on a narrow screen it scrolls sideways inside
+   its own box (min-width: 0 lets it shrink inside a flex or grid parent).
+   The colours are theme tokens, so the row follows the dark scheme. */
+.tabs { min-width: 0; margin-block: 0 1rem; }
+.tabs-list { display: flex; gap: .25rem; min-width: 0; max-width: 100%; overflow-x: auto; overscroll-behavior-x: contain; border-bottom: var(--button-border-width) solid var(--accent); }
+.tabs-tab { flex: none; display: inline-flex; align-items: center; gap: .4rem; min-height: var(--button-min-height); padding: .5rem 1.1rem; border: var(--button-border-width) solid transparent; border-bottom: 0; border-radius: var(--radius-small) var(--radius-small) 0 0; color: var(--accent); font-weight: 650; text-decoration: none; white-space: nowrap; }
+.tabs-tab[href]:hover { background: var(--accent-soft); color: var(--accent-strong); }
+.tabs-tab[aria-selected=true], .tabs-tab[aria-selected=true]:hover { background: var(--accent); border-color: var(--accent); color: var(--paper); }
+.tabs-tab:focus-visible { outline: 3px solid var(--focus); outline-offset: -6px; }
+/* The ring sits inside the tab, so on the chosen (accent) tab it is drawn
+   in --paper, which keeps 3:1 on --accent in both schemes, as on a
+   binary choice's chosen segment. */
+.tabs-tab[aria-selected=true]:focus-visible { outline-color: var(--paper); }
+.tabs-tab[aria-disabled=true] { color: var(--unavailable); cursor: not-allowed; }
+.tabs-count { display: inline-block; min-width: 1.5em; padding: 0 .4em; border-radius: 999px; background: var(--accent-soft); color: var(--accent-strong); font-size: .85em; text-align: center; }
+.tabs-tab[aria-selected=true] .tabs-count { background: var(--paper); color: var(--accent); }
+.tabs-tab[aria-disabled=true] .tabs-count { background: var(--paper-soft); color: var(--unavailable); }
+/* The panel area is a flow root, so its panels' margins count in the
+   height ui-v1.js holds when a shorter panel replaces a taller one. */
+.tabs-panels { display: flow-root; }
+.tabs-panel { padding-top: 1rem; }
+.tabs-panel:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+@media (forced-colors: active) {
+  .tabs-tab[aria-selected=true] { forced-color-adjust: none; background: Highlight; border-color: Highlight; color: HighlightText; }
+  .tabs-tab[aria-selected=true] .tabs-count { background: HighlightText; color: Highlight; }
+}
+/* A review-pipeline stage's chip (the Family hub's census tabs, #1678): a
+   plain badge, or for a needs-correction stage (Entered incorrectly) the
+   Error look with its icon (UX conventions, "Status indicators"). The same
+   rule as the review worklist's Stage column (#1683); whichever of the two
+   lands second keeps one copy. */
+.stage-chip { display: inline-flex; align-items: center; gap: .3rem; padding: .1rem .55rem; border: 1px solid var(--border); border-radius: 999px; background: var(--paper-soft); color: var(--ink); font-size: .8125rem; font-weight: 600; white-space: nowrap; }
+.stage-chip:is(.status-error, .status-warning) { border-color: var(--status-line); background: var(--status-bg); color: var(--status-ink); }
+/* The hub's Show unchanged disclosure: its table opens below the toggle,
+   which stays put (no layout shift above it). */
+details.hub-unchanged { margin-block: 1rem; }
+details.hub-unchanged > .table-scroll { margin-top: .5rem; }
 /* The Basic panel is a <fieldset> so one disabled attribute keeps its
    controls unsent while Advanced is shown; it draws no box of its own. */
 fieldset.editor-mode-panel { margin: 0; padding: 0; border: 0; border-radius: 0; background: none; }

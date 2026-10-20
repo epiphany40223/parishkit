@@ -548,6 +548,12 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
             "stewardship_campaign_setup_review_guard",
             "stewardship_campaign_setup_review_guard_v1",
         ),
+        # A refresh's check of a final or decided item (#1689): INSERT
+        # only, by the promoting worker, under its own name.
+        "stewardship_refresh_check": (
+            "stewardship_refresh_check_guard",
+            "stewardship_refresh_check_guard_v1",
+        ),
         # A roster tick's history (#528): INSERT only, under its own name.
         "stewardship_ministry_roster_entry": (
             "stewardship_ministry_roster_entry_guard",
@@ -900,6 +906,7 @@ def test_all_concrete_immutable_records_have_enabled_guard(db):
                 "stewardship_census_addition",
                 "stewardship_census_addition_resolution",
                 "stewardship_ministry_roster_entry",
+                "stewardship_refresh_check",
                 "stewardship_pledge_review",
                 "stewardship_limitation_review",
                 "stewardship_publication_plan",

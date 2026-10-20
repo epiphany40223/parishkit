@@ -115,8 +115,11 @@ def test_the_weekly_report_in_progress_is_shown_unavailable():
         # decision while held, and its export pane's button names the notice.
         ("information.html", "information-locked", 0, 1),
         ("information-worklist-export.html", "information-locked", 1, 0),
-        # Save, Save and next, and (#1331) the bulk bar and both kinds of box.
-        ("ministry-followup.html", "followup-locked", 6, 1),
+        # A request page's Save and Save and next (both of its branches).
+        ("ministry-followup.html", "followup-locked", 3, 1),
+        # The review worklist (#1684) draws no action while the page is held,
+        # so its notice is named by nothing.
+        ("ministry-requests.html", "followup-locked", 0, 1),
     ],
 )
 def test_locked_report_actions_name_the_notice_that_says_why(

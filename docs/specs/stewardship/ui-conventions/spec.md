@@ -55,7 +55,7 @@ when it lands.
   [Review, Apply and Change status](#review-apply-and-change-status),
   [review dialog](#review-dialog),
   [conditional fields](#conditional-fields),
-  [binary choices](#binary-choices),
+  [binary choices](#binary-choices), [tabs](#tabs),
   [Clear filters](#clear-filters),
   [Basic and Advanced modes](#basic-and-advanced-modes),
   [single-campaign interim](#single-campaign-interim),
@@ -1799,10 +1799,8 @@ Testing rehearsal.
   Testing rehearsal) and Chart population (Historical as of day | Current
   population), the
   [family directory](../reports/spec.md#active-parishioner-family-directory)'s Responses shown
-  (Production | Testing rehearsal), above its Filters panel, and
-  [Roster changes to enter](../admin-portal/spec.md#roster-changes-to-enter)'s
-  Show (Not yet entered | All, including entered), above its Ministry
-  filter, and the [Campaign calendar](../admin-portal/spec.md#campaign-calendar)'s
+  (Production | Testing rehearsal), above its Filters panel, and the
+  [Campaign calendar](../admin-portal/spec.md#campaign-calendar)'s
   Show (Upcoming emails | Include past emails), above Every email by date.
 - **Links.** Each segment is a link to the page's own address with that
   choice (`a[data-in-place]`, marked `aria-current="page"` when chosen), so
@@ -1849,6 +1847,83 @@ Testing rehearsal.
   and has no menu for that choice, and its view no longer hands the
   template the choice's options. Any other menu built from a loop is
   checked in review.
+
+### Tabs
+
+**Rule.** A page that shows several views of one subject, each too large or
+too different to share one screen, draws them as **tabs**: a row of tabs
+above one panel area, the chosen tab filled. Choosing a tab shows its panel
+in place. **Why.** One subject should stay on one page with one address,
+and every such page should look and work the same, so a reader learns it
+once; separate pages reload on every switch, and drawing every panel up front
+makes each open of the page pay for every panel. **Shared code.**
+`components/tabs.html` (the tab row and the panels), `web/tabs.py` (`Tab`
+and `tab_set`, which read the address and build each tab's link), the tab
+behaviour in `ui-v1.js` and the `.tabs` style in `ui-v1.css`;
+`test_tabs.py` (the component, the helper and the guards) and the browser
+tests in `browser/test_tabs.py`. **Precedent.**
+[#1712](https://github.com/epiphany40223/parishkit/issues/1712)
+(Administrator, 2026-10-18), for the Family hub
+([#1678](https://github.com/epiphany40223/parishkit/issues/1678)).
+
+- **Not this pattern.** Two views of a page are a
+  [binary choice](#binary-choices); a filter stays in its filter form; a
+  wizard's steps are a [step bar](#step-bars); a link to another page
+  belongs in the menu or the page's text.
+- **Address.** The chosen tab is in the address as a bare `?tab=<key>`
+  parameter; a page has at most one tab row. An address without it, or one
+  whose key names no tab or an unavailable one, shows the first available
+  tab, with no error. Each tab's link is the page's own address with only
+  that `tab` and the parameters the page names as its own (`carry`), never
+  a panel's filters. Choosing a tab adds a history entry, unlike a binary
+  choice, because a tab is navigation: Back and Forward step between the
+  tabs in place, and a reload, a bookmark or a link opens the tab it names.
+- **Lazy panels.** The server draws only the chosen tab's panel; every other
+  panel is drawn empty and hidden. The first time a tab is chosen, the
+  browser fetches the page at that tab's address and swaps in only its
+  panel ([in-place controls](#in-place-controls), `data-in-place-only`).
+  A panel once drawn stays until the next load, so choosing its tab again
+  shows it with no request. When a panel cannot be fetched (no answer, or
+  a refusal), the page is reloaded at the tab's address, as an ordinary
+  load would draw it. Each panel is a region marked
+  `data-in-place-own`: a control inside a panel refreshes only the region it
+  names, and another answer never empties a panel already drawn. While a
+  save is in flight a tab is not switched, and the live region says "Still
+  saving…".
+- **In place.** Choosing a tab never reloads the page or moves it: the
+  page above the panels stays put, focus stays on the tab, and when a
+  shorter panel replaces a taller one the panel area keeps the height the
+  reader's place needs (as `data-keep-height` regions do,
+  [no layout shift](#no-layout-shift)), so the tab row never moves under
+  the pointer. A fetched panel's tab label is announced; Back and Forward
+  switch quietly, moving no focus.
+- **Keyboard and screen readers.** The WAI-ARIA tabs pattern with manual
+  activation: a `tablist` named by its label, each tab a `tab` with
+  `aria-selected` and `aria-controls`, each panel a `tabpanel` named by its
+  tab. Only the chosen tab is in the Tab order (roving `tabindex`); Left
+  and Right arrows move focus between tabs, wrapping at the ends, and Home
+  and End move to the first and last. Enter or Space chooses the focused
+  tab, so arrowing past a tab never loads its panel. Tab from the row moves
+  into the panel, which is focusable.
+- **Unavailable tabs.** A tab that applies but cannot be opened now is
+  greyed, marked `aria-disabled`, still reached by the arrow keys, and shows
+  its reason in a tip on hover, focus and tap, as an
+  [unavailable control](#unavailable-menu-pages) does; choosing it does
+  nothing. A tab that does not apply to this page is left out, not greyed
+  ([conditional fields](#conditional-fields)).
+- **Counts.** A tab may show a count after its label (a number of items in
+  its panel), which is part of its accessible name.
+- **Look.** Every tab keeps one size and weight, so choosing one changes
+  only colours. The chosen tab is filled in the accent colour, which shows
+  the choice in force, whatever the page's primary button is
+  ([#1713](https://github.com/epiphany40223/parishkit/issues/1713)); the
+  focus ring sits inside the tab, drawn in the paper colour on the chosen
+  one; the colours are theme tokens, so the row follows the
+  [colour scheme](#colour-scheme). On a narrow screen the tab row scrolls
+  sideways inside its own container, and the page never does.
+- **Script.** Tabs need the script, as the whole Admin portal does
+  ([JavaScript requirement](#javascript-requirement)); there is no
+  no-script fallback.
 
 ### Clear filters
 
@@ -3598,8 +3673,8 @@ orders. In v1 that covers:
   Family code would need every code decrypted per view);
 - Financial stewardship detail (Family, Family DUID, Annual pledge and
   latest response);
-- the follow-up queue on Ministry requests (Member and Ministry; newest
-  first by default, with no Submitted column to show it, #1064).
+- the Ministry requests review worklist (Member and Ministry; newest first
+  by default, #1064, #1684).
 
 Extending those vocabularies is a schema change; the DUID sorts of the
 financial, Additional information and Ministry tables came with one
@@ -3721,8 +3796,8 @@ Actions column. **Why.** One pattern for every list of editable things; a dialog
 names exactly what will be removed. **Shared code.** The `table_actions`
 template tag, `components/confirm-dialog.html` and `data-confirm-open` in
 `ui-v1.js`. **Precedent.** #879, #882 (first user), #947 (second slice),
-the Pages and emails email tables (third slice), Roster changes to enter
-(a recording action), Census changes (actions with a note); #1065 (row
+the Pages and emails email tables (third slice), Ministry requests'
+Entered by hand (a recording action), Census changes (actions with a note); #1065 (row
 links, System logs).
 
 A table whose rows can be acted on follows one pattern
@@ -3734,10 +3809,10 @@ sessions of
 [Automation access](../admin-automation/spec.md#revocation-and-listing),
 [Users](../admin-portal/spec.md#users-table), the email template tables of
 [Pages and emails](../admin-portal/spec.md#default-content) and the bulk
-outcomes of [Ministry follow-up](../admin-portal/spec.md#follow-up-workflows)
-([#1131](https://github.com/epiphany40223/parishkit/issues/1131)) and the
+decisions of the [Ministry requests](../admin-portal/spec.md#follow-up-workflows)
+review worklist (#1131, #1684) and the
 Entered in ParishSoft tick of
-[Roster changes to enter](../admin-portal/spec.md#roster-changes-to-enter) and
+[Ministry requests](../admin-portal/spec.md#roster-entry-on-ministry-requests) and
 the row actions of
 [Census changes](../reports/spec.md#manual-census-resolution); the
 other Admin tables with per-row actions move to it in later changes, as the
@@ -3757,7 +3832,7 @@ inventory on #879 lists.
   Revoke ("Revoke nightly export") on Automation access. An action that
   records rather than removes, and that the row's other action undoes, also
   takes an icon of its own and acts [in place](#in-place-controls) without a
-  dialog; so far only Roster changes to enter's tick, "Mark … entered in
+  dialog; so far only the request page's tick, "Mark … entered in
   ParishSoft" (a check mark) and "Clear Entered in ParishSoft for …" (an
   undo arrow). An action that carries a note opens the confirmation dialog
   instead, which holds the note, with an ordinary confirm button unless the
@@ -3887,7 +3962,7 @@ of ParishSoft DUID:
 - **Family DUID:** wherever a Family is named, in its own column; staff
   search and match Families by it.
 - **Member DUID:** only where staff act on a specific Member in ParishSoft:
-  Census changes, Publish to ParishSoft, Roster changes to enter, the follow-up queue on Ministry
+  Census changes, Publish to ParishSoft, the follow-up queue on Ministry
   requests and its Export these requests, the host's join and leave lists
   and the packets, the Limitations report, Families the form cannot open, and the
   Users page's ParishSoft Ministry leaders table and its import review
@@ -3950,11 +4025,11 @@ Administrators that reports and notices go to,
 [#1562](https://github.com/epiphany40223/parishkit/issues/1562)). The
 one DUID column apart from its name is the recorded exception below.
 
-The follow-up queue on Ministry requests also has no Submitted column (Administrator
-decision, 2026-10-11,
-[#1064](https://github.com/epiphany40223/parishkit/issues/1064)), so its
-one-line rows take less width; the request page shows the submission time
-([Follow-up workflows](../admin-portal/spec.md#follow-up-workflows)).
+The follow-up queue on Ministry requests had no Submitted column
+(Administrator decision, 2026-10-11,
+[#1064](https://github.com/epiphany40223/parishkit/issues/1064)); the review
+worklist that replaced it has one, as every
+[review worklist](../review-pipeline/spec.md#review-worklist) does (#1684).
 
 Recorded exception: Families the form cannot open shows a Member DUID with
 no Member name on purpose: the name itself may be the value the form
@@ -4163,7 +4238,8 @@ wraps instead to at most two lines (`cell-clamp`), so a name as long as any
 in use shows whole; only a name too long even for two lines ends in "…"
 ([#1136](https://github.com/epiphany40223/parishkit/issues/1136)). In the
 queue a name cut short shows whole in a tip on hover, keyboard focus and
-tap (a cut Ministry name joins the tab order for that), not in a bare
+tap (a cut name joins the tab order for that, unless it is a link's text,
+as on a worklist, where focus on the link shows the tip), not in a bare
 `title`, which keyboard and touch cannot reach; the whole name stays the
 cell's text for screen readers. Since
 [#1064](https://github.com/epiphany40223/parishkit/issues/1064) the queue's

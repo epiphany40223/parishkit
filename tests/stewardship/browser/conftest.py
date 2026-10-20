@@ -164,9 +164,8 @@ from .report_components import SLOW_GETS as REPORT_SLOW_GETS
 from .report_components import components as report_components
 from .response_dashboard_components import components as dashboard_components
 from .restore_review_components import components as restore_review_components
+from .review_work_components import components as review_work_components
 from .review_worklist_components import components as review_worklist_components
-from .roster_components import POSTS as ROSTER_POSTS
-from .roster_components import components as roster_components
 from .schedule_list_components import POSTS as SCHEDULE_LIST_POSTS
 from .schedule_list_components import components as schedule_list_components
 from .security_components import POSTS as SECURITY_POSTS
@@ -187,6 +186,7 @@ from .source_form_components import components as source_form_components
 from .stepper_components import POSTS as STEPPER_POSTS
 from .stepper_components import components as stepper_components
 from .system_health_components import components as system_health_components
+from .tabs_components import components as tabs_components
 from .timeline_components import components as timeline_components
 from .upload_defaults_components import components as upload_defaults_components
 from .upload_defaults_components import posts as upload_defaults_posts
@@ -2236,7 +2236,6 @@ def component_origin():
     responses.update(source_form_components(context, admin))
     responses.update(data_to_fix_components(context, admin))
     responses.update(go_live_families_components(context, admin))
-    responses.update(roster_components(context, admin))
     responses.update(review_worklist_components(context, admin))
     responses.update(pledges_components(context, admin))
     responses.update(financial_components(context, admin))
@@ -2244,6 +2243,7 @@ def component_origin():
     responses.update(chart_components(context, admin))
     responses.update(dashboard_components(context, admin))
     responses.update(timeline_components(context, admin))
+    responses.update(tabs_components(context, admin))
     responses.update(find_family_components(context, admin))
     responses.update(user_components(context, admin))
     responses.update(security_components(context, admin))
@@ -2286,6 +2286,7 @@ def component_origin():
     responses.update(campaign_create_components(context, admin))
     responses.update(menu_components(context, admin))
     responses.update(my_ministries_components(context, admin))
+    responses.update(review_work_components(context, admin))
     responses.update(home_steps_components(context, admin))
     responses.update(home_overview_components(context, admin))
     responses.update(automation_components(context, admin))
@@ -2307,7 +2308,6 @@ def component_origin():
         | AUTOMATION_POSTS
         | SIGNED_IN_POSTS
         | FOLLOWUP_POSTS
-        | ROSTER_POSTS
         | PUBLICATION_POSTS
         | INFORMATION_POSTS
         | FIND_FAMILY_POSTS

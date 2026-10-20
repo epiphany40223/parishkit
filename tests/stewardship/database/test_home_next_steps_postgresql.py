@@ -94,11 +94,10 @@ def sign_in(store, google, role):
                 "Go-live readiness",
             ],
         ),
-        # The Response dashboard is linked from the campaign panel (#1673),
-        # so a Staff member's Testing draft has no next step.
-        ("staff", []),
-        # Ministry requests carries the follow-up queue's open count (#1133).
-        ("ministry_leader", ["Ministry requests 0 open"]),
+        # Staff and Ministry leaders sign in to My review work instead of
+        # Home (#1690), so they get no Next steps.
+        ("staff", None),
+        ("ministry_leader", None),
     ],
 )
 def test_testing_draft_offers_each_roles_next_steps(
@@ -116,6 +115,9 @@ def test_testing_draft_offers_each_roles_next_steps(
     browser = sign_in(store, google, role)
     body = browser.get("/admin/").content
     html = panel(body)
+    if expected is None:
+        assert html is None and b"<h1>My review work</h1>" in body
+        return
     assert (html is not None) == bool(expected)
     assert steps(html or "") == expected
     if role == "administrator":
@@ -153,14 +155,14 @@ def test_active_campaign_steps_counts_and_today(response_service, google):
     listed = steps(html)
     assert [re.sub(r" \d.*", "", step) for step in listed] == [
         "Census changes",
-        "Roster changes to enter",
+        "Ministry requests to enter by hand",
         "Additional information",
         "Ministry requests",
         "Family email progress",
         "Sent mail",
     ]
     # No request is resolved yet, so nothing waits to be entered (#1590).
-    assert "Roster changes to enter 0 not yet entered" in listed
+    assert "Ministry requests to enter by hand 0 to enter by hand" in listed
     # The follow-up request the harness made is open in the queue.
     assert "Ministry requests 2 open" in listed
     assert 'href="/admin/mail/sent/"' in html
@@ -178,19 +180,16 @@ def test_active_campaign_steps_counts_and_today(response_service, google):
     assert "Today:" not in html
 
 
-def test_ministry_leader_today_line_counts_their_open_requests(
-    response_service, google
-):
-    """A leader's Today line sums My Ministries; Next steps link the queue."""
+def test_ministry_leader_lands_on_my_review_work(response_service, google):
+    """A leader signs in to My review work (#1690), which counts the open
+    request in their Ministry; Home's Next steps and Today line are not shown."""
     harness = setup(response_service)
     browser, _, _, _ = leader(harness, google)
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = read(browser, "/admin/")
     assert response.status_code == 200
-    html = panel(body)
-    assert "Today: 1 open request in your Ministries." in html
-    assert "Families responded" not in html
-    assert [re.sub(r" \d.*", "", step) for step in steps(html)] == ["Ministry requests"]
+    assert panel(body) is None and b"Today:" not in body
+    assert b'href="/admin/reports/ministries/?ministry=9"' in body
 
 
 def test_status_read_leaves_the_home_only_values_out(response_service):

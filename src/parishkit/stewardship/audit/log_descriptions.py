@@ -271,7 +271,7 @@ DESCRIPTIONS = {
     ),
     "admin_cmd_followup_roster_bulk": _(
         "An automation session marked several Ministry requests Entered in "
-        "ParishSoft, as Roster changes to enter's bulk mark does."
+        "ParishSoft, as Ministry requests' bulk Entered by hand does."
     ),
     "admin_cmd_information_decide": _(
         "An automation session accepted, ignored, reopened or handled "
@@ -899,6 +899,12 @@ DESCRIPTIONS = {
         "An upgrade moved open census changes that ParishSoft cannot take "
         "automatically (a gender, a death date, a Family address, or an "
         "answer that removes a value) to By hand. Count is how many."
+    ),
+    "refresh_checks_started": _(
+        "An upgrade started recording what each ParishSoft refresh finds for "
+        "census changes and Ministry requests already entered or decided, so "
+        "an entry ParishSoft does not show yet can be flagged Not seen in "
+        "ParishSoft."
     ),
     "census_publication_planned": _(
         "The server checked approved census changes against ParishSoft and "

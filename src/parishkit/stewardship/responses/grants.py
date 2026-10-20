@@ -64,12 +64,24 @@ def add_response_web_grants(tables, columns):
     tables["stewardship_census_addition"] = {"SELECT", "INSERT"}
     tables["stewardship_census_addition_resolution"] = {"SELECT", "INSERT"}
     # The guard sets resolved_at itself; Staff never write roster evidence.
+    # An Edit's Ministry (#1684) changes only with its paired revision.
     columns["stewardship_ministry_request"] = {
-        "UPDATE": {"state", "superseded_by_id", "version", "outcome", "assignee_id"}
+        "UPDATE": {
+            "state",
+            "superseded_by_id",
+            "version",
+            "outcome",
+            "assignee_id",
+            "reviewed_ministry_duid",
+        }
     }
     tables["stewardship_ministry_revision"] = {"SELECT", "INSERT"}
     # The roster Entered in ParishSoft tick's history (#528, step 4).
     tables["stewardship_ministry_roster_entry"] = {"SELECT", "INSERT"}
+    # The refresh checks (#1689) place final census changes and decided
+    # requests; web only reads them and the Not seen start.
+    tables["stewardship_refresh_check"] = {"SELECT"}
+    tables["stewardship_refresh_check_start"] = {"SELECT"}
     # A pledge's review history (#1686): Staff and Administrators record
     # each decision; its guard checks the actor, the item and its stage.
     tables["stewardship_pledge_review"] = {"SELECT", "INSERT"}

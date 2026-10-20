@@ -26,20 +26,13 @@ from parishkit.stewardship.reports.ministry_followup import (
     STATE_LABELS as FOLLOWUP_STATE_LABELS,
 )
 from parishkit.stewardship.reports.ministry_followup_views import (
-    BULK_FIELD_IDS,
-    BULK_KIND_HINTS,
     FIELD_IDS,
     REFUSALS,
-    _bulk_refusal,
     _refusal_error,
-    bulk_actions,
-    bulk_values,
     change_values,
     refusal_fields,
 )
 from parishkit.stewardship.workflows.followup import (
-    BULK_ACTIONS,
-    MAX_BULK,
     MAX_CONTACT_NOTES,
     MAX_NOTES,
     FollowupRefusal,
@@ -335,25 +328,6 @@ def test_refusals_name_the_one_problem_and_its_field():
     assert not isinstance(refused.value, FollowupRefusal)
 
 
-def test_bulk_refusal_names_the_dialog_fields_it_concerns():
-    """A bulk contact refusal names the dialog's Date and Time (#1332), so
-    the dialog shows it there; one with no field names none."""
-    fields = ("contact_date", "contact_time")
-    named = json.loads(_bulk_refusal(400, "Fix the time.", fields).content)
-    assert [e["field_id"] for e in named["errors"]] == [
-        BULK_FIELD_IDS[name] for name in fields
-    ]
-    assert named["refusal"]["message"] == "Fix the time."
-    plain = json.loads(_bulk_refusal(409, "Changed.").content)
-    assert [(e["code"], e["field_id"]) for e in plain["errors"]] == [
-        ("stale_version", None)
-    ]
-    # Every refusal field the dialog has is named by its own id there.
-    assert set(BULK_FIELD_IDS) <= {
-        name for _, names in REFUSALS.values() for name in names
-    }
-
-
 SOURCES = Path(__file__).parents[2] / "src/parishkit/stewardship"
 
 
@@ -532,116 +506,6 @@ def test_refused_fields_are_marked_at_the_field(code):
     assert len(re.findall(r'<ul class="errorlist"', clean)) == 1
 
 
-REQUEST = uuid4()
-BULK = {
-    "outcome": "leave:declined",
-    "bulk_key": str(uuid4()),
-    "contact_channel": "",
-}
-
-
-def bulk(values, requests=(f"{REQUEST}:3",)):
-    """Parse a bulk outcome dialog's POST of ``values`` and ``requests``."""
-    data = QueryDict(mutable=True)
-    for key, value in values.items():
-        data[key] = value
-    data.setlist("request", list(requests))
-    return bulk_values(data)
-
-
-def test_bulk_form_reads_each_request_with_its_own_version():
-    """Each chosen row posts its id and the version it showed (#1131)."""
-    other = uuid4()
-    values = bulk(BULK, (f"{REQUEST}:3", f"{other}:1"))
-    assert values["versions"] == {REQUEST: 3, other: 1}
-    assert (values["action"], values["outcome"]) == ("leave", "declined")
-    assert values["change"].contact_channel is None
-    assert values["change"].contact_notes == ""
-    contact = bulk(
-        BULK
-        | {"contact_channel": "phone", "contact_notes": "Called everyone"}
-        | CONTACT
-    )["change"]
-    assert contact.contact_channel == "phone"
-    assert contact.contact_at == datetime(2026, 9, 19, 15, 4, tzinfo=UTC)
-    assert contact.contact_notes == "Called everyone"
-    # A contact attempt's details without a channel are ignored, as on a
-    # request's own form.
-    ignored = bulk(BULK | {"contact_notes": "Stale"} | CONTACT)["change"]
-    assert (ignored.contact_at, ignored.contact_notes) == (None, "")
-
-
-@pytest.mark.parametrize(
-    ("values", "requests"),
-    [
-        # Only Joined or Declined for joins and Left or Stayed for leaves,
-        # each posted with its kind.
-        (BULK | {"outcome": "declined"}, None),
-        (BULK | {"outcome": "leave:joined"}, None),
-        (BULK | {"outcome": "join:leave_confirmed"}, None),
-        (BULK | {"outcome": "any:declined"}, None),
-        (BULK | {"outcome": "join:other"}, None),
-        (BULK | {"outcome": "join:duplicate"}, None),
-        (BULK | {"outcome": "leave:no_response"}, None),
-        ({k: v for k, v in BULK.items() if k != "bulk_key"}, None),
-        (BULK | {"bulk_key": "not-a-uuid"}, None),
-        (BULK | {"state": "resolved"}, None),
-        (BULK | {"notes": "Shared notes"}, None),
-        (BULK, ()),
-        (BULK, (f"{REQUEST}:3", f"{REQUEST}:3")),
-        (BULK, (f"{REQUEST}:3", f"{REQUEST}:4")),
-        (BULK, (str(REQUEST),)),
-        (BULK, (f"{REQUEST}:0",)),
-        (BULK, (f"{REQUEST}:x",)),
-        (BULK, ("x:1",)),
-        (BULK, tuple(f"{uuid4()}:1" for _ in range(MAX_BULK + 1))),
-    ],
-)
-def test_malformed_bulk_forms_are_refused(values, requests):
-    """A crafted or stale dialog post is a malformed form, not a refusal."""
-    with pytest.raises(ValueError) as refused:
-        bulk(values) if requests is None else bulk(values, requests)
-    assert not isinstance(refused.value, FollowupRefusal)
-
-
-def test_bulk_contact_mistakes_are_the_request_forms_refusals():
-    """The dialog's contact attempt is checked as a request's own form's is."""
-    with pytest.raises(FollowupRefusal) as refused:
-        bulk(BULK | {"contact_channel": "phone"})
-    assert refused.value.code == "contact_incomplete"
-    with pytest.raises(FollowupRefusal) as refused:
-        bulk(BULK | {"contact_channel": "phone"} | CONTACT | {"contact_zone": ""})
-    assert refused.value.code == "contact_zone"
-
-
-def test_bulk_buttons_are_each_for_one_kind_of_request():
-    """Joined and Declined for joins, Left and Stayed for leaves (2026-10-13).
-
-    Each button posts its kind with its outcome and names the outcome by
-    that kind's label (#1132); the page gives the reason line's text for a
-    selection of one kind and for a mixed one.
-    """
-    actions = bulk_actions()
-    assert [(action["kind"], action["value"]) for action in actions] == [
-        (kind, f"{kind}:{outcome}") for kind, outcome in BULK_ACTIONS
-    ]
-    assert [str(action["label"]) for action in actions] == [
-        "Mark as Joined",
-        "Mark as Declined",
-        "Mark as Left",
-        "Mark as Stayed",
-    ]
-    joined, declined, _left, stayed = actions
-    assert joined["title_many"] == "Mark {count} requests as Joined the Ministry?"
-    assert joined["done_one"] == "Marked {name} as Joined the Ministry."
-    assert declined["title_one"] == "Mark {name} as Declined / no longer interested?"
-    assert stayed["title_many"] == "Mark {count} requests as Stayed in the Ministry?"
-    assert "Stayed in the Ministry" in stayed["body"]
-    # No skipped-row text any more: a button never meets the other kind.
-    assert not any(key.startswith("skipped") for key in joined)
-    assert set(BULK_KIND_HINTS) == {"join", "leave", "mixed"}
-
-
 def test_each_request_in_a_bulk_action_has_its_own_replay_key():
     """One page key derives a distinct, repeatable key per request."""
     key, first, second = uuid4(), uuid4(), uuid4()
@@ -655,7 +519,7 @@ def test_members_no_longer_in_parishsoft_are_one_status_choice():
     of any status (#1217)."""
     default = json.loads(selection_filters(FollowupQuery()))
     assert (default["state"], default["presence"]) == ("unresolved", "current")
-    # Roster changes to enter asks for every Member (#1217).
+    # The roster rows ask for every Member (#1217).
     roster = json.loads(selection_filters(FollowupQuery(), every_member=True))
     assert roster["presence"] == "any"
     query = FollowupQuery.parse({"state": NOT_IN_SOURCE})

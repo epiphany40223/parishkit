@@ -68,6 +68,9 @@ STEPS = {
     "additional": _("Additional information"),
     "review": _("Review"),
 }
+# The form's first step. The form page's script reports it as soon as the
+# page loads, with no choice made, so reaching it is no portal action.
+FIRST_STEP = next(iter(STEPS))
 # The timeline is a shared Admin table with one sortable column, When:
 # newest first by default (the Administrator's decision on #590), and the
 # heading reverses it in place. Rows at the same instant sort by their
@@ -247,6 +250,9 @@ class Event:
     page's Kind filter. ``rank`` is the line's place in the oldest-first
     order ``events`` returns, which ``TIMELINE_SORTING`` uses to order lines
     at the same instant, so both sort directions read the same way.
+    ``portal`` marks a line that only the Family itself can cause on the
+    parishioner portal, the candidates for the hub's Last portal action
+    (``Timeline.last_action``).
     """
 
     at: datetime
@@ -255,6 +261,7 @@ class Event:
     message_id: UUID | None = None
     kind: str = "form"
     rank: int = 0
+    portal: bool = False
 
 
 @dataclass(frozen=True)
@@ -374,10 +381,13 @@ def events(
     Staff started through Open form (#795) reads "Staff opened the form",
     since no link was followed, and never names who did.
 
-    ``session_ends`` are ``(instant, event_type)`` pairs, ``family_logout``
-    (the Family chose Sign out) or ``family_session_ended`` (the system ended
-    the session); they are built after the Family's own steps, so a sign-in,
-    a submission and the sign-out at one instant read in that order. The
+    ``session_ends`` are ``(instant, event_type)`` pairs, or ``(instant,
+    event_type, by_staff)`` triples, ``family_logout`` (Sign out was chosen)
+    or ``family_session_ended`` (the system ended the session); ``by_staff``
+    says the session was one Staff opened through Open form, whose Sign out
+    is not the Family's portal action. They are built after the Family's own
+    steps, so a sign-in, a submission and the sign-out at one instant read
+    in that order. The
     exception is a system end at the same instant as a sign-in: a new
     sign-in in the same browser ends the earlier session in its own
     transaction, so that end reads "Earlier session ended" and is built
@@ -407,10 +417,10 @@ def events(
             kind="sessions",
         )
 
-    def session_end(at, event_type):
+    def session_end(at, event_type, by_staff=False):
         """One sign-out or session-end line."""
         if event_type == "family_logout":
-            return Event(at, _("Signed out"), kind="sessions")
+            return Event(at, _("Signed out"), kind="sessions", portal=not by_staff)
         return Event(
             at,
             _("Session ended"),
@@ -422,9 +432,11 @@ def events(
         )
 
     sign_in_at = {value[0] if isinstance(value, tuple) else value for value in sign_ins}
+    # Every end as a triple: a pair is a session the Family opened itself.
+    session_ends = [(*end, False)[:3] for end in session_ends]
     replaced = [
         (at, event_type)
-        for at, event_type in session_ends
+        for at, event_type, _by_staff in session_ends
         if event_type == "family_session_ended" and at in sign_in_at
     ]
     lines = [
@@ -439,13 +451,19 @@ def events(
     lines += [sign_in(value) for value in sign_ins]
     lines += [Event(at, _("Opened the form")) for at in forms]
     if engagement is not None and engagement.progress_at is not None:
-        lines.append(Event(engagement.progress_at, _("Got past the first step")))
+        lines.append(
+            Event(engagement.progress_at, _("Got past the first step"), portal=True)
+        )
     if engagement is not None and engagement.furthest_at is not None:
+        # Only a step past the first is the Family's action: the first is
+        # reported when the form page loads (a script-running mail scanner
+        # too), with nothing chosen.
         lines.append(
             Event(
                 engagement.furthest_at,
                 _("Reached the furthest step so far"),
                 engagement.furthest_label,
+                portal=engagement.furthest != FIRST_STEP,
             )
         )
     for submission in submissions:
@@ -454,12 +472,19 @@ def events(
             details.append(str(_("Entered by Staff for the Family")))
         if submission.no_receipt:
             details.append(str(_("No receipt: no email address")))
+        # A response Staff entered through Open form is not the Family's
+        # own portal action.
         lines.append(
-            Event(submission.at, _("Submitted a response"), "; ".join(details))
+            Event(
+                submission.at,
+                _("Submitted a response"),
+                "; ".join(details),
+                portal=not submission.by_staff,
+            )
         )
     lines += [
-        session_end(at, event_type)
-        for at, event_type in session_ends
+        session_end(at, event_type, by_staff)
+        for at, event_type, by_staff in session_ends
         if (at, event_type) not in replaced
     ]
     lines += [
@@ -564,7 +589,8 @@ def read_sessions(family_id, scope, current_mode, bounds):
     """The Family's sign-ins and session ends in the scope, oldest first.
 
     Returns ``(sign_ins, session_ends)``: sign-ins as ``(instant, by_staff)``
-    and ends as ``(instant, event_type)``, the ``events`` arguments.
+    and ends as ``(instant, event_type, by_staff)``, the ``events``
+    arguments.
     ``by_staff`` says the sign-in's Family session was started by Staff
     through Open form; it is decided per session, so two sign-ins at the
     same instant are never confused. Sign-in audit events carry no mode, so
@@ -609,7 +635,7 @@ def read_sessions(family_id, scope, current_mode, bounds):
     )
     sign_ins = [(at, subject in assisted) for at, subject in logins if at in kept]
     ends = [
-        (at, kind)
+        (at, kind, subject in assisted)
         for at, subject, kind in rows
         if kind != "family_login" and subject in sessions
     ]
@@ -641,43 +667,77 @@ def read_engagement(family_id, scope):
 class Timeline:
     """One Family's records in one scope: the summary, and the full view's extras.
 
-    ``events`` and ``engagement`` are only read for the full view; for the
-    reduced (Staff) view they stay empty and None.
+    ``engagement`` is only kept for the full view. For the reduced (Staff)
+    view it stays None and ``events`` holds only the ``portal`` lines, which
+    ``last_action`` needs, never the rest of the full timeline.
     """
 
     summary: Summary
     events: tuple = ()
     engagement: Engagement | None = None
 
+    @property
+    def last_action(self):
+        """The Family's newest portal action (an ``Event``), or None.
+
+        The hub's Last portal action (#1678): the newest line marked
+        ``portal`` (a submission of the Family's own, a sign-out, or a form
+        step), the latest built when two share an instant. Sign-ins and form
+        opens never count: a mail scanner fetching the Family's personal
+        link makes both exactly as the Family would. Both views read these
+        lines: Staff see the Last portal action too (Administrator decision,
+        2026-10-18).
+        """
+        return max(
+            (line for line in self.events if line.portal),
+            key=lambda line: (line.at, line.rank),
+            default=None,
+        )
+
 
 def read_timeline(scope, family_id, *, full, current_mode="production"):
     """Read one Family's records in ``scope``; ``full`` adds the timeline.
 
-    Runs inside the report's read guard and read-only transaction. The
-    reduced view reads only the emails and submissions its summary needs;
-    the full view adds the skips, sign-ins and session ends (``current_mode``
-    is the runtime mode now, for attributing them), form opens and the
-    engagement record.
+    Runs inside the report's read guard and read-only transaction. Both
+    views read the emails and submissions the summary needs, and the
+    sign-ins, session ends (``current_mode`` is the runtime mode now, for
+    attributing them) and engagement record the Last portal action comes
+    from. The reduced (Staff) view keeps only the portal lines; the full
+    view adds the skips and form opens and keeps every line.
     """
     values = scope_values(scope, family_id)
+    bounds = lifetime(scope)
     with connection.cursor() as cursor:
         emails = read_emails(cursor, values)
         submissions = read_submissions(cursor, values, emails)
-        if not full:
-            return Timeline(summary(emails, submissions))
-        bounds = lifetime(scope)
-        window = values | {"started": bounds[0], "ended": bounds[1]}
-        cursor.execute(_SKIPS, window)
-        skips = cursor.fetchall()
-        cursor.execute(_WORKGROUP_SKIPS, window)
-        workgroup_skips = cursor.fetchall()
+        if full:
+            window = values | {"started": bounds[0], "ended": bounds[1]}
+            cursor.execute(_SKIPS, window)
+            skips = cursor.fetchall()
+            cursor.execute(_WORKGROUP_SKIPS, window)
+            workgroup_skips = cursor.fetchall()
+    engagement = read_engagement(family_id, scope)
+    sign_ins, ends = read_sessions(family_id, scope, current_mode, bounds)
+    if not full:
+        # Staff see the Last portal action (Administrator decision,
+        # 2026-10-18) but not the timeline: build the lines from what the
+        # action can come from and keep only the portal ones, so no email,
+        # sign-in or form open reaches Staff's page through ``events``.
+        lines = events(
+            emails,
+            submissions,
+            sign_ins=sign_ins,
+            engagement=engagement,
+            session_ends=ends,
+        )
+        return Timeline(
+            summary(emails, submissions), tuple(line for line in lines if line.portal)
+        )
     forms = FamilyFormBaseline.objects.filter(
         family_id=family_id,
         mode=values["response_mode"],
         rehearsal_epoch_id=scope.rehearsal_epoch_id,
     ).values_list("created_at", flat=True)
-    engagement = read_engagement(family_id, scope)
-    sign_ins, ends = read_sessions(family_id, scope, current_mode, bounds)
     return Timeline(
         summary(emails, submissions),
         events(
