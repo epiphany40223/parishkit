@@ -14,7 +14,14 @@ import pytest
 
 from .comparison_components import DAY_5, NEWER, PAGE, REFUSED_UPDATING, UPDATING
 from .conftest import NOW
-from .report_components import FIGURES_NEWER, FIGURES_PENDING, REAL
+from .report_components import (
+    FIGURES_NEWER,
+    FIGURES_PENDING,
+    FIGURES_RETRY,
+    FIGURES_RETRY_NEWER,
+    REAL,
+    UNAVAILABLE,
+)
 from .test_in_place import MARK, MARKED, VIEWPORT, scroll_below
 from .test_live_status_in_place import refresh_controls
 from .waits import has_count, has_value, recorded, visible
@@ -112,6 +119,38 @@ def test_response_dashboard_shows_its_newest_figures_by_itself(page, component_o
     assert len(page_reads) == 1
     # The re-read is passive (it never extends the sign-in); the status
     # reads are passive by themselves.
+    assert page_reads[0][1] == "passive"
+
+
+def test_unavailable_figures_come_back_by_themselves(page, component_origin):
+    """A dashboard that could not read its figures never asks for a reload:
+    its figures status is read every 60 seconds, and once figures are ready
+    the page re-reads itself once, passively and in place, and shows them."""
+    opened(page, component_origin, UNAVAILABLE)
+    line = page.locator("#production-unavailable")
+    visible(line)
+    assert "appear here by themselves once they can be read" in line.inner_text()
+    assert "reload" not in page.locator("main").inner_text().lower()
+    has_count(page.locator(NOTICE), 0)
+    reads = statuses(page, component_origin, FIGURES_RETRY, FIGURES_RETRY_NEWER)
+    page_reads = rereads(page, component_origin, UNAVAILABLE, "/participation-later")
+    # Nothing is read at the fast pace.
+    page.clock.fast_forward(30000)
+    page.evaluate("() => true")  # One round trip after the clock jump.
+    assert reads == []
+    page.clock.fast_forward(31000)
+    recorded(page, reads, 1)
+    assert "retry=1" in reads[0][0]
+    has_count(line, 1)
+    # Let its answer arrive, so the next check is scheduled from now.
+    page.wait_for_timeout(500)
+    page.clock.fast_forward(61000)
+    recorded(page, reads, 2)
+    recorded(page, page_reads, 1)
+    visible(page.locator("#response-summary .stat-value", has_text=REFRESHED))
+    has_count(line, 0)
+    assert page.evaluate(MARKED) == "kept"
+    assert page.url == component_origin + UNAVAILABLE
     assert page_reads[0][1] == "passive"
 
 
@@ -225,6 +264,48 @@ def test_failed_follow_up_reads_back_off_to_the_status(page, component_origin):
     recorded(page, page_reads, 5)
     visible(problem)
     assert page.evaluate(MARKED) == "kept"
+
+
+def test_failed_retry_reads_never_speed_up_the_unavailable_status(
+    page, component_origin
+):
+    """After three failed follow-up reads an ordinary figures status goes
+    back to its status at 30 s; a page retrying figures it could not read
+    keeps its own 60 s (#1586)."""
+    opened(page, component_origin, UNAVAILABLE)
+    reads = statuses(page, component_origin, FIGURES_RETRY_NEWER)
+    page_reads = []
+
+    def unavailable(route):
+        """Answer the page's own re-reads 503; let the page load through."""
+        if route.request.resource_type == "document":
+            route.continue_()
+            return
+        page_reads.append(route.request.url)
+        route.fulfill(status=503, body="Unavailable")
+
+    page.route(
+        lambda url: url.split("#")[0] == component_origin + UNAVAILABLE,
+        unavailable,
+    )
+    page.clock.fast_forward(61000)
+    recorded(page, reads, 1)
+    recorded(page, page_reads, 1)
+    page.clock.fast_forward(5000)
+    recorded(page, page_reads, 2)
+    page.clock.fast_forward(5000)
+    recorded(page, page_reads, 3)
+    page.wait_for_timeout(500)
+    # Handed back to the status: not read at 30 s, but at 60 s.
+    page.clock.fast_forward(31000)
+    page.wait_for_timeout(300)
+    assert len(reads) == 1
+    page.clock.fast_forward(30000)
+    recorded(page, reads, 2)
+    assert page.evaluate(MARKED) == "kept"
+    # The status answer just asked for another follow-up read; let reads
+    # still in flight end quietly when the page closes.
+    page.unroute_all(behavior="ignoreErrors")
 
 
 def test_a_readers_own_read_is_never_marked_automatic(page, component_origin):

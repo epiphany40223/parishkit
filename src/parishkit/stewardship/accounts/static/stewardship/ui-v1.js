@@ -3350,6 +3350,8 @@
   // The status poll's pace after the third failed follow-up read, then
   // after each later one.
   const FOLLOW_BACKOFF_MS = [30000, 60000];
+  // The pace of a figures status retrying figures it could not read.
+  const RETRY_PACE_MS = 60000;
   // Said when a read is refused, and when reads keep failing and will be
   // tried again; live-status-v1.js says the same (#1647).
   const UPDATES_REFUSED = "Couldn't check for updates. Reload the page or sign in again.";
@@ -3498,7 +3500,10 @@
     follow = null;
     const status = link.closest("[data-live-status]");
     if (!status) return;
-    const pace = FOLLOW_BACKOFF_MS[Math.min(followFailures - REREAD_FAILURES, FOLLOW_BACKOFF_MS.length - 1)];
+    // A region retrying figures it could not read (data-live-retry) never
+    // goes faster than its own 60 s (#1586).
+    const backoff = FOLLOW_BACKOFF_MS[Math.min(followFailures - REREAD_FAILURES, FOLLOW_BACKOFF_MS.length - 1)];
+    const pace = status.hasAttribute("data-live-retry") ? Math.max(backoff, RETRY_PACE_MS) : backoff;
     status.setAttribute("data-live-pending", "");
     status.setAttribute("data-live-interval", String(pace));
     status.dispatchEvent(new CustomEvent("parishkit:live-watch", {bubbles: true}));
