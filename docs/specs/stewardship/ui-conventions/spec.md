@@ -855,17 +855,22 @@ the [in-place controls](#in-place-controls); no other mechanism.
   only when that status still says newer figures are ready. The next read
   that works clears the count. The notice says the new
   figures appear by themselves; no page tells the reader to refresh it to
-  check progress.
+  check progress. When the Response dashboard could not read its figures at
+  all, its unavailable line says they appear by themselves too, and the
+  figures status stays beside it, checking every 60 seconds (never faster,
+  even after failed re-reads), so the page re-reads itself once another
+  generation of figures is ready
+  ([reports](../reports/spec.md#response-dashboard)).
 - **Pace.** While background work is pending a status region reads fast
   (2 s backing off to 10 s, or the fixed pace the page asks for). A page
   whose state changes without the reader's own action re-reads every 30
   seconds (Background work, Families on the form now), and a report's
   figures status checks every 30 seconds while its figures are current, so
   figures a new response or ParishSoft load makes out of date are noticed.
-  A watch that passes
-  its time limit (an hour, or the page's own) slows to every 30 seconds
-  instead of stopping, so a page left open never goes quiet while it still
-  says "running". Reads pause while the tab is hidden, and the page catches
+  A watch that passes its time limit (an hour, or the page's own) slows
+  to every 30 seconds (a region with a slower fixed pace keeps it) instead
+  of stopping, so a page left open never goes quiet while it still says
+  "running". Reads pause while the tab is hidden, and the page catches
   up at once when it is shown again (`visibilitychange`) or comes back from
   the back/forward cache (`pageshow`). A part of a status that is costly to
   check is rechecked by the same passive status read at a slower pace

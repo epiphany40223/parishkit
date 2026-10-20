@@ -38,9 +38,10 @@
 {# The statistics, the daily chart and the export count Production responses only, so a Testing view leaves them out and says why (conditional fields, #1537). #}
 <p id="production-only">{% translate "Population statistics, daily participation and the export count Production responses only. Choose Production to see them." %}</p>
 {% elif participation_unavailable %}
-{# The statistics or daily facts could not be read from their inputs: the Families by stage row above still shows (#1537), and no zero is assumed. #}
-{% if participation_cause == "statistics" %}<p id="production-unavailable">{% translate "Population statistics, daily participation and the export need ParishSoft data, and none is available yet; no zero values have been assumed. They appear after the first ParishSoft update completes." %}</p>
-{% else %}<p id="production-unavailable">{% translate "Population statistics, daily participation and the export are unavailable right now; no zero values have been assumed. Reload the page in a few minutes to try again." %}</p>{% endif %}
+{# The statistics or daily facts could not be read from their inputs: the Families by stage row above still shows (#1537), and no zero is assumed. The figures status after the line keeps watching at its slow retry pace, so they appear by themselves and the page never asks for a reload (#1586). #}
+{% if participation_cause == "statistics" %}<p id="production-unavailable">{% translate "Population statistics, daily participation and the export need ParishSoft data, and none is available yet; no zero values have been assumed. They appear here by themselves after the first ParishSoft update completes." %}</p>
+{% else %}<p id="production-unavailable">{% translate "Population statistics, daily participation and the export are unavailable right now; no zero values have been assumed. They appear here by themselves once they can be read." %}</p>{% endif %}
+{% if figures_status %}{% include 'stewardship/report-figures-status.html' %}{% endif %}
 {% else %}
 <section class="panel" id="participation-chart">
 <h2>{% translate "Daily participation" %} — {% if query.scope == 'historical' %}{% translate "Historical as of day" %}{% else %}{% translate "Current population" %}{% endif %}</h2>
