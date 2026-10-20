@@ -580,7 +580,10 @@ its command session at most once a minute, as a heartbeat, so the 60-minute
 idle checks hold while the process lives. At exit the command sets the command
 session's `revoked_at` directly, without an audit event (the automation
 session's events carry the attribution); a crashed process leaves a row that
-idles out and is cleaned up as usual.
+idles out and is cleaned up as usual. Where a page ties staged work to the
+sign-in that made it (Parish logos' staged uploads), the command line's
+sign-in is the automation session, not one command session, so a later
+command of the same automation session can finish it (#1865).
 
 If the principal's roles or Ministries change while a command runs, ordinary
 admission on the web would rotate the session. For a command session it
@@ -1770,6 +1773,11 @@ signatures:
   pages' profile, catalog and campaign-target reads were already
   request-free; `branding show` moved the logo page's current-logo query
   into `branding_slots.current_assets`, which the page now calls.
+  `branding preview` moved the upload's staging (after the page's field
+  checks) into `branding_views.stage_upload`, which the page now calls,
+  and adds a `record` callback to `branding_staging.stage_branding`;
+  a staged upload's owning sign-in is `branding_staging.sign_in`, which
+  is the request's own portal session on the web, unchanged (#1865).
   `parish preview` moved the parish page's review (after form validation)
   into `parish_views.review_change`, which the page's Review now calls.
   `integration list`, `integration show` and `integration status` moved the
@@ -2013,8 +2021,8 @@ none.
 | `parish_settings`, `ministries` | `parish show`, `parish preview`, `parish confirm`, `ministries list` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); Ministries changes nothing since [#1267](https://github.com/epiphany40223/parishkit/issues/1267) |
 | `hosted_files`, `hosted_file_delete`, `hosted_file_rename` | `files list`, `files delete`, `files rename` ([#463](https://github.com/epiphany40223/parishkit/issues/463)) |
 | `artwork_settings` (its upload and removal reviews, #750) | `artwork show`, `artwork remove-preview`, `artwork remove` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); uploads are `artwork_upload`'s, below |
-| `branding_settings`: **Apply** in its review dialog (#750) | `branding show` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); applying logos comes with the uploads below: staged logos belong to the sign-in that uploaded them, and each `pk-admin` run is its own sign-in, so a command cannot apply logos staged in the browser |
-| `hosted_file_upload`, `artwork_upload`, `branding_settings` uploads | Pending: file uploads; a later PR may accept `--file` |
+| `branding_settings` (its upload, review dialog and **Apply**, #750) | `branding show`, `branding preview`, `branding confirm` ([#1865](https://github.com/epiphany40223/parishkit/issues/1865)); the preview takes the image on standard input |
+| `hosted_file_upload`, `artwork_upload` | Pending: file uploads; a later PR may accept the file on standard input, as `branding preview` does |
 | `branding_asset` | Permanent: image previews and bytes for the browser |
 
 Every configuration change still becomes a configuration request that the
@@ -2319,6 +2327,58 @@ and shows no confirmation dialog: the reviewed token is the confirmation,
 and a removal deletes nothing (the image stays in the activated
 configurations' history). The command shapes are defaults, pending
 Administrator confirmation.
+
+`branding preview - [--size SIZE] --expected-version …` and `branding
+confirm --bundle ID --token …` are Parish logos' upload with its review
+dialog and the dialog's **Apply** (#750, #1062,
+[#1865](https://github.com/epiphany40223/parishkit/issues/1865)), as
+`parish preview` and `parish confirm` are Parish settings' Review and
+Apply. The preview reads one image from standard input after the preamble
+(at most the page's 5 MB; the wrapper forwards it for the `-` input, as
+for `history preview -`) and admits as the page's upload does
+(`CONFIGURE`, recording activity). It binds the image to the page's own
+form (`branding_views.LogoUploadForm`): without `--size` it is Basic, one
+image made into all four sizes; `--size large|menu|icon|favicon` is
+Advanced for that one size, the others keeping their current images, as
+on the page (one size per run, as standard input carries one file). It
+stages the sizes through the page's own `branding_views.stage_upload`
+(`branding_staging.stage_branding`), with `admin_cmd_branding_preview` in
+the transaction that makes them ready (so the event means the logos were
+staged; a later review refusal is logged as the command's refusal), then, as the page's dialog does,
+reads the staged upload before the configuration and builds the page's own
+review (`branding_views._review`). The form's refusals (an image too
+large, unsupported or animated, a size outside its rules) are `invalid`
+at `branding.logo` or `branding.<size>` with the page's words; another
+version is `stale_version`, before anything is staged; settings that
+changed between staging and review are `stale_version` too; media storage
+that cannot be used is `unavailable`. A refusal after staging leaves only
+an unapplied upload, which expires within a day as the page's do, so a
+new preview is always safe. It prints `version`, `bundle` (the staged
+upload), `mode` (`basic` or `advanced`), `logos` (each size in the page's
+order with its label, the staged image's stored facts and `changed`,
+whether this upload changes it) and `preview.token`, the page's own signed
+binding (its salt, bound to the bundle); never image bytes. `branding
+confirm` records the configuration request as the dialog's Apply does,
+through `admin_editing.confirm_intent` with the page's salt and staged-upload
+scope (`branding_views._scope`), with `admin_cmd_branding_confirm` in the
+request's own transaction; a repeat returns the original request. Another
+bundle's token is `invalid`. Staged logos belong to the sign-in that
+uploaded them (`branding_staging.sign_in`, recorded as the bundle's
+`session_id`): in the browser that is the portal session, and on the
+command line it is the automation session, not the short-lived command
+session of one run (see [Command sessions](#command-sessions)), so
+`branding confirm` applies what the same automation session's `branding
+preview` staged for the upload's whole day, even after the maintenance
+task has removed the preview's command session. Logos staged in the browser or by another automation
+session, even the same Administrator's, are `not_available`, as the page
+refuses another sign-in's upload; expired ones are `stale_version`. Both
+need a full-scope session; neither is fresh-gated nor prompts, as the
+page's upload and Apply are not privileged and show no confirmation
+dialog: the reviewed token is the confirmation. The command shapes,
+`--size` and one size per run are defaults, pending Administrator
+confirmation. The
+[operator guide](../../../guides/stewardship-admin-automation.md#parish-logos)
+lists the fields.
 
 `workgroup show`, `workgroup preview (--name … | --clear)
 --expected-version …` and `workgroup confirm --token …` are the

@@ -203,10 +203,13 @@ LEDGER = {
     "artwork_settings": command(
         "artwork show", "artwork remove-preview", "artwork remove"
     ),
-    # Applying logos is owed with the uploads: staged logos belong to the
-    # sign-in that uploaded them, and each pk-admin run is its own sign-in,
-    # so a command cannot apply logos staged in the browser (#463).
-    "branding_settings": command("branding show", owed="PR 10"),
+    # The upload with its review and the dialog's Apply (#1865). Staged
+    # logos belong to the sign-in that uploaded them, which for pk-admin is
+    # the automation session, so branding confirm applies the logos its own
+    # session's branding preview staged, never the browser's.
+    "branding_settings": command(
+        "branding show", "branding preview", "branding confirm"
+    ),
     "hosted_file_upload": permanent(UPLOAD),
     "artwork_upload": permanent(UPLOAD),
     "branding_asset": permanent(IMAGES),

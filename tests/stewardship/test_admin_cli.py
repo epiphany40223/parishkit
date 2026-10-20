@@ -110,6 +110,8 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "artwork show",
         "artwork remove-preview",
         "artwork remove",
+        "branding preview",
+        "branding confirm",
         "integration list",
         "integration show",
         "integration status",
@@ -1030,6 +1032,9 @@ def test_every_state_change_has_a_registered_described_event():
         "admin_cmd_history_confirm",
         "admin_cmd_history_remove",
         "admin_cmd_artwork_remove",
+        # Parish logos' upload review and Apply (#1865).
+        "admin_cmd_branding_preview",
+        "admin_cmd_branding_confirm",
         "admin_cmd_integration_confirm",
         "admin_cmd_integration_backup_probe",
         "admin_cmd_integration_dismiss",

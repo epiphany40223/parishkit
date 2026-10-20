@@ -71,6 +71,9 @@ is ``export roster`` (in ``admin_roster_export``), and ``report census`` (in
 ``artwork show``,
 ``artwork remove-preview`` and ``artwork remove`` (PR 10, in
 ``admin_artwork``) read Campaign images and remove one of them.
+``branding preview`` and ``branding confirm`` (#1865, in ``admin_branding``)
+are Parish logos' upload with its review and the review dialog's Apply; the
+preview reads the image from standard input after the preamble.
 ``workgroup show``, ``workgroup preview`` and ``workgroup confirm`` (PR 10,
 in ``admin_workgroup``) read and change the No-reminders WorkGroup.
 ``campaign show``, ``campaign preview`` and ``campaign confirm`` (PR 10, in
@@ -344,6 +347,9 @@ def configure_admin_process(configuration):
     values["DATABASES"] = {"default": database_settings(configuration)}
     values["STEWARDSHIP_OPERATIONAL_POLICY"] = configuration.operational_alerts
     values["STEWARDSHIP_REPORTS_ROOT"] = configuration.paths["reports"]
+    # The web's private media mount, where ``branding preview`` stages logos
+    # as the page's upload does (#1865); the web created and checked it.
+    values["STEWARDSHIP_MEDIA_ROOT"] = configuration.paths["media"]
     values.update(profile_settings(configuration))
     settings.configure(**values)
     django.setup()
@@ -1777,6 +1783,38 @@ def branding_show(args, preamble, runtime, context):
     from .admin_settings import read_branding
 
     return read_branding(context["caller"], runtime)
+
+
+def branding_preview(args, preamble, runtime, context):
+    """Stage and review new parish logos from standard input (#1865).
+
+    The image's bytes follow the preamble (the wrapper forwards them for the
+    ``-`` input); nothing else is read.
+    """
+    from .admin_branding import preview_branding, read_image
+
+    return preview_branding(
+        context["caller"],
+        runtime,
+        read_image(context["stdin"]),
+        size=args.size,
+        expected_version=args.expected_version,
+        context=context,
+    )
+
+
+def branding_confirm(args, preamble, runtime, context):
+    """Apply reviewed parish logos as a configuration request (#1865)."""
+    from .admin_branding import confirm_branding
+    from .admin_changes import TOKEN_LIMIT
+
+    return confirm_branding(
+        context["caller"],
+        runtime,
+        args.bundle,
+        token=_input(args.token, context, TOKEN_LIMIT),
+        context=context,
+    )
 
 
 def campaign_shares(args, preamble, runtime, context):
@@ -3826,6 +3864,48 @@ def _artwork_remove_options(parser):
     )
 
 
+def _branding_preview_options(parser):
+    """Options of ``branding preview``: ``-``, the one size and the version.
+
+    The sizes are ``admin_branding.SIZES``, the page's, which a test keeps
+    equal to ``branding_slots.SLOTS``.
+    """
+    from .admin_branding import SIZES
+
+    parser.add_argument(
+        "file",
+        choices=("-",),
+        metavar="-",
+        help="read the image's bytes from standard input",
+    )
+    parser.add_argument(
+        "--size",
+        choices=SIZES,
+        help="replace only this size (Advanced); without it the image makes all four",
+    )
+    parser.add_argument(
+        "--expected-version",
+        required=True,
+        type=_digest,
+        help="the version branding show printed",
+    )
+
+
+def _branding_confirm_options(parser):
+    """Options of ``branding confirm``: the staged bundle and the token."""
+    parser.add_argument(
+        "--bundle",
+        type=_uuid,
+        required=True,
+        help="bundle from branding preview",
+    )
+    parser.add_argument(
+        "--token",
+        required=True,
+        help="preview.token from branding preview, or - for standard input",
+    )
+
+
 def _files_delete_options(parser):
     """Options of ``files delete``: the files, by ``files list`` id."""
     parser.add_argument("file_id", type=_uuid, nargs="+", metavar="FILE_ID")
@@ -5786,6 +5866,41 @@ def _campaign_specs():
             CampaignConfirm.field_names(),
             10,
             options=(_campaign_confirm_options,),
+        ),
+    )
+
+
+def _branding_specs():
+    """Parish logos' upload review and Apply (#1865, ``admin_branding``).
+
+    ``branding show`` (in ``_settings_specs``) is the read. Both need a full
+    scope, as the page's upload and Apply record activity, and both change
+    state: the preview stages the logos, as the page's upload does. Neither
+    is privileged nor prompts, as the page's Apply is the reviewed token.
+    """
+    from .admin_branding import BrandingConfirm, BrandingPreview
+
+    return (
+        CommandSpec(
+            "branding preview",
+            "Upload new parish logos from standard input and review them.",
+            branding_preview,
+            "full",
+            True,
+            BrandingPreview.field_names(),
+            10,
+            options=(_branding_preview_options,),
+            expected_version=True,
+        ),
+        CommandSpec(
+            "branding confirm",
+            "Apply reviewed parish logos.",
+            branding_confirm,
+            "full",
+            True,
+            BrandingConfirm.field_names(),
+            10,
+            options=(_branding_confirm_options,),
         ),
     )
 
@@ -8069,6 +8184,7 @@ COMMANDS = (
     + _followup_specs()
     + _history_specs()
     + _artwork_specs()
+    + _branding_specs()
     + _integration_specs()
     + _followup_more_specs()
     + _followup_export_specs()
