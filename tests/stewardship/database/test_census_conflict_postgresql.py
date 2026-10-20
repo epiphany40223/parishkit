@@ -36,7 +36,7 @@ from parishkit.stewardship.storage import StaleRecordError
 from .test_background_grants_postgresql import task_login
 from .test_census_bulk_review_postgresql import bulk
 from .test_census_edit_postgresql import edit
-from .test_census_resolution_postgresql import prepared, resubmit
+from .test_census_resolution_postgresql import leader, prepared, resubmit
 from .test_census_review_postgresql import fresh, review
 from .test_publication_plans_postgresql import owner, ready  # noqa: F401
 from .test_publication_tasks_postgresql import world  # noqa: F401 (fixture)
@@ -200,7 +200,7 @@ def test_undoing_a_resolution_brings_the_conflict_back(response_service, undo, i
     assert (undone.execution, undone.decision) == ("conflict", undo)
     assert not annotated(undone).conflict_accepted
     if undo == "ignored":
-        review(harness, admin, undone, "unreviewed")
+        review(harness, admin, undone, "unreviewed", note="Decide again")
         undone = fresh(name)
         assert undone.execution == "conflict"
     with pytest.raises(ValueError):
@@ -270,22 +270,21 @@ def test_an_edited_value_can_be_used_anyway(response_service):
     )
 
 
-def test_only_an_administrators_conflict_with_a_known_value_is_resolved(
+def test_only_a_reviewers_conflict_with_a_known_value_is_resolved(
     response_service,
 ):
-    """Staff never resolve; a stale version, a By-hand change, a change not in
+    """A Ministry leader never resolves; a stale version, a change not in
     conflict, a queued one and a conflict whose ParishSoft value is unknown
-    are refused, and nothing is recorded."""
+    are refused, and nothing is recorded. Staff resolve as an Administrator
+    does, a By hand change too (#1683): it is then To enter by hand."""
     harness, admin, staff, home, name = prepared(response_service)
     with pytest.raises(ValueError):
         resolve(harness, admin, name)  # pending, not a conflict
     name = conflicted(name)
     with pytest.raises(PermissionError):
-        resolve(harness, staff, name)
+        resolve(harness, leader(harness, admin), name)
     with pytest.raises(StaleRecordError):
         resolve(harness, admin, name, version=name.version + 1)
-    with pytest.raises(ValueError):
-        resolve(harness, admin, conflicted(home))
     for statement in (
         "UPDATE stewardship_proposed_change SET execution='queued' WHERE id=%s",
         "UPDATE stewardship_proposed_change SET execution='conflict',"
@@ -295,6 +294,9 @@ def test_only_an_administrators_conflict_with_a_known_value_is_resolved(
         with pytest.raises(ValueError):
             resolve(harness, admin, fresh(name))
     assert ProposalReview.objects.count() == 0
+    resolve(harness, staff, conflicted(home))
+    home = fresh(home)
+    assert (home.decision, home.execution) == ("approved", "pending")
 
 
 def forge(proposal, actor, *, review=None, update=None):
@@ -345,11 +347,12 @@ def forge(proposal, actor, *, review=None, update=None):
         ({"accepted_source_id": uuid4()}, None, "current authority"),
         # A resolution approves.
         ({"decision": "ignored"}, None, "current authority"),
-        # With an edit at once.
+        # With an edit at once: Edit on a Conflict (#1683) is admitted with
+        # its paired result, so only the missing audit event refuses it.
         (
             {"admin_value_set": True, "admin_value": '"Corrected"'},
             {"admin_value_set": True, "admin_value": '"Corrected"'},
-            "current authority",
+            "result and audit",
         ),
         # A decision review that also carries an accepted value.
         (
@@ -570,19 +573,26 @@ def test_do_block_refuses_the_earlier_bodies():
         "check": "ALTER TABLE stewardship_proposal_review"
         " DROP CONSTRAINT proposal_review_accepted_shape",
     }
-    with transaction.atomic(), connection.cursor() as cursor:
+    own = _replaced(text, "stewardship_proposal_review_guard_v1")
+
+    class Rollback(Exception):
+        """Ends a check that must leave the database as it found it."""
+
+    # 0128 (#1683) replaced the review guard since: each check runs on this
+    # file's own body for it, rolled back, so it tests this file alone.
+    with pytest.raises(Rollback), transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute(own)
         cursor.execute(check)
+        raise Rollback
     for statement in earlier.values():
         with (
             pytest.raises(DatabaseError, match="lacks"),
             transaction.atomic(),
             connection.cursor() as cursor,
         ):
+            cursor.execute(own)
             cursor.execute(statement)
             cursor.execute(check)
-
-    class Rollback(Exception):
-        """Ends a check that must leave the database as it found it."""
 
     with pytest.raises(Rollback), transaction.atomic(), connection.cursor() as cursor:
         for name in ("review_guard", "effect", "derived_guard"):
@@ -601,51 +611,3 @@ def test_do_block_refuses_the_earlier_bodies():
         )
         assert cursor.fetchone() == (2,)
         raise Rollback
-
-
-def test_the_worklist_resolves_in_place_for_an_administrator_only(
-    response_service, google
-):
-    """An Administrator's Conflict row offers Use the Family's value anyway;
-    the answer is the page with its notice and the row To do. Staff see no
-    such button and are denied; a pending row offers none."""
-    from .auth_builders import signed_in
-    from .test_information_followup_postgresql import search
-
-    harness, admin, staff, _, name = prepared(response_service)
-    google[0]["email"] = "admin@example.org"
-    browser, login = signed_in()
-    assert login.status_code == 302
-    _, body = search(browser, ROUTE, {"status": "all"})
-    assert USE not in body
-    name = conflicted(name)
-    form = {
-        "status": "all",
-        "resolve": "use_family",
-        "proposal": str(name.pk),
-        "version": str(name.version),
-        "request_key": str(uuid4()),
-        "note": "Asked the Family",
-    }
-    google[0]["email"] = "staff@example.org"
-    staff_browser, login = signed_in()
-    assert login.status_code == 302
-    _, body = search(staff_browser, ROUTE, {"status": "all"})
-    assert USE not in body
-    response, _ = search(staff_browser, ROUTE, form)
-    assert response.status_code == 403
-    google[0]["email"] = "admin@example.org"
-    browser, login = signed_in()
-    assert login.status_code == 302
-    _, body = search(browser, ROUTE, {"status": "all"})
-    assert USE in body and b"Use the Family's value anyway" in body
-    response, body = search(browser, ROUTE, form)
-    assert response.status_code == 200
-    assert b"approved over ParishSoft&#x27;s current value." in body
-    assert USE not in body and b"Asked the Family" in body
-    resolved = fresh(name)
-    assert (resolved.execution, resolved.decision) == ("pending", "approved")
-    # The same drawn form again records nothing new.
-    response, body = search(browser, ROUTE, form)
-    assert response.status_code == 200
-    assert ProposalReview.objects.count() == 1

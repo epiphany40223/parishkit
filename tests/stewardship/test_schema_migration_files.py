@@ -414,6 +414,9 @@ FROZEN = {
     "0127_pledge_review.sql": (
         "bb2729437fdec314ee1c79d3fef4e3c8ffa0a4f372ded37b21b1bc68f54afeb4"
     ),
+    "0128_census_pipeline_review.sql": (
+        "a586f0a0100242e02ee493f9baaf8fb8116efea5525dc6329cb35072239be7c1"
+    ),
 }
 
 

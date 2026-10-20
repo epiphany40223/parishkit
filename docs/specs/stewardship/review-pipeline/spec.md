@@ -8,8 +8,10 @@ stage mapping, role-action table and refresh comparison
 [#1691](https://github.com/epiphany40223/parishkit/issues/1691)), and
 the review worklist component with its decision interface
 (`components/review-worklist.html`, `web/review_worklist.py`,
-[#1681](https://github.com/epiphany40223/parishkit/issues/1681)), and the
-financial stream on it
+[#1681](https://github.com/epiphany40223/parishkit/issues/1681)), which
+Census changes uses
+([#1683](https://github.com/epiphany40223/parishkit/issues/1683); its Add is
+deferred, below), as does the financial stream
 ([Pledges](../reports/spec.md#pledges),
 [#1686](https://github.com/epiphany40223/parishkit/issues/1686)). Every Staff
 and Ministry leader part ships during the current campaign. The
@@ -339,8 +341,9 @@ slice closes each, with a test of today's behaviour first:
   row; the successor silently becomes unreviewed. Reopening is right (the
   Family answered again against the original baseline), but it must not be
   silent: the item returns as **Conflict**, keeping the earlier decision
-  visible but not in force, and history records "Reopened: ParishSoft had
-  changed since this was accepted"
+  visible but not in force, and history records "Reopened: the Family
+  answered again, so the earlier Accept over ParishSoft's changed value no
+  longer counts"
   ([#1683](https://github.com/epiphany40223/parishkit/issues/1683)).
 - **Ministry, already decided.** Today's form offers only undecided
   requests as choices and otherwise shows the roster, so an Accepted join
@@ -581,6 +584,20 @@ are new and need the value recorded at the Entered mark. The page itself
 mixes review and update in one table; the Census page layout issue
 ([#1682](https://github.com/epiphany40223/parishkit/issues/1682)) separates
 them.
+
+[#1683](https://github.com/epiphany40223/parishkit/issues/1683) closed the
+review gaps: Census changes is the shared worklist, Staff and Administrators
+Accept, Edit (By hand fields and Family addresses included), Ignore and send
+back to review every change, Entered by hand on a To review By hand row
+accepts and marks it in one step, and forward migration 0128 (provisional
+number) widens the review guard for it
+([Automatic census review](../reports/spec.md#automatic-census-review)).
+Census **Add** was cut from that slice (7th on the
+[cut list](#risks-and-what-to-cut-first)): a change with no Family answer
+behind it needs either a table of its own or a wider Family-submit guard, so
+it has an issue of its own
+([#1710](https://github.com/epiphany40223/parishkit/issues/1710)); Staff use
+Open form meanwhile.
 
 ### Ministry stream
 
@@ -1233,7 +1250,8 @@ Cut first if time runs short, in this order:
 5. the Limitations half of #1685 (its report stays as it is);
 6. the pledge Edit in #1686 (keep Accept and the Pledges
    report; Staff correct a pledge through Open form, as today);
-7. census Add in #1683 (Staff use Open form).
+7. census Add in #1683 (Staff use Open form); cut from #1683 and moved to
+   [#1710](https://github.com/epiphany40223/parishkit/issues/1710).
 
 Never cut: #1691, #1681, #1690, #1683, #1684 and #1687, which are what
 Staff and Ministry leaders use.

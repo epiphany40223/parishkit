@@ -1172,9 +1172,10 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
 ):
     """One statement for every count, none without a counted link (#585).
 
-    Census changes' groups (#1590) are counted with the page's own status
-    rules: To do and Conflict for Staff, plus To review for an Administrator;
-    nothing published, ignored or superseded.
+    Census changes' groups (#1590) are counted at the worklist's To review
+    and Conflict stages, for Staff and Administrators alike (Administrator
+    decision, 2026-10-18); nothing ready to update, published, ignored or
+    superseded.
     """
     from parishkit.stewardship.accounts import admin_context
     from parishkit.stewardship.reports.ministry_followup import FollowupQuery
@@ -1183,12 +1184,14 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
     # The Ministries the follow-up selection reports it read (#389 L3).
     selected = [9]
     # Census changes' groups: handling, entity kind, decision, execution and
-    # rows. An automatic change no one reviewed (To review), a By-hand Family
-    # change (To do), a Conflict, and outcomes the default view leaves out.
+    # rows. An automatic change and a By hand Family change no one reviewed
+    # (both To review), a Conflict, an approved change Ready to update, and
+    # stages the count leaves out.
     groups = [
         ["api", "member", "unreviewed", "pending", 2],
         ["manual", "family", "unreviewed", "pending", 1],
         ["api", "member", "approved", "conflict", 4],
+        ["api", "member", "approved", "pending", 8],
         ["api", "member", "approved", "published", 5],
         ["manual", "member", "ignored", "pending", 6],
         ["api", "member", "approved", "superseded", 7],
@@ -1233,12 +1236,12 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
         ("staff", active, {**queues, "ministry_roster": 6}),
         # A draft has nothing to enter yet, so its roster count is not read.
         ("staff", draft, queues),
-        # With the census: Staff count To do and Conflict, an Administrator
-        # To review as well.
+        # With the census: Staff and an Administrator both count To review
+        # and Conflict, never Ready to update.
         (
             "staff",
             census,
-            {"census_changes": 5, **queues, "ministry_roster": 6},
+            {"census_changes": 7, **queues, "ministry_roster": 6},
         ),
         (
             "administrator",
