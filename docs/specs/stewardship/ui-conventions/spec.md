@@ -2605,8 +2605,14 @@ worklists ([#1685](https://github.com/epiphany40223/parishkit/issues/1685))
 [#1682](https://github.com/epiphany40223/parishkit/issues/1682)). Ministry requests keeps its
 compact filter bar rather than a Filters panel: its By Ministry counts apply
 a Ministry and request into the filters in place, and a closed panel would
-hide what the link just applied. System logs and the remaining report pages
-are still to convert.
+hide what the link just applied. System logs keeps its filter bar for the
+same reason: each entry's Related icons apply a filter into the form in
+place. Limitations and the [Timeline](../reports/spec.md#timeline) keep a
+one-row filter bar, too short to need a panel, and Roster changes to enter
+moves to the shared review worklist, whose filters are always open
+([#1687](https://github.com/epiphany40223/parishkit/issues/1687)). No page
+is left to convert
+([#1828](https://github.com/epiphany40223/parishkit/issues/1828)).
 An edit form's short fields (a status, an outcome,
 a date and a time) likewise share a row on desktop (`.field-row` in
 `ui-v1.css`), top-aligned so a time's reading line fits under its box, while
@@ -4296,11 +4302,13 @@ out or not set up yet. **Shared code.** The `{% for %}…{% empty %}` row or
 item in each template; `components/table.html` shows its caller's
 `table_empty` message. `tests/stewardship/test_admin_empty_states.py` checks
 that every such message in an Admin template has a reason or next step after
-its first sentence; its allowlist names the pages still to convert and two
-reviewed exceptions: the "None" value of a before-and-after review list, and
-the shared chart's "Nothing to show yet." row, which sits in the collapsed
-Exact values table under a chart whose visible summary and page say what it
-covers.
+its first sentence; its allowlist holds one reviewed exception, the shared
+chart's "Nothing to show yet." row, which sits in the collapsed Exact values
+table under a chart whose visible summary and page say what it covers
+([#1828](https://github.com/epiphany40223/parishkit/issues/1828) converted
+the last pages). A report table picks its filtered or unfiltered message
+with the `applied_filters` template filter, the Filters panel's own count,
+so the message and the panel's summary never disagree.
 Empty states drawn by `{% if %}…{% else %}` follow the same rule and are
 reviewed by hand. **Precedent.** Sent mail, Background work and Hosted
 files' empty rows;
