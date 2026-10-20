@@ -4131,7 +4131,9 @@ needs no tooltip, and screen readers read the same words. A download splits
 the name cell into its parts, as [downloaded files](#downloaded-files)
 allows: the name stays in its column (blank when no name is known) and a
 **ParishSoft status** column right after it holds the same words, blank when
-there is nothing to mark. A file whose Family is a report detail rather than
+there is nothing to mark. A file that marks both a Family and a Member in
+one row heads the Member's column **Member's ParishSoft status**, so the
+two columns say which name each describes. A file whose Family is a report detail rather than
 a column, such as the Timeline export's, has a ParishSoft status detail
 instead. Older phrases ("Unavailable Member", "Unavailable Family", "Not in
 the latest ParishSoft data", "Not in current ParishSoft data", "Name not in
@@ -4150,7 +4152,7 @@ named "Unavailable" and could not tell whether two pages meant the same thing
 `source/source_status.py`; the `{% source_status status %}` template tag in
 `accounts/templatetags/stewardship.py`, which renders the `status-badge`
 (nothing for a current Member or Family); the downloads' `STATUS_HEADING`
-and `family_status(name, active=...)`, which reads a Family row's key. The
+and `MEMBER_STATUS_HEADING`, and `family_status(name, active=...)`, which reads a Family row's key. The
 status keys are those of the SQL `stewardship_member_source_status_v1`
 (#1217): `current`,
 `missing`, `moved`, `inactive` and `deceased`. A selection that builds a

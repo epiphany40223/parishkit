@@ -2242,8 +2242,12 @@ same files through the same writer.
 The files' columns are: Family, ParishSoft status (the page's
 [Not in ParishSoft](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
 badge in a column of its own, with Family blank, for a Family the data no
-longer has; blank otherwise), Family DUID, Who, Member DUID worded as on
-the page (the DUID, "New Member", or blank for a household change), What
+longer has; blank otherwise), Family DUID, Who, Member's ParishSoft status
+(the Who cell's badge, for a change whose Member is no longer an active,
+living Member of its Family; blank otherwise,
+[#1752](https://github.com/epiphany40223/parishkit/issues/1752)), Member
+DUID worded as on the page (the DUID, "New Member", or blank for a
+household change), What
 changed, ParishSoft now, Family's answer, Reviewer's value, How it reaches
 ParishSoft, Stage (the page's stage word), Submitted, then Recorded by,
 Recorded at and Note, the latest review or mark
@@ -2252,7 +2256,7 @@ Recorded at and Note, the latest review or mark
 [#1683](https://github.com/epiphany40223/parishkit/issues/1683) the Stage and
 Reviewer's value columns were Status (with the words *To do*, *Published*
 and so on) and Edited value; a spreadsheet that reads them by heading needs
-updating. The page's Actions column has no file column. Fifteen columns
+updating. The page's Actions column has no file column. Sixteen columns
 share the PDF's one landscape table, so its Submitted and Recorded at times
 keep the date on one line and the time on the next. The downloads move to
 the shared export component with
