@@ -135,12 +135,13 @@ def install(value, request_id):
         )
 
 
-def test_key_paste_after_the_approved_sessions_ended_says_sign_in_again(working):
-    """An ended automation session makes the browser's key paste a 403 sign-in.
+def test_key_paste_after_the_approved_sessions_ended_still_stages(working):
+    """An ended automation session does not block its approving browser's paste.
 
-    The browser approved a full-scope automation session and then ended it, so
-    no session holds its sign-in instant live and the intake guard would refuse
-    (#1547). The page says so, with the sign-in link, instead of an outage.
+    The browser approved a full-scope automation session and then ended it.
+    The browser's own sign-in is still live, and its request names no
+    automation session, so its key replacement no longer depends on the
+    sessions it approved (#1763; before that, #1547 showed a sign-in page).
     """
     from parishkit.stewardship.accounts import automation_sessions as automation
 
@@ -153,11 +154,14 @@ def test_key_paste_after_the_approved_sessions_ended_says_sign_in_again(working)
     row = AutomationSession.objects.get(secret_digest=automation.secret_digest(secret))
     assert automation.revoke(row.pk, owner(service), reason="revoked_by_owner")
     response = save(working)
-    assert response.status_code == 403
-    assert b"Your sign-in has ended" in response.content
-    assert b"/admin/login" in response.content
-    assert not SecretReplacementRequest.objects.exists()
-    assert not SealedCredentialStaging.objects.exists()
+    assert response.status_code == 302
+    assert response["Location"] == URL
+    staged = SecretReplacementRequest.objects.get()
+    # The request holds the ended session's sign-in instant, so this is the
+    # shared-instant case 0114's check used to refuse.
+    assert staged.reauthenticated_at == row.authenticated_at
+    assert staged.automation_session_id is None
+    assert SealedCredentialStaging.objects.count() == 1
 
 
 def test_saved_key_installs_acknowledges_and_is_selected(working):
@@ -343,13 +347,19 @@ def test_failed_switch_is_an_error_and_finish_switching_recovers(
     assert "switching to it did not finish" in page
     assert "ParishSoft refreshes are stopped" in page
     assert "notice-error" in page and 'role="alert"' in page
-    select = f"/admin/system/key-changes/{row.pk}/selection/"
-    assert f'class="button" href="{select}"' in page
+    # Finish switching opens the page's review dialog (#1568), never a page.
+    assert 'data-review-open="integration-review"' in page
+    assert '<input type="hidden" name="action" value="finish">' in page
+    assert "/admin/system/key-changes/" not in page
     assert summary("parishsoft", _record(working)).kind == "unselected"
     # Finish switching previews the original selection on today's settings.
-    preview = hidden(browser.get(select), "preview")
+    preview = hidden(post(browser, URL, {"action": "finish"}), "preview")
     with identity("pk_stewardship_web"):
-        response = post(browser, select, {"action": "confirm", "preview": preview})
+        response = post(
+            browser,
+            URL,
+            {"action": "confirm", "preview": preview, "request_id": str(row.pk)},
+        )
     assert response.status_code == 302, response.content
     assert b"Switching to it now" in browser.get(URL).content
     finish = ConfigurationChangeRequest.objects.get(
@@ -407,18 +417,23 @@ def test_finish_switching_keeps_another_admins_newer_schedule(working):
 
     Another Administrator's schedule change landed first. Replaying the
     whole saved settings block would silently undo it; only the key-scope
-    organization ID is carried over, and the confirm page lists it.
+    organization ID is carried over, and the confirmation lists it.
     """
     row = failed_switch(working, nightly_time="04:15")
     browser = working["browser"]
-    select = f"/admin/system/key-changes/{row.pk}/selection/"
-    page = browser.get(select)
+    page = post(browser, URL, {"action": "finish"})
     changes = page.context["changes"]
     assert [(c["before"], c["after"]) for c in changes] == [("12345", "54321")]
     assert b"Settings saved with the new key" in page.content
     with identity("pk_stewardship_web"):
         response = post(
-            browser, select, {"action": "confirm", "preview": hidden(page, "preview")}
+            browser,
+            URL,
+            {
+                "action": "confirm",
+                "preview": hidden(page, "preview"),
+                "request_id": str(row.pk),
+            },
         )
     assert response.status_code == 302, response.content
     finish = UUID(response["Location"].rstrip("/").rsplit("/", 1)[-1])
@@ -434,17 +449,18 @@ def test_finish_switching_keeps_another_admins_newer_schedule(working):
 def test_finish_switching_cannot_change_a_loaded_organization(working, monkeypatch):
     """A key saved with a new organization before the first load can't switch after.
 
-    The confirm page refuses in plain language and records nothing, and the
-    configuration installer refuses the same change from any other path.
+    Its review in the dialog refuses in plain language and records nothing
+    (#1568), and the configuration installer refuses the same change from
+    any other path.
     """
     from parishkit.stewardship.accounts import integration_selection
     from parishkit.stewardship.accounts.configuration_requests import record_request
 
-    row = failed_switch(working)
+    failed_switch(working)
     monkeypatch.setattr(integration_selection, "loaded_organization", lambda: 12345)
     count = ConfigurationChangeRequest.objects.count()
     browser = working["browser"]
-    page = browser.get(f"/admin/system/key-changes/{row.pk}/selection/")
+    page = post(browser, URL, {"action": "finish"})
     assert page.status_code == 409
     assert b"organization ID can't change after ParishSoft data" in page.content
     assert b'name="preview"' not in page.content
@@ -736,7 +752,13 @@ def test_pending_key_status_is_passive_and_cannot_outlive_the_idle_limit(
     assert install(working, selection.pk).state == "applied"
     finished = browser.get(URL + "status/").content
     assert b"data-live-pending" not in finished
-    assert b'data-live-follow href="' + URL.encode() + b'"' in finished
+    # Its one follow-up redraws the status line and editor in place (#1568).
+    assert (
+        b"<a hidden data-live-follow data-in-place data-in-place-quiet "
+        b'data-in-place-only="integration-editor" href="'
+        + URL.encode()
+        + b'#integration-status">'
+    ) in finished
     # Polling never moved the idle deadline, so once the clock passes it the
     # same poll is refused: an open page cannot keep an idle login alive.
     session.refresh_from_db()

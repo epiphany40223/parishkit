@@ -433,8 +433,10 @@ def test_edit_links_carry_the_month_shown(page, component_origin):
     assert table.get_attribute("href").endswith("/?calendar=2054-10")
     page.get_by_role("button", name="Next month").click()
     assert table.get_attribute("href").endswith("/?calendar=2054-11")
+    # A digest send also names its own slot (#1658): the daily digest sent on
+    # November 1 reports on October 31.
     digest = cell(page, 1).get_by_role("link", name="4:00 AM Daily Admin digest")
-    assert digest.get_attribute("href").endswith("/?calendar=2054-11")
+    assert digest.get_attribute("href").endswith("/?send=2054-10-31&calendar=2054-11")
 
 
 def unavailable_look(button):

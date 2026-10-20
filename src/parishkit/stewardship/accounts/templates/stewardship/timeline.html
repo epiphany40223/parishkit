@@ -14,5 +14,4 @@
 <p>{% if not identity.name %}{% source_status "missing" %} · {% endif %}{% translate "Family DUID" %} {{ identity.duid|duid }}{% if identity.envelope is not None %} · {% translate "Envelope number" %} {{ identity.envelope|duid }}{% endif %} · {% translate "Last portal action:" %} {% if last_action %}{{ last_action.what }}, <time datetime="{{ last_action.at|instant }}" data-local-instant>{{ last_action.at|instant }}</time>{% else %}{% translate "None recorded" %}{% endif %}</p>
 <p>{{ campaign.active_configuration.name }} · {% translate "Counted at" %} <time datetime="{{ as_of|instant }}" data-local-instant>{{ as_of|instant }}</time></p>
 {% include "stewardship/components/tabs.html" with tabs_id="family-tabs" label=_("Family information") tabs=tabs %}
-<script src="{% static 'stewardship/information-export-v1.js' %}" defer></script>
 {% endblock %}

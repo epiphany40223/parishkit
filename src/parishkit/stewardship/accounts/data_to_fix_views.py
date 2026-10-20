@@ -99,8 +99,9 @@ SECTIONS = (
     ),
     # Refused addresses: the delivery views' admission (BACKGROUND_WORK).
     Section("refused_addresses", Capability.BACKGROUND_WORK, "delivery_refusals"),
-    # Families no mail can reach: Home's count, which is the directory's
-    # "neither" reach selection; the directory needs a campaign.
+    # Families no mail can reach: the directory's "neither" reach
+    # selection (Home no longer shows it, #1673); the directory needs a
+    # campaign.
     Section(
         "unreachable_families",
         Capability.FAMILY_CODES,
@@ -187,7 +188,7 @@ def _refused_addresses(principal, campaign_id):
 
 
 def _unreachable_families(principal, campaign_id):
-    """Home's count of Families with no deliverable email and no mailing address."""
+    """This page's count of Families with no deliverable email and no address."""
     from parishkit.stewardship.reports.read_admission import admit_report_read
 
     from .admin_dashboard import unreachable_families
@@ -201,8 +202,15 @@ def _unreachable_families(principal, campaign_id):
 
 
 def _census_changes(principal, campaign_id):
-    """The Census changes page's default view for this viewer, counted."""
+    """The Census changes rows at To review or Conflict, counted.
+
+    The same rule as the menu's count (``census_changes.open_count``) and
+    the same for every role (Administrator decision, 2026-10-18): the rows
+    waiting on a reviewer, never Ready to update or To enter by hand.
+    """
     from parishkit.stewardship.reports.census_changes import (
+        EVERY_STAGE,
+        OPEN_STAGES,
         CensusQuery,
         census_changes,
     )
@@ -210,10 +218,11 @@ def _census_changes(principal, campaign_id):
 
     result = _guarded(
         campaign_id,
-        lambda: census_changes(campaign_id, CensusQuery(), principal),
+        lambda: census_changes(campaign_id, CensusQuery(stage=EVERY_STAGE), principal),
         admit=admit_report_read,
     )
-    return {"count": len(result["rows"])}
+    stages = {stage.value for stage in OPEN_STAGES}
+    return {"count": sum(row["stage"] in stages for row in result["rows"])}
 
 
 READS = {

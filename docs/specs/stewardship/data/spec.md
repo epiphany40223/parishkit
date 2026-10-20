@@ -1120,7 +1120,17 @@ Decision and execution are orthogonal:
 
 Ignored decisions remain searchable and may return to unreviewed/approved.
 Published or resolved records are immutable outcomes; a later response creates
-new proposed-change records where necessary.
+new proposed-change records where necessary. A later census response that
+gives the same answer again for an ordinary field already *published* or
+*resolved_external* (not yet in the promoted download) creates none: the
+entered change stays as it is
+([resubmission rule](../review-pipeline/spec.md#resubmission-while-the-setting-is-off),
+[#1683](https://github.com/epiphany40223/parishkit/issues/1683)). The
+submission's completeness check admits that absence, and the effective-value
+index keeps that change for the next response while each census response
+answers it the same way. A terminal request (moved, deceased, a death date)
+asked for again after it was entered is a new request, since an entered one
+is no longer presented.
 
 Writability is `api`, `manual`, or `report-only`. It is derived from a shared
 ParishSoft capability registry, not guessed in views. The initial registry is:
@@ -1200,6 +1210,17 @@ digest content include only items still `current_actionable` at generation.
 The next digest includes a compact correction section for items sent in a prior
 digest and since superseded/withdrawn, preventing stale emailed work from
 remaining silently actionable. History views expose every disposition.
+Each Staff revision also records its review decision (`accepted`, `ignored`
+or `none`; empty on revisions saved before schema migration 0126), from which
+the [review pipeline](../review-pipeline/spec.md#additional-information-stream)
+derives the item's stage.
+
+A cannot-participate or cannot-attend answer stores nothing beyond the live
+response. Each review decision on one is an immutable
+`stewardship_limitation_review` row naming the Family campaign record, the
+answer (a Member's key, or the Family itself), the effective live response
+it was decided on, a per-answer sequence, the decision, the note, the actor
+and the time ([Limitations](../reports/spec.md#limitations)).
 
 A `MinistryRequest` represents one Member/Ministry requested action (`join` or
 `leave`). Latest effective submissions may create, cancel, or supersede a
@@ -1214,12 +1235,38 @@ the `assigned` state and their database rules remain, unused, for requests
 assigned before that decision, which a same-intent Family resubmission still
 carries forward until the next Staff edit clears them.
 
+The review pipeline adds three request fields
+([#1684](https://github.com/epiphany40223/parishkit/issues/1684), one
+additive forward migration; no existing row or value changes):
+`reviewed_ministry_duid`, the Ministry an Edit carries forward (set only on a
+request resolved as joined or leave confirmed, never its own Ministry, and
+cleared by Back to review), which every revision also records;
+`parish_added`, true for a request Staff added with no Family answer behind
+it, attached to the Family's latest live response; and
+`added_in_place_of`, the Ignored request of the same Member it was added
+in place of. Each revision also keeps its decision's note
+(`decision_note`). The SQL guards admit, besides today's edits: a revision
+that sends a resolved or closed request back to In progress (never one a
+refresh resolved or one ticked Entered in ParishSoft; reopening an ignored
+one needs a note), or that withdraws (cancels) a request the parish added;
+an Edit only by someone who may follow up both the request's Ministry and
+the one chosen, which must be another of the campaign's Ministries; and an
+added request only from a current Staff member or Administrator, for a
+Member of that Family's response and a campaign Ministry. A Family answer
+that repeats a decided request's action for the same Member and Ministry
+creates no new request: the submission's completeness check accepts the
+decided request in its place ("Family asked again"). Authority for a
+request is checked against its current Ministry: the edited one once
+edited.
+
 Manual census work uses proposed-change execution state rather than a separate
 workflow; each resolution's note, actor and time are an immutable resolution
 row ([Manual census resolution](../reports/spec.md#manual-census-resolution)).
-Admin and Staff may mark manual items resolved externally or ignored; only
-Admin may approve/edit/publish API-writable items, each decision an immutable
-review row ([Automatic census review](../reports/spec.md#automatic-census-review)).
+Admin and Staff review every census change (Accept, Edit, Ignore, Back to
+review), each decision an immutable review row
+([Automatic census review](../reports/spec.md#automatic-census-review)), and
+mark By hand items resolved externally; only an Administrator publishes
+([role-specific actions](../review-pipeline/spec.md#role-specific-actions)).
 
 ### Content and email templates
 
@@ -2003,7 +2050,10 @@ Snapshot promotion performs these effects transactionally:
   applying provider-suppression records;
 - resolve proposals that now match upstream;
 - mark three-way conflicts;
-- resolve Ministry requests whose requested roster state is now current.
+- resolve Ministry requests whose requested roster state is now current;
+- re-evaluate final census changes and decided Ministry requests against
+  the new data, recording a refresh check for each whose outcome changed
+  ([refresh checks](../review-pipeline/spec.md#refresh-checks)).
 
 Promotion plans no mail itself. A Family that becomes active, eligible or
 deliverable changes its row's planning columns, which the
@@ -2186,9 +2236,9 @@ Admins may publish any reviewed subset during or after an active campaign.
 They need not finish review in one session. Later Family submissions supersede
 unpublished proposals as appropriate but never rewrite publication history.
 
-Only an Administrator approves and publishes; the per-change decisions are
-the worklist's
-[Automatic census review](../reports/spec.md#automatic-census-review). Only changes the
+Only an Administrator publishes. Staff and Administrators record the
+per-change decisions on the worklist
+([Automatic census review](../reports/spec.md#automatic-census-review)). Only changes the
 [handling registry](#proposed-changes) marks API-writable are ever written;
 staff enter every other census change by hand from the
 [Census changes](../reports/spec.md#pending-census-changes) worklist.

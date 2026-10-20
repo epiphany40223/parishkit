@@ -70,7 +70,6 @@ def test_only_copy_campaign_uses_the_multi_campaign_control():
         "information.html",
         "limitations-report.html",
         "ministry-followup.html",
-        "ministry-roster.html",
         "response-dashboard.html",
     ],
 )

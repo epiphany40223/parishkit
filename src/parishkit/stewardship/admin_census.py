@@ -13,10 +13,11 @@ its filters (``CensusQuery``, without the search) and its read
 Each row names a Family and often a Member, and carries their contact
 details, so the command prints counts only: how many rows the filters
 keep, split by how they reach ParishSoft and by kind of change, and the
-page's summary of every status. The rows themselves stay on the page and
-its downloads (a later ``export census``). It records the page's
-``census_changes_viewed``; as the other report reads, the event's
-``count`` is the rows the command displayed, which is none.
+page's count of every status (its Status filter's choices). The rows
+themselves stay on the page and its downloads (a later ``export
+census``). It records the page's ``census_changes_viewed``; as the other
+report reads, the event's ``count`` is the rows the command displayed,
+which is none.
 
 ``census resolve`` is a By-hand row's outcome (Entered in ParishSoft, Ignore
 or Reopen, #528), through the page's own admission and the page's own
@@ -46,7 +47,7 @@ class CensusReport(ReadModel):
     ``history``, ``route``, ``kind``, ``start``, ``end`` and ``zone``),
     without the search. ``matching`` is the rows the filters keep;
     ``routes`` splits them into ``automatic`` and ``by_hand`` and ``kinds``
-    by kind of change. ``statuses`` is the page's summary: every row of the
+    by kind of change. ``statuses`` is the page's status counts: every row of the
     campaign by status key, whatever the other filters, with the history
     statuses (``superseded``, ``cancelled``) only when ``history`` is on.
     """
@@ -63,19 +64,20 @@ def census_model(campaign_id, query, result):
     """``census_changes``'s result as ``report census`` prints it: counts only.
 
     No Family's or Member's name, DUID or value, and no resolver or note,
-    reaches the document. The page's summary is a list of (wording, count)
-    pairs with most zero counts left out; it is printed by status key, every
-    status the summary covers, zeros included.
+    reaches the document. The page's status counts are printed by status
+    key, history only with ``history``, zeros included.
     """
     from .reports.census_changes import HISTORY, KINDS, STATUSES
 
     rows = result["rows"]
-    summary = dict(result["summary"])
+    counts = result["status_counts"]
     history = bool(query.history)
     return CensusReport(
         campaign_id=campaign_id,
         filters={
-            key: value for key, value in query.form_values().items() if key != "search"
+            key: value
+            for key, value in query.form_values().items()
+            if key not in {"search", "stage"}
         },
         matching=len(rows),
         routes={
@@ -85,9 +87,7 @@ def census_model(campaign_id, query, result):
         # The page's Kind filter choices, less its "any" (Every kind).
         kinds={kind: sum(row["kind"] == kind for row in rows) for kind in KINDS[1:]},
         statuses={
-            key: summary.get(wording, 0)
-            for key, wording in STATUSES.items()
-            if history or key not in HISTORY
+            key: counts.get(key, 0) for key in STATUSES if history or key not in HISTORY
         },
     )
 
@@ -161,7 +161,7 @@ def racing_write(error):
     does the command. Any other database refusal (a guard or audit
     mismatch) is not dressed up as the race.
     """
-    from .reports.census_change_views import UNIQUE_VIOLATION
+    from .reports.census_worklist import UNIQUE_VIOLATION
 
     return (
         isinstance(error, IntegrityError)

@@ -150,7 +150,7 @@ def test_when_heading_sorts_in_place_both_ways(page, component_origin):
 
 
 def test_the_kind_filter_narrows_the_lines_in_place(page, component_origin):
-    """Show lines swaps the table in place; nothing above it moves (#1570).
+    """Apply filters swaps the table in place; nothing above it moves (#1570).
 
     The window is tall enough to hold the whole page, so the shorter table
     cannot clamp the scroll position and any move of the button is a shift.
@@ -165,7 +165,7 @@ def test_the_kind_filter_narrows_the_lines_in_place(page, component_origin):
     # carries it, as a reader's would.
     has_value(page.locator('#table-filters input[name="zone"]'), "America/Los_Angeles")
     page.locator("#timeline-kind").select_option("emails")
-    button = page.get_by_role("button", name="Show lines")
+    button = page.get_by_role("button", name="Apply filters", exact=True)
     before = button.bounding_box()
     scrolled = page.evaluate("window.scrollY")
     with page.expect_response(
@@ -197,7 +197,7 @@ def test_the_kind_filter_narrows_the_lines_in_place(page, component_origin):
 def test_from_and_through_gate_apply_and_a_reload_keeps_the_view(
     page, component_origin
 ):
-    """A half-typed day holds Show lines; a whole one applies; reload keeps it.
+    """A half-typed day holds Apply filters; a whole one applies; reload keeps it.
 
     Engines differ in what typing does to a date control (see
     test_system_logs.py): Chromium and macOS WebKit mark a half-typed date
@@ -209,7 +209,7 @@ def test_from_and_through_gate_apply_and_a_reload_keeps_the_view(
     page.set_viewport_size({"width": 1280, "height": 2400})
     page.goto(component_origin + ADMIN)
     has_value(page.locator('#table-filters input[name="zone"]'), "America/Los_Angeles")
-    button = page.get_by_role("button", name="Show lines")
+    button = page.get_by_role("button", name="Apply filters", exact=True)
     hint = page.locator("#table-filters [data-complete-hint]")
     start = page.get_by_label("From", exact=True)
     start.click()
@@ -253,7 +253,7 @@ def test_from_and_through_gate_apply_and_a_reload_keeps_the_view(
 def test_the_filter_bar_is_one_row_on_a_desktop_and_wraps_on_a_phone(
     page, component_origin
 ):
-    """Kind, From, Through and Show lines share one row until the page narrows."""
+    """Kind, From, Through and the filter buttons share one row until it narrows."""
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + ADMIN)
     # The bar aligns its items' ends, so one row shares their bottoms.
@@ -310,32 +310,40 @@ def export_form(page):
     return page.locator("form#timeline-export")
 
 
-def test_the_export_form_starts_on_the_browsers_zone(page, component_origin):
-    """The form posts no mode, with the browser's zone preselected."""
+def zone(form):
+    """The browser's zone the export row posts unasked (#1679)."""
+    return form.locator('input[name="browser_timezone"]').input_value()
+
+
+def test_the_export_form_posts_the_browsers_zone(page, component_origin):
+    """The form posts no mode, and the browser's zone unasked (#1679)."""
     errors = watch(page)
     page.goto(component_origin + ADMIN)
     form = export_form(page)
     visible(form)
     assert form.locator('input[name="mode"]').count() == 0
-    # The fixture browser is Pacific; the menu starts there, not on UTC.
-    assert form.locator("#timeline-export-timezone").input_value() == (
-        "America/Los_Angeles"
-    )
+    # The fixture browser is Pacific; no zone menu is offered.
+    assert zone(form) == "America/Los_Angeles"
+    assert form.locator("select").count() == 0
+    assert form.locator(".export-buttons button").all_inner_texts() == [
+        "Export XLSX",
+        "Export CSV",
+        "Export PDF",
+    ]
     assert_clean(page, errors)
 
 
-def test_the_export_form_keeps_choices_across_a_filter(page, component_origin):
-    """A format and zone picked before an in-place filter survive it."""
+def test_each_export_button_posts_its_format(page, component_origin):
+    """A button posts its own format and the browser's zone, no zone menu."""
     errors = watch(page)
     page.goto(component_origin + ADMIN)
-    form = export_form(page)
-    form.locator("#timeline-format").select_option("pdf")
-    form.locator("#timeline-export-timezone").select_option("UTC")
-    page.locator("#timeline-kind").select_option("emails")
-    page.get_by_role("button", name="Show lines").click()
-    has_count(page.locator("#table tbody tr", has_text="Got past"), 0)
-    assert form.locator("#timeline-format").input_value() == "pdf"
-    assert form.locator("#timeline-export-timezone").input_value() == "UTC"
+    page.route("**/timeline-export", lambda route: route.fulfill(body="Queued"))
+    with page.expect_request(lambda request: request.method == "POST") as sent:
+        export_form(page).get_by_role("button", name="Export PDF").click()
+    body = sent.value.post_data
+    assert "format=pdf" in body
+    assert "browser_timezone=America%2FLos_Angeles" in body
+    assert "timezone=" not in body.replace("browser_timezone=", "")
     assert_clean(page, errors)
 
 

@@ -8,6 +8,7 @@ Administrator-only.
 """
 
 import json
+import re
 from datetime import timedelta
 from uuid import uuid4
 
@@ -217,6 +218,59 @@ def test_unknown_query_options_are_refused(auth_service, google):
     assert views() == []
 
 
+def test_a_slow_recheck_runs_the_page_load_checks_and_stays_passive(
+    auth_service, google, monkeypatch
+):
+    """#1790: an ordinary poll never runs the two page-load checks; only
+    ``?slow=1`` does, once each, and answers the tiles' lasting copies and
+    the fragment address carrying their fresh states. Neither poll records
+    an audited view or renews the sign-in's idle time; ``slow`` takes only
+    ``1``."""
+    from parishkit.stewardship.accounts import system_health_views
+    from parishkit.stewardship.accounts.models import PortalSession
+
+    calls = []
+
+    def form(campaign_id):
+        """Three Families the form cannot open."""
+        calls.append("form")
+        return 3
+
+    def resave(service, campaign_id):
+        """Nothing to re-save."""
+        calls.append("resave")
+        return []
+
+    monkeypatch.setattr(system_health_views, "source_form_summary", form)
+    monkeypatch.setattr(system_health_views, "resave_summary", resave)
+    running_services()
+    browser, _ = signed_in()
+    before = PortalSession.objects.get().last_activity_at
+    assert browser.get(STATUS + "?slow=2").status_code == 400
+    assert browser.get(STATUS + "?slow=1&all=1").status_code == 400
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        echoed = browser.get(STATUS + "?loaded=resave:error")
+        assert echoed.status_code == 200 and calls == []
+        body = echoed.content.decode()
+        assert "1 error" in body[: body.index("</h2>")]
+        assert "data-live-mirror-lasting" not in body
+        assert "data-live-url" not in body
+        assert 'data-live-slow-every="300000"' in body
+        slow = browser.get(STATUS + "?loaded=resave:error&slow=1")
+        assert slow.status_code == 200 and calls == ["form", "resave"]
+        assert slow["Cache-Control"] == "no-store"
+        body = slow.content.decode()
+    # The fresh reads replace the states the page passed.
+    line = body[: body.index("</h2>")]
+    assert "1 warning" in line and "error" not in line
+    assert f'data-live-url="{STATUS}?loaded=source-form%3Awarning"' in body
+    assert body.count("data-live-mirror-lasting") == 4
+    assert "3 Families cannot open the form" in body
+    assert "No saved page or email needs re-saving." in body
+    assert views() == []
+    assert PortalSession.objects.get().last_activity_at == before
+
+
 def test_a_refused_load_shows_its_counts_until_a_full_refresh_follows(tmp_path):
     """The web login reads the newest refused attempt's counts in check order."""
     attempt, execution, lease = refused_attempt(tmp_path)
@@ -283,24 +337,21 @@ def test_an_unreadable_configuration_answers_503(auth_service, google, monkeypat
     assert views() == []
 
 
-def test_home_lists_each_problem_with_the_pages_sentence(auth_service, google):
-    """Administrators see one line per problem on Home, with its state word,
-    linking the problem's tile (#1214)."""
+def test_home_counts_problems_in_one_line_linking_the_page(auth_service, google):
+    """Administrators see one short line on Home: the count, the worst state's
+    word and one link to System health, never the problem's sentence
+    (#1214, #1673)."""
     running_services()
     insert_row("worker", process="source", age=timedelta(minutes=10))
     browser, _ = signed_in()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         home = browser.get("/admin/").content.decode()
-    assert "1 system problem needs attention" in home
-    assert "The ParishSoft refresh worker has not reported since" in home
-    line = home[home.index('data-problem="not_running"') :]
+    assert home_count(home) == (1, "Error")
+    assert "The ParishSoft refresh worker has not reported since" not in home
+    assert listed(home) == []
+    line = home[home.index("data-home-health") :]
     line = line[: line.index("</li>")]
-    assert 'data-severity="error"' in line
-    assert '<span class="status-word">Error</span>' in line
-    assert (
-        'href="/admin/system/health/#health-version">'
-        "See Version and services in System health</a>"
-    ) in line
+    assert 'href="/admin/system/health/">See System health</a>' in line
 
 
 def test_the_command_reads_the_page_and_watches_until_healthy(admin, google):  # noqa: F811
@@ -375,8 +426,7 @@ def test_home_problem_lines_cost_no_query_whatever_is_open(
     troubled = count()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         home = browser.get("/admin/").content.decode()
-    assert "2 system problems need attention" in home
-    assert "No backup has finished yet." in home
+    assert home_count(home) == (2, "Error")
     assert troubled == healthy
     # The shared backup kinds (#1214, slice 1) ride on the same statement:
     # a backup sealed to another key than the configured one and a request
@@ -390,15 +440,18 @@ def test_home_problem_lines_cost_no_query_whatever_is_open(
     more = count()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         home = browser.get("/admin/").content.decode()
-    assert 'data-problem="backup_key_mismatch"' in home
-    assert 'data-problem="backup_request_failed"' in home
+        status = browser.get(STATUS).content.decode()
+    assert 'data-problem="backup_key_mismatch"' in status
+    assert 'data-problem="backup_request_failed"' in status
+    assert home_count(home)[0] == len(listed(status))
     assert more == keyed
 
 
-def test_several_stopped_services_are_one_line_on_home_and_the_page(
+def test_several_stopped_services_are_one_problem_on_home_and_the_page(
     auth_service, google
 ):
-    """One condition in several processes is listed once in both places (#686)."""
+    """One condition in several processes is listed once on the page and
+    counted once on Home (#686, #1673)."""
     # Web and both mail senders run; the worker and scheduler stopped.
     insert_row("web")
     insert_row("mail-dispatch", sender="running")
@@ -409,13 +462,13 @@ def test_several_stopped_services_are_one_line_on_home_and_the_page(
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         home = browser.get("/admin/").content.decode()
         page = browser.get(STATUS).content.decode()
-    for body in (home, page):
-        assert body.count('data-problem="not_running"') == 1, body
-        assert (
-            "The background worker and the scheduler have not reported for more "
-            "than "
-            "three minutes"
-        ) in body
+    assert page.count('data-problem="not_running"') == 1, page
+    assert (
+        "The background worker and the scheduler have not reported for more "
+        "than "
+        "three minutes"
+    ) in page
+    assert home_count(home)[0] == len(listed(page))
 
 
 def configure_backup_key(store):
@@ -483,10 +536,21 @@ def listed(body):
     return re.findall(r'data-problem="([a-z_]+)"', body)
 
 
+def home_count(body):
+    """Home's System health count line (#1673) as (count, state word), or None."""
+    match = re.search(
+        r'data-home-health>.*?class="status-word">(\w+)</span></span>'
+        r" (\d+) system problems?\.",
+        body,
+        re.DOTALL,
+    )
+    return (int(match[2]), match[1]) if match else None
+
+
 def test_the_shared_backup_problems_on_home_and_the_page(auth_service, google):
     """A key mismatch counts only for a backup started after the configured
     key was set, and stands in for the changed-key incident; a request that
-    was never picked up is listed too, on Home and the page alike."""
+    was never picked up is listed too; Home counts them (#1673)."""
     running_services()
     configured = configure_backup_key(auth_service.store)
     # Before the key was set: the ordinary day after a key change.
@@ -507,29 +571,30 @@ def test_the_shared_backup_problems_on_home_and_the_page(auth_service, google):
         assert (home.status_code, page.status_code) == (200, 200)
         return home.content.decode(), page.content.decode()
 
-    for body in bodies():
-        assert "backup_key_changed" in listed(body)
-        assert "backup_key_mismatch" not in listed(body)
+    home, page = bodies()
+    assert listed(home) == [] and home_count(home) is not None
+    assert "backup_key_changed" in listed(page)
+    assert "backup_key_mismatch" not in listed(page)
     # Sealed to another key after it was set: one warning, not two.
     backup_run(fingerprint="e" * 16)
     unpicked_request()
     home, page = bodies()
-    for body in (home, page):
-        kinds = listed(body)
-        assert "backup_key_changed" not in kinds, kinds
-        assert "backup_key_mismatch" in kinds and "backup_request_failed" in kinds
-        assert "The server did not pick up the backup requested at" in body
-    assert 'href="/admin/system/health/#health-backups"' in home
+    kinds = listed(page)
+    assert "backup_key_changed" not in kinds, kinds
+    assert "backup_key_mismatch" in kinds and "backup_request_failed" in kinds
+    assert "The server did not pick up the backup requested at" in page
+    assert "The server did not pick up the backup requested at" not in home
     # Sealed to the configured key: no mismatch.
     backup_run(fingerprint=configured)
     home, page = bodies()
-    assert "backup_key_mismatch" not in listed(home) + listed(page)
+    assert "backup_key_mismatch" not in listed(page)
 
 
-def test_home_lists_an_unreadable_backup_key_while_the_page_is_unavailable(
+def test_home_states_an_unreadable_backup_key_while_the_page_is_unavailable(
     auth_service, google, monkeypatch
 ):
-    """Home falls back to a warning line; the page keeps its 503.
+    """Home shows the warning's own sentence, with no link, instead of a
+    count line linking System health, whose page keeps its 503 (#1673).
 
     Only System health's own reading of the key fails here: the applied
     configuration is still valid, as a damaged key record would not be.
@@ -551,9 +616,15 @@ def test_home_lists_an_unreadable_backup_key_while_the_page_is_unavailable(
     assert home.status_code == 200
     assert page.status_code == 503
     body = home.content.decode()
-    assert listed(body) == ["backup_key_unchecked"]
-    assert "The backup key could not be checked" in body
-    assert "#health-backups" not in body
+    assert home_count(body) is None
+    line = re.search(
+        r'<li class="notice" data-problem="backup_key_unchecked"[^>]*>.*?</li>',
+        body,
+        re.DOTALL,
+    ).group(0)
+    assert '<span class="status-word">Warning</span>' in line
+    assert "so System health cannot be shown" in line
+    assert "<a " not in line
 
 
 def test_a_backup_running_across_a_key_change_is_no_mismatch(auth_service, google):
@@ -589,14 +660,15 @@ def test_a_backup_running_across_a_key_change_is_no_mismatch(auth_service, googl
         home = browser.get("/admin/")
         page = browser.get(PAGE)
     assert (home.status_code, page.status_code) == (200, 200)
-    for body in (home.content.decode(), page.content.decode()):
-        kinds = listed(body)
-        assert "backup_key_mismatch" not in kinds and "backup_key_changed" in kinds
+    kinds = listed(page.content.decode())
+    assert "backup_key_mismatch" not in kinds and "backup_key_changed" in kinds
+    assert home_count(home.content.decode()) is not None
 
 
-def test_home_in_production_lists_off_site_copies_not_set_up(auth_service, google):
-    """In Production with no off-site copies, Home's line replaces its own
-    invitation to set them up; the line keeps the setup link."""
+def test_home_in_production_counts_off_site_copies_not_set_up(auth_service, google):
+    """In Production with no off-site copies, Home counts one more problem;
+    neither mode repeats the invitation to set them up, which System health
+    keeps (#1673)."""
     from parishkit.stewardship.accounts.runtime_models import SystemConfiguration
 
     from .auth_builders import unguarded
@@ -605,14 +677,14 @@ def test_home_in_production_lists_off_site_copies_not_set_up(auth_service, googl
     browser, _ = signed_in()
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         testing = browser.get("/admin/").content.decode()
-    assert "offsite_missing" not in listed(testing)
-    assert "Encrypted copies of every backup" in testing
+    assert "Encrypted copies of every backup" not in testing
     with unguarded():
         SystemConfiguration.objects.update(mode="production")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response = browser.get("/admin/")
     assert response.status_code == 200
     body = response.content.decode()
-    assert "offsite_missing" in listed(body)
+    before = home_count(testing)[0] if home_count(testing) else 0
+    assert home_count(body)[0] == before + 1
     assert "Encrypted copies of every backup" not in body
-    assert body.count("Set up off-site backups") == 1
+    assert "Set up off-site backups" not in body

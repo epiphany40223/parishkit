@@ -848,14 +848,18 @@ def test_once_applying_nothing_dismisses_the_dialog(page, component_origin):
 
 
 def test_a_field_error_stays_on_the_form(page, component_origin):
-    """A date after the campaign: the dialog stays shut, the date is marked
-    with its message where the server draws it, and the summary has focus."""
+    """A date the server refuses: the dialog stays shut, the date is marked
+    with its message where the server draws it, and the summary has focus.
+
+    The page's own window check (#1787) admits October 15, so this is a
+    refusal only the server makes (its answer here refuses any date).
+    """
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + NEW_INVALID)
     failures = watch(page)
     choose(page, "kind", "reminder")
     date = page.locator('[name="schedule-date"]')
-    date.fill("2054-11-15")
+    date.fill("2054-10-15")
     page.locator('[name="schedule-time"]').fill("6am")
     choose(page, "template_version", email_for(page, "reminder"))
     page.get_by_role("button", name=ADD).click()
@@ -866,14 +870,17 @@ def test_a_field_error_stays_on_the_form(page, component_origin):
     message = page.locator("#id_schedule-date_error")
     visible(message)
     assert message.inner_text() == DATE_REFUSAL
-    # Just before the field, as on a page the server drew.
-    assert message.evaluate("node => node.nextElementSibling.id") == "id_schedule-date"
+    # In the date's reserved line just before it, as the server draws it.
+    assert (
+        message.evaluate("node => node.parentElement.nextElementSibling.id")
+        == "id_schedule-date"
+    )
     assert date.get_attribute("aria-invalid") == "true"
     assert "id_schedule-date_error" in date.get_attribute("aria-describedby")
     # The reader's values stay, and the form can be edited again.
-    assert date.input_value() == "2054-11-15"
+    assert date.input_value() == "2054-10-15"
     assert not page.evaluate("document.getElementById('schedule-entry-form').inert")
-    date.fill("2054-10-15")
+    date.fill("2054-10-16")
     assert date.get_attribute("aria-invalid") == "false"
     hidden(message)
     assert page.evaluate("window.notReloaded === true")
@@ -945,13 +952,14 @@ def test_tab_reaches_the_review_body_and_arrow_keys_scroll_it(page, component_or
 
 def test_an_accepted_review_clears_an_earlier_field_error(page, component_origin):
     """A date refused, then a Review the server accepts without the date
-    edited: the message placed at the date and its mark go."""
+    edited: the message placed at the date and its mark go. (October 15 is
+    inside the campaign; the refusing answer refuses any date.)"""
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + NEW_INVALID)
     failures = watch(page)
     choose(page, "kind", "reminder")
     date = page.locator('[name="schedule-date"]')
-    date.fill("2054-11-15")
+    date.fill("2054-10-15")
     page.locator('[name="schedule-time"]').fill("6am")
     choose(page, "template_version", email_for(page, "reminder"))
     page.get_by_role("button", name=ADD).click()

@@ -26,7 +26,10 @@ from its data-schedule-local moment, making those values the fields'
 defaults, so the change gate compares with the saved schedules as this
 browser shows them. Without a zone, data-zone-missing shows and Review
 changes stays unavailable. The campaign dates are calendar dates, and its
-time zone is a setting; neither is converted.
+time zone is a setting; neither is converted. Each send date's window check
+(#1787) reads the campaign window fields here, so a send date is judged
+against the dates and zone being proposed, and a saved schedule they leave
+outside has its editor opened with the date refused.
 {% endcomment %}
 <h1>{% translate "Dates and mail schedules" %}</h1>
 {% aboutpage "schedules" %}{% include 'stewardship/schedule-guide.html' with window_text=schedules.window_text %}
