@@ -426,6 +426,7 @@ LEDGER = {
     "source_form": command("report source-form"),
     # Data to fix in ParishSoft (#1011): its section counts only.
     "parishsoft_fixes": command("report data-to-fix"),
+    "parishsoft_fixes_status": command("report data-to-fix"),
     # Operations.
     "background": command("task list"),
     "background_tasks": command("task list"),

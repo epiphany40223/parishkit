@@ -3366,7 +3366,7 @@ other publication types in their
 | `system_health` POST, Turn off debug logging (ADM-13 PR 6b) | `system debug-off [--request-key UUID]` (fresh-gated, always prompts); its effect is `system health`'s `debug_switch` and each process's `debug_logging`, with `--watch` |
 | `system_health` POST, Allow debug logging again (ADM-13 PR 6c, Testing only) | `system debug-allow [--switch UUID]` (fresh-gated, always prompts, refused in Production); its effect is `system health`'s `debug_switch` |
 | `source_form` ([#774](https://github.com/epiphany40223/parishkit/issues/774)) | `report source-form`, counts and DUIDs only ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the host's `pk-stewardship source-form-check` lists the same Families |
-| `parishsoft_fixes` ([#1011](https://github.com/epiphany40223/parishkit/issues/1011)) | `report data-to-fix`, section counts only, as [Data to fix in ParishSoft](../admin-portal/spec.md#data-to-fix-command-and-downloads) describes |
+| `parishsoft_fixes` ([#1011](https://github.com/epiphany40223/parishkit/issues/1011)), `parishsoft_fixes_status` (its passive status fragment, [#1859](https://github.com/epiphany40223/parishkit/issues/1859)) | `report data-to-fix`, section counts only, as [Data to fix in ParishSoft](../admin-portal/spec.md#data-to-fix-command-and-downloads) describes |
 
 `report source-form` is System health's Families the form cannot open
 list, through the page's own functions (`source_form_views._principal`,
