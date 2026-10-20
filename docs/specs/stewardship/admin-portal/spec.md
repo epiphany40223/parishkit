@@ -5174,9 +5174,18 @@ line the first rows start on a laptop screen with the help closed
   An email to a person, one email per address (an Administrator's report or
   notice, or a Ministry leader's sign-in email), names them by the Name of
   their entry on the [Users page](#portal-user-management) in the current
-  configuration, or by the address when that entry has no Name or the
-  address is not a user (a Ministry leader with no user entry, or a former
-  Administrator). The addresses of a Family email are not
+  configuration; when that entry has no Name or the address is not a user,
+  by the name ("Surname, First name") of a ParishSoft Member whose contact
+  record lists that address in the latest ParishSoft data; and otherwise by
+  the address (Administrator decision, 2026-10-20). When several Members
+  list the address, the name is the one the Users page offers as a new
+  user's default Name: a Member of an active Family first, then a head of
+  household, then by name, then by Member DUID. Only the addresses the
+  Users page itself can name are looked up (the current configuration's
+  users and the people who have signed in), through the read-only definer
+  the Users page's upgrade preview uses, and only when a shown email to a
+  person has no Users-page Name, so a page of Family emails reads no
+  ParishSoft names this way. The addresses of a Family email are not
   listed here: they are on its Mail message page, with what each address's
   latest attempt recorded. In Testing mode the Recipient is still the
   intended Family or person; the Mail message page names the Testing
@@ -5209,8 +5218,9 @@ line the first rows start on a laptop screen with the help closed
   Families no longer in the data, then emails to people (Administrators
   and Ministry leaders), sort last in both directions. Emails to people sort
   among themselves by
-  what Recipient shows (the Name, else the address, case-folded), read
-  through the definer read below for every such email the filters match.
+  what Recipient shows (the Users-page Name, else the ParishSoft Member
+  name, else the address, case-folded), read through the definer read
+  below for every such email the filters match.
 - **Family DUID** is the Family's DUID in its own column, as
   [table column order](../ui-conventions/spec.md#table-column-order)
   requires (a DUID never shares a cell with a name), and sorts (token
@@ -5335,10 +5345,12 @@ Administrator-only definer read over the renderings' intended recipients,
 backed by an index (below), then finds the emails by primary key. The
 Recipient names of a page's emails to people take one definer read for
 the page's ids and one query of the current configuration's users,
-however many rows, and the Timeline links of its Production Family emails
+however many rows, plus one read of the ParishSoft Member names only when
+one of them has no Users-page Name, and the Timeline links of its Production Family emails
 take one query of the current campaign's Family records by DUID. The
 Recipient sort adds one query of the matching emails to people's ids, one
-definer read per 500 of them and one query of the users, and then orders
+definer read per 500 of them, one query of the users (and the Member
+names read when one of them has no Users-page Name), and then orders
 by a JSON object of their keys. The orderings are not indexed, so a page is
 a top-N sort of
 the filtered emails, as before.
