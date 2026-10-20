@@ -247,12 +247,9 @@ def test_ignored_needs_a_note_and_bulk_is_all_or_none(
     code, document = inform(run, "back_to_review", item)
     assert code == 1 and document["error"]["code"] == "invalid", document
     assert [field["field"] for field in document["error"]["fields"]] == ["note"]
-    # Standard input carries the note, so it cannot carry an answer: --yes.
+    # Standard input carries the note, and needs nothing else (no --yes): no
+    # decision command prompts any more (#1840).
     code, document = inform(run, "back_to_review", item, note="-", answer=NOTE.encode())
-    assert code == 2 and document["error"]["code"] == "usage", document
-    code, document = inform(
-        run, "back_to_review", item, note="-", extra=("--yes",), answer=NOTE.encode()
-    )
     assert code == 0, document
     assert AdditionalInformationRevision.objects.latest("expected_version").notes == (
         NOTE
