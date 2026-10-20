@@ -35,7 +35,7 @@ ACTION = "**/admin/reports/financial/pledges/"
 
 def row(page, index):
     """Family ``index``'s row (its response id is ``UUID(int=index)``)."""
-    return page.locator(f"#pledges-row-00000000-0000-0000-0000-{index:012d}")
+    return page.locator(f"#pledges-row-00000000-0000-0000-0000-{index:012x}")
 
 
 def icon(page, index, label):
@@ -73,6 +73,7 @@ def test_the_worklist_lists_pledges_to_review(
     stage = filters.get_by_label("Stage")
     assert stage.locator("option").all_inner_texts() == [
         "To review (3)",
+        "Conflict (0)",
         "To enter by hand (1)",
         "Entered by hand (1)",
         "Entered incorrectly (0)",
@@ -244,20 +245,23 @@ def test_refresh_checks_show_on_the_worklist(page, component_origin, axe_source,
     """What a refresh found (#1704): Entered incorrectly in its danger chip
     with ParishSoft now beside the Reviewer's value and no action; Not seen
     in ParishSoft as a flag on Entered by hand, chosen on its own; Confirmed
-    with nothing offered; an Ignored pledge only noted. The page fits a
-    phone and has no WCAG violation."""
+    with nothing offered; an Ignored pledge only noted; and (#1747) a
+    Conflict offering Accept, Edit and Ignore beside ParishSoft now, its
+    earlier Accept shown not in force, and a To review pledge already in
+    ParishSoft. The page fits a phone and has no WCAG violation."""
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(component_origin + CHECKED)
     stage = page.locator("#table-filters").get_by_label("Stage")
     assert stage.locator("option").all_inner_texts() == [
         "To review (0)",
+        "Conflict (2)",
         "To enter by hand (0)",
         "Entered by hand (1)",
         "Entered incorrectly (1)",
-        "Confirmed (1)",
+        "Confirmed (2)",
         "Ignored (1)",
         "Not seen in ParishSoft (1)",
-        "Every stage (4)",
+        "Every stage (7)",
     ]
     headings = page.locator("#table thead th").all_inner_texts()
     assert "ParishSoft now" in [text.strip() for text in headings]
@@ -274,6 +278,19 @@ def test_refresh_checks_show_on_the_worklist(page, component_origin, axe_source,
     assert confirmed.locator(".stage-chip").inner_text().strip() == "Confirmed"
     assert confirmed.locator(".table-actions button:not([aria-disabled])").count() == 0
     assert "ParishSoft now matches the Family's answer." in row(page, 6).inner_text()
+    # #1747: a Conflict is decided again against ParishSoft now; a To review
+    # pledge already in ParishSoft is Confirmed with nothing offered.
+    for index, amount in ((10, "$900.00"), (11, "$950.00")):
+        conflict = row(page, index)
+        assert conflict.locator(".stage-chip").inner_text().strip() == "Conflict"
+        assert amount in conflict.inner_text()
+        for label in ("Accept", "Edit", "Ignore"):
+            visible(icon(page, index, label))
+    assert "Earlier: Accepted, not in force." in row(page, 11).inner_text()
+    assert "Earlier:" not in row(page, 10).inner_text()
+    already = row(page, 12)
+    assert "Already in ParishSoft." in already.inner_text()
+    assert already.locator(".table-actions button:not([aria-disabled])").count() == 0
     assert page.evaluate(
         "document.documentElement.scrollWidth <= document.documentElement.clientWidth"
     )
