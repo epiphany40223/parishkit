@@ -15,7 +15,13 @@ from parishkit.email.google_workspace import xoauth2_string
 
 from .accounts.integration_candidates import GOOGLE_TOKEN_URI, workspace_candidate
 from .accounts.provider_context import validated_context
-from .mail_catcher import MailTransport, open_mail_catcher, workspace_transport
+from .mail_catcher import (
+    MailTransport,
+    envelope,
+    open_mail_catcher,
+    redirected_message,
+    workspace_transport,
+)
 from .provider_check_worker import CheckSession
 from .readiness_mail import ReadinessMail
 
@@ -55,6 +61,7 @@ def deliver_sample(
     profile,
     smtp_factory=smtplib.SMTP_SSL,
     session_factory=CheckSession,
+    redirect=None,
 ):
     """Never retry, leak provider exceptions or mistake a failed QUIT for non-delivery.
 
@@ -67,6 +74,10 @@ def deliver_sample(
     ``mail_catcher.workspace_transport``): Gmail with XOAUTH2 for a service
     account outside LOCAL, the plain mail-catcher connection for the
     mail-catcher document in LOCAL. A mismatch is definitively not sent.
+
+    The envelope is routed by ``mail_catcher.envelope`` (#1399) before
+    anything is contacted: with a LOCAL ``redirect`` the sample goes to that
+    address instead, and a refused route is definitively not sent.
     """
     settings = validated_context("google_workspace", settings)
     if not isinstance(mail, ReadinessMail) or any(
@@ -76,18 +87,21 @@ def deliver_sample(
         raise ValueError("The sample differs from its admitted mail context.")
     try:
         transport = workspace_transport(value, profile)
+        (recipient,) = envelope(
+            (mail.recipient,), profile=profile, transport=transport, redirect=redirect
+        )
     except ConfigError:
         return DeliveryOutcome.NOT_SENT
     outcome = DeliveryOutcome.NOT_SENT
     try:
-        message = mail.message()
+        message = redirected_message(mail.message(), redirect)
         if transport is MailTransport.MAIL_CATCHER:
             with open_mail_catcher() as smtp:
                 code, _ = smtp.ehlo()
                 if code != 250:
                     return DeliveryOutcome.NOT_SENT
                 outcome = DeliveryOutcome.UNKNOWN
-                outcome = _submit(smtp, message, mail)
+                outcome = _submit(smtp, message, mail.sender, recipient)
             return outcome
         with session_factory() as session:
             credentials = _credentials(value, settings, session)
@@ -105,7 +119,7 @@ def deliver_sample(
             if code != 235:
                 return DeliveryOutcome.NOT_SENT
             outcome = DeliveryOutcome.UNKNOWN
-            outcome = _submit(smtp, message, mail)
+            outcome = _submit(smtp, message, mail.sender, recipient)
             # Once send_message supplied its complete response, QUIT cannot
             # change that decision, including an explicit single-address refusal.
     except Exception:
@@ -115,15 +129,16 @@ def deliver_sample(
     return outcome
 
 
-def _submit(smtp, message, mail):
-    """Classify DATA before context-manager cleanup can obscure its real outcome."""
+def _submit(smtp, message, sender, recipient):
+    """Classify DATA before context-manager cleanup can obscure its real outcome.
+
+    ``recipient`` is the one envelope address ``deliver_sample`` routed.
+    """
     try:
-        refused = smtp.send_message(
-            message, from_addr=mail.sender, to_addrs=[mail.recipient]
-        )
+        refused = smtp.send_message(message, from_addr=sender, to_addrs=[recipient])
         if refused == {}:
             return DeliveryOutcome.ACCEPTED
-        if isinstance(refused, dict) and set(refused) == {mail.recipient}:
+        if isinstance(refused, dict) and set(refused) == {recipient}:
             return DeliveryOutcome.NOT_SENT
     except (
         smtplib.SMTPRecipientsRefused,

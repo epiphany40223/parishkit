@@ -499,7 +499,8 @@ def test_helper_refuses_the_local_endpoint_for_a_non_local_request(
     monkeypatch.setattr(family_delivery.smtplib, "SMTP_SSL", forbidden)
     monkeypatch.setattr(family_delivery, "_credentials", forbidden)
     raw = json.dumps(family_request(profile.value, MAIL_CATCHER_DOCUMENT)).encode()
-    candidate, settings, mail, decoded = decode_request(raw)
+    candidate, settings, mail, decoded, redirect = decode_request(raw)
+    assert redirect is None
     result = deliver_family(candidate, settings, mail, profile=decoded)
     assert result.status is FamilyDeliveryStatus.SYSTEMIC
 
@@ -636,7 +637,10 @@ def test_batched_session_header_names_the_profile(settings):
     finally:
         session.close()
     assert result.status is FamilyDeliveryStatus.ACCEPTED
-    candidate, decoded_settings, profile = decode_session_header(process.header)
+    candidate, decoded_settings, profile, redirect = decode_session_header(
+        process.header
+    )
+    assert redirect is None
     assert candidate == MAIL_CATCHER_DOCUMENT
     assert decoded_settings == SETTINGS and profile is LOCAL
 
