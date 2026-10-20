@@ -310,7 +310,7 @@ def test_readiness_of_a_draft_ready_to_go_live(
     ]
     # Never the Admin report recipients or a Testing Family.
     assert "@" not in json.dumps(document)
-    # A cleanup started from the command line is PR 12; nothing started one.
+    # Readiness is a read: it started nothing.
     assert not ProductionTransitionRequest.objects.exists()
 
 

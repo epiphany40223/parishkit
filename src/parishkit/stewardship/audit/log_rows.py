@@ -452,6 +452,13 @@ UNGROUPED_REASONS = {
         "campaign_boundary_skipped",
         *built_types("production_"),
         "production_cancel_requested",
+        # The Go live page's actions from the command line (#1809).
+        "admin_cmd_go_live_start",
+        "admin_cmd_go_live_retry",
+        "admin_cmd_go_live_refresh_again",
+        "admin_cmd_go_live_stop",
+        "admin_cmd_go_live_confirm",
+        "admin_cmd_go_live_cancel",
         "runtime_transition",
         "rehearsal_gate_released",
         "rehearsal_invalidated",

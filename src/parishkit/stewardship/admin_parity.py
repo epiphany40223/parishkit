@@ -6,7 +6,7 @@ inventory" and "Rules for new Admin actions"):
 
 - ``command``: the commands that cover the route, all in the catalog now;
   ``owed`` names the pull request that adds the rest of a partly covered
-  route (``go_live`` reads today, its preview and confirmation come in PR 12);
+  route (``branding_settings`` reads today, its logo uploads are owed);
 - ``pending``: the pull request that will add its commands, which it names
   (an ADM-11 pull request, or a feature's own later slice, "#528 slice 4");
 - ``permanent``: web-only by nature, with the reason;
@@ -211,23 +211,32 @@ LEDGER = {
     "artwork_upload": permanent(UPLOAD),
     "branding_asset": permanent(IMAGES),
     # Production transition and withdrawal: the four-step Go live page
-    # (#1585). Its actions are owed by PR 12 (#1809), named after the
+    # (#1585), its actions added by PR 12 (#1809) and named after the
     # page's labels; ``go-live retry`` retries whichever failed task the
     # current step offers a Retry for (a stop on Check, a box on Prepare,
     # mail preparation on Production activation).
-    "go_live": command("go-live readiness", owed="PR 12"),
-    "go_live_families": pending("PR 12", "go-live families"),
-    "go_live_prepare": pending(
-        "PR 12",
+    "go_live": command(
+        "go-live readiness", "go-live preview", "go-live start", "go-live retry"
+    ),
+    "go_live_families": command("go-live families"),
+    "go_live_prepare": command(
         "go-live status",
         "go-live retry",
         "go-live refresh-again",
         "go-live stop",
     ),
-    "go_live_confirm": pending("PR 12", "go-live confirm-preview", "go-live confirm"),
-    # Mail preparation's Retry and the Cancel go-live dialog (``go-live
-    # retry``, ``go-live cancel-preview``, ``go-live cancel``) come in PR 12.
-    "production_progress": command("go-live progress", owed="PR 12"),
+    "go_live_confirm": command(
+        "go-live confirm-preview",
+        "go-live confirm",
+        "go-live stop",
+        "go-live refresh-again",
+    ),
+    "production_progress": command(
+        "go-live progress",
+        "go-live retry",
+        "go-live cancel-preview",
+        "go-live cancel",
+    ),
     # Family email history and Pause and resume mail.
     "family_email_progress": command("send progress"),
     "family_email_progress_status": command("send progress"),
