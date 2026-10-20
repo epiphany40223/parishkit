@@ -301,8 +301,11 @@ keyboard-operable equivalent that does the same thing, such as a **Move…**
 action with a date field (WCAG 2.2 SC 2.5.7). A drop never applies a change by
 itself: it fills in the same review the equivalent opens, and only Apply
 changes anything ([review dialog](#review-dialog)). Drag uses pointer events
-with a few-pixel threshold, so a click still follows a link, is offered on
-fine pointers only (touch uses the equivalent), and Escape cancels it. The
+with a few-pixel threshold, so a click still follows a link or presses a
+button, is offered on fine pointers only (touch uses the equivalent), and
+Escape cancels it. A drag may start from the item itself or from its
+equivalent's button; a press without a drag, and Enter or Space on the
+button, still open the equivalent. The
 first user is
 [Campaign calendar editing](../admin-portal/spec.md#editing-from-the-calendar)
 ([#1521](https://github.com/epiphany40223/parishkit/issues/1521)).

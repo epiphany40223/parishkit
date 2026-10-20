@@ -918,3 +918,59 @@ def test_dragging_a_send_onto_a_day_opens_move_with_that_day(page, component_ori
     # A click without a drag follows the link.
     with page.expect_navigation():
         link.click()
+
+
+def test_dragging_move_onto_a_day_opens_move_with_that_day(page, component_origin):
+    """A drag may also start from a send's Move… button (R40b): it outlines
+    the day under the pointer and the drop opens the Move dialog with that
+    day, focus going back to the button when it closes. Escape cancels a
+    drag, and a drop on the send's own day does nothing, even when the
+    mouse is released over the button; a plain click on the button still
+    opens the dialog on the send's own day."""
+    page.set_viewport_size({"width": 1280, "height": 1600})
+    at_now(page)
+    page.goto(component_origin + CALENDAR)
+    failures = watch(page)
+    page.locator("table.calendar-month").scroll_into_view_if_needed()
+    button = move_button(page, 10, "Reminder 1")
+    target = cell(page, 14)
+    place = page_place(target)
+    page.mouse.move(*centre(button))
+    page.mouse.down()
+    page.mouse.move(*centre(target), steps=8)
+    has_class(target, "calendar-drop-target")
+    has_class(cell(page, 10).locator("li.calendar-movable"), "calendar-dragging")
+    assert same_place(page_place(target), place)
+    page.mouse.up()
+    dialog = page.locator(MOVE_DIALOG)
+    visible(dialog)
+    assert dialog.locator('[name="schedule-date"]').input_value() == "2054-10-14"
+    assert page.locator(".calendar-drop-target, .calendar-dragging").count() == 0
+    dialog.get_by_role("button", name="Cancel").click()
+    assert not is_open(page, MOVE_DIALOG)
+    focused(button)
+    # Escape cancels a drag; released back over the button, the click that
+    # ends the drag does not open Move….
+    page.mouse.move(*centre(button))
+    page.mouse.down()
+    page.mouse.move(*centre(cell(page, 15)), steps=8)
+    has_class(cell(page, 15), "calendar-drop-target")
+    page.keyboard.press("Escape")
+    page.mouse.move(*centre(button), steps=4)
+    page.mouse.up()
+    assert not is_open(page, MOVE_DIALOG)
+    assert page.locator(".calendar-drop-target, .calendar-dragging").count() == 0
+    # Dropped back on its own day, over the button: nothing either.
+    page.mouse.move(*centre(button))
+    page.mouse.down()
+    page.mouse.move(*centre(cell(page, 11)), steps=8)
+    page.mouse.move(*centre(button), steps=8)
+    page.mouse.up()
+    assert not is_open(page, MOVE_DIALOG)
+    # A click without a drag opens Move… on the send's own day.
+    button.click()
+    visible(dialog)
+    assert dialog.locator('[name="schedule-date"]').input_value() == "2054-10-10"
+    assert page.evaluate("window.notReloaded === true")
+    assert page.url.endswith(CALENDAR)
+    assert not failures

@@ -3531,12 +3531,14 @@ checks it exactly as that page does.
   dialog, changing nothing, and returns focus to what opened it. The table
   keeps its Edit link and offers no Move…; the grid's is the one Move.
 - **Drag to move.** On a fine pointer (a mouse or trackpad), dragging a
-  movable send's link by a few pixels starts a drag: the send is marked as
-  being dragged and the day under the pointer is outlined (outline only, so
-  nothing moves). Dropping it on another day of the grid opens the same Move
-  dialog with that day filled in; dropping it on its own day, outside the
-  grid, or pressing Escape cancels the drag, and the click that ends a drag
-  never follows the link. A click without a drag still follows the link.
+  movable send's link or its Move… button by a few pixels starts a drag:
+  the send is marked as being dragged and the day under the pointer is
+  outlined (outline only, so nothing moves). Dropping it on another day of
+  the grid opens the same Move dialog with that day filled in; dropping it
+  on its own day, outside the grid, or pressing Escape cancels the drag, and
+  the click that ends a drag neither follows the link nor opens Move…. A
+  click without a drag still follows the link or opens Move…, and Enter or
+  Space on Move… opens it as before.
   The drop changes nothing: the send stays where it was until Apply, and
   Cancel leaves it there. Touch has no drag and uses Move…. Drag follows
   the [dragging rule](../ui-conventions/spec.md#accessibility-and-client-behavior).

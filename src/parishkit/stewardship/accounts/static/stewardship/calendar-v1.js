@@ -36,10 +36,12 @@
 // (ui-v1.js, data-review-open), so the server draws Edit's own review and
 // nothing changes before Apply. Its change gate's version is set per send,
 // so the gate takes the send's day as the saved value. On a fine pointer, a
-// movable send's link can also be dragged (pointer events, a few pixels
-// before a drag starts, so a click still follows the link) onto another day,
-// which opens the same dialog with that day filled in; Escape cancels a
-// drag, and the drop itself changes nothing (UX conventions, dragging rule).
+// movable send's link or its Move… button can also be dragged (pointer
+// events, a few pixels before a drag starts, so a click still follows the
+// link or opens Move…) onto another day, which opens the same dialog with
+// that day filled in; Escape cancels a drag, and the drop itself changes
+// nothing (UX conventions, dragging rule). Enter or Space on Move… is a
+// click, never a drag.
 // Apply redraws the list of sends with the dialog (one region), so the grid
 // is drawn again from the new list on the same month.
 (() => {
@@ -72,7 +74,8 @@
   // replacement function, so a "$" in a name is never a pattern).
   const fillIn = (pattern, values) => pattern.replace(/\{(\w+)\}/g,
     (whole, key) => (key in values ? values[key] : whole));
-  // The grid's link of a movable send, to its send's item in the list.
+  // The grid's link and Move… button of a movable send (its drag handles),
+  // to its send's item in the list.
   const sources = new WeakMap();
 
   // The list's sends grouped by local day ("2054-10-05"), each day's in
@@ -129,6 +132,7 @@
     button.title = label;
     button.append(moveIcon());
     button.addEventListener("click", () => openMove(row, null, button));
+    sources.set(button, row);
     return button;
   }
 
@@ -420,8 +424,9 @@
   let drag = null;
   let swallowClick = false;
   // Clear a drag's marks. The click that ends an active drag never follows
-  // the link: it is swallowed until the next press or key, so an Escape
-  // before the button is released (which ends the drag early) is covered.
+  // the link or opens Move…: it is swallowed until the next press or key,
+  // so an Escape before the mouse button is released (which ends the drag
+  // early) is covered.
   function endDrag() {
     if (!drag) return;
     drag.item.classList.remove("calendar-dragging");
@@ -438,10 +443,12 @@
   }, true);
   root.addEventListener("pointerdown", (event) => {
     if (!finePointer.matches || event.pointerType === "touch" || event.button !== 0) return;
-    const link = event.target instanceof Element ? event.target.closest("a") : null;
-    const row = link && sources.get(link);
+    // A drag starts from a movable send's link or its Move… button.
+    const handle = event.target instanceof Element
+      ? event.target.closest("a, .calendar-move") : null;
+    const row = handle && sources.get(handle);
     if (!row) return;
-    drag = {link, row, item: link.closest("li"), x: event.clientX, y: event.clientY,
+    drag = {handle, row, item: handle.closest("li"), x: event.clientX, y: event.clientY,
       id: event.pointerId, active: false, over: null};
   });
   document.addEventListener("pointermove", (event) => {
@@ -465,11 +472,11 @@
   });
   document.addEventListener("pointerup", (event) => {
     if (!drag || event.pointerId !== drag.id) return;
-    const {active, over, row, link} = drag;
+    const {active, over, row, handle} = drag;
     const own = localKey(new Date(row.querySelector("time[datetime]").dateTime));
     endDrag();
     // Dropped on another day: the Move dialog with that day, nothing more.
-    if (active && over && over.dataset.day !== own) openMove(row, over.dataset.day, link);
+    if (active && over && over.dataset.day !== own) openMove(row, over.dataset.day, handle);
   });
   document.addEventListener("pointercancel", (event) => {
     if (drag && event.pointerId === drag.id) endDrag();
