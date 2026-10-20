@@ -811,6 +811,20 @@ def record_refresh_checks(snapshot, corpus, *, campaign_id, full):
     return len(checks)
 
 
+# The executions a refresh moves to Conflict (#1749): an Updated in
+# ParishSoft change, never a queued one, which the publish worker owns.
+CONFLICT_EXECUTIONS = frozenset({"published"})
+
+
+def moves_to_conflict(execution, outcome):
+    """Whether a refresh check's ``outcome`` moves a change at ``execution``
+    to Conflict: only a ``conflict`` check of an Updated in ParishSoft change.
+    """
+    if execution not in CONFLICT_EXECUTIONS:
+        return False
+    return outcome == CONFLICT
+
+
 def _to_conflict(snapshot, check):
     """Move the Updated in ParishSoft change ``check`` found changed to Conflict.
 
@@ -823,9 +837,11 @@ def _to_conflict(snapshot, check):
     reference moves on). The census guard admits it only with this check,
     recorded just before at the change's version.
     """
-    row = ProposedChange.objects.only("submission_id", "current_source_id").get(
-        pk=check.proposal_id
-    )
+    row = ProposedChange.objects.only(
+        "submission_id", "current_source_id", "execution"
+    ).get(pk=check.proposal_id)
+    if not moves_to_conflict(row.execution, check.outcome):
+        raise StorageInvariantError("The updated change moved under its check.")
     pin_snapshot(
         snapshot.pk,
         parent_kind="submission",
@@ -833,7 +849,9 @@ def _to_conflict(snapshot, check):
         admit=_pin_admission,
     )
     moved = ProposedChange.objects.filter(
-        pk=check.proposal_id, execution="published", version=check.item_version
+        pk=check.proposal_id,
+        execution__in=CONFLICT_EXECUTIONS,
+        version=check.item_version,
     ).update(
         current_available=True,
         current_value=check.observed["value"],
