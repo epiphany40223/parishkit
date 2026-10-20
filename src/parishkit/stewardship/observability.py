@@ -222,6 +222,8 @@ SHAPING_STEPS = frozenset(
         "data_to_fix_refused_addresses",
         "data_to_fix_unreachable_families",
         "data_to_fix_census_changes",
+        # A Family hub census change whose stored state has no stage (#1678).
+        "hub_census_stage",
     }
 )
 DRIVE_FAILURES = frozenset(
