@@ -174,6 +174,30 @@ def test_a_leader_never_undoes_a_terminal_step(response_service, google):
         revise(join, head, state="resolved", outcome="joined", note="Mine")
 
 
+def test_a_confirmed_request_is_not_reopened_to_in_progress(response_service, google):
+    """A person's decision a refresh check Confirmed is undone only by the
+    kept-decision undo: a forged revision sending it straight to In
+    progress (dropping the decision) is refused, Staff's by that rule. A
+    Ministry leader's is refused too (after this fixture's refresh the
+    leader no longer passes the authority check, which refuses it first).
+    """
+    harness, staff, join = accepted(response_service)
+    _, head, _, _ = leader(harness, google)
+    refresh(harness, joins=(9,))
+    assert stage(harness, staff, join).stage is Stage.CONFIRMED
+    with pytest.raises(DatabaseError, match="not valid for this request"):
+        revise(join, staff, state="in_progress", outcome=None, note="Wrong")
+    with pytest.raises(
+        DatabaseError, match="not valid for this request|lacks current authority"
+    ):
+        revise(join, head, state="in_progress", outcome=None, note="Mine")
+    join.refresh_from_db()
+    assert (join.state, join.outcome) == ("resolved", "joined")
+    # The kept-decision undo is still admitted.
+    decide(harness, staff, "back_to_review", join, note="Wrong person")
+    assert stage(harness, staff, join).stage is Stage.TO_ENTER_BY_HAND
+
+
 def revise(target, actor_id, *, state, outcome, note, version=None):
     """Insert one revision as the web login, bypassing the service."""
     target.refresh_from_db()

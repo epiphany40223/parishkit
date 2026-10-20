@@ -33,7 +33,9 @@
 --   stewardship_ministry_revision_guard_v1      (0131's) admits the undo of
 --       a tick or a Confirmed check (kept decision, a note, Staff only),
 --       and Back to review of a refresh's resolution (a note, Staff only);
---       a ticked request is still never reopened to In progress directly;
+--       a ticked request, or one a check Confirmed after a person's
+--       decision, is never reopened to In progress directly; a blank note
+--       is one with no character other than white space;
 --   stewardship_ministry_roster_entry_guard_v1  (0061's) clearing the tick
 --       needs the undo's paired revision with its note.
 -- None of them is SECURITY DEFINER, before or after, so there is no ALTER
@@ -311,17 +313,20 @@ BEGIN
        OR (NEW.outcome='leave_confirmed' AND target.action<>'leave')
        OR NEW.contact_at>NEW.created_at
        -- Back to review: In progress with nothing carried forward, never
-       -- while Staff ticked it Entered in ParishSoft (that tick is undone
-       -- first), with a note when it reopens an ignored request, and by
-       -- Staff with a note when it undoes a refresh's resolution (#1840). A
-       -- request the parish added is withdrawn (cancelled) instead.
+       -- while Staff ticked it Entered in ParishSoft or a refresh check
+       -- Confirmed a person's decision (that step is undone first, by the
+       -- undo below, keeping the decision), with a note when it reopens an
+       -- ignored request, and by Staff with a note when it undoes a
+       -- refresh's resolution (#1840). A request the parish added is
+       -- withdrawn (cancelled) instead.
        OR (reopen AND NOT undo
            AND (NEW.state<>CASE WHEN target.parish_added THEN 'cancelled' ELSE 'in_progress' END
            OR NEW.outcome IS NOT NULL OR NEW.reviewed_ministry_duid IS NOT NULL
            OR NEW.contact_channel IS NOT NULL OR coalesce(ticked,false)
+           OR (confirmed AND target.resolution_source_id IS NULL)
            OR (target.resolution_source_id IS NOT NULL
-               AND (btrim(NEW.decision_note)='' OR NOT operational))
-           OR (target.outcome NOT IN ('joined','leave_confirmed') AND btrim(NEW.decision_note)='')))
+               AND (NEW.decision_note !~ '\S' OR NOT operational))
+           OR (target.outcome NOT IN ('joined','leave_confirmed') AND NEW.decision_note !~ '\S')))
        -- The undo of Entered in ParishSoft or Confirmed (above): the
        -- decision as it stands, a person's (no refresh resolution), and a
        -- tick or a Confirmed check to undo.
@@ -332,7 +337,7 @@ BEGIN
            OR NEW.contact_channel IS NOT NULL
            OR target.resolution_source_id IS NOT NULL
            OR NOT (coalesce(ticked,false) OR confirmed)
-           OR btrim(NEW.decision_note)='' OR NOT operational))
+           OR NEW.decision_note !~ '\S' OR NOT operational))
        OR (NOT reopen AND NEW.state='cancelled')
        -- Edit: Accept with another of the campaign's Ministries carried
        -- forward, which the actor may also follow up (a leader edits only
@@ -389,11 +394,16 @@ BEGIN
     -- Clearing the tick is Back to review of Entered in ParishSoft (#1840):
     -- only with that undo's revision, just recorded on this request by the
     -- same actor and request key, which kept the decision and has its note.
+    -- (The other way round, an undo revision of a ticked request without
+    -- this clearing, is not refused here: the revision guard cannot see a
+    -- row written after it, and a deferred check would be another trigger
+    -- for every closure to track. workflows/review.py records both in one
+    -- transaction; a revision alone would only advance the version.)
     IF NOT NEW.entered AND NOT EXISTS (SELECT 1 FROM public.stewardship_ministry_revision r
            WHERE r.request_id=target.id AND r.actor_id=NEW.actor_id
              AND r.request_key=NEW.request_key AND r.expected_version=target.version-1
              AND r.state='resolved' AND r.outcome=target.outcome
-             AND btrim(r.decision_note)<>'')
+             AND r.decision_note ~ '\S')
     THEN RAISE EXCEPTION 'Clearing Entered in ParishSoft needs its Back to review with a note'
         USING ERRCODE='23514'; END IF;
     -- Attribution time is database-owned.
@@ -413,9 +423,11 @@ BEGIN
             OR (p.proname='stewardship_ministry_revision_guard_v1'
                 AND p.prosrc LIKE '%undo := reopen AND NEW.state=''resolved'';%'
                 AND p.prosrc LIKE '%OR NOT (coalesce(ticked,false) OR confirmed)%'
-                AND p.prosrc LIKE '%AND (btrim(NEW.decision_note)='''' OR NOT operational))%')
+                AND p.prosrc LIKE '%OR (confirmed AND target.resolution_source_id IS NULL)%'
+                AND p.prosrc LIKE '%AND (NEW.decision_note !~ ''\\S'' OR NOT operational))%')
             OR (p.proname='stewardship_ministry_roster_entry_guard_v1'
                 AND p.prosrc LIKE '%Clearing Entered in ParishSoft needs its Back to review with a note%'
+                AND p.prosrc LIKE '%AND r.decision_note ~ ''\\S'')%'
                 AND p.prosrc LIKE '%FOR NO KEY UPDATE%')))<>3 THEN
         RAISE EXCEPTION 'Migration 0212 (Ministry terminal undo) did not replace the guards';
     END IF;

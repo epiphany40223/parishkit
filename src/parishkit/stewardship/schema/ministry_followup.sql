@@ -84,17 +84,20 @@ BEGIN
        OR (NEW.outcome='leave_confirmed' AND target.action<>'leave')
        OR NEW.contact_at>NEW.created_at
        -- Back to review: In progress with nothing carried forward, never
-       -- while Staff ticked it Entered in ParishSoft (that tick is undone
-       -- first), with a note when it reopens an ignored request, and by
-       -- Staff with a note when it undoes a refresh's resolution (#1840). A
-       -- request the parish added is withdrawn (cancelled) instead.
+       -- while Staff ticked it Entered in ParishSoft or a refresh check
+       -- Confirmed a person's decision (that step is undone first, by the
+       -- undo below, keeping the decision), with a note when it reopens an
+       -- ignored request, and by Staff with a note when it undoes a
+       -- refresh's resolution (#1840). A request the parish added is
+       -- withdrawn (cancelled) instead.
        OR (reopen AND NOT undo
            AND (NEW.state<>CASE WHEN target.parish_added THEN 'cancelled' ELSE 'in_progress' END
            OR NEW.outcome IS NOT NULL OR NEW.reviewed_ministry_duid IS NOT NULL
            OR NEW.contact_channel IS NOT NULL OR coalesce(ticked,false)
+           OR (confirmed AND target.resolution_source_id IS NULL)
            OR (target.resolution_source_id IS NOT NULL
-               AND (btrim(NEW.decision_note)='' OR NOT operational))
-           OR (target.outcome NOT IN ('joined','leave_confirmed') AND btrim(NEW.decision_note)='')))
+               AND (NEW.decision_note !~ '\S' OR NOT operational))
+           OR (target.outcome NOT IN ('joined','leave_confirmed') AND NEW.decision_note !~ '\S')))
        -- The undo of Entered in ParishSoft or Confirmed (above): the
        -- decision as it stands, a person's (no refresh resolution), and a
        -- tick or a Confirmed check to undo.
@@ -105,7 +108,7 @@ BEGIN
            OR NEW.contact_channel IS NOT NULL
            OR target.resolution_source_id IS NOT NULL
            OR NOT (coalesce(ticked,false) OR confirmed)
-           OR btrim(NEW.decision_note)='' OR NOT operational))
+           OR NEW.decision_note !~ '\S' OR NOT operational))
        OR (NOT reopen AND NEW.state='cancelled')
        -- Edit: Accept with another of the campaign's Ministries carried
        -- forward, which the actor may also follow up (a leader edits only
