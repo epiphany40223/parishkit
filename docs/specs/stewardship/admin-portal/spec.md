@@ -5183,8 +5183,8 @@ line the first rows start on a laptop screen with the help closed
   household, then by name, then by Member DUID. Every such address can be
   named this way, whether or not it is a user or has ever signed in (a
   removed Ministry leader, for example): the names are read through the
-  Administrator-only Member-name read of the page's addresses (below,
-  frozen migration 0220), and only for the shown addresses that have no
+  Administrator-only Member-name read of the page's emails (below, frozen
+  migration 0220), and only for the shown emails whose address has no
   Users-page Name, so a page of Family emails or of named users reads no
   ParishSoft names. The addresses of a Family email are not
   listed here: they are on its Mail message page, with what each address's
@@ -5368,13 +5368,13 @@ sort does, the names of every email to a person the other filters match
 the Member-name read), then finds the emails by DUID and by id. The
 Recipient names of a page's emails to people take one definer read for
 the page's ids and one query of the current configuration's users,
-however many rows, plus one Member-name read of the addresses that have
-no Users-page Name (it reads the current ParishSoft Members' contact
+however many rows, plus one Member-name read of the emails whose address
+has no Users-page Name (it reads the current ParishSoft Members' contact
 records), and the Timeline links of its Production
 Family emails take one query of the current campaign's Family records by DUID. The
 Recipient sort adds one query of the matching emails to people's ids, one
 definer read per 500 of them, one query of the users (and one Member-name
-read per 500 addresses without a Users-page Name), and then orders
+read per 500 of them whose address has no Users-page Name), and then orders
 by a JSON object of their keys. The orderings are not indexed, so a page is
 a top-N sort of
 the filtered emails, as before.
@@ -5396,15 +5396,19 @@ else:
   ids per call; Family emails' addresses are not returned.
 
 **Member-name read (frozen migration 0220, provisional).**
-`stewardship_member_names_for_addresses_v1(addresses, actor)`, with the
-same caller and Administrator checks, returns `(address, name)`: for each
-given address (lower-cased and trimmed, at most 500 per call) that a
-ParishSoft Member's contact record lists in the current ParishSoft data,
-the one name the Users page would offer as that address's default Name
-("Surname, First name"; a Member of an active Family first, then a head of
-household, then by name, then by Member DUID), and nothing else of the
-Member, contact or Family. An address no Member lists is left out. It adds
-no audit of its own: the page's `delivery_viewed` record names the actor
+`stewardship_delivery_page_member_names_v1(messages, actor)`, with the
+same caller and Administrator checks, returns `(message, name)`: for each
+given email that has no Family (at most 500 per call), when a ParishSoft
+Member's contact record in the current ParishSoft data lists the first
+intended address of its current rendering (matched trimmed and
+case-insensitively), the one name the Users page would offer as that
+address's default Name ("Surname, First name"; a Member of an active
+Family first, then a head of household, then by name, then by Member
+DUID), and nothing else of the Member, contact or Family. A Family email,
+and an email no Member's address matches, get no row. It takes email ids,
+not addresses, so it can name only people the parish has emailed, never
+an address typed in. It adds no audit of its own: the page's
+`delivery_viewed` record names the actor
 ([data spec](../data/spec.md#outbox-recipient-reads)).
 
 An email whose delivery recorded a [refused address](#refused-addresses)
