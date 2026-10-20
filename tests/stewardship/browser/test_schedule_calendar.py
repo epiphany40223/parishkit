@@ -731,6 +731,9 @@ def test_move_reviews_in_its_dialog_and_applies_in_place(
         submit.click()
     shown = page.locator(REVIEW_DIALOG)
     visible(shown)
+    # Reminder 1 has sent nothing, so its review has nothing to recall (R40b).
+    assert "Reminder — " in shown.inner_text()
+    assert "cannot be recalled" not in shown.inner_text()
     assert sent.value.url.startswith(component_origin + "/admin/campaign/schedules/")
     fields = posted(sent.value)
     fields.pop("csrfmiddlewaretoken", None)

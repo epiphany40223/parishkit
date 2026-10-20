@@ -19,6 +19,7 @@ import pytest
 from parishkit.stewardship.accounts import (
     campaign_wizard,
     schedule_calendar_views,
+    schedule_changes,
     schedule_entry_views,
 )
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
@@ -423,6 +424,54 @@ def test_a_move_is_edits_own_review_and_keeps_the_browser_local_time(
     assert saved["template_version"] == emails["reminder"]["id"]
     page = unescape(browser.get(CALENDAR).content.decode())
     assert 'datetime="2054-10-20T12:00:00+00:00"' in page
+
+
+NOT_RECALLED = "Email already sent cannot be recalled."
+
+
+def test_only_a_schedule_that_has_sent_says_sent_email_is_not_recalled(
+    auth_service, google, monkeypatch
+):
+    """The review's not-recalled notice is for sent email only (R40b).
+
+    Moving or editing the future October 25 reminder, which has sent
+    nothing, reviews without the notice. Once the reminder's schedule has
+    sent email (its fulfillment, counted across revisions), the same move's
+    review says that email cannot be recalled, with the count.
+    """
+    store = auth_service.store
+    _, emails = draft_with_schedules(store)
+    browser, _ = signed_in()
+    reminder_id = definition("reminder").pk
+    edit = f"/admin/campaign/schedules/{reminder_id}/"
+    moved = review_text(post(browser, edit, move(store, date="2054-10-20")))
+    edited = review_text(
+        post(
+            browser,
+            edit,
+            entry(
+                store,
+                date="2054-10-20",
+                time="09:00",
+                template_version=emails["reminder"]["id"],
+                drawn_at="2054-10-25T13:00:00+00:00",
+            ),
+        )
+    )
+    assert "Emails already sent by this schedule" in moved
+    assert NOT_RECALLED not in moved and NOT_RECALLED not in edited
+    real = schedule_changes.work_summary
+
+    def sent(campaign_id):
+        """The real counts, with two emails of the reminder already sent."""
+        rows = real(campaign_id)
+        rows[str(reminder_id)] = rows.get(str(reminder_id), {}) | {"delivered": 2}
+        return rows
+
+    monkeypatch.setattr(schedule_changes, "work_summary", sent)
+    again = review_text(post(browser, edit, move(store, date="2054-10-20")))
+    assert NOT_RECALLED in again
+    assert "<dt>Emails already sent by this schedule</dt><dd>2</dd>" in again
 
 
 def test_a_move_edit_refuses_is_refused_the_same_way(auth_service, google):

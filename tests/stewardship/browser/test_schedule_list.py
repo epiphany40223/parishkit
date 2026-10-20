@@ -1045,7 +1045,8 @@ def test_date_change_review_applies_in_the_dialog_and_returns_to_the_list(
     assert page.evaluate(FOCUSED) == "schedule-dates-review-title"
     text = shown.inner_text()
     assert "Campaign window" in text and "Reminder — Update" in text
-    assert "Email already sent cannot be recalled." in text
+    # The re-planned reminder has sent nothing: nothing to recall (R40b).
+    assert "Email already sent cannot be recalled." not in text
     assert axe_violations(page, axe_source) == []
     assert page.evaluate("window.notReloaded === true")
     with page.expect_request(lambda request: request.method == "POST") as sent:

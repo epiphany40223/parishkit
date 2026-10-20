@@ -2719,7 +2719,11 @@ Content and future schedules remain versioned/editable under the
 [atomic schedule-replacement policy](../background-processing/spec.md#schedule-replacement-and-removal).
 The confirmation shows successful, safely cancellable, failed, and blocking
 in-flight/unknown counts. A sent message cannot be recalled; its logical
-schedule fulfillment carries across revisions. Provider-submitting or
+schedule fulfillment carries across revisions. The review says so ("Email
+already sent cannot be recalled.") only when a schedule it changes or
+deletes has already sent email; a review of schedules that have sent
+nothing yet, such as a future Reminder's edit or move, carries no such
+notice. Provider-submitting or
 `delivery_unknown` work blocks the edit until it is resolved.
 
 When a proposed end-date shortening would place future Family mail outside the
