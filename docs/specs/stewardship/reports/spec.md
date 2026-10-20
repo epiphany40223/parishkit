@@ -1204,7 +1204,10 @@ In this release the lines cover the decisions stored today:
   `stewardship_proposal_resolution`);
 - Ministry: each follow-up edit (`stewardship_ministry_revision`), by Staff,
   an Administrator or a Ministry leader, and each Entered in ParishSoft tick
-  set or cleared (`stewardship_ministry_roster_entry`);
+  set or cleared (`stewardship_ministry_roster_entry`); a tick that Back to
+  review's undo clears
+  ([#1840](https://github.com/epiphany40223/parishkit/issues/1840)) is part
+  of that one Back to review line, not a line of its own;
 - Additional information: each follow-up edit
   (`stewardship_information_revision`).
 

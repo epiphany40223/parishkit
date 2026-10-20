@@ -11,7 +11,8 @@ from the audit log, whose context deliberately names no item or value:
   anyway) and ``stewardship_proposal_resolution`` (Entered by hand, Ignore
   and Back to review), which share their change's version sequence;
 - Ministry: ``stewardship_ministry_revision`` (each follow-up edit) and
-  ``stewardship_ministry_roster_entry`` (each Entered in ParishSoft tick);
+  ``stewardship_ministry_roster_entry`` (each Entered in ParishSoft tick,
+  except the clearing a Back to review undo writes with its revision);
 - Additional information: ``stewardship_information_revision``.
 
 Each history row stores the item's state after the step, not the step
@@ -118,6 +119,13 @@ WITH subs AS (
         NULL, NULL, NULL
     FROM subs JOIN stewardship_ministry_request q ON q.submission_id=subs.id
     JOIN stewardship_ministry_roster_entry e ON e.request_id=q.id
+    -- A tick cleared by Back to review's undo (#1840) is part of that undo,
+    -- written with its revision (the same actor and request key), which
+    -- reads as the one Back to review line; only a clearing without one
+    -- (made before #1840) is a line of its own.
+    WHERE e.entered OR NOT EXISTS (SELECT 1 FROM stewardship_ministry_revision r
+        WHERE r.request_id=q.id AND r.actor_id=e.actor_id
+          AND r.request_key=e.request_key)
     UNION ALL
     SELECT 'information', i.id::text, v.expected_version, v.created_at,
         v.actor_id, i.submission_id, NULL, NULL, NULL,
@@ -259,17 +267,22 @@ def state_after(row, before):
             state=a, outcome=b, source_resolved=False, roster_entered=False
         )
         # Back to review of a terminal step (#1840) records the decision
-        # again, keeping it in force (a cleared tick follows as its own
-        # line), or, for a request a refresh resolved with no decision
-        # behind it, reopens it with the required note.
-        undone = (
+        # again, keeping it in force, and clears the tick if one was set
+        # (that clearing, written with it, is no line of its own:
+        # ``_HISTORY``), or, for a request a refresh resolved with no
+        # decision behind it, reopens it with the required note.
+        kept = (
             a == "resolved"
             and before.decision is not None
             and placement.decision == before.decision
-        ) or (a == "in_progress" and before.decision is None and row["d"] == "true")
+        )
+        undone = kept or (
+            a == "in_progress" and before.decision is None and row["d"] == "true"
+        )
         return replace(
             before,
             decision=placement.decision,
+            done=None if kept else before.done,
             forced=BACK_TO_REVIEW if undone else None,
         )
     if stream == "ministry_roster":

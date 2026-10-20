@@ -196,7 +196,15 @@ def test_a_ministry_the_catalog_lost_is_named_by_its_duid():
 
 
 def test_ministry_follow_up_and_roster_ticks_share_one_request():
-    """Revisions and ticks of one request replay together, in time order."""
+    """Revisions and ticks of one request replay together, in time order.
+
+    A tick cleared without a revision (before #1840) is its own line. Back
+    to review of Entered by hand (#1840) is one line: its revision keeps the
+    decision and clears the tick, whose clearing row ``_HISTORY`` leaves
+    out, so ticking again reads Entered by hand. Back to review of a
+    request the refresh resolved (no decision behind it, In progress with
+    the required note) reads Back to review too.
+    """
     ministry = {"subject": "9"}
     rows = [
         row("ministry_revision", "m", 1, "in_progress", None, "join", **ministry),
@@ -214,6 +222,29 @@ def test_ministry_follow_up_and_roster_ticks_share_one_request():
             "leave",
             **ministry,
         ),
+        row("ministry_revision", "p", 8, "resolved", "joined", "join", **ministry),
+        row("ministry_roster", "p", 9, "true", None, "join", **ministry),
+        row(
+            "ministry_revision",
+            "p",
+            10,
+            "resolved",
+            "joined",
+            "join",
+            "true",
+            **ministry,
+        ),
+        row("ministry_roster", "p", 11, "true", None, "join", **ministry),
+        row(
+            "ministry_revision",
+            "q",
+            12,
+            "in_progress",
+            None,
+            "join",
+            "true",
+            **ministry,
+        ),
     ]
     assert words(rows, {9: "Choir"}) == [
         "Follow-up updated",
@@ -223,6 +254,11 @@ def test_ministry_follow_up_and_roster_ticks_share_one_request():
         "Back to review",
         "Ignored",
         "Ignored",
+        "Accepted",
+        "Entered by hand",
+        "Back to review",
+        "Entered by hand",
+        "Back to review",
     ]
     details = [detail for _at, _what, detail in steps(rows, {9: "Choir"})]
     assert details[0] == "Join Choir for Smith, Anne; by staff@example.org"

@@ -174,7 +174,7 @@ def test_ministry_follow_up_and_roster_ticks(response_service):
     """A follow-up edit, a resolution and the Entered in ParishSoft tick set
     and cleared, worded per step, with the Ministry names read once. The
     clear is Back to review of the mark (#1840): its revision reads Back to
-    review, then the cleared tick its own line."""
+    review, and the tick's clearing written with it is no line of its own."""
     harness, admin, join, leave = resolved(response_service)
     tick(harness, admin, join, True)
     tick(harness, admin, join, False)
@@ -188,7 +188,6 @@ def test_ministry_follow_up_and_roster_ticks(response_service):
         "Accepted",
         "Entered by hand",
         "Back to review",
-        "Entered by hand cleared",
         "Follow-up updated",
         "Ignored",
     ]

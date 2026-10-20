@@ -324,8 +324,9 @@ def test_do_block_passes_installed_and_refuses_an_old_body():
 
 def test_the_timeline_reads_the_undo_as_back_to_review():
     """The undo's revision keeps the decision, so the Timeline names it
-    Back to review (then the cleared tick); a refresh resolution's undo,
-    with its note, too."""
+    Back to review, one line: the tick's clearing it writes with it is left
+    out (``_HISTORY``), and ticking again reads Entered by hand. A refresh
+    resolution's undo, with its note, reads Back to review too."""
     base = dict(
         item="r1",
         actor="staff@example.org",
@@ -351,7 +352,7 @@ def test_the_timeline_reads_the_undo_as_back_to_review():
             row("ministry_revision", 1, "resolved", "joined", "false"),
             row("ministry_roster", 2, "true"),
             row("ministry_revision", 3, "resolved", "joined", "true"),
-            row("ministry_roster", 4, "false"),
+            row("ministry_roster", 5, "true"),
         ],
         {9: "Choir"},
     )
@@ -359,7 +360,7 @@ def test_the_timeline_reads_the_undo_as_back_to_review():
         "Accepted",
         "Entered by hand",
         str(BACK_TO_REVIEW),
-        "Entered by hand cleared",
+        "Entered by hand",
     ]
     (line,) = steps([row("ministry_revision", 1, "in_progress", None, "true")])
     assert str(line[1]) == str(BACK_TO_REVIEW)
