@@ -79,18 +79,26 @@ MEMBER_TEMPLATE = "stewardship/census-worklist-member.html"
 REFRESH_CONFLICT = "ParishSoft no longer holds the update."
 MEMBER_ID = "ParishSoft Member ID {}."
 # A New Member Entered by hand and not Confirmed may have its ParishSoft
-# Member ID corrected, or given (#1773): the mark made again, one row at a
-# time, in a dialog of its own asking for the ID.
+# Member ID corrected, or added when its mark named none (#1773): the mark
+# made again, one row at a time, in a dialog of its own asking for the ID.
 CORRECT_TEMPLATE = "stewardship/census-worklist-member-correct.html"
+CORRECT_BODY = (
+    "Record the ID of the Member you added. Check the Member in "
+    "ParishSoft first: the next refresh checks the entry again."
+)
 CORRECT_MEMBER_ID = Remark(
     icon="edit",
     label="Correct the ParishSoft Member ID of {name}",
-    title_one="Correct the ParishSoft Member ID of {name}",
-    done="ParishSoft Member ID corrected.",
-    body=(
-        "Record the ID of the Member you added. Check the Member in "
-        "ParishSoft first: the next refresh checks the entry again."
-    ),
+    title_one="Correct the ParishSoft Member ID of {name}?",
+    done="had its ParishSoft Member ID corrected.",
+    body=CORRECT_BODY,
+)
+ADD_MEMBER_ID = Remark(
+    icon="edit",
+    label="Add the ParishSoft Member ID of {name}",
+    title_one="Add the ParishSoft Member ID of {name}?",
+    done="had its ParishSoft Member ID added.",
+    body=CORRECT_BODY,
 )
 
 
@@ -182,6 +190,14 @@ def _correctable(row):
     )
 
 
+def _remark(row):
+    """The row's Member ID correction (#1773): Correct when its mark names an
+    ID, Add when it names none; None when the row offers neither."""
+    if not _correctable(row):
+        return None
+    return CORRECT_MEMBER_ID if row.get("resolution_member") else ADD_MEMBER_ID
+
+
 def _entered_template(row):
     """The row's own Entered by hand fields: a New Member's Member ID for a
     first mark (#1749), or for its correction (#1773); None for any other."""
@@ -220,7 +236,7 @@ def worklist_rows(rows):
                 "note": note or "",
                 "stage_note": _stage_note(row),
                 "entered_template": _entered_template(row),
-                "remark": CORRECT_MEMBER_ID if _correctable(row) else None,
+                "remark": _remark(row),
             }
         )
     return found
@@ -330,24 +346,30 @@ def _made_again(resolution):
     ).exists()
 
 
-def _corrected(resolution):
-    """Whether ``resolution`` corrected a New Member's Member ID (#1773).
+def _correction(resolution):
+    """The ``Remark`` a New Member's Member ID correction (#1773) is worded
+    by (Correct, or Add over a mark that named none), or None.
 
-    A first mark never follows another: Entered by hand is final, so only a
-    mark made again has an ``entered`` resolution at the version before its
-    own. A New Member is never Entered incorrectly, so for one that is the
-    correction. Read from the recorded row, so a replay is worded alike.
+    A first mark never follows an ``entered`` resolution at the version
+    before it; only a mark made again does, and a New Member is never
+    Entered incorrectly, so for one that is the correction. Read from the
+    recorded rows, so a replay is worded alike.
     """
-    return (
-        resolution.member_duid is not None
-        and ProposalResolution.objects.filter(
+    if resolution.member_duid is None:
+        return None
+    earlier = list(
+        ProposalResolution.objects.filter(
             proposal_id=resolution.proposal_id,
             expected_version=resolution.expected_version - 1,
             action="entered",
             proposal__entity_kind="proposed_member",
             proposal__field="new_member",
-        ).exists()
+        ).values_list("member_duid", flat=True)[:1]
     )
+    if not earlier:
+        return None
+    (earlier,) = earlier
+    return ADD_MEMBER_ID if earlier is None else CORRECT_MEMBER_ID
 
 
 class CensusDecisions:
@@ -494,9 +516,15 @@ class CensusDecisions:
         if len(recorded) > 1:
             return f"{len(recorded):,} changes {words}"
         (proposal,) = proposals.values()
-        if decision.action is Action.ENTERED_BY_HAND and _corrected(recorded[0]):
-            # A New Member's Member ID corrected (#1773), also on a replay.
-            return f"{notice_name(proposal)} {CORRECT_MEMBER_ID.done}"
+        correction = (
+            _correction(recorded[0])
+            if decision.action is Action.ENTERED_BY_HAND
+            else None
+        )
+        if correction is not None:
+            # A New Member's Member ID corrected or added (#1773), also on a
+            # replay.
+            return f"{notice_name(proposal)} {correction.done}"
         if decision.action in INCORRECT_WORDS and _made_again(recorded[0]):
             # Entered incorrectly's mark made again (#1737), worded as its
             # icon was, also when the answer is a replay.

@@ -62,8 +62,13 @@ class InvalidMemberId(ValueError):
     """A ParishSoft Member ID a New Member's mark cannot take (#1749).
 
     The message is static and safe, so the page may show it as the refusal
-    at the Member ID field.
+    at the Member ID field. ``correcting`` is whether it refused a
+    correction of a mark in force (#1773), whose field cannot be left blank.
     """
+
+    def __init__(self, message, *, correcting=False):
+        super().__init__(message)
+        self.correcting = correcting
 
 
 def member_id(proposal, raw):
@@ -82,17 +87,24 @@ def member_id(proposal, raw):
         return None
     if proposal.entity_kind != "proposed_member" or proposal.field != "new_member":
         raise ValueError("Only a New Member takes a ParishSoft Member ID.")
+    # A New Member already entered is having its ID corrected (#1773).
+    correcting = proposal.execution == "resolved_external"
     digits = text.lstrip("0") or "0"
     if not (text.isascii() and text.isdecimal()) or len(digits) > 19:
-        raise InvalidMemberId("Enter the ParishSoft Member ID as a whole number.")
+        raise InvalidMemberId(
+            "Enter the ParishSoft Member ID as a whole number.", correcting=correcting
+        )
     value = int(digits)
     if not 1 <= value <= MAX_MEMBER_ID:
-        raise InvalidMemberId("Enter the ParishSoft Member ID as a whole number.")
+        raise InvalidMemberId(
+            "Enter the ParishSoft Member ID as a whole number.", correcting=correcting
+        )
     submission = proposal.submission
     if str(value) in (submission.answers.get("members") or {}):
         raise InvalidMemberId(
             "That ParishSoft Member ID is a Member the Family already listed. "
-            "Enter the ID of the Member you added."
+            "Enter the ID of the Member you added.",
+            correcting=correcting,
         )
     taken = ProposalResolution.objects.filter(
         member_duid=value,
@@ -106,7 +118,8 @@ def member_id(proposal, raw):
     if taken.exists():
         raise InvalidMemberId(
             "Another New Member of this Family is already entered with that "
-            "ParishSoft Member ID. Enter the ID of this Member."
+            "ParishSoft Member ID. Enter the ID of this Member.",
+            correcting=correcting,
         )
     return value
 
@@ -253,19 +266,21 @@ def record_resolution(
     check_version(proposal, expected_version)
     incorrect = entered_incorrectly(proposal)
     # A New Member's Member ID corrected (#1773): a mark made again over the
-    # one in force, with an ID. The cheap tests come first, so other
+    # one in force, with an ID. The cheap tests come first (and
+    # ``member_correctable`` tests the kind before it queries), so other
     # resolutions pay no query for it.
-    again = (
-        action == "entered"
-        and member_duid is not None
-        and not incorrect
-        and member_correctable(proposal)
-    )
-    if again and member_duid == marked_member(proposal):
+    correctable = action == "entered" and not incorrect and member_correctable(proposal)
+    if correctable and member_duid is None:
         raise InvalidMemberId(
-            "That is the ParishSoft Member ID already recorded. Enter the corrected ID."
+            "Enter the ParishSoft Member ID of the Member you added.", correcting=True
         )
-    if not (again or allowed(proposal, action, incorrect=incorrect)) or (
+    if correctable and member_duid == marked_member(proposal):
+        raise InvalidMemberId(
+            "That is the ParishSoft Member ID already recorded. "
+            "Enter the corrected ID.",
+            correcting=True,
+        )
+    if not (correctable or allowed(proposal, action, incorrect=incorrect)) or (
         member_duid is not None and action != "entered"
     ):
         raise ValueError("This census change cannot be resolved that way now.")

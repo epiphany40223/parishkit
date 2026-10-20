@@ -434,7 +434,7 @@ def test_correcting_a_new_members_member_id(page, component_origin, axe_source):
         "refusal": {
             "message": "That is the ParishSoft Member ID already recorded. "
             "Enter the corrected ID.",
-            "fix": "Correct the Member ID, or leave it blank, then record it again.",
+            "fix": "Correct the Member ID, then record it again.",
             "link": None,
         },
     }
@@ -460,7 +460,7 @@ def test_correcting_a_new_members_member_id(page, component_origin, axe_source):
     correct.click()
     dialog = page.locator("#census-entered-dialog-4")
     visible(dialog)
-    has_text(dialog.locator("h2"), label)
+    has_text(dialog.locator("h2"), f"{label}?")
     has_text(
         dialog.locator("[data-confirm-body]"),
         "Record the ID of the Member you added. Check the Member in ParishSoft "
@@ -475,7 +475,7 @@ def test_correcting_a_new_members_member_id(page, component_origin, axe_source):
     has_text(
         dialog.locator(".errorlist"),
         "That is the ParishSoft Member ID already recorded. Enter the corrected "
-        "ID. Correct the Member ID, or leave it blank, then record it again.",
+        "ID. Correct the Member ID, then record it again.",
     )
     assert "value_member=7" in sent[0] and "decide=entered_by_hand" in sent[0]
     member_id.fill("9")

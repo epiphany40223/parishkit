@@ -112,8 +112,11 @@ def test_the_correction_needs_a_new_valid_id(response_service):
     change = mark(harness, staff, rows["new_member"], str(WRONG))
     with pytest.raises(InvalidMemberId, match="already recorded"):
         mark(harness, staff, change, f"000{WRONG}")
-    with pytest.raises(ValueError, match="cannot be resolved that way now"):
-        mark(harness, staff, change, "")
+    with pytest.raises(
+        InvalidMemberId, match="Enter the ParishSoft Member ID"
+    ) as blank:
+        mark(harness, staff, change, "  ")
+    assert blank.value.correcting
     for member_id in ("3", "x"):
         with pytest.raises(InvalidMemberId):
             mark(harness, staff, change, member_id)
@@ -281,8 +284,62 @@ def test_the_page_offers_and_records_the_correction(response_service, google):
             browser, ROUTE, decide(change, "entered_by_hand", value_member=str(ADDED))
         )
     assert response.status_code == 200
-    assert b"ParishSoft Member ID corrected." in body
+    assert b"had its ParishSoft Member ID corrected." in body
     assert marks(change) == [WRONG, ADDED]
+    assert refusal["refusal"]["fix"] == "Correct the Member ID, then record it again."
+
+
+def test_the_id_is_corrected_again_and_freed_for_another_new_member(
+    response_service,
+):
+    """A second correction reads the mark now in force (the version before
+    the change's current one); an ID corrected away is free for another New
+    Member of the Family."""
+
+    def edit(answers):
+        """Two New Members."""
+        new_member(answers)
+        new_member(answers)
+
+    harness, staff, _ = answered(response_service, edit)
+    first, second = ProposedChange.objects.filter(field="new_member").order_by("pk")
+    first = mark(harness, staff, first, str(ADDED))
+    first = mark(harness, staff, first, str(WRONG))
+    with pytest.raises(InvalidMemberId, match="already recorded"):
+        mark(harness, staff, first, str(WRONG))
+    first = mark(harness, staff, first, "9")
+    assert marks(first) == [ADDED, WRONG, 9]
+    second = mark(harness, staff, second, str(ADDED))
+    assert marks(second) == [ADDED]
+
+
+def test_sql_refuses_a_stale_or_unpaired_correction(response_service):
+    """A correction at another version is refused at once; one with no
+    paired update and audit event is refused when the work commits (0060's
+    deferred effect check)."""
+    from parishkit.stewardship.campaigns.work_locks import work_transaction
+
+    harness, staff, rows = answered(response_service, new_member)
+    change = mark(harness, staff, rows["new_member"], str(WRONG))
+    for version in (change.version - 1, change.version + 1):
+        stale = ProposedChange(pk=change.pk, version=version)
+        with pytest.raises((IntegrityError, DatabaseError), match="lacks current"):
+            forge_mark(stale, staff, ADDED)
+    with (
+        pytest.raises((IntegrityError, DatabaseError)),
+        task_login(ServiceRole.WEB, exact=True, reconnect=True),
+        work_transaction(),
+        connection.cursor() as cursor,
+    ):
+        cursor.execute(
+            "INSERT INTO stewardship_proposal_resolution (id,correlation_id,"
+            "actor_id,proposal_id,expected_version,request_key,action,note,"
+            "member_duid) VALUES (gen_random_uuid(),gen_random_uuid(),%s,%s,%s,"
+            "gen_random_uuid(),'entered','',%s)",
+            [staff, change.pk, change.version, ADDED],
+        )
+    assert marks(change) == [WRONG]
+    assert fresh(change).version == change.version
 
 
 def _check():

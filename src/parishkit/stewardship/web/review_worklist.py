@@ -416,9 +416,9 @@ def remark_icon(words, row, prefix, *, name):
 
     It opens the row's own Entered by hand dialog (``entered_template``) and
     posts Entered by hand, so the stream's service tells the mark made again
-    from a first one. It records no new state, so it is no toggle; the mark
-    in force stays drawn selected beside it, and focus returns to that mark
-    once the row is redrawn (the first ``data-row-action`` match).
+    from a first one. It records the same state again, so it is no toggle;
+    the mark in force stays drawn selected beside it, and focus returns to
+    that mark once the row is redrawn (the first ``data-row-action`` match).
     """
     return {
         "action": Action.ENTERED_BY_HAND.value,

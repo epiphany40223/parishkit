@@ -535,7 +535,8 @@ def test_an_entered_new_member_offers_correcting_its_member_id():
     assert correct["label"] == f"Correct the ParishSoft Member ID of {name}"
     assert correct["dialog"] == "census-entered-dialog-3"
     assert "decide=entered_by_hand" in correct["post"]
-    assert correct["done"] == "{name} ParishSoft Member ID corrected."
+    assert correct["title_one"] == "Correct the ParishSoft Member ID of {name}?"
+    assert correct["done"] == "{name} had its ParishSoft Member ID corrected."
     assert correct["focus"] == "entered_by_hand" and correct["pressed"] is None
     assert shown["kinds"] == "" and shown["offers_entered"]
     dialog = html.split('id="census-entered-3"')[1].split("</form>")[0]
@@ -543,11 +544,30 @@ def test_an_entered_new_member_offers_correcting_its_member_id():
     assert "required" in field and 'value="7"' in field
     assert "(optional)" not in dialog
     assert "The next refresh checks the entry again with this ID." in dialog
-    # A mark that named no ID may gain one: the field starts blank.
+    # A mark that named no ID may gain one: Add, the field starts blank.
     worklist, html = page([entered_new_member(resolution_member=None)])
+    add = worklist.rows[0]["icons"][2]
+    assert add["label"] == f"Add the ParishSoft Member ID of {name}"
+    assert add["done"] == "{name} had its ParishSoft Member ID added."
     dialog = html.split('id="census-entered-3"')[1].split("</form>")[0]
     field = re.search(r"<input[^>]*name=\"value_member\"[^>]*>", dialog)[0]
     assert 'value=""' in field and "required" in field
+
+
+def test_a_not_seen_new_member_offers_the_correction():
+    """A New Member flagged Not seen in ParishSoft (a mistyped ID, most
+    likely) is still Entered by hand and offers the correction, out of
+    bulk."""
+    unseen = CheckState(outcome="unchanged", unseen=2, not_seen_after=2)
+    worklist, _ = page([shape(entered_new_member() | {"check": unseen})])
+    (shown,) = worklist.rows
+    assert shown["not_seen"]
+    assert [icon.get("remark", False) for icon in shown["icons"]] == [
+        False,
+        False,
+        True,
+    ]
+    assert shown["kinds"] == ""
 
 
 @pytest.mark.parametrize(

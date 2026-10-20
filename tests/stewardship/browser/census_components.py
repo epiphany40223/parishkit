@@ -76,7 +76,8 @@ MEMBER_ENTERED_NOTICE = (
 # The page after the New Member's Member ID is corrected to 9 (#1773).
 MEMBER_CORRECTED = "/census-changes-member-corrected"
 MEMBER_CORRECTED_NOTICE = (
-    "New Member for a New Member in Family DUID 1004 ParishSoft Member ID corrected."
+    "New Member for a New Member in Family DUID 1004 had its ParishSoft Member ID "
+    "corrected."
 )
 
 

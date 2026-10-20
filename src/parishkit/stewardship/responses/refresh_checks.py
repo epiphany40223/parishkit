@@ -276,11 +276,13 @@ def _remarked(rows):
     """ParishSoft's value at each census change's latest mark made again, by id.
 
     A final change's version moves only when it is marked Entered by hand
-    again over Entered incorrectly (#1737), and then by one. So a check at
-    the version before an entered change's current one means that mark was
-    made, and the latest such check's ParishSoft value is the value recorded
-    at it. The refresh check guard (migration 0140, provisional number)
-    reads it the same way. One query, when any change is entered.
+    again, and then by one: over Entered incorrectly (#1737), or a New
+    Member's Member ID corrected (#1773), which has no third value and so
+    never reads this. So a check at the version before an entered change's
+    current one means that mark was made, and the latest such check's
+    ParishSoft value is the value recorded at it. The refresh check guard
+    (migration 0140, provisional number) reads it the same way. One query,
+    when any change is entered.
     """
     wanted = {
         (row.pk, row.version - 1)
