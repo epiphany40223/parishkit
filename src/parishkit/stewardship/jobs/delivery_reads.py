@@ -407,6 +407,33 @@ def administrator_names(addresses):
     )
 
 
+def person_names(addresses):
+    """The name Sent mail shows for each address of an email to a person.
+
+    Keyed by the lower-cased address (#1562, Administrator decision
+    2026-10-20): the Users-page Name (``administrator_names``); for an
+    address with none, the name of a ParishSoft Member whose contact
+    record lists it in the current ParishSoft data; an address with
+    neither is left out, so the page shows the address itself. The Member
+    names come from ``stewardship_member_names_v1`` (frozen migration
+    0047), the read-only definer behind the Users page's upgrade preview,
+    which names only the current users' and signed-in people's addresses,
+    best first: a Member of an active Family, then a head of household,
+    then by name and Member DUID; the first is shown. That read is made
+    only when some address has no Users-page Name.
+    """
+    from parishkit.stewardship.accounts.users_upgrade import member_names
+
+    names = administrator_names(addresses)
+    missing = {address.lower() for address in addresses} - set(names)
+    if missing:
+        listed = member_names()
+        names |= {
+            address: listed[address][0] for address in missing if listed.get(address)
+        }
+    return names
+
+
 # The most ids one call of stewardship_delivery_page_recipients_v1 takes.
 PAGE_RECIPIENTS_LIMIT = 500
 
@@ -444,15 +471,17 @@ def with_recipients(rows, actor_id):
     or a Ministry leader's sign-in email, to one leader's address) gains
     ``recipient_address``, read for the shown page through
     ``stewardship_delivery_page_recipients_v1`` (frozen migration 0116),
-    and ``recipient_name``, that address's Users-page Name or None: one
-    definer read and one query, however many rows, and none when the page
-    lists only Family emails. Raises ``PermissionError`` when the read
+    and ``recipient_name``, that address's name (``person_names``: the
+    Users-page Name, else a ParishSoft Member's) or None: one definer read
+    and one query, however many rows (and the Member names read when one
+    address has no Users-page Name), and none when the page lists only
+    Family emails. Raises ``PermissionError`` when the read
     refuses ``actor_id``.
     """
     addresses = administrator_addresses(
         [row["id"] for row in rows if row["family_id"] is None], actor_id
     )
-    names = administrator_names(addresses.values())
+    names = person_names(addresses.values())
     return [
         row
         | {

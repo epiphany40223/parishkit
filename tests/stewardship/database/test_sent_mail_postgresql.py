@@ -552,6 +552,41 @@ def test_recipient_names_take_one_read_and_one_query(response_service, google):
     assert by_address["admin@example.org"] == (admin_name or None)
 
 
+def test_a_person_without_a_users_page_name_takes_a_parishsoft_name(
+    response_service, google
+):
+    """An email to a person whose address has no Users-page Name (here a
+    sign-in rule from before users, which has none) is named by the
+    ParishSoft Member listing that address (Administrator decision
+    2026-10-20, #1562), with one more read only then; an address no Member
+    lists keeps the address."""
+    from parishkit.stewardship.accounts.users_upgrade import member_names
+    from parishkit.stewardship.jobs.delivery_reads import person_names
+
+    harness = activate_response_service(response_service)
+    add_rules(
+        harness.service.store,
+        address("valid@example.org"),
+        address("nobody.listed@example.org"),
+    )
+    notices(harness)
+    signed_in()
+    admin = PortalUser.objects.get(email="admin@example.org").pk
+    with task_login(ServiceRole.WEB, exact=True):
+        listed = member_names()
+        (expected, *_) = listed["valid@example.org"]
+        assert "nobody.listed@example.org" not in listed
+        rows = read_listing({}, actor=admin)["rows"]
+        with CaptureQueriesContext(connection) as queries:
+            named = with_recipients(rows, admin)
+        # The address read, the users and the Member names.
+        assert len([q for q in queries if q["sql"].startswith("SELECT")]) == 3
+        assert person_names({"Valid@Example.org"}) == {"valid@example.org": expected}
+    by_address = {row["recipient_address"]: row["recipient_name"] for row in named}
+    assert by_address["valid@example.org"] == expected
+    assert by_address["nobody.listed@example.org"] is None
+
+
 def test_a_production_family_recipient_opens_its_timeline(response_service, google):
     """A Production Family email's Recipient is the shared Family-name link
     to that Family's Timeline (#1562, #1570), its record id read once for

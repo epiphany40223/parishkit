@@ -527,22 +527,24 @@ def recipient_sort_key(selected, actor):
     address each, and Ministry leader emails, to one leader each) have no
     Family name to sort by, so under the name sort they come after every
     Family; among themselves they sort by what
-    Recipient shows, the Users-page Name or else the address, case-folded.
+    Recipient shows (``delivery_reads.person_names``: the Users-page Name,
+    else a ParishSoft Member's name, else the address), case-folded.
     Those keys come from the definer read of their addresses
     (``delivery_reads.administrator_addresses``), so they are read in
     Python for every such email the filters match, and the database then
     looks each one up by id in a JSON object: one id query, one definer
-    read per 500 such emails and one query of the users. Family emails get
+    read per 500 such emails and one query of the users (and one of the
+    Member names when an address has no Users-page Name). Family emails get
     NULL. Without an actor (no definer read is possible) every key is NULL,
     so they keep newest first, as before.
     """
-    from .delivery_reads import administrator_addresses, administrator_names
+    from .delivery_reads import administrator_addresses, person_names
 
     keys = {}
     if actor is not None:
         ids = list(selected.filter(family__isnull=True).values_list("pk", flat=True))
         addresses = administrator_addresses(ids, actor)
-        names = administrator_names(addresses.values())
+        names = person_names(addresses.values())
         keys = {
             str(message): (names.get(address.lower()) or address).casefold()
             for message, address in addresses.items()
