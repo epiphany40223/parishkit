@@ -66,6 +66,11 @@ class AuditEvent(ImmutableRecord):
             # System logs and their export read newest first by (created_at,
             # id), with a keyset cursor on the same pair (#308).
             models.Index(fields=["created_at", "id"], name="audit_event_created_id"),
+            # A user's timeline reads the records of the user's Google
+            # accounts by actor, in time order (#1866, frozen file 0240).
+            models.Index(
+                fields=["actor_id", "created_at"], name="audit_event_actor_time"
+            ),
             # System logs text search (#765, log_search).
             *type_indexes("event_type", "audit_event_type"),
         ]
