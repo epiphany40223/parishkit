@@ -509,6 +509,8 @@ def census_rows(campaign_id):
         for name in JSON_COLUMNS:
             row[name] = None if row[name] is None else json.loads(row[name])
         row["check"] = checks.get(row["id"])
+        # A New Member's ID correction (#1773) is not offered on history.
+        row["replaced"] = row["family_version"] != latest[key(row)]
     return [shape(row) for row in rows]
 
 
