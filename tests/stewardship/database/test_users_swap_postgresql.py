@@ -467,6 +467,9 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # resolution table (in CLOSURE_TABLES, so made again by 0129's file) and
 # replaces 0129's three guards in place; every statement can run again, so
 # ``CLOSURE_REPLACED`` runs its file again after 0129's.
+# 0212 (#1840, provisional number) creates nothing: it replaces 0061's
+# roster entry guard and 0131's request and revision guards in place, so
+# ``CLOSURE_REPLACED`` runs its file again after theirs.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -1013,6 +1016,22 @@ CLOSURE_REPLACED = {
     "public.stewardship_census_addition_resolution_guard_v1()": (
         ("stewardship_responses", "0024_census_addition_undo"),
         "Census addition step does not follow its latest step",
+    ),
+    # 0212 (#1840, provisional number) replaces 0061's roster entry guard
+    # (CLOSURE_CREATED) and 0131's request and revision guards (its file
+    # runs again through CLOSURE_ALTERED), which those reruns bring back
+    # older; it creates nothing, so its file runs again whole.
+    "public.stewardship_ministry_roster_entry_guard_v1()": (
+        ("stewardship_workflows", "0007_ministry_terminal_undo"),
+        "Clearing Entered in ParishSoft needs its Back to review with a note",
+    ),
+    "public.stewardship_ministry_revision_guard_v1()": (
+        ("stewardship_workflows", "0007_ministry_terminal_undo"),
+        "undo := reopen AND NEW.state='resolved';",
+    ),
+    "public.stewardship_ministry_request_guard_v1()": (
+        ("stewardship_workflows", "0007_ministry_terminal_undo"),
+        "NEW.resolution_source_id := NULL;",
     ),
 }
 

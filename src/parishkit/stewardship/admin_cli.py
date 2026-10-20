@@ -7298,19 +7298,25 @@ def _yes_no(value):
 def followup_roster_entered(args, preamble, runtime, context):
     """Set or clear one request's Entered in ParishSoft tick (#463, #528).
 
-    The request page's tick asks nothing, so neither does this. Without
-    ``--request-key`` a new key is made and written to standard error
-    before anything is done.
+    The request page's tick asks nothing, so neither does this. ``--clear``
+    is Back to review of the mark (#1840) and needs ``--note``, as the
+    page's dialog does. Without ``--request-key`` a new key is made and
+    written to standard error before anything is done.
     """
     from .admin_roster_tick import roster_entered
+    from .workflows.review import MAX_NOTE
 
     key = _request_key(args, context)
+    # The page's dialog strips the note it posts; so does a note read from
+    # standard input (``_input``).
+    note = None if args.note is None else _input(args.note, context, MAX_NOTE * 4)
     return roster_entered(
         context["caller"],
         runtime,
         args.request_id,
         expected_version=args.expected_version,
         entered=args.set,
+        note=note.strip() if note is not None else None,
         request_key=key,
         context=context,
     )
@@ -7392,13 +7398,24 @@ def _roster_entered_options(parser):
         action="store_true",
         help="mark the change entered in ParishSoft",
     )
-    choice.add_argument("--clear", action="store_true", help="clear a mistaken mark")
+    choice.add_argument(
+        "--clear",
+        action="store_true",
+        help="clear a mistaken mark: Back to review of Entered by hand, which "
+        "needs --note",
+    )
     parser.add_argument(
         "--expected-version",
         required=True,
         type=_tick_version,
         help="the tick's current sequence, as followup show prints "
         "roster.sequence (0 before any tick)",
+    )
+    parser.add_argument(
+        "--note",
+        metavar="TEXT|-",
+        help="why the mark is cleared (required with --clear), or - to read "
+        "it from standard input",
     )
     _request_key_option(parser)
 

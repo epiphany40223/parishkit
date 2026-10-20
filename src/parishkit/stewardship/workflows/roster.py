@@ -2,15 +2,18 @@
 
 The ParishSoft API cannot change Ministry rosters, so a join or leave that a
 person resolved (*joined* or *leave confirmed*) is entered in ParishSoft by
-hand. Staff and Admin record that, or clear a mistaken mark, here: each set
-or clear is one immutable ``MinistryRosterEntry`` row, and the latest row is
-the current state. Ministry requests' bulk Entered by hand marks several
-at once (``mark_many_entered``, #879), each exactly as a single tick is
-recorded. A request resolved because the ParishSoft roster already showed
-the change (it has a resolution source) needs no tick. The request
-itself is a closed outcome and never changes. SQL checks the actor, the
-request, the sequence and the audit again
-(``schema/migrations/0061_roster_entries.sql``).
+hand. Staff and Admin record that here: each set or clear is one immutable
+``MinistryRosterEntry`` row, and the latest row is the current state.
+Clearing a mark is Back to review of Entered by hand, with a required
+note (#1840): ``review.undo_entered`` and the worklist's undo record it,
+as a revision paired with the clearing row (migration 0212). Ministry
+requests' bulk Entered by hand marks several at once
+(``mark_many_entered``, #879), each exactly as a single tick is recorded.
+A request resolved because the ParishSoft roster already showed the
+change (it has a resolution source) needs no tick. SQL checks the actor,
+the request, the sequence and the audit again
+(``schema/migrations/0061_roster_entries.sql``,
+``0212_ministry_terminal_undo.sql``).
 
 Ministry leaders see the tick but never set it: its readers here take no
 principal, and the views show it read-only to them.
@@ -57,7 +60,7 @@ def eligible(request):
 
 
 def can_tick(principal):
-    """Admin and Staff set or clear the tick; a Ministry leader never does.
+    """Admin and Staff set the tick or undo it; a Ministry leader never does.
 
     ``MINISTRY_FOLLOWUP`` without a Ministry is granted only to the global
     operational roles; a leader holds it only for their own Ministries.
@@ -173,18 +176,20 @@ def _system():
 
 
 def set_roster_entered(store, actor_id, request_id, *, sequence, entered, request_key):
-    """Set or clear one request's tick, replay-safe, under the work order.
+    """Set one request's tick, replay-safe, under the work order.
 
     ``sequence`` is the tick's next sequence as the page saw it (its current
     sequence plus one), so a page drawn before someone else's change is
     refused as stale rather than undoing it. The same ``request_key`` with the
     same intent returns the first row; with another intent it is refused.
+    Clearing it is Back to review, with a note (``review.undo_entered``,
+    #1840), so ``entered`` false is refused here.
     """
     if (
         not _valid_keys(actor_id, request_key)
         or not isinstance(request_id, UUID)
         or not _valid_sequence(sequence)
-        or type(entered) is not bool
+        or entered is not True
     ):
         raise ValueError("Invalid roster entry.")
     with work_transaction():

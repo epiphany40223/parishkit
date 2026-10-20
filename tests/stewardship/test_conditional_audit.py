@@ -136,7 +136,8 @@ def test_locked_report_actions_name_the_notice_that_says_why(
 def test_a_held_roster_tick_is_shown_unavailable_with_why(entered):
     """While other campaign work holds follow-up, the request page's Mark or
     Clear Entered in ParishSoft is drawn disabled, named by the locked
-    notice; otherwise it is the plain enabled button."""
+    notice; otherwise it is the plain enabled button. (Clear opens its
+    dialog, so it is no submit button and has no data-server-disabled.)"""
     label = "Clear Entered in ParishSoft" if entered else "Mark entered in ParishSoft"
     row = {
         "id": uuid4(),
@@ -148,8 +149,8 @@ def test_a_held_roster_tick_is_shown_unavailable_with_why(entered):
     template = "stewardship/roster-tick.html"
     held = render_to_string(template, context | {"mutable": False})
     assert re.search(
-        rf'<button[^>]*disabled data-server-disabled aria-describedby="followup-locked"'
-        rf"[^>]*>{label}</button>",
+        rf"<button[^>]*disabled(?: data-server-disabled)?"
+        rf' aria-describedby="followup-locked"[^>]*>{label}</button>',
         held,
     )
     open_ = render_to_string(template, context | {"mutable": True})

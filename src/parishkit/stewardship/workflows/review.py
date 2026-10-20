@@ -10,7 +10,12 @@ decision a row icon, the bulk bar or Add sends (``web.review_worklist``'s
 - Edit accepts with another Ministry carried forward
   (``reviewed_ministry_duid``); the Family's stays as answered.
 - Back to review returns an accepted or ignored request to In progress, or
-  withdraws (cancels) a request the parish added.
+  withdraws (cancels) a request the parish added. On a terminal stage it
+  undoes only the terminal step, with a required note (#1840): Entered by
+  hand or Confirmed keeps the decision (the tick, if set, is cleared, and
+  the request's version moves past any refresh check), so the request is To
+  enter by hand again; a request the refresh resolved goes back to To
+  review (``_undo``).
 - Entered by hand ticks Entered in ParishSoft (``roster``), Staff only.
 - Add creates a request the Family did not ask for on that Family's latest
   live response, then accepts it.
@@ -20,7 +25,7 @@ Every decision is one revision of its request, written through
 order with the requests locked first; a bulk decision is all or none. What
 each reader may do is the pipeline's role-action table
 (``pipeline.allowed_actions``) at the request's current stage, and the SQL
-guards (migration 0131) check it all again. The stage is the pipeline's
+guards (migrations 0131 and 0212) check it all again. The stage is the pipeline's
 mapping (``ministry_placement``) of the locked row, so a decision against a
 row someone else changed first is a ``StaleDecision``, never a guess.
 """
@@ -41,12 +46,14 @@ from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.observability import bound_correlation, correlation
 from parishkit.stewardship.pipeline import (
     ROLES,
+    TERMINAL_STAGES,
     Action,
     Decision,
     Stage,
     Stream,
     allowed_actions,
     ministry_placement,
+    undo_needs_note,
 )
 from parishkit.stewardship.reports.export_services import admit_campaign
 from parishkit.stewardship.responses.models import Submission
@@ -143,10 +150,9 @@ def placement(
 def _locked_placement(target):
     """The stage of a locked request, its roster tick and checks read under the lock.
 
-    A request a refresh check Confirmed (#1689) offers nothing, so a
-    decision on it is refused as on any stage that does not offer it. Its
-    revision guard does not know the checks: Back to review on one would
-    reopen it, and the next refresh would resolve it as Confirmed again.
+    A request a refresh check Confirmed at its version (#1689) is Confirmed:
+    Back to review undoes that (#1840), advancing the version past the
+    check, which its revision guard reads too.
     """
     latest = (
         MinistryRosterEntry.objects.filter(request_id=target.pk)
@@ -373,7 +379,15 @@ class MinistryDecisions:
             # (which that revision itself changed).
             # Notes and contacts recorded since may differ; the decision
             # itself must not.
-            intent = self._intent(previous.request, version, decision, notes)
+            # A Back to review that kept the request resolved undid a
+            # terminal step (#1840), so its intent keeps the decision.
+            intent = self._intent(
+                previous.request,
+                version,
+                decision,
+                notes,
+                kept=previous.state == "resolved",
+            )
             if any(getattr(previous, name) != intent[name] for name in REPLAYED):
                 raise ValueError("This request key is already bound.")
             return 0
@@ -388,10 +402,15 @@ class MinistryDecisions:
             raise _stale(target)
         if (
             action is Action.BACK_TO_REVIEW
-            and current.stage is Stage.IGNORED
-            and not decision.note
+            and undo_needs_note(Stream.MINISTRY, current.stage)
+            and not decision.note.strip()
         ):
-            raise ValueError("Reopening an ignored request needs a note.")
+            if current.stage is Stage.IGNORED:
+                raise ValueError("Reopening an ignored request needs a note.")
+            raise ValueError(f"Undoing {current.stage.label} needs a note.")
+        if action is Action.BACK_TO_REVIEW and current.stage in TERMINAL_STAGES:
+            _undo(principal.identity, target, version, key, decision.note, current)
+            return 1
         intent = self._intent(target, version, decision, notes)
         if action is Action.EDIT:
             authorize_ministry(
@@ -406,16 +425,19 @@ class MinistryDecisions:
         write_revision(principal.identity, target, intent, key, system)
         return 1
 
-    def _intent(self, target, version, decision, notes):
+    def _intent(self, target, version, decision, notes, *, kept=False):
         """The resulting workflow a decision records on ``target``.
 
         Notes carry forward unchanged (they are the request page's); the
         decision's own note is ``decision_note``. Back to review reopens a
         request as In progress, or withdraws one the parish added (the note
         an ignored request's reopening needs is checked by the caller, on
-        the locked stage).
+        the locked stage); ``kept`` is Back to review of a terminal step,
+        which keeps the decision in force (``undo_intent``).
         """
         action = decision.action
+        if action is Action.BACK_TO_REVIEW and kept:
+            return undo_intent(target, version, decision.note, notes, kept=True)
         state, outcome, reviewed = "resolved", None, None
         if action is Action.ACCEPT:
             outcome = ACCEPT_OUTCOME[target.action]
@@ -578,6 +600,125 @@ class MinistryDecisions:
                 _system(),
             )
         return f"{self.namer(request.pk) or 'The request'} added."
+
+
+def undo_intent(target, version, note, notes, *, kept):
+    """The revision Back to review of a terminal step records (#1840).
+
+    It removes only the terminal step: a request a person decided
+    (``kept``) stays resolved with its outcome and Edit, so the revision
+    only advances its version past any refresh check of the step; one the
+    refresh resolved, with no decision behind it, goes back to In progress
+    (To review). The note is required, and is the revision's own.
+    """
+    return {
+        "request_id": target.pk,
+        "expected_version": version,
+        "state": "resolved" if kept else "in_progress",
+        "outcome": target.outcome if kept else None,
+        "notes": notes,
+        "contact_channel": None,
+        "contact_at": None,
+        "contact_notes": "",
+        "reviewed_ministry_duid": target.reviewed_ministry_duid if kept else None,
+        "decision_note": note,
+    }
+
+
+def _undo(actor_id, target, version, key, note, current):
+    """Back to review of a locked request's terminal step; the roster entry or None.
+
+    ``current`` is its locked placement (Entered by hand or Confirmed). The
+    revision (``undo_intent``) is written first, then, if the request is
+    ticked Entered in ParishSoft, the tick is cleared by a roster entry
+    under the same request key, which the roster guard pairs with that
+    revision (migration 0212); all in the caller's transaction.
+    """
+    system = _system()
+    notes = _latest_notes([target.pk])[target.pk]
+    kept = current.decision is not None
+    write_revision(
+        actor_id,
+        target,
+        undo_intent(target, version, note, notes, kept=kept),
+        key,
+        system,
+    )
+    latest = (
+        MinistryRosterEntry.objects.filter(request_id=target.pk)
+        .order_by("-sequence")
+        .first()
+    )
+    if not (latest and latest.entered):
+        return None
+    return roster._record(
+        actor_id,
+        target,
+        sequence=latest.sequence + 1,
+        entered=False,
+        request_key=key,
+        system=system,
+    )
+
+
+def undo_entered(store, actor_id, request_id, *, sequence, note, request_key):
+    """The request page's Clear Entered in ParishSoft: Back to review of the tick.
+
+    The same undo as the worklist's Back to review on Entered by hand
+    (#1840), with its required note: Staff and Administrators only, and,
+    as the tick itself, for a Member no longer in ParishSoft too.
+    ``sequence`` is the clearing entry's sequence as the page saw it (the
+    tick's current sequence plus one), so a page drawn before someone
+    else's change is stale. The same ``request_key`` again returns the
+    first entry; with another intent it is refused. Returns the entry.
+    """
+    if (
+        not isinstance(actor_id, UUID)
+        or not isinstance(request_id, UUID)
+        or not isinstance(request_key, UUID)
+        or type(sequence) is not int
+        or not 1 <= sequence < 2**63 - 1
+        or not isinstance(note, str)
+        or len(note) > MAX_NOTE
+    ):
+        raise ValueError("Invalid roster entry.")
+    with correlation(bound_correlation()), work_transaction():
+        # The role first: a Ministry leader is refused before the note.
+        if not roster.can_tick(current_principal(store, actor_id)):
+            raise PermissionError("The roster tick is unavailable.")
+        if not note.strip():
+            raise ValueError("Undoing Entered by hand needs a note.")
+        (target,) = _targets(store, actor_id, {request_id: None}, gone_ok=True)
+        previous = MinistryRosterEntry.objects.filter(
+            actor_id=actor_id, request_key=request_key
+        ).first()
+        if previous is not None:
+            if (previous.request_id, previous.sequence, previous.entered) != (
+                target.pk,
+                sequence,
+                False,
+            ):
+                raise ValueError("This request key is already bound.")
+            return previous
+        if not roster.eligible(target):
+            raise ValueError("This request does not take the roster tick.")
+        latest = (
+            MinistryRosterEntry.objects.filter(request_id=target.pk)
+            .order_by("-sequence")
+            .first()
+        )
+        if sequence != (latest.sequence if latest else 0) + 1:
+            raise StaleRecordError("The roster tick changed.")
+        if not (latest and latest.entered):
+            raise ValueError("The roster tick already says so.")
+        return _undo(
+            actor_id,
+            target,
+            target.version,
+            request_key,
+            note,
+            _locked_placement(target),
+        )
 
 
 def _ever_led(principal, request):

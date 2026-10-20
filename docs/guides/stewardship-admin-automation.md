@@ -3440,7 +3440,8 @@ notes; read those on the page, or download them with `export information`.
 ```sh
 pk-admin followup show REQUEST_ID
 pk-admin followup roster-entered REQUEST_ID --set --expected-version 0
-pk-admin followup roster-entered REQUEST_ID --clear --expected-version 1
+pk-admin followup roster-entered REQUEST_ID --clear --expected-version 1 \
+  --note "Marked by mistake"
 pk-admin followup roster-bulk --request REQUEST_ID:0 --request OTHER_ID:2
 pk-admin followup information-show ITEM_ID
 pk-admin followup information-update ITEM_ID --expected-version 3 \
@@ -3453,7 +3454,12 @@ adds one. A tick changed since is exit 1 (`stale_version`). A request that
 takes no tick (only a join or leave a person resolved as joined or leave
 confirmed takes one) is exit 1 (`invalid`, `error.fields` naming
 `request`), and so is a tick that already says so (naming `set` or
-`clear`). `followup roster-bulk` takes each chosen request as `ID:VERSION`,
+`clear`). `--clear` is the request's Back to review of the mark, as the
+page's Clear Entered in ParishSoft is: it needs `--note TEXT` (or `--note -`
+to read it from standard input), saying why, and records that undo with the
+note; the request is To enter by hand again, its decision kept. Without a
+note it is exit 1 (`invalid`, naming `note`); `--set` takes no note.
+`followup roster-bulk` takes each chosen request as `ID:VERSION`,
 up to 250, and only marks; it asks for confirmation first (or takes
 `--yes`), and saves nothing if any request is stale or already marked.
 Find the requests with `followup list --state resolved`: a row whose

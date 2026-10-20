@@ -3819,7 +3819,9 @@ pages' own pieces.
   Back to review of the mark
   ([undoing a terminal stage](../review-pipeline/spec.md#undoing-a-terminal-stage),
   [#1840](https://github.com/epiphany40223/parishkit/issues/1840)) and needs `--note TEXT|-`, as the page's dialog does; without one
-  it is `invalid` at `note`.
+  it is `invalid` at `note`. It records the undo through the page's
+  service (`workflows.review.undo_entered`); `--set` takes no note
+  (`invalid` at `note`), as the page's mark does not.
 - **Bulk mark.** `followup roster-bulk --request ID:VERSION ... [--yes]`
   admits with the list's own `ministry_roster_views._principal`
   (Administrators and Staff) before any input or prompt, refuses more than

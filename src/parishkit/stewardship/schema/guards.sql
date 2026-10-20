@@ -5716,10 +5716,16 @@ BEGIN
     -- A closed request changes only by Staff follow-up sending it back to
     -- review (or withdrawing one the parish added); its revision guard
     -- proves which (#1684). The Edit's Ministry is part of the projection.
+    -- Back to review of a terminal step (Entered in ParishSoft or a
+    -- Confirmed refresh check, #1840) keeps the decision: the request stays
+    -- resolved with its outcome and Edit, and only its version moves.
     IF (OLD.state NOT IN ('new','assigned','in_progress')
         AND NOT (current_user='pk_stewardship_web'
             AND OLD.state IN ('resolved','closed_no_response')
-            AND (NEW.state='in_progress' OR (NEW.state='cancelled' AND OLD.parish_added))))
+            AND (NEW.state='in_progress' OR (NEW.state='cancelled' AND OLD.parish_added)
+                OR (OLD.state='resolved' AND NEW.state='resolved'
+                    AND NEW.outcome IS NOT DISTINCT FROM OLD.outcome
+                    AND NEW.reviewed_ministry_duid IS NOT DISTINCT FROM OLD.reviewed_ministry_duid))))
        OR NEW.version<>OLD.version+1
        OR (to_jsonb(NEW)-ARRAY['state','outcome','resolved_at','resolution_source_id','superseded_by_id','assignee_id','reviewed_ministry_duid','version','updated_at'])
           IS DISTINCT FROM
@@ -5753,10 +5759,17 @@ BEGIN
               AND r.outcome IS NOT DISTINCT FROM NEW.outcome
               AND r.assignee_id IS NOT DISTINCT FROM NEW.assignee_id
               AND r.reviewed_ministry_duid IS NOT DISTINCT FROM NEW.reviewed_ministry_duid;
-        IF NOT FOUND OR NEW.resolution_source_id IS NOT NULL OR NEW.superseded_by_id IS NOT NULL THEN
+        -- Staff follow-up never carries a refresh's resolution: Back to
+        -- review of a request the refresh resolved, which its revision
+        -- guard admits only with a note, clears it (#1840); the web login
+        -- has no privilege on the column.
+        NEW.resolution_source_id := NULL;
+        IF NOT FOUND OR NEW.superseded_by_id IS NOT NULL THEN
             RAISE EXCEPTION 'Ministry follow-up projection requires its paired history' USING ERRCODE='23514';
         END IF;
-        NEW.resolved_at := CASE WHEN NEW.outcome IS NOT NULL THEN staff_at END;
+        -- An undone terminal step keeps the decision's time (#1840).
+        NEW.resolved_at := CASE WHEN OLD.state='resolved' AND NEW.state='resolved'
+            THEN OLD.resolved_at WHEN NEW.outcome IS NOT NULL THEN staff_at END;
     ELSIF current_user='pk_stewardship_web' THEN
         SELECT candidate.* INTO later FROM public.stewardship_submission candidate
         JOIN public.stewardship_family_form_baseline baseline ON baseline.id=candidate.baseline_id

@@ -471,6 +471,9 @@ FROZEN = {
     "0211_census_addition_undo.sql": (
         "348087874420f97e25e0530effa59e7c0fc302150f7137bc7b47f3e819c54f4f"
     ),
+    "0212_ministry_terminal_undo.sql": (
+        "26e01493568c5c74cd4fe11e69c8700b471944ada053fa305b94f753cfbe71b5"
+    ),
 }
 
 

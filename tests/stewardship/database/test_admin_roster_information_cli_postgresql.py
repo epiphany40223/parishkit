@@ -27,7 +27,10 @@ from parishkit.stewardship.responses.models import (
     AdditionalInformationItem,
     AdditionalInformationRevision,
 )
-from parishkit.stewardship.workflows.models import MinistryRosterEntry
+from parishkit.stewardship.workflows.models import (
+    MinistryRosterEntry,
+    MinistryWorkflowRevision,
+)
 
 from .auth_builders import signed_in
 from .test_admin_digest_list_cli_postgresql import revoke
@@ -126,12 +129,19 @@ def sequence(target):
     return latest.sequence if latest else 0
 
 
-def tick(run, target, choice="--set", *, version=None, key=None):
-    """``followup roster-entered`` at the tick's current (or given) sequence."""
+def tick(run, target, choice="--set", *, version=None, key=None, note=None):
+    """``followup roster-entered`` at the tick's current (or given) sequence.
+
+    ``--clear`` is Back to review of the mark (#1840) and gets its required
+    ``--note`` ("Typo" unless ``note`` says otherwise; "" sends none).
+    """
+    if note is None:
+        note = "Typo" if choice == "--clear" else ""
     return run(
         *("followup", "roster-entered", str(target.pk), choice),
         *("--expected-version", str(sequence(target) if version is None else version)),
         *("--request-key", str(key or uuid4())),
+        *(("--note", note) if note else ()),
     )
 
 
@@ -169,9 +179,21 @@ def test_the_tick_is_the_page_s_once_per_key(response_service, google, cli):
     assert code == 1 and document["error"]["fields"][0]["field"] == "set", document
     code, document = tick(run, join, "--clear", version=0)
     assert code == 1 and document["error"]["code"] == "stale_version", document
+    # Clearing is Back to review of the mark: invalid at note without one,
+    # and the mark takes none (#1840).
+    code, document = tick(run, join, "--clear", note="")
+    assert code == 1 and document["error"]["fields"][0]["field"] == "note", document
+    code, document = tick(run, leave, "--set", note="Typed")
+    assert code == 1 and document["error"]["fields"][0]["field"] == "note", document
     code, document = tick(run, join, "--clear")
     assert code == 0 and not document["result"]["entry"]["entered"], document
     assert (count(TICKED), count(TICK_EVENT)) == (2, 2)
+    undo = MinistryWorkflowRevision.objects.filter(request=join).latest("created_at")
+    assert (undo.state, undo.outcome, undo.decision_note) == (
+        "resolved",
+        "joined",
+        "Typo",
+    )
 
     # The page's tick and the command share the sequence: a page tick makes
     # the command's view of the tick stale.

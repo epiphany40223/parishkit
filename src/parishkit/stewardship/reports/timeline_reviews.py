@@ -107,8 +107,8 @@ WITH subs AS (
     UNION ALL
     SELECT 'ministry_revision', q.id::text, v.expected_version, v.created_at,
         v.actor_id, q.submission_id, q.entity_kind, q.entity_key,
-        q.ministry_duid::text, v.state, v.outcome, q.action, NULL,
-        NULL, NULL, NULL
+        q.ministry_duid::text, v.state, v.outcome, q.action,
+        (v.decision_note<>'')::text, NULL, NULL, NULL
     FROM subs JOIN stewardship_ministry_request q ON q.submission_id=subs.id
     JOIN stewardship_ministry_revision v ON v.request_id=q.id
     UNION ALL
@@ -215,7 +215,8 @@ def state_after(row, before):
     The row's ``a`` to ``d`` columns are, by stream: a census review's
     decision, whether it set a Reviewer's value, that value and whether it
     used the Family's value anyway; a census resolution's action; a Ministry
-    revision's state and outcome (``c`` the request's join or leave); a
+    revision's state and outcome (``c`` the request's join or leave, ``d``
+    whether it has a decision note); a
     roster tick's "true" or "false"; an Additional information revision's
     follow-up-needed and followed-up flags.
     """
@@ -257,7 +258,20 @@ def state_after(row, before):
         placement = ministry_placement(
             state=a, outcome=b, source_resolved=False, roster_entered=False
         )
-        return replace(before, decision=placement.decision)
+        # Back to review of a terminal step (#1840) records the decision
+        # again, keeping it in force (a cleared tick follows as its own
+        # line), or, for a request a refresh resolved with no decision
+        # behind it, reopens it with the required note.
+        undone = (
+            a == "resolved"
+            and before.decision is not None
+            and placement.decision == before.decision
+        ) or (a == "in_progress" and before.decision is None and row["d"] == "true")
+        return replace(
+            before,
+            decision=placement.decision,
+            forced=BACK_TO_REVIEW if undone else None,
+        )
     if stream == "ministry_roster":
         return replace(before, done="entered" if a == "true" else None)
     # Additional information: followed up is Handled, needed is Accepted

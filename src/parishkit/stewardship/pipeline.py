@@ -554,7 +554,7 @@ TERMINAL_STAGES = frozenset(
 # stream's slice of #1840 adds itself here, so a page never offers an undo
 # its stream's guard would refuse; Census changes' Entered incorrectly
 # already had its Back to review (#1737) before.
-TERMINAL_UNDO_STREAMS = frozenset({Stream.CENSUS})
+TERMINAL_UNDO_STREAMS = frozenset({Stream.CENSUS, Stream.MINISTRY})
 # Roles that may undo a terminal step: Ministry leaders never see those
 # stages (spec, "Role-specific actions").
 _TERMINAL_ROLES = frozenset({"staff", "administrator"})
