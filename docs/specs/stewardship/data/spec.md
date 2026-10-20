@@ -1132,7 +1132,7 @@ new proposed-change records where necessary. A later census response that
 gives the same answer again for an ordinary field already *published* or
 *resolved_external* (not yet in the promoted download) creates none: the
 entered change stays as it is
-([resubmission rule](../review-pipeline/spec.md#resubmission-while-the-setting-is-off),
+([resubmission rule](../review-pipeline/spec.md#resubmission-before-the-reviewed-form),
 [#1683](https://github.com/epiphany40223/parishkit/issues/1683)). The
 submission's completeness check admits that absence, and the effective-value
 index keeps that change for the next response while each census response

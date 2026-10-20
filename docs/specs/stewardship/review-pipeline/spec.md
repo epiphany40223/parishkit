@@ -1282,7 +1282,7 @@ selection the page, the counts and the row guard share:
   **Entered incorrectly** when a refresh found so.
 
 "Changed" follows [rule 2 of the setting-off
-rule](#resubmission-while-the-setting-is-off): a live response that answers
+rule](#resubmission-before-the-reviewed-form): a live response that answers
 the financial questions after the decided one with a different pledge answer
 reopens the item, even if a later response returns to the decided answer.
 Pledge answers are compared as typed values: money exactly, and the share
@@ -1421,7 +1421,7 @@ none, or Back to review → To review; Accepted → To handle; Ignored →
 Ignored; Handled → Handled. A response that answers the other way
 withdraws the item, and giving it again later is a new item, To review; one
 that leaves the answer out changes nothing
-([rule 1 to 5](#resubmission-while-the-setting-is-off)).
+([rule 1 to 5](#resubmission-before-the-reviewed-form)).
 
 ### Additional information stream
 
