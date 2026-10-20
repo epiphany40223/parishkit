@@ -10,6 +10,7 @@ carry the #1245 review notes the dispatch must honour (notes 2, 4 and 5;
 notes 1 and 3 are the worker's, in test_publication_worker_postgresql).
 """
 
+import json
 from dataclasses import replace
 from pathlib import Path
 from uuid import uuid4
@@ -279,6 +280,151 @@ def test_an_unreadable_member_is_blocked(world):
     entity = PublicationEntity.objects.get(plan=plan)
     assert entity.blocked and entity.planned_sha256 is None
     assert confirmation_counts(plan.pk)["write_entities"] == 0
+
+
+# How a Member leaves the change's Family in the promoted data (#1738): the
+# snapshot's record for the Member, rewritten in place (triggers off), so
+# the shared status reads moved, inactive or deceased.
+LEAVINGS = {
+    "moved": ("family_key='999999'", "{family_key}", '"999999"'),
+    "inactive": (None, "{active}", "false"),
+    "deceased": (None, "{deceased}", "true"),
+}
+
+
+def leave(row, how):
+    """Make the promoted data stop listing ``row``'s Member in its Family."""
+    column, path, value = LEAVINGS[how]
+    owner(
+        "UPDATE stewardship_source_member SET "
+        + (column + ", " if column else "")
+        + "canonical=jsonb_set(canonical::jsonb, %s, %s::jsonb)::text "
+        "WHERE id IN (SELECT payload_id FROM stewardship_snapshot_member m "
+        "JOIN stewardship_source_current c ON c.snapshot_id=m.snapshot_id "
+        "WHERE m.source_key=%s)",
+        [path, value, row.entity_key],
+    )
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT stewardship_member_source_status_v1(c.snapshot_id, %s, "
+            "f.family_duid) FROM stewardship_source_current c, "
+            "stewardship_family_campaign f WHERE f.id=%s",
+            [row.entity_key, row.submission.family_id],
+        )
+        assert cursor.fetchone()[0] == how
+
+
+@pytest.mark.parametrize("how", sorted(LEAVINGS))
+def test_a_member_no_longer_in_the_family_is_neither_read_nor_written(world, how):
+    """The promoted data no longer lists the Member, active and living, in
+    the change's Family (#1738): preflight leaves the change out (open and
+    unplanned) and does not read the Member for it."""
+    leave(world.first, how)
+    plan = world.planned(uuid4())
+    assert world.gateway.reads == []
+    assert not PublicationEntity.objects.filter(plan=plan).exists()
+    assert confirmation_counts(plan.pk)["write_entities"] == 0
+    assert proposal(world.first) == "pending"
+
+
+@pytest.mark.parametrize("how", sorted(LEAVINGS))
+def test_a_member_who_left_after_the_plan_is_not_written(world, how):
+    """A refresh after the confirmation keeps the change open (rule 4), so
+    the worker checks the Member again before reading them: the entity is
+    invalidated with no read and no write, and the change stays pending."""
+    plan = world.planned(uuid4())
+    _, run = world.confirm(plan)
+    leave(world.first, how)
+    reads = len(world.gateway.reads)
+    assert world.execute(run.run_id) and state(run) == "succeeded"
+    assert len(world.gateway.reads) == reads and world.gateway.writes == []
+    entity = PublicationEntity.objects.get(plan=plan)
+    assert list(entity.outcomes.values_list("result", flat=True)) == ["invalidated"]
+    assert proposal(world.first) == "pending"
+
+
+def copy(table, row_id, **values):
+    """Copy one row of ``table`` with a new id and ``values``; the new id.
+
+    Forged as the schema owner with triggers off, as the other world
+    changes here are: the copy stands for a second Family's response.
+    """
+    new_id = uuid4()
+    owner(
+        f"INSERT INTO {table} SELECT (jsonb_populate_record(NULL::{table}, "
+        f"to_jsonb(t) || %s::jsonb)).* FROM {table} t WHERE id=%s",
+        [json.dumps({"id": str(new_id), **values}), row_id],
+    )
+    return new_id
+
+
+def test_a_member_with_changes_from_two_families_plans_the_current_one(
+    world, monkeypatch
+):
+    """A Member who moved has an open change from the Family they left (kept
+    by rule 4) and one from the Family they are in now, for one field. The
+    left Family's change is left out, so the planner meets one open change
+    per field (two would raise and fail every preflight): the Member is read
+    once and only the current change is planned (#1738)."""
+    answered = world.first.submission
+    baseline = copy("stewardship_family_form_baseline", answered.baseline_id)
+    submission = copy(
+        "stewardship_submission",
+        answered.pk,
+        baseline_id=str(baseline),
+        family_version=answered.family_version + 100,
+        campaign_sequence=answered.campaign_sequence + 100,
+    )
+    current = copy(
+        "stewardship_proposed_change", world.first.pk, submission_id=str(submission)
+    )
+    # The original change stands for the Family the Member left.
+    monkeypatch.setattr(tasks, "unlisted_changes", lambda ids: {world.first.pk})
+    plan = world.planned(uuid4())
+    assert world.gateway.reads == [world.first.entity_key]
+    assert list(
+        PublicationField.objects.filter(entity__plan=plan).values_list(
+            "proposal_id", "outcome"
+        )
+    ) == [(current, "write")]
+    assert proposal(world.first) == "pending"
+
+
+def test_the_waiting_count_leaves_out_a_member_who_left(world):
+    """The Publish page counts only what preflight would plan, so a change
+    whose Member left the Family cannot offer Check ParishSoft alone."""
+    from parishkit.stewardship.reports.census_publication import waiting
+
+    campaign = world.first.submission.campaign_id
+    assert waiting(campaign) == {"changes": 1, "members": 1}
+    leave(world.first, "moved")
+    assert waiting(campaign) == {"changes": 0, "members": 0}
+
+
+def test_the_queueing_transaction_checks_the_member_again(world, monkeypatch):
+    """Should the pre-read check pass, the queue's own check still refuses a
+    Member who left: one read, no write, the entity invalidated."""
+    from parishkit.stewardship.responses import publication_worker
+
+    real = publication_worker.unlisted_changes
+    calls = []
+
+    def first_passes(ids):
+        """The pre-read check answers "still listed"; later ones are real."""
+        calls.append(ids)
+        return set() if len(calls) == 1 else real(ids)
+
+    plan = world.planned(uuid4())
+    _, run = world.confirm(plan)
+    leave(world.first, "moved")
+    reads = len(world.gateway.reads)
+    monkeypatch.setattr(publication_worker, "unlisted_changes", first_passes)
+    assert world.execute(run.run_id) and state(run) == "succeeded"
+    assert len(calls) == 2
+    assert len(world.gateway.reads) == reads + 1 and world.gateway.writes == []
+    entity = PublicationEntity.objects.get(plan=plan)
+    assert list(entity.outcomes.values_list("result", flat=True)) == ["invalidated"]
+    assert proposal(world.first) == "pending"
 
 
 def test_a_change_since_the_read_fails_the_preflight(world):

@@ -2056,6 +2056,10 @@ Snapshot promotion performs these effects transactionally:
   applying provider-suppression records;
 - resolve proposals that now match upstream;
 - mark three-way conflicts;
+- keep, unchanged, an open census change whose Member is no longer an
+  active, living Member of its Family (the review pipeline's
+  [rule 4](../review-pipeline/spec.md#refresh-checks)), since publication
+  refuses such a Member ([review and publication](#review-and-publication));
 - resolve Ministry requests whose requested roster state is now current;
 - re-evaluate final census changes and decided Ministry requests against
   the new data, recording a refresh check for each whose outcome changed
@@ -2096,6 +2100,14 @@ current authorization/filter snapshot.
    does not claim the mutation lease.
 2. Validate the upstream organization without cache and fetch uncached current
    contact payloads for every affected entity without holding a database lock.
+   A change whose Member the promoted data no longer lists as an active,
+   living Member of the change's Family (moved to another Family, inactive,
+   deceased or gone) is left out of the plan: it stays open and unplanned,
+   and the Member is not read for it, so a change a Family made is never
+   written to a Member of another household
+   ([#1738](https://github.com/epiphany40223/parishkit/issues/1738)). A
+   Member with changes from two Families plans only those of the Family
+   they are in now.
 3. Re-evaluate each approved field against baseline/proposed/current. After
    an Administrator resolved a conflict with *Use the Family's value anyway*
    ([reports](../reports/spec.md#automatic-census-review), ADM-09.03), the
@@ -2191,7 +2203,12 @@ revalidates its fencing token, confirms the system is still in Production mode
 database also refuses to queue an entity's changes outside Production mode,
 though no guard can refuse the PUT itself),
 fetches the uncached contact record, and repeats
-canonical merge/conflict evaluation against the confirmed plan digest. Any
+canonical merge/conflict evaluation against the confirmed plan digest. As it
+queues the entity's changes it also confirms the current promoted data still
+lists the Member, active and living, in each written change's Family (a
+refresh may have promoted since the preflight); an entity none of whose
+changes it has queued yet is checked before its read, so such a Member is
+not read either. Any
 difference invalidates that entity without writing and returns it for
 confirmation; a conditional-write primitive is used when ParishSoft exposes
 one. Publication then groups fields by entity and uses idempotent v2 `PUT`

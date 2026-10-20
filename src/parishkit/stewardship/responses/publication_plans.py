@@ -14,7 +14,10 @@ before each PUT, that nothing changed since the Administrator confirmed:
 - ``matches_confirmed`` is the pure pre-PUT check of a fresh plan against
   the confirmed one;
 - ``record_outcome`` (the worker, under the source mutation fence) records
-  one write attempt on an entity.
+  one write attempt on an entity;
+- ``unlisted_changes`` names the changes whose Member the current promoted
+  data no longer lists, active and living, in the change's Family, which
+  preflight and the worker refuse to write (#1738).
 
 Nothing here calls ParishSoft, and only that mark changes a proposal. SQL
 independently checks every row, its authority and its audit
@@ -27,7 +30,7 @@ name.
 import re
 from uuid import UUID
 
-from django.db import transaction
+from django.db import connection, transaction
 from django.db.models import F
 
 from parishkit.stewardship.accounts.policy import Capability, allows, current_principal
@@ -54,6 +57,43 @@ _RESULT_AUDIT = {
     "invalidated": AuditOutcome.CANCELLED,
     "failed": AuditOutcome.FAILED,
 }
+
+
+# Each change's Member standing in the current promoted data, by the shared
+# SQL status (migration 0092's stewardship_member_source_status_v1, #1217),
+# so publication refuses exactly the Members every page marks.
+_STANDING = """
+SELECT p.id, stewardship_member_source_status_v1(sc.snapshot_id, p.entity_key,
+    f.family_duid)
+FROM stewardship_proposed_change p
+JOIN stewardship_submission s ON s.id=p.submission_id
+JOIN stewardship_family_campaign f ON f.id=s.family_id
+CROSS JOIN stewardship_source_current sc
+WHERE sc.singleton AND p.entity_kind='member' AND p.id = ANY(%s)
+"""
+
+
+def unlisted_changes(proposal_ids):
+    """The ids of the Member changes publication must not write now (#1738).
+
+    A change whose Member the current promoted ParishSoft data no longer
+    lists as an active, living Member of the change's Family (gone, moved
+    to another Family, inactive or deceased) was made by a household the
+    Member is no longer in. Refresh reconciliation keeps such a change at
+    its stage (the review pipeline's rule 4) instead of cancelling it, so
+    this check is what stops its write: preflight plans the Member as
+    *cannot check*, and the worker invalidates the entity before queueing.
+    A change with no promoted data to judge it by counts as unlisted.
+    """
+    ids = list(proposal_ids)
+    if not ids:
+        return set()
+    with connection.cursor() as cursor:
+        cursor.execute(_STANDING, [ids])
+        current = {
+            row_id for row_id, status in cursor.fetchall() if status == "current"
+        }
+    return set(ids) - current
 
 
 def _uuids(*values):

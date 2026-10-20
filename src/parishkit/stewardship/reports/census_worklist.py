@@ -17,6 +17,7 @@ from django.db import IntegrityError
 from django.utils.html import format_html
 
 from parishkit.stewardship.accounts.policy import Capability, allows
+from parishkit.stewardship.accounts.templatetags.stewardship import source_status
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.pipeline import (
@@ -104,6 +105,17 @@ def _family(row):
     )
 
 
+def _who(row):
+    """The Who cell: the name, with the shared ParishSoft status badge beside it.
+
+    A Member change whose Member the current data no longer lists, active
+    and living, in the Family keeps its stage (rule 4, #1738), so the badge
+    (Not in ParishSoft, Inactive or Deceased in ParishSoft) says why.
+    """
+    badge = source_status(row.get("member_status"))
+    return format_html("{} {}", row["who"], badge) if badge else row["who"]
+
+
 def _member_duid(row):
     """The Member DUID cell: the DUID, "New Member" or blank (a household change)."""
     if row["member_duid"] is not None:
@@ -164,6 +176,7 @@ def worklist_rows(rows):
                 "withheld": _withheld(row),
                 "family": _family(row),
                 "family_duid": duid(row["family_duid"]),
+                "who": _who(row),
                 "member_duid": _member_duid(row),
                 "what": row["label"],
                 "reviewer_value": row["edited"],

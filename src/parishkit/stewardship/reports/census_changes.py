@@ -308,6 +308,11 @@ SELECT p.id::text, p.entity_kind, p.entity_key, p.field,
               WHERE later.proposal_id=pr.id
                 AND later.expected_version>base.expected_version
                 AND later.decision<>'approved')) AS reopened,
+    -- A Member change's Member standing in the current data, by the shared
+    -- status (#1217): a change whose Member left the Family keeps its stage
+    -- (rule 4, #1738), and the Who cell shows the shared badge for it.
+    CASE WHEN p.entity_kind='member' THEN stewardship_member_source_status_v1(
+        sc.snapshot_id, p.entity_key, f.family_duid) END AS member_status,
     -- The response's place in its Family's order, which tells a final change
     -- a later response replaced (#1737).
     s.family_version
@@ -417,6 +422,7 @@ COLUMNS = (
     "resolution_at",
     "resolution_by",
     "reopened",
+    "member_status",
     "family_version",
 )
 
@@ -938,7 +944,7 @@ def shape(row):
     # value now (the change's own stored value is frozen at its mark), and
     # whether an Entered by hand change is still not seen there.
     check = row.get("check")
-    if check is not None and check.observed and row["entity_kind"] == "member":
+    if check is not None and check.observed:
         shown["parishsoft_read"] = bool(check.observed.get("available"))
         shown["parishsoft_now"] = display(check.observed.get("value"))
     shown["not_seen"] = bool(

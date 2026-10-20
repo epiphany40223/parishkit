@@ -525,10 +525,23 @@ How [#1689](https://github.com/epiphany40223/parishkit/issues/1689) builds
 these rules. An item still open (a census change To review, Conflict, Ready,
 To enter by hand or Ignored; a Ministry request To review) keeps today's
 [refresh reconciliation](../data/spec.md#parishsoft-refresh-reconciliation),
-which already stores ParishSoft's value or resolves the request, with two
+which already stores ParishSoft's value or resolves the request, with three
 corrections: a census change's C is the reviewer's value when it was
-Edited, and an Ignored census change ParishSoft now matches stays Ignored
-(its row says "ParishSoft now matches the Family's answer"). An item whose
+Edited; an Ignored census change ParishSoft now matches stays Ignored
+(its row says "ParishSoft now matches the Family's answer"); and, from
+[#1738](https://github.com/epiphany40223/parishkit/issues/1738), a census
+change whose Member is no longer an active, living Member of its Family
+keeps its stage (rule 4) instead of being cancelled (or, for a death date,
+put in Conflict). That is safe because the update run refuses such a
+Member: its preflight leaves the change unplanned and does not read the
+Member for it, and the publish worker checks again before it reads or
+writes
+([review and publication](../data/spec.md#review-and-publication)). The
+worklist's Who cell shows the shared
+[ParishSoft status badge](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
+for such a Member, whatever the row's stage. The Family's own resubmission
+still withdraws the ordinary changes of a Member no longer on its form, as
+any omitted answer is withdrawn. An item whose
 row is final (a census change Entered by hand or Updated in ParishSoft) or
 decided (a Ministry request a person accepted or ignored) gets a **refresh
 check** instead (a census change a later Family response replaced does not:
@@ -570,6 +583,26 @@ flag off. While some item has the flag, the Stage filter
 has a Not seen in ParishSoft choice (Staff and Administrators), counted
 beside the stages it is a flag of.
 
+Issue #1738 also checks three census fields the Member contact read does not
+carry, each against its own reading of the promoted data, with the
+snapshot's own evidence (migration 0137, provisional number, widens the
+check's guard for them):
+
+- **Moved** (a Member leaving the household): ParishSoft holds it when the
+  data no longer lists the Member as an active Member of the change's
+  Family (not in the data, in another Family, or inactive). A Member the
+  data marks deceased is no evidence of a move and gets no check.
+- **Deceased**: ParishSoft holds it when the data lists the Member, still
+  in the change's Family, as deceased. A Member no longer in that Family
+  gives no evidence and gets no check.
+- **Email opt-out**: ParishSoft holds it when the active Family's
+  `sendNoMail` flag equals the answer ([below](#what-is-confirmable)). Its
+  A is unavailable, so a different flag is unchanged (and Not seen after
+  the threshold), never Entered incorrectly.
+
+For moved and deceased, A is "no" and C is "yes", so, as for a Ministry
+request, rule 3 cannot apply.
+
 Entered incorrectly's two fixes
 ([#1737](https://github.com/epiphany40223/parishkit/issues/1737)) are the
 row's Entered by hand and Back to review icons (one by one or in bulk, each
@@ -609,14 +642,15 @@ only when a value was recorded and ParishSoft holds another one.
 
 Left for later, each in its own issue:
 
-- [#1738](https://github.com/epiphany40223/parishkit/issues/1738): rule 4
-  for open census changes (a refresh still cancels a change whose Member
-  left the Family, until the update run refuses such a Member); an Updated
-  in ParishSoft change found back at A or at a third value (publication is
-  switched off until [#1688](https://github.com/epiphany40223/parishkit/issues/1688));
-  and confirming the census fields the Member contact read does not carry
-  (moved, deceased, a New Member, the Family's email opt-out and address),
-  which stay final when Entered by hand.
+- [#1749](https://github.com/epiphany40223/parishkit/issues/1749): an
+  Updated in ParishSoft change found back at A or at a third value
+  (publication is switched off until
+  [#1688](https://github.com/epiphany40223/parishkit/issues/1688)), which
+  needs the derived guard to admit `published` to `conflict`; and
+  confirming an entered New Member (matching a new ParishSoft Member to the
+  proposed one is a staff association not yet built) and the Family's
+  primary address (after #1688's smoke test maps it), which stay final when
+  Entered by hand.
 
 ### What is confirmable
 

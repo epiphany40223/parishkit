@@ -444,6 +444,9 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # resolution guard and 0132's refresh check guard, which their files bring
 # back older (``CLOSURE_REPLACED`` runs 0133's file again), and the derived
 # guard last (``CLOSURE_REPLACED_ONLY``).
+# 0137 (#1738, provisional number) creates the census refresh source and
+# replaces 0132's refresh check guard. The source goes, so its file installs
+# whole again after 0132's, putting its guard body back over 0132's.
 CLOSURE_CREATED = {
     "public.stewardship_limitations_report_v1(uuid,jsonb)": (
         "stewardship_reports",
@@ -779,6 +782,10 @@ CLOSURE_CREATED = {
         ),
         ("stewardship_reports", "0034_pledge_conflicts"),
     ),
+    "public.stewardship_refresh_census_source_v1(uuid,uuid,text,text,text)": (
+        "stewardship_workflows",
+        "0005_census_refresh_sources",
+    ),
 }
 
 
@@ -1038,6 +1045,14 @@ CLOSURE_REPLACED_ONLY = {
     "stewardship_response_derived_guard_v1": (
         ("stewardship_responses", "0017_entered_incorrectly_fixes"),
         "AND (OLD.execution='resolved_external' OR (NOT EXISTS (",
+    ),
+    # 0137 (#1738) replaces the refresh check guard last, on 0133's body; the
+    # rerun of 0133's file (CLOSURE_REPLACED, for its resolution guard) puts
+    # 0133's body back over it, and 0137 creates the census refresh source,
+    # so only its replacement statement runs again.
+    "stewardship_refresh_check_guard_v1": (
+        ("stewardship_workflows", "0005_census_refresh_sources"),
+        "stewardship_refresh_census_source_v1(",
     ),
     # 0109 (#1398) widens 0106's safe context with the export report and
     # format keys, and 0122 (#1620) widens 0109's with the automatic view
