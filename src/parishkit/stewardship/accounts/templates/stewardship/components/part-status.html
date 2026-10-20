@@ -1,0 +1,14 @@
+{% load i18n %}{% comment %}
+  A part an audited page could not read (#1863; web/part_status.py, UX
+  conventions "Pages that update themselves"). The notice says so in place
+  of the part, never asking for a reload. live-status-v1.js polls the
+  region's passive status (data-live-url), which never extends the sign-in
+  and records no audit event; once a re-read would show the part, the
+  answer is settled and carries the hidden data-reread follow-up link, and
+  ui-v1.js re-reads the page's own address once, in place and marked
+  automatic, redrawing the region the link names. Not aria-live: the notice
+  does not change between checks, and the part that replaces it is the
+  page's own quiet in-place redraw. A part with a fixed pace is also
+  data-live-retry, so ui-v1.js's backoff after failed re-reads never
+  checks it faster than that pace.
+{% endcomment %}{% with status=part_status %}<div data-live-status="{{ status.name }}" data-live-url="{{ status.url }}"{% if not status.ready %} data-live-pending{% if status.interval %} data-live-interval="{{ status.interval }}"{% endif %}{% endif %}{% if status.interval %} data-live-retry{% endif %}><p class="{{ status.notice_class }}" id="{{ status.notice_id }}">{{ status.notice }}</p>{% if status.ready %}<a hidden data-live-follow data-reread href="#{{ status.region }}">{% translate "Show it now" %}</a>{% endif %}</div>{% endwith %}
