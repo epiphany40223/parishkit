@@ -748,9 +748,18 @@ def test_campaign_images_review_in_the_dialog():
     """Each Campaign images upload and removal opens the shared review dialog
     (#750) from the slots' region, which is redrawn from the page's address
     once a change is applied; the page draws no in-place review region, and
-    the dialog's Review sends an upload multipart, as the form would."""
+    the dialog's Review sends an upload multipart, as the form would.
+    Inside the campaign wizard the upload form and the save form save
+    directly instead (#1404 PR 4c), with no dialog."""
     text = (TEMPLATES / "artwork-settings.html").read_text()
-    forms = re.findall(r"<form\b[^>]*>", text)
+    every = re.findall(r"<form\b[^>]*>", text)
+    wizard = [form for form in every if "data-wizard-upload" in form]
+    wizard += [form for form in every if "data-direct-save" in form]
+    assert len(wizard) == 2 and all("data-review-open" not in form for form in wizard)
+    assert 'data-review-outcome="artwork-outcome-{{ entry.slot }}"' in wizard[0]
+    assert 'enctype="multipart/form-data"' in wizard[0]
+    assert "data-direct-uploads" in wizard[1]
+    forms = [form for form in every if form not in wizard]
     assert len(forms) == 2
     for form in forms:
         assert 'data-review-open="artwork-review"' in form

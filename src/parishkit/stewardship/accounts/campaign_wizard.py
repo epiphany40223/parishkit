@@ -30,9 +30,10 @@ the Campaign calendar, and Campaign settings' content history) draw the
 same stepper with their step current and a Return to <step> link instead
 (``SUBPAGES``).
 
-On Campaign settings and Share options (``DIRECT_STEPS``) the same primary
-becomes **Save and continue** once the page's form holds a change (#1404
-PR 4): the form posts its ``save`` action, which ``save_step`` records
+On Campaign settings, Share options and Campaign images (``DIRECT_STEPS``)
+the same primary becomes **Save and continue** once the page's form holds a
+change (#1404 PR 4; on Campaign images a chosen image, PR 4c): the form
+posts its ``save`` action, which ``save_step`` records
 directly, with no review dialog, while the stepper still applies; the page
 follows the change and then opens the next step not done yet. The
 sub-pages that save (Pages and emails' editor, New and Edit scheduled email;
@@ -94,9 +95,11 @@ _CONTENT_SCHEDULE_VALUES = frozenset({"template_version", "subject"})
 # that page's (Campaign settings can make the same change, and it counts too).
 _WINDOW_VALUES = frozenset({"timezone", "start_date", "end_date"})
 # The step pages whose own form the action row's primary saves directly
-# (#1404 PR 4), and that form's id on each of them.
-DIRECT_STEPS = frozenset({"settings", "share_options"})
+# (#1404 PR 4; Campaign images, PR 4c), and that form's id on each of them:
+# ``DIRECT_FORM`` unless ``STEP_FORMS`` names another.
+DIRECT_STEPS = frozenset({"settings", "share_options", "images"})
 DIRECT_FORM = "settings-form"
+STEP_FORMS = {"images": "artwork-save-form"}
 # The sub-pages whose form the action row's Save and go back saves directly
 # (#1404 PR 4b), by URL name, and that form's id by their step.
 DIRECT_SUBPAGES = frozenset(
@@ -146,12 +149,14 @@ class CampaignWizard(Wizard):
     def direct_form(self):
         """The id of the form a direct save posts, or None.
 
-        ``DIRECT_FORM`` on a step page; a sub-page's form by its step
-        (``SUBPAGE_FORMS``).
+        A step page's by its step (``STEP_FORMS``, else ``DIRECT_FORM``); a
+        sub-page's form by its step (``SUBPAGE_FORMS``).
         """
         if not self.direct:
             return None
-        return SUBPAGE_FORMS[self.current.key] if self.sub else DIRECT_FORM
+        if self.sub:
+            return SUBPAGE_FORMS[self.current.key]
+        return STEP_FORMS.get(self.current.key, DIRECT_FORM)
 
     @property
     def reviewable(self):

@@ -1791,7 +1791,10 @@ refused upload marks the slot's field and says why in the slot's own status
 line, with no jump to the top (#1410). An upload that expired,
 or was staged against settings changed since, is refused in the dialog with
 a request to reload the page and upload it again (the slots keep the version
-the page was loaded at).
+the page was loaded at). Inside the campaign wizard the uploads are saved
+directly instead, with Save and continue
+([guided steps](#create-the-campaign), #1404 PR 4c); Remove this image keeps
+its confirmation there too.
 Artwork is presentation, not structure, so it stays editable while the campaign
 is live. Each Family email's editor (initial, reminder and confirmation) has a
 "Show the campaign banner at the top of this email" checkbox, on by default.
@@ -3599,11 +3602,11 @@ its guided steps are built
 quick wins ([#1407](https://github.com/epiphany40223/parishkit/pull/1407)),
 Create the campaign drawn as step 1 (#1404 PR 3), Load ParishSoft data as
 step 2 (#1404 PR 5), and the direct save
-on Campaign settings and Share options (#1404 PR 4) and on Pages and emails'
-editor and New and Edit scheduled email (#1404 PR 4b).
+on Campaign settings and Share options (#1404 PR 4), on Pages and emails'
+editor and New and Edit scheduled email (#1404 PR 4b) and on Campaign images
+(#1404 PR 4c), and the Pages and emails item states (#1404 PR 6b).
 The rest of #1404 is planned, and each part below marked "(planned, #1404
-PR n)" describes the design, not yet the pages: the direct save on Campaign
-images (PR 4c); the Pages and emails item states and the
+PR n)" describes the design, not yet the pages: the
 suggested schedules (PR 6); and Back asking before it discards, with
 Go-live readiness's summary lines (PR 7). Setup ends without a campaign, so
 a newly set-up deployment reaches the page; a deployment set up before #142
@@ -3835,9 +3838,14 @@ live.
   never automatically at creation. Outside the stepper Refresh from
   ParishSoft is unchanged
   ([manual ParishSoft refresh](#manual-parishsoft-refresh)).
-- **Share options** and **Campaign images.** The existing pages in wizard
-  mode. Removing an image keeps its confirmation, because it discards a file
-  ([wizard rule 5](../ui-conventions/spec.md#wizards)).
+- **Share options.** The existing page in wizard mode.
+- **Campaign images** (#1404 PR 4c). The existing page in wizard mode, whose
+  slots draw no Upload and review: each keeps its image, its file field and
+  its Remove this image, and the action row's primary saves every chosen
+  image at once (below). Removing an image keeps its confirmation, because
+  it discards a file ([wizard rule 5](../ui-conventions/spec.md#wizards));
+  once it is applied the slots are redrawn in place and the page stays on
+  its step, as outside the wizard.
 - **Pages and emails** (#1404 PR 6b). The list keeps its order (pages, then
   emails) and gives each item one state, as text: **Default text**,
   **Edited**, **Kept as is** (reviewed in the wizard without a change) or
@@ -3930,10 +3938,25 @@ to reload the page. A refusal (a value at
 its field, a stale page, background work, setup that ended meanwhile)
 stays on the page with its reason, and a draft's dates-only change with
 schedules still leads to Dates and mail schedules' combined review. On
-Campaign images, while a chosen image is not uploaded yet, Continue is
-unavailable, with a hint after the row in a line that is always reserved,
-so the page's own Save (with its review dialog, for now) stays the way on,
-until its direct save makes it Save and continue (planned, #1404 PR 4c).
+Campaign images (#1404 PR 4c) the change is a chosen image: once any slot's
+file field holds one, the primary is Save and continue, and Continue again
+once every chosen file is cleared. Save and continue first uploads each
+chosen image to its slot's own upload address, which normalizes and stages
+it as an upload outside the wizard does (nothing changes yet), one at a
+time, the status line saying "Saving…"; then it posts one save naming the
+staged image of each chosen slot, with the page's request key. The change's
+request key comes from that page key and the staged images' ids, never the
+image bytes, so a repeat of the same save answers with the same change. The
+server checks that each staged image is this sign-in's own, for that slot's
+kind (a banner or an icon), not expired, and for a slot the campaign shows,
+and that the page's version is current, and records one change setting every
+chosen slot, as above. A refused image (not a usable image, too large, or
+for a slot the campaign does not show) is marked at its slot's field and said
+in that slot's own status line, with nothing saved; the images already staged are
+kept for the retry, so they are uploaded again only when their file is
+changed. A staged image that can no longer be saved (it expired after a
+day, the settings changed since, another sign-in) is refused in the row's
+status line with a request to reload the page and choose it again.
 Load ParishSoft data offers Continue only once the campaign has its Families
 (above). Preview and test
 email offers Continue to Go-live readiness only once its test is accepted,

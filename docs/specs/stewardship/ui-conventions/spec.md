@@ -2518,7 +2518,8 @@ completed only while the campaign has its Families;
 an applied change or a Continue stays completed, while Preview and test
 email counts only for a test of the invitation's current revision. It meets
 rule 8 for Continue, which opens the next step not done yet. Campaign
-settings and Share options meet rules 3 to 5 and 8 (#1404 PR 4): their
+settings and Share options meet rules 3 to 5 and 8 (#1404 PR 4), and
+Campaign images too (#1404 PR 4c), where a chosen image is the change: their
 Save and continue saves directly, follows the change and opens the next
 step not done yet. The sub-pages that save (an email's editor, New and
 Edit scheduled email) meet rule 10's Save and go back (#1404 PR 4b): it
@@ -2526,11 +2527,7 @@ saves directly and returns to the step, whose status line says what was
 saved. Pages and emails' editor also meets rule 10's Keep as is and go back
 (#1404 PR 6b): it marks the item Kept as is and returns to the list, with
 focus on the item's row; New and Edit scheduled email store no item mark,
-so Return to *step* is their way back while unchanged. On Campaign images, until its direct save lands (planned, #1404
-PR 4c), Continue is unavailable while an image is chosen but not uploaded,
-so the page's own upload, with its review dialog, is the way on, and after
-it the page redraws in place and stays on its step;
-and Back asking before it discards (rule 6) is not built in either
+so Return to *step* is their way back while unchanged. Back asking before it discards (rule 6) is not built in either
 wizard. Each part's precedent moves into the rule above when it lands.
 
 ## Admin page layout and help
