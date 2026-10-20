@@ -806,7 +806,9 @@ def record_refresh_checks(snapshot, corpus, *, campaign_id, full):
     for model in {type(check) for check in checks}:
         model.objects.bulk_create([check for check in checks if type(check) is model])
     for check in checks:
-        if check.outcome == CONFLICT:
+        # Only a census change's check moves it (#1749); a pledge's own
+        # conflict check (#1747) is a stage, written above, not a move.
+        if type(check) is RefreshCheck and check.outcome == CONFLICT:
             _to_conflict(snapshot, check)
     return len(checks)
 
