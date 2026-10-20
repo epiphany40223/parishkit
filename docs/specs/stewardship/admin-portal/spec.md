@@ -10114,7 +10114,7 @@ every `'<prefix>_'||` an installed audit-writing function builds to be a
   line's parish profile changes (`admin_cmd_parish_confirm`) and Campaign
   image removals (`admin_cmd_artwork_remove`), parish logo uploads and
   their Apply (`admin_cmd_branding_preview`, `admin_cmd_branding_confirm`),
-  email template deletions
+  email template deletions and page and email text changes
   (`admin_cmd_content_confirm`), No-reminders WorkGroup changes
   (`admin_cmd_workgroup_confirm`), Campaign settings changes
   (`admin_cmd_campaign_confirm`), the first campaign's creation

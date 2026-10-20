@@ -1783,7 +1783,11 @@ signatures:
   which the page now calls. `content preview` moved the email tables'
   Delete build into `content_delete_views.review_deletion` (and its choice
   check into `chosen_ids`) and the editors' plain-text conversion into
-  `content_views.plain_text`, which the pages now call.
+  `content_views.plain_text`, which the pages now call; `content preview
+  --edit` moved the editor's Preview changes build (after the form, up to
+  the signed preview and the review's samples) into
+  `content_views.review_change`, and its salt into `preview_salt`, which
+  the editor now calls (#1873).
   `parish show`, `ministries list` and `campaign shares` needed none: the
   pages' profile, catalog and campaign-target reads were already
   request-free; `branding show` moved the logo page's current-logo query
@@ -2045,7 +2049,7 @@ none.
 | `campaign_settings`, `campaign_create`, `campaign_clone` | `campaign show`, `campaign preview`, `campaign confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), Campaign settings' read, Review and Apply, a live campaign's Ministries included (#1119); `campaign create-preview`, `campaign create` ([#1899](https://github.com/epiphany40223/parishkit/issues/1899)), [Create the campaign](../admin-portal/spec.md#create-the-campaign)'s Review and Apply for the first campaign (#142); `campaign_clone` is deferred on #145: until then creating or copying a campaign is refused, except the first campaign ([navigation rule 10](../ui-conventions/spec.md#navigation-rules)), and Copy campaign refuses every request before reading anything, so a command could only repeat that refusal. Commands that go through `confirm` and `_target`, or call `refuse_campaign_creation`, get the same refusal as the pages; `privileged_actions.configuration_request` has no such check |
 | `share_settings` | `campaign shares`, `campaign shares-preview`, `campaign shares-confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), Share options' read, Review and Apply |
 | `reminder_workgroup` (its review and apply, #750) | `workgroup show`, `workgroup preview`, `workgroup confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)) |
-| `content_catalog`, `content_edit`, `content_revision`, `content_delete`, `content_history`, `content_history_revision`, `content_plain_text` | `content list`, `content show`, `content history`, `content preview` (the Delete and the plain-text preview), `content confirm` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the editor's Review and Apply (PR 10) |
+| `content_catalog`, `content_edit`, `content_revision`, `content_delete`, `content_history`, `content_history_revision`, `content_plain_text` | `content list`, `content show`, `content history`, `content preview` (the editor's Preview changes, the Delete and the plain-text preview), `content confirm` (the review dialog's Apply and the Delete's) ([#463](https://github.com/epiphany40223/parishkit/issues/463), [#1873](https://github.com/epiphany40223/parishkit/issues/1873)) |
 | `parish_settings`, `ministries` | `parish show`, `parish preview`, `parish confirm`, `ministries list` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); Ministries changes nothing since [#1267](https://github.com/epiphany40223/parishkit/issues/1267) |
 | `hosted_files`, `hosted_file_delete`, `hosted_file_rename` | `files list`, `files delete`, `files rename` ([#463](https://github.com/epiphany40223/parishkit/issues/463)) |
 | `artwork_settings` (its upload and removal reviews, #750) | `artwork show`, `artwork remove-preview`, `artwork remove` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); uploads are `artwork_upload`'s, below |
@@ -2321,10 +2325,57 @@ campaign and scope (`campaign_views._scope`), with
 returns the original request. Both need a full-scope session; neither is
 fresh-gated nor prompts, as the page's action is not privileged and the
 reviewed token replaces its dialog. Each checks the role first
-(#1341). The editor's own Review and Apply join these verbs in a later
-slice. The two modes, `--delete` repeated for several emails, no prompt,
+(#1341). The two modes, `--delete` repeated for several emails, no prompt,
 the `deleting` and `plain_text` fields, the plain-text mode needing a
 full-scope session and the command-only event are defaults, pending
+Administrator confirmation.
+
+`content preview --edit {page,email} SLOT [--revision ID]
+--expected-version … -` and `content confirm --edit {page,email} SLOT
+[--revision ID] --token …` are the content editor's **Preview changes**
+and its review dialog's **Apply** (#750, #1873), outside the campaign
+wizard. The page or email is named as for `content show`. A page or email
+has several multi-line fields and the wrapper forwards standard input only
+once, so the fields come as one JSON object on standard input after the
+preamble: `subject`, `html`, `text` (strings), `generate_text`,
+`show_banner` and `clear` (booleans). An absent field keeps the editor's
+own value as it opens (`content show`), except that with
+`generate_text` true an absent `text` is the generated one, as the editor
+fills it; with `clear` true the content fields are greyed and not sent on
+the page, so giving one is `invalid`. A field the editor does not show
+(`subject`, `text` or `generate_text` on a page, `show_banner` where the
+banner choice does not apply), an unknown name or a wrong type is
+`invalid` at `content.<name>`. The preview admits as the editor's post
+does (`CONFIGURE`, recording activity), then, in the editor's work
+transaction, reads the page's pinned state and campaign check
+(`content_views._content_campaign`) and the editor's lookup
+(`editor_content`), checks the version (another is `stale_version`),
+binds the page's own `ContentForm` (with its Remove rule: the subject is
+not required while `clear` is set) and builds the change through the
+page's own `content_views.review_change` (`revision_patch`,
+`build_candidate` and `sign_preview` with the editor's salt,
+`preview_salt`). The form's refusals are `invalid` at `content.<field>`
+(or `content`) with the page's words; no change is `invalid` at `content`
+("No content has changed."); removing an email a schedule still sends is
+`invalid` at `content.clear` with the page's fix; background work holding
+the campaign is `stale_version`; an archived campaign, none, or an unknown
+slot or revision `not_available`. It prints `action` (`edit`), `version`,
+`campaign_id`, `edit` (`kind`, `slot`, `revision_id`, `name`, the
+fictional sample's `before` and `after`, each `subject`, `html` and `text`
+or null, and `schedules`, the saved schedules the new text switches, each
+`id`, `kind`, `name` (the mail type's), `subject` and `due_at`, null for a recurring
+digest) and `preview.token`, and records nothing, as the editor's Preview
+changes records nothing. `content confirm --edit` is the dialog's Apply:
+`confirm_intent` with the editor's salt for the same page or email and the
+page's scope (`campaign_views._scope`), with one
+`admin_cmd_content_confirm` in the request's own transaction; a repeat
+returns the original request. A token for another page or email, or the
+Delete's, is `invalid`. As for the Delete, both need a full-scope session,
+neither is fresh-gated nor prompts, and the role is checked before
+standard input is read. The campaign wizard's direct save (#1404 PR 4b)
+stays on the page: outside the wizard the reviewed change is the same.
+The JSON object on standard input, `--edit` on both verbs, the `edit`
+field and reusing `admin_cmd_content_confirm` are defaults, pending
 Administrator confirmation.
 
 `artwork remove-preview SLOT --expected-version …` and `artwork remove
@@ -4850,7 +4901,8 @@ exactly the commands that exist.
   the prompt.
 - **PR 10, other configuration:** campaign, content (`content list`,
   `content show` and `content history` first, then `content preview` and
-  `content confirm` for the Delete and the plain-text preview), Ministries, parish, logos
+  `content confirm` for the Delete and the plain-text preview, then their
+  `--edit` mode for the editor's Review and Apply, #1873), Ministries, parish, logos
   and Share options
   (`parish show`, `ministries list`, `branding show` and `campaign shares`
   first, then `parish preview` and `parish confirm`, and `campaign
