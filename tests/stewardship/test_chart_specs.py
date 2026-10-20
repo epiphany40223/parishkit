@@ -30,7 +30,6 @@ from parishkit.stewardship.reports.chart_specs import (
     financial_charts,
     funnel_chart,
     label_room,
-    ministry_followup,
     participation_chart,
     quiet_slots,
     round_ticks,
@@ -481,52 +480,6 @@ def test_financial_share_chart_draws_every_offered_method_and_groups_retired():
     )
 
 
-def test_ministry_followup_draws_each_state_against_all_requests():
-    """Resolved or closed and Unresolved are progress bars against every
-    current request of the matching Ministries (#720), each bar's value on
-    its axis label's second line, as the Participation chart draws it."""
-    totals = {
-        "joining": 30,
-        "leaving": 10,
-        "unresolved": 28,
-        "completed": 12,
-        "requests": 40,
-    }
-    chart = ministry_followup(totals)
-    assert (chart.key, chart.title) == ("ministry-followup", "Follow-up progress")
-    spec = json.loads(json.dumps(chart.spec))
-    assert spec["encoding"]["x"]["scale"] == {"domain": [0, 40], "nice": False}
-    assert spec["encoding"]["x"]["title"] == "Requests"
-    assert [row["tick"] for row in spec["data"]["values"]] == [
-        "Resolved or closed — 12 out of 40 (30%)",
-        "Unresolved — 28 out of 40 (70%)",
-    ]
-    assert chart.summary == (
-        "Follow-up progress: Resolved or closed 12 out of 40 (30%), "
-        "Unresolved 28 out of 40 (70%)."
-    )
-    assert chart.table.headings == (
-        "Follow-up progress",
-        "Requests",
-        "Share of all requests",
-    )
-
-
-def test_ministry_followup_without_progress_draws_zero_bars():
-    """With no request, or no progress at all (Members no longer in
-    ParishSoft), the chart still draws, its bars at zero, so its box never
-    appears or disappears under the reader (no layout shift, #736)."""
-    empty = dict.fromkeys(
-        ("joining", "leaving", "unresolved", "completed", "requests"), 0
-    )
-    gone = {"joining": 2, "leaving": 1, "requests": None}
-    for totals in (empty, gone):
-        chart = ministry_followup(totals)
-        assert chart.key == "ministry-followup"
-        assert [row["count"] for row in chart.spec["data"]["values"]] == [0, 0]
-        assert chart.spec["encoding"]["x"]["scale"]["domain"] == [0, 1]
-
-
 def test_participation_chart_is_panels_on_one_date_axis():
     """The Participation page's daily chart (#720 slice 2c) is the static
     drawing's design in the chart engine: titled panels on one shared date
@@ -751,9 +704,6 @@ def test_every_chart_colour_is_a_token():
     light = {hex6((COLORS | CHART_COLORS)[name]) for name in names}
     documents = [
         *page_charts(),
-        ministry_followup(
-            {"joining": 2, "leaving": 1, "unresolved": 1, "completed": 2, "requests": 3}
-        ),
     ]
     found = set().union(*(colours_in(document.spec) for document in documents))
     assert found and {hex6(colour) for colour in found} <= light

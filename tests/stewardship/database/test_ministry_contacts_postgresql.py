@@ -292,9 +292,7 @@ def test_a_pdf_above_its_limit_is_refused_and_not_offered(
     browser, _, _, _ = leader(harness, google, roles=("staff",))
     queue = reverse("admin:ministry_report")
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
-        response, body = search(
-            browser, queue, FollowupQuery(state="any").form_values()
-        )
+        response, body = search(browser, queue, {"stage": "all"})
         assert response.status_code == 200
         assert b'value="pdf" disabled data-server-disabled' in body
         assert b"The PDF is limited to 1 requests" in body

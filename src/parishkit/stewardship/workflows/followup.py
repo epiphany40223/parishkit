@@ -193,17 +193,32 @@ def _revise(store, actor_id, target, expected_version, request_key, change, syst
         )
     if change.contact_at is not None and change.contact_at > database_now():
         raise FollowupRefusal("contact_future")
+    return write_revision(actor_id, target, intent, request_key, system)
+
+
+def write_revision(actor_id, target, intent, request_key, system):
+    """Append one checked revision, its exact projection and its audit event.
+
+    ``intent`` holds the revision's fields (``request_id``,
+    ``expected_version`` and the resulting workflow); the request's
+    projection takes its state, outcome and the Ministry an Edit carries
+    forward (``reviewed_ministry_duid``, #1684). The caller holds the work
+    order and the request's row lock, and has checked the version, the
+    replay and the change; SQL checks them all again.
+    """
     # No edit stores an assignee (#552), and one recorded before then is
     # cleared: the CHECKs pair `new` with none, and nothing offers `assigned`.
     revision = MinistryWorkflowRevision.objects.create(
         actor_id=actor_id, request_key=request_key, assignee_id=None, **intent
     )
     MinistryRequest.objects.filter(pk=target.pk).update(
-        state=change.state,
-        outcome=change.outcome,
+        state=intent["state"],
+        outcome=intent["outcome"],
+        reviewed_ministry_duid=intent.get("reviewed_ministry_duid"),
         assignee_id=None,
         version=F("version") + 1,
     )
+    expected_version = intent["expected_version"]
     record_action(
         Action.MINISTRY_REQUEST_UPDATED,
         actor_kind=ActorKind.PORTAL_USER,
@@ -236,7 +251,9 @@ def _targets(store, actor_id, versions):
     )
     if len(rows) != len(versions):
         raise PermissionError("A Ministry request is unavailable.")
-    for ministry in {row.ministry_duid for row in rows}:
+    # Authority follows each request's current Ministry: the one an Edit
+    # carried forward, once edited (#1684).
+    for ministry in {row.current_ministry_duid for row in rows}:
         authorize_ministry(store, actor_id, ministry)
     for campaign in {row.submission.campaign_id for row in rows}:
         admit_campaign(campaign, mutating=True)

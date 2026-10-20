@@ -31,7 +31,10 @@ from parishkit.stewardship.reports.ministry_followup_exports import (
     _choices,
     queue_document,
 )
+from parishkit.stewardship.reports.ministry_worklist import WorklistQuery
 from parishkit.stewardship.web.tables import report_table
+
+from .test_ministry_table_columns import ministry_page
 
 SUBMITTED = datetime(2054, 10, 5, 14, 30, tzinfo=UTC)
 CONTACTED = datetime(2054, 10, 7, 16, 0, tzinfo=UTC)
@@ -52,6 +55,10 @@ def row(request_id, **values):
         "state": "new",
         "state_label": "New",
         "outcome_label": "",
+        # The worklist's words for its stage (ministry_worklist.place).
+        "stage_label": "To review",
+        "decision_label": "",
+        "reviewed_ministry_name": None,
         "submitted_at": SUBMITTED,
         "last_contact_at": None,
     } | values
@@ -116,8 +123,18 @@ def document():
             state="resolved",
             state_label="Resolved",
             outcome_label="Stayed in the Ministry",
+            stage_label="Ignored",
+            decision_label="Ignored: Stayed in the Ministry",
         ),
-        row(BARE, member_name="Gone, Old", member_duid=34567),
+        row(
+            BARE,
+            member_name="Gone, Old",
+            member_duid=34567,
+            state="resolved",
+            stage_label="To enter by hand",
+            decision_label="Accepted (edited)",
+            reviewed_ministry_name="Food pantry",
+        ),
         row(PROPOSED, member_name="New, Kid", member_duid=None),
     ]
     contacts = {
@@ -136,7 +153,8 @@ def document():
 
 
 def test_the_file_holds_the_queue_columns_then_the_contact_details():
-    """Queue columns, Status split from Outcome, then contacts; no Submitted.
+    """The worklist's columns in the pipeline's words (Stage, Decision and
+    Reviewer's value, #1684), then contacts; no Submitted.
 
     The Administrator asked for the file without the Submitted time
     (2026-10-13), as the queue has no such column; the request page still
@@ -145,13 +163,14 @@ def test_the_file_holds_the_queue_columns_then_the_contact_details():
     """
     built = document()
     assert built.headings == HEADINGS
-    assert HEADINGS[:7] == (
+    assert HEADINGS[:8] == (
         "Member",
         "Member DUID",
         "Ministry",
         "Request",
-        "Status",
-        "Outcome",
+        "Stage",
+        "Decision",
+        "Reviewer's value",
         "Last contact",
     )
     assert HEADINGS[-1] == "Current Ministry role"
@@ -170,7 +189,18 @@ def test_the_file_holds_the_queue_columns_then_the_contact_details():
     assert joined["Last contact"] == CONTACTED.astimezone(CHICAGO)
     # A leave has its role and the packet's email and phones, no join details.
     assert left["Request"] == "Leave (cannot participate)"
-    assert (left["Status"], left["Outcome"]) == ("Resolved", "Stayed in the Ministry")
+    assert (left["Stage"], left["Decision"], left["Reviewer's value"]) == (
+        "Ignored",
+        "Ignored: Stayed in the Ministry",
+        "",
+    )
+    assert (joined["Stage"], joined["Decision"]) == ("To review", "")
+    # An Edit's Ministry is the Reviewer's value.
+    assert (bare["Stage"], bare["Decision"], bare["Reviewer's value"]) == (
+        "To enter by hand",
+        "Accepted (edited)",
+        "Join Food pantry",
+    )
     assert left["Email"] == "Not published"
     assert left["Phones"].startswith("mobile: ")
     assert left["Current Ministry role"] == "Member"
@@ -234,6 +264,21 @@ def test_request_history_notes_that_values_are_current():
     assert "not from when each version was submitted" in note
 
 
+def test_the_worklist_view_exports_without_a_history_choice():
+    """Export these requests posts the worklist's view, which has no history
+    choice: the file is built (no AttributeError, which answered 500) and
+    has no Request history note."""
+    built = queue_document(
+        result([]),
+        {},
+        WorklistQuery(),
+        parish_name="P",
+        requested_at=SUBMITTED,
+        zone=CHICAGO,
+    )
+    assert "Request history" not in dict(built.metadata)
+
+
 def test_two_new_members_with_one_name_are_numbered():
     """Rows stay distinct in every format, as the retired lists' did."""
     rows = [
@@ -282,6 +327,24 @@ def test_the_form_grammar_is_closed(values):
     """Only the queue's own filters, a format and a zone are accepted."""
     with pytest.raises(ValueError):
         _choices(RequestFactory().post("/", values).POST)
+
+
+def test_the_form_carries_the_worklist_view():
+    """The page posts the worklist's Stage and filters (#1684); the Members
+    choice for Members no longer in ParishSoft is never exported."""
+    values = {"stage": "ignored", "search": "Pat", "kind": "join", "ministry": ""}
+    values |= {"members": "current", "sort": "name"}
+    post = RequestFactory().post("/", values | {"format": "csv", "timezone": "UTC"})
+    query, fmt, _zone = _choices(post.POST)
+    assert (query.stage, query.search, query.sort, fmt) == (
+        "ignored",
+        "Pat",
+        "name",
+        "csv",
+    )
+    gone = values | {"members": "gone", "format": "csv", "timezone": "UTC"}
+    with pytest.raises(ValueError):
+        _choices(RequestFactory().post("/", gone).POST)
 
 
 def test_the_form_carries_the_queue_view():
@@ -392,6 +455,9 @@ def test_details_merge_the_report_and_the_packet(monkeypatch):
 def followup_page(**context):
     """The follow-up template rendered as its view does, from detached values."""
     query = FollowupQuery()
+    if "item" not in context:
+        # The worklist page (#1684), which holds the export.
+        return ministry_page(**context)
     return render_to_string(
         "stewardship/ministry-followup.html",
         {
@@ -456,7 +522,7 @@ def test_the_queue_offers_export_these_requests():
     assert 'aria-label="Export these requests"' in section
     assert 'id="table-export" data-table-sync' in section
     assert '<input type="hidden" name="search" value="">' in section
-    assert '<input type="hidden" name="state" value="unresolved">' in section
+    assert '<input type="hidden" name="stage" value="to_review">' in section
     # No sensitive-data banner (#1539); the source note stays as help.
     assert "Sensitive parish" not in section
     assert "trusted device" not in section
@@ -537,6 +603,7 @@ def test_a_pdf_above_the_limit_is_refused_before_contacts_are_read(monkeypatch):
     patch(ministry_followup_exports, "admit_report_read", Mock())
     patch(ministry_followup_exports, "_audit", Mock())
     patch(ministry_followup_exports, "followup_page", lambda *a, **k: result(rows))
+    patch(ministry_followup_exports, "place", lambda found, principal: found)
     patch(
         ministry_followup_exports,
         "request_contacts",

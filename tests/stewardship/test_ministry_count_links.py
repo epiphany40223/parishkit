@@ -28,8 +28,8 @@ def test_each_count_links_the_queue_with_its_own_filters():
     """Joining and Leaving choose Any status; Unresolved is the queue default."""
     staff = Principal(uuid4(), frozenset({"staff"}))
     assert count_links(staff, row(9, 2, 1, 3)) == {
-        "joining": f"{PAGE}?ministry=9&action=join&state=any",
-        "leaving": f"{PAGE}?ministry=9&action=leave&state=any",
+        "joining": f"{PAGE}?ministry=9&kind=join&stage=all",
+        "leaving": f"{PAGE}?ministry=9&kind=leave&stage=all",
         "unresolved": f"{PAGE}?ministry=9",
     }
 
@@ -38,7 +38,7 @@ def test_a_zero_count_has_no_link():
     """A count of zero is plain text: there is nothing for the queue to show."""
     staff = Principal(uuid4(), frozenset({"staff"}))
     assert count_links(staff, row(9, joining=1)) == {
-        "joining": f"{PAGE}?ministry=9&action=join&state=any"
+        "joining": f"{PAGE}?ministry=9&kind=join&stage=all"
     }
     assert count_links(staff, row(9)) == {}
 

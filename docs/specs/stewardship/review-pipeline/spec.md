@@ -12,9 +12,14 @@ the review worklist component with its decision interface
 Census changes uses
 ([#1683](https://github.com/epiphany40223/parishkit/issues/1683), with its
 Add from [#1710](https://github.com/epiphany40223/parishkit/issues/1710),
-below), as does the financial stream
+below), as do the financial stream
 ([Pledges](../reports/spec.md#pledges),
-[#1686](https://github.com/epiphany40223/parishkit/issues/1686)). Every Staff
+[#1686](https://github.com/epiphany40223/parishkit/issues/1686)) and
+Ministry requests, with Edit, Staff Add and the "Family asked again"
+case ([#1684](https://github.com/epiphany40223/parishkit/issues/1684);
+[follow-up workflows](../admin-portal/spec.md#follow-up-workflows)); Not
+seen in ParishSoft for ticked requests comes with the refresh rules
+([#1689](https://github.com/epiphany40223/parishkit/issues/1689)). Every Staff
 and Ministry leader part ships during the current campaign. The
 Family-facing view of reviewed changes
 ([#1705](https://github.com/epiphany40223/parishkit/issues/1705)) comes

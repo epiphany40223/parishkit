@@ -787,6 +787,13 @@ CLOSURE_ALTERED = {
         "stewardship_responses",
         "0009_conflict_resolution",
     ),
+    # 0131 (#1684, provisional number) adds five Ministry request and
+    # revision columns; one entry, so its file runs once
+    # (``before_ministry_review_pipeline`` drops them all).
+    ("stewardship_ministry_request", "reviewed_ministry_duid"): (
+        "stewardship_workflows",
+        "0003_ministry_review_pipeline",
+    ),
 }
 
 
@@ -959,6 +966,13 @@ def rerun_old_bodies(cursor, migrations):
 # reruns; 0118's body keeps 0096's, 0108's, 0112's and 0113's rules, so only
 # the latest replacement runs.
 CLOSURE_REPLACED_ONLY = {
+    # 0131 (#1684) replaces the follow-up selection last; 0094's rerun
+    # (above) puts back its older body, and 0131 adds columns, so only its
+    # replacement statement runs again.
+    "stewardship_ministry_followup_v1": (
+        ("stewardship_workflows", "0003_ministry_review_pipeline"),
+        "AS reviewed_ministry_name",
+    ),
     "stewardship_response_derived_guard_v1": (
         ("stewardship_responses", "0012_gender_by_hand"),
         "'suffix','gender','marital_status'",
@@ -1249,6 +1263,26 @@ def before_leader_changes():
     return [body.replace("CREATE FUNCTION", "CREATE OR REPLACE FUNCTION", 1)]
 
 
+def before_ministry_review_pipeline():
+    """The statements that put Ministry requests back as they were before 0131.
+
+    #1684's 0131 adds the Edit's Ministry, the parish-added mark and the
+    request an addition replaces to ``stewardship_ministry_request``, and
+    the Edit's Ministry and the decision note to its revisions; dropping
+    the columns drops their checks and foreign key with them. The guards and
+    selection it replaced keep their 0131 bodies, which nothing on the
+    users upgrade's base calls; 0131's file (or the full migration) adds
+    the columns again.
+    """
+    return [
+        'ALTER TABLE "stewardship_ministry_request" '
+        'DROP COLUMN "reviewed_ministry_duid", DROP COLUMN "parish_added", '
+        'DROP COLUMN "added_in_place_of_id"',
+        'ALTER TABLE "stewardship_ministry_revision" '
+        'DROP COLUMN "reviewed_ministry_duid", DROP COLUMN "decision_note"',
+    ]
+
+
 def before_information_limitation_review():
     """The statement that puts the information revisions back as before 0126.
 
@@ -1331,6 +1365,7 @@ def swap_pending():
             *before_staff_entered(),
             *before_leader_changes(),
             *before_branding_bundle_mode(),
+            *before_ministry_review_pipeline(),
             *before_information_limitation_review(),
         ):
             cursor.execute(statement)

@@ -5541,6 +5541,7 @@ DECLARE
     later public.stewardship_submission;
     prior public.stewardship_ministry_request;
     successor public.stewardship_ministry_request;
+    replaced public.stewardship_ministry_request;
     group_name text; expected_state text; same_intent boolean;
     staff_at timestamp with time zone;
 BEGIN
@@ -5566,6 +5567,58 @@ BEGIN
         RAISE EXCEPTION 'Ministry request requires its immutable response' USING ERRCODE='23514';
     END IF;
     group_name := CASE WHEN NEW.entity_kind='member' THEN 'members' ELSE 'proposed_members' END;
+    IF TG_OP='INSERT' AND NEW.parish_added THEN
+        -- A request the parish added (#1684): a current Staff member or
+        -- Administrator, on the Family's latest live response in a campaign
+        -- that admits edits, for a Member that response lists and a Ministry
+        -- the campaign asks about, open and unworked (its Accept follows as
+        -- a revision), with no current request for that Member and
+        -- Ministry. It may name the same Member's ignored request it was
+        -- added in place of.
+        IF current_user<>'pk_stewardship_web' OR response.mode<>'live'
+           OR NOT coalesce((public.stewardship_ministry_scope_v1(NEW.actor_id)->'operational')
+               ='true'::jsonb,false)
+           OR NOT public.stewardship_export_admitted_v1(response.campaign_id,true)
+           OR EXISTS (SELECT 1 FROM public.stewardship_submission newer
+               WHERE newer.family_id=response.family_id AND newer.campaign_id=response.campaign_id
+                 AND newer.mode='live' AND newer.family_version>response.family_version)
+           OR NEW.entity_kind<>'member' OR NOT ((response.answers->'members') ? NEW.entity_key)
+           OR NOT EXISTS (SELECT 1 FROM public.stewardship_campaign c
+               JOIN public.stewardship_campaign_configuration cc ON cc.id=c.active_configuration_id
+               WHERE c.id=response.campaign_id
+                 AND cc.values->'ministry_duids' @> to_jsonb(NEW.ministry_duid))
+           OR EXISTS (SELECT 1 FROM public.stewardship_ministry_request current_request
+               JOIN public.stewardship_submission history ON history.id=current_request.submission_id
+               WHERE history.family_id=response.family_id AND history.campaign_id=response.campaign_id
+                 AND history.mode='live' AND current_request.entity_kind=NEW.entity_kind
+                 AND current_request.entity_key=NEW.entity_key
+                 -- A request holds its Family's Ministry and its Edit's:
+                 -- Back to review can return it to the first.
+                 AND NEW.ministry_duid IN (current_request.ministry_duid,
+                     current_request.reviewed_ministry_duid)
+                 AND current_request.state NOT IN ('cancelled','superseded'))
+           OR NEW.version<>1 OR NEW.state<>'new' OR NEW.assignee_id IS NOT NULL
+           OR NEW.superseded_by_id IS NOT NULL OR NEW.outcome IS NOT NULL
+           OR NEW.resolved_at IS NOT NULL OR NEW.resolution_source_id IS NOT NULL
+           OR NEW.reviewed_ministry_duid IS NOT NULL THEN
+            RAISE EXCEPTION 'A request the parish adds needs Staff, a current response and a free Ministry'
+                USING ERRCODE='23514';
+        END IF;
+        IF NEW.added_in_place_of_id IS NOT NULL THEN
+            SELECT r.* INTO replaced FROM public.stewardship_ministry_request r
+                JOIN public.stewardship_submission history ON history.id=r.submission_id
+                WHERE r.id=NEW.added_in_place_of_id AND history.family_id=response.family_id
+                  AND history.campaign_id=response.campaign_id AND history.mode='live';
+            IF replaced.id IS NULL OR replaced.entity_kind<>NEW.entity_kind
+               OR replaced.entity_key<>NEW.entity_key
+               OR NOT (replaced.state='closed_no_response'
+                   OR (replaced.state='resolved' AND replaced.outcome NOT IN ('joined','leave_confirmed'))) THEN
+                RAISE EXCEPTION 'An added request replaces only the same Member''s ignored request'
+                    USING ERRCODE='23514';
+            END IF;
+        END IF;
+        RETURN NEW;
+    END IF;
     IF TG_OP='INSERT' THEN
         IF NOT EXISTS (SELECT 1 FROM public.stewardship_family_form_baseline
                        WHERE id=response.baseline_id AND state='open')
@@ -5573,7 +5626,8 @@ BEGIN
            OR NOT coalesce(response.answers#>ARRAY['ministries',group_name,NEW.entity_key,NEW.action]
                            @> to_jsonb(NEW.ministry_duid),false)
            OR NEW.superseded_by_id IS NOT NULL OR NEW.outcome IS NOT NULL
-           OR NEW.resolved_at IS NOT NULL OR NEW.resolution_source_id IS NOT NULL THEN
+           OR NEW.resolved_at IS NOT NULL OR NEW.resolution_source_id IS NOT NULL
+           OR NEW.reviewed_ministry_duid IS NOT NULL OR NEW.added_in_place_of_id IS NOT NULL THEN
             RAISE EXCEPTION 'Ministry request must derive from an in-flight final answer' USING ERRCODE='23514';
         END IF;
         SELECT * INTO prior FROM public.stewardship_ministry_request WHERE id=
@@ -5589,16 +5643,24 @@ BEGIN
         END IF;
         RETURN NEW;
     END IF;
-    IF OLD.state NOT IN ('new','assigned','in_progress') OR NEW.version<>OLD.version+1
-       OR (to_jsonb(NEW)-ARRAY['state','outcome','resolved_at','resolution_source_id','superseded_by_id','assignee_id','version','updated_at'])
+    -- A closed request changes only by Staff follow-up sending it back to
+    -- review (or withdrawing one the parish added); its revision guard
+    -- proves which (#1684). The Edit's Ministry is part of the projection.
+    IF (OLD.state NOT IN ('new','assigned','in_progress')
+        AND NOT (current_user='pk_stewardship_web'
+            AND OLD.state IN ('resolved','closed_no_response')
+            AND (NEW.state='in_progress' OR (NEW.state='cancelled' AND OLD.parish_added))))
+       OR NEW.version<>OLD.version+1
+       OR (to_jsonb(NEW)-ARRAY['state','outcome','resolved_at','resolution_source_id','superseded_by_id','assignee_id','reviewed_ministry_duid','version','updated_at'])
           IS DISTINCT FROM
-          (to_jsonb(OLD)-ARRAY['state','outcome','resolved_at','resolution_source_id','superseded_by_id','assignee_id','version','updated_at']) THEN
+          (to_jsonb(OLD)-ARRAY['state','outcome','resolved_at','resolution_source_id','superseded_by_id','assignee_id','reviewed_ministry_duid','version','updated_at']) THEN
         RAISE EXCEPTION 'Ministry provenance and closed outcomes are immutable' USING ERRCODE='23514';
     END IF;
     IF current_user='pk_stewardship_worker' THEN
         IF NEW.state<>'resolved' OR NEW.outcome IS DISTINCT FROM
             (CASE WHEN NEW.action='join' THEN 'joined' ELSE 'leave_confirmed' END)
            OR NEW.assignee_id IS DISTINCT FROM OLD.assignee_id
+           OR NEW.reviewed_ministry_duid IS NOT NULL
            OR NEW.resolution_source_id IS NULL
            OR NOT public.stewardship_response_source_owner_v1(NEW.resolution_source_id)
            OR NEW.entity_kind<>'member'
@@ -5611,14 +5673,16 @@ BEGIN
             RAISE EXCEPTION 'Ministry resolution requires fenced scoped roster evidence' USING ERRCODE='23514';
         END IF;
         NEW.resolved_at := clock_timestamp();
-    ELSIF current_user='pk_stewardship_web' AND NEW.state NOT IN ('superseded','cancelled') THEN
+    ELSIF current_user='pk_stewardship_web' AND (NEW.state NOT IN ('superseded','cancelled')
+        OR (NEW.state='cancelled' AND OLD.parish_added AND OLD.state='resolved')) THEN
         -- Staff follow-up. Its revision guard already proved current authority,
         -- Ministry scope, the work gate and this exact version; accept only the
         -- projection that history records. Roster evidence stays worker-owned.
         SELECT r.created_at INTO staff_at FROM public.stewardship_ministry_revision r
             WHERE r.request_id=NEW.id AND r.expected_version=OLD.version AND r.state=NEW.state
               AND r.outcome IS NOT DISTINCT FROM NEW.outcome
-              AND r.assignee_id IS NOT DISTINCT FROM NEW.assignee_id;
+              AND r.assignee_id IS NOT DISTINCT FROM NEW.assignee_id
+              AND r.reviewed_ministry_duid IS NOT DISTINCT FROM NEW.reviewed_ministry_duid;
         IF NOT FOUND OR NEW.resolution_source_id IS NOT NULL OR NEW.superseded_by_id IS NOT NULL THEN
             RAISE EXCEPTION 'Ministry follow-up projection requires its paired history' USING ERRCODE='23514';
         END IF;
@@ -5633,6 +5697,8 @@ BEGIN
           AND OLD.id=public.stewardship_ministry_predecessor_v1(
               candidate,OLD.entity_kind,OLD.entity_key,OLD.ministry_duid);
         IF NOT FOUND OR NEW.assignee_id IS DISTINCT FROM OLD.assignee_id
+           OR OLD.state NOT IN ('new','assigned','in_progress')
+           OR NEW.reviewed_ministry_duid IS NOT NULL
            OR NOT public.stewardship_response_ministry_visible_v1(
                later.validation_source_id,later.configuration_id,later.campaign_id,NEW.ministry_duid)
            OR (NEW.entity_kind='member' AND NOT ((later.answers->'members') ? NEW.entity_key))
@@ -5676,10 +5742,18 @@ BEGIN
         FOR member_key,choices IN SELECT * FROM jsonb_each(NEW.answers#>ARRAY['ministries',group_name]) LOOP
             FOR action_name,identifiers IN SELECT * FROM jsonb_each(choices) LOOP
                 FOR identifier IN SELECT * FROM jsonb_array_elements(identifiers) LOOP
+                    -- A choice repeating a decided request's action for the
+                    -- same Member and Ministry derives nothing: the decided
+                    -- request keeps its decision ("Family asked again", #1684).
                     IF NOT EXISTS (SELECT 1 FROM public.stewardship_ministry_request request
                         WHERE request.submission_id=NEW.id AND request.entity_kind=entity
                           AND request.entity_key=member_key AND request.ministry_duid=identifier::text::integer
-                          AND request.action=action_name) THEN
+                          AND request.action=action_name)
+                       AND NOT EXISTS (SELECT 1 FROM public.stewardship_ministry_request decided
+                        WHERE decided.id=public.stewardship_ministry_predecessor_v1(
+                              NEW,entity,member_key,identifier::text::integer)
+                          AND decided.state IN ('resolved','closed_no_response')
+                          AND decided.action=action_name) THEN
                         RAISE EXCEPTION 'Submitted Ministry choice requires atomic derived work' USING ERRCODE='23514';
                     END IF;
                 END LOOP;

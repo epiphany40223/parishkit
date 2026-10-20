@@ -117,7 +117,7 @@ def test_followup_save_without_a_usable_save_focuses_the_heading(
         "Follow-up saved.",
     )
     if start == RESOLVE_ITEM:
-        visible(page.get_by_text("This request is closed.", exact=False))
+        visible(page.get_by_text("This request is decided.", exact=False))
         assert page.locator("#followup-item form").count() == 0
     else:
         assert page.locator(FOLLOWUP_SAVE).is_disabled()

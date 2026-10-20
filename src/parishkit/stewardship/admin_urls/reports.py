@@ -142,13 +142,6 @@ patterns = [
         ministry_export_views.create_packet,
         "ministry_packet",
     ),
-    # One outcome for the requests chosen on the queue (#1131), posted by
-    # its confirmation dialog.
-    _page(
-        "reports/ministries/follow-up/bulk/",
-        ministry_followup_views.bulk,
-        "ministry_followup_bulk",
-    ),
     # Export these requests (#1157): the queue's filtered set as a file,
     # rendered on request. A request is a UUID, so "exports" is never one.
     _page(

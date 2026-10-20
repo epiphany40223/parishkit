@@ -3598,8 +3598,8 @@ orders. In v1 that covers:
   Family code would need every code decrypted per view);
 - Financial stewardship detail (Family, Family DUID, Annual pledge and
   latest response);
-- the follow-up queue on Ministry requests (Member and Ministry; newest
-  first by default, with no Submitted column to show it, #1064).
+- the Ministry requests review worklist (Member and Ministry; newest first
+  by default, #1064, #1684).
 
 Extending those vocabularies is a schema change; the DUID sorts of the
 financial, Additional information and Ministry tables came with one
@@ -3734,8 +3734,8 @@ sessions of
 [Automation access](../admin-automation/spec.md#revocation-and-listing),
 [Users](../admin-portal/spec.md#users-table), the email template tables of
 [Pages and emails](../admin-portal/spec.md#default-content) and the bulk
-outcomes of [Ministry follow-up](../admin-portal/spec.md#follow-up-workflows)
-([#1131](https://github.com/epiphany40223/parishkit/issues/1131)) and the
+decisions of the [Ministry requests](../admin-portal/spec.md#follow-up-workflows)
+review worklist (#1131, #1684) and the
 Entered in ParishSoft tick of
 [Roster changes to enter](../admin-portal/spec.md#roster-changes-to-enter) and
 the row actions of
@@ -3950,11 +3950,11 @@ Administrators that reports and notices go to,
 [#1562](https://github.com/epiphany40223/parishkit/issues/1562)). The
 one DUID column apart from its name is the recorded exception below.
 
-The follow-up queue on Ministry requests also has no Submitted column (Administrator
-decision, 2026-10-11,
-[#1064](https://github.com/epiphany40223/parishkit/issues/1064)), so its
-one-line rows take less width; the request page shows the submission time
-([Follow-up workflows](../admin-portal/spec.md#follow-up-workflows)).
+The follow-up queue on Ministry requests had no Submitted column
+(Administrator decision, 2026-10-11,
+[#1064](https://github.com/epiphany40223/parishkit/issues/1064)); the review
+worklist that replaced it has one, as every
+[review worklist](../review-pipeline/spec.md#review-worklist) does (#1684).
 
 Recorded exception: Families the form cannot open shows a Member DUID with
 no Member name on purpose: the name itself may be the value the form
@@ -4163,7 +4163,8 @@ wraps instead to at most two lines (`cell-clamp`), so a name as long as any
 in use shows whole; only a name too long even for two lines ends in "…"
 ([#1136](https://github.com/epiphany40223/parishkit/issues/1136)). In the
 queue a name cut short shows whole in a tip on hover, keyboard focus and
-tap (a cut Ministry name joins the tab order for that), not in a bare
+tap (a cut name joins the tab order for that, unless it is a link's text,
+as on a worklist, where focus on the link shows the tip), not in a bare
 `title`, which keyboard and touch cannot reach; the whole name stays the
 cell's text for screen readers. Since
 [#1064](https://github.com/epiphany40223/parishkit/issues/1064) the queue's
