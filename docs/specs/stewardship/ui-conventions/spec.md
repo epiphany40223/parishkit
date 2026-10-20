@@ -834,7 +834,8 @@ the [in-place controls](#in-place-controls); no other mechanism.
   of the page's own address when that view is itself passive (Background
   work, Families on the form now). A read never extends the sign-in and
   never records an audited view, except a report's re-read that brings
-  newer figures in, once per newer set of figures (below).
+  newer figures in, once per newer set of figures, and a page's re-read
+  that brings in a part it could not read (both below).
 - **Reports whose figures are being prepared.** The Response dashboard and
   Campaign comparison audit every view, so they are never re-read on a timer.
   Their **Updating** notice sits in a figures status region that reads a
@@ -871,6 +872,26 @@ the [in-place controls](#in-place-controls); no other mechanism.
   even after failed re-reads), so the page re-reads itself once another
   generation of figures is ready
   ([reports](../reports/spec.md#response-dashboard)).
+- **Parts a page could not read.** A page whose view is audited and
+  that could not read one of its parts says so in place of that part, never
+  asking for a reload, and brings the part in by itself
+  ([#1863](https://github.com/epiphany40223/parishkit/issues/1863)): the
+  notice sits in a status region that reads a passive, unaudited status
+  saying only whether a re-read would now show the part, never any of its
+  values. Once it would, the page re-reads its own address once, quietly
+  and in place, through the same hidden `a[data-reread]` follow-up link
+  and with the same rules as a report's figures: one audited view marked
+  `automatic`, `X-ParishKit-Read: passive` so the sign-in is never
+  extended, waiting while the reader is busy and stopping at a refusal.
+  The status answers ready only once something has changed since the
+  page's own read, so a part that stays unreadable is never re-read once a
+  minute. The Information request page's Contact details, when the
+  ParishSoft data was replaced while it was read, wait for the newer data
+  ([reports](../reports/spec.md#additional-information)); the
+  Users page's ParishSoft Ministry leaders, when they could not be read,
+  are tried again once a minute later and, if that read fails too, wait for
+  the next ParishSoft data
+  ([admin portal](../admin-portal/spec.md#parishsoft-ministry-leaders-without-a-user)).
 - **Pace.** While background work is pending a status region reads fast
   (2 s backing off to 10 s, or the fixed pace the page asks for). A page
   whose state changes without the reader's own action re-reads every 30

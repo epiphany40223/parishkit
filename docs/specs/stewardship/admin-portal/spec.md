@@ -6172,7 +6172,22 @@ while no row is ticked, its reserved reason line under the buttons says
 "Select at least one leader to use Import selected."; with no row at all,
 both buttons are unavailable and the same line says there is nothing to
 import. If the leaders cannot be read, the section says so in place of the
-table and the users table above stays usable. Reading the leaders has no
+table and the users table above stays usable. It never asks for a reload:
+the section
+[brings the leaders in by itself](../ui-conventions/spec.md#pages-that-update-themselves)
+([#1863](https://github.com/epiphany40223/parishkit/issues/1863)). Its
+notice is a status region that reads the passive status
+`/admin/users/leaders/status/` (`user_leaders_status`) every 60 seconds; it
+admits Administrators only, never extends the sign-in, records no audit
+event and never reads a leader. A failed read is a database failure that
+no passive read can foresee, so after the reader's own view the status
+answers ready at its first check that works (`retry=1`), and the page
+re-reads its own address once, in place and marked automatic: one
+`users_viewed` view with `automatic: true`, plus the leaders read's own
+`user_leaders_listed` event when that read works. If the leaders still
+cannot be read on that automatic read, the status waits instead for a
+ParishSoft data generation other than the one in use then (`shown`), so a
+lasting failure is never re-read once a minute. Reading the leaders has no
 rate cap, unlike the [Name lookup](#name-from-parishsoft): one read already
 returns every row, so repeating it discloses nothing more;
 the audit of each read and storing the session keys only as digests

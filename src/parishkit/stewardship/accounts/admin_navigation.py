@@ -707,6 +707,10 @@ NON_PAGES = frozenset(
         # The figures status the Response dashboard and Campaign comparison
         # poll (#1586), a fragment.
         "response_dashboard_status",
+        # The passive statuses of the parts the Information request page and
+        # Users could not read (#1863), fragments.
+        "information_contacts_status",
+        "user_leaders_status",
         # A Campaign setup step's Continue (#1404), a POST that redirects.
         "campaign_step_continue",
         "content_plain_text",

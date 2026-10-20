@@ -717,3 +717,73 @@ def test_the_local_seeders_leader_import_takes_the_pages_path(deployment, monkey
         event_type="user_leaders_import_requested"
     ).exists()
     assert AuditEvent.objects.filter(event_type="user_leader_imported").count() == 1
+
+
+def test_unreadable_leaders_come_in_by_themselves(deployment, monkeypatch):
+    """#1863: the notice never asks for a reload. Its passive status reads no
+    leader, records no audit event and renews no sign-in. After the reader's
+    own view it is ready at once (``retry``); the page's own re-read is
+    audited marked automatic and renews no sign-in, and if the leaders
+    still cannot be read it waits for newer ParishSoft data instead."""
+    from parishkit.stewardship.accounts import leader_import_views
+    from parishkit.stewardship.source.models import SourceCurrent
+
+    real = leader_import_views.read_leaders
+
+    def failing(_session_key):
+        with transaction.atomic(), connection.cursor() as cursor:
+            cursor.execute("SELECT 1/0")
+
+    monkeypatch.setattr(leader_import_views, "read_leaders", failing)
+    _store, browser = deployment
+    generation = SourceCurrent.objects.get().generation
+    status = f"/admin/users/leaders/status/?shown={generation}"
+    region = leaders_region(page(browser))
+    assert (
+        f'data-live-url="{status}&amp;retry=1" data-live-pending '
+        'data-live-interval="60000"'
+    ) in region
+    assert "appear here by themselves" in region
+    assert "reload" not in region.lower()
+    viewed = AuditEvent.objects.filter(event_type="portal_users_viewed")
+    events = AuditEvent.objects.count()
+    activity = PortalSession.objects.get().last_activity_at
+    with web():
+        ready = browser.get(status + "&retry=1")
+    assert ready.status_code == 200 and ready["Cache-Control"] == "no-store"
+    assert '<a hidden data-live-follow data-reread href="#leaders-table">' in (
+        ready.content.decode()
+    )
+    assert AuditEvent.objects.count() == events
+    assert PortalSession.objects.get().last_activity_at == activity
+    # Signed out (no session at all): refused, never answered ready.
+    from django.test import Client
+
+    with web():
+        out = Client().get(status + "&retry=1")
+    assert out.status_code == 403
+    assert b"data-reread" not in out.content
+    passive = {"HTTP_X_PARISHKIT_READ": "passive"}
+    with web():
+        again = browser.get(USERS, **passive)
+    assert again.status_code == 200
+    region = leaders_region(again.content.decode())
+    # Still unreadable on the automatic read: wait for newer data.
+    assert f'data-live-url="{status}" data-live-pending' in region
+    assert PortalSession.objects.get().last_activity_at == activity
+    automatic = AuditContext.objects.filter(event__in=viewed).values_list(
+        "context", flat=True
+    )
+    assert [context.get("automatic") for context in automatic].count(True) == 1
+    with web():
+        waiting = browser.get(status)
+    assert b"data-live-pending" in waiting.content
+    assert b"data-reread" not in waiting.content
+    # Readable again: the next automatic read draws the table, and the
+    # leaders read is audited once, by its definer.
+    monkeypatch.setattr(leader_import_views, "read_leaders", real)
+    with web():
+        shown = browser.get(USERS, **passive)
+    assert 'id="leader-import"' in leaders_region(shown.content.decode())
+    assert listed().count() == 1
+    assert PortalSession.objects.get().last_activity_at == activity

@@ -319,6 +319,8 @@ LEDGER = {
     # and history, as the Ministry follow-up items are read; its content is
     # Family-level and comes through ``export information``.
     "information_item": command("followup information-show"),
+    # Its Contact details' passive status (#1863): no data of its own.
+    "information_contacts_status": command("followup information-show"),
     # Ministry requests (#1133) is the follow-up queue with the summary's
     # By Ministry counts. ``report ministry`` prints those counts, and
     # ``export ministry`` writes one Ministry's join or leave list, the file
@@ -457,6 +459,8 @@ LEDGER = {
     "user_name_suggestions": command("users preview"),
     # The leaders table and its import review (#952 slice 6).
     "user_leader_import": command("users import-leaders"),
+    # The leaders section's passive status (#1863): no data of its own.
+    "user_leaders_status": command("users import-leaders"),
     # Email Ministry leaders (#1592): its review and Apply (#1622).
     "user_leader_emails": command("users email-leaders"),
     # Home's Acknowledge buttons; events list reads what they acknowledge.

@@ -195,3 +195,81 @@ def test_other_members_are_left_out(crowded_service):
     text = str(shown)
     assert "child@example.org" not in text and "retired@example.org" not in text
     assert "202-555-0199" not in text
+
+
+def test_replaced_contact_details_come_in_by_themselves(
+    live_response_service, google, monkeypatch
+):
+    """#1863: details the replaced data could not give say they appear by
+    themselves, never to reload. The notice's passive status records no
+    audit event and renews no sign-in, and is ready only once other
+    ParishSoft data is in use; the page's own re-read then reads them,
+    audited marked automatic, and still renews no sign-in."""
+    from parishkit.stewardship.accounts.models import PortalSession
+    from parishkit.stewardship.reports import information_views
+    from parishkit.stewardship.source.models import SourceCurrent
+
+    harness = live_response_service
+    respond(harness, "Please call us")
+    item = AdditionalInformationItem.objects.get()
+    detail = reverse("admin:information_item", args=[item.pk])
+    browser, _ = signed_in()
+    real = information_views.family_contacts
+    monkeypatch.setattr(
+        information_views,
+        "family_contacts",
+        lambda *args: {"state": "unavailable"},
+    )
+    generation = SourceCurrent.objects.get().generation
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = read(browser, detail)
+    assert response.status_code == 200
+    section = body.split(b'id="information-contact"', 1)[1].split(b"</section>")[0]
+    status = f"/admin/reports/information/contacts/status/?shown={generation}"
+    assert f'data-live-url="{status}" data-live-pending>'.encode() in section
+    assert b"appear here by themselves" in section
+    assert b"reload" not in section.lower()
+    events = AuditEvent.objects.count()
+    activity = PortalSession.objects.get().last_activity_at
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        waiting = browser.get(status)
+        # Data the page did not read is in use now: a re-read would read it.
+        ready = browser.get(f"{status[: -len(str(generation))]}{generation - 1}")
+        refused = browser.get(status + "&retry=1")
+    assert waiting.status_code == 200 and waiting["Cache-Control"] == "no-store"
+    assert b"data-live-pending" in waiting.content
+    assert b"data-reread" not in waiting.content
+    assert ready.status_code == 200
+    assert b'data-reread href="#information-item"' in ready.content
+    assert FAMILY_EMAIL not in ready.content and HEAD_EMAIL not in ready.content
+    assert refused.status_code == 400
+    # Signed out (no session at all): refused, never answered ready.
+    from django.test import Client
+
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        out = Client().get(f"{status[: -len(str(generation))]}{generation - 1}")
+    assert out.status_code == 403
+    assert b"data-reread" not in out.content
+    assert AuditEvent.objects.count() == events
+    assert PortalSession.objects.get().last_activity_at == activity
+    # The re-read, from a history page's address too: the whole request,
+    # its details now read, audited as automatic.
+    monkeypatch.setattr(information_views, "family_contacts", real)
+    before = _viewed()
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = read(
+            browser,
+            detail + "?page=1",
+            HTTP_X_PARISHKIT_READ="passive",
+            HTTP_X_REQUESTED_WITH="fetch",
+        )
+    assert response.status_code == 200
+    assert FAMILY_EMAIL in body and HEAD_EMAIL in body
+    contexts = AuditContext.objects.filter(
+        event__event_type="information_viewed"
+    ).exclude(event__in=before)
+    assert sorted(contexts.values_list("context", flat=True), key=str) == [
+        {"outcome": "started", "automatic": True},
+        {"outcome": "succeeded", "automatic": True},
+    ]
+    assert PortalSession.objects.get().last_activity_at == activity
