@@ -610,6 +610,7 @@ def table_actions(
     field="id",
     verb="delete",
     confirm_name=None,
+    caution=False,
 ):
     """One row's Actions cell in an action table (#879).
 
@@ -624,6 +625,9 @@ def table_actions(
     ``confirm_name`` is what the dialog's title and announcement call the
     row, when that needs more than ``name``
     (Users: the address with its Name and role); it defaults to ``name``.
+    ``caution`` marks the row's action ``data-confirm-caution``, for a
+    dialog whose caution is said only for marked rows (confirm-dialog.html
+    caution_marked; a scheduled email that has sent, R40b).
     Leave out an action the row does not offer; a row with none gets an
     empty cell.
     """
@@ -640,6 +644,7 @@ def table_actions(
         "verb": verb,
         "icon": TABLE_ACTION_VERBS[verb],
         "confirm_name": confirm_name or name,
+        "caution": bool(caution),
     }
 
 

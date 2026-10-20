@@ -199,7 +199,8 @@ def test_delete_asks_in_a_dialog_then_redraws_the_table_in_place(
     delete.click()
     visible(dialog(page))
     assert dialog(page).locator("h2").inner_text() == "Delete Reminder 1?"
-    assert "never recalled" in dialog(page).inner_text()
+    # Reminder 1 has sent nothing, so nothing is said about recalling (R40b).
+    assert "never recalled" not in dialog(page).inner_text()
     # The safe choice has focus, and Tab stays inside the dialog.
     assert page.evaluate("document.activeElement.textContent.trim()") == "Cancel"
     page.keyboard.press("Tab")
@@ -245,6 +246,8 @@ def test_delete_selected_names_the_count(page, component_origin):
     bulk.click()
     visible(dialog(page))
     assert dialog(page).locator("h2").inner_text() == "Delete 2 scheduled emails?"
+    # Neither reminder has sent: no word about recalling sent email (R40b).
+    assert "never recalled" not in dialog(page).inner_text()
     with page.expect_request(lambda request: request.method == "POST") as sent:
         dialog(page).get_by_role("button", name="Delete", exact=True).click()
     assert len(posted(sent.value)["schedule_id"]) == 2
@@ -254,6 +257,41 @@ def test_delete_selected_names_the_count(page, component_origin):
         page.locator("main > [role=status]", has_text="Deleted 2 scheduled emails.")
     )
     assert page.evaluate("window.notReloaded === true")
+    assert not failures
+
+
+def test_delete_says_sent_email_is_not_recalled_only_for_one_that_sent(
+    page, component_origin
+):
+    """The Delete confirmation's caution (R40b) is said only while a chosen
+    schedule has sent email: the Weekly Admin digest has, the reminders
+    have not. Delete selected says it once the digest is ticked too."""
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + BULK)
+    failures = watch(page)
+    caution = dialog(page).get_by_text("Email already sent is never recalled")
+    page.get_by_role("button", name="Delete Weekly Admin digest").click()
+    visible(dialog(page))
+    visible(caution)
+    page.keyboard.press("Escape")
+    hidden(dialog(page))
+    page.get_by_role("button", name="Delete Reminder 2").click()
+    visible(dialog(page))
+    hidden(caution)
+    page.keyboard.press("Escape")
+    hidden(dialog(page))
+    boxes = page.locator("input[data-select-row]")
+    boxes.nth(1).check()
+    page.get_by_role("button", name="Delete selected").click()
+    visible(dialog(page))
+    hidden(caution)
+    page.keyboard.press("Escape")
+    hidden(dialog(page))
+    boxes.nth(0).check()
+    page.get_by_role("button", name="Delete selected").click()
+    visible(dialog(page))
+    assert dialog(page).locator("h2").inner_text() == "Delete 2 scheduled emails?"
+    visible(caution)
     assert not failures
 
 
@@ -1045,7 +1083,8 @@ def test_date_change_review_applies_in_the_dialog_and_returns_to_the_list(
     assert page.evaluate(FOCUSED) == "schedule-dates-review-title"
     text = shown.inner_text()
     assert "Campaign window" in text and "Reminder — Update" in text
-    assert "Email already sent cannot be recalled." in text
+    # The re-planned reminder has sent nothing: nothing to recall (R40b).
+    assert "Email already sent cannot be recalled." not in text
     assert axe_violations(page, axe_source) == []
     assert page.evaluate("window.notReloaded === true")
     with page.expect_request(lambda request: request.method == "POST") as sent:

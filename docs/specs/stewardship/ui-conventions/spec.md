@@ -301,9 +301,12 @@ keyboard-operable equivalent that does the same thing, such as a **Move…**
 action with a date field (WCAG 2.2 SC 2.5.7). A drop never applies a change by
 itself: it fills in the same review the equivalent opens, and only Apply
 changes anything ([review dialog](#review-dialog)). Drag uses pointer events
-with a few-pixel threshold, so a click still follows a link, is offered on
-fine pointers only (touch uses the equivalent), and Escape cancels it. The
-first user is the planned
+with a few-pixel threshold, so a click still follows a link or presses a
+button, is offered on fine pointers only (touch uses the equivalent), and
+Escape cancels it. A drag may start from the item itself or from its
+equivalent's button; a press without a drag, and Enter or Space on the
+button, still open the equivalent. The
+first user is
 [Campaign calendar editing](../admin-portal/spec.md#editing-from-the-calendar)
 ([#1521](https://github.com/epiphany40223/parishkit/issues/1521)).
 
@@ -1565,7 +1568,11 @@ the campaign wizard in #1404 PR 4).
   and described by it: no summary is placed above the heading, since moving
   focus there would jump the page to the top, and no error line is added
   that would move the pane's controls. The line clears on the form's next
-  edit or accepted Review (#1410).
+  edit or accepted Review (#1410). A form inside a dialog of its own (the
+  Campaign calendar's Move…, #1521) names its refusal line the same way
+  with `data-review-refused` instead, which leaves Apply's status line the
+  page's: a refusal is said where the reader is, in the dialog, and the
+  applied change on the page the dialog closes onto.
 - **Opening the dialog.** An accepted Review opens the dialog. Its title
   names the change ("Review campaign settings") and labels the dialog
   (`aria-labelledby`); focus moves to that title, never to Apply, so the

@@ -2710,7 +2710,11 @@ Content and future schedules remain versioned/editable under the
 [atomic schedule-replacement policy](../background-processing/spec.md#schedule-replacement-and-removal).
 The confirmation shows successful, safely cancellable, failed, and blocking
 in-flight/unknown counts. A sent message cannot be recalled; its logical
-schedule fulfillment carries across revisions. Provider-submitting or
+schedule fulfillment carries across revisions. The review says so ("Email
+already sent cannot be recalled.") only when a schedule it changes or
+deletes has already sent email; a review of schedules that have sent
+nothing yet, such as a future Reminder's edit or move, carries no such
+notice. Provider-submitting or
 `delivery_unknown` work blocks the edit until it is resolved.
 
 When a proposed end-date shortening would place future Family mail outside the
@@ -2895,7 +2899,9 @@ a new revision and plan it again. Every other row has **Edit** and **Delete**.
 Edit opens the [Edit scheduled email page](#new-and-edit-scheduled-email)
 for that schedule. Delete, and **Delete selected** for the ticked rows, open the
 confirmation dialog. It names the schedule ("Delete Reminder 2?") or the count
-("Delete 3 scheduled emails?") and says that email already sent is not recalled
+("Delete 3 scheduled emails?"). Only when a chosen schedule has already sent
+email (the same sent count as the review's notice, so in practice an Admin
+digest that has run) does it also say that email already sent is not recalled
 and that emailed Family codes and links keep working. Confirming removes the
 schedules in one configuration change. The server builds the change as the
 review does (the same validation of the remaining schedules, the same blocking
@@ -3224,8 +3230,10 @@ following** and **The whole series**. The choice is described by "Part of: "
 and the series' rule in plain words, such as "Every Monday and Thursday,
 October 5, 2054 – November 13, 2054", and by one help line that is always
 shown. "This reminder only" is the ordinary Edit: moving the reminder to a day
-its rule does not give takes it out of the series, and deleting it from the
-list does too. The other two grey the send date in place (a [conditional
+its rule does not give takes it out of the series, and the review says so in
+one line ("This reminder leaves its series (Every Monday …), since the series
+does not send on its new day."); deleting it from the list takes it out too.
+The other two grey the send date in place (a [conditional
 field](../ui-conventions/spec.md#conditional-fields), not sent), and the
 greyed box shows this reminder's own date, with help under it that the date
 is used only with "This reminder only". Every reminder they change keeps its
@@ -3274,7 +3282,7 @@ what happens to the series:
   (with its rule, now ending the day before) and that the changed ones become
   a new series (with its rule).
 
-Changing a series' rule stays on the command line for now; deleting a series
+Changing a series' rule stays on the command line for now (planned in [#1808](https://github.com/epiphany40223/parishkit/issues/1808)); deleting a series
 is Edit's Delete ([Delete a scheduled email](#delete-a-scheduled-email)).
 Editing from the calendar is in
 [Editing from the calendar](#editing-from-the-calendar).
@@ -3329,10 +3337,11 @@ directly; the wizard's list has its own Delete.
 **Campaign calendar** (`/admin/campaign/schedules/calendar/`,
 [#469](https://github.com/epiphany40223/parishkit/issues/469)), opened by the
 link beside New scheduled email, shows every email the saved schedules send,
-by date. It changes nothing itself and offers no Delete of its own: Add on a
-day starts a new schedule ([Editing from the
-calendar](#editing-from-the-calendar)), and each send links to its Edit
-scheduled email page, which has [Delete](#delete-a-scheduled-email). It reads
+by date. It changes nothing without the review dialog and offers no Delete of
+its own: Add on a day starts a new schedule and Move… (or a drag) moves a send
+to another day ([Editing from the calendar](#editing-from-the-calendar)), and
+each send links to its Edit scheduled email page, which has
+[Delete](#delete-a-scheduled-email). It reads
 the current schedules: the
 Initial invitation, each reminder, and every send of each
 [report email](../report-emails/spec.md#campaign-calendar-and-other-pages),
@@ -3405,15 +3414,14 @@ not a date is refused as an unknown address.
 A muted send is told apart by its status, in words in the table and read to
 screen readers in the grid. A week view,
 Production activation and go-live milestones, ParishSoft refresh times and the
-backup window are later slices of
-[#1521](https://github.com/epiphany40223/parishkit/issues/1521).
+backup window are planned in
+[#1808](https://github.com/epiphany40223/parishkit/issues/1808).
 
 ##### Editing from the calendar
 
 From [#1521](https://github.com/epiphany40223/parishkit/issues/1521) (split
 from #469); the defaults below stand until the Administrator changes them.
-Add on a day is built; Move… and drag to move are planned, and until they
-ship the calendar moves nothing.
+Add on a day, Move… and drag to move are built.
 
 The calendar starts the existing edits; it has no write path of its own.
 Every change it starts is the same server-drawn review, signed preview, Apply
@@ -3438,18 +3446,51 @@ checks it exactly as that page does.
   what was applied. Days outside the campaign's dates, or already past, have no Add. Until a
   schedule exists the calendar draws no grid, and its link to Dates and mail
   schedules is the way to add one.
-- **Move…** Each send the calendar links (a dated schedule that has not run:
-  the Initial invitation and each reminder) has a **Move…** action beside its
-  link. It opens the [review dialog](../ui-conventions/spec.md#review-dialog)
-  over the calendar with one date field, filled in with the send's date, and
-  the send's time and email shown but not editable. Its Review answers
-  exactly the review Edit scheduled email draws for that schedule with the
-  new date, the same browser-local time and the same email. Apply redraws the
-  calendar in place ([in-place
-  controls](../ui-conventions/spec.md#in-place-controls)).
-- **Drag to move.** Dragging a movable send onto another day opens the same
-  Move dialog with that day filled in. The drop changes nothing: the send
-  stays where it was until Apply, and Cancel leaves it there. Drag follows
+- **Move…** Each send the grid links (a dated schedule that has not run:
+  the Initial invitation and each reminder) has a small move icon button
+  beside its link, at least 24 px square, reachable by keyboard, and named,
+  with a matching tooltip, with the send ("Move Reminder 2…"). It opens a
+  dialog over the calendar titled with the same words, which says the send's
+  time (browser-local) and email, that only the date changes and the time
+  stays the same in this computer's time zone, and holds one date field,
+  **New send date**, filled in with the send's date. **Review the move**
+  stays unavailable until the date differs from the send's
+  ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)), with
+  its hint after it. Review posts the move to the schedule's Edit scheduled
+  email address (`move=yes` with the date, the browser's zone and the
+  configuration version) and the server answers exactly the review Edit
+  scheduled email draws for that schedule with the new date, the same
+  browser-local time and the same email: it fills in the rest of Edit's form
+  from the saved schedule, so the calendar has no write path or rules of its
+  own. That review opens in the [review
+  dialog](../ui-conventions/spec.md#review-dialog) on top of the Move
+  dialog; its Cancel returns to the Move dialog. A refusal for a value (a
+  day outside the campaign, two Family mailings at one moment, the
+  repeated hour) is said in the Move dialog's reserved line after its
+  buttons, so a long refusal moves nothing; a refusal of the date marks the
+  field, which the line then describes. The repeated hour is refused at the
+  date, in words that fit the dialog: choose another day, or change the
+  time on the send's Edit page. Move always reviews in the dialog, also
+  while the campaign wizard applies (whose own steps save directly): the
+  calendar is not a wizard step but a view of schedules that may already be
+  live, and a move changes when Families get mail. Apply redraws the grid and
+  the table in place ([in-place
+  controls](../ui-conventions/spec.md#in-place-controls)) on the month
+  shown, closes the Move dialog, and the calendar's status line says
+  "Scheduled email changed. Applied at …". Escape or Cancel closes the Move
+  dialog, changing nothing, and returns focus to what opened it. The table
+  keeps its Edit link and offers no Move…; the grid's is the one Move.
+- **Drag to move.** On a fine pointer (a mouse or trackpad), dragging a
+  movable send's link or its Move… button by a few pixels starts a drag:
+  the send is marked as being dragged and the day under the pointer is
+  outlined (outline only, so nothing moves). Dropping it on another day of
+  the grid opens the same Move dialog with that day filled in; dropping it
+  on its own day, outside the grid, or pressing Escape cancels the drag, and
+  the click that ends a drag neither follows the link nor opens Move…. A
+  click without a drag still follows the link or opens Move…, and Enter or
+  Space on Move… opens it as before.
+  The drop changes nothing: the send stays where it was until Apply, and
+  Cancel leaves it there. Touch has no drag and uses Move…. Drag follows
   the [dragging rule](../ui-conventions/spec.md#accessibility-and-client-behavior).
 - **The moved send** keeps its browser-local wall-clock time, converted on
   the new day as a typed date is, so 9:00 AM stays 9:00 AM across a
@@ -3458,13 +3499,16 @@ checks it exactly as that page does.
   two Family mailings at one moment, and the hour the clocks repeat. Only the
   moved send may move into the past.
 - **A series reminder** moves as "This reminder only". On a day its rule does
-  not give, it leaves the series, and the review says so. The series scopes
-  stay on Edit, where every reminder keeps its own date.
+  not give, it leaves the series, and the review says so in Edit's line
+  ([New and Edit scheduled email](#new-and-edit-scheduled-email)). The series
+  scopes stay on Edit, where every reminder keeps its own date.
 - **Not movable:** a send that has run, is being prepared or was missed, and
   every send of a report email (a report keeps its own schedule; one of its
   sends can only be skipped, through
   [Skip this send](../report-emails/spec.md#skip-one-send)). These keep their look on the
-  calendar and offer neither Move… nor a drag.
+  calendar and offer neither Move… nor a drag, and the server refuses a
+  move of any of them, from an old page or a crafted request, in the
+  review dialog, changing nothing.
 
 ### Ministry leader roles
 
