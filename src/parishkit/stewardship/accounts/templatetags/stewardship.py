@@ -375,7 +375,14 @@ def applied_filters(query, ignore=()):
     actionable requests" is the page's normal list, so it does not count).
     Sort, page, zone and mode are left out (``NOT_FILTERS``), as is any field
     named in ``ignore``: one another choice currently overrides.
+
+    As a template filter, ``ignore`` is one comma-separated string
+    (``query|applied_filters:"reach,responses"``); it is split into names so
+    a field is matched whole, never as a substring ("response" is not
+    ignored by "responses").
     """
+    if isinstance(ignore, str):
+        ignore = tuple(ignore.split(","))
     return sum(
         getattr(query, name) != field.default
         for name, field in query.__dataclass_fields__.items()

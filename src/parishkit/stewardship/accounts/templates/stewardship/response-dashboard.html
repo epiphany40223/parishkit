@@ -54,10 +54,10 @@
 {% with chart=daily_chart %}{% include 'stewardship/components/chart.html' with no_table=True %}{% endwith %}
 <div id="{{ table.anchor }}" data-table-region>
 {% translate "Daily table pages" as navigator_label %}{% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
-<div class="table-scroll" tabindex="0" role="region" aria-labelledby="daily-table-caption"><table class="data-table"><caption id="daily-table-caption">{{ chart.scope_label }} — {% translate "exact daily values" %}</caption><thead><tr>{% for key, heading in columns %}{% sort_heading table key heading %}{% endfor %}</tr></thead><tbody>{% for day, row in table.rows %}<tr>{% for value in row %}<td>{{ value }}</td>{% endfor %}</tr>{% empty %}<tr><td colspan="4">{% translate "No campaign dates to show." %}</td></tr>{% endfor %}</tbody></table></div>
+<div class="table-scroll" tabindex="0" role="region" aria-labelledby="daily-table-caption"><table class="data-table"><caption id="daily-table-caption">{{ chart.scope_label }} — {% translate "exact daily values" %}</caption><thead><tr>{% for key, heading in columns %}{% sort_heading table key heading %}{% endfor %}</tr></thead><tbody>{% for day, row in table.rows %}<tr>{% for value in row %}<td>{{ value }}</td>{% endfor %}</tr>{% empty %}<tr><td colspan="4">{% translate "No campaign dates to show yet. The daily table starts on the Campaign start date and gains a row each day." %}</td></tr>{% endfor %}</tbody></table></div>
 {% include "stewardship/table-navigator.html" with table=table label=navigator_label %}
 </div>
-{% else %}<p>{% translate "There are no campaign dates to display yet." %}</p>{% endif %}
+{% else %}<p>{% translate "No campaign dates to show yet. The daily table starts on the Campaign start date and gains a row each day." %}</p>{% endif %}
 {% else %}<p>{% translate "Participation chart unavailable. No complete report is ready for this population yet; no zero values have been assumed. The chart is calculated in the background and appears here by itself once it is ready." %}</p>{% endif %}
 </section>
 {# A small export panel (#1537): the row of export buttons, with no sentence on what it exports (ui-conventions "Downloaded files", Export actions) (export_actions, XLSX first, #1190, #1679), posting the zone the page was drawn in. Without a chart, or while other campaign work holds exports, the button is still drawn, unavailable and named by the sentence that says why (#563); the server refuses a forged request all the same. #}
