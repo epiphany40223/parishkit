@@ -366,7 +366,7 @@ def answered_pledge(snapshot_id, campaign_id, family_duid):
     The financial stream's A for the Family's answer (#1753): read at the
     submit from the response's validation snapshot (the current one, which
     the submission guard requires) by ``proven_pledge``; the response's own
-    guard (0145) pins it to the same snapshot's sum. None, when the read is
+    guard (0136) pins it to the same snapshot's sum. None, when the read is
     unproven, records no amount. The read runs in a savepoint, so a source
     row the selection cannot read (a database error) also records none
     instead of aborting the Family's submit; the guard reads nothing then.

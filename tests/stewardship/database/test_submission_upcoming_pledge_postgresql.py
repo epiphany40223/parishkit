@@ -1,7 +1,7 @@
 """The upcoming-year pledge a Family answered against (#1753).
 
-Frozen migration 0145 (provisional number,
-``schema/migrations/0145_submission_upcoming_pledge.sql``) records on each
+Frozen migration 0136 (provisional number,
+``schema/migrations/0136_submission_upcoming_pledge.sql``) records on each
 response ParishSoft's pledge for the campaign's upcoming period in the
 snapshot the submit validates against (only with its proven giving read),
 guards it in SQL, and reads it as the financial stream's A in the shared
@@ -41,7 +41,7 @@ from .test_runtime_auth_grants_postgresql import web_login
 pytestmark = pytest.mark.django_db(transaction=True)
 
 SCHEMA = Path(__file__).resolve().parents[3] / "src/parishkit/stewardship/schema"
-FILE = SCHEMA / "migrations/0145_submission_upcoming_pledge.sql"
+FILE = SCHEMA / "migrations/0136_submission_upcoming_pledge.sql"
 
 
 def answered(response_service, *amounts, covered=True, **answer):
@@ -303,9 +303,9 @@ def test_the_web_login_gains_no_new_authority(response_service):
 
 
 def test_the_migration_check_refuses_the_earlier_selection(response_service):
-    """0145's DO block refuses to commit while 0142's stage selection (A read
+    """0136's DO block refuses to commit while 0135's stage selection (A read
     as $0.00) or no response guard is installed."""
-    earlier = (SCHEMA / "migrations/0142_pledge_conflicts.sql").read_text(
+    earlier = (SCHEMA / "migrations/0135_pledge_conflicts.sql").read_text(
         encoding="utf-8"
     )
     new = FILE.read_text(encoding="utf-8")
@@ -352,7 +352,7 @@ def test_a_source_row_the_selection_cannot_read_records_none(
 
 def test_a_run_that_began_unrecorded_keeps_a_at_zero(response_service):
     """Rule 1 against a response that recorded nothing (every response
-    before 0145): an unchanged resubmission records ParishSoft's newer
+    before 0136): an unchanged resubmission records ParishSoft's newer
     amount but keeps A at $0.00, so the Conflict that amount made stays,
     and the item's A is still read as $0.00."""
     harness, submission = answered(response_service, covered=False)

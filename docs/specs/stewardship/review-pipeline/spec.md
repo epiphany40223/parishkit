@@ -826,7 +826,7 @@ maps a Family's ParishSoft pledge for the upcoming year to the pipeline item:
   no pledge for it. A for the Family's answer is ParishSoft's upcoming-year
   pledge when the Family answered: the Family submit (and Open form)
   records it on the response (`stewardship_submission.upcoming_pledge`,
-  frozen migration 0145, provisional number), read the same way from the
+  frozen migration 0136, provisional number), read the same way from the
   current snapshot the submit validates against, and only when that
   snapshot's giving read is proven complete; otherwise it records none and
   the submit goes on. A guard on the response pins a recorded amount to

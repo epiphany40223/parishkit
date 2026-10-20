@@ -139,7 +139,7 @@ class Submission(ImmutableRecord):
     # ParishSoft's pledge for the campaign's upcoming financial period in the
     # validation snapshot, recorded at the submit only for a response that
     # answers the financial questions and only with that snapshot's proven
-    # giving read, else None (#1753, frozen migration 0145, provisional). The
+    # giving read, else None (#1753, frozen migration 0136, provisional). The
     # financial stream's A for the pledge; a guard checks it in SQL.
     upcoming_pledge = models.DecimalField(max_digits=24, decimal_places=2, null=True)
 

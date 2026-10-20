@@ -1,4 +1,4 @@
--- Frozen forward migration file 0145 (the repository-wide file sequence;
+-- Frozen forward migration file 0136 (the repository-wide file sequence;
 -- provisional, the coordinator assigns the final number at merge): the
 -- upcoming-year pledge a Family answered against (#1753, review pipeline).
 -- This file is installed by its Django migration in the responses app and
@@ -18,22 +18,22 @@
 --     for a response answering the financial questions and only when that
 --     snapshot's giving read is proven complete; NULL otherwise.
 --   * stewardship_submission_pledge_guard_v1 (new trigger function): a
---     recorded amount must be 0139's stewardship_pledge_upcoming_v1 for the
+--     recorded amount must be 0134's stewardship_pledge_upcoming_v1 for the
 --     response's own validation snapshot, campaign and Family, on a response
 --     answering the financial questions. It pins the amount to the
 --     snapshot's sum; the giving read's full proof is the application's
---     check, as for the Entered by hand mark (0139), though the selection
+--     check, as for the Entered by hand mark (0134), though the selection
 --     itself is NULL (so refuses any amount) without a valid giving date.
 --     INSERT only: 0001's submission
 --     guard already refuses every UPDATE and admits only the rehearsal
 --     cleanup's DELETE. It runs with the submitting login's rights, which
 --     already read every input (web reads the pledge snapshot rows, the
 --     snapshot cursor and the campaign configuration for the Family form).
---   * stewardship_pledge_stages_v1 (0142's, replaced in place, same
+--   * stewardship_pledge_stages_v1 (0135's, replaced in place, same
 --     columns): an item's A is now the amount recorded on the response at
 --     which the Family's current pledge answer began (rule 1 keeps A while
 --     the answer is unchanged; rule 2 takes this submit's), unless the
---     decision in force recorded its own (a Conflict's R, 0142); NULL reads
+--     decision in force recorded its own (a Conflict's R, 0135); NULL reads
 --     as $0.00, as before. next_baseline, which the pledge review guard
 --     records on a decision, carries that A. A To review pledge no decision
 --     is in force for whose recorded A equals the Family's annual pledge is
@@ -41,7 +41,7 @@
 --     a confirmed check at that amount, unless any earlier version of the
 --     Family's pledge was ever marked Entered by hand, which stays for the
 --     refresh to judge. The financial stream places rules 3 and 4 so (the
---     spec's "Financial stream"), not as the general rule does. Every 0142
+--     spec's "Financial stream"), not as the general rule does. Every 0135
 --     rule is otherwise unchanged.
 -- No grant changes: the column is part of the response row web already
 -- inserts and reads, and no new function is a definer. The file ends with a
@@ -52,7 +52,7 @@ SET LOCAL search_path = public;
 
 ALTER TABLE "stewardship_submission" ADD COLUMN "upcoming_pledge" numeric(24, 2) NULL;
 
--- A recorded upcoming-year pledge is the validation snapshot's own: 0139's
+-- A recorded upcoming-year pledge is the validation snapshot's own: 0134's
 -- selection, the one the refresh checks and the Entered by hand mark read.
 CREATE FUNCTION public.stewardship_submission_pledge_guard_v1() RETURNS trigger
 LANGUAGE plpgsql SET search_path TO pg_catalog,public,pg_temp AS $$
@@ -74,7 +74,7 @@ CREATE TRIGGER stewardship_submission_pledge_guard
     BEFORE INSERT ON public.stewardship_submission
     FOR EACH ROW EXECUTE FUNCTION public.stewardship_submission_pledge_guard_v1();
 
--- 0142's stage selection with A read from the responses (#1753). ``answered``
+-- 0135's stage selection with A read from the responses (#1753). ``answered``
 -- is the amount recorded on the earliest live financial response from which
 -- every later one up to the current carries the current pledge answer (the
 -- run rule 1 keeps); ``known`` is the item's A before the $0.00 reading.
@@ -124,7 +124,7 @@ LANGUAGE sql STABLE SET search_path TO pg_catalog,public,pg_temp AS $$
         SELECT c.outcome::text AS outcome,c.observed FROM stewardship_pledge_refresh_check c
         WHERE i.stage<>'to_review' AND i.in_force AND c.review_id=i.review_id
         ORDER BY c.created_at DESC,c.id DESC LIMIT 1) d ON true
-    -- 0142's open check read, unchanged: its inner ``s`` is the checked
+    -- 0135's open check read, unchanged: its inner ``s`` is the checked
     -- response and shadows the outer current one inside this subquery.
     LEFT JOIN LATERAL (
         SELECT c.outcome::text AS outcome,c.observed FROM stewardship_pledge_open_check c

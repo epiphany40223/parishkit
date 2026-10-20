@@ -438,8 +438,8 @@ FROZEN = {
     "0135_pledge_conflicts.sql": (
         "958caff9e59ffe8464f3a71a2fe21582e8372b3371b4f2a46186a0a019f94ab7"
     ),
-    "0145_submission_upcoming_pledge.sql": (
-        "62b463fd821f90c8add1f282df197bb211673b287c7eec2f2d6e9b876e0659d8"
+    "0136_submission_upcoming_pledge.sql": (
+        "b66fcf15d06818dc6781b5a5813df647282dbe1f1dfb30ff4edf922696bd64cf"
     ),
 }
 

@@ -834,14 +834,14 @@ CLOSURE_ALTERED = {
         "stewardship_workflows",
         "0003_ministry_review_pipeline",
     ),
-    # 0145 (#1753, provisional number) adds the responses' upcoming pledge
-    # with its INSERT guard and replaces 0142's stage selection in place,
-    # which 0142's reinstall (``CLOSURE_CREATED``) puts back first; its file
+    # 0136 (#1753, provisional number) adds the responses' upcoming pledge
+    # with its INSERT guard and replaces 0135's stage selection in place,
+    # which 0135's reinstall (``CLOSURE_CREATED``) puts back first; its file
     # then runs whole again (``before_submission_upcoming_pledge`` drops the
     # column and the guard).
     ("stewardship_submission", "upcoming_pledge"): (
         "stewardship_responses",
-        "0014_submission_upcoming_pledge",
+        "0018_submission_upcoming_pledge",
     ),
 }
 
@@ -1326,12 +1326,12 @@ def before_leader_changes():
 
 
 def before_submission_upcoming_pledge():
-    """The statements that put responses back as they were before 0145.
+    """The statements that put responses back as they were before 0136.
 
-    #1753's 0145 adds ``stewardship_submission.upcoming_pledge`` with its
-    INSERT guard and replaces 0142's stage selection, which ``swap_pending``
+    #1753's 0136 adds ``stewardship_submission.upcoming_pledge`` with its
+    INSERT guard and replaces 0135's stage selection, which ``swap_pending``
     already dropped (``CLOSURE_CREATED``); dropping the guard function drops
-    its trigger. 0145's frozen file (or the full migration) installs all of
+    its trigger. 0136's frozen file (or the full migration) installs all of
     it again.
     """
     return [

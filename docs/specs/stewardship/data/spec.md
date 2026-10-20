@@ -1095,7 +1095,7 @@ Every final click creates an immutable `Submission` version containing:
 - `upcoming_pledge`, ParishSoft's pledge for the campaign's upcoming
   financial period in the validation snapshot, recorded only for a response
   that answers the financial questions and only when that snapshot's giving
-  read is proven complete, else null (frozen migration 0145, provisional
+  read is proven complete, else null (frozen migration 0136, provisional
   number; the review pipeline's A for the pledge,
   [Financial stream](../review-pipeline/spec.md#financial-stream)).
 

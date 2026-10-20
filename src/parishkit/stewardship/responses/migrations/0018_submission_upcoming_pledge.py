@@ -1,12 +1,12 @@
 """Forward migration: the upcoming-year pledge a Family answered against (#1753).
 
 Its SQL is the frozen file
-``schema/migrations/0145_submission_upcoming_pledge.sql`` (prefix 0145 in the
+``schema/migrations/0136_submission_upcoming_pledge.sql`` (prefix 0136 in the
 repository-wide file sequence, provisional until the coordinator assigns it
 at merge), read whole and never parsed. It adds ``upcoming_pledge`` to each
 response (ParishSoft's upcoming-year pledge in its validation snapshot, or
 NULL), installs the INSERT guard that checks a recorded amount against that
-snapshot, and replaces 0142's pledge stage selection in place so the
+snapshot, and replaces 0135's pledge stage selection in place so the
 financial stream reads A from the responses. It ends with a DO block that
 refuses to commit unless all of it is installed. The state operation records
 the column in Django's model state, so ``makemigrations --check`` stays
@@ -14,7 +14,7 @@ clean. Reversing needs its own forward migration, so, like the baseline, it
 has no reverse operation.
 
 It depends on this app's previous migration, so the app keeps one leaf, and
-on the reports migration that installs the previous frozen file (0142),
+on the reports migration that installs the previous frozen file (0135),
 whose selection it replaces, so the files apply in prefix order.
 """
 
@@ -26,13 +26,13 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0145_submission_upcoming_pledge.sql"
+    / "0136_submission_upcoming_pledge.sql"
 )
 
 
 class Migration(migrations.Migration):
     dependencies = [
-        ("stewardship_responses", "0013_census_pipeline_review"),
+        ("stewardship_responses", "0017_entered_incorrectly_fixes"),
         ("stewardship_reports", "0034_pledge_conflicts"),
     ]
 
