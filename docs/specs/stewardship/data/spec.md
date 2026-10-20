@@ -295,7 +295,7 @@ Campaign exists. Clearing the pointer through Return to Testing permanently
 makes that archived Campaign historical and ineligible for unarchive.
 
 v1 does not build reopen, archive, unarchive, Return to Testing or purge
-([v1 launch scope](../../plans/stewardship/v1-launch.md#cut-from-v1), items 1
+([v1 launch scope](../../../plans/stewardship/v1-launch.md#cut-from-v1), items 1
 and 2; the close-out wizard is
 [#527](https://github.com/epiphany40223/parishkit/issues/527)). Their
 lifecycle registry entries (`campaigns/lifecycle.py`) and some storage
@@ -1132,7 +1132,7 @@ new proposed-change records where necessary. A later census response that
 gives the same answer again for an ordinary field already *published* or
 *resolved_external* (not yet in the promoted download) creates none: the
 entered change stays as it is
-([resubmission rule](../review-pipeline/spec.md#resubmission-while-the-setting-is-off),
+([resubmission rule](../review-pipeline/spec.md#resubmission-before-the-reviewed-form),
 [#1683](https://github.com/epiphany40223/parishkit/issues/1683)). The
 submission's completeness check admits that absence, and the effective-value
 index keeps that change for the next response while each census response
@@ -1953,7 +1953,13 @@ each check that the other has not happened.
 ## Effective-value merge
 
 The value displayed on a repeat Family visit is computed from the immutable
-Family-submitted value, never an Admin review edit:
+Family-submitted value, never an Admin review edit, until the release
+with [#1705](https://github.com/epiphany40223/parishkit/issues/1705)'s last
+slice deploys. From then on a live form shows the
+[reviewed Family form](../review-pipeline/spec.md#reviewed-family-form)
+instead ([Families see reviewed changes](../review-pipeline/spec.md#families-see-reviewed-changes)),
+and the census slice of #1705 rewrites these rules for it; a Testing form
+keeps these rules:
 
 1. Start with the current ParishSoft value.
 2. If there is no prior effective response change, use current.
