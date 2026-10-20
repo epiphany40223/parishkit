@@ -295,7 +295,7 @@ Campaign exists. Clearing the pointer through Return to Testing permanently
 makes that archived Campaign historical and ineligible for unarchive.
 
 v1 does not build reopen, archive, unarchive, Return to Testing or purge
-([v1 launch scope](../../plans/stewardship/v1-launch.md#cut-from-v1), items 1
+([v1 launch scope](../../../plans/stewardship/v1-launch.md#cut-from-v1), items 1
 and 2; the close-out wizard is
 [#527](https://github.com/epiphany40223/parishkit/issues/527)). Their
 lifecycle registry entries (`campaigns/lifecycle.py`) and some storage
