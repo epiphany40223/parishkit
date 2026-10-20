@@ -765,6 +765,13 @@ textarea { max-width: 56rem; }
 @media (min-width: 48rem) {
   :is(form, fieldset) > div:has(> input:is([type=date], [type=time], [type=datetime-local], [type=month], [type=number], [data-time-entry=time])):not(:has(> :is(select, textarea))):not([hidden]) { display: inline-flex !important; flex-direction: column; vertical-align: top; min-width: 12rem; margin-inline-end: 1.5rem; }
   :is(form, fieldset) > div:has(> input:is([type=date], [type=time], [type=datetime-local], [type=month], [type=number], [data-time-entry=time])) > :is(input, .helptext, .time-reading) { max-width: 14rem; }
+  /* A short field's reserved answer line (.field-error-line, drawn before
+     the control) sits under its control, not above it, so every short field
+     in a row (a date beside a time, which keeps its reading line below) puts
+     its box at the same height under its label (#1851). The help
+     follows it, as it follows a time's reading. */
+  :is(form, fieldset) > div:has(> input:is([type=date], [type=time], [type=datetime-local], [type=month], [type=number], [data-time-entry=time])):not(:has(> :is(select, textarea))):not([hidden]) > .field-error-line { order: 1; }
+  :is(form, fieldset) > div:has(> input:is([type=date], [type=time], [type=datetime-local], [type=month], [type=number], [data-time-entry=time])):not(:has(> :is(select, textarea))):not([hidden]) > .helptext { order: 2; }
   /* A date checked as it is typed whose answer line has no Review beside
      it (a live campaign's end date on Campaign settings, #1119) takes the
      form's whole width, so its reserved line holds the longest answer in
