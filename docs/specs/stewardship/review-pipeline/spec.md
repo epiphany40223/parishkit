@@ -46,7 +46,7 @@ It links to the stream specs rather than restating them:
 - Ministry: [Follow-up records](../data/spec.md#follow-up-records),
   [Ministry change summary](../reports/spec.md#ministry-change-summary),
   [Follow-up workflows](../admin-portal/spec.md#follow-up-workflows) and
-  [Roster changes to enter](../admin-portal/spec.md#roster-changes-to-enter);
+  [roster entry on Ministry requests](../admin-portal/spec.md#roster-entry-on-ministry-requests);
 - financial: [Financial stewardship detail](../reports/spec.md#financial-stewardship-detail);
 - cannot participate: [Limitations](../reports/spec.md#limitations);
 - free text: [Additional information](../reports/spec.md#additional-information).
@@ -501,7 +501,7 @@ The rules, in order:
 4. **Entity gone.** The Member or Family left the baseline (inactive,
    deceased, moved): the item keeps its stage and gains the shared
    [Not in ParishSoft](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
-   badge, as Roster changes to enter does today.
+   badge, as Ministry requests' roster rows do today.
 
 For a Ministry request, R, A and C are the Member's roster state for that
 Ministry (in or not in), so rule 3 cannot apply: a join is Confirmed when
@@ -555,7 +555,7 @@ introduce its own word for a shared stage.
 | Ready to update | accepted, the API can write it | "To do" for an approved Automatic row |
 | Updating | in a running update | "Being published" |
 | Updated in ParishSoft | written and read back | "Published" |
-| To enter by hand | accepted, the API cannot write it | "To do" for a By hand row; "Not yet" on Roster changes to enter |
+| To enter by hand | accepted, the API cannot write it | "To do" for a By hand row; "Not yet" on the retired Roster changes to enter |
 | Entered by hand | a person recorded entering it | "Entered by hand", "Entered in ParishSoft: Yes" |
 | Entered incorrectly | ParishSoft shows a different value after Entered by hand | new |
 | Not seen in ParishSoft | Entered by hand, but ParishSoft still shows the old value after two refreshes (a flag, not a stage) | new |
@@ -615,7 +615,8 @@ Stored state: `MinistryRequest` workflow (`new`, `in_progress`,
 `resolved`, `closed_no_response`, …) and outcome (`joined`,
 `leave_confirmed`, `declined`, `no_response`, `duplicate`, `other`), then
 the Entered in ParishSoft tick on
-[Roster changes to enter](../admin-portal/spec.md#roster-changes-to-enter),
+Ministry requests' Stage To enter by hand
+([roster entry](../admin-portal/spec.md#roster-entry-on-ministry-requests)),
 then reconciliation resolving a request whose roster state is current.
 The mapping onto stages is the
 [existing state to stage](#existing-state-to-stage) table. A decided request is
@@ -805,7 +806,7 @@ a box). Each takes the optional note in the shared confirmation dialog.
 A row's decision is shown on its action icons, not only in the Stage
 column: Accept, Ignore and Entered by hand / Handled follow the
 [selected state](../ui-conventions/spec.md#row-actions-and-confirmation) rule, and Back to review is the row's undo.
-Ministry requests and Roster changes to enter use it too.
+Ministry requests uses it too.
 
 ### Bulk actions
 
@@ -851,9 +852,25 @@ Every stream has a **To enter by hand** (or To handle) report: the
 worklist filtered to that stage, with Entered by hand / Handled as its row
 and bulk action, exported through the shared export component in CSV, XLSX
 and PDF. The same report has Stage choices for Entered incorrectly and Not
-seen in ParishSoft. Roster changes to enter is the Ministry stream's report
-today and becomes the shared component's first user; Census changes'
-*By hand* view and a new financial "Pledges" report follow.
+seen in ParishSoft (once [#1689](https://github.com/epiphany40223/parishkit/issues/1689)
+lands; until then, To enter by hand and Entered by hand). The report is the
+stream's own review worklist at that Stage, never a page of its own (the
+Administrator, R39 finding 2, 2026-10-19), and its dialog takes no note
+for a mark that records none (`web/review_worklist.build`'s `silent`).
+Each stream's report, as it lands:
+
+- **Ministry:** Ministry requests at its To enter by hand Stage, with its
+  export carrying the roster-entry columns
+  ([roster entry](../admin-portal/spec.md#roster-entry-on-ministry-requests);
+  Roster changes to enter, the first such report,
+  [#1687](https://github.com/epiphany40223/parishkit/issues/1687), was folded
+  into it).
+- **Census:** Census changes' worklist at its To enter by hand Stage, with
+  its export ([#1683](https://github.com/epiphany40223/parishkit/issues/1683)).
+- **Financial:** [Pledges](../reports/spec.md#pledges) at its To enter by
+  hand Stage ([#1686](https://github.com/epiphany40223/parishkit/issues/1686)).
+- **Cannot participate and Additional information:** their To handle
+  view, with Handled ([#1685](https://github.com/epiphany40223/parishkit/issues/1685)).
 
 ## What cannot be automated
 

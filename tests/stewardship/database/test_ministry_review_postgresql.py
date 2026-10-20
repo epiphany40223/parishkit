@@ -90,6 +90,85 @@ def withdraw_leave(harness):
     return current.get(ministry_duid=9)
 
 
+def replace_join(harness, join):
+    """A later response of the Family replaces ``join``'s revision.
+
+    The Family answers again without the join (a decided request stays as
+    it is), and a later request about the same Member and Ministry is put
+    on that response directly, bypassing the guards, so the accepted join
+    is the worklist's ``latest`` False revision at To enter by hand.
+    """
+    from django.db import connection
+
+    form = revisit(harness)
+    answers = answers_for(form)
+    answers["ministries"]["members"]["3"] = {"join": [], "leave": [4]}
+    respond(harness, form, answers)
+    later = (
+        MinistryRequest.objects.filter(
+            submission__family_id=join.submission.family_id,
+            submission__mode="live",
+        )
+        .order_by("-submission__family_version")
+        .first()
+        .submission
+    )
+    assert later.family_version > join.submission.family_version
+    with transaction.atomic(), connection.cursor() as cursor:
+        cursor.execute("SET LOCAL session_replication_role = replica")
+        MinistryRequest.objects.create(
+            submission=later,
+            entity_kind=join.entity_kind,
+            entity_key=join.entity_key,
+            ministry_duid=join.ministry_duid,
+            action="leave",
+            actor_id=later.family_id,
+        )
+    join.refresh_from_db()
+
+
+def test_a_replaced_revision_takes_only_its_roster_tick(response_service):
+    """An accepted request a later response replaced (the worklist's latest
+    False) offers Entered by hand alone: a forged Back to review, Ignore or
+    Edit on it is stale, names the request and records nothing (R39
+    review); its roster tick still records."""
+    harness = setup(response_service)
+    staff = actor(harness, {"staff"}, ())
+    join, _ = requests()
+    decide(harness, staff, "accept", join)
+    replace_join(harness, join)
+    assert (join.state, join.outcome) == ("resolved", "joined")
+    before = MinistryWorkflowRevision.objects.count()
+    for action, fields in (
+        ("back_to_review", {}),
+        ("ignore", {}),
+        ("edit", {"value": ["4"]}),
+    ):
+        with pytest.raises(StaleDecision) as raised:
+            decide(harness, staff, action, join, fields=fields)
+        assert raised.value.name == f"request {join.pk}", action
+    assert MinistryWorkflowRevision.objects.count() == before
+    assert (join.state, join.outcome, join.version) == ("resolved", "joined", 2)
+    decide(harness, staff, "entered_by_hand", join)
+    assert MinistryRosterEntry.objects.get(request=join).entered is True
+
+
+def test_a_bulk_mark_names_the_row_someone_marked_first(response_service):
+    """A bulk Entered by hand over a request already marked is stale and
+    its notice names that request (as a Member no longer in ParishSoft
+    does); nothing of the batch is recorded."""
+    harness = setup(response_service)
+    staff = actor(harness, {"staff"}, ())
+    join, leave = requests()
+    decide(harness, staff, "accept", join)
+    decide(harness, staff, "accept", leave)
+    decide(harness, staff, "entered_by_hand", leave)
+    with pytest.raises(StaleDecision) as raised:
+        decide(harness, staff, "entered_by_hand", join, leave)
+    assert raised.value.name == f"request {leave.pk}"
+    assert not MinistryRosterEntry.objects.filter(request=join).exists()
+
+
 def view(harness, principal, **values):
     """The worklist's rows for ``principal``, every stage, by request id."""
     query = WorklistQuery.parse({"stage": "all"} | values)
@@ -267,7 +346,7 @@ def test_a_leader_edits_only_into_a_ministry_they_lead(response_service):
     join = withdraw_leave(harness)
     decide(harness, both, "edit", join, fields={"value": ["4"]})
     assert join.reviewed_ministry_duid == 4
-    # Roster changes to enter lists the Ministry to enter: the edited one.
+    # The roster rows list the Ministry to enter: the edited one.
     from parishkit.stewardship.reports.ministry_roster_views import roster_rows
 
     staff = actor(harness, {"staff"}, ())

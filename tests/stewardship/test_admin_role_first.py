@@ -85,7 +85,7 @@ ADMITTING_READ = {
     "history confirm": (admin_history, "pending_replacement", {"token": "-"}),
     # The page's own admission, which admits a leader of any Ministry.
     "followup bulk": (admin_followup, "admit_followup", {}),
-    # Roster changes to enter's admission: Administrators and Staff only.
+    # The roster tick's admission: Administrators and Staff only.
     "followup roster-bulk": (admin_roster_tick, "admit_roster", {}),
     # The worklist pages' own admission: Administrators and Staff only
     # (#1735).

@@ -692,7 +692,7 @@ def test_the_catalog_lists_every_command_with_its_flags():
         "stage",
         *census["result_fields"][1:],
     ]
-    # The Roster changes to enter download (PR 8g): the same, with the
+    # The roster list's download (PR 8g): the same, with the
     # page's own event and report roster's Show and Ministry choices.
     roster = entries["export roster"]
     assert roster["scope"] == "full" and not roster["changes_state"]

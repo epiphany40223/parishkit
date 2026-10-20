@@ -145,6 +145,32 @@ def _locked_placement(target):
     )
 
 
+def _stale(target):
+    """A StaleRecordError naming ``target``, so a bulk notice names its row."""
+    error = StaleRecordError("The Ministry request changed.")
+    error.request_id = target.pk
+    return error
+
+
+def _later_revision(target):
+    """Whether a later live response of the Family replaced ``target``.
+
+    The worklist's order (``ministry_followup.sql``, ``revision``): the
+    latest revision of a Member's request for a Ministry is the one from the
+    Family's highest ``family_version`` (unique per Family and mode).
+    """
+    submission = target.submission
+    return MinistryRequest.objects.filter(
+        submission__family_id=submission.family_id,
+        submission__campaign_id=submission.campaign_id,
+        submission__mode="live",
+        submission__family_version__gt=submission.family_version,
+        entity_kind=target.entity_kind,
+        entity_key=target.entity_key,
+        ministry_duid=target.ministry_duid,
+    ).exists()
+
+
 def _ids(versions):
     """The posted item ids as request UUIDs (a malformed one is a 400)."""
     return {UUID(identity): version for identity, version in versions.items()}
@@ -169,6 +195,12 @@ def campaign_ministries(campaign_id):
         .active_configuration
     )
     return frozenset(int(duid) for duid in configuration.values["ministry_duids"])
+
+
+# The Ministry actions whose decision records no note: a roster tick has
+# none, so its worklist dialog shows none (``web.review_worklist.build``'s
+# ``silent``) and ``MinistryDecisions`` refuses one.
+SILENT = frozenset({Action.ENTERED_BY_HAND})
 
 
 class MinistryDecisions:
@@ -196,6 +228,9 @@ class MinistryDecisions:
         actor = principal.identity
         if len(decision.note) > MAX_NOTE:
             raise ValueError("A decision note is too long.")
+        # A roster tick records no note (its dialog shows none, ``SILENT``).
+        if decision.action in SILENT and decision.note:
+            raise ValueError("Entered by hand takes no note.")
         try:
             if decision.action is Action.ADD:
                 return self._add(actor, decision)
@@ -213,7 +248,14 @@ class MinistryDecisions:
             principal = current_principal(self.store, actor)
             roles = reader_roles(principal)
             try:
-                targets = _targets(self.store, actor, versions)
+                # The roster tick is recorded for a Member no longer in
+                # ParishSoft too: the roster work may still be real.
+                targets = _targets(
+                    self.store,
+                    actor,
+                    versions,
+                    gone_ok=decision.action is Action.ENTERED_BY_HAND,
+                )
             except PermissionError:
                 # A replay, or a post outdated by someone else's decision,
                 # can find the reader no longer leads the request's current
@@ -314,8 +356,15 @@ class MinistryDecisions:
             if any(getattr(previous, name) != intent[name] for name in REPLAYED):
                 raise ValueError("This request key is already bound.")
             return 0
-        if target.version != version or action not in offered:
-            raise StaleRecordError("The Ministry request changed.")
+        # A later response replaced this revision (the worklist's latest
+        # False): only its roster tick is still offered, so any other
+        # decision on it is a forged or outdated post.
+        if (
+            target.version != version
+            or action not in offered
+            or _later_revision(target)
+        ):
+            raise _stale(target)
         if (
             action is Action.BACK_TO_REVIEW
             and current.stage is Stage.IGNORED
@@ -390,7 +439,7 @@ class MinistryDecisions:
                 raise ValueError("This request key is already bound.")
             return 0
         if target.version != version or Action.ENTERED_BY_HAND not in offered:
-            raise StaleRecordError("The Ministry request changed.")
+            raise _stale(target)
         latest = MinistryRosterEntry.objects.filter(request_id=target.pk).aggregate(
             sequence=Max("sequence")
         )["sequence"]

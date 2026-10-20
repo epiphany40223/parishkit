@@ -688,7 +688,7 @@ def test_every_report_command_has_its_models_fields():
         "report source-form": admin_source_form.SourceFormReport,
         # Data to fix in ParishSoft (#1011), a Parish data page, likewise.
         "report data-to-fix": admin_data_to_fix.DataToFixReport,
-        # Roster changes to enter (#528), under Ministry follow-up: not a
+        # The roster list (#528), under Ministry requests: not a
         # report menu entry, so ``report list`` does not offer it.
         "report roster": admin_roster.RosterReport,
         # Census changes (#528), a campaign report menu entry, so ``report
