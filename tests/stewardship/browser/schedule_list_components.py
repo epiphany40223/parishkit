@@ -289,9 +289,17 @@ def _data():
 
 
 def _list(values, owner, emails, rows, *, sort="when", **extra):
-    """The list page for ``rows`` (Initial invitation sent, with results)."""
+    """The list page for ``rows`` (Initial invitation sent, with results;
+    the Weekly Admin digest has sent too, and stays deletable)."""
     names = email_names([row for row in emails if row["values"]["kind"] == "email"])
-    summary = {rows[0]["id"]: {"delivered": 1031, "failed": 2}}
+    summary = {
+        **{
+            row["id"]: {"delivered": 4}
+            for row in rows
+            if row["values"]["kind"] == "weekly_digest"
+        },
+        rows[0]["id"]: {"delivered": 1031, "failed": 2},
+    }
     described = schedule_rows(rows, owner["values"], summary, NOW, names)
     context = {
         "campaign": {"pk": owner["id"], "active_configuration": owner["values"]},

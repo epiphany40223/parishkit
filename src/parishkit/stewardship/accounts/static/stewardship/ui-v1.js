@@ -4790,6 +4790,15 @@
     const values = {count: chosen.length.toLocaleString("en-US"), name: chosen[0].name || ""};
     dialog.querySelector("[data-confirm-title]").textContent = fillIn(
       chosen.length === 1 ? text("titleOne") : text("titleMany"), values);
+    // A caution for marked rows only (confirm-dialog.html caution_marked):
+    // said while some chosen row's control carries data-confirm-caution.
+    const caution = dialog.querySelector("[data-confirm-caution-marked]");
+    if (caution) {
+      caution.hidden = !(bulk
+        ? [...form.elements].some((box) => box.matches("input[data-select-row]:checked")
+          && !box.disabled && box.hasAttribute("data-confirm-caution"))
+        : opener.hasAttribute("data-confirm-caution"));
+    }
     const body = dialog.querySelector("[data-confirm-body]");
     if (body) {
       if (body.dataset.default === undefined) body.dataset.default = body.textContent;

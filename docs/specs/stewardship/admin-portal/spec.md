@@ -2909,7 +2909,9 @@ a new revision and plan it again. Every other row has **Edit** and **Delete**.
 Edit opens the [Edit scheduled email page](#new-and-edit-scheduled-email)
 for that schedule. Delete, and **Delete selected** for the ticked rows, open the
 confirmation dialog. It names the schedule ("Delete Reminder 2?") or the count
-("Delete 3 scheduled emails?") and says that email already sent is not recalled
+("Delete 3 scheduled emails?"). Only when a chosen schedule has already sent
+email (the same sent count as the review's notice, so in practice an Admin
+digest that has run) does it also say that email already sent is not recalled
 and that emailed Family codes and links keep working. Confirming removes the
 schedules in one configuration change. The server builds the change as the
 review does (the same validation of the remaining schedules, the same blocking
