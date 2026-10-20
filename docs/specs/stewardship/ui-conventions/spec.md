@@ -70,6 +70,7 @@ when it lands.
   [colour scheme](#colour-scheme),
   [status indicators](#status-indicators), [stat tiles](#stat-tiles),
   [overview pages](#overview-pages),
+  [working spinner](#working-spinner),
   [stage boxes](#stage-boxes), [time entry](#time-entry),
   [schedules](#schedules), [schedule previews](#schedule-previews).
 - Tables: [Admin tables](#admin-tables),
@@ -3236,6 +3237,36 @@ and `.link-cards` in `ui-v1.css`; `.home-alerts` for the count lines.
 ([#1673](https://github.com/epiphany40223/parishkit/issues/1673); see
 [Home page](../admin-portal/spec.md#home-page)).
 
+### Working spinner
+
+**Rule.** Anything that shows work in flight with a spinning icon uses the
+one shared spinner, never a spinner of its own: a small ring with one
+quarter open, turning once every .8 seconds. It is drawn by the
+`components/spinner.html` include (`<span class="spinner"
+aria-hidden="true">`), or, on a button whose request is in flight
+(`is-busy`), by the same CSS rule on the button's `::after`. The spinner
+is decorative: it is hidden from assistive technology, and words beside it
+(the button's label, "Working…", "In progress") carry the state. Its ring
+takes its colour from the [design tokens](#shared-visual-style) (the accent
+by default, the text colour on a busy button and the attention ink in an
+In progress stage box), so Dark mode keeps it readable. Under reduced motion it stands still, a static ring that still
+says "working", through the theme's one reduced-motion rule. A spinner's
+space is reserved, or it takes the place of a mark that was already there,
+so it never moves the content around it when it appears or goes
+([no layout shift](#no-layout-shift)). Never add another spinner class,
+spinning animation or keyframes: extend this one, with a placement rule
+for its context if needed. **Why.** The Administrator, 2026-10-20 (pk-local
+R40b), asking for a working spinner in an In progress stage box "like the
+spinner the export download buttons show", and: "Is the spinning icon
+common code? If it's not, it should be." **Shared code.** The
+`components/spinner.html` include; the one `.spinner` rule, shared with
+`is-busy` buttons, and `@keyframes busy-spin` in `ui-v1.css`;
+`test_spinner_guard.py` fails if another spinning rule or keyframes
+appears. **Precedent.** Busy buttons (export buttons included), the live
+"Working…" line (`live-running.html`), a point-in-time export's pending
+state and In progress stage boxes
+([#1847](https://github.com/epiphany40223/parishkit/issues/1847)).
+
 ### Stage boxes
 
 **Rule.** A page that follows a long piece of work through its major
@@ -3244,13 +3275,18 @@ left to right, wrapping onto more rows on a phone with no sideways scroll.
 Each box names its stage and its state in words, Not started, In progress,
 Done or Failed (Finishing setup also has Waiting for the server operator),
 so its text, and its name as a list item, carry the state; a mark (a
-bullet, a pointer, a check, a cross or a pause) and a colour from the
+bullet, the [working spinner](#working-spinner), a check, a cross or a
+pause) and a colour from the
 [design tokens](#shared-visual-style) only reinforce it, in light and dark:
 Not started keeps the page's own background, In progress is the attention
 yellow (`warning-bg`, `warning-border`), Done the light accent green
 (`accent-soft`, `accent-line`) and Failed the error tone (`error-bg`,
 `error-border`); Dark mode takes each token's dark value. A change of state
 changes only these colours, the mark and the words, never the box's size.
+An In progress box, and only that box, shows the
+[working spinner](#working-spinner) in its mark's reserved slot; setup's
+list of collections downloaded from ParishSoft marks its active row the
+same way.
 The boxes show only stages the server reports, never invented ones. While
 the work runs, the page updates the boxes in place from a passive status
 read, and announces a change of state politely through the page's
@@ -3262,7 +3298,10 @@ each major step in the loading process, proceeding from left to right",
 and the same boxes, from the same code, as setup's Loading parish data and
 Finishing setup, so a reader learns the pattern once; and on their colours
 (Administrator, 2026-10-17): "'normal' background before starting, yellow
-while running, and light green when done". **Shared code.** The
+while running, and light green when done"; and on the spinner
+(Administrator, 2026-10-20): a "working" spinning icon in a box while
+that stage is actively In progress, to show progress visually. **Shared
+code.** The
 `components/stage-boxes.html` include, `accounts/stages.py` (`rows`, which
 marks the stages before the current one done, and the state words) and
 `.stage-boxes` in `ui-v1.css`. **Precedent.** Setup's Loading parish data
