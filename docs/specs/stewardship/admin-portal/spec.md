@@ -4533,7 +4533,10 @@ outcome.
      Administrator. A resend of an Apply that already cancelled opens Check
      (its request key makes the cancellation happen once). Apply returns the
      campaign to a Testing draft and opens Check, whose status line says
-     "Go-live cancelled at 3:42 PM." until go-live starts again.
+     "Go-live cancelled at 3:42 PM." until go-live starts again. The
+     dialog's dismiss button reads **Keep it scheduled**, not Cancel
+     ([a dismiss label that names what is
+     kept](../ui-conventions/spec.md#review-dialog)).
 
 After Production is confirmed, the Check address is an
 [unavailable menu page](../ui-conventions/spec.md#unavailable-menu-pages)

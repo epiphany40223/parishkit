@@ -1607,8 +1607,17 @@ the campaign wizard in #1404 PR 4).
 - **While the dialog is open** it is a native modal `<dialog>`: the rest of
   the page, the form included, is inert and cannot be edited, and Tab stays
   inside the dialog. So the review shown is always the review of the form as
-  it stands, and no edit ever has to withdraw it. Escape or Cancel closes the
-  dialog, changes nothing, and returns focus to Review changes.
+  it stands, and no edit ever has to withdraw it. Escape or Cancel (or the
+  dialog's own dismiss label, below) closes the dialog, changes nothing,
+  and returns focus to Review changes.
+- **A dismiss label that names what is kept.** The button that closes the
+  dialog without applying reads **Cancel**, unless that word would read as
+  the action it dismisses: a dialog that asks whether to cancel something
+  then names what is kept instead (Cancel go-live's **Keep it scheduled**,
+  [#1806](https://github.com/epiphany40223/parishkit/issues/1806)), as the
+  [confirmation dialog](#row-actions-and-confirmation)'s own labels may
+  (the Basic and Advanced toggle's **Keep Advanced**). It behaves exactly as
+  Cancel does. The title still names the action ("Cancel go-live?").
 - **Apply** posts the dialog's signed preview without a page load, as the
   [Delete dialog](#row-actions-and-confirmation) does: from then on the
   dialog cannot be dismissed (no Escape, no Cancel) until the answer

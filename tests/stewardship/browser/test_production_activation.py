@@ -210,16 +210,19 @@ def test_cancel_go_live_waits_for_a_reason_in_the_dialog(page, component_origin)
     assert "reason=Correct+the+schedule" in posts[1]
 
 
-def test_cancel_and_a_reload_change_nothing(page, component_origin):
-    """Cancel closes the dialog and returns focus to Cancel go-live; a
-    reload while it is open closes it with nothing applied."""
+def test_keep_it_scheduled_and_a_reload_change_nothing(page, component_origin):
+    """The dismiss button reads Keep it scheduled, never a bare Cancel that
+    would read as cancelling go-live (#1806): it closes the dialog and
+    returns focus to Cancel go-live; a reload while it is open closes it
+    with nothing applied."""
     page.goto(component_origin + "/production-scheduled")
     posts = posted(page)
     opener = page.get_by_role("button", name="Cancel go-live")
     opener.click()
     dialog = page.get_by_role("dialog", name="Cancel go-live?")
     visible(dialog)
-    dialog.get_by_role("button", name="Cancel", exact=True).click()
+    assert dialog.get_by_role("button", name="Cancel", exact=True).count() == 0
+    dialog.get_by_role("button", name="Keep it scheduled", exact=True).click()
     hidden(dialog)
     focused(opener)
     opener.click()
@@ -284,7 +287,7 @@ def test_a_refused_apply_names_the_change_inside_the_dialog(
 ):
     """The campaign started, or its mail work changed, since the Review: the
     refusal is shown in the dialog in its own words, Apply stays
-    unavailable, and Cancel closes it on the same page."""
+    unavailable, and Keep it scheduled closes it on the same page."""
     from playwright.sync_api import expect
 
     page.goto(component_origin + "/production-scheduled")
@@ -298,6 +301,6 @@ def test_a_refused_apply_names_the_change_inside_the_dialog(
     assert apply.is_disabled()
     dialog.get_by_label("Reason for cancelling go-live").fill("Fix the dates")
     assert apply.is_disabled()
-    dialog.get_by_role("button", name="Cancel", exact=True).click()
+    dialog.get_by_role("button", name="Keep it scheduled", exact=True).click()
     hidden(dialog)
     assert page.url == component_origin + "/production-scheduled"
