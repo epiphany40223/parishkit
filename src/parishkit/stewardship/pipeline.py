@@ -603,6 +603,16 @@ def undo_stage(stream, placement, *, by_hand=False):
     return Stage.TO_ENTER_BY_HAND
 
 
+class NoteRequired(ValueError):
+    """Back to review that needs a note (``undo_needs_note``) was sent without one.
+
+    Every stream's service raises this (or a subclass) for it, with a
+    static, safe message the page may show at the note; nothing was saved.
+    It is a ``ValueError``, so a caller that refuses a bad decision in
+    general refuses it too.
+    """
+
+
 def undo_needs_note(stage):
     """Whether Back to review from ``stage`` needs a note saying why.
 

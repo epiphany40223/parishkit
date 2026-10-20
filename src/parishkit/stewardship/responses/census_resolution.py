@@ -57,6 +57,7 @@ from parishkit.stewardship.audit.schemas import Action, ActorKind, Outcome
 from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.pipeline import (
+    NoteRequired,
     Stage,
     Stream,
     census_by_hand,
@@ -311,14 +312,6 @@ def undo_decision(proposal):
         by_hand=census_by_hand(proposal.handling, proposal.entity_kind),
     )
     return "unreviewed" if stage is Stage.TO_REVIEW else "approved"
-
-
-class NoteRequired(ValueError):
-    """Back to review of a terminal step, or of an Ignore, was sent without a note.
-
-    The message is static and safe, so the page may show it at the note.
-    Nothing was saved.
-    """
 
 
 def _valid(action, note):

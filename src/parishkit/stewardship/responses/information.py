@@ -26,6 +26,7 @@ from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.pipeline import Action as Decide
 from parishkit.stewardship.pipeline import (
+    NoteRequired,
     Stage,
     Stream,
     information_placement,
@@ -75,7 +76,7 @@ class ClearUnconfirmed(ValueError):
     """
 
 
-class ReopenNeedsNote(ValueError):
+class ReopenNeedsNote(NoteRequired):
     """An Ignored request left Ignored with no note; nothing was saved.
 
     Reopening an ignored item needs a reason (review pipeline spec,

@@ -33,6 +33,7 @@ from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.campaigns.work_locks import work_transaction
+from parishkit.stewardship.pipeline import NoteRequired
 from parishkit.stewardship.reports.export_services import admit_campaign
 
 from .capabilities import capability
@@ -487,7 +488,7 @@ def resolve_census_additions(
                 raise BulkStale(addition.pk)
             if step == "reopened" and not note.strip():
                 # Undoing a mark needs a reason, as reopening Ignored does.
-                raise ValueError("Undoing Entered by hand needs a note.")
+                raise NoteRequired("Undoing Entered by hand needs a note.")
             if step == "reopened" and _open_change(
                 addition.family_id,
                 addition.entity_kind,

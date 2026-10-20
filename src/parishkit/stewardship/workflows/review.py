@@ -49,6 +49,7 @@ from parishkit.stewardship.pipeline import (
     TERMINAL_STAGES,
     Action,
     Decision,
+    NoteRequired,
     Stage,
     Stream,
     allowed_actions,
@@ -406,8 +407,8 @@ class MinistryDecisions:
             and not decision.note.strip()
         ):
             if current.stage is Stage.IGNORED:
-                raise ValueError("Reopening an ignored request needs a note.")
-            raise ValueError(f"Undoing {current.stage.label} needs a note.")
+                raise NoteRequired("Reopening an ignored request needs a note.")
+            raise NoteRequired(f"Undoing {current.stage.label} needs a note.")
         if action is Action.BACK_TO_REVIEW and current.stage in TERMINAL_STAGES:
             _undo(principal.identity, target, version, key, decision.note, current)
             return 1
@@ -687,7 +688,7 @@ def undo_entered(store, actor_id, request_id, *, sequence, note, request_key):
         if not roster.can_tick(current_principal(store, actor_id)):
             raise PermissionError("The roster tick is unavailable.")
         if not note.strip():
-            raise ValueError("Undoing Entered by hand needs a note.")
+            raise NoteRequired("Undoing Entered by hand needs a note.")
         (target,) = _targets(store, actor_id, {request_id: None}, gone_ok=True)
         previous = MinistryRosterEntry.objects.filter(
             actor_id=actor_id, request_key=request_key

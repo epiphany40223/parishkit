@@ -40,6 +40,7 @@ from parishkit.stewardship.observability import bound_correlation, correlation
 from parishkit.stewardship.pipeline import (
     ROLES,
     Action,
+    NoteRequired,
     Stage,
     Stream,
     allowed_actions,
@@ -339,7 +340,7 @@ class PledgeDecisions:
                 and undo_needs_note(stage)
                 and not decision.note
             ):
-                raise ValueError(
+                raise NoteRequired(
                     REOPEN_NEEDS_NOTE if stage is Stage.IGNORED else UNDO_NEEDS_NOTE
                 )
             action = decision.action
