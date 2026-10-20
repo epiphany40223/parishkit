@@ -249,9 +249,35 @@ When census is enabled, show:
 - structured mailing address plus "same as home"; and
 - "opt out of all parish emails."
 
-Addresses contain line 1, optional line 2, city/locality, region/state,
-postal code, and country. Validation is country-aware and does not require a US
-state/ZIP for international addresses.
+Addresses contain country, line 1, optional line 2, city/locality,
+region/state, and postal code, in that order (#1777). Country comes first and
+defaults to United States, because it decides how the rest of the address is
+asked for:
+
+- **United States.** State is a drop-down of exactly the regions the server
+  accepts: the US states, the District of Columbia, the territories, and the
+  military AA, AE and AP. Each choice shows a readable name with its code, such
+  as "Kentucky (KY)", and submits the code. The postal field is labelled "ZIP
+  code" and takes five digits or ZIP+4.
+- **Any other country.** State is free text labelled "State, province or
+  region", and the postal field is labelled "Postal code". Both are optional
+  and are checked only as bounded single lines.
+
+Changing Country switches these controls in place, without moving the page,
+and loses nothing typed: the region text and the US selection are each kept
+while the other is showing, also after Review and Edit, so switching back
+restores them. Typed region text the drop-down offers, as a code or a name
+("ky", "Ky.", "Kentucky"), carries over to it on switching to United States.
+A US region the list does not offer, such as free text from parish records,
+stays shown and selected rather than being dropped, and its check asks the
+Family to "Choose a state from the list."
+
+A country on its own never makes an address nonblank: an address whose other
+fields are all empty is still "Not provided", even though Country shows a
+country (United States unless the Family chose another). An address that has
+other parts but no country shows no country selected, and its check asks for
+one. The US rule is the parish's, not ParishSoft's (which stores any text);
+the server and database apply the same checks whatever the browser shows.
 
 The email-opt-out answer becomes a manual census proposal for the parish's
 source systems. It does not alter mail from this campaign. Because reminders go
