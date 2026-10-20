@@ -190,7 +190,7 @@ def test_web_admission_requires_exactly_the_login_function(family_service):  # n
         # The publication plans' audit answer (0087, #528).
         "stewardship_publication_audited_v1(text, uuid, uuid, jsonb)",
         "stewardship_debug_logging_off_v1()",
-        # The pledges a refresh re-evaluates (0142, #1747).
+        # The pledges a refresh re-evaluates (0135, #1747).
         "stewardship_pledge_refresh_items_v2(uuid, uuid, uuid)",
     }
     tables, columns = runtime_grants(ServiceRole.WEB)

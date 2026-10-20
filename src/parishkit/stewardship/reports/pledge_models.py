@@ -37,7 +37,7 @@ class PledgeReview(ImmutableRecord):
     carries the decision forward. ``marked_pledge`` is ParishSoft's
     upcoming-year pledge read at the mark, when ``marked_pledge_known``
     (#1704). ``baseline_pledge`` is the item's A after this row (#1747,
-    frozen migration 0142, provisional number): ParishSoft's amount of the
+    frozen migration 0135, provisional number): ParishSoft's amount of the
     Conflict the decision was taken on, carried by Back to review and the
     mark while the Family's pledge is unchanged; NULL reads as $0.00. The
     guard sets it, never the caller.
@@ -166,9 +166,9 @@ class PledgeReview(ImmutableRecord):
         ]
 
 
-# The outcomes a refresh records for a pledge, as 0136's census and Ministry
+# The outcomes a refresh records for a pledge, as 0132's census and Ministry
 # refresh checks name them (``workflows.models.REFRESH_OUTCOMES``), and a
-# Conflict on an accepted pledge not yet marked (#1747, 0142).
+# Conflict on an accepted pledge not yet marked (#1747, 0135).
 PLEDGE_REFRESH_OUTCOMES = (
     "confirmed",
     "unchanged",
@@ -234,7 +234,7 @@ class PledgeOpenCheck(ImmutableRecord):
     shared stage selection (``stewardship_pledge_stages_v1``) reads. Only
     the source worker writes one, inside the promotion of ``snapshot_id``;
     SQL checks the item, the amount and the outcome and keeps the rows
-    immutable (schema/migrations/0142_pledge_conflicts.sql, provisional).
+    immutable (schema/migrations/0135_pledge_conflicts.sql, provisional).
     """
 
     snapshot_id = models.UUIDField()

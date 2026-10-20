@@ -4,8 +4,8 @@ Each Family's current pledge answer is one item ([review pipeline spec,
 "Financial stream"](docs/specs/stewardship/review-pipeline/spec.md)). Its
 history is ``PledgeReview`` (one immutable row per decision), and its stage
 is derived from its latest row and its latest refresh check by the SQL
-selection ``stewardship_pledge_stages_v1`` (frozen migration 0142,
-provisional number, over 0135's ``stewardship_pledge_review_states_v1``),
+selection ``stewardship_pledge_stages_v1`` (frozen migration 0135,
+provisional number, over 0127's ``stewardship_pledge_review_states_v1``),
 which the page, the counts and the row guard all read, so none of them can
 disagree about whether a Family's new answer reopened its pledge or a
 refresh Confirmed it or found a Conflict.
@@ -89,7 +89,7 @@ class Item:
     on the page is ``version_of(item)``. ``review`` is that latest row,
     ``in_force`` whether the Family's pledge answer is unchanged since it,
     and ``stage`` the selection's own stage, which ``placement`` must agree
-    with. ``base_stage`` is the stage its decision rows alone give (0135's),
+    with. ``base_stage`` is the stage its decision rows alone give (0127's),
     ``check`` the outcome of its latest refresh check that counts (None
     without one), ``observed`` ParishSoft's amount that check found, and
     ``checks`` how many checks the Family's pledge has (#1747).

@@ -1,20 +1,20 @@
 """Forward migration: refresh checks of To review and conflicting pledges (#1747).
 
-Its SQL is the frozen file ``schema/migrations/0142_pledge_conflicts.sql``
-(prefix 0142 in the repository-wide file sequence, provisional until the
+Its SQL is the frozen file ``schema/migrations/0135_pledge_conflicts.sql``
+(prefix 0135 in the repository-wide file sequence, provisional until the
 coordinator assigns it at merge), read whole and never parsed. It creates
 ``stewardship_pledge_open_check`` (one immutable row per refresh and To
 review pledge, which only the promoting source worker writes), adds a
-Conflict outcome to 0139's pledge refresh checks and the item's A
-(``baseline_pledge``) to 0135's pledge reviews, and installs the shared
+Conflict outcome to 0134's pledge refresh checks and the item's A
+(``baseline_pledge``) to 0127's pledge reviews, and installs the shared
 stage selection, the worker's definer selection and the open checks' guard;
-it replaces 0139's check guard and pledge review guard in place. It ends with
+it replaces 0134's check guard and pledge review guard in place. It ends with
 a DO block that refuses to commit unless all of it is installed. The state
 operations record the same changes in Django's model state, so
 ``makemigrations --check`` stays clean. Reversing needs its own forward
 migration, so, like the baseline, it has no reverse operation.
 
-It depends on the reports app's previous migration (0139's, whose table and
+It depends on the reports app's previous migration (0134's, whose table and
 guards it changes), which installs the previous frozen file, so the files
 apply in prefix order, and on the apps whose tables the new one references.
 Its table is registered in ``runtime_grants.CLOSURE_TABLES``, which keeps it
@@ -35,7 +35,7 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0142_pledge_conflicts.sql"
+    / "0135_pledge_conflicts.sql"
 )
 
 
@@ -43,7 +43,7 @@ class Migration(migrations.Migration):
     dependencies = [
         ("stewardship_campaigns", "0014_digest_skip_dates"),
         ("stewardship_reports", "0033_pledge_refresh_checks"),
-        ("stewardship_responses", "0013_census_pipeline_review"),
+        ("stewardship_responses", "0014_census_pipeline_review"),
     ]
 
     operations = [

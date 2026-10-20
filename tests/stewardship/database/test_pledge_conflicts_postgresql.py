@@ -1,7 +1,7 @@
 """The refresh re-evaluation of To review and conflicting pledges (#1747).
 
-Frozen migration 0142 (provisional number,
-``schema/migrations/0142_pledge_conflicts.sql``) checks To review pledges
+Frozen migration 0135 (provisional number,
+``schema/migrations/0135_pledge_conflicts.sql``) checks To review pledges
 (``stewardship_pledge_open_check``), adds a Conflict outcome for an accepted
 pledge not yet marked, records the item's A on the decision taken on a
 Conflict, and places every pledge through one stage selection the page, the
@@ -378,7 +378,7 @@ def test_the_open_guard_refuses_each_forgery_inside_a_promotion(
 def test_the_decided_guard_knows_a_conflict(
     response_service, monkeypatch, request, fields, amounts
 ):
-    """0139's check guard, replaced: a Conflict only before the mark, and
+    """0134's check guard, replaced: a Conflict only before the mark, and
     an unmarked pledge unchanged only at A."""
     from parishkit.stewardship.responses import refresh_checks
 
@@ -417,16 +417,16 @@ def test_open_checks_are_immutable(response_service):
 
 
 def test_the_migration_check_refuses_the_earlier_guards(response_service):
-    """0142's DO block refuses to commit while 0139's review guard (which
+    """0135's DO block refuses to commit while 0134's review guard (which
     reads no check) or check guard (which knows no Conflict) is installed."""
-    earlier = (SCHEMA / "migrations/0139_pledge_refresh_checks.sql").read_text(
+    earlier = (SCHEMA / "migrations/0134_pledge_refresh_checks.sql").read_text(
         encoding="utf-8"
     )
-    new = (SCHEMA / "migrations/0142_pledge_conflicts.sql").read_text(encoding="utf-8")
+    new = (SCHEMA / "migrations/0135_pledge_conflicts.sql").read_text(encoding="utf-8")
     block = new[new.index("DO $check$") :]
 
     def guard(name, created):
-        """One of 0139's guard bodies, replacing the current one."""
+        """One of 0134's guard bodies, replacing the current one."""
         start = earlier.index(f"{created} public.{name}()")
         body = earlier[start : earlier.index("END $$;", start) + len("END $$;")]
         return body.replace(created, "CREATE OR REPLACE FUNCTION")
@@ -455,10 +455,10 @@ def test_the_migration_check_refuses_the_earlier_guards(response_service):
 def test_the_migration_revokes_the_earlier_selection_from_the_worker(
     response_service,
 ):
-    """An environment that granted 0139's v1 to the worker loses it in 0142
+    """An environment that granted 0134's v1 to the worker loses it in 0135
     (database-grants never revokes, and the worker refuses an undeclared
     definer), and the DO block refuses to commit while the grant remains."""
-    new = (SCHEMA / "migrations/0142_pledge_conflicts.sql").read_text(encoding="utf-8")
+    new = (SCHEMA / "migrations/0135_pledge_conflicts.sql").read_text(encoding="utf-8")
     revoke = new[new.index("DO $revoke$") : new.index("DO $check$")]
     block = new[new.index("DO $check$") :]
     v1 = "public.stewardship_pledge_refresh_items_v1(uuid, uuid)"

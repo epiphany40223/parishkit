@@ -447,8 +447,8 @@ def test_the_mark_guard_refuses_a_known_mark_without_an_amount(
 
 
 def test_the_migration_check_refuses_the_old_pledge_review_guard(response_service):
-    """0139's DO block refuses to commit while 0135's guard, which admits no
-    mark amount, is installed, and passes over 0139's own guards (0142,
+    """0134's DO block refuses to commit while 0127's guard, which admits no
+    mark amount, is installed, and passes over 0134's own guards (0135,
     #1747, replaces both since)."""
     from pathlib import Path
 
