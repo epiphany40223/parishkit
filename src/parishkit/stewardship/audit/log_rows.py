@@ -168,7 +168,9 @@ EVENTS = tuple(sorted({item.value for item in Action} | {item.value for item in 
 # - ParishSoft refreshes: full refreshes and quick updates accepted,
 #   rejected, replaced or fallen back to a full reload, their failures and
 #   holds, an Administrator accepting a refused large change once, and the
-#   Ministry leader changes they cause (#1034). That one type
+#   Ministry leader changes they cause (#1034), and updating ParishSoft with
+#   census changes (#1688): an update is not a refresh, so the label says
+#   both. That one leader type
 #   is also recorded when a settings change (leader roles or Ministries)
 #   changes who leads; it stays here, with the refreshes
 #   that cause most of them, because each type belongs to one group.
@@ -299,6 +301,18 @@ ACTIVITY_TYPES = {
         # Accept this change once (ADM-13 PR 5b, #530) on System health.
         "source_drop_accepted",
         "admin_cmd_system_refresh_accept",
+        # Updating ParishSoft with census changes (#528, #1688): checks,
+        # plans, confirmations, attempts, reruns, the final refresh and
+        # refusals. The page view stays ungrouped with the other views.
+        "census_publication_preflight_requested",
+        "census_publication_planned",
+        "census_publication_confirmed",
+        "census_publication_recorded",
+        "census_publication_rerun_requested",
+        "census_publication_refresh_requested",
+        "census_publication_switched_off",
+        "census_publication_read_unconfirmed",
+        "census_publication_refused",
     ),
     "downloads": (
         *(
@@ -536,17 +550,6 @@ UNGROUPED_REASONS = {
     "Found while using already-loaded ParishSoft data, not in a refresh": (
         "source_member_unusable",
     ),
-    # Publication plans (#528, DAT-09.01): no page shows them yet (ADM-09).
-    "Publishing census changes to ParishSoft; no page shows it yet": (
-        "census_publication_planned",
-        "census_publication_confirmed",
-        "census_publication_recorded",
-        "census_publication_preflight_requested",
-        "census_publication_rerun_requested",
-        "census_publication_switched_off",
-        "census_publication_read_unconfirmed",
-        "census_publication_refused",
-    ),
     # Refused Admin input (#1403): its writer is in place before anything
     # calls it, and its own Activity group, Refused input, comes with the
     # page's operational-only handling of that group.
@@ -573,7 +576,7 @@ ACTIVITY_LABELS = (
     ("sign_in", _("Sign-in activity")),
     ("configuration", _("Configuration changes")),
     ("family_mail", _("Family mail")),
-    ("parishsoft", _("ParishSoft refreshes")),
+    ("parishsoft", _("ParishSoft refreshes and updates")),
     ("downloads", _("Reports and downloads")),
     ("security", _("Security events")),
     ("family_portal", _("Family portal activity")),

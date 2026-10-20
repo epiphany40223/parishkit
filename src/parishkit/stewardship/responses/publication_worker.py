@@ -451,7 +451,11 @@ def publish_plan(execution, plan_id, gateway, *, enabled):
             for entity in unfinished([pk for pk in expired if pk != plan_id]):
                 counts[_close(claim, gateway, _Entity(entity))] += 1
             stopped = plan_id in expired
-            for entity in unfinished([plan_id]):
+            entities = unfinished([plan_id])
+            # Update ParishSoft's status line counts the Members done
+            # ("3 of 5 Members done", #1688): a typed count, never a name.
+            execution.progress(0, len(entities))
+            for done, entity in enumerate(entities, start=1):
                 item = _Entity(entity)
                 # A resumed entity whose PUT was already accepted but read
                 # back wrong goes straight to the closing read: no more PUTs.
@@ -474,6 +478,7 @@ def publish_plan(execution, plan_id, gateway, *, enabled):
                     # have landed) is tried again.
                     if result != "failed":
                         break
+                execution.progress(done, len(entities))
             # Every entity this run did not finish is closed, so none is
             # left queued or blocking a later confirmation.
             for entity in unfinished([plan_id]):

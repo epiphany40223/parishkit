@@ -228,8 +228,9 @@ PAGES = {
     # Review work: each stream's review worklist (review pipeline spec).
     "limitations_report": Page("review", _("Limitations")),
     "census_changes": Page("review", _("Census changes")),
-    # Not a menu entry: Census changes links to it (#528, ADM-09).
-    "census_publication": Page("review", _("Publish to ParishSoft"), "census_changes"),
+    # Not a menu entry: Census changes links to it (#528, ADM-09; renamed
+    # from Publish to ParishSoft by #1688).
+    "update_parishsoft": Page("review", _("Update ParishSoft"), "census_changes"),
     "response_dashboard": Page("reports", _("Response dashboard")),
     "information_queue": Page("review", _("Additional information")),
     "information_item": Page("review", _("Information request"), "information_queue"),
@@ -741,6 +742,10 @@ NON_PAGES = frozenset(
         "logs_export",
         "limitations_export",
         "census_changes_export",
+        # Update ParishSoft's confirmation and Run again (#1688): POSTs that
+        # answer the review dialog with a fragment.
+        "update_parishsoft_confirmation",
+        "update_parishsoft_retries",
         "maintenance",
         "ministry_followup_export",
         "ministry_followup_update",

@@ -907,39 +907,44 @@ DESCRIPTIONS = {
         "ParishSoft."
     ),
     "census_publication_planned": _(
-        "The server checked approved census changes against ParishSoft and "
-        "recorded what publishing them would write."
+        "The server checked Ready to update census changes against ParishSoft "
+        "and recorded what updating ParishSoft would write."
     ),
     "census_publication_confirmed": _(
-        "An Administrator confirmed publishing census changes to ParishSoft."
+        "An Administrator confirmed updating ParishSoft with census changes."
     ),
     "census_publication_recorded": _(
-        "The server recorded whether a census change publication to "
-        "ParishSoft was written, stopped because something changed, or failed."
+        "The server recorded whether a Member's census changes were written "
+        "to ParishSoft, stopped because something changed, or failed."
     ),
     "census_publication_preflight_requested": _(
-        "An Administrator asked the server to check approved census changes "
-        "against ParishSoft before publishing them."
+        "An Administrator asked the server to check Ready to update census "
+        "changes against ParishSoft before updating it."
     ),
     "census_publication_rerun_requested": _(
-        "An Administrator asked the server to run a failed census change "
-        "publication to ParishSoft again."
+        "An Administrator asked the server to run an unfinished update of "
+        "ParishSoft with census changes again."
+    ),
+    "census_publication_refresh_requested": _(
+        "After updating ParishSoft with census changes, the server asked for "
+        "a full ParishSoft refresh so Census changes shows the new values. "
+        "It is attributed to the Administrator who confirmed the update."
     ),
     "census_publication_switched_off": _(
-        "A census change publication task stopped without reading or writing "
-        "ParishSoft because publishing to ParishSoft is switched off."
+        "A census change update task stopped without reading or writing "
+        "ParishSoft because updating ParishSoft is switched off."
     ),
     "census_publication_read_unconfirmed": _(
         "A census change check stopped without a plan because reading "
         "ParishSoft contact records is not confirmed yet."
     ),
     "census_publication_refused": _(
-        "A census change publication task stopped without writing ParishSoft "
+        "A census change update task stopped without writing ParishSoft "
         "because what it needed had changed or was missing."
     ),
     "census_publication_viewed": _(
-        "Someone opened Publish to ParishSoft, which shows the latest check "
-        "of approved census changes against ParishSoft."
+        "Someone opened Update ParishSoft, which shows the latest check of "
+        "Ready to update census changes against ParishSoft."
     ),
     "response_dashboard_viewed": _("Someone opened the response dashboard."),
     "response_submitted_list_viewed": _(

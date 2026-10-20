@@ -96,7 +96,7 @@ TEMPLATES = {
     "pledges_to_enter": "pledges-to-enter.html",
     "limitations_report": "limitations-report.html",
     "census_changes": "census-changes.html",
-    "census_publication": "census-publication.html",
+    "update_parishsoft": "update-parishsoft.html",
     "response_dashboard": "response-dashboard.html",
     "information_queue": "information.html",
     "information_item": "information.html",

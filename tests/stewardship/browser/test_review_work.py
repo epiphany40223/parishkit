@@ -104,7 +104,7 @@ def test_an_administrators_home_has_the_review_work_panel(
     page, component_origin, axe_source
 ):
     """Home keeps its own panels and adds Review work, with Ready to update
-    opening Publish to ParishSoft."""
+    opening Update ParishSoft."""
     page.set_viewport_size({"width": 1366, "height": 768})
     page.goto(component_origin + HOME_PATH)
     expect(page.get_by_role("heading", level=1)).to_have_text("Home")
@@ -114,5 +114,5 @@ def test_an_administrators_home_has_the_review_work_panel(
     census = review.get_by_role("region", name="Census changes")
     expect(
         census.get_by_role("link", name="Ready to update 5 changes")
-    ).to_have_attribute("href", "/admin/reports/census/publication/")
+    ).to_have_attribute("href", "/admin/reports/census/update-parishsoft/")
     expect(review.get_by_role("heading", level=3)).to_have_count(5)

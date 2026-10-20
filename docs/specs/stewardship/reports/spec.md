@@ -938,7 +938,7 @@ the [active parishioner family directory](#active-parishioner-family-directory)
 (each row), the header's Find a Family box (each match; see
 [Admin navigation](../admin-portal/spec.md#admin-navigation)), the
 [Financial stewardship](#financial-stewardship-detail) Family table, Census
-changes, Publish to ParishSoft's newest check, Ministry requests, both
+changes, Update ParishSoft's newest check, Ministry requests, both
 Limitations tables, Families on the form now, the Additional information
 request page's heading, each Weekly report item, Refused addresses and each
 Refused address page, and Families the form cannot open. The
@@ -2310,7 +2310,7 @@ or the bulk bar, each decision with an optional note, acting
 
 - **Accept** (a check mark): decision *approved*. An Automatic change
   becomes *Ready to update*, waiting for an Administrator's update run
-  ([Publish to ParishSoft](#publish-to-parishsoft)); a By hand change
+  ([Update ParishSoft](#update-parishsoft)); a By hand change
   becomes *To enter by hand*. On a *Conflict*, Accept is decided against
   ParishSoft's current value: it is today's "use the Family's value anyway"
   ([#528](https://github.com/epiphany40223/parishkit/issues/528), ADM-09.03).
@@ -2402,7 +2402,7 @@ says why; the list and its downloads still read. On the command line,
 `census resolve` record reviews and marks through the same services
 ([admin automation](../admin-automation/spec.md#reports-and-exports)); they
 keep their earlier words until
-[#1688](https://github.com/epiphany40223/parishkit/issues/1688) renames them.
+[#1755](https://github.com/epiphany40223/parishkit/issues/1755) renames them.
 
 Each review is one immutable review row (who, when, the note and the
 resulting decision and edit fields), added by forward migration 0096 under
@@ -2502,50 +2502,63 @@ for an addition, the rules above, the value's shape as 0128 checks an
 edit's, and record the baseline themselves. Each row is paired with a
 `census_change_updated` audit event naming only its id and version.
 
-### Publish to ParishSoft
+### Update ParishSoft
 
 **Access:** Administrator only. Staff and Ministry leaders never see the
 page or its link, and its addresses deny them.
 
-**Publish to ParishSoft** ([#528](https://github.com/epiphany40223/parishkit/issues/528),
-ADM-09) is the page that writes approved Automatic changes into ParishSoft.
-It drives the publication pipeline the
+**Update ParishSoft** ([#528](https://github.com/epiphany40223/parishkit/issues/528),
+ADM-09; renamed from Publish to ParishSoft, and given its confirmation and
+run, by [#1688](https://github.com/epiphany40223/parishkit/issues/1688)) is
+the page that writes the review pipeline's *Ready to update* census changes
+into ParishSoft: the pipeline's
+[automatic update](../review-pipeline/spec.md#automatic-update). It drives
+the publication pipeline the
 [data workflow](../data/spec.md#review-and-publication) defines (preflight,
-plan, confirmation, fenced writes, final refresh) and the
+plan, confirmation, fenced writes, read-after-write, final refresh) and the
 [background tasks](../background-processing/spec.md#parishsoft-publication)
-that run it; this section says only what the Administrator sees and does.
-It is at `/admin/reports/census/publication/`, reached from a **Publish to
-ParishSoft** link above the Census changes table, and is not a menu entry:
-its breadcrumb is Home › Review work › Census changes › Publish to
-ParishSoft.
+that run it, unchanged; this section says only what the Administrator sees
+and does. It is at `/admin/reports/census/update-parishsoft/`, reached from
+an **Update ParishSoft** link above the Census changes table, and is not a
+menu entry: its breadcrumb is Home › Review work › Census changes
+› Update ParishSoft. The page's earlier address
+(`/admin/reports/census/publication/`) is gone, with no redirect
+([addresses and legacy URLs](../ui-conventions/spec.md#addresses-and-legacy-urls)).
+
+The page uses the [pipeline vocabulary](../review-pipeline/spec.md#pipeline-vocabulary):
+Accept, never Approve, and Update, never Publish. Only the words changed:
+the reason codes below, the audit event types, the task types and the
+`parishsoft_publication` setting keep their names, as stored values do
+([data integrity](../review-pipeline/spec.md#data-integrity)).
 
 What can be written is narrow. ParishSoft's v2 API writes only contact
-fields: a Member's contact record (names, birth date, language, gender,
-email and phones) and a Family's contact record. Publication writes only the
-Member changes the
-[handling registry](../data/spec.md#proposed-changes) marks API-writable,
-and never one that removes a value, which the API cannot do; Family
-addresses wait for a verified address read, and every other census change
-(deceased with its date, moved, new Members and the rest), as well as Ministry
-rosters, pledges and share methods, is entered by hand from Census changes
-or its own page. Publication never changes a Family's code or link, and
-never sends mail.
+fields. The update writes only the Member changes the
+[handling registry](../data/spec.md#proposed-changes) marks API-writable
+(names, birth date, language, email and phones; gender is by hand while
+[#1616](https://github.com/epiphany40223/parishkit/issues/1616) is open),
+and never one that removes a value, which the API cannot do. Family
+addresses stay by hand
+([Family addresses](../review-pipeline/spec.md#family-addresses)), and
+every other census change (deceased with its date, moved, new Members and
+the rest), as well as Ministry rosters, pledges and share methods, is
+entered by hand from Census changes or its own page. An update never
+changes a Family's code or link, and never sends mail.
 
-#### Publishing switched off
+#### Updating switched off
 
-Publication ships **off**, and this page stays inert until the
+The update ships **off**, and this page stays inert until the
 Administrator turns it on. While the deployment's `parishsoft_publication`
 setting is off:
 
-- Census changes shows **Publish to ParishSoft** unavailable, with its
-  reason in a reserved line beside it ([prerequisite
-  gates](../ui-conventions/spec.md#prerequisite-gates)): "Publishing to
-  ParishSoft is switched off. Type Ready to update changes in by hand."
+- Census changes shows **Update ParishSoft** unavailable, with its reason
+  in a reserved line beside it ([prerequisite
+  gates](../ui-conventions/spec.md#prerequisite-gates)): "Updating
+  ParishSoft is switched off, so Ready to update changes wait here."
 - The page itself, opened by its address, says the same in its page help and
   offers no button. Nothing is queued, read or written, and every post to
   it is refused (`publication_off`).
 
-Turning publication on is the Administrator's decision, made outside the
+Turning the update on is the Administrator's decision, made outside the
 page, and it needs two things first, in this order, as the
 [publication guide](../../../guides/stewardship-member-requests.md#parishsoft-publication)
 says:
@@ -2560,38 +2573,60 @@ says:
    says. No pull request replaces `read_unconfirmed` without that comment,
    and CI never runs the tool.
 2. **The Administrator switches it on**, on both the web and worker
-   services. No pull request, agent or default turns it on.
+   services, after the Administrator's local check of this page and a
+   supervised update of the Test Family (the turn-on sequence recorded
+   on #528 on 2026-10-17). No pull request, agent or default turns it on.
 
 If the switch is on while the read is still unconfirmed, a check fails as a
 whole in the background and plans nothing; the check's status region says
 "ParishSoft's contact details cannot be checked yet, so nothing was
 planned" (the preflight task's `census_publication_read_unconfirmed`
-failure; see [Publish refusals and errors](#publish-refusals-and-errors)).
+failure; see [Update refusals and errors](#update-refusals-and-errors)).
 
 In Testing mode the page works up to the check and stops there: it shows
 the plan with the line "Testing mode: ParishSoft was checked, and nothing is
-written or marked", and offers no Publish button
+written or marked", and offers no Update button
 ([data workflow](../data/spec.md#review-and-publication)).
 
 #### Checking ParishSoft
 
-The page opens with what is waiting: the number of approved Automatic
-changes not yet published, for how many Members, with a link back to Census
-changes to review more. **Check ParishSoft** is available while at least one
-approved, open Automatic Member change exists and no publication run is queued
-or running; otherwise its reserved line says why ("No approved changes to
-publish. Approve changes on Census changes first." or "Publishing is
-running."). The running gate is the page's and the command line's: the
-preflight service itself does not refuse a check during a run, so
-`publish-check` states it too. It acts [in place](../ui-conventions/spec.md#in-place-controls),
-as Refresh now does on [Refresh from
-ParishSoft](../admin-portal/spec.md#manual-parishsoft-refresh): it queues
-the preflight task with a request key drawn with the page, so a repeated
-click returns the same check, and the region below the button shows the
-check's live status through the task's passive status read, with a link to
-its Background task page. The check reads every affected Member from
-ParishSoft without the cache and without the source lease, so it can run
-beside a refresh. When it ends, the page redraws in place with the plan.
+The page opens with what is waiting: the number of *Ready to update*
+changes (accepted Automatic Member changes not yet written, including one
+whose earlier update failed), for how many Members, with a link back to
+Census changes to review more. They are exactly the changes the pipeline
+places at Ready to update
+([existing state to stage](../review-pipeline/spec.md#existing-state-to-stage)),
+except one whose Member the current ParishSoft data no longer lists, active
+and living, in the change's Family: [rule 4](../review-pipeline/spec.md#refresh-checks)
+keeps such a change open but the check never plans it, so it is counted
+apart, in a line of its own ("2 Ready to update changes are for Members no
+longer in their Family in ParishSoft, so they are not checked."), and
+Census changes shows each with its
+[ParishSoft status badge](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft).
+An accepted change in *Conflict* is not Ready to update and is not counted,
+but the check still considers it, so its Member is held back (below).
+
+**Check ParishSoft** is available while at least one change the check would
+plan is Ready to update, no update run is queued or running, and no update
+stopped before finishing its Members; otherwise its reserved line says why
+("No changes are Ready to update. Accept changes on Census changes first.",
+"An update is running. Wait for it to finish." or "An update stopped
+before it finished. Run again, under the newest check, must finish it
+first."). A
+newer check would otherwise strand the stopped plan: its Run again would be
+refused as superseded, and the newer plan's confirmation refused while the
+stopped plan's writes may still be queued. These gates are the page's (and
+the command line's,
+[#1755](https://github.com/epiphany40223/parishkit/issues/1755)): the
+preflight service itself does not refuse a check during a run. It acts
+[in place](../ui-conventions/spec.md#in-place-controls), as Refresh now does
+on [Refresh from ParishSoft](../admin-portal/spec.md#manual-parishsoft-refresh):
+it queues the preflight task with a request key drawn with the page, so a
+repeated click returns the same check, and the region below the button
+shows the check's live status through the task's passive status read, with
+a link to its Background task page. The check reads every affected Member
+from ParishSoft without the cache and without the source lease, so it can
+run beside a refresh. When it ends, the page redraws in place with the plan.
 
 The page shows the current campaign's newest plan, whoever made it, with
 "Checked by (sign-in address) at (time)" in browser-local time. Older
@@ -2603,20 +2638,20 @@ that apply, in the same order: Family, Family DUID, Who, Member DUID, What
 changed, **ParishSoft at the check**, **Will write**, and **Outcome**:
 
 - **Will be written**: ParishSoft still held the value the change was
-  compared with (the Family's baseline, or the accepted base after *Use the
-  Family's value anyway*), so ParishSoft at the check shows that value and
-  Will write shows the edited value, else the Family's answer.
+  compared with (the Family's baseline, or the accepted base after an
+  Accept over a Conflict), so ParishSoft at the check shows that value and
+  Will write shows the reviewer's value, else the Family's answer.
 - **Already in ParishSoft**: ParishSoft already holds the value to write,
   so ParishSoft at the check and Will write both show that value (the
-  edited value, else the Family's answer). Nothing is written, and the
+  reviewer's value, else the Family's answer). Nothing is written, and the
   change is marked *Already in ParishSoft* (`resolved_upstream`) at the
-  check, so it leaves the To do list (Production mode only). The mark is
-  final: Reopen on Census changes cannot undo it (see the
+  check, so it is *Confirmed* (Production mode only). The mark is final:
+  Back to review on Census changes cannot undo it (see the
   [data workflow](../data/spec.md#review-and-publication), step 4).
 - **Conflict**: ParishSoft changed since the Family answered. Nothing for
-  this Member is written until the change is resolved on Census changes
-  (Ignore, or *Use the Family's value anyway* after the next refresh shows
-  the new value).
+  this Member is written until the change is decided again on Census
+  changes (Accept against ParishSoft's value once the next refresh shows
+  it, or Ignore).
 - **Cannot check**: ParishSoft could not be read for this Member. Nothing
   for this Member is written; check again later.
 - **Held back**: a change that would be written, on a Member that has a
@@ -2629,9 +2664,9 @@ themselves. For a Conflict or Cannot check row it therefore shows no
 ParishSoft value: "Changed since the Family answered" or "Could not be
 read"; the new value appears on Census changes after the next refresh.
 Values are shown in full, as on Census changes, and each view is audited
-with its count. Changes the plan leaves at ParishSoft's value (not approved,
-or By hand) are not rows; a line under the table counts them ("4 other
-changes for these Members are not approved and stay as they are in
+with its count. Changes the plan leaves at ParishSoft's value (not
+accepted, or By hand) are not rows; a line under the table counts them ("4
+other changes for these Members are not accepted and stay as they are in
 ParishSoft"). The page has no download: Census changes' files carry every
 value.
 
@@ -2641,79 +2676,103 @@ ParishSoft." These are the counts the confirmation binds.
 
 #### Confirming and running
 
-**Publish 12 changes** (the count is the plan's) opens the shared [review
-dialog](../ui-conventions/spec.md#review-dialog) as a confirmation, since
-the table already shows every value. Its title asks "Write 12 changes for 5
-Members to ParishSoft?", and its sentence says: "Each Member's contact
-record in ParishSoft is read again and replaced with its current details
-plus these changes; nothing else changes. 2 Members are held back. This
+**Update 12 changes** (the count is the plan's), below the summary line,
+opens the shared [review dialog](../ui-conventions/spec.md#review-dialog) as
+a confirmation, since the table already shows every value. Its title asks
+"Write 12 changes for 5 Members to ParishSoft?", and its sentence says:
+"Each Member's contact record in ParishSoft is read again, and only these
+changes are written; nothing else changes. 2 Members are held back. This
 cannot be undone from here." It offers **Apply** and **Cancel**. Apply posts
 the plan and the counts shown, and the server confirms the plan and queues
 its run in one transaction (`confirm_and_publish`), re-checking every rule
-the data workflow lists: Production mode, the switch on, the plan less than an hour old, every
-planned change at the version the plan recorded, the counts equal to the
-plan's, and no change being written by another unfinished plan. A repeated
-Apply returns the same run.
+the data workflow lists: Production mode, the switch on, the plan less than
+an hour old, every planned change at the version the plan recorded, the
+counts equal to the plan's, and no change being written by another
+unfinished plan. A repeated Apply returns the same run.
 
 The button is unavailable, with its reason in its reserved line, when the
-plan writes nothing, in Testing mode, while a run is queued or running, while
-other campaign work holds the campaign, and once the plan is an hour old
-("This check is more than an hour old. Check ParishSoft again."); the page
-script re-checks the age on `pageshow`. A newer plan made in another tab
-or by another Administrator makes Apply refuse the older one
+plan writes nothing, in Testing mode, while a run is queued or running,
+while a Check ParishSoft is queued or running (its plan will be the
+newest), while other campaign work holds the campaign, once the plan is
+confirmed (its run's status shows instead), and once the plan is an hour old ("This
+check is more than an hour old. Check ParishSoft again."); the page script
+re-checks the age on `pageshow`. A newer plan made in another tab or by
+another Administrator makes Apply refuse the older one
 (`publication_plan_superseded`), so the Administrator always confirms the
-newest check they have seen. No SQL guard or service checks this today:
-the page's view and the `publish-confirm` command check it in Python,
-through one shared helper, before calling `confirm_and_publish`, so both
-refuse an older plan the same way.
+newest check they have seen. No SQL guard or service checks this: the
+page's view checks it in Python, through one shared helper the command line
+will use too ([#1755](https://github.com/epiphany40223/parishkit/issues/1755)),
+before calling `confirm_and_publish`, so both refuse an older plan the same
+way.
 
 Once the run is queued the dialog closes and the page redraws in place: the
-run's live status replaces Check ParishSoft's region ("Writing to
-ParishSoft: 3 of 5 Members done"), polled through the task's passive read.
-Census changes shows a change as *Being published* only while the worker is
-writing its Member: the worker queues a Member's changes when it reaches
-that Member under the source lease, so changes of Members not yet reached
-still show *To do*. Leaving the page does not stop the run. When the run
-ends the page redraws in place, and the Outcome column gives each Member's
+plan's region shows the run's live status below the summary line
+("Updating ParishSoft: 3 of 5 Members done"), polled through the task's
+passive read, with a link to its Background task page. Census changes shows
+a change as *Updating* only while the worker is writing its Member: the
+worker queues a Member's changes when it reaches that Member under the
+source lease, so changes of Members not yet reached still show *Ready to
+update*. Leaving the page does not stop the run. When the run ends the page
+redraws in place, and the Outcome column gives each written change's
 result. A run that completes leaves no Member unfinished: the worker closes
-every Member it did not publish as `invalidated`, and the page derives the
-two "not published" outcomes from the Member's recorded attempts:
+every Member it did not update as `invalidated`, and the page derives the
+two "not written" outcomes from the Member's recorded attempts:
 
-- **Published**: written, and read back from ParishSoft as planned
-  (`published`).
+- **Updated in ParishSoft**: written, and read back from ParishSoft as
+  planned (`published`). Once a refresh shows the value, the change is
+  *Confirmed* on Census changes, and this Outcome says Confirmed too.
 - **Not written: changed since the check**: `invalidated` with no failed
-  attempt. ParishSoft or the change moved after the check, so nothing was
-  written; the change is back to *To do* (`pending`), or *To review* if its
-  decision changed, and the next check plans it afresh.
+  attempt. ParishSoft or the change moved after the check (or the Member
+  left the Family), so nothing was written; the change is *Ready to update*
+  again (`pending`), or back in review if its decision changed, and the next
+  check plans it afresh.
 - **Failed**: `invalidated` after at least one `failed` attempt. The write
   did not complete, with the last attempt's plain reason ("ParishSoft did
   not answer", "ParishSoft refused the change", "The details read back
-  differently"); the change is *To do* again (`failed`). Run again cannot
-  retry it, because the plan has finished with that Member: a new **Check
-  ParishSoft** plans it again.
+  differently"); the change is *Ready to update* again (`failed`, shown with
+  its failure). Run again cannot retry it, because the plan has finished
+  with that Member: a new **Check ParishSoft** plans it again.
+- **Not finished**: a run that ended without completing has not finished
+  this Member yet; Run again offers it.
 
-**Run again** appears only when the run's task itself ended without
-completing (refused partway, stopped after its recovery limit, or crashed)
-and the plan still has a Member with no final outcome. It retries that
-plan's own run (`rerun_publication`), which reads each Member again before
-writing and never repeats a write that landed. It asks first in the shared
-confirmation dialog ("Try the 2 Members this run did not finish?"),
-without a new sign-in, since the plan was confirmed already and the data
-workflow bounds its execution window. After a run that completed, the page
-offers Check ParishSoft instead.
+**Run again** appears in the Update button's place only when the run's task
+failed (refused partway, or stopped after its recovery limit once crashed
+runs were retried) and the plan still has a Member with no final outcome;
+it is unavailable, with its reason, in Testing mode and while other
+campaign work holds the campaign. It retries that plan's own run
+(`rerun_publication`, which retries only a failed task), which reads
+each Member again before writing and never repeats a write that landed. It
+asks first in the shared review dialog as a confirmation ("Try the 2
+Members this run did not finish?"), without a new sign-in, since the plan
+was confirmed already and the data workflow bounds its execution window.
+Once that window (a day) has passed, a run writes nothing more and only
+reads back and closes the Members it did not finish, and the dialog says
+so instead.
+After a run that completed, the page offers Check ParishSoft instead. The
+plan's region never offers Update and Run again together.
 
-When a run that wrote at least one Member ends, the worker requests one full
-ParishSoft refresh, so ParishSoft now on Census changes catches up. The page
-says "ParishSoft is being refreshed so Census changes shows the new values"
-with a link to Refresh from ParishSoft. The published changes are already
-final; the refresh only updates the copy of ParishSoft's data. It is
-recorded as a manual refresh attributed to the Administrator who confirmed
-the plan, carrying the publication's correlation id, and its System logs
-description says it followed a publication, so nobody mistakes it for a
-click on Refresh now. If the request fails, the run's outcome stands, a
-WARNING is logged, and the next scheduled refresh catches up.
+When a run that wrote at least one Member ends, completed or refused
+partway, the worker requests one full
+ParishSoft refresh, so ParishSoft now on Census changes catches up, and that
+refresh's [checks](../review-pipeline/spec.md#refresh-checks) move each
+written change from *Updated in ParishSoft* to *Confirmed*. While that
+refresh is unfinished the page says "ParishSoft is being refreshed so
+Census changes shows the new values", with a link to Refresh from
+ParishSoft. The written changes are already final; the refresh only updates
+the copy of ParishSoft's data and confirms them. It is recorded as a manual
+refresh attributed to the Administrator who confirmed the plan, carrying
+the run's correlation id, and the worker records
+`census_publication_refresh_requested` with it, whose System logs
+description says the refresh followed an update, so nobody mistakes it for
+a click on Refresh now. If the request fails (no promoted data, other
+campaign work holding refreshes, the configured organization missing), the
+run's outcome stands, a WARNING is logged, and the next scheduled refresh
+catches up. A refresh is asked for only while one is owed (a Member was
+updated after the plan's last final refresh), so a run that crashed after
+its writes but before asking is retried by recovery for it, writing
+nothing again, and a run that updated nobody new asks for nothing.
 
-#### Publish refusals and errors
+#### Update refusals and errors
 
 Every refusal is plain language with a stable reason code, shown where its
 control is: Check ParishSoft's in its reserved status line, Apply's and Run
@@ -2724,16 +2783,27 @@ refusals](../operations/spec.md#admin-input-refusals)), never with a value.
 
 | Code | When | The page says |
 | --- | --- | --- |
-| `publication_off` | The switch is off | Publishing to ParishSoft is switched off. |
+| `publication_off` | The switch is off | Updating ParishSoft is switched off. |
 | `publication_testing` | Testing mode, at Apply or Run again | Testing mode: nothing is written to ParishSoft. |
-| `publication_nothing_approved` | No approved, open Automatic change | No approved changes to publish. |
-| `publication_running` | A run is queued or running | Publishing is running. Wait for it to finish. |
-| `publication_campaign_held` | Other campaign work holds the campaign | Publishing waits until (the work) finishes. |
+| `publication_nothing_approved` | No change the check would plan is Ready to update | No changes are Ready to update. |
+| `publication_running` | A run is queued or running | An update is running. Wait for it to finish. |
+| `publication_nothing_to_write` | Update on a plan that writes nothing | This check found nothing to write. Check ParishSoft again. |
+| `publication_campaign_held` | Other campaign work holds the campaign | Updating waits until (the work) finishes. |
 | `publication_plan_expired` | The plan is an hour old | This check is more than an hour old. Check ParishSoft again. |
 | `publication_plan_changed` | A planned change or the counts changed since the check | Something changed since the check. Check ParishSoft again. |
 | `publication_plan_superseded` | A newer plan exists | A newer check exists. Review it first. |
-| `publication_overlap` | A change is still being written by another plan | Some of these changes are still being written. Wait for that run to finish. |
+| `publication_overlap` | A change is still being written by another plan | Some of these changes are still being written. Wait for that update to finish. |
 | `publication_finished` | Run again with nothing unfinished | Every Member in this check is finished. |
+| `publication_stopped` | Check ParishSoft while an update stopped before finishing | An update stopped before it finished. Run again, under the newest check, must finish it first. |
+| `publication_checking` | Update while a Check ParishSoft is queued or running | ParishSoft is being checked again. Wait for that check to finish. |
+
+A database error at Apply that is not one of the confirmation guard's
+refusals (a lost connection, a timeout) is not shown as "Something
+changed": it is answered as the outage it is, and logged. The guard's own
+refusal of a held campaign or an hour-old plan is told apart from a change
+by checking the plan again, and a service refusing what the page's checks
+passed a moment before (another Administrator's Run again) is answered
+with the reason the page would now draw.
 
 A check or run that fails in the background is not a refusal: the page shows
 the task's failure in its status region, as a refresh's does, and the
@@ -2744,7 +2814,7 @@ still unconfirmed is one: its preflight task fails permanently with
 planned." A ParishSoft organization that is not the configured one stops
 the check with a CRITICAL, as for a refresh.
 
-#### Publish audit and logs
+#### Update audit and logs
 
 The page adds no new state and only one audit action: viewing the page
 records `census_publication_viewed` with the number of rows shown, as
@@ -2754,14 +2824,16 @@ values: `census_publication_preflight_requested` (who asked and when),
 `census_publication_planned` (the plan's counts),
 `census_publication_confirmed` (the Administrator and the counts confirmed),
 `census_publication_recorded` (each Member's attempt and outcome, whose plan
-rows name the fields written), `census_publication_rerun_requested`, and the
+rows name the fields written), `census_publication_rerun_requested`,
+`census_publication_refresh_requested` (the final refresh, above), and the
 refusals `census_publication_switched_off`,
 `census_publication_read_unconfirmed` and `census_publication_refused`. A
 change marked *Already in ParishSoft* at the check is recorded by the plan's
-field rows and its version, not by an event of its own. The
-[activity groups](../admin-portal/spec.md#activity-groups) of System logs
-say which group these types and the command line's join; the page view
-stays ungrouped with the other page views.
+field rows and its version, not by an event of its own. Their System logs
+descriptions use the pipeline's words (updating ParishSoft, never
+publishing). The [activity groups](../admin-portal/spec.md#activity-groups)
+of System logs put these types in **ParishSoft refreshes and updates**; the
+page view stays ungrouped with the other page views.
 
 The structured log has the background tasks' usual lines (start, progress,
 outcome) with ids, counts and sanitized failure words only. Every timeout
@@ -2769,21 +2841,27 @@ kill logs what was stopped, its limit and the time elapsed, and an
 ambiguous write after a crash is CRITICAL
 ([critical errors](../background-processing/spec.md#critical-errors-and-notification)).
 
-On the command line the same steps are `pk-admin census publish-check`,
-`publish-plan`, `publish-confirm` and `publish-rerun`, through the same
-services ([admin automation](../admin-automation/spec.md#reports-and-exports)).
+On the command line the same steps are `pk-admin census update-check`,
+`update-plan`, `update-confirm` and `update-rerun`, through the same
+services ([admin automation](../admin-automation/spec.md#update-parishsoft-commands));
+they are specified, not built yet
+([#1755](https://github.com/epiphany40223/parishkit/issues/1755)).
 
-#### Publish page delivery
+#### Update page delivery
 
-Built in slices after this specification, each its own pull request; the
+Built in slices, each its own pull request; the
 [ADM-09 work package](../../../plans/stewardship/admin-portal.md#adm-09-census-review-and-parishsoft-publication-ui)
-lists them and the migration number reserved for it. Only the first needs
-schema: a new forward migration lets a Production-mode check mark
-already-matching changes *Already in ParishSoft*, as the
-[data workflow](../data/spec.md#review-and-publication) says, following the
+lists them. Only the first needed schema: forward migration 0112 lets a
+Production-mode check mark already-matching changes *Already in
+ParishSoft*, as the [data workflow](../data/spec.md#review-and-publication)
+says, following the
 [post-launch schema policy](../operations/spec.md#post-launch-schema-policy).
-The page, its command-line commands, the final refresh and the activity
-group need no schema change. Every slice ships with publication off.
+The page's read and check came next, then its confirmation and run, the
+final refresh and the activity group, with the rename
+([#1688](https://github.com/epiphany40223/parishkit/issues/1688)); none of
+them changed the schema. The command line is
+[#1755](https://github.com/epiphany40223/parishkit/issues/1755). Every slice
+ships with the update switched off.
 
 ## Financial stewardship detail
 

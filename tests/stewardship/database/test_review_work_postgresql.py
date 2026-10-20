@@ -192,7 +192,7 @@ def test_an_administrator_keeps_home(response_service, google):
     assert b">My review work</a>" not in body
     census = panel(body, "census")
     assert (
-        b"/admin/reports/census/publication/",
+        b"/admin/reports/census/update-parishsoft/",
         b"Ready to update",
         b"0",
         b"changes",

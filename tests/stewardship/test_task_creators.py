@@ -108,19 +108,19 @@ SITES = {
         WEB,
         {"campaigns/cleanup_requests.py"},
     ),
-    # The census Publish page's calls (#528). Check ParishSoft, on the
-    # Publish to ParishSoft page, queues the preflight from the web login;
-    # Apply and Run again are a later slice, so nothing imports them yet.
+    # Update ParishSoft's calls (#528, #1688), all from the web login: Check
+    # ParishSoft queues the preflight, Update's Apply confirms the plan and
+    # queues its run, and Run again retries that run.
     "responses/publication_tasks.py::request_preflight": site(
         "census_publication_preflight",
         WEB,
         {"reports/census_publication_views.py"},
     ),
     "responses/publication_tasks.py::confirm_and_publish": site(
-        "census_publication", WEB
+        "census_publication", WEB, {"reports/census_publication_views.py"}
     ),
     "responses/publication_tasks.py::rerun_publication": site(
-        "census_publication", WEB
+        "census_publication", WEB, {"reports/census_publication_views.py"}
     ),
     "jobs/delivery_resolution.py::resolve_delivery": site(
         "outbox_delivery",
@@ -260,14 +260,15 @@ SITES = {
     ),
     "source/requests.py::request_refresh": site(
         # The refresh page and command line (web), the refresh and go-live
-        # producers (scheduler), and the source handler's full fallback
-        # after a rejected delta (worker).
+        # producers (scheduler), the source handler's full fallback after a
+        # rejected delta and an update run's final refresh (#1688, worker).
         "source_refresh",
         {WEB, SCHEDULER, WORKER},
         {
             "accounts/refresh_views.py",
             "campaigns/go_live_sequencing.py",
             "local/seed_web.py",
+            "responses/publication_tasks.py",
             "source/fallback.py",
             "source/production.py",
         },

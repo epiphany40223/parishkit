@@ -175,9 +175,9 @@ def test_staff_review_by_hand_and_automatic_rows():
         "back_to_review",
         "entered_by_hand",
     ]
-    # Publish to ParishSoft is the Administrator's alone.
-    assert "Publish to ParishSoft" not in html
-    assert "Publish to ParishSoft" in page(rows, roles=ADMINISTRATOR)[1]
+    # Update ParishSoft is the Administrator's alone.
+    assert "Update ParishSoft" not in html
+    assert "Update ParishSoft" in page(rows, roles=ADMINISTRATOR)[1]
 
 
 def test_a_conflict_with_an_unknown_parishsoft_value_waits():
