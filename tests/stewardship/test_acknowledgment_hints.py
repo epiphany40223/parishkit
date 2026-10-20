@@ -67,24 +67,28 @@ def test_cancel_go_live_waits_for_a_reason_and_its_tick():
 
 
 def test_delivery_resolutions_wait_for_a_note():
-    """Every resolution form uses the gate, with a hint per form."""
+    """Every answer's form uses the gate, with a hint per form right after
+    its button, whose line is reserved so it never moves the slot (#1563)."""
     html = delivery_page("/delivery")
-    forms = re.findall(r'<form method="post" action="[^"]*resolution[^"]*"[^>]*>', html)
-    assert forms and all("data-require-complete" in form for form in forms)
-    notes = re.findall(r'<textarea id="evidence-[^>]*>', html)
+    forms = re.findall(r'<form id="answer-[^>]*resolution/[^>]*>', html)
+    assert len(forms) == 4 and all("data-require-complete" in form for form in forms)
+    notes = re.findall(r'<textarea id="note-[^>]*>', html)
     assert len(notes) == len(forms)
-    # A bare evidence note asks for the note; every decision asks why.
     for note in notes:
-        hint = (
-            "Enter the note."
-            if 'id="evidence-note"' in note
-            else "Enter why you are doing this."
+        assert 'data-missing-hint="Enter the note."' in note, note
+    for label, choice in (
+        ("Mark as delivered", "sent"),
+        ("Send it again", "resend"),
+        ("Record as not sent", "not_sent"),
+        ("Save note", "unsure"),
+    ):
+        hint = f"complete-hint-{choice}"
+        button = tag(html, rf"<button[^>]*>{re.escape(label)}</button>")
+        assert f'aria-describedby="{hint}"' in button
+        after = html.split(button, 1)[1]
+        assert after.startswith(
+            f'<p class="help" id="{hint}" data-complete-hint="reserve"></p>'
         )
-        assert f'data-missing-hint="{hint}"' in note, note
-    hint_follows(html, "Save evidence note", "complete-hint-note")
-    hint_follows(
-        html, "Confirm delivery using external evidence", "complete-hint-accept"
-    )
 
 
 def test_refusal_removal_waits_for_a_note_and_its_tick():

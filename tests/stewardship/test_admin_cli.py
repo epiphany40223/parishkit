@@ -2227,7 +2227,8 @@ def test_family_keys_refuse_an_unreadable_ring(tmp_path):
 @pytest.mark.parametrize(
     "template,text",
     [
-        ("delivery.html", admin_cli.RESEND_ACKNOWLEDGEMENT),
+        # The resend's answer form on the Mail message page (#1563).
+        ("delivery-answer.html", admin_cli.RESEND_ACKNOWLEDGEMENT),
         ("delivery-refusal.html", admin_cli.CLEAR_ACKNOWLEDGEMENT),
     ],
 )

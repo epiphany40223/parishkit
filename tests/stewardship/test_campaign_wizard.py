@@ -340,6 +340,16 @@ def test_action_row_saves_a_direct_step_in_the_same_place():
     )
     assert 'id="campaign-step-status" role="status"' in html
     assert "campaign-continue-hint" not in html
+    # Campaign images saves its staged images with its own form (PR 4c).
+    images = wizard.build(
+        True, "images", done={"settings"}, mail_test_url=None, direct=True
+    )
+    assert images.direct_form == "artwork-save-form"
+    assert re.search(
+        r'<button type="submit" form="artwork-save-form" [^>]*data-campaign-save'
+        r" data-step-inactive[^>]*>Save and continue</button>",
+        actions(images),
+    )
     # Any other step, and a stepper drawn without ``direct``, is unchanged.
     for other in (
         wizard.build(True, "share_options", done={"settings"}, mail_test_url=None),
@@ -520,6 +530,7 @@ def test_load_notice_offers_the_load_until_families_exist():
     ("name", "step", "sub"),
     [
         ("campaign_settings", "settings", False),
+        ("artwork_settings", "images", False),
         ("content_catalog", "content", False),
         ("content_edit", "content", True),
         ("content_revision", "content", True),
@@ -538,7 +549,9 @@ def test_sub_pages_draw_their_steps_stepper(monkeypatch, name, step, sub):
     Campaign settings' own page (and Share options') saves directly (#1404
     PR 4), and so do the sub-pages that save: Pages and emails' editor and
     New and Edit scheduled email (PR 4b), each with its own form. Content
-    history and the Campaign calendar, which save nothing, do not.
+    history and the Campaign calendar, which save nothing, do not. Campaign
+    images' refused upload, drawing Campaign images again, saves directly
+    with that page's own save form (PR 4c).
     """
     monkeypatch.setattr(wizard, "invitation_revision", lambda *_: None)
     monkeypatch.setattr(wizard, "completed", lambda *_: {"settings"})
@@ -562,6 +575,8 @@ def test_sub_pages_draw_their_steps_stepper(monkeypatch, name, step, sub):
         "content_revision": "content-form",
         "schedule_new": "schedule-entry-form",
         "schedule_edit": "schedule-entry-form",
+        "artwork_settings": "artwork-save-form",
+        "artwork_upload": "artwork-save-form",
     }
     assert stepper.direct is (name in forms)
     assert stepper.direct_form == forms.get(name)

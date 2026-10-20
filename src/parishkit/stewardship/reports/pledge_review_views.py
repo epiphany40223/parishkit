@@ -75,6 +75,7 @@ from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.review_worklist import (
     Column,
     build,
+    page_address,
     read_decision,
     record,
 )
@@ -764,6 +765,12 @@ def page_context(rows, stage, extra, roles, *, mutable, notice):
         filters_template="stewardship/pledges-filters.html",
         editor_template="stewardship/pledges-edit.html",
         export_template="stewardship/pledges-export.html",
+        # The view's address carries its Stage alone (To review is the plain
+        # address), the one choice the page's GET takes, so a reload after an
+        # in-place Stage change draws the Stage on screen (#1820).
+        address=page_address(
+            action, [("stage", "" if stage == DEFAULT_STAGE else stage)]
+        ),
     )
     for row in worklist.rows:
         row["decision_label"] = _stage_line(row.pop("_source"), row["decision_label"])

@@ -1240,6 +1240,14 @@ the data no longer has has no name: the page shows the
 [ParishSoft status](../ui-conventions/spec.md#members-and-families-no-longer-in-parishsoft)
 badge in its place, and marks an inactive Family beside its name (#1216).
 No chart or summary sits above the table: the counts are the Stage choices'.
+The search and filters travel in POST bodies; the one address a link may
+carry is a Stage alone (`?stage=<value>`, a
+[My review work](../review-pipeline/spec.md#role-views) card's,
+[#1818](https://github.com/epiphany40223/parishkit/issues/1818)), and any
+other query string, or a Stage the filter does not offer, is refused with
+the page's plain-language filter error (a 400). The page's address carries
+its Stage the same way (To review is the plain address), so a reload after
+an in-place answer draws the same Stage.
 
 Staff and Administrators decide each request as the pipeline's
 [role-specific actions](../review-pipeline/spec.md#role-specific-actions)
@@ -2343,8 +2351,7 @@ or the bulk bar, each decision with an optional note, acting
   or Ignore only. The editor starts with the value carried forward now (the
   reviewer's value, else the Family's answer): a date field no later than
   the campaign's today for a birth or death date, the census choices for
-  Gender and Marital status, an address's own parts (street, second line,
-  city, state or region, postal code, country) checked as the Family form
+  Gender and Marital status, an address's own parts checked as the Family form
   checks them, and otherwise text no longer than the field takes (for an
   Automatic change, no longer than ParishSoft's request schema takes:
   First name 30 characters, Email address 150, a phone 25). The value is
@@ -2370,6 +2377,26 @@ or the bulk bar, each decision with an optional note, acting
   accepted base no longer counts, so no later Accept can publish over
   ParishSoft's value without deciding the Conflict again. A reviewer's
   value is kept (a later Accept keeps it too) until the next Edit.
+
+The address editor (Edit's, and [Add](#census-add)'s for a Family address)
+asks for the parts in the Family form's order, Country first ([Family
+census](../parishioner-portal/spec.md#family-census), #1785): Country,
+Street, "Street, second line (optional)", City, State, and ZIP code. Country
+starts as the address's own, or United States for a blank address. For the
+United States, State is the Family form's drop-down of the regions the
+server accepts ("Kentucky (KY)", submitting the code) and the postal field
+is labelled "ZIP code"; for any other country, State is free text labelled
+"State, province or region" and the postal field "Postal code". Changing
+Country swaps the State control in place, at the same position, and each
+State control keeps its value while the other shows, so switching back
+restores it; only the shown one is sent. A US region the list does not offer
+(parish records take any text) is kept, shown and selected, so the server
+refuses it at State ("Choose a state from the list.") rather than it being
+silently dropped. As before, the ZIP code's format is checked by the server
+only, which refuses it at the field. Unlike the Family form, typed region
+text does not carry over to the drop-down on switching to United States: a
+reviewer corrects one address at a time and picks the state. The server
+checks the parts with the Family form's own address rules and messages.
 
 Each is offered only while the change's stage allows it
 ([individual actions](../review-pipeline/spec.md#individual-actions)): never
@@ -2937,6 +2964,12 @@ It was "Pledges to enter" until the Administrator renamed it (R39 finding 3,
 stages, decisions and resubmission rule are the
 [Financial stream](../review-pipeline/spec.md#financial-stream)'s; this
 section is the page.
+
+- **Address.** The page's address carries its Stage alone (To review is
+  the plain address; [#1820](https://github.com/epiphany40223/parishkit/issues/1820)),
+  as [Additional information's](#additional-information) does, so a reload
+  after an in-place Stage change draws the Stage on screen. The search stays
+  private POST state.
 
 - **Rows.** One row per Family whose current live response answers the
   financial questions: the rows of

@@ -1002,11 +1002,13 @@ the grid. First user: the
 
 Recorded exception (Administrator, 2026-10-11, on
 [#1015](https://github.com/epiphany40223/parishkit/issues/1015)): on the
-[Mail message page](../admin-portal/spec.md#mail-message-page), the
-attempt history sits above the resolution forms, so paging it with the
-upper pager can change its height and move the forms and the evidence list
-below it. The Administrator accepted this so the page reads in the order
-asked for.
+[Mail message page](../admin-portal/spec.md#mail-message-page), paging
+the attempt history with its pager can change its height and move what
+follows it (the bounce report, the note form and the evidence list). The
+Administrator accepted this so the page reads in the order asked for.
+Since [#1563](https://github.com/epiphany40223/parishkit/issues/1563) the
+outcome panel and its resolution question sit above the history, so paging
+never moves them.
 
 ### Disclosures
 
@@ -1758,6 +1760,19 @@ around it, two gates keep it in place instead:
   [activity groups](../admin-portal/spec.md#activity-groups).
   `data-locked-when` (#957) must match its rule the same way (`anyValue` in
   `ui-v1.js`) when it lands.
+- A `data-show-when` group may sit inside another, and a control is sent
+  only while every group around it is shown (#1785): showing the outer group
+  never enables a control its inner rule hides. Two controls in groups whose
+  rules exclude each other may share a name, so exactly one is sent; a
+  server refusal naming that field marks the one shown. A rule may also mark
+  a span (such as one wording of a label), which it hides or shows. Uses:
+  the census address editor's State, a drop-down for the United States and
+  free text otherwise, inside Add's "What changed" group, with its "ZIP
+  code" or "Postal code" label
+  ([Census changes](../reports/spec.md#automatic-census-review)); and Resolve
+  held messages' types Cancel cannot take, inside its Message types group,
+  where the server never offers Clear while such a type is held, so the rule
+  changes nothing there.
 - Every gate compares a value the same way (`sameValue` in `ui-v1.js`): a
   number field's value is read as a number, as the server reads it, so
   `04321` matches a rule's `4321` and an empty number field matches no
@@ -2503,7 +2518,8 @@ completed only while the campaign has its Families;
 an applied change or a Continue stays completed, while Preview and test
 email counts only for a test of the invitation's current revision. It meets
 rule 8 for Continue, which opens the next step not done yet. Campaign
-settings and Share options meet rules 3 to 5 and 8 (#1404 PR 4): their
+settings and Share options meet rules 3 to 5 and 8 (#1404 PR 4), and
+Campaign images too (#1404 PR 4c), where a chosen image is the change: their
 Save and continue saves directly, follows the change and opens the next
 step not done yet. The sub-pages that save (an email's editor, New and
 Edit scheduled email) meet rule 10's Save and go back (#1404 PR 4b): it
@@ -2511,11 +2527,7 @@ saves directly and returns to the step, whose status line says what was
 saved. Pages and emails' editor also meets rule 10's Keep as is and go back
 (#1404 PR 6b): it marks the item Kept as is and returns to the list, with
 focus on the item's row; New and Edit scheduled email store no item mark,
-so Return to *step* is their way back while unchanged. On Campaign images, until its direct save lands (planned, #1404
-PR 4c), Continue is unavailable while an image is chosen but not uploaded,
-so the page's own upload, with its review dialog, is the way on, and after
-it the page redraws in place and stays on its step;
-and Back asking before it discards (rule 6) is not built in either
+so Return to *step* is their way back while unchanged. Back asking before it discards (rule 6) is not built in either
 wizard. Each part's precedent moves into the rule above when it lands.
 
 ## Admin page layout and help

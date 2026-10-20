@@ -33,10 +33,11 @@ only for roles that may open them. Every other count rides on one statement
 Admin Home it runs inside the menu's own open-count statement
 (``with_counts``), so Home's panel adds no statement of its own.
 
-Until a stream moves to the shared review worklist, its cards link to that
-stream's current page, which does not read a stage from its address; a
-stream in ``STAGE_LINKED`` gets ``?stage=<value>`` on each card instead
-(the slices that move each page add it there).
+Each card of a stream in ``STAGE_LINKED`` links that stream's review
+worklist at its stage (``?stage=<value>``, #1818), so the page opens on the
+items counted, except census Ready to update, which opens Publish to
+ParishSoft; Cannot participate, which has only To review, links its
+plain page.
 """
 
 import contextlib
@@ -62,11 +63,17 @@ from parishkit.stewardship.pipeline import (
 
 from .policy import Capability, allows
 
-# Streams whose page reads ``?stage=<value>`` and filters by it. Each stream
-# is added as its cards are linked by stage; Financial's page is Pledges
-# (#1686). Ministry To enter by hand is linked by stage on its own
-# (``_stage_cards``).
-STAGE_LINKED = frozenset({Stream.FINANCIAL})
+# Streams whose page reads ``?stage=<value>`` and filters by it, so each
+# card links its stage (Administrator decision, #1818). Financial's page is
+# Pledges (#1686).
+STAGE_LINKED = frozenset(
+    {
+        Stream.CENSUS,
+        Stream.MINISTRY,
+        Stream.ADDITIONAL_INFORMATION,
+        Stream.FINANCIAL,
+    }
+)
 
 # One statement for every count the viewer may see; each part runs only when
 # its flag is set (NULL otherwise), as the menu's own OPEN_COUNTS does. Its
@@ -556,20 +563,18 @@ def panels(chrome, review):
 def _stage_cards(view, item, counts):
     """A Staff member's cards for one stream: one per stage in ``counts``.
 
-    Ministry To enter by hand opens Ministry requests at that Stage, where
-    Roster changes to enter was folded (R39 finding 2), and census Ready to
-    update is Publish to ParishSoft, the update run's page,
-    which is opened from Census changes. A stream in ``STAGE_LINKED`` links
-    its page filtered to each stage.
+    A stream in ``STAGE_LINKED`` links its page filtered to each stage
+    (Ministry To enter by hand is Ministry requests at that Stage, where
+    Roster changes to enter was folded, R39 finding 2). Census Ready to
+    update is Publish to ParishSoft instead, the update run's page, which
+    is opened from Census changes.
     """
     cards = []
     for stage in view.stages:
         if stage.value not in counts:
             continue
         url = item.url
-        if url and view.stream is Stream.MINISTRY and stage is Stage.TO_ENTER_BY_HAND:
-            url = f"{url}?stage={stage.value}"
-        elif url and stage is Stage.READY_TO_UPDATE:
+        if url and stage is Stage.READY_TO_UPDATE:
             url = reverse("admin:census_publication")
         elif url and view.stream in STAGE_LINKED:
             url = f"{url}?stage={stage.value}"

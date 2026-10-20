@@ -8,11 +8,12 @@ secondary and first, and one primary control, last.
   campaign_step_continue, which records the step kept as is and opens that
   step. Dates and mail schedules with no schedule yet says Continue without
   schedules for now. While a form on the page holds a change
-  (form[data-require-change], or an upload form with a file chosen,
-  ui-v1.js), Continue is unavailable, named by
+  (form[data-require-change], ui-v1.js), Continue is unavailable, named by
   the hint after the row, so the page's own Save stays the way on; the
   hint's line is always reserved (data-idle hides it), so nothing moves.
-- Campaign settings and Share options (``wizard.direct``, #1404 PR 4):
+- Campaign settings, Share options and Campaign images (``wizard.direct``,
+  #1404 PR 4 and 4c; on Campaign images a chosen image is the change, and
+  its form is artwork-save-form, data-direct-uploads):
   the same Continue and, in the same grid cell, Save and continue, a submit
   button of the page's own form (``wizard.direct_form``, which is marked
   data-direct-save and posts its save action). One of the two is shown at a
