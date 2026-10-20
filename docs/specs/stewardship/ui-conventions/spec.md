@@ -638,7 +638,9 @@ never scrolls to show it (Administrator, pk-local review of
   replaced, and the address is unchanged. The error summary, which the base
   template draws above the page content, moves to the top of the region when
   it is drawn outside the region; this page's own older summaries outside
-  the regions are removed then (a successful swap leaves them). The reader
+  the regions are removed then (a successful swap leaves them, except an
+  item whose field the swap removed, which goes, and the summary with it
+  once it lists nothing, #750). The reader
   keeps their place, focus moves to the summary (or to the control when
   there is none), the fields it names are marked in error beside their
   message as the fetched page draws them, and the live region reads the
