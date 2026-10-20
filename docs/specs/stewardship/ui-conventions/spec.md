@@ -2589,7 +2589,10 @@ rule 8 for Continue, which opens the next step not done yet. Campaign
 settings and Share options meet rules 3 to 5 and 8 (#1404 PR 4), and
 Campaign images too (#1404 PR 4c), where a chosen image is the change: their
 Save and continue saves directly, follows the change and opens the next
-step not done yet. The sub-pages that save (an email's editor, New and
+step not done yet. Dates and mail schedules meets rule 9's empty step with
+its suggested schedules (#1404 PR 6a): Add these schedules and continue
+saves them directly, and Continue without schedules for now keeps the
+step as is. The sub-pages that save (an email's editor, New and
 Edit scheduled email) meet rule 10's Save and go back (#1404 PR 4b): it
 saves directly and returns to the step, whose status line says what was
 saved. Pages and emails' editor also meets rule 10's Keep as is and go back

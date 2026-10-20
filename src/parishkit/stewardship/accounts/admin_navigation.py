@@ -727,6 +727,9 @@ NON_PAGES = frozenset(
         "family_email_progress_status",
         # The header's presence count, polled at the old presence address.
         "presence_count",
+        # Dates and mail schedules' Add these schedules and continue (#1404
+        # PR 6), a POST answered with the change's status.
+        "schedule_suggested",
         "timeline_export",
         "family_directory_export",
         # Open form's hand-off (#529): a POST that opens the Family form.
