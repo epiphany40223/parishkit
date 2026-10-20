@@ -1423,8 +1423,10 @@ reauthentication ceremony, distinct-Family reveal budget, or Valkey dependency.
 The server rechecks the report role and campaign scope on each request and uses
 `Cache-Control: no-store` for interactive responses.
 
-In Testing mode the Family sign-in accepts only rehearsal codes, so the page,
-and a directory export's page, says the listed codes work only after go-live.
+In Testing mode the Family sign-in accepts only rehearsal codes, so the page
+says the listed codes work only after go-live; its exports download in place
+from that page ([downloads happen in place](../ui-conventions/spec.md#downloads-happen-in-place)),
+and an export status page opened directly says the same.
 For Administrators the notice links "Try the Family form as a chosen Family",
 the chosen-Family test send they alone may open; Staff get no link and are told
 to ask an Administrator for a test invitation
