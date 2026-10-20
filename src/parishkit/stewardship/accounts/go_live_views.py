@@ -350,14 +350,30 @@ def _family_emails(preview):
     """The selected Family emails as ``(record id, subject)``, by subject.
 
     The subject names the email the Administrator wrote, as Pages and
-    emails lists it; a revision without one falls back to "Family email".
+    emails lists it, but rendered with the campaign's own values as the
+    Preview and test email page shows it (#1846), never the raw template
+    with its ``{{ placeholders }}``. A revision without one falls back to
+    "Family email".
     """
+    from parishkit.stewardship.jobs.campaign_mail_values import document_parish
+
+    from .content_forms import sample_render
+
     templates = preview.configuration.family_templates
-    subjects = dict(
-        ContentVersion.objects.filter(record_id__in=templates).values_list(
-            "record_id", "subject"
-        )
+    rows = ContentVersion.objects.filter(record_id__in=templates).select_related(
+        "configuration"
     )
+    campaign = preview.campaign.active_configuration.values
+    subjects = {}
+    for row in rows:
+        # The same render the test email page uses, so the name matches the
+        # subject the Administrator is about to preview.
+        rendered = sample_render(
+            {"subject": row.subject, "html": row.html, "text": row.text},
+            parish=document_parish(row.configuration.canonical_document),
+            campaign=campaign,
+        )
+        subjects[row.record_id] = rendered["subject"] if rendered else None
     return sorted(
         (
             (template, subjects.get(UUID(str(template))) or _("Family email"))

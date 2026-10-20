@@ -251,3 +251,37 @@ def test_signature_alone_cannot_admit_cleanup_with_missing_current_proofs(
             acknowledge=True,
         )
     assert not ProductionTransitionRequest.objects.exists()
+
+
+def test_readiness_names_family_emails_by_rendered_subject(campaign_test, monkeypatch):
+    """Check's test-email links show the subject with values filled in (#1846)."""
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.accounts.models import AppliedConfigurationVersion
+    from parishkit.stewardship.web.presentation import campaign_year
+
+    campaign = Campaign.objects.select_related("active_configuration").get()
+    active = AppliedConfigurationVersion.objects.latest("created_at")
+    record_id = uuid4()
+    # A content revision is insert-only and must match the YAML, so stand in
+    # a row holding the raw template a link used to show.
+    row = SimpleNamespace(
+        record_id=record_id,
+        configuration=active,
+        subject="Reminder: {{ parish_name }} {{ campaign_year }} Renewal",
+        html="<p>Hello</p>",
+        text="Hello",
+    )
+    monkeypatch.setattr(
+        go_live_views.ContentVersion.objects,
+        "filter",
+        lambda **kwargs: SimpleNamespace(select_related=lambda *args: [row]),
+    )
+    preview = SimpleNamespace(
+        campaign=campaign,
+        configuration=SimpleNamespace(family_templates=(str(record_id),)),
+    )
+    [(_template, name)] = go_live_views._family_emails(preview)
+    year = campaign_year(campaign.active_configuration.values)
+    parish = active.canonical_document["sections"]["parish"][0]["values"]["name"]
+    assert name == f"Reminder: {parish} {year} Renewal"
