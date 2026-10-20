@@ -727,6 +727,18 @@ CLOSURE_CREATED = {
         ),
         ("stewardship_reports", "0032_pledge_review"),
     ),
+    # 0129 (#1710) creates the census addition tables (in CLOSURE_TABLES)
+    # with their guards and deferred audit checks, and replaces nothing, so
+    # its file installs whole again.
+    **dict.fromkeys(
+        (
+            "public.stewardship_census_addition_guard_v1()",
+            "public.stewardship_census_addition_effect_v1()",
+            "public.stewardship_census_addition_resolution_guard_v1()",
+            "public.stewardship_census_addition_resolution_effect_v1()",
+        ),
+        ("stewardship_responses", "0015_census_additions"),
+    ),
 }
 
 
