@@ -1152,7 +1152,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `family_portal` | Family portal availability | Menu: Family portal availability | Administrator | (same) | `/admin/mail/family-portal/` | (same) |  |
 | `report_emails` | Report emails | Menu: Report emails | Administrator, Staff | (new, #1786) | `/admin/mail/report-emails/` | (same) | [Report emails page](../report-emails/spec.md#report-emails-page); Staff read-only. Replaces `emailed_reports` and `weekly_digest_manual`, which delivery PR 5 retires. |
 | `report_email_edit` | _report name_ | Report emails | Administrator | (new, #1786) | `/admin/mail/report-emails/<report>/`; New at `/admin/mail/report-emails/new/` | (same) | Object-named (exception). [New and Edit report email](../report-emails/spec.md#new-and-edit-report-email). |
-| `report_email_send` | _report name and date_ | Report emails | Administrator, Staff (when every block allows) | (new, #1786) | `/admin/mail/report-emails/sends/<send>/`, with `items/<item>/` for one request | (same) | Object-named (exception). A [saved copy](../report-emails/spec.md#saved-copies). |
+| `report_email_send` | _report name and date_ | Report emails | Administrator, Staff (when every block allows) | (new, #1786) | `/admin/mail/report-emails/sends/<send>/`, with `items/<item>/` for one request | (same) | Object-named (exception). A [saved copy](../report-emails/spec.md#saved-copies). Until the Report emails page ships (report-emails delivery plan item 5) it is an interim page named by the email's subject, under Sent mail, with a Return to Emailed reports link for Staff. |
 | `presence` | Families on the form now | Menu: Families on the form now | Administrator | (same) | `/admin/mail/presence/` | (same) | The header's count is still polled at `/admin/presence?format=count` (decision 8); any other read of that address is 404. |
 | `held_emails` | Held emails | Reached from: Home | Administrator | (new, #757) | `/admin/mail/held-emails/` | (same) | Not a menu entry: Home links to it while a held email is undecided. Its trail is Home › Mail and Family portal. See [restore release](#restore-release). |
 | `response_dashboard` | Response dashboard | Menu: Response dashboard | Administrator, Staff | (same); Participation and campaign statistics | `/admin/reports/responses/` | (same) | Absorbed Participation ([#1537](https://github.com/epiphany40223/parishkit/issues/1537)): `/admin/reports/participation/` and its `exact-exports/` form action are gone, with no redirect (#864); the export form posts to `responses/exports/`. |
@@ -10431,7 +10431,9 @@ every `'<prefix>_'||` an installed audit-writing function builds to be a
   line's `admin_cmd_users_confirm`, ParishSoft Ministry leaders imported as
   users (`user_leaders_import_requested`, `user_leader_imported`,
   `admin_cmd_users_import_leaders`), and the operator's one-time conversion
-  of sign-in rules into users, `operator_users_upgraded`), the command
+  of sign-in rules into users, `operator_users_upgraded`, and of the
+  Daily and Weekly digests into report emails (#1786),
+  `operator_reports_converted`), the command
   line's parish profile changes (`admin_cmd_parish_confirm`) and Campaign
   image removals (`admin_cmd_artwork_remove`), parish logo uploads and
   their Apply (`admin_cmd_branding_preview`, `admin_cmd_branding_confirm`),
@@ -10496,10 +10498,10 @@ every `'<prefix>_'||` an installed audit-writing function builds to be a
 - **Reports and downloads** (`downloads`, audit records only): reports and
   exports requested, made, cancelled or downloaded (`export_requested`,
   `export_cancelled`, `export_downloaded`, every `*_exported`,
-  `weekly_manual_requested` for sends before #1786, `report_email_send_now`
-  after), and the same from the command line (`admin_cmd_export_*`,
-  `admin_cmd_digest_weekly_request` before #1786,
-  `admin_cmd_report_email_send_now` after). Opening a report
+  `weekly_manual_requested` for sends before #1786,
+  `report_email_manual_requested` after), and the same from the command
+  line (`admin_cmd_export_*`, `admin_cmd_digest_weekly_request` until the
+  Report emails page ships, `admin_cmd_report_email_send_now` after). Opening a report
   page (`*_viewed`) downloads nothing and is in no group.
 - **Security events** (`security`, audit records only): a settings change that
   widened access or replaced the backup encryption key
