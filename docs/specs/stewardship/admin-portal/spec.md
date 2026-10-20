@@ -5243,7 +5243,14 @@ a phone, without sideways scrolling) holds:
   case, across kinds (a Family member who is also an Administrator sees both
   their Family's emails and their reports); a delivery ID lists that one
   email (or, as before, the emails of the Family record with that id).
-  Anything else is refused with the page's field error. A Testing email's
+  Anything else, a name included, is refused at the field
+  ([field errors](../ui-conventions/spec.md#field-errors-and-live-checks)):
+  the field's pattern holds Apply filters while it cannot be one of these,
+  saying "Enter a Family DUID, an email address or a delivery ID, or clear
+  it. Names are not searched." in the bar's reserved hint row; a value the
+  pattern lets through that the server still refuses draws the page again
+  in place, answered 400, with the same words at the field and the list
+  for no filters, never an error page (R40b). A Testing email's
   routed address (the Testing recipient) is not searched.
 - **Purpose**: All; Family invitations and reminders (Initial invitation
   and Reminder together, the Family email

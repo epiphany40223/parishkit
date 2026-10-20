@@ -18,10 +18,17 @@ from parishkit.stewardship.jobs.delivery_bulk import BulkResult
 from parishkit.stewardship.jobs.delivery_metadata import (
     DELIVERY_SORTING,
     PURPOSE_CHOICES,
+    RECIPIENT_PATTERN,
+    RECIPIENT_REFUSAL,
     STATES,
 )
-from parishkit.stewardship.jobs.delivery_views import REFUSAL_SORTING
+from parishkit.stewardship.jobs.delivery_views import (
+    FIELD_IDS,
+    FIELD_LINES,
+    REFUSAL_SORTING,
+)
 from parishkit.stewardship.web.contracts import PageWindow
+from parishkit.stewardship.web.filter_errors import FilterError, error_context
 from parishkit.stewardship.web.tables import window_table
 
 REFUSAL_ID = UUID(int=935)
@@ -73,6 +80,9 @@ LIST_FILTERS = dict(
     purposes=PURPOSE_CHOICES,
     selected_purpose="all",
     recipient="",
+    # The Recipient's browser check and its words, as the view passes them.
+    recipient_pattern=RECIPIENT_PATTERN,
+    recipient_hint=RECIPIENT_REFUSAL,
     start="",
     end="",
     zone="",
@@ -80,6 +90,19 @@ LIST_FILTERS = dict(
     mode_fields=mode_fields(),
     page_address=LIST_ACTION + "?size=25&sort=-changed",
 )
+
+
+def refused_recipient(context, typed):
+    """``context`` drawn again for a Recipient ``typed`` that the server
+    refuses at its field (#1562), as the view draws it: the field shows what
+    was typed, marked, with the message in the hint row and the summary."""
+    error = FilterError("recipient", RECIPIENT_REFUSAL, {"recipient": typed})
+    return (
+        context
+        | dict(recipient=typed)
+        | error_context(error, FIELD_IDS, FIELD_LINES)
+        | {"filter_sizes": {FIELD_LINES["recipient"]: RECIPIENT_REFUSAL}}
+    )
 
 
 def components(now):
@@ -139,65 +162,65 @@ def components(now):
     # ParishSoft data no longer has, and an Administrator report. The first
     # two emails have unresolved refused addresses (#935), counted in the
     # link line.
-    yield (
-        "/deliveries-names",
-        "deliveries",
-        dict(
-            refusal_count=3,
-            table=sent_table(
-                PageWindow(1, 25),
-                [
-                    message | dict(refused=2),
-                    message
-                    | dict(
-                        id=uuid4(),
-                        family__family_duid=4021,
-                        family_name=None,
-                        refused=1,
-                    ),
-                    # An Administrator's report, named by the Users page
-                    # (#1562), and a notice to an address with no Name.
-                    message
-                    | dict(
-                        id=uuid4(),
-                        family_id=None,
-                        family__family_duid=None,
-                        family_name=None,
-                        purpose="daily_digest",
-                        state="delivered",
-                        recipient_name="Morgan Administrator",
-                        recipient_address="morgan@example.org",
-                        recipient_fields=[
-                            ("recipient", "morgan@example.org"),
-                            ("mode", "production"),
-                        ],
-                    ),
-                    message
-                    | dict(
-                        id=uuid4(),
-                        family_id=None,
-                        family__family_duid=None,
-                        family_name=None,
-                        purpose="security_event",
-                        state="permanent_failure",
-                        recipient_name=None,
-                        recipient_address="pat@example.org",
-                        recipient_fields=[
-                            ("recipient", "pat@example.org"),
-                            ("mode", "production"),
-                        ],
-                    ),
-                ],
-                False,
-                total=(4, False),
-                sorting=DELIVERY_SORTING,
-                sort=DELIVERY_SORTING.default,
-            ),
-            states=STATES,
-            selected_state="all",
-            **LIST_FILTERS,
+    names = dict(
+        refusal_count=3,
+        table=sent_table(
+            PageWindow(1, 25),
+            [
+                message | dict(refused=2),
+                message
+                | dict(
+                    id=uuid4(),
+                    family__family_duid=4021,
+                    family_name=None,
+                    refused=1,
+                ),
+                # An Administrator's report, named by the Users page
+                # (#1562), and a notice to an address with no Name.
+                message
+                | dict(
+                    id=uuid4(),
+                    family_id=None,
+                    family__family_duid=None,
+                    family_name=None,
+                    purpose="daily_digest",
+                    state="delivered",
+                    recipient_name="Morgan Administrator",
+                    recipient_address="morgan@example.org",
+                    recipient_fields=[
+                        ("recipient", "morgan@example.org"),
+                        ("mode", "production"),
+                    ],
+                ),
+                message
+                | dict(
+                    id=uuid4(),
+                    family_id=None,
+                    family__family_duid=None,
+                    family_name=None,
+                    purpose="security_event",
+                    state="permanent_failure",
+                    recipient_name=None,
+                    recipient_address="pat@example.org",
+                    recipient_fields=[
+                        ("recipient", "pat@example.org"),
+                        ("mode", "production"),
+                    ],
+                ),
+            ],
+            False,
+            total=(4, False),
+            sorting=DELIVERY_SORTING,
+            sort=DELIVERY_SORTING.default,
         ),
+        states=STATES,
+        selected_state="all",
+        **LIST_FILTERS,
     )
+    yield ("/deliveries-names", "deliveries", names)
+    # The same page drawn again for a Recipient the server refuses at its
+    # field (#1562): a short hex-like name the field's pattern lets through.
+    yield ("/deliveries-refused", "deliveries", refused_recipient(names, "Abbe"))
     # Sent mail's filters and its Production / Testing links acting in
     # place (#1562): the answers a test routes the Testing link and an
     # applied filter to.

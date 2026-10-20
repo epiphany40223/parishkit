@@ -22,7 +22,7 @@
   {% csrf_token %}<input type="hidden" name="zone" value="{{ zone }}" data-browser-zone data-zone-missing-hint="{% translate "Your browser didn't report a time zone, so these dates can't be used. Clear From and Through, or check your computer's time zone setting." %}">
   <input type="hidden" name="mode" value="{{ mode }}">
   <div><div class="label-row"><label for="delivery-recipient" id="delivery-recipient-label">{% translate "Recipient" %}</label>{% translate "A Family DUID (with or without its commas), an email address in any case, or a delivery ID from an email's page." as recipient_tip %}{% include "stewardship/components/toggletip.html" with tip_id="delivery-recipient-tip" tip_label_id="delivery-recipient-label" tip_text=recipient_tip %}</div>
-  <input id="delivery-recipient" name="recipient" value="{{ recipient }}" maxlength="254" autocomplete="off" spellcheck="false"></div>
+  <input id="delivery-recipient" name="recipient" value="{{ recipient }}" maxlength="254" pattern="{{ recipient_pattern }}" data-missing-hint="{{ recipient_hint }}" autocomplete="off" spellcheck="false"{% filter_mark filter_error "recipient" %}></div>
   <div><label for="delivery-purpose">{% translate "Purpose" %}</label>
   <select name="purpose" id="delivery-purpose">{% for purpose in purposes %}<option value="{{ purpose }}"{% if purpose == selected_purpose %} selected{% endif %}>{{ purpose|delivery_label }}</option>{% endfor %}</select></div>
   <div class="short" data-missing-hint="{% translate 'Enter a whole From date, or clear it.' %}"><div class="label-row"><label for="delivery-start" id="delivery-start-label">{% translate "From" %}</label>{% translate "From and Through are days in this computer's time zone:" as zone_note %}{% include "stewardship/components/toggletip.html" with tip_id="delivery-zone-help" tip_label_id="delivery-start-label" tip_text=zone_note tip_zone_note=True %}</div><input id="delivery-start" type="date" name="start" value="{{ start }}" data-browser-zone-field></div>
@@ -32,7 +32,7 @@
   {% if send %}<input type="hidden" name="send" value="{{ send.key.token }}" data-filter>{% endif %}
   {% for name, value in table.view_fields %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endfor %}
   {% include "stewardship/components/filter-actions.html" with apply_hint="delivery-filter-hint" %}
-  <p class="help" id="delivery-filter-hint" data-complete-hint="reserve"></p>
+  {% comment %}A Recipient the server refuses at its field (a name, #1562) draws the page again, the field marked (filter_mark) and its message in this reserved hint row, over the gate's hint, which says the same words and is hidden while it shows (ui-v1.css); the row is sized to it only then (filter_sizes), so its clearing on the first edit moves nothing. The field's pattern holds Apply before a name is sent, saying the same words.{% endcomment %}<div class="hint-row-messages"><p class="help" id="delivery-filter-hint" data-complete-hint="reserve"></p>{% filter_line filter_error "delivery-filters" filter_sizes %}</div>
 </form>
 {% include "stewardship/delivery-bulk.html" %}
 {% translate "Sent mail pages" as navigator_label %}

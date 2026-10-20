@@ -371,6 +371,49 @@ def test_sent_mail_filters_by_recipient_purpose_delivery_and_mode(
         assert sent_mail(browser, **query)[0] == 400, query
 
 
+def test_a_name_in_recipient_is_refused_at_the_field(response_service, google):
+    """A name typed in Recipient (R40b, #1562) draws Sent mail again,
+    answered 400, rather than an error page: the filter form shows what was
+    sent, the Recipient marked with the message in its hint row and the
+    summary, and the list is the one for no filters in the mode sent. A
+    malformed field structure keeps the error page."""
+    testing = family_message(response_service, mode="testing")
+    harness = activate_response_service(response_service)
+    browser, _ = signed_in()
+    production = family_message(harness)
+    reminder = family_message(harness, purpose="reminder")
+    status, html = sent_mail(
+        browser, recipient="Thompson", purpose="reminder", state="needs_attention"
+    )
+    assert status == 400
+    assert "Delivery action unavailable" not in html
+    assert '<form id="table-filters"' in html
+    field = re.search(r'<input id="delivery-recipient"[^>]*>', html).group(0)
+    assert 'value="Thompson"' in field and 'aria-invalid="true"' in field
+    assert 'aria-describedby="delivery-filters_error"' in field
+    message = "Enter a Family DUID, an email address or a delivery ID, or clear it."
+    assert html.count(message) >= 3  # the hint, the line and the summary
+    assert '<option value="needs_attention" selected>' in html
+    assert '<option value="reminder" selected>' in html
+    ids = {production, reminder, testing}
+    assert listed(html, ids) == {production, reminder}
+    assert shown_mode(region(html, "delivery-mode")) == "production"
+    (address,) = re.findall(r'<a href="([^"]*)" data-page-address hidden>', html)
+    assert "Thompson" not in address and "state=" not in address
+    # The mode sent is kept: Testing lists the Testing email.
+    status, html = sent_mail(browser, recipient="Thompson", mode="testing")
+    assert status == 400 and listed(html, ids) == {testing}
+    # A repeated field is structural, so it keeps the error page.
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        token = browser.cookies["pk_admin_csrf"].value
+        response = browser.post(
+            "/admin/mail/sent/",
+            {"csrfmiddlewaretoken": token, "recipient": ["Thompson", "1"]},
+        )
+    assert response.status_code == 400
+    assert "Delivery action unavailable" in response.content.decode()
+
+
 def test_sent_mail_dates_are_days_in_the_browser_zone(response_service, google):
     """From and Through bound When in the zone the form carries; a day
     without a known zone, or Through before From, is refused."""

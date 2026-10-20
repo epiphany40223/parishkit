@@ -1304,6 +1304,10 @@ section.filter-panel > h2 { margin: 0; padding-block: .6rem; font-size: 1rem; li
    6.5rem, so the button wrapped and pushed that field's control below the
    others'. */
 .filter-bar.mail-filters > div:not(.short):has(> .label-row) { min-width: 7.5rem; }
+/* Sent mail's hint row (the gate's hint and a refused Recipient's message,
+   #1562) keeps its own full-width line under the fields, as the plain hint
+   paragraph did, rather than taking a field's share of the row. */
+.filter-bar.mail-filters > .hint-row-messages { flex: 0 1 100%; }
 /* From and Through are wide enough for the empty "mm/dd/yyyy" placeholder
    beside the calendar button, with Linux's wider fonts too. They drop the
    desktop short-field rule's end margin: the bar's gap spaces them, and
