@@ -130,17 +130,40 @@ def recorded(action, placement):
     return DECISIONS[action][0]
 
 
-def records(action):
-    """Every row ``action`` can store, as the fields a repeat must match.
+# The action that stored each decision, except ``accepted`` (``stored_by``).
+STORED_BY = {
+    "none": Decide.BACK_TO_REVIEW,
+    "ignored": Decide.IGNORE,
+    "handled": Decide.HANDLED,
+}
 
-    A replayed request key is checked against these, since the answer has
-    moved on since its first post. Handled's undo stores ``accepted``, as
-    Accept does; the row's version and answer still have to match, so a key
-    replayed for another answer or version is still refused.
+
+def stored_by(row):
+    """The worklist action that recorded review ``row``.
+
+    A replayed request key is checked against it, since the answer has
+    moved on since its first post. ``accepted`` alone does not tell: Accept
+    stores it on To review, and Handled's undo (#1840) stores it on
+    Handled, so the stage the answer's row before this one gives tells them
+    apart. (A row stops being in force for good once a later response
+    changes the answer, so a Handled that was not in force, and so To
+    review, when Accept was chosen still reads To review; one that stopped
+    being in force since only makes a replayed undo look like an Accept,
+    which is refused rather than taken as a repeat.) The row's version and
+    answer still have to match too, so a key replayed for another answer or
+    version is still refused.
     """
-    if action is Decide.BACK_TO_REVIEW:
-        return [{"decision": decision} for decision in UNDO_DECISIONS.values()]
-    return [{"decision": DECISIONS[action][0]}]
+    if row.decision != "accepted":
+        return STORED_BY[row.decision]
+    before = LimitationReview.objects.filter(
+        family_id=row.family_id,
+        kind=row.kind,
+        member_key=row.member_key,
+        expected_version=row.expected_version - 1,
+    ).first()
+    if limitation_stage(before).stage is Stage.HANDLED:
+        return Decide.BACK_TO_REVIEW
+    return Decide.ACCEPT
 
 
 def authorize_limitations(store, actor_id):
@@ -178,7 +201,7 @@ def _decide_one(family, answer, actor_id, action, version, key, note, parish):
             (previous.family_id, previous.kind, previous.member_key)
             != (family.pk, answer.kind, answer.member_key)
             or previous.expected_version != version
-            or {"decision": previous.decision} not in records(action)
+            or stored_by(previous) is not action
         ):
             raise KeyRebound("This request key is already bound.")
         return previous

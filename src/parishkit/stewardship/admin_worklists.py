@@ -300,19 +300,27 @@ def _limitation_rows(actor, campaign_id):
     ]
 
 
-def _recorded(stream, action):
-    """Every row ``action`` can store, as the fields a repeat must match.
+def _stored_by(stream, action, row):
+    """Whether ``action`` could have stored ``row``, which a repeat must match.
 
     Back to review stores what the stage it left gives (a Handled item's
-    undo keeps its decision, #1840), so a repeat matches any of them.
+    undo keeps its decision, #1840). An information revision says which
+    action stored it by its fields (only Handled's undo confirms a clear);
+    a Limitations review needs the answer's row before it, since Accept and
+    Handled's undo both store ``accepted`` (``stored_by``).
     """
     from .pipeline import Action
 
     if stream is INFORMATION:
         from .responses.information import records
-    else:
-        from .responses.limitation_review import records
-    return records(Action(action))
+
+        return any(
+            all(getattr(row, field) == value for field, value in fields.items())
+            for fields in records(Action(action))
+        )
+    from .responses.limitation_review import stored_by
+
+    return stored_by(row) is Action(action)
 
 
 def _model(stream):
@@ -350,17 +358,10 @@ def _repeat(stream, actor, campaign_id, request_key, keys, action):
     found = {
         matched[row.pk]: row for row in _model(stream).objects.filter(pk__in=matched)
     }
-    expected = _recorded(stream, action)
     if (
         {item: row.request_key for item, row in found.items()} != keys
         or len(matched) != len(keys)
-        or not all(
-            any(
-                all(getattr(row, field) == value for field, value in fields.items())
-                for fields in expected
-            )
-            for row in found.values()
-        )
+        or not all(_stored_by(stream, action, row) for row in found.values())
     ):
         raise InvalidFollowup(
             [problem("request_key", "This request key was used for another decision.")]

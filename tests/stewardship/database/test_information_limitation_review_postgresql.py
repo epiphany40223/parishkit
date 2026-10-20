@@ -769,7 +769,20 @@ def test_back_to_review_undoes_a_handled_answer(response_service, google):
     actor = staff_actor()
     family = FamilyCampaign.objects.get(pk=first.family_id)
     member = answer_id(family.family_duid, "member", "3")
-    decide_answer(harness, actor, Action.ACCEPT, member, 0)
+    accept_key = uuid4()
+    decide_answer(harness, actor, Action.ACCEPT, member, 0, key=accept_key)
+    # Accept's key sent again as Back to review at the same version: both
+    # store accepted, but Accept stored it on To review, so it is no repeat.
+    with pytest.raises(KeyRebound):
+        decide_answer(
+            harness,
+            actor,
+            Action.BACK_TO_REVIEW,
+            member,
+            0,
+            note="Oops",
+            key=accept_key,
+        )
     (handled,) = decide_answer(harness, actor, Action.HANDLED, member, 1)
     assert limitation_stage(handled).stage is Stage.HANDLED
     for note in ("", "  "):
@@ -810,6 +823,9 @@ def test_back_to_review_undoes_a_handled_answer(response_service, google):
         harness, actor, Action.BACK_TO_REVIEW, member, 2, note="Not yet", key=key
     )
     assert replay.pk == undone.pk
+    # The undo's key is no Accept, though it stored accepted too.
+    with pytest.raises(KeyRebound):
+        decide_answer(harness, actor, Action.ACCEPT, member, 2, key=key)
     (row,) = limitation_rows(harness)["members"]
     assert (row["decision"], row["in_force"], row["version"]) == ("accepted", True, 3)
     # Counted as To handle on the page; the menu counts To review only, so
