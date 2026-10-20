@@ -1651,3 +1651,38 @@ def test_the_test_waits_for_an_email_and_for_an_open_campaign(page, component_or
     visible(button)
     assert button.is_disabled() and status.inner_text() == NOT_OPEN
     assert not failures
+
+
+@pytest.mark.parametrize("path", [NEW, EDIT])
+def test_send_date_and_time_boxes_line_up_and_stack(page, component_origin, path):
+    """Send date's box is level with Send time's at desktop width (#1851).
+
+    The date field's reserved answer line used to sit above its box and push
+    it about 38px below the time's. At phone width the two fields stack in
+    one column, the date first, without overlapping or scrolling sideways.
+    """
+    page.set_viewport_size({"width": 1280, "height": 900})
+    page.goto(component_origin + path)
+    if path == NEW:
+        choose(page, "kind", "reminder")
+    date = page.locator('[name="schedule-date"]')
+    time = page.locator('[name="schedule-time"]')
+    visible(date)
+    visible(time)
+    assert abs(date.bounding_box()["y"] - time.bounding_box()["y"]) <= 1
+    page.set_viewport_size({"width": 390, "height": 900})
+    # Both boxes are read in one script step, so the page cannot reflow
+    # between the two measurements.
+    first, second = page.evaluate(
+        """() => ['schedule-date', 'schedule-time'].map((name) => {
+            const box = document.querySelector(`[name="${name}"]`)
+                .getBoundingClientRect();
+            return {x: box.x, y: box.y, width: box.width, height: box.height};
+        })"""
+    )
+    assert first["y"] + first["height"] <= second["y"]
+    assert first["x"] >= 0 and first["x"] + first["width"] <= 390
+    assert second["x"] >= 0 and second["x"] + second["width"] <= 390
+    assert page.evaluate(
+        "document.documentElement.scrollWidth <= document.documentElement.clientWidth"
+    )
