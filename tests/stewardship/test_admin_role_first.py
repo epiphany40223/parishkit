@@ -67,6 +67,10 @@ ROLE_FIRST = {
     "send confirm": None,
     # The Email Ministry leaders Apply (#1622); its --confirm path.
     "users email-leaders": Capability.MANAGE_USERS,
+    # Update ParishSoft's Update and Run again (#1755): an Administrator's,
+    # before the request key is made or the page's checks run.
+    "census update-confirm": Capability.PUBLISH_CENSUS,
+    "census update-rerun": Capability.PUBLISH_CENSUS,
 }
 
 # The prompting commands Staff may run, as on their pages.
