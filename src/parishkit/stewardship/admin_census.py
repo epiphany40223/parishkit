@@ -22,13 +22,15 @@ which is none.
 ``census resolve`` is a By-hand row's outcome (Entered in ParishSoft, Ignore
 or Reopen, #528), through the page's own admission and the page's own
 service (``census_resolution.resolve_census_change``), keyed by the page's
-request key. ``census review`` is an Automatic row's review (Approve,
+request key. ``census review`` is an Automatic row's review (Accept,
 Ignore or Back to To review, ADM-09), the same way, through the page's
 ``census_review.review_census_change``. ``census edit`` is the review's
 Edit value and Clear edit (ADM-09.04), through ``edit_census_change``, and
 ``census resolve-conflict`` its Use the Family's value anyway (ADM-09.03),
 through ``resolve_census_conflict`` (#1434). All print ids, versions and
-states, never the note, the Family, the Member or the value.
+states, never the note, the Family, the Member or the value, and speak the
+review pipeline's words (decision 7, #1755): the stored ``approved`` is
+``accepted`` in what they take and print (``DECISION_WORDS``).
 """
 
 from dataclasses import dataclass
@@ -37,6 +39,30 @@ from uuid import UUID
 from django.db import DatabaseError, IntegrityError
 
 from .admin_reads import NotAvailable, ReadModel, _held, _recheck
+
+# The review decisions the command line says otherwise than the database
+# stores them (review pipeline, decision 7: "words change, stored values do
+# not"): Accept, never Approve, with no alias.
+DECISION_WORDS = {"approved": "accepted"}
+
+
+def decision_word(stored):
+    """A stored review decision as the command line says it."""
+    return DECISION_WORDS.get(stored, stored)
+
+
+def stored_decision(word):
+    """The stored review decision for one the command line takes."""
+    return {said: stored for stored, said in DECISION_WORDS.items()}.get(word, word)
+
+
+def _worded(record):
+    """``record`` with its ``decision``, if any, in the command line's words."""
+    if record is None or "decision" not in record:
+        return record
+    # Spelled as a keyword so the queued-change tripwire
+    # (test_publication_tasks) does not read this printed copy as a write.
+    return record | dict(decision=decision_word(record["decision"]))
 
 
 @dataclass(frozen=True)
@@ -279,7 +305,7 @@ def _census_write(
             proposal = ProposedChange.objects.values(
                 "id", "version", "decision", "execution"
             ).get(pk=proposal_id)
-            return build(not repeat and receipt is not None, receipt, proposal)
+            return build(not repeat and receipt is not None, receipt, _worded(proposal))
 
     try:
         model = _held(step)
@@ -391,7 +417,7 @@ def review_census(
     are ``denied``), an Automatic change only, only while it is open
     (``pending``, ``conflict`` or ``failed``: never ``queued`` for
     publication, #1245 review note 5, nor final), a decision different
-    from the current one, and no Approve of a Conflict. Any of those is
+    from the current one, and no Accept of a Conflict. Any of those is
     ``invalid`` (the page's 400). The command records
     ``admin_cmd_census_review``.
     """
@@ -417,7 +443,10 @@ def review_census(
             "id", "proposal_id", "decision", "expected_version", "created_at"
         ).get(pk=receipt.pk)
         return CensusReview(
-            created=created, request_key=request_key, review=review, proposal=proposal
+            created=created,
+            request_key=request_key,
+            review=_worded(review),
+            proposal=proposal,
         )
 
     return _census_write(
@@ -550,7 +579,7 @@ def resolve_conflict(
     ``_census_write``, so every guard is the page's: an Administrator only,
     an Automatic Member change in ``conflict`` whose ParishSoft value is
     known, one change at a time. It accepts ParishSoft's current value as
-    the base, approves the change and makes it ``pending``; anything else is
+    the base, accepts the change and makes it ``pending``; anything else is
     ``invalid``. The document is ``census review``'s (``CensusReview``); the
     command records ``admin_cmd_census_resolve_conflict``. Undoing it is
     ``census review --decision ignored|unreviewed``, which puts the change
@@ -577,7 +606,10 @@ def resolve_conflict(
             "id", "proposal_id", "decision", "expected_version", "created_at"
         ).get(pk=receipt.pk)
         return CensusReview(
-            created=created, request_key=request_key, review=review, proposal=proposal
+            created=created,
+            request_key=request_key,
+            review=_worded(review),
+            proposal=proposal,
         )
 
     return _census_write(

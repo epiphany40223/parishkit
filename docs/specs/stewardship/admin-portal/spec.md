@@ -9792,8 +9792,9 @@ every `'<prefix>_'||` an installed audit-writing function builds to be a
   `census_publication_refresh_requested`,
   `census_publication_switched_off`, `census_publication_read_unconfirmed`,
   `census_publication_refused`), with the command line's
-  `admin_cmd_census_update_confirm` and `admin_cmd_census_update_rerun` once
-  they are built ([#1755](https://github.com/epiphany40223/parishkit/issues/1755)),
+  `admin_cmd_census_update_check`, `admin_cmd_census_update_confirm` and
+  `admin_cmd_census_update_rerun`
+  ([#1755](https://github.com/epiphany40223/parishkit/issues/1755)),
   which stay out of Staff follow-up with the other `admin_cmd_census_*`
   types. Its label is **ParishSoft refreshes and updates**, its key staying
   `parishsoft`, because an update is not a refresh. The page's

@@ -296,12 +296,12 @@ LEDGER = {
         "census edit",
         "census resolve-conflict",
     ),
-    # Update ParishSoft (#528, ADM-09; #1688): its check, plan, Update and
-    # Run again come to the command line in #1755, renamed from #528's
-    # fourth slice (decision 7: update, not publish).
-    "update_parishsoft": pending("#1755", "census update-check", "census update-plan"),
-    "update_parishsoft_confirmation": pending("#1755", "census update-confirm"),
-    "update_parishsoft_retries": pending("#1755", "census update-rerun"),
+    # Update ParishSoft (#528, ADM-09; #1688): its check and plan, Update
+    # and Run again (#1755), renamed from #528's fourth slice (decision 7:
+    # update, not publish), through the page's own checks and services.
+    "update_parishsoft": command("census update-check", "census update-plan"),
+    "update_parishsoft_confirmation": command("census update-confirm"),
+    "update_parishsoft_retries": command("census update-rerun"),
     # Additional information's review worklist (#1685) posts its decisions
     # to the page itself: ``information decide`` (#1735), through the page's
     # own InformationDecisions service, with ``information list`` the rows'
