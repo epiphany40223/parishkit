@@ -1426,3 +1426,33 @@ def test_testing_without_a_rehearsal_is_refused_not_shown_as_production(
         assert response.status_code == 409
         assert b"That Testing rehearsal is no longer active" in response.content
     assert not ExportRequest.objects.exists()
+
+
+def test_unfiltered_empty_directory_says_no_data_has_loaded(
+    response_service, google, monkeypatch
+):
+    """With no active Family and no filter, the empty row names the refresh (#1828).
+
+    The real selection runs; only its rows are dropped, as if a ParishSoft
+    refresh had loaded no active Family.
+    """
+    from parishkit.stewardship.reports import directory_views
+
+    real = directory_views.directory_page
+
+    def empty(*args, **kwargs):
+        """The real page with its Families removed."""
+        report = real(*args, **kwargs)
+        return report | {"rows": [], "total": 0}
+
+    monkeypatch.setattr(directory_views, "directory_page", empty)
+    browser, _ = signed_in()
+    route = reverse("admin:family_directory")
+    with task_login(ServiceRole.WEB, exact=True, reconnect=True):
+        response, body = read(browser, route)
+    assert response.status_code == 200
+    assert b"No active Families in the ParishSoft data yet." in body
+    assert b"Refresh from ParishSoft" in body
+    # The filtered and mailing messages are for other cases.
+    assert b"No Families match these filters" not in body
+    assert b"No active Family needs a postal invitation" not in body
