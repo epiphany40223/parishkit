@@ -141,7 +141,8 @@ def test_census_reviews_and_resolutions_reach_both_roles(response_service, googl
     body, counted = page(client, path)
     assert counted == 1 and 'id="table-filters"' in body
     assert ("Entered by hand", lines[-1][1]) in rows(body)
-    assert "Export this timeline" not in body and "/admin/mail/sent/" not in body
+    # Staff export it too (#1799), but get no Mail message links.
+    assert "Export this timeline" in body and "/admin/mail/sent/" not in body
     assert '<th scope="row">Submission receipt</th>' in body
     # Four views, each audited once; the reads add no audit row.
     viewed = AuditEvent.objects.filter(event_type="family_timeline_viewed")

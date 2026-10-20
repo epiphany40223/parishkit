@@ -2,8 +2,8 @@
 
 ``reports/families/<family>/`` shows one Family of the current campaign
 (``timeline``): its summary and full timeline, for Administrators and Staff
-(Staff since the Administrator's decision of 2026-10-19, #1774), with the
-export for Administrators only. ``<family>`` is the Family's campaign record id, an
+(Staff since the Administrator's decision of 2026-10-19, #1774), with its
+export (Staff's since #1799). ``<family>`` is the Family's campaign record id, an
 opaque random UUID that, like a Mail message's, names no person; the Family's
 name, DUID, envelope number and code never enter the URL, and the page's title
 leaves the name out so browser history does not keep it. The page replaced
@@ -471,22 +471,14 @@ def _principal(request, store, *, read_only=False):
 
 
 def _full(principal):
-    """Administrators and Staff see the full timeline (#1774).
+    """Administrators and Staff see the full timeline (#1774) and export it.
 
     Any other role that may open the page (none today: Ministry leaders
     hold no ``CAMPAIGN_REPORT``) would get the summary and the Last portal
-    action only.
+    action only, and no export. The export's SQL (migration 0144, #1799)
+    admits the same two roles.
     """
     return bool({"administrator", "staff"} & principal.roles)
-
-
-def _exports(principal):
-    """Only Administrators may export the timeline.
-
-    The export's frozen capture trigger and request guard (migration 0063)
-    admit only Administrators; #1799 opens it to Staff with a migration.
-    """
-    return "administrator" in principal.roles
 
 
 def _audit(principal, campaign_id, family_id, outcome):
@@ -667,9 +659,7 @@ def timeline(request, campaign_id, family_id):
                 family_test_url=test_url,
                 query=query,
                 values=values,
-                export=export_context(campaign_id, family.pk)
-                if _exports(principal)
-                else None,
+                export=export_context(campaign_id, family.pk) if full else None,
                 mail_links=allows(principal, Capability.BACKGROUND_WORK),
                 parameters=request.GET,
                 sections=sections,
@@ -716,12 +706,12 @@ def timeline(request, campaign_id, family_id):
 def export(request, campaign_id, family_id):
     """Queue this Family's timeline file, as the page's export form posts it.
 
-    Only an Administrator may export it (``_exports``;
-    ``create_timeline_export`` rechecks inside its lock), though Staff see
-    the full timeline too. The form carries the format, the time zone and a
-    one-time request key; anything else (a ``mode`` included, since #1570)
-    is refused, and the export is of Production records, as the page shows.
-    The file can hold the Family's live code.
+    Administrators and Staff may export it (``_full``, #1799;
+    ``create_timeline_export`` rechecks inside its lock). The form carries
+    the format, the time zone and a one-time request key; anything else
+    (a ``mode`` included, since #1570) is refused, and the export is of
+    Production records, as the page shows. The file can hold the Family's
+    live code.
     """
     from uuid import UUID
 
@@ -734,8 +724,10 @@ def export(request, campaign_id, family_id):
     try:
         service = runtime()
         principal = _principal(request, service.store)
-        if not _exports(principal):
-            raise PermissionError("The timeline export is for Administrators.")
+        if not _full(principal):
+            raise PermissionError(
+                "The timeline export is for Administrators and Staff."
+            )
         parameters = request.POST.copy()
         parameters.pop("csrfmiddlewaretoken", None)
         # The browser's zone is posted unasked, so it is optional and never

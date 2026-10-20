@@ -953,9 +953,10 @@ validate and read; nothing records them now.
 (`CAMPAIGN_REPORT`; the Administrator's decision of 2026-10-19 on
 [#1774](https://github.com/epiphany40223/parishkit/issues/1774), which
 replaced Staff's summary-only view, the decision of 2026-10-04 on
-[#523](https://github.com/epiphany40223/parishkit/issues/523)). Only
-Administrators may [export](#timeline-export) it. Ministry leaders have no
-access.
+[#523](https://github.com/epiphany40223/parishkit/issues/523)). Both
+may [export](#timeline-export) it
+([#1799](https://github.com/epiphany40223/parishkit/issues/1799)). Ministry
+leaders have no access.
 
 `/admin/reports/families/<family>/` (**Timeline**) answers "what happened
 with this Family?" and "did you get my response?" for one Family of the
@@ -1263,19 +1264,20 @@ created, replaced or cancelled, so emailed codes and links keep working.
 
 #### Timeline export
 
-An Administrator's view offers **Export this timeline** (the shared
-[export buttons](../ui-conventions/spec.md#downloaded-files) for XLSX, CSV
-and PDF, in the browser's time zone), the shared export lifecycle's
-`family_timeline` kind (ADM-11 PR 8g, frozen migration 0063, unchanged by
-#1570). Its form posts to `reports/families/<family>/exports/`, which only
-an Administrator may use: Staff see the full timeline since #1774, but the
-export's frozen capture trigger and request guard admit only Administrators,
-so Staff get no form and their post is denied until a forward migration
-admits them
-([#1799](https://github.com/epiphany40223/parishkit/issues/1799)). The
-form carries the format, the browser's time zone and a one-time request key,
-and nothing else; the
-export is always of Production records (the capture's `mode` is
+The full view offers **Export this timeline** (the shared [export
+buttons](../ui-conventions/spec.md#downloaded-files) for XLSX, CSV and PDF,
+in the browser's time zone), the shared export lifecycle's `family_timeline`
+kind (ADM-11 PR 8g, frozen migration 0063, unchanged by #1570).
+Administrators and Staff may use it: Staff see the full timeline since #1774,
+and frozen migration 0144 (#1799) opened the export's capture
+trigger, request guard and request authorization to a current Staff member
+as well. Its form posts to `reports/families/<family>/exports/`; a Ministry
+leader, who cannot open the page, is refused there and by the capture's SQL.
+Regenerating or downloading another requester's timeline export stays
+Administrator-only, as for every shared export. The file holds no links, so
+Staff's email lines are as unlinked there as on their page. The form carries
+the format, the browser's time zone and a one-time request key, and nothing
+else; the export is always of Production records (the capture's `mode` is
 `production`), and old Testing exports keep their status pages, whose
 breadcrumb opens the timeline. The file holds every line of the timeline,
 whatever the page's Kind and day filters show, and keeps the title "Family
@@ -1306,12 +1308,18 @@ carry the rest, including the code. The PDF is an infographic sheet
 sign-out and session-end lines too, and its Reviews kind counts the
 [review lines](#timeline-review-lines). The page builds its timeline in Python,
 so the web supplies that document; the capture trigger admits it only from
-the web login, for a current Administrator, an admitted campaign, the active
-configuration and a Family of that campaign (with its DUID), with the
-document's keys and value types checked and its size bounded, and sets the
-event count itself. The Family code is never captured: the worker decrypts it
-into the file, under the key-set lock, only when the requester may see
-Family codes. The status page, download, Retry, Cancel and the short
+the web login, for a current Administrator or Staff member (a Testing
+capture, which the page no longer makes, for an Administrator only), an
+admitted campaign, the active configuration and a Family of that campaign
+(with its DUID), with the document's keys and value types checked and its
+size bounded, and sets the event count itself. The bound is 1 MiB of JSON
+since migration 0144 (it was 128 KiB): the review lines (#1774) made a busy
+Family's file longer, and 1 MiB holds several thousand lines, far beyond
+any Family's timeline. A document over it is refused like any malformed
+capture, with no message of its own: the bound was raised rather than
+given a "too many lines" error (#1799). The Family code is never
+captured: the worker decrypts it into the file, under the key-set lock,
+only when the requester may see Family codes. The status page, download, Retry, Cancel and the short
 download window are the shared
 [point-in-time](../operations/spec.md#point-in-time-exports) lifecycle's.
 The request records `export_requested` with its line count, and the download

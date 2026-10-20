@@ -214,8 +214,8 @@ def test_timeline_for_administrators_and_staff(
     assert f"start={later}&amp;zone=UTC&amp;size=all&amp;sort=-when".encode() in body
 
     # Staff see the full timeline (signing in afresh; Administrator
-    # decision, 2026-10-19, #1774): the same lines and filters, but no
-    # export form and no Mail message links, which they may not use.
+    # decision, 2026-10-19, #1774): the same lines and filters and the
+    # export form (#1799), but no Mail message links, which they may not use.
     browser, login = signed_in()
     assert login.status_code == 302
     response, body = as_web(browser, corpus)
@@ -225,12 +225,11 @@ def test_timeline_for_administrators_and_staff(
     assert lines(body) == shown
     assert b"Timeline</h2>" in body and b"table-filters" in body
     assert b"Campaign email can reach this Family" in body
-    for absent in (b"/admin/mail/sent/", b"Export this timeline"):
-        assert absent not in body, absent
+    assert b"/admin/mail/sent/" not in body and b"Export this timeline" in body
     _, body = as_web(browser, corpus + "?kind=sessions")
     assert set(lines(body)) == {"Signed in", "Signed out"}
     assert as_web(browser, corpus + "?mode=testing")[0].status_code == 400
-    # Their export post is still denied (#1799): test_timeline_exports.
+    # Their export (#1799) and the leader's refusals: test_timeline_exports.
 
     # A Ministry leader may not open a Timeline at all, and the refusal is
     # not audited as a view.

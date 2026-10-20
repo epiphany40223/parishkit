@@ -1,6 +1,6 @@
 """The Family timeline export: one Family's timeline as a file (ADM-11 PR 8g).
 
-The Timeline page (``timeline_views``) shows an Administrator one
+The Timeline page (``timeline_views``) shows an Administrator or Staff one
 Family's identity and every line of its timeline. This export captures what
 that page shows, through the page's own reads (``read_timeline`` and the
 identity read), into an immutable ``TimelineExportSnapshot`` when it is
@@ -11,10 +11,11 @@ a lifecycle change.
 
 The page builds its timeline in Python, not in a SQL report function, so the
 web supplies the captured document. SQL checks everything around it (frozen
-migration 0063): only the web, for a current Administrator, an admitted
-campaign, the active configuration, a Family of that campaign, the document's
-closed shape and its event count. The Family code is never captured; the
-worker decrypts it into the file for a requester who may see codes.
+migrations 0063 and 0144): only the web, for a current Administrator or
+Staff member (#1799), an admitted campaign, the active configuration, a
+Family of that campaign, the document's closed shape and its event count.
+The Family code is never captured; the worker decrypts it into the file
+for a requester who may see codes.
 """
 
 from uuid import UUID, uuid4
@@ -138,10 +139,10 @@ def create_timeline_export(
 ):
     """Capture one Family's timeline and queue its file, as the page's form does.
 
-    Only an Administrator may request it, as only an Administrator sees the
-    full timeline (and Testing records) on the page. A request key already
-    used for the same selection returns that export; for another selection
-    it is ``ExportRequestBound`` (the page's 409).
+    Administrators and Staff may request it, as both see the full timeline
+    on the page (#1774, #1799); the page's ``_full`` is the one rule. A
+    request key already used for the same selection returns that export;
+    for another selection it is ``ExportRequestBound`` (the page's 409).
     """
     from parishkit.stewardship.campaigns.credential_models import FamilyCampaign
 
@@ -161,9 +162,13 @@ def create_timeline_export(
 
     def admit(*args):
         """Both enqueue and its owning transaction recheck current authorization."""
+        from .timeline_views import _full
+
         principal = authorize(store, user_id)
-        if "administrator" not in principal.roles:
-            raise PermissionError("The Family timeline export is for Administrators.")
+        if not _full(principal):
+            raise PermissionError(
+                "The Family timeline export is for Administrators and Staff."
+            )
         admit_campaign(campaign_id, mutating=True)
         return True
 
