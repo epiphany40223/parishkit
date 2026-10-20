@@ -12,7 +12,10 @@ module gives it the Ministry stream's own parts:
   the follow-up selection (its scope and cross-check), each with its stage
   (``workflows.review.placement``) and the reader's word for it. A Ministry
   leader never sees the update phase (#1160), so for a leader an accepted
-  request is at the stage Accepted whether or not Staff entered it.
+  request is at the stage Accepted whether or not Staff entered it. For
+  Staff and Administrators the To enter by hand and Entered by hand Stages
+  also hold the roster rows the review stages leave out (``roster_only``):
+  Roster changes to enter was folded into this page (R39 finding 2).
 - ``worklist_context``: one page of those rows decorated for the component,
   with the Stage choices' counts, the identity cells, the decision line
   ("Ignored: Stayed in the Ministry", "Family asked again", "Added in its
@@ -32,19 +35,26 @@ from django.utils.safestring import mark_safe
 
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.accounts.policy_models import PortalUser
-from parishkit.stewardship.pipeline import Decision, Stage, Stream
+from parishkit.stewardship.pipeline import TERMS, Action, Decision, Stage, Stream
+from parishkit.stewardship.responses.refresh_checks import check_states
 from parishkit.stewardship.source.source_status import source_status_label
 from parishkit.stewardship.web.content import bounded_text
 from parishkit.stewardship.web.contracts import filters
-from parishkit.stewardship.web.review_worklist import Column, build
+from parishkit.stewardship.web.review_worklist import (
+    NOT_SEEN,
+    NOW_MATCHES,
+    Column,
+    build,
+)
 from parishkit.stewardship.web.tables import PAGE_SIZES, report_table
 from parishkit.stewardship.workflows.models import MinistryRequest
 from parishkit.stewardship.workflows.review import (
+    SILENT,
     leads,
     ministry_placement_of,
     reader_roles,
 )
-from parishkit.stewardship.workflows.roster import roster_marks
+from parishkit.stewardship.workflows.roster import eligible, mark, roster_marks
 
 from .information import parse_page
 from .ministries import outcome_label
@@ -70,7 +80,11 @@ STAFF_STAGES = (
 ACCEPTED = "accepted"
 LEADER_STAGES = (Stage.TO_REVIEW.value, ACCEPTED, Stage.IGNORED.value, "confirmed")
 EVERY = "all"
-STAGE_VALUES = frozenset({*(stage.value for stage in STAFF_STAGES), ACCEPTED, EVERY})
+# Not seen in ParishSoft (#1689) is a flag on Entered by hand, chosen like a
+# stage; only Staff and Administrators see it, as they alone see the update.
+STAGE_VALUES = frozenset(
+    {*(stage.value for stage in STAFF_STAGES), ACCEPTED, NOT_SEEN, EVERY}
+)
 # The Members filter (Staff only, #1217): the requests for Members ParishSoft
 # still lists in their Family (the default), or only those it no longer does.
 MEMBERS = {"current": "In ParishSoft", "gone": "No longer in ParishSoft"}
@@ -85,6 +99,10 @@ COLUMNS = (
     Column("contact_cell", "Last contact"),
 )
 FORMER = "Former portal user"
+REPLACED = "Replaced by a later response"
+# A current request: the newest revision, neither withdrawn nor replaced
+# (the follow-up selection's own "current" history, schema 0131).
+NOT_CURRENT = frozenset({"cancelled", "superseded"})
 
 
 @dataclass(frozen=True, repr=False)
@@ -178,6 +196,20 @@ def is_leader(principal):
     return not allows(principal, Capability.MINISTRY_FOLLOWUP)
 
 
+def for_reader(query, principal):
+    """The view as the reader's Stage filter offers it.
+
+    A Ministry leader has no update phase: their Accepted holds To enter by
+    hand and Entered by hand, so a link to either (Home's card is Staff's,
+    but a link can be passed on) opens their Accepted rather than an empty
+    list under a Stage their filter does not have.
+    """
+    update_phase = {Stage.TO_ENTER_BY_HAND.value, Stage.ENTERED_BY_HAND.value}
+    if query.stage in update_phase and is_leader(principal):
+        return replace(query, stage=ACCEPTED)
+    return query
+
+
 def read_rows(campaign_id, query, principal, *, empty=False):
     """Every request the view's filters select, each with its stage.
 
@@ -188,29 +220,94 @@ def read_rows(campaign_id, query, principal, *, empty=False):
     """
     # Only Staff and Administrators may list the requests for Members no
     # longer in ParishSoft (#1217); a leader asking is a malformed form.
-    if is_leader(principal) and query.members != "current":
+    leader = is_leader(principal)
+    if leader and query.members != "current":
         raise ValueError("Invalid Ministry request filters.")
+    if leader:
+        result = followup_page(
+            campaign_id, query.selection(), principal, whole=True, empty=empty
+        )
+        return place(result, principal)
+    # Staff and Administrators read every revision of every Member's
+    # requests, as Roster changes to enter did, and keep the view's own
+    # rows plus the roster rows it would otherwise leave out (``listed``),
+    # in the selection's order.
     result = followup_page(
-        campaign_id, query.selection(), principal, whole=True, empty=empty
+        campaign_id,
+        replace(query.selection(), state="any", history="all"),
+        principal,
+        whole=True,
+        empty=empty,
+        every_member=True,
     )
+    result["rows"] = [row for row in result["rows"] if listed(row, query.members)]
     return place(result, principal)
 
 
-def place(result, principal, *, marks=None):
+def roster_only(row):
+    """Whether a row is listed only for its roster work: an accepted join or
+    leave for a Member no longer in ParishSoft, or one a later Family
+    response replaced. It offers only Entered by hand (admin-portal spec,
+    "Roster entry on Ministry requests")."""
+    return eligible(row) and (bool(row["source_mark"]) or row.get("latest") is False)
+
+
+def listed(row, members):
+    """Whether a row of the every-revision read belongs in a Staff view.
+
+    ``members`` is the Members choice. The view's own rows are the current
+    requests (the newest revision, not withdrawn or replaced) for Members
+    ParishSoft still lists ("current") or no longer lists ("gone"); the
+    roster rows, accepted joins and leaves with no resolution source, are
+    listed under the default choice whatever their Member's standing or
+    revision, since the roster work may still be real, and under "gone"
+    for such a Member.
+    """
+    gone = bool(row["source_mark"])
+    current = row.get("latest") is not False and row["state"] not in NOT_CURRENT
+    if members == "gone":
+        return gone and (current or eligible(row))
+    return (current and not gone) or eligible(row)
+
+
+def place(result, principal, *, marks=None, checks=None):
     """Give each row of a follow-up selection result its stage, in place.
 
-    One read of the rows' roster ticks, unless ``marks`` gives them (a
-    detached page). Each row gains ``placement`` (the pipeline's),
-    ``stage`` (the reader's Stage choice) and the words a file shows for
-    them (``stage_label``, ``decision_label``). Returns ``result``.
+    One read of the rows' roster ticks and one of their refresh checks
+    (#1689), unless ``marks`` gives the ticks (a detached page, which then
+    gives its ``checks`` too, or has none). Each row gains
+    ``placement`` (the pipeline's), ``stage`` (the reader's Stage choice),
+    the Not seen in ParishSoft flag (Staff only) and whether ParishSoft now
+    matches an ignored request (``not_seen``, ``now_matches``), and the
+    words a file shows for them (``stage_label``, ``decision_label``).
+    Returns ``result``.
     """
     if marks is None:
         marks = roster_marks(row["id"] for row in result["rows"])
+        checks = check_states(
+            requests=[row["id"] for row in result["rows"]],
+            marks=marks,
+            versions={str(row["id"]): row["version"] for row in result["rows"]},
+        )
+    checks = checks or {}
     leader = is_leader(principal)
     for row in result["rows"]:
-        placement = ministry_placement_of(row, marks)
+        # The tick's who and when, for the decision line and the file.
+        mark(row, marks)
+        placement = ministry_placement_of(row, marks, checks)
+        check = checks.get(str(row["id"]))
         row["placement"] = placement
         row["stage"] = stage_of(placement, leader)
+        row["not_seen"] = bool(
+            not leader
+            and check
+            and check.not_seen(placement.stage is Stage.ENTERED_BY_HAND)
+        )
+        row["now_matches"] = bool(
+            placement.stage is Stage.IGNORED
+            and check
+            and check.outcome == "ignored_now_matches"
+        )
         row["stage_label"] = (
             placement.decision.label
             if row["stage"] == ACCEPTED
@@ -227,10 +324,15 @@ def place(result, principal, *, marks=None):
 
 
 def stage_counts(rows):
-    """How many of ``rows`` are at each Stage choice's value."""
+    """How many of ``rows`` are at each Stage choice's value.
+
+    Not seen in ParishSoft is counted beside the stage its rows are at.
+    """
     counts = {}
     for row in rows:
         counts[row["stage"]] = counts.get(row["stage"], 0) + 1
+        if row.get("not_seen"):
+            counts[NOT_SEEN] = counts.get(NOT_SEEN, 0) + 1
     return counts
 
 
@@ -243,10 +345,13 @@ def stage_choices(counts, leader):
         if leader
         else [(stage.value, stage.label) for stage in STAFF_STAGES]
     )
+    if NOT_SEEN in counts and not leader:
+        labels.append((NOT_SEEN, TERMS["not_seen"]))
     choices = [
         (value, f"{label} ({counts.get(value, 0):,})") for value, label in labels
     ]
-    choices.append((EVERY, f"Every stage ({sum(counts.values()):,})"))
+    every = sum(count for value, count in counts.items() if value != NOT_SEEN)
+    choices.append((EVERY, f"Every stage ({every:,})"))
     return choices
 
 
@@ -254,6 +359,8 @@ def _keeps(row, stage):
     """Whether a row is at the chosen Stage (Every stage keeps every row)."""
     if stage == EVERY:
         return True
+    if stage == NOT_SEEN:
+        return bool(row.get("not_seen"))
     if stage == ACCEPTED:
         return row["stage"] in (
             ACCEPTED,
@@ -416,6 +523,17 @@ def _member_cell(row):
     )
 
 
+def row_name(row):
+    """How the worklist names a request: "Member — Ministry". One a later
+    Family response replaced (a Staff roster row) adds ", replaced by a later
+    response", since the same change can then be listed twice, and each
+    control, dialog and notice names its own row."""
+    name = f"{row['member_label']} — {row['ministry_name']}"
+    if row.get("latest") is False:
+        name += f", {REPLACED.lower()}"
+    return name
+
+
 def _ministry_cell(row):
     """The Ministry cell, with the Removed badge for one no longer asked about."""
     removed = (
@@ -445,7 +563,8 @@ def _decision_line(row, leader, asked, replaced_by, reader_leads):
     parish added a request in place of names it; an edited request read by
     a leader of the Family's Ministry only says where it went. Accepted
     stays under To enter by hand and Entered by hand, as the component
-    words it.
+    words it. For Staff, an accepted request a later response replaced says
+    so, and an entered one says who marked it and when.
     """
     placement = row["placement"]
     parts = []
@@ -463,10 +582,21 @@ def _decision_line(row, leader, asked, replaced_by, reader_leads):
         parts.append(format_html("{}", placement.decision.label))
     if not reader_leads and leader and row.get("reviewed_ministry_name"):
         parts.append(format_html("{}", "Read only: edited into another Ministry"))
+    if row.get("now_matches"):
+        parts.append(format_html("{}", NOW_MATCHES))
     if replaced_by:
         parts.append(format_html("Added in its place: {}", replaced_by))
     if asked:
         parts.append(format_html("Family asked again {}", _time(asked)))
+    if not leader and row.get("latest") is False:
+        parts.append(format_html("{}", REPLACED))
+    if not leader and placement.stage is Stage.ENTERED_BY_HAND:
+        by = format_html("Entered by {}", row["roster_by"] or FORMER)
+        parts.append(
+            format_html("{}, {}", by, _time(row["roster_at"]))
+            if row["roster_at"]
+            else by
+        )
     return format_html_join(mark_safe("<br>"), "{}", ((part,) for part in parts))
 
 
@@ -516,16 +646,18 @@ def decorate(
         key = str(row["id"])
         current = row.get("reviewed_ministry_duid") or row["ministry_duid"]
         reader_leads = leads(principal, current)
+        entry = not leader and roster_only(row)
         decided_by, decided_at, note = decisions.get(key, ("", None, ""))
         decorated.append(
             {
                 "id": key,
                 "version": row["version"],
-                "name": f"{row['member_label']} — {row['ministry_name']}",
+                "name": row_name(row),
                 # Nothing is recorded for a Member no longer in ParishSoft
                 # (#1217), so such a row is drawn with no actions at all.
                 "placement": row["placement"],
-                "leads": reader_leads and not row["source_mark"],
+                # A roster row keeps its Entered by hand (``_withhold``).
+                "leads": reader_leads and (entry or not row["source_mark"]),
                 "member_cell": _member_cell(row),
                 "family_id": families.get(key),
                 "item_url": _item_url(row, token),
@@ -539,7 +671,18 @@ def decorate(
                 "baseline": "",
                 "family_answer": "" if row.get("parish_added") else _request_words(row),
                 "reviewer_value": reviewer_value(row),
-                "parishsoft_now": "",
+                # Shown only beside Not seen in ParishSoft: the roster still
+                # shows the Member as before the entry.
+                "not_seen": row.get("not_seen", False),
+                "parishsoft_now": (
+                    (
+                        "Not in the roster"
+                        if row["action"] == "join"
+                        else "In the roster"
+                    )
+                    if row.get("not_seen")
+                    else ""
+                ),
                 "submitted_at": row["submitted_at"],
                 "decided_by": decided_by,
                 "decided_at": decided_at,
@@ -549,6 +692,7 @@ def decorate(
                     row, leader, asked.get(key), replacements.get(key), reader_leads
                 ),
                 "_leader_stage": row["stage"] == ACCEPTED,
+                "_entry_only": entry,
             }
         )
     return decorated
@@ -560,12 +704,20 @@ def _withhold(row, actionable):
     The component words a row by its pipeline stage; a leader's accepted
     request reads by its decision instead, since leaders never see the
     update phase (#1160). And a Staff reader's rows for Members no longer in
-    ParishSoft offer nothing (#1217).
+    ParishSoft offer nothing (#1217), but for a roster row's Entered by
+    hand, which is all such a row and one a later response replaced offer
+    (``roster_only``).
     """
     if row.pop("_leader_stage"):
         row["stage_label"] = row["placement"].decision.label
     row["decision_label"] = row.pop("_decision_line")
-    if actionable and not row["leads"]:
+    if row.pop("_entry_only"):
+        entered = Action.ENTERED_BY_HAND.value
+        row["icons"] = [icon for icon in row["icons"] if icon["action"] == entered]
+        offered = any(not icon["selected"] for icon in row["icons"])
+        row["kinds"] = entered if offered else ""
+        row["offers_edit"] = False
+    elif actionable and not row["leads"]:
         row["icons"] = []
         row["kinds"] = ""
         row["offers_edit"] = False
@@ -647,6 +799,8 @@ def worklist_context(
         editor_template="stewardship/ministry-worklist-edit.html",
         add_template="stewardship/ministry-worklist-add.html",
         export_template="stewardship/ministry-worklist-export.html",
+        # A roster tick records no note, so its dialog shows none.
+        silent=SILENT,
     )
     worklist.stage_choices = stage_choices(counts, leader)
     for row in worklist.rows:

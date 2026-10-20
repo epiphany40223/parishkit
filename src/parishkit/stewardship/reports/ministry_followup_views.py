@@ -50,8 +50,6 @@ from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.review_worklist import read_decision, record
 from parishkit.stewardship.web.tables import (
     PAGE_SIZES,
-    paginate,
-    table_parameters,
 )
 from parishkit.stewardship.workflows.followup import (
     FollowupRefusal,
@@ -96,7 +94,13 @@ from .ministry_followup import (
     followup_page,
     valid_ministry,
 )
-from .ministry_worklist import WorklistQuery, read_rows, worklist_context
+from .ministry_worklist import (
+    WorklistQuery,
+    for_reader,
+    read_rows,
+    row_name,
+    worklist_context,
+)
 from .read_admission import admit_report_read
 from .report_paging import (
     next_open,
@@ -363,29 +367,33 @@ def _queue_query(request, principal, parameters):
     """The worklist view a queue request asks for (#534, #1133, #1684).
 
     A query string carries either the token of a remembered view ("Return
-    to Ministry requests", #534) or one Ministry: from Home's My Ministries
-    panel (#533), or with a request type and stage from a count on By
-    Ministry (#1133). Search and every other filter stay private POST state
-    (``parameters``, the POST body less any decision's fields).
+    to Ministry requests", #534) or closed link filters: one Ministry, from
+    Home's My Ministries panel (#533) or with a request type and stage from
+    a count on By Ministry (#1133), or a Stage alone, from Home's Ministry
+    requests to enter by hand card (R39 finding 2). Search and every other
+    filter stay private POST state (``parameters``, the POST body less any
+    decision's fields). A Ministry leader's view of Staff's update phase
+    reads as their Accepted (``for_reader``).
     """
     if request.GET:
         if request.method != "GET":
             raise ValueError("Search and filters require a POST body.")
         values = filters(request.GET, allowed={"queue", *LINK_FILTERS})
-        if "ministry" in values and "queue" not in values:
+        if "queue" not in values and ("ministry" in values or set(values) == {"stage"}):
             # Remembered below like any view, so its token keeps these
             # filters on each request page, Save and next and the way back
-            # to the worklist. The parse checks the closed values; the
+            # to the worklist. The parse checks the closed values; a
             # Ministry is then checked against scope.
             query = WorklistQuery.parse(values)
-            _linked_ministry(query.ministry, principal)
-            return query
+            if query.ministry:
+                _linked_ministry(query.ministry, principal)
+            return for_reader(query, principal)
         if values.keys() == {"queue"}:
             return _recalled(request, None, queue_token(values["queue"]))
         raise ValueError("Use a queue token or a Ministry.")
     if parameters is None:
         return WorklistQuery()
-    return WorklistQuery.parse(parameters)
+    return for_reader(WorklistQuery.parse(parameters), principal)
 
 
 def _page_response(
@@ -1049,20 +1057,12 @@ def update(request, campaign_id, request_id):
 def roster(request, campaign_id, request_id):
     """Set or clear one resolved request's Entered in ParishSoft tick (#528).
 
-    The answer is the page the tick was drawn on, Post/Redirect/Get, so it
-    refreshes in place: the request's own page (keeping its queue token), or
-    Roster changes to enter (``return_to=roster``), which keeps the list's
-    own Show, sort, page and page size from the tick form, so the reader
-    stays where they were. A tick someone else changed first is a conflict:
-    on the request page a 409, as a stale follow-up save is; on the list,
-    the list again with a notice (``changed=1``), so the reader never leaves
-    it.
+    The answer is the request's own page, Post/Redirect/Get, keeping its
+    queue token, so it refreshes in place. A tick someone else changed first
+    is a conflict (409), as a stale follow-up save is. Roster changes to
+    enter records its marks through its own worklist since #1687; clearing
+    a mistaken mark is this page's.
     """
-    # Lazy: the list's module reads the follow-up selection from this one.
-    from .ministry_roster_views import SHOW
-    from .ministry_roster_views import SORTING as ROSTER_SORTING
-
-    view_fields = {"show", "ministry", *table_parameters()}
 
     def work(store, actor):
         """Validate the closed form, record the tick and name the answer."""
@@ -1075,40 +1075,23 @@ def roster(request, campaign_id, request_id):
                 "return_to",
                 "queue",
                 "csrfmiddlewaretoken",
-                *view_fields,
             },
         )
-        back = values.get("return_to", "item")
-        if values.get("entered") not in {"yes", "no"} or back not in {"item", "roster"}:
-            raise ValueError("Invalid roster tick.")
-        view = {key: values[key] for key in sorted(view_fields) if key in values}
-        if view.get("show", "todo") not in SHOW or (
-            view.get("ministry") and not valid_ministry(view["ministry"])
+        if (
+            values.get("entered") not in {"yes", "no"}
+            or values.get("return_to", "item") != "item"
         ):
-            raise ValueError("Invalid roster list choice.")
-        # Refuse a bad sort, page or size now, as the list itself would.
-        paging = {
-            key: value for key, value in view.items() if key not in {"show", "ministry"}
-        }
-        paginate([], paging, sorting=ROSTER_SORTING)
+            raise ValueError("Invalid roster tick.")
         token = queue_token(values.get("queue", ""))
         _in_campaign(campaign_id, [request_id])
-        listed = reverse("admin:ministry_roster")
-        try:
-            set_roster_entered(
-                store,
-                actor,
-                request_id,
-                sequence=expected_version(values.get("sequence", "")),
-                entered=values["entered"] == "yes",
-                request_key=UUID(values.get("request_key", "")),
-            )
-        except StaleRecordError:
-            if back != "roster":
-                raise
-            return f"{listed}?{urlencode(view | {'changed': '1'})}"
-        if back == "roster":
-            return f"{listed}?{urlencode(view)}" if view else listed
+        set_roster_entered(
+            store,
+            actor,
+            request_id,
+            sequence=expected_version(values.get("sequence", "")),
+            entered=values["entered"] == "yes",
+            request_key=UUID(values.get("request_key", "")),
+        )
         return with_queue(
             reverse("admin:ministry_followup_item", args=[request_id]), token
         )
@@ -1117,7 +1100,7 @@ def roster(request, campaign_id, request_id):
 
 
 def _row_name(campaign_id, principal, request_id):
-    """A request as its worklist row names it ("Member — Ministry"), or None.
+    """A request as its worklist row names it (``row_name``), or None.
 
     Read through the scoped selection, so only a request the person may see
     is named; any failure falls back to a notice that names no row.
@@ -1132,21 +1115,4 @@ def _row_name(campaign_id, principal, request_id):
             )["rows"][0]
     except (DatabaseError, *SAFE_FAILURES, StorageInvariantError, IndexError):
         return None
-    return f"{row['member_label']} — {row['ministry_name']}"
-
-
-BULK_FIX = _("Cancel, then reload the list and try again.")
-
-
-def _bulk_refusal(status, message):
-    """A refusal a bulk dialog shows (ui-v1.js refusalText), below its buttons.
-
-    Roster changes to enter's bulk bar (#879) answers a mark someone else
-    changed first with it.
-    """
-    code = ErrorCode.STALE if status == 409 else ErrorCode.INVALID
-    return validation_response(
-        [FieldError(code)],
-        status=status,
-        refusal=Refusal(message, BULK_FIX if status == 409 else None),
-    )
+    return row_name(row)

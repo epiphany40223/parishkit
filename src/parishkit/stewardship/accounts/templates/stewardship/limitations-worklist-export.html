@@ -1,0 +1,11 @@
+{% load i18n stewardship %}{% comment %}
+  Limitations' download (#1685), below the table and always shown, as a
+  worklist's export pane is (UX conventions, "Admin tables"): one row of
+  small export buttons (#1679, export_actions), each posting its format, in
+  the browser's time zone. Its hidden filters, the Stage included, follow
+  every in-place Apply, sort or page change (data-table-sync), so it
+  downloads the answers the table shows.
+{% endcomment %}<div class="export-pane">
+<form id="table-export" data-table-sync method="post" action="{% url 'admin:limitations_export' %}">{% csrf_token %}
+{% for key,value in query_fields.items %}<input type="hidden" name="{{ key }}" value="{{ value }}">{% endfor %}
+{% export_actions "csv" "xlsx" "pdf" name="limitations" label=_("Export both tables") %}</form></div>

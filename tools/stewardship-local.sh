@@ -55,6 +55,13 @@
 #   status                           VM, services, Docker and VM disk use
 #   down                             stop the services; never removes data
 #   sign-in --email E                print a local test sign-in link
+#   fake-parishsoft member ID FIELD=VALUE... | family ID FIELD=VALUE...
+#   fake-parishsoft roster add|remove MINISTRY MEMBER [role=R] [start=YYYY-MM-DD]
+#   fake-parishsoft pledge FAMILY AMOUNT|none [fund=ID] [start=YYYY-MM-DD]
+#   fake-parishsoft undo | clear | show [member|family|ministry ID] | refresh
+#                                    change the fake ParishSoft's data (the fake only;
+#                                    refused after deploy --parishsoft real), show it,
+#                                    or run the Admin's full refresh of it (#1780)
 #   ca                               fetch Caddy's root certificate and say how to trust it
 #
 # Configuration (environment variables):
@@ -523,6 +530,10 @@ case "$command" in
         [ $# -eq 0 ] || usage
         require_running
         run_remote down ;;
+    fake-parishsoft)
+        [ $# -ge 1 ] || usage
+        require_running
+        run_remote fake-parishsoft "$@" ;;
     sign-in)
         if [ "$#:${1-}" != "2:--email" ] || [ -z "${2-}" ]; then usage; fi
         require_running

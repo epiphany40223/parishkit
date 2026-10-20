@@ -33,9 +33,9 @@ ACL = MIGRATION[
     )
 ]
 REPLACED = re.findall(r"^CREATE OR REPLACE FUNCTION public\.(\w+)\(", MIGRATION, re.M)
-# 0132 (#1684) replaced the follow-up selection again, scoping a request by
+# 0131 (#1684) replaced the follow-up selection again, scoping a request by
 # its edited Ministry too, which rewrites the arm 0093's check reads. The
-# checks below put back the body 0132 replaced (0094's) first, rolled back
+# checks below put back the body 0131 replaced (0094's) first, rolled back
 # with them, so they test 0093's own result.
 LATER = definition(
     (SCHEMA_FILES / "migrations/0094_source_status_names.sql").read_text(

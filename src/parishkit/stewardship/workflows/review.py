@@ -20,7 +20,7 @@ Every decision is one revision of its request, written through
 order with the requests locked first; a bulk decision is all or none. What
 each reader may do is the pipeline's role-action table
 (``pipeline.allowed_actions``) at the request's current stage, and the SQL
-guards (migration 0132) check it all again. The stage is the pipeline's
+guards (migration 0131) check it all again. The stage is the pipeline's
 mapping (``ministry_placement``) of the locked row, so a decision against a
 row someone else changed first is a ``StaleDecision``, never a guess.
 """
@@ -68,6 +68,7 @@ from .models import (
     MinistryRequest,
     MinistryRosterEntry,
     MinistryWorkflowRevision,
+    RefreshCheck,
 )
 
 # What Accept records for each kind of request, and what Ignore records.
@@ -108,18 +109,29 @@ def leads(principal, ministry_duid):
     return allows(principal, Capability.MINISTRY_FOLLOWUP, ministry_id=ministry_duid)
 
 
-def placement(*, state, outcome, source_resolved, roster_entered, reviewed, added):
+def placement(
+    *,
+    state,
+    outcome,
+    source_resolved,
+    roster_entered,
+    reviewed,
+    added,
+    confirmed=False,
+):
     """A request's stage, with the decision the pipeline words it by.
 
     ``pipeline.ministry_placement`` knows only the stored workflow; an
     accepted request with an Edit's Ministry is Accepted (edited), and one
     the parish added is Added by the parish (spec, "Reviewed stage").
+    ``confirmed`` is whether its latest refresh check Confirmed it (#1689).
     """
     found = ministry_placement(
         state="new" if state == "assigned" else state,
         outcome=outcome,
         source_resolved=source_resolved,
         roster_entered=roster_entered,
+        confirmed=confirmed,
     )
     if found.decision is Decision.ACCEPTED and added:
         return replace(found, decision=Decision.ADDED)
@@ -129,7 +141,13 @@ def placement(*, state, outcome, source_resolved, roster_entered, reviewed, adde
 
 
 def _locked_placement(target):
-    """The stage of a locked request, its roster tick read under the lock."""
+    """The stage of a locked request, its roster tick and checks read under the lock.
+
+    A request a refresh check Confirmed (#1689) offers nothing, so a
+    decision on it is refused as on any stage that does not offer it. Its
+    revision guard does not know the checks: Back to review on one would
+    reopen it, and the next refresh would resolve it as Confirmed again.
+    """
     latest = (
         MinistryRosterEntry.objects.filter(request_id=target.pk)
         .order_by("-sequence")
@@ -142,7 +160,36 @@ def _locked_placement(target):
         roster_entered=bool(latest and latest.entered),
         reviewed=target.reviewed_ministry_duid is not None,
         added=target.parish_added,
+        confirmed=RefreshCheck.objects.filter(
+            request_id=target.pk, item_version=target.version, outcome="confirmed"
+        ).exists(),
     )
+
+
+def _stale(target):
+    """A StaleRecordError naming ``target``, so a bulk notice names its row."""
+    error = StaleRecordError("The Ministry request changed.")
+    error.request_id = target.pk
+    return error
+
+
+def _later_revision(target):
+    """Whether a later live response of the Family replaced ``target``.
+
+    The worklist's order (``ministry_followup.sql``, ``revision``): the
+    latest revision of a Member's request for a Ministry is the one from the
+    Family's highest ``family_version`` (unique per Family and mode).
+    """
+    submission = target.submission
+    return MinistryRequest.objects.filter(
+        submission__family_id=submission.family_id,
+        submission__campaign_id=submission.campaign_id,
+        submission__mode="live",
+        submission__family_version__gt=submission.family_version,
+        entity_kind=target.entity_kind,
+        entity_key=target.entity_key,
+        ministry_duid=target.ministry_duid,
+    ).exists()
 
 
 def _ids(versions):
@@ -171,6 +218,12 @@ def campaign_ministries(campaign_id):
     return frozenset(int(duid) for duid in configuration.values["ministry_duids"])
 
 
+# The Ministry actions whose decision records no note: a roster tick has
+# none, so its worklist dialog shows none (``web.review_worklist.build``'s
+# ``silent``) and ``MinistryDecisions`` refuses one.
+SILENT = frozenset({Action.ENTERED_BY_HAND})
+
+
 class MinistryDecisions:
     """The Ministry stream's ``DecisionService`` for one campaign's worklist.
 
@@ -196,6 +249,9 @@ class MinistryDecisions:
         actor = principal.identity
         if len(decision.note) > MAX_NOTE:
             raise ValueError("A decision note is too long.")
+        # A roster tick records no note (its dialog shows none, ``SILENT``).
+        if decision.action in SILENT and decision.note:
+            raise ValueError("Entered by hand takes no note.")
         try:
             if decision.action is Action.ADD:
                 return self._add(actor, decision)
@@ -213,7 +269,14 @@ class MinistryDecisions:
             principal = current_principal(self.store, actor)
             roles = reader_roles(principal)
             try:
-                targets = _targets(self.store, actor, versions)
+                # The roster tick is recorded for a Member no longer in
+                # ParishSoft too: the roster work may still be real.
+                targets = _targets(
+                    self.store,
+                    actor,
+                    versions,
+                    gone_ok=decision.action is Action.ENTERED_BY_HAND,
+                )
             except PermissionError:
                 # A replay, or a post outdated by someone else's decision,
                 # can find the reader no longer leads the request's current
@@ -314,8 +377,15 @@ class MinistryDecisions:
             if any(getattr(previous, name) != intent[name] for name in REPLAYED):
                 raise ValueError("This request key is already bound.")
             return 0
-        if target.version != version or action not in offered:
-            raise StaleRecordError("The Ministry request changed.")
+        # A later response replaced this revision (the worklist's latest
+        # False): only its roster tick is still offered, so any other
+        # decision on it is a forged or outdated post.
+        if (
+            target.version != version
+            or action not in offered
+            or _later_revision(target)
+        ):
+            raise _stale(target)
         if (
             action is Action.BACK_TO_REVIEW
             and current.stage is Stage.IGNORED
@@ -390,7 +460,7 @@ class MinistryDecisions:
                 raise ValueError("This request key is already bound.")
             return 0
         if target.version != version or Action.ENTERED_BY_HAND not in offered:
-            raise StaleRecordError("The Ministry request changed.")
+            raise _stale(target)
         latest = MinistryRosterEntry.objects.filter(request_id=target.pk).aggregate(
             sequence=Max("sequence")
         )["sequence"]
@@ -655,10 +725,16 @@ def _replaced(response, member, value):
     return found
 
 
-def ministry_placement_of(row, marks):
-    """A follow-up selection row's placement, from its fields and roster tick."""
+def ministry_placement_of(row, marks, checks=None):
+    """A follow-up selection row's placement, from its fields, tick and checks.
+
+    ``checks`` are the rows' refresh check states (``responses.
+    refresh_checks.check_states``), when the caller read them.
+    """
     current = marks.get(str(row["id"]), {})
+    check = (checks or {}).get(str(row["id"]))
     return placement(
+        confirmed=bool(check and check.outcome == "confirmed"),
         state=row["state"],
         outcome=row["outcome"],
         source_resolved=bool(row["source_resolved"]),
