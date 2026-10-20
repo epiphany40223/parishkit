@@ -170,12 +170,16 @@ def _binding(token):
     return value
 
 
-def withdraw(request, service, campaign_id, *, token):
+def withdraw(request, service, campaign_id, *, token, record=None):
     """Cancel safe work and withdraw atomically, or leave every record unchanged.
 
     The compiled web owner enforces signed browser intent; SQL independently
     checks scope, session, clocks, versions and the exact work inventory. SQL
     credentials identify this trusted service, not an arbitrary browser user.
+
+    ``record(actor, withdrawal)`` runs after a new withdrawal is created
+    (never for a replay), in this transaction: ``pk-admin go-live cancel``
+    records its own event there (#1809).
     """
     binding = _binding(token)
     with campaign_transaction(campaign_id, correlation_id=current_correlation()) as (
@@ -232,10 +236,13 @@ def withdraw(request, service, campaign_id, *, token):
         inventory = _inventory(campaign_id)
         if inventory != binding["inventory"] or inventory["blocking"]:
             raise StaleRecordError("Withdrawal work changed; review a new preview.")
-        return ProductionWithdrawal.objects.create(
+        created = ProductionWithdrawal.objects.create(
             **values,
             transition_id=uuid4(),
             session_id=request.portal_session.pk,
             authenticated_at=sign_in_instant(request, irreversible=True),
             correlation_id=current_correlation(),
         )
+        if record is not None:
+            record(actor, created)
+        return created
