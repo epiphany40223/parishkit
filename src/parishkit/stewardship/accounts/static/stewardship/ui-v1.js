@@ -6054,7 +6054,8 @@
 
   // A campaign wizard step's direct save (#1404 PR 4; UX conventions,
   // "Wizards", rules 4 and 5): a form marked data-direct-save (Campaign
-  // settings, Share options and the sub-pages that save, while the wizard
+  // settings, Share options, the sub-pages that save and Dates and mail
+  // schedules' suggested schedules, #1404 PR 6, while the wizard
   // applies) is posted by the action row's Save and continue (a sub-page's
   // Save and go back) without a page load and without the review dialog. The form is inert and aria-busy meanwhile, and the
   // row's reserved status line (#campaign-step-status) says "Saving…".
@@ -6166,19 +6167,27 @@
     opener.setAttribute("aria-disabled", "true");
     opener.classList.add("is-busy");
     busy.inert = true;
+    // The row's Continue (Continue without schedules for now beside Add
+    // these schedules and continue) waits too, so the step is not kept as
+    // is while its save is under way; each gets back its own state.
+    const paused = [...document.querySelectorAll("form[data-campaign-continue]")]
+      .map((node) => [node, node.inert]);
+    paused.forEach(([node]) => { node.inert = true; });
     say("Saving…");
     const finish = (text, link) => {
       busy.inert = false;
+      paused.forEach(([node, inert]) => { node.inert = inert; });
       busy.removeAttribute("aria-busy");
       opener.removeAttribute("aria-disabled");
       opener.classList.remove("is-busy");
       reviewing.delete(form);
       say(text, link);
     };
-    // Hold Save and continue for good (until a reload), saying why.
+    // Hold Save and continue (or Add these schedules and continue, #1404
+    // PR 6) for good (until a reload), saying why.
     const hold = (text, link) => {
       finish(text, link);
-      document.querySelectorAll("[data-campaign-save]")
+      document.querySelectorAll("[data-campaign-save], [data-campaign-add]")
         .forEach((node) => holdButton(node, "data-save-spent-gated"));
     };
     // The change is recorded but the page stays: keep what was typed (at
