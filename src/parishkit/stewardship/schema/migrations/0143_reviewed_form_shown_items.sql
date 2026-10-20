@@ -1,4 +1,4 @@
--- Frozen forward migration file 0153 (the repository-wide file sequence,
+-- Frozen forward migration file 0143 (the repository-wide file sequence,
 -- assigned centrally): storage for what each Family form showed, the first
 -- slice of the reviewed Family form (#1705; review-pipeline spec, "Shown
 -- items"). This file is installed by its Django migration in the responses

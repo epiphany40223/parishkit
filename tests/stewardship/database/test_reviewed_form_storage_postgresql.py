@@ -1,4 +1,4 @@
-"""What each Family form showed: storage only (#1705 slice 1, migration 0153).
+"""What each Family form showed: storage only (#1705 slice 1, migration 0143).
 
 The baseline records ``reviewed_view`` and ``shown_items`` and the submit
 copies them, unchanged, to the immutable Submission. Nothing sets them yet,
@@ -28,7 +28,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 FROZEN = (
     Path(__file__).resolve().parents[3]
-    / "src/parishkit/stewardship/schema/migrations/0153_reviewed_form_shown_items.sql"
+    / "src/parishkit/stewardship/schema/migrations/0143_reviewed_form_shown_items.sql"
 )
 TABLES = ("stewardship_family_form_baseline", "stewardship_submission")
 COLUMNS = ("reviewed_view", "shown_items")

@@ -458,7 +458,7 @@ def test_the_swap_check_refuses_each_old_definition(tmp_path, name):
 # CLOSURE_TABLES) with its guard and the request table's deferred check
 # (``CLOSURE_CREATED``), and replaces 0109's discard in place, which 0109's
 # file brings back older, so ``CLOSURE_OLD_BODIES`` puts 0142's back.
-# 0153 (#1705, provisional number) creates nothing: it adds what a Family
+# 0143 (#1705, provisional number) creates nothing: it adds what a Family
 # form showed (``reviewed_view``, ``shown_items`` and the check pairing
 # them) to the form baseline and the Submission. While the swap is pending
 # ``before_reviewed_form_shown_items`` drops the four columns (their checks
@@ -895,7 +895,7 @@ CLOSURE_ALTERED = {
     ),
     ("stewardship_family_form_baseline", "reviewed_view"): (
         "stewardship_responses",
-        "0013_reviewed_form_shown_items",
+        "0022_reviewed_form_shown_items",
     ),
 }
 
@@ -1388,11 +1388,11 @@ def before_staff_entered():
 
 
 def before_reviewed_form_shown_items():
-    """The statements that put baselines and submissions back as before 0153.
+    """The statements that put baselines and submissions back as before 0143.
 
-    #1705's 0153 adds only ``reviewed_view`` and ``shown_items`` to both
+    #1705's 0143 adds only ``reviewed_view`` and ``shown_items`` to both
     tables, with a check on each that goes with the columns, so dropping
-    them is the production base; 0153's frozen file (or the full migration)
+    them is the production base; 0143's frozen file (or the full migration)
     adds them again.
     """
     return [
@@ -1504,7 +1504,7 @@ def swap_pending():
     (``before_bounce_report``), and branding bundles as they were before 0082
     (``before_branding_bundle_mode``), and the digest ready row's funnel
     charts as they were before 0083 (``before_digest_funnel_charts``), and
-    form baselines and submissions as they were before 0153
+    form baselines and submissions as they were before 0143
     (``before_reviewed_form_shown_items``).
     """
     from django.db.migrations.loader import MigrationLoader

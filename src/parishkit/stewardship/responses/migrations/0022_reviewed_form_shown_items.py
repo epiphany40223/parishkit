@@ -1,7 +1,7 @@
 """Forward migration: storage for what each Family form showed (#1705).
 
-Its SQL is the frozen file ``schema/migrations/0153_reviewed_form_shown_items.sql``
-(number 0153, provisional until the coordinator assigns it in merge order),
+Its SQL is the frozen file ``schema/migrations/0143_reviewed_form_shown_items.sql``
+(number 0143, provisional until the coordinator assigns it in merge order),
 read whole and never parsed. It adds ``reviewed_view`` (false by default)
 and ``shown_items`` (NULL by default) to ``stewardship_family_form_baseline``
 and ``stewardship_submission``, each with the check that pairs them, and
@@ -28,7 +28,7 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0153_reviewed_form_shown_items.sql"
+    / "0143_reviewed_form_shown_items.sql"
 )
 
 
@@ -71,10 +71,13 @@ def _shape(name):
 class Migration(migrations.Migration):
     dependencies = [
         # This app's previous migration, so the app keeps one leaf.
-        ("stewardship_responses", "0012_gender_by_hand"),
-        # The migration that installs the previous frozen file (0121,
-        # #1658), so the files apply in prefix order.
+        ("stewardship_responses", "0021_added_member_links"),
+        # The digest skip dates (0121, #1658), which this branch was
+        # written on.
         ("stewardship_campaigns", "0014_digest_skip_dates"),
+        # The migration that installs the previous frozen file (0142,
+        # #1557), so the files apply in prefix order.
+        ("stewardship_reports", "0036_participation_summary"),
     ]
 
     operations = [

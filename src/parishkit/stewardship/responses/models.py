@@ -18,7 +18,7 @@ from parishkit.stewardship.storage import (
 
 
 def shown_shape(name):
-    """The check that pairs ``reviewed_view`` with its ``shown_items`` (0153).
+    """The check that pairs ``reviewed_view`` with its ``shown_items`` (0143).
 
     A form not drawn as the reviewed form records no shown items (SQL NULL);
     a reviewed form records a JSON array of entries, possibly empty. The
@@ -71,7 +71,7 @@ class FamilyFormBaseline(MutableRecord):
     expires_at = UTCDateTimeField()
     state = models.CharField(max_length=12, default="open")
     ended_at = UTCDateTimeField(null=True)
-    # What the form showed (#1705, migration 0153): whether it was drawn as
+    # What the form showed (#1705, migration 0143): whether it was drawn as
     # the reviewed Family form, and then one entry per census, Ministry or
     # pledge item naming which immutable value it showed. Both are fixed
     # when the baseline is issued and copied, unchanged, to the Submission,
@@ -180,7 +180,7 @@ class Submission(ImmutableRecord):
     # giving read, else None (#1753, frozen migration 0136, provisional). The
     # financial stream's A for the pledge; a guard checks it in SQL.
     upcoming_pledge = models.DecimalField(max_digits=24, decimal_places=2, null=True)
-    # The baseline's record of what its form showed (#1705, migration 0153),
+    # The baseline's record of what its form showed (#1705, migration 0143),
     # copied unchanged by the submit, so every stream can read what this
     # response's form showed after the baseline itself is gone.
     reviewed_view = models.BooleanField(default=False, db_default=False)

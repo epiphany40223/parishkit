@@ -1103,7 +1103,7 @@ Every final click creates an immutable `Submission` version containing:
 - `reviewed_view` and `shown_items`, what the response's form showed, copied
   unchanged from its form baseline
   ([shown items](../review-pipeline/spec.md#shown-items); added by frozen
-  migration 0153).
+  migration 0143).
 
 The current effective live response points to the latest accepted live version.
 Test versions are isolated from live calculations, response prefilling,

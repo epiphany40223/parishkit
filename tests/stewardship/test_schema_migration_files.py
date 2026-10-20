@@ -459,8 +459,8 @@ FROZEN = {
     "0142_participation_export_summary.sql": (
         "e8eecd8555cfd8f4cfee650b6974b92551ab1f52d592b3ae0b513445d5fce073"
     ),
-    "0153_reviewed_form_shown_items.sql": (
-        "917cfd626a29459d8783a1564099b2eaa4933d834cc24da398a2e7868dd0f056"
+    "0143_reviewed_form_shown_items.sql": (
+        "5071598637b62aed4cce02362f86a7e67cb1273996387308a95969aa064f0a66"
     ),
 }
 
