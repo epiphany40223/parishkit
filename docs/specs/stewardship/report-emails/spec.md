@@ -152,6 +152,39 @@ the page and the command line; none is a raw stored rule.
 | `paused_ranges` | Closed and open pause intervals ([pause and resume](#pause-and-resume)). |
 | `slot_basis` | `send_date` or `report_date`; fixed when the definition is created and never edited ([slot keys](#slot-keys)). |
 
+#### Stored form
+
+A report's values are stored with the schedule record's `campaign_id` and
+`kind` (`report`), each value under its own key and every key present
+(`campaigns/report_values.py` validates them):
+
+- `recipients`: a list of entries, each `{"user": RECORD}` (the stable
+  record id of a portal user), `{"group": "administrators"}`,
+  `{"group": "staff"}` or `{"address": ADDRESS}` (one valid address, stored
+  in lower case), with no entry twice.
+- `schedule`: `{"type": "once", "date": DATE, "time": TIME}` or
+  `{"type": "repeat", "frequency": "daily" or "weekly", "weekdays": [...],
+  "from": FROM, "until": UNTIL, "time": TIME}`. `weekdays` (Monday 0 to
+  Sunday 6, ascending, distinct) is present only for a weekly rule. `from`
+  is `campaign_start`, `day_after_campaign_start` or a date; `until` is
+  `campaign_end`, `day_after_campaign_end`, `first_send_after_campaign_end`,
+  `archive` or a date. Dates are ISO dates and times are campaign-local
+  wall-clock `HH:MM:SS` values. The bounds name send dates, whatever the
+  slot basis.
+- `blocks`: `[{"block": KEY, "version": 1, "options": {...}}, ...]`, the
+  options holding only the values a block declares, each checked by the
+  block.
+- `skip_dates`: ascending slot keys, as a digest's are.
+- `paused_ranges`: `[{"start": INSTANT, "end": INSTANT or null}, ...]` in
+  UTC ISO form, ascending and not overlapping; only the last may be open
+  (`end` null), meaning the report is paused now.
+- `as_of`, `content_required` and `slot_basis` as the table above says, and
+  `intro_html` and `intro_text` as strings, empty when there is no
+  introduction.
+
+The checks that span a campaign's reports (unique names, at most 20) are
+made over all of its `report` records together.
+
 Report values hold no Family data. Outside addresses are personal data of
 the people they name, so they are shown only to Administrators, kept out of
 logs and audit text (an audit event records the count of outside addresses
@@ -187,6 +220,7 @@ rule sends at most once a day), so the key is unique per report.
 - Each block at most once per report (decision 10).
 - At most 50 recipient entries per report, of which at most 25 outside
   addresses; a group counts as one entry. Refused at the field.
+- At most 100 pause intervals per report, kept with every later revision.
 - These bounds, with the six blocks, keep compile work bounded: several
   reports due at the same minute are compiled one after another by the
   existing report worker.
@@ -208,18 +242,22 @@ migration):
 - `ReportEmailPreparation` (`stewardship_report_email_preparation`): one per
   occurrence (scheduled, recovery or manual) and its task: campaign,
   definition, revision and configuration ids, mode and rehearsal epoch, the
-  covered slots of a recovery send, and its phase (inputs, capture, fanout,
-  complete, cancelled), with the same namespace and lineage guards the digest
-  preparations have.
+  covered slots of a recovery send, the recorded inputs (as-of kind and
+  moment, capture instant, report day, source, submission watermark and
+  fact pin), and its phase (`dates`, `cover`, `inputs`, `capture`, `fanout`,
+  `complete`, `cancelled`; see [report pipeline](#report-pipeline)), with the
+  same namespace and lineage guards the digest preparations have.
 - `ReportEmailSnapshot` (`stewardship_report_email_snapshot`): the
-  [report snapshot](#report-snapshot): the as-of kind and moment, the source,
-  configuration and fact-generation pins, `blocks` (the versioned per-block
-  JSON), retained chart images, the frozen recipient cohort, and the
-  compiled subject, HTML and text. Immutable once committed.
+  [report snapshot](#report-snapshot): the report's values, `blocks` (the
+  versioned per-block JSON), whether any block has content, the fact
+  generation it drew from, retained chart images, the frozen recipient
+  cohort, and the compiled subject, HTML and text. Immutable once committed.
 - `ReportEmailRecipient` (`stewardship_report_email_recipient`): one per distinct
   address of the cohort: the address, how it was chosen (`user`, `group` or
   `outside`, with the user or group), its outbox message, and its
-  disposition, unique per snapshot and address.
+  disposition (`queued`, with its message, or `revoked`, when the recipient
+  failed the [recheck](#resolving-recipients) before a message was made),
+  unique per snapshot and address.
 
 A manual send's request is a `ReportEmailManualRequest`
 (`stewardship_report_email_manual_request`) row keyed by its request id, so a replay returns the same send. All four tables are campaign
@@ -227,6 +265,45 @@ data: Testing cleanup, the Production-transition inventory, restore,
 archive and the campaign purge include them as they include today's digest
 tables, and their writes go through the same campaign read guards and
 security-definer write functions.
+
+### Report pipeline
+
+One report send is prepared by one `report_email_prepare` task, which moves
+its preparation through these phases, each committed with the work it
+proves, so a retry resumes where the last attempt stopped:
+
+1. **`dates`** (scheduled sends): the report's slots due by the
+   preparation's cutoff are enumerated in pages of at most 100 candidate
+   send dates through `SchedulePlan`, and each one not already covered (a
+   fulfillment, a restore hold or a post-close resolution) gets its
+   occurrence. The database's page proof
+   (`stewardship_report_email_page_v1`) checks each page against the
+   report's slot evaluation (`stewardship_report_slot_due_v1`), so no slot
+   can be passed over.
+2. **`cover`**: the latest pending occurrence is chosen; earlier overdue
+   ones are coalesced into it (reason `missed_report_recovery`), or into one
+   recovery occurrence (slot `recovery:<preparation>`) when only replaced
+   revisions' sends are owed, as the digests do.
+3. **`inputs`**: the send records its inputs on the preparation, once: the
+   covered slots, the [as-of](#as-of) kind and moment, the capture instant,
+   the report day (or none), the promoted source and the submission
+   watermark, and the fact inputs its fact blocks will pin, with the source
+   pinned to the preparation. A manual send's preparation starts here, with
+   its manual occurrence (slot `manual:<request>`).
+4. **`capture`**: the fact generation is built or reused (when the report
+   has a fact block), each block captures its data, the cohort is resolved,
+   the email is compiled, and the snapshot is committed with the fact pin.
+   A send in which no block has content and **Send only when there is
+   something to report** is on completes here with nothing to send, unless
+   it is a Send now, which always sends.
+5. **`fanout`**: each cohort address is rechecked and gets its own outbox
+   message (purpose `admin_report`), or a `revoked` recipient row.
+6. **`complete`**: the occurrence succeeds once every recipient is settled,
+   with the fulfillment `delivered` (reason `report_email_complete`) or
+   `empty` (`report_email_no_current_recipients`, or
+   `report_email_nothing_to_report` for a send skipped as empty).
+   `cancelled` ends a preparation whose report, revision, campaign scope or
+   Testing epoch changed before capture.
 
 ## Schedules
 
@@ -321,7 +398,8 @@ convention requires.
   before the campaign's first day has no report day: each fact block shows
   its empty statement ("No campaign day has ended yet."). A report day after
   the campaign's last day is held at the last day, as today's Compared with
-  past campaigns section holds it.
+  past campaigns section holds it; a report as of when it is made holds its
+  report day there too.
 - **When the email is made** (`send_time`). Every figure is counted at one
   capture instant, recorded when the occurrence first records its inputs,
   and never moved by a retry: the fact blocks pin the exact
@@ -453,6 +531,8 @@ A report's recipient list may hold, in any combination (decision 2):
 - **Portal users** who are Administrators or Staff. A user whose only role
   is Ministry leader is not offered, and neither is a deactivated user.
 - **All Administrators** and **All Staff**, resolved when each send is made.
+  All Staff is the users whose role is Staff; Administrators, who also hold
+  Staff's access, are All Administrators.
 - **Outside email addresses**, each a single valid address. An outside
   address may receive any block.
 
@@ -460,8 +540,9 @@ Ministry leaders are not offered (decision 2).
 
 ### Resolving recipients
 
-When a send's occurrence first records its inputs, its recipient cohort is
-resolved and frozen: the groups are expanded to the users holding the role
+When a send captures its snapshot, right after it records its inputs (see
+[report pipeline](#report-pipeline)), its recipient cohort is resolved and
+frozen: the groups are expanded to the users holding the role
 then, each chosen user is resolved to their current address, and the list is
 reduced to distinct addresses (compared after normalization), so a person in
 two entries gets one message. Each recipient remembers how it was chosen (a
@@ -578,10 +659,10 @@ case after the dash, for example "Annual campaign — daily report, October 6,
 
 ### Report snapshot
 
-When an occurrence first records its inputs, the compiler captures a report
-snapshot: the report's values as of that revision, the pinned as-of moment,
-the source and fact-generation pins, the frozen recipient cohort, and, per
-block, `{block, version, data}`, the block's captured data as versioned JSON.
+Right after a send records its inputs (its as-of moment and its source,
+held on its preparation), the compiler captures a report snapshot: the
+report's values as of that revision, the fact-generation pin, the frozen
+recipient cohort, and, per block, `{block, version, data}`, the block's captured data as versioned JSON.
 Every email, retry and saved copy of the send is drawn from that snapshot,
 so a later change to a block's code, a report's configuration or the
 campaign's data never changes what a send said, and an old saved copy keeps
@@ -1296,8 +1377,14 @@ migration:
 - **The report pipeline file** (delivery PR 3) adds the
   [report send records](#report-send-records) tables, their guards and
   write functions, the report page proof and the report slot evaluation,
-  all with plain `CREATE`, and the task types they need. Nothing uses them
-  yet; no existing object changes.
+  all with plain `CREATE`, and the task type they need
+  (`report_email_prepare`, added to the two task-type maps, the only
+  existing objects it replaces; the metadata finalizer's
+  `report_email_finalize` comes with the scheduler's producers in the
+  conversion file). Nothing uses them
+  yet: the shared guards that would admit the pipeline's occurrence,
+  outbox, pin and cleanup writes still admit only the digests until the
+  conversion file rewrites them.
 - **The conversion file** (delivery PR 4) converts the rows and, in the
   same file, replaces every shared function above that names a digest kind
   or purpose with a report-aware body copied whole from the baseline, which
@@ -1382,6 +1469,11 @@ require.
    validation, the repeat rule with campaign bounds, slot basis and pause
    intervals in `SchedulePlan`, and the report preparation, capture, fanout,
    recheck and completion code, all unused until PR 4. No visible change.
+   Its tests exercise the new objects directly (the slot evaluation against
+   `SchedulePlan` through one shared case table, the guards' refusals, the
+   cohort and request reads) and the Python pieces that need no shared
+   guard; the end-to-end send tests come with PR 4, whose rewritten shared
+   guards are the first to admit a report's writes.
 4. **Conversion**: the conversion frozen file with its function rewrites and
    the conversion; the scheduler, catch-up, recovery, live pause recovery,
    archive inventory, Testing cleanup, Go-live readiness and activation
@@ -1411,7 +1503,9 @@ require.
 6. **New and Edit report email**: the editor with the recipients, schedule,
    as-of and blocks fields, review and Apply, the after-campaign
    confirmation and Skip this send (the calendar's send links move to it), with the `create` and `edit` entries of `report-email
-   preview`/`confirm`. Removes the digest editors on Dates and mail
+   preview`/`confirm`, and the Participation charts block's "which charts"
+   option, the first place a report can choose its charts (until then
+   every report draws all three). Removes the digest editors on Dates and mail
    schedules and the schedule commands' digest entries. Needs the
    Administrator's pk-local check.
 7. **Preview and Send a test to me**, with `report-email render` and
