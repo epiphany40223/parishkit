@@ -270,7 +270,10 @@ restores them. Typed region text the drop-down offers, as a code or a name
 ("ky", "Ky.", "Kentucky"), carries over to it on switching to United States.
 A US region the list does not offer, such as free text from parish records,
 stays shown and selected rather than being dropped, and its check asks the
-Family to "Choose a state from the list."
+Family to "Choose a state from the list.", as the server's refusal of a US
+region it does not accept says too (#1785). The Admin census address editor
+asks for an address the same way
+([Census changes](../reports/spec.md#automatic-census-review)).
 
 A country on its own never makes an address nonblank: an address whose other
 fields are all empty is still "Not provided", even though Country shows a

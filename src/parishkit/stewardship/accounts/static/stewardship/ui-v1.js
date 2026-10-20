@@ -3848,7 +3848,13 @@
           });
         }
         controls.forEach((item) => {
-          item.disabled = !shown;
+          // A group inside another (the census address editor's State
+          // controls inside Add's "What changed" group, #1785) is sent only
+          // while every group around it is shown: showing the outer group
+          // never enables a control the inner rule hides, nor the inner
+          // one a control inside a hidden outer group.
+          item.disabled = !shown || showWhenUpdates.some((entry) => entry.wrapper !== wrapper
+            && entry.wrapper?.hidden && entry.wrapper.contains(item));
           // A hidden file field's size refusal goes with it (#1062).
           if (!shown && item.dataset.sizeRule) {
             item.setCustomValidity("");
@@ -3863,7 +3869,7 @@
       // buttons is listened to instead.
       (control instanceof RadioNodeList ? [...control] : [control])
         .forEach((item) => item.addEventListener("change", update));
-      showWhenUpdates.push({node, update});
+      showWhenUpdates.push({node, update, wrapper: hides ? wrapper : null});
       update();
     });
   };
@@ -4875,8 +4881,13 @@
     try {
       ids = (JSON.parse(raw)?.errors || []).map((item) => item?.field_id).filter(Boolean);
     } catch { return false; }
-    const fields = [...new Set(ids)].map((id) => document.getElementById(id)
-      || state.form.elements.namedItem(id))
+    // A name two controls share (the census address editor's State: a
+    // drop-down for the United States, free text otherwise, #1785) is a
+    // RadioNodeList; the enabled one, which was sent, is marked.
+    const fields = [...new Set(ids)].flatMap((id) => {
+      const found = document.getElementById(id) || state.form.elements.namedItem(id);
+      return found instanceof RadioNodeList ? [...found] : [found];
+    })
       .filter((node) => node instanceof HTMLElement && state.dialog.contains(node)
         && node.matches("input, select, textarea") && !node.disabled);
     const list = state.dialog.querySelector(".errorlist[id]");

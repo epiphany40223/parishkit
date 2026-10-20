@@ -35,10 +35,8 @@ from parishkit.stewardship.pipeline import (
     census_placement,
 )
 from parishkit.stewardship.responses.census import (
-    ADDRESS_LIMITS,
     FAMILY_FIELDS,
-    blank_address,
-    country_choices,
+    address_editor,
 )
 from parishkit.stewardship.responses.census_additions import ADDED_PREFIX
 from parishkit.stewardship.responses.census_resolution import allowed
@@ -785,23 +783,19 @@ def editor(row):
 
     The editor starts with the value carried forward (the reviewer's value,
     else the Family's answer), in the form the Family form shows it. A
-    Family address is its parts (``parts``, with the country choices); a
-    Member field is a date, a choice or text no longer than the field takes
-    (for an Automatic change, ParishSoft's request schema;
-    ``census_review.edit_limit``). None for a field no value can be typed
-    for.
+    Family address is ``census.address_editor``'s (its parts, the country
+    shown and both State controls' values); a Member field is a date, a
+    choice or text no longer than the field takes (for an Automatic change,
+    ParishSoft's request schema; ``census_review.edit_limit``). None for a
+    field no value can be typed for.
     """
     value = row["admin_value"] if row["admin_value_set"] else row["submitted_value"]
     if row["entity_kind"] == "family":
         if row["field"] not in ADDRESS_FIELDS:
             return None
-        known = value if isinstance(value, dict) else {}
-        return {
-            "kind": "address",
-            "parts": {part: known.get(part) or "" for part in blank_address()},
-            "limits": dict(ADDRESS_LIMITS),
-            "countries": country_choices(),
-        }
+        # Country first, with the US State drop-down (#1785).
+        known = value if isinstance(value, dict) else None
+        return {"kind": "address", **address_editor(known)}
     definition = FIELDS.get(row["field"]) if row["entity_kind"] == "member" else None
     if definition is None or definition.kind is ValueKind.BOOLEAN:
         return None
