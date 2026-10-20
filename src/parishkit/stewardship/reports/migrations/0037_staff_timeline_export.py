@@ -1,7 +1,7 @@
 """Forward migration: Staff may export a Family's Timeline (#1799).
 
-Its SQL is the frozen file ``schema/migrations/0160_staff_timeline_export.sql``
-(prefix 0160 in the repository-wide file sequence), read whole and never
+Its SQL is the frozen file ``schema/migrations/0144_staff_timeline_export.sql``
+(prefix 0144 in the repository-wide file sequence), read whole and never
 parsed. It re-creates the timeline capture trigger, the export request guard
 and the export request authorization from their latest bodies so that a
 current Staff member, not only an Administrator, may capture and request a
@@ -20,17 +20,20 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0160_staff_timeline_export.sql"
+    / "0144_staff_timeline_export.sql"
 )
 
 
 class Migration(migrations.Migration):
     dependencies = [
-        # The reports app's previous migration.
-        ("stewardship_reports", "0031_leader_request_contacts"),
-        # The migration that installs the previous frozen file (0120,
-        # leader emails, #1592), so the files apply in prefix order.
+        # The reports app's previous migration on main (0127's).
+        ("stewardship_reports", "0032_pledge_review"),
+        # Leader emails (0120, #1592), which this branch was written on.
         ("stewardship_jobs", "0035_leader_emails"),
+        # The migration that installs main's last frozen file (0132), so the
+        # files apply in prefix order. Its number and these dependencies
+        # follow the R40 pipeline's (0133 to 0143) once that lands first.
+        ("stewardship_workflows", "0004_refresh_checks"),
     ]
 
     operations = [

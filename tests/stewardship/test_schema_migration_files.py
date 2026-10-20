@@ -429,8 +429,8 @@ FROZEN = {
     "0132_refresh_checks.sql": (
         "850b796b28d7cd472fee463fc6e119b73c33150ca920c899d1d69d400f84ed9d"
     ),
-    "0160_staff_timeline_export.sql": (
-        "b2d2f28b0138eaf123df25320751aa9e948b491167b7b94ea89b3c48188b97c4"
+    "0144_staff_timeline_export.sql": (
+        "adfde07b256d584b99de8ae7cdc2910cd982bf4bc1d505404e7b4fc957b522b6"
     ),
 }
 

@@ -475,7 +475,7 @@ def _full(principal):
 
     Any other role that may open the page (none today: Ministry leaders
     hold no ``CAMPAIGN_REPORT``) would get the summary and the Last portal
-    action only, and no export. The export's SQL (migration 0160, #1799)
+    action only, and no export. The export's SQL (migration 0144, #1799)
     admits the same two roles.
     """
     return bool({"administrator", "staff"} & principal.roles)

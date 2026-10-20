@@ -273,7 +273,7 @@ OTHER = "00000000-0000-4000-8000-000000000072"
 def test_administrators_and_staff_may_have_a_timeline_export(
     monkeypatch, roles, requester, allowed
 ):
-    """The service's check mirrors migration 0160's SQL (#1799): Staff may
+    """The service's check mirrors migration 0144's SQL (#1799): Staff may
     have their own timeline export; a Ministry leader never may."""
     from uuid import UUID
 

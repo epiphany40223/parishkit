@@ -74,7 +74,7 @@ def authorize(store, user_id, *, request=None):
         permitted = permitted and allows(principal, Capability.FINANCIAL_DETAIL)
     elif isinstance(request, ExportRequest) and request.report == "family_timeline":
         # The full timeline is the page's view of Administrators and Staff
-        # (#1774, #1799), as its SQL authorization (migration 0160) admits.
+        # (#1774, #1799), as its SQL authorization (migration 0144) admits.
         permitted = permitted and bool({"administrator", "staff"} & principal.roles)
     elif isinstance(request, ExportRequest) and request.report == "campaign_archive":
         # The campaign archive holds each Family's giving: Past campaigns'
