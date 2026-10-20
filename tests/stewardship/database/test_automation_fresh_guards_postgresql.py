@@ -11,9 +11,10 @@ session-bound definer guards are exercised by an insert whose session check
 comes first, so the error says which clause refused; the
 Family test guard through the real chosen-Family test form; the secret
 request guards through the real sealed intake and the installer's
-staged-to-testing step, on disposable roles; there an instant that a
-full-scope automation session holds still needs one such session live
-(``stewardship_automation_instant_ended_v1``, new in 0114). 0013's own DO block is run
+staged-to-testing step, on disposable roles; there a request that names
+its automation session needs that session live
+(``stewardship_automation_request_live_v1``, 0125, #1763, which replaced
+0114's ended-instant check). 0013's own DO block is run
 against 0013's bodies, put back in a rolled-back transaction, and refuses
 each pre-0013 guard. ``sign_in_instant`` is covered directly. 0123 (#1550)
 dropped 0013's ``stewardship_automation_fresh_principal_v1``, which no guard
@@ -27,6 +28,7 @@ from uuid import uuid4
 
 import pytest
 from django.db import DatabaseError, connection, transaction
+from django.db.models import F
 from django.utils import timezone
 
 from parishkit.stewardship.accounts import automation_sessions as automation
@@ -35,6 +37,7 @@ from parishkit.stewardship.accounts import sessions
 from parishkit.stewardship.accounts.automation_models import AutomationSession
 from parishkit.stewardship.accounts.models import PortalSession
 from parishkit.stewardship.accounts.policy import Principal
+from parishkit.stewardship.accounts.secret_models import SecretReplacementRequest
 from parishkit.stewardship.jobs.family_mail_models import FamilyMailTest
 from parishkit.stewardship.storage import StorageInvariantError
 
@@ -156,33 +159,6 @@ def age(delta):
             cursor.execute(f"ALTER TABLE {table} DISABLE TRIGGER USER")
             cursor.execute(
                 f"UPDATE {table} SET authenticated_at=authenticated_at-%s", [delta]
-            )
-            cursor.execute(f"ALTER TABLE {table} ENABLE TRIGGER USER")
-
-
-def shift(row, delta):
-    """Give one automation session (and its command sessions) its own instant.
-
-    Sessions approved from one browser share its sign-in instant; a read-only
-    session moved apart cannot borrow a full session's command session.
-    """
-    from parishkit.stewardship.accounts.automation_models import AutomationLogin
-
-    logins = list(
-        AutomationLogin.objects.filter(automation_session_id=row.pk).values_list(
-            "portal_session_id", flat=True
-        )
-    )
-    with transaction.atomic(), connection.cursor() as cursor:
-        for table, column, keys in (
-            ("stewardship_automation_session", "id", [row.pk]),
-            ("stewardship_portal_session", "id", logins),
-        ):
-            cursor.execute(f"ALTER TABLE {table} DISABLE TRIGGER USER")
-            cursor.execute(
-                f"UPDATE {table} SET authenticated_at=authenticated_at+%s "
-                f"WHERE {column}=ANY(%s)",
-                [delta, keys],
             )
             cursor.execute(f"ALTER TABLE {table} ENABLE TRIGGER USER")
 
@@ -336,12 +312,17 @@ def test_the_family_test_guard_admits_a_command_session_of_any_age(
     assert ticket.reauthenticated_at == instant
 
 
-def stage_as(principal, instant, target="slack"):
-    """The web's sealed intake for ``principal`` with sign-in ``instant``."""
+def stage_as(principal, instant, target="slack", *, session=None):
+    """The web's sealed intake for ``principal`` with sign-in ``instant``.
+
+    ``session`` is the automation session the request names, as a
+    command-line request records it (#1763); a browser request names none.
+    """
     from parishkit.stewardship.accounts.credential_handoff import PrivateHandoff
     from parishkit.stewardship.accounts.cryptography import Key
     from parishkit.stewardship.accounts.key_files import file_fingerprint
     from parishkit.stewardship.accounts.secret_requests import stage_secret_request
+    from parishkit.stewardship.service_boundaries import ALLOWED_SECRETS
 
     key = PrivateHandoff(target, Key("handoff", "active", b"h" * 32))
     identifier = uuid4()
@@ -356,9 +337,16 @@ def stage_as(principal, instant, target="slack"):
             expires_at=timezone.now() + timedelta(minutes=5),
             expected_fingerprint="a" * 64,
             correlation_id=uuid4(),
-            required_consumers=("worker",),
+            required_consumers=tuple(
+                sorted(
+                    role.value
+                    for role, names in ALLOWED_SECRETS.items()
+                    if target in names
+                )
+            ),
             sealed_candidate=key.public().seal(identifier, value),
             candidate_fingerprint=file_fingerprint(value),
+            automation_session_id=session,
         )
     return identifier
 
@@ -370,19 +358,21 @@ def test_secret_request_guards_accept_a_sign_in_of_any_age(
 ):
     """Intake and staged-to-testing take an hours-old recorded instant.
 
-    0114 checks no age, but an instant that a full-scope automation session
-    holds still needs one such session live (ADM-11): once it ends, a
-    credential it staged cannot move to testing and it stages no other. An
-    instant no automation session holds (a browser's) still passes.
+    0114 checks no age. A request that names its automation session (#1763)
+    still needs that session live (ADM-11): once it ends, a credential it
+    staged cannot move to testing.
     """
     _, _, row = paired(auth_service)
     age(STALE)
     instant = AutomationSession.objects.get(pk=row.pk).authenticated_at
     assert timezone.now() - instant > STALE
-    staged = stage_as(row.principal_id, instant)
+    staged = stage_as(row.principal_id, instant, session=row.pk)
+    assert SecretReplacementRequest.objects.get(pk=staged).automation_session_id == (
+        row.pk
+    )
     with identity("pk_stewardship_credential_slack"):
         assert advance(staged, "testing") == 1
-    pending = stage_as(row.principal_id, instant, target="parishsoft")
+    pending = stage_as(row.principal_id, instant, target="parishsoft", session=row.pk)
     revoke(row)
     with (
         identity("pk_stewardship_credential_parishsoft"),
@@ -405,7 +395,12 @@ def test_an_ended_automation_session_stages_no_secret(
     auth_service,
     google,
 ):
-    """Its instant is refused at intake; a browser instant still passes."""
+    """A request naming it is refused; the approving browser's still passes.
+
+    The browser session shares the ended session's sign-in instant. Before
+    #1763 that instant alone refused the browser's own key replacements too;
+    now only a request that names the session is checked.
+    """
     _, _, row = paired(auth_service)
     age(STALE)
     instant = AutomationSession.objects.get(pk=row.pk).authenticated_at
@@ -413,29 +408,96 @@ def test_an_ended_automation_session_stages_no_secret(
     with pytest.raises(
         DatabaseError, match="Sealed intake requires a live automation session"
     ):
-        stage_as(row.principal_id, instant)
-    browser = stage_as(row.principal_id, instant - timedelta(seconds=1))
+        stage_as(row.principal_id, instant, session=row.pk)
+    browser = stage_as(row.principal_id, instant)
+    assert (
+        SecretReplacementRequest.objects.get(pk=browser).automation_session_id is None
+    )
     with identity("pk_stewardship_credential_slack"):
         assert advance(browser, "testing") == 1
 
 
-def instant_ended(principal, instant):
-    """``stewardship_automation_instant_ended_v1``'s answer."""
+def test_a_named_session_is_checked_for_its_target_and_login(
+    isolated_roles,  # noqa: F811
+    auth_service,
+    google,
+    monkeypatch,
+):
+    """Only the web names a session; only the three targets take one.
+
+    A login other than the web naming a session is refused at intake even
+    while the session is live, and a target whose installer holds no
+    EXECUTE on the check never moves such a request to testing. The named
+    session cannot change after intake.
+    """
+    _, _, row = paired(auth_service)
+    instant = AutomationSession.objects.get(pk=row.pk).authenticated_at
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT public.stewardship_automation_instant_ended_v1(%s,%s)",
-            [principal, instant],
+            "GRANT INSERT ON stewardship_secret_request "
+            'TO "pk_stewardship_credential_slack"'
+        )
+    with (
+        identity("pk_stewardship_credential_slack"),
+        pytest.raises(
+            DatabaseError, match="Sealed intake requires a live automation session"
+        ),
+        transaction.atomic(),
+        connection.cursor() as cursor,
+    ):
+        cursor.execute(
+            "INSERT INTO stewardship_secret_request (id,created_at,updated_at,"
+            "version,actor_id,correlation_id,target,staging_reference,"
+            "requested_by_id,reauthenticated_at,expires_at,state,cleanup_reason,"
+            "required_consumers,automation_session_id) VALUES (%s,now(),now(),1,"
+            "%s,%s,'slack',%s,%s,%s,now()+interval '5 minutes','staged','',"
+            "'[]'::jsonb,%s)",
+            [uuid4(), row.principal_id, uuid4(), uuid4(), row.principal_id]
+            + [instant, row.pk],
+        )
+    # Python refuses this target a session's request first; the guard is
+    # checked on its own.
+    from parishkit.stewardship.accounts import secret_requests
+
+    monkeypatch.setattr(
+        secret_requests,
+        "AUTOMATION_SECRET_TARGETS",
+        secret_requests.AUTOMATION_SECRET_TARGETS | {"metrics"},
+    )
+    metrics = stage_as(row.principal_id, instant, target="metrics", session=row.pk)
+    with (
+        identity("pk_stewardship_credential_metrics"),
+        pytest.raises(DatabaseError, match="requires a live sealed request"),
+        transaction.atomic(),
+    ):
+        advance(metrics, "testing")
+    with (
+        pytest.raises(DatabaseError, match="Record identity and bindings"),
+        transaction.atomic(),
+    ):
+        SecretReplacementRequest.objects.filter(pk=metrics).update(
+            automation_session_id=None, version=F("version") + 1
+        )
+
+
+def request_live(session, principal, instant):
+    """``stewardship_automation_request_live_v1``'s answer."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT public.stewardship_automation_request_live_v1(%s,%s,%s)",
+            [session, principal, instant],
         )
         return cursor.fetchone()[0]
 
 
-def test_instant_ended_is_true_only_once_every_full_session_ended(auth_service, google):
-    """Never NULL; true only for a full-scope session's instant, once ended.
+def test_request_live_is_true_only_for_the_named_live_full_session(
+    auth_service, google
+):
+    """Never NULL; true only for that live full-scope session's own binding.
 
-    A read-only session's instant, another principal's and an instant no
-    automation session holds are never ended; a second live full-scope
-    session with the same instant (approved from the same browser) keeps it
-    live.
+    Another principal, another instant, a read-only session and a session
+    that ended are never live; a second live session with the same instant
+    (approved from the same browser) does not keep an ended one live.
     """
     _, _, row = paired(auth_service)
     # Approved from the same browser: paired() would sign in again, and a
@@ -446,20 +508,23 @@ def test_instant_ended_is_true_only_once_every_full_session_ended(auth_service, 
         secret_digest=automation.secret_digest(secret)
     )
     _, _, reader = paired(auth_service, scope="read-only")
-    shift(reader, timedelta(seconds=7))
-    reader.refresh_from_db()
     assert second.authenticated_at == row.authenticated_at
     principal, instant = row.principal_id, row.authenticated_at
-    assert instant_ended(principal, instant) is False
-    assert instant_ended(principal, None) is False
+    assert request_live(row.pk, principal, instant) is True
+    assert request_live(None, principal, instant) is False
+    assert request_live(row.pk, None, instant) is False
+    assert request_live(row.pk, principal, None) is False
+    assert request_live(row.pk, uuid4(), instant) is False
+    assert request_live(row.pk, principal, instant + timedelta(seconds=1)) is False
+    assert request_live(uuid4(), principal, instant) is False
+    assert request_live(reader.pk, reader.principal_id, reader.authenticated_at) is (
+        False
+    )
     revoke(row)
-    assert instant_ended(principal, instant) is False
+    assert request_live(row.pk, principal, instant) is False
+    assert request_live(second.pk, principal, instant) is True
     expire(second)
-    assert instant_ended(principal, instant) is True
-    assert instant_ended(uuid4(), instant) is False
-    assert instant_ended(principal, instant + timedelta(seconds=1)) is False
-    revoke(reader)
-    assert instant_ended(reader.principal_id, reader.authenticated_at) is False
+    assert request_live(second.pk, principal, instant) is False
 
 
 def test_sign_in_instant_admits_a_live_full_session_only(auth_service, google):

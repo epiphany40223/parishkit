@@ -327,7 +327,16 @@ def test_the_ledger_covers_the_queue_its_requests_and_the_bulk_outcome():
     for route, commands in (
         (
             "ministry_report",
-            ("report ministry", "export ministry", "followup list", "followup bulk"),
+            # Its To enter by hand Stage holds the roster list since R39.
+            (
+                "report ministry",
+                "export ministry",
+                "followup list",
+                "followup bulk",
+                "report roster",
+                "export roster",
+                "followup roster-bulk",
+            ),
         ),
         ("ministry_followup_item", ("followup show",)),
         ("ministry_followup_update", ("followup show", "followup update")),

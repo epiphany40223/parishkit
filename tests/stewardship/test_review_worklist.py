@@ -245,6 +245,25 @@ def test_build_gives_each_row_its_box_kinds_and_posts():
     assert built.span == 9
 
 
+def test_a_stream_without_baseline_or_edit_drops_those_columns():
+    """No Baseline or Reviewer's value column for a stream without them (#1685)."""
+    from django.template.loader import render_to_string
+
+    table = paginate(rows(), {"size": "25"}, carry=[("stage", "all")])
+    built = made(shown=table.rows, baseline=False, reviewer=False)
+    assert not built.baseline and not built.reviewer
+    # Who, Family's answer, Stage, Submitted, Last decision, Actions and the
+    # selection column.
+    assert built.span == 7
+    html = render_to_string(
+        "stewardship/components/review-worklist.html",
+        {"worklist": built, "table": table, "csrf_token": "x"},
+    )
+    head = html.split("<thead>")[1].split("</thead>")[0]
+    assert "Reviewer's value" not in head and "Baseline" not in head
+    assert "Family's answer" in head
+
+
 def test_add_needs_the_role_and_an_editor():
     """Add shows for Staff only once the stream gives its editor."""
     assert made(add_template="editor.html").add
@@ -281,6 +300,73 @@ def test_the_template_draws_selected_icons_and_the_filters_open():
     assert 'data-confirm-open="census-decide-dialog"' in offered
     assert 'id="census-bulk-dialog"' in html and 'id="census-decide-dialog"' in html
     assert 'name="stage"' in html and "Every stage (1)" in html
+
+
+def test_a_silent_action_hides_its_note():
+    """``silent`` actions record no note (a Ministry roster tick, R39 finding
+    2): their row icons and bulk button carry the ``no_note`` choice, which
+    hides the dialog's note (ui-v1.js data-note-field); the others keep
+    theirs, and reopening an Ignored item still asks for one."""
+    shown = [
+        dict(
+            rows()[0],
+            id="0",
+            placement=Placement(Stage.TO_ENTER_BY_HAND, Decision.ACCEPTED),
+        ),
+        dict(rows()[1], id="1", placement=Placement(Stage.IGNORED, Decision.IGNORED)),
+    ]
+    built = made(shown=shown, silent={Action.ENTERED_BY_HAND})
+    entered, ignored = built.rows
+    choices = {
+        icon["action"]: icon["choice"]
+        for icon in entered["icons"]
+        if not icon["selected"]
+    }
+    assert choices == {"back_to_review": "", "entered_by_hand": "no_note"}
+    assert [i["choice"] for i in ignored["icons"] if not i["selected"]] == ["reopen"]
+    bulk = {button["value"]: button["choice"] for button in built.bulk}
+    assert bulk["entered_by_hand"] == "no_note"
+    assert bulk["back_to_review"] == "reopen" and bulk["accept"] == ""
+    # Without ``silent`` every action keeps its note.
+    plain = made(shown=shown)
+    assert {i["choice"] for i in plain.rows[0]["icons"] if not i["selected"]} == {""}
+
+
+def test_a_stream_family_column_links_anywhere():
+    """A Family column links its Timeline wherever it sits, not only first."""
+    from django.template.loader import render_to_string
+
+    shown = [
+        dict(
+            rows()[0],
+            family="Sample, Pat and Lee",
+            family_name="Sample, Pat and Lee",
+            family_id=UUID(int=5),
+        )
+    ]
+    columns = [Column("who", "Who"), Column("family", "Family")]
+    table = paginate(shown, {"size": "25"}, carry=[("stage", "all")])
+    built = build(
+        "census",
+        table.rows,
+        STAFF,
+        prefix="census",
+        action="/review",
+        columns=columns,
+        stage="all",
+        counts={},
+        stages=[],
+    )
+    from types import SimpleNamespace
+
+    from parishkit.stewardship.accounts.policy import Principal
+
+    staff = SimpleNamespace(principal=Principal(UUID(int=1), frozenset({"staff"})))
+    html = render_to_string(
+        "stewardship/components/review-worklist.html",
+        {"worklist": built, "table": table, "csrf_token": "x", "request": staff},
+    )
+    assert ">Sample, Pat and Lee</a></td>" in html
 
 
 def test_read_decision_reads_a_row_add_and_bulk_post():

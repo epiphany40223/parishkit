@@ -29,7 +29,7 @@ that edit (``edit_census_change``, ADM-09.04): the same kind of review row,
 which keeps the decision and changes only the edit fields
 (``schema/migrations/0107_proposal_review_edit.sql``). The worklist's Edit
 is Accept with a value: one review row that approves and edits together
-(``decide_census_changes``, ``schema/migrations/0131_census_pipeline_review.sql``).
+(``decide_census_changes``, ``schema/migrations/0128_census_pipeline_review.sql``).
 The Family's answer is never changed. An edit is per change only, never in
 bulk.
 
@@ -70,12 +70,23 @@ from parishkit.stewardship.web.tables import PAGE_SIZES
 from .accepted_base import has_active_base
 from .capabilities import Handling, capability
 from .census import InvalidHousehold, validate_address
-from .census_resolution import MAX_NOTE, KeyRebound, record_resolution
+from .census_resolution import (
+    MAX_NOTE,
+    KeyRebound,
+    ReopenCovered,
+    covered_by_addition,
+    record_resolution,
+)
 from .comparison import ADDRESS_COMPONENTS, ValueKind
 from .contact_schema import PUT_SCHEMA, sendable
 from .member_census import InvalidMemberValue, validate_member_value
 from .member_requests import REQUEST_FIELDS
-from .models import REVIEW_DECISIONS, ProposalReview, ProposedChange
+from .models import (
+    REVIEW_DECISIONS,
+    ProposalResolution,
+    ProposalReview,
+    ProposedChange,
+)
 from .publication import MEMBER_FIELDS, encode_member_value
 
 # A review may start only while the change is open: never while it is queued
@@ -163,6 +174,10 @@ def editable(proposal):
 
 ISO_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 BLANK_EDIT = "Enter the value to publish. To leave ParishSoft as it is, choose Ignore."
+# The review guard keeps at most this many bytes of an edit, measured as
+# PostgreSQL prints its JSON (``octet_length(admin_value::text)``, 0128).
+EDIT_BYTES = 1024
+LONG_ADDRESS = "This address is too long to save. Shorten its longest lines."
 # The Family form's messages that read wrong for an edit, in Edit value's
 # own words: a blank required name is a blank edit like any other, and an
 # edit cannot be left blank.
@@ -235,7 +250,9 @@ def edited_address(raw):
     ``raw`` maps each address part to its text (the editor's
     ``value_<part>`` fields). A blank address is refused, as any blank edit
     is; each part's reason is kept by its part's name, so the page marks
-    the part in error (``InvalidEdit.fields``).
+    the part in error (``InvalidEdit.fields``). The review guard holds the
+    edit to the same rules (``stewardship_response_address_guard_v1``,
+    migration 0130) and to its size limit, so what passes here is stored.
     """
     if type(raw) is not dict or set(raw) != set(ADDRESS_COMPONENTS):
         raise ValueError("This census change cannot take an edited value.")
@@ -248,6 +265,11 @@ def edited_address(raw):
         raise InvalidEdit(next(iter(reasons.values())), fields=reasons) from None
     if value is None:
         raise InvalidEdit(BLANK_EDIT)
+    # Each part fits its own limit, yet parts in a script of several bytes a
+    # character can together pass the guard's limit for the whole edit. The
+    # JSON's length is PostgreSQL's (same separators, characters unescaped).
+    if len(json.dumps(value, ensure_ascii=False).encode()) > EDIT_BYTES:
+        raise InvalidEdit(LONG_ADDRESS)
     return value
 
 
@@ -413,6 +435,13 @@ def _record(
         # Reopening an ignored change says why (the review pipeline's
         # "Reviewed stage"); the SQL guard requires the same.
         raise ValueError("Sending an ignored census change back needs a note.")
+    if (
+        decision == "unreviewed"
+        and proposal.decision == "ignored"
+        and covered_by_addition(proposal)
+    ):
+        # An open parish addition stands in for it (#1710).
+        raise ReopenCovered("An open addition covers this census change.")
     # The row records the whole resulting review state: a decision keeps
     # the edit fields as the proposal has them, an edit keeps the decision.
     # A resolution accepts exactly the value and source the proposal holds
@@ -734,11 +763,24 @@ def _decide(proposal, action, actor_id, version, key, note, parish, value):
     the fields the change already has is a plain Accept. Ignore and Back to
     review are decisions. Entered by hand is a resolution
     (``census_resolution``), which on a To review By hand change accepts and
-    marks it in one step (decision 2).
+    marks it in one step (decision 2), and on a change Entered incorrectly
+    marks it again. Back to review on a change Entered incorrectly is a
+    resolution too (``reopened``, #1737): the change is final for reviews.
     """
     if action == ENTERED:
         return record_resolution(
             proposal, actor_id, version, key, "entered", note, parish
+        )
+    if action == BACK and (
+        proposal.execution == "resolved_external"
+        # A repeated post (the same request key) follows its first post's
+        # path: that post reopened the change, which is no longer entered.
+        or ProposalResolution.objects.filter(
+            actor_id=actor_id, request_key=key
+        ).exists()
+    ):
+        return record_resolution(
+            proposal, actor_id, version, key, "reopened", note, parish
         )
     if action in (ACCEPT, EDIT):
         # A repeated post (the same request key) follows the path its first

@@ -2,6 +2,7 @@
 
 import re
 from dataclasses import replace
+from html import escape
 from types import MappingProxyType
 from uuid import UUID, uuid4
 
@@ -15,6 +16,7 @@ from parishkit.stewardship.accounts.credential_installation import CredentialIns
 from parishkit.stewardship.accounts.cryptography import Key
 from parishkit.stewardship.accounts.handoff_discovery import publish_handoff
 from parishkit.stewardship.accounts.integration_credentials import selection_key
+from parishkit.stewardship.accounts.integration_forms import KEY_RULES
 from parishkit.stewardship.accounts.key_files import file_fingerprint
 from parishkit.stewardship.accounts.request_models import ConfigurationChangeRequest
 from parishkit.stewardship.accounts.secret_models import SecretReplacementRequest
@@ -317,7 +319,10 @@ def test_a_refused_slack_set_up_keeps_its_token_required(slack):
     html = response.content.decode()
     (field,) = re.findall(r'<input[^>]*name="candidate"[^>]*>', html)
     assert " required" in field
-    assert 'data-missing-hint="Paste the Slack bot token to set up Slack."' in field
+    # The token has a format rule (#1577): its message is the missing hint and
+    # the empty-field words moved to data-empty-hint.
+    assert 'data-empty-hint="Paste the Slack bot token to set up Slack."' in field
+    assert f'data-missing-hint="{escape(KEY_RULES["slack"].message)}"' in field
     assert TOKEN.decode() not in html
     assert re.search(r'data-error-summary.*?<a href="#id_channel_id">', html, re.S)
     assert not SecretReplacementRequest.objects.exists()

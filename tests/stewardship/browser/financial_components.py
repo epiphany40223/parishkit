@@ -17,6 +17,7 @@ from parishkit.stewardship.reports.financial import (
 from parishkit.stewardship.reports.financial_views import (
     FIELD_IDS,
     FIELD_LINES,
+    page_address,
     summary_tiles,
 )
 from parishkit.stewardship.reports.money import MoneyAmount
@@ -183,6 +184,9 @@ def components(context, admin):
         total=51,
         # The export form: enabled, with its one-time key and timezone choices.
         mutable=True,
+        # This view's own address (#1586): the sample's search and pledge
+        # range are private, and its share method is closed.
+        page_address=page_address(reverse("admin:financial_report"), query, 50),
         request_key=UUID(int=100),
         # The filters' reserved message lines (#1332), as the view sizes them.
         filter_sizes=line_sizes(FIELD_MESSAGES, FIELD_LINES),
@@ -224,6 +228,12 @@ def components(context, admin):
             summary_tiles=summary_tiles(filtered),
             charts=financial_charts(filtered, choices),
             total=4,
+            # The answer names its view's closed choices for the address bar.
+            page_address=page_address(
+                reverse("admin:financial_report"),
+                FinancialQuery(frequency="monthly", sort="pledge_desc"),
+                100,
+            ),
         ),
         # Every Family chose one long-named method (#1266): its full-length
         # bar's label must still fit after it at phone width.
@@ -253,6 +263,11 @@ def components(context, admin):
         "/financial-dated": values
         | dict(query=dated, query_fields=dated.form_values()),
     }
+    # The report at its own address, and at the address an applied filter's
+    # answer names (#1586), so a reload of that address draws its view.
+    route = reverse("admin:financial_report")
+    pages[route] = pages["/financial-report"]
+    pages[pages["/financial-filtered"]["page_address"]] = pages["/financial-filtered"]
     result = {
         path: (
             "text/html",

@@ -111,7 +111,10 @@ def test_the_weekly_report_in_progress_is_shown_unavailable():
         # The Response dashboard's export button (#1537), and its unavailable
         # stand-in without a chart, which then names both reasons.
         ("response-dashboard.html", "participation-export-locked", 2, 1),
-        ("information.html", "information-locked", 4, 1),
+        # Additional information's notice (#1685): its worklist offers no
+        # decision while held, and its export pane's button names the notice.
+        ("information.html", "information-locked", 0, 1),
+        ("information-worklist-export.html", "information-locked", 1, 0),
         # A request page's Save and Save and next (both of its branches).
         ("ministry-followup.html", "followup-locked", 3, 1),
         # The review worklist (#1684) draws no action while the page is held,
