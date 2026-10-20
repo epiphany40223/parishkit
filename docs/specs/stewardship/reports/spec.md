@@ -1296,8 +1296,20 @@ flags do not hide them. Source text that is not a valid address is shown
 with "not a valid address; fix in ParishSoft", as the
 [directory](#active-parishioner-family-directory) shows it, and a detail
 with no value reads "None recorded". A Family the data no longer has shows
-no details and says so; if the data is replaced while the page is read, the
-section says to reload the page. Who sees the section is exactly who may
+no details and says so. If the data is replaced while the page is read,
+the section says the details appear by themselves once the newer ParishSoft
+data can be read, and the page
+[brings them in by itself](../ui-conventions/spec.md#pages-that-update-themselves)
+([#1863](https://github.com/epiphany40223/parishkit/issues/1863)): the
+notice is a status region that reads the passive status
+`/admin/reports/information/contacts/status/?shown=<generation>`
+(`information_contacts_status`), which admits the same readers as the page,
+never extends the sign-in, records no audit event, and says only whether a
+ParishSoft data generation other than the page's own (`shown`) is now in
+use, never a contact value. Once one is, the page re-reads its own address
+once, in place and marked automatic, which records one
+`information_viewed` view with `automatic: true` and reads the details from
+the newer data. Who sees the section is exactly who may
 open the page, Administrators and Staff (`ADDITIONAL_FOLLOWUP`), checked
 again by the contact read itself; Ministry leaders still cannot open the
 page. Only the request page reads the details, never the worklist, its
