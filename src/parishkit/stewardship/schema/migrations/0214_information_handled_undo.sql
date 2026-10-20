@@ -14,7 +14,9 @@
 -- stewardship_information_revision_guard_v1 from its latest body (0126's,
 -- which equals the baseline's) plus one rule: a revision that leaves a
 -- completed follow-up not followed up needs a new note (not blank, not the
--- earlier notes a revision carries forward), whichever writer records it.
+-- earlier notes a revision carries forward), whichever writer records it;
+-- and a note of nothing but white space (spaces, tabs, line breaks) is
+-- blank, for that rule and for reopening an Ignored request alike.
 -- The guard already admits only a current Staff member or Administrator
 -- (stewardship_export_authorized_v1), at the request's current version, so
 -- a Ministry leader is still refused. It is not SECURITY DEFINER (the
@@ -55,7 +57,7 @@ BEGIN
     -- why, as the review pipeline requires: the request's earlier notes,
     -- which a revision carries forward, are not one.
     IF NEW.review_decision<>'ignored'
-       AND (btrim(NEW.notes)='' OR NEW.notes=prior.notes)
+       AND (NEW.notes !~ '\S' OR NEW.notes=prior.notes)
        AND prior.id IS NOT NULL AND NOT item.follow_up_needed
        AND item.followed_up_at IS NULL
        AND coalesce(prior.review_decision,'ignored')='ignored'
@@ -66,9 +68,17 @@ BEGIN
     -- terminal step, which needs a new note saying why, as reopening an
     -- Ignored request does (#1840).
     IF item.followed_up_at IS NOT NULL AND NOT NEW.followed_up
-       AND (btrim(NEW.notes)='' OR NEW.notes=prior.notes)
+       AND (NEW.notes !~ '\S' OR NEW.notes=prior.notes)
     THEN RAISE EXCEPTION 'Undoing a handled request needs a note'
         USING ERRCODE='23514'; END IF;
+    -- The worklist's undo also keeps the Accept (To handle: accepted,
+    -- follow-up needed, not followed up; responses.information.recorded),
+    -- but this guard cannot require that: pk-admin's followup
+    -- information-update records the same revision, with the same
+    -- confirm_clear, and may clear a completed follow-up with Follow-up
+    -- needed off, back to To review, as the admin automation spec says.
+    -- Nothing in a revision tells the two apart, so the service holds the
+    -- worklist's destination.
     -- Only a request To review (or already Ignored) is ignored: one whose
     -- follow-up is needed or done goes back to review first.
     IF NEW.review_decision='ignored'
@@ -101,6 +111,8 @@ BEGIN
     IF NOT EXISTS(SELECT 1 FROM pg_proc
             WHERE oid='public.stewardship_information_revision_guard_v1()'::regprocedure
               AND prosrc LIKE '%Undoing a handled request needs a note%'
+              AND prosrc NOT LIKE '%btrim(NEW.notes)%'
+              AND prosrc LIKE '%AND (NEW.notes !~ ''\\S'' OR NEW.notes=prior.notes)%'
               AND prosrc LIKE '%Reopening an ignored request needs a note%'
               AND prosrc LIKE '%Only a request to review can be ignored%'
               AND prosrc LIKE '%Follow-up attribution history is unavailable%'

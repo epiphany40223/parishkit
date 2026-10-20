@@ -478,7 +478,7 @@ FROZEN = {
         "1e3c7b5633a967bbdf76460d29f3173f65838fda0630a535825f26241de64641"
     ),
     "0214_information_handled_undo.sql": (
-        "151a03f5d72dcdee07f84fe9affc368bb04c1dab9aedd1df6ce48f3979bb0922"
+        "c4d6a612c13a6783a9db917a865aaac8889220c628bb2f9b82030dd258d3ce26"
     ),
     "0215_limitation_handled_undo.sql": (
         "099966c1085727beddc9f92688248cc0ebf1e0902e0120d1948eeb571033222e"
