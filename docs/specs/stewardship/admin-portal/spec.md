@@ -5180,15 +5180,13 @@ line the first rows start on a laptop screen with the help closed
   the address (Administrator decision, 2026-10-20). When several Members
   list the address, the name is the one the Users page offers as a new
   user's default Name: a Member of an active Family first, then a head of
-  household, then by name, then by Member DUID. Only the addresses the
-  Users page itself can name are looked up (the current configuration's
-  users and the people who have signed in), through the read-only definer
-  the Users page's upgrade preview uses, and only when a shown email to a
-  person has no Users-page Name, so a page of Family emails reads no
-  ParishSoft names this way. An address no longer a user that never
-  signed in (a removed Ministry leader, for example) is outside that set,
-  so it still shows the address; naming it too would take a new definer
-  read of the page's addresses. The addresses of a Family email are not
+  household, then by name, then by Member DUID. Every such address can be
+  named this way, whether or not it is a user or has ever signed in (a
+  removed Ministry leader, for example): the names are read through the
+  Administrator-only Member-name read of the page's addresses (below,
+  frozen migration 0220), and only for the shown addresses that have no
+  Users-page Name, so a page of Family emails or of named users reads no
+  ParishSoft names. The addresses of a Family email are not
   listed here: they are on its Mail message page, with what each address's
   latest attempt recorded. In Testing mode the Recipient is still the
   intended Family or person; the Mail message page names the Testing
@@ -5355,13 +5353,13 @@ Administrator-only definer read over the renderings' intended recipients,
 backed by an index (below), then finds the emails by primary key. The
 Recipient names of a page's emails to people take one definer read for
 the page's ids and one query of the current configuration's users,
-however many rows, plus one read of the ParishSoft Member names (which
-reads the current ParishSoft Members' contact records) only when one of
-them has no Users-page Name, and the Timeline links of its Production
+however many rows, plus one Member-name read of the addresses that have
+no Users-page Name (it reads the current ParishSoft Members' contact
+records), and the Timeline links of its Production
 Family emails take one query of the current campaign's Family records by DUID. The
 Recipient sort adds one query of the matching emails to people's ids, one
-definer read per 500 of them, one query of the users (and the Member
-names read when one of them has no Users-page Name), and then orders
+definer read per 500 of them, one query of the users (and one Member-name
+read per 500 addresses without a Users-page Name), and then orders
 by a JSON object of their keys. The orderings are not indexed, so a page is
 a top-N sort of
 the filtered emails, as before.
@@ -5381,6 +5379,18 @@ else:
   `(message, address)` for the intended addresses of the current rendering
   of each listed email that has no Family (a report or notice), at most 500
   ids per call; Family emails' addresses are not returned.
+
+**Member-name read (frozen migration 0220, provisional).**
+`stewardship_member_names_for_addresses_v1(addresses, actor)`, with the
+same caller and Administrator checks, returns `(address, name)`: for each
+given address (lower-cased and trimmed, at most 500 per call) that a
+ParishSoft Member's contact record lists in the current ParishSoft data,
+the one name the Users page would offer as that address's default Name
+("Surname, First name"; a Member of an active Family first, then a head of
+household, then by name, then by Member DUID), and nothing else of the
+Member, contact or Family. An address no Member lists is left out. It adds
+no audit of its own: the page's `delivery_viewed` record names the actor
+([data spec](../data/spec.md#outbox-recipient-reads)).
 
 An email whose delivery recorded a [refused address](#refused-addresses)
 that is still unresolved is marked in its Delivery cell, on a second line,
