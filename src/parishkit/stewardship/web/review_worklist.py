@@ -175,7 +175,7 @@ DECISION_ICON = {
     Decision.ACCEPTED_EDITED: Action.ACCEPT,
     Decision.IGNORED: Action.IGNORE,
 }
-# The mark each final stage shows in force.
+# The mark each terminal stage that has one shows in force.
 MARK_ICON = {
     Stage.ENTERED_BY_HAND: Action.ENTERED_BY_HAND,
     Stage.HANDLED: Action.HANDLED,
@@ -204,8 +204,9 @@ BODIES = {
     Action.HANDLED: "Record that this was handled. Back to review undoes it.",
     Action.BACK_TO_REVIEW: (
         "A decided item goes back to To review, to be decided again; a marked, "
-        "handled or confirmed one goes back to the stage before that step, "
-        "with its decision kept."
+        "handled, updated or confirmed one goes back to the stage before that "
+        "step, with its decision kept. Undoing an update writes nothing to "
+        "ParishSoft."
     ),
 }
 # What an Entered incorrectly row's Entered by hand again says (#1737). Its
@@ -218,8 +219,9 @@ INCORRECT_BODIES = {
 }
 REOPEN_BODY = "The ignored item goes back to To review. Say why it is reopened."
 # What Back to review on a terminal stage says (#1840): which step it undoes
-# and where the item goes. Updated in ParishSoft is undone in this portal
-# only, which the dialog must say.
+# and where the item goes. An undo back to Ready to update (Updated in
+# ParishSoft, or a census change Confirmed or Already in ParishSoft that the
+# update run carries) changes this portal only, which the dialog must say.
 UNDO_BODY = "{step} is undone: the item goes back to {stage}{kept}. Say why."
 UNDO_KEPT = ", with its decision kept"
 UNDO_PORTAL_ONLY = (
@@ -264,8 +266,10 @@ def undo_body(stream, placement, *, by_hand=False):
     """What Back to review's dialog says on a terminal stage (#1840).
 
     It names the step undone and the stage the item returns to
-    (``pipeline.undo_stage``), and, for Updated in ParishSoft, that
-    nothing is written to ParishSoft.
+    (``pipeline.undo_stage``), and, whenever it returns to Ready to update
+    (Updated in ParishSoft, or a census change Confirmed or Already in
+    ParishSoft that the update run carries), that nothing is written to
+    ParishSoft.
     """
     stage = undo_stage(stream, placement, by_hand=by_hand)
     body = UNDO_BODY.format(
@@ -273,7 +277,7 @@ def undo_body(stream, placement, *, by_hand=False):
         stage=stage.label,
         kept=UNDO_KEPT if stage is not Stage.TO_REVIEW else "",
     )
-    if placement.stage is Stage.UPDATED:
+    if stage is Stage.READY_TO_UPDATE:
         body += UNDO_PORTAL_ONLY
     return body
 
@@ -283,8 +287,9 @@ def _selected_title(action, placement, undo):
 
     Accept names the decision exactly (Accepted, Accepted (edited), Added
     by the parish). The undo is named only while the row offers it
-    (``undo``): once an item's update starts, or once it is marked, there
-    is none.
+    (``undo``): there is none while an item's update is running, nor for a
+    reader whose role does not offer Back to review (a Ministry leader on a
+    terminal stage).
     """
     state = WORDS[action].selected
     if action is Action.ACCEPT and placement.decision is not None:

@@ -1036,7 +1036,7 @@ worklist's Who cell shows the shared
 for such a Member, whatever the row's stage. The Family's own resubmission
 still withdraws the ordinary changes of a Member no longer on its form, as
 any omitted answer is withdrawn. An item whose
-row is final (a census change Entered by hand or Updated in ParishSoft) or
+row is terminal (a census change Entered by hand or Updated in ParishSoft) or
 decided (a Ministry request a person accepted or ignored) gets a **refresh
 check** instead (a census change a later Family response replaced does not:
 it is history, below): an immutable record, written in the promotion transaction,

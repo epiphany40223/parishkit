@@ -5023,7 +5023,8 @@ BEGIN
                    -- upstream at the next version and nothing is written. The
                    -- plan guard stamps created_at with transaction_timestamp(),
                    -- so a plan committed earlier never matches; resolved_upstream
-                   -- is terminal, so the mark is final.
+                   -- is terminal: only the web login's Back to review (#1840,
+                   -- with its resolution row) undoes the mark.
                    OR (OLD.execution IN ('pending','failed') AND NEW.execution='resolved_upstream'
                        AND OLD.decision='approved' AND OLD.handling='api' AND OLD.entity_kind='member'
                        AND EXISTS (SELECT 1 FROM public.stewardship_publication_field f

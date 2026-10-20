@@ -666,3 +666,19 @@ def test_a_terminal_undo_says_where_the_item_goes():
         "Updated in ParishSoft is undone: the item goes back to Ready to update"
     )
     assert "Nothing is written to ParishSoft" in updated
+    # A census change the update run carries, Confirmed after its update or
+    # accepted and Already in ParishSoft (shown Confirmed), goes back to
+    # Ready to update too: its undo also writes nothing to ParishSoft.
+    confirmed = Placement(Stage.CONFIRMED, Decision.ACCEPTED)
+    body = worklist.undo_body("census", confirmed)
+    assert "goes back to Ready to update, with its decision kept" in body
+    assert body.endswith(worklist.UNDO_PORTAL_ONLY)
+    # A by-hand change's Confirmed undo goes to To enter by hand: no update
+    # to speak of.
+    assert "Nothing is written" not in worklist.undo_body(
+        "census", confirmed, by_hand=True
+    )
+    assert (
+        "Undoing an update writes nothing to ParishSoft."
+        in (worklist.BODIES[Action.BACK_TO_REVIEW])
+    )
