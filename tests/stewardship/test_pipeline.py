@@ -467,9 +467,14 @@ ALLOWED_TABLE = [
     ("census", Stage.TO_ENTER_BY_HAND, STAFF, True, MARK),
     ("census", Stage.ENTERED_INCORRECTLY, STAFF, True, MARK),
     ("census", Stage.UPDATING, ADMIN, False, set()),
-    ("census", Stage.UPDATED, ADMIN, False, set()),
-    ("census", Stage.ENTERED_BY_HAND, ADMIN, True, set()),
-    ("census", Stage.CONFIRMED, ADMIN, True, set()),
+    # Every census terminal stage takes Back to review (#1840), never for a
+    # Ministry leader.
+    ("census", Stage.UPDATED, ADMIN, False, {"back_to_review"}),
+    ("census", Stage.ENTERED_BY_HAND, ADMIN, True, {"back_to_review"}),
+    ("census", Stage.ENTERED_BY_HAND, STAFF, True, {"back_to_review"}),
+    ("census", Stage.CONFIRMED, ADMIN, True, {"back_to_review"}),
+    ("census", Stage.CONFIRMED, STAFF, False, {"back_to_review"}),
+    ("census", Stage.ENTERED_BY_HAND, {"ministry_leader"}, True, set()),
     ("census", Stage.HISTORY, ADMIN, True, set()),
     ("census", Stage.TO_REVIEW, {"ministry_leader"}, True, set()),
     ("ministry", Stage.TO_REVIEW, STAFF, False, DECIDE),

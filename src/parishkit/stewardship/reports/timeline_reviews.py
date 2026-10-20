@@ -237,7 +237,20 @@ def state_after(row, before):
     if stream == "census_resolution":
         if a == "entered":
             return replace(before, done="entered")
-        return replace(before, decision=Decision.IGNORED if a == "ignored" else None)
+        if a == "ignored":
+            return replace(before, decision=Decision.IGNORED)
+        if before.decision is Decision.IGNORED:
+            # Reopening an Ignore: no decision is in force.
+            return replace(before, decision=None)
+        # Back to review of a terminal step (#1840) keeps the decision behind
+        # it: a mark that accepted in one step leaves the change Accepted.
+        # Updated in ParishSoft and Already in ParishSoft have no step of
+        # their own here, so the states alone cannot tell this line apart
+        # and its word is forced.
+        decision = before.decision
+        if before.done == "entered" and decision is None:
+            decision = Decision.ACCEPTED
+        return replace(before, decision=decision, done=None, forced=BACK_TO_REVIEW)
     if stream == "ministry_revision":
         # The roster flags only move a decided join or leave between To
         # enter by hand and Entered by hand; the decision is the same.

@@ -74,11 +74,15 @@ def icons(stream, placement, roles=STAFF, **flags):
             {},
             [("ignore", True, True), ("back_to_review", False, None)],
         ),
-        # A mark in force is selected too, and final: no undo.
+        # A mark in force is selected too; Back to review undoes it (#1840).
         (
             Placement(Stage.ENTERED_BY_HAND, Decision.ACCEPTED),
             {},
-            [("accept", True, True), ("entered_by_hand", True, True)],
+            [
+                ("accept", True, True),
+                ("back_to_review", False, None),
+                ("entered_by_hand", True, True),
+            ],
         ),
         # Entered incorrectly's old mark is not in force: mark it again.
         (
@@ -129,11 +133,13 @@ def test_selected_icons_are_named_and_filled():
     assert back["css"] == "icon-button" and back["label"] == (
         "Send Phone for Pat back to review"
     )
-    # Once marked there is no undo, so the tooltip names none.
+    # A mark is undone by Back to review too (#1840), so the tooltip says so.
     marked = Placement(Stage.ENTERED_BY_HAND, Decision.ACCEPTED)
-    assert [icon["title"] for icon in row_icons("census", marked, STAFF, name="x")] == [
-        "Accepted",
-        "Entered by hand",
+    titles = [icon["title"] for icon in row_icons("census", marked, STAFF, name="x")]
+    assert titles == [
+        "Accepted; choose Back to review to change it",
+        "Send x back to review",
+        "Entered by hand; choose Back to review to change it",
     ]
     assert accept["focus"] == "accept"
     edit = row_icons("census", Placement(Stage.TO_REVIEW), STAFF, name="x")[1]
@@ -225,13 +231,14 @@ def made(roles=STAFF, shown=None, **options):
 
 
 def test_build_gives_each_row_its_box_kinds_and_posts():
-    """A row's box lists the bulk actions its icons offer; a row with none
-    has no box; each icon posts its decision, version and request key."""
+    """A row's box lists the bulk actions its icons offer; each icon posts
+    its decision, version and request key. A census mark's Back to review
+    (#1840) needs a note, so its box says so."""
     built = made()
     first, ready, entered = built.rows
     assert first["kinds"] == "accept ignore"
     assert ready["kinds"] == "back_to_review" and ready["choice"] == ""
-    assert entered["kinds"] == ""
+    assert entered["kinds"] == "back_to_review" and entered["choice"] == "reopen"
     accept = first["icons"][0]
     assert accept["dialog"] == "census-decide-dialog"
     assert accept["post"].startswith("decide=accept&version=3&request_key=")
@@ -291,7 +298,7 @@ def test_the_template_draws_selected_icons_and_the_filters_open():
         {"worklist": made(shown=table.rows), "table": table, "csrf_token": "x"},
     )
     assert "<details" not in html.split('id="table-filters"')[0][-200:]
-    assert html.count("data-select-row") == 2
+    assert html.count("data-select-row") == 3
     selected = html.split('aria-label="Accept Phone for Member 1"')[1].split(">")[0]
     assert 'aria-pressed="true"' in selected and 'aria-disabled="true"' in selected
     assert "data-confirm-open" not in selected

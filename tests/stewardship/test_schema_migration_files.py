@@ -465,6 +465,9 @@ FROZEN = {
     "0144_staff_timeline_export.sql": (
         "adfde07b256d584b99de8ae7cdc2910cd982bf4bc1d505404e7b4fc957b522b6"
     ),
+    "0210_census_terminal_undo.sql": (
+        "8102c45a865e2fc1c0acde77121eede09ed0ee6c320f502925596d52732320db"
+    ),
 }
 
 

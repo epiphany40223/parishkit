@@ -90,6 +90,38 @@ def test_census_reviews_and_resolutions_read_as_pipeline_actions():
     assert [at for at, _what, _detail in lines] == [row["at"] for row in rows]
 
 
+def test_undoing_a_terminal_census_step_reads_back_to_review():
+    """Back to review of a mark or an update (#1840) reads "Back to review"
+    and keeps the decision behind it, so the next step words from it: a
+    one-step Entered by hand leaves the change Accepted, and marking it
+    again reads Entered by hand."""
+    rows = [
+        # Accepted, marked, the mark undone, marked again.
+        row("census_review", "p", 1, "approved", "false", None, "false"),
+        row("census_resolution", "p", 2, "entered"),
+        row("census_resolution", "p", 3, "reopened"),
+        row("census_resolution", "p", 4, "entered"),
+        # Accepted and marked in one step, undone, then sent back again.
+        row("census_resolution", "q", 5, "entered"),
+        row("census_resolution", "q", 6, "reopened"),
+        row("census_review", "q", 7, "unreviewed", "false", None, "false"),
+        # An Updated in ParishSoft change (no step of its own here) undone.
+        row("census_review", "r", 8, "approved", "false", None, "false"),
+        row("census_resolution", "r", 9, "reopened"),
+    ]
+    assert words(rows) == [
+        "Accepted",
+        "Entered by hand",
+        "Back to review",
+        "Entered by hand",
+        "Entered by hand",
+        "Back to review",
+        "Back to review",
+        "Accepted",
+        "Back to review",
+    ]
+
+
 def test_member_names_fall_back_to_parishsoft_and_additions_say_so():
     """A Member with no answered name reads as ParishSoft has them; a new
     Member's change names the addition; an unknown actor is said so."""

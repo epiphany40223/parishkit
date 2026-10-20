@@ -61,7 +61,8 @@ EDITED_NOTICE = "Home address for the Family in Family DUID 1002 accepted (edite
 ADDED = "/census-changes-added"
 ADDED_NOTICE = "Nickname for Member DUID 103 in Family DUID 1003 added."
 # Row 3 Entered incorrectly (#1737): a refresh found ParishSoft at a third
-# value, and the pages after each of its two fixes.
+# value, and the pages after each of its two fixes: Back to review undoes
+# the mark (#1840), so row 3 is To enter by hand again, Accepted.
 INCORRECT = "/census-changes-incorrect"
 WRONG = "555-0199"
 REENTERED = "/census-changes-reentered"
@@ -71,6 +72,11 @@ REENTERED_NOTICE = (
 RETURNED = "/census-changes-returned"
 RETURNED_NOTICE = (
     "Mobile phone for Member DUID 103 in Family DUID 1003 sent back to review."
+)
+# The page after Back to review undid row 1's Entered by hand (#1840).
+UNDONE = "/census-changes-undone"
+UNDONE_NOTICE = (
+    "Mobile phone for Member DUID 101 in Family DUID 1001 sent back to review."
 )
 # The page after an Edit of row 0's mobile phone (R38 finding 4).
 EDITED_PHONE = "/census-changes-edited-phone"
@@ -291,7 +297,9 @@ def components(context, admin):
         ),
         INCORRECT: page(size, incorrect={3}),
         REENTERED: page(size, REENTERED_NOTICE, entered={3}),
-        RETURNED: page(size, RETURNED_NOTICE),
+        RETURNED: page(size, RETURNED_NOTICE, accepted={3}),
+        # Row 1's Entered by hand undone (#1840): To enter by hand, Accepted.
+        UNDONE: page(size, UNDONE_NOTICE, accepted={1}),
         EDITED_PHONE: page(size, EDITED_PHONE_NOTICE, accepted={0}, edited={0}),
         # No changes at all, and none at the stage chosen.
         "/census-changes-none": page(size, rows=0),

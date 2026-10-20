@@ -28,6 +28,7 @@ from django.utils.datastructures import MultiValueDict
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
 from parishkit.stewardship.pipeline import (
+    TERMINAL_STAGES,
     Decision,
     Placement,
     Stage,
@@ -568,9 +569,10 @@ def link_additions(changes, added):
     Returns each ignored change's additions made in place of it (its
     history line names them), and marks rows in place: an open addition
     whose field the Family has an open change of too (``overlap``, from a
-    later response), and an ignored change an open addition of its field
-    covers (``covered``: it is not sent back to review while that addition
-    is open, so the field never has two open changes, #1710).
+    later response), and an ignored or terminal change an open addition of
+    its field covers (``covered``: it is not sent back to review while that
+    addition is open, so the field never has two open changes, #1710,
+    #1840).
     """
     replacements = {}
     for row in added:
@@ -584,15 +586,19 @@ def link_additions(changes, added):
     for row in added:
         key = _key(row)
         row["overlap"] = row["stage"] == Stage.TO_ENTER_BY_HAND.value and key in asked
-    # An ignored change an open addition of its field covers is not sent
-    # back to review while it is open (``census_resolution.
+    # An ignored change, or one whose terminal step Back to review would
+    # undo (#1840), that an open addition of its field covers is not sent
+    # back to review while the addition is open (``census_resolution.
     # covered_by_addition`` refuses it too), so the field never has two.
     covering = {
         _key(row) for row in added if row["stage"] == Stage.TO_ENTER_BY_HAND.value
     }
     for row in changes:
         key = _key(row)
-        row["covered"] = row["stage"] == Stage.IGNORED.value and key in covering
+        row["covered"] = key in covering and (
+            row["stage"] == Stage.IGNORED.value
+            or Stage(row["stage"]) in TERMINAL_STAGES
+        )
     return replacements
 
 
@@ -980,8 +986,10 @@ def shape(row):
         row
     )
     # What a person may record on this row now (#528): the page offers only
-    # these, and the service and SQL check them again. Reopen is the
-    # Administrator's; the page shows it only to them.
+    # these, and the service and SQL check them again. Reopening an Ignore
+    # is the Administrator's; the page shows it only to them. Reopen of a
+    # terminal change undoes its step (#1840), Staff's too, never on one a
+    # later response replaced.
     state = SimpleNamespace(
         handling=row["handling"],
         entity_kind=row["entity_kind"],
@@ -991,7 +999,7 @@ def shape(row):
         current_available=row["current_available"],
     )
     shown["can_resolve"] = allowed(state, "entered")
-    shown["can_reopen"] = allowed(state, "reopened")
+    shown["can_reopen"] = allowed(state, "reopened", replaced=bool(row.get("replaced")))
     # An Administrator's Review of an Automatic row (ADM-09): the form values
     # (census_change_views.REVIEWS) it may record now, in the page's order.
     shown["review_actions"] = [

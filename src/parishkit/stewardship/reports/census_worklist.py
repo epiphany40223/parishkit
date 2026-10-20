@@ -21,6 +21,7 @@ from parishkit.stewardship.accounts.templatetags.stewardship import source_statu
 from parishkit.stewardship.campaigns.work_locks import work_transaction
 from parishkit.stewardship.observability import Event, emit_failure
 from parishkit.stewardship.pipeline import (
+    TERMINAL_STAGES,
     Action,
     Stage,
     Stream,
@@ -47,6 +48,7 @@ from parishkit.stewardship.responses.census_additions import (
     resolve_census_additions,
 )
 from parishkit.stewardship.responses.census_resolution import (
+    NoteRequired,
     ReopenCovered,
     member_correctable,
 )
@@ -166,7 +168,9 @@ def _withheld(row):
     Edit for a field no value can be typed for (moved, deceased, the email
     opt-out, a New Member), and Accept and Edit on a Conflict whose
     ParishSoft value is unknown, which waits for a refresh: Accept on a
-    Conflict is decided against ParishSoft's current value.
+    Conflict is decided against ParishSoft's current value. Back to review
+    on a change an open addition covers, on a terminal change a later
+    response replaced, and on an entered addition.
     """
     withheld = set()
     if row["editor"] is None:
@@ -175,6 +179,14 @@ def _withheld(row):
         withheld |= {Action.ACCEPT, Action.EDIT}
     if row.get("covered"):
         # An open addition of the field stands in for it (#1710).
+        withheld.add(Action.BACK_TO_REVIEW)
+    if row.get("replaced") and row["placement"].stage in TERMINAL_STAGES:
+        # A terminal change a later response of the Family replaced is
+        # history: it takes no undo (#1840), as the service refuses.
+        withheld.add(Action.BACK_TO_REVIEW)
+    if row.get("added") and row["placement"].stage is Stage.ENTERED_BY_HAND:
+        # An entered parish addition records no undo until #1840's addition
+        # slice (its one resolution per addition), so it offers none.
         withheld.add(Action.BACK_TO_REVIEW)
     return withheld
 
@@ -758,9 +770,19 @@ class CensusDecisions:
             raise AddRefusal(
                 "reopen_added",
                 "A change the parish added for this field is still open, so this "
-                "ignored change cannot go back to review.",
+                "change cannot go back to review.",
                 field_ids=("bulk_note" if decision.bulk else "note",),
                 fix="Withdraw the added change first, then send this one back.",
+            ) from None
+        except NoteRequired:
+            # The page's dialog requires the note too; a post without one
+            # (an older page, a script) is refused in plain words at it.
+            raise AddRefusal(
+                "note_required",
+                "Back to review of an ignored change, or of a mark or update "
+                "already made, needs a note saying why.",
+                field_ids=("bulk_note" if decision.bulk else "note",),
+                fix="Write a note, then choose Back to review again.",
             ) from None
         except BulkStale as error:
             if error.proposal_id in additions:

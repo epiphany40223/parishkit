@@ -208,16 +208,12 @@ BODIES = {
         "with its decision kept."
     ),
 }
-# What an Entered incorrectly row's dialogs say (#1737): the two ways to fix
-# it, as the review pipeline spec names them.
+# What an Entered incorrectly row's Entered by hand again says (#1737). Its
+# Back to review is a terminal undo (#1840), worded by ``undo_body``.
 INCORRECT_BODIES = {
     Action.ENTERED_BY_HAND: (
         "Record that you corrected this in ParishSoft. Check ParishSoft first: "
         "the next refresh checks it again."
-    ),
-    Action.BACK_TO_REVIEW: (
-        "The item goes back to To review. If ParishSoft's value is right, edit "
-        "the item to that value."
     ),
 }
 REOPEN_BODY = "The ignored item goes back to To review. Say why it is reopened."
