@@ -192,7 +192,7 @@ def test_complete_download_holds_guard_and_streams_with_private_headers(
             assert "X-Accel-Redirect" not in response
             assert b"".join(response.streaming_content).startswith(
                 {
-                    "csv": b"Campaign date,Population,",
+                    "csv": b"Section,Group,Figure,",
                     "png": b"\x89PNG",
                     "pdf": b"%PDF",
                 }[format]

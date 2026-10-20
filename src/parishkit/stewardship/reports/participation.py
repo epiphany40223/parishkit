@@ -118,9 +118,19 @@ class ParticipationDocument:
     last_date: date | None
     financial_enabled: bool
     days: tuple[ParticipationDay, ...]
+    # The Response dashboard's Summary its export captured when requested
+    # (``participation_summary.ParticipationSummary``, #1557); None for a
+    # latest-data handoff, an earlier request and the daily email's chart.
+    summary: object = None
 
     def __post_init__(self):
         """Reject mixed, reordered or incomplete series rather than repairing them."""
+        from .participation_summary import ParticipationSummary
+
+        if self.summary is not None and not isinstance(
+            self.summary, ParticipationSummary
+        ):
+            raise ValueError("A report summary must be a captured Summary.")
         if any(
             not isinstance(value, UUID)
             for value in (self.campaign_id, self.fact_set_id)
@@ -228,13 +238,43 @@ def participation_columns(document):
     return COLUMNS + ((PLEDGE_COLUMN,) if document.financial_enabled else ())
 
 
-def participation_csv(document, output):
-    """Write every daily row under the shared columns, never page slices.
+def summary_csv_rows(document):
+    """The Summary section's CSV cells, one list per row (``participation_summary``).
 
-    Exactly the table: report details live in the XLSX "Report information"
-    sheet, never as repeated CSV columns (#966). Times are ISO 8601 with
-    their offset, in the requester's display time zone.
+    Counts are numbers, an amount is its exact decimal text (as the daily
+    pledge column's), Data as of is ISO 8601 in the requester's display time
+    zone, a share is the page's "41%", and an unknown value is blank.
     """
+    from .money import MoneyAmount
+    from .participation_summary import share_text
+
+    if document.summary is None:
+        return []
+    zone = ZoneInfo(document.browser_timezone)
+    rows = []
+    for group, figure, value, ratio, note in document.summary.rows():
+        if isinstance(value, MoneyAmount):
+            value = value.canonical
+        elif isinstance(value, datetime):
+            value = value.astimezone(zone)
+        rows.append([group, figure, value, share_text(ratio), note])
+    return rows
+
+
+def participation_csv(document, output):
+    """Write the Summary and every daily row as one table, never page slices.
+
+    The CSV is one table of the Response dashboard's sections (#1557; UX
+    conventions, "Downloaded files"): a Section column, then the Summary's
+    columns, then the daily columns, each row filling only its own
+    section's. A document without a captured Summary has daily rows only.
+    Report details live in the XLSX "Report information" sheet, never as
+    repeated CSV columns (#966). Times are ISO 8601 with their offset, in
+    the requester's display time zone.
+    """
+    from .participation_summary import COLUMNS as SUMMARY_COLUMNS
+    from .participation_summary import DAILY, SUMMARY
+
     rows = participation_table(document)
     zone = ZoneInfo(document.browser_timezone)
     columns = participation_columns(document)
@@ -243,7 +283,15 @@ def participation_csv(document, output):
     wrapper = io.TextIOWrapper(output, encoding="utf-8", newline="", write_through=True)
     try:
         writer = csv.writer(wrapper, lineterminator="\r\n")
-        writer.writerow([heading for _, heading in columns])
+        writer.writerow(
+            ["Section", *SUMMARY_COLUMNS, *(heading for _, heading in columns)]
+        )
+        blank_daily = [""] * len(columns)
+        for cells in summary_csv_rows(document):
+            writer.writerow(
+                [SUMMARY, *(csv_cell(cell) for cell in cells), *blank_daily]
+            )
+        blank_summary = [""] * len(SUMMARY_COLUMNS)
         for row in rows:
             if row["source_as_of"] is not None:
                 row = row | {
@@ -251,7 +299,9 @@ def participation_csv(document, output):
                         row["source_as_of"]
                     ).astimezone(zone)
                 }
-            writer.writerow([csv_cell(row[key]) for key, _ in columns])
+            writer.writerow(
+                [DAILY, *blank_summary, *(csv_cell(row[key]) for key, _ in columns)]
+            )
         wrapper.flush()
     finally:
         wrapper.detach()

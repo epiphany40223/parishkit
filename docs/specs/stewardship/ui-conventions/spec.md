@@ -4395,6 +4395,18 @@ same way, and a Family cell with its
 [ParishSoft status](#members-and-families-no-longer-in-parishsoft) badge is
 Family and ParishSoft status (#1216).
 
+A download of a page with more than one table carries every section of the
+page, in page order, each section with the same columns in every format:
+the XLSX has one sheet per section, the CSV is one table whose first column,
+Section, names each row's section, followed by every section's columns in
+order (each row filling only its own section's), and the PDF prints the
+sections in page order. The Response dashboard's export, its Summary and its
+Daily participation, was the first
+([#1557](https://github.com/epiphany40223/parishkit/issues/1557);
+[participation graph](../reports/spec.md#participation-graph)). **Why.** One
+download per page keeps one small export row, and a single CSV keeps one
+file to open, while each section's columns stay as the page shows them.
+
 Recorded exceptions to the rule above:
 
 - **System logs:** CSV, XLSX and JSON Lines, no PDF. Its rows are wide raw
@@ -4531,7 +4543,7 @@ references (`tests/stewardship/test_export_columns.py` guards it), except the
 recorded exceptions above. A download written straight from its page registers
 with `web.exports.page_download`; the guard finds every registered and routed
 one, and fails until a new one has a case there; a case without a PDF table
-must be one of the exceptions above (or the participation chart). The
+must be one of the exceptions above. The
 Limitations report (formerly Talents and limitations,
 [#970](https://github.com/epiphany40223/parishkit/issues/970)) offers all
 three formats; the guard checks its Members and Families tables in each.
