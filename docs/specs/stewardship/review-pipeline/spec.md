@@ -657,9 +657,23 @@ only when a value was recorded and ParishSoft holds another one.
   wrong ID is noticed. It is never Entered incorrectly. The ID may not be
   one of the Members the Family's response listed, nor the ID another New
   Member of the Family is entered as. Without an ID (marked in bulk, or
-  left blank) Entered by hand is final, as before. Either way the mark
-  cannot be made again: correcting a mistyped ID, or adding one later, is
-  [#1773](https://github.com/epiphany40223/parishkit/issues/1773). Nothing
+  left blank) nothing confirms the mark.
+  [#1773](https://github.com/epiphany40223/parishkit/issues/1773) (migration
+  0273, provisional number) lets Staff and Administrators correct a
+  mistyped ID, or give one the mark lacked: while the change is Entered by
+  hand and not Confirmed (Not seen or not), its row offers **Correct the
+  ParishSoft Member ID**, one row at a time. It records a new Entered by
+  hand mark (a resolution row at the change's version, as Entered by hand
+  again does over Entered incorrectly) naming the new ID, which must differ
+  from the one the current mark names and pass the same rules. The
+  change's version advances, so the checks made before it no longer place
+  it and Not seen counts from the new mark; the refresh then reads the new
+  mark's ID. A blank ID is refused (the mark in force stays), and the
+  correction is not offered in bulk, on a Confirmed change, or on a change
+  a later response replaced. Making a wrong ID Entered incorrectly was
+  rejected: a Member not yet listed reads the same as a wrong ID until
+  ParishSoft is refreshed after the entry, so it would flag correct
+  entries. Nothing
   guesses the association: matching by name and birth date inside the
   Family (a twin, a namesake or a typo would confirm the wrong person or
   none) and confirming on any new Member in the Family (no evidence it is
@@ -695,7 +709,8 @@ field:
   opt-out (below), and the Family's home address, against ParishSoft's
   primary address ([address finding](#family-addresses)).
 - **Not confirmable** (Entered by hand is final): share methods, the Family's
-  mailing address, a New Member marked without its ParishSoft Member ID,
+  mailing address, a New Member marked without its ParishSoft Member ID
+  (until one is given, [above](#refresh-checks)),
   the pledge frequency until its mapping is verified (below), and the
   non-ParishSoft streams.
 
