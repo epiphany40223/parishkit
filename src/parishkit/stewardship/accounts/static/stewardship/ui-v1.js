@@ -3491,6 +3491,14 @@
       node.required = Boolean(control) && !control.disabled
         && control.validity?.valid !== false
         && anyValue(control, value, sameValue) !== negated;
+      // A label with both words (data-required-label, data-optional-label)
+      // says "required" only while the rule holds, so it follows the choice
+      // in place (the review worklist's note, required only to reopen an
+      // ignored item, #1681).
+      const label = node.labels?.[0];
+      if (label?.dataset.requiredLabel && label.dataset.optionalLabel) {
+        label.textContent = node.required ? label.dataset.requiredLabel : label.dataset.optionalLabel;
+      }
     });
   };
   const requireOne = (form) => {
@@ -3557,6 +3565,11 @@
       else if (field.dataset.clientError === hint) delete field.dataset.clientError;
     });
   };
+  // Whether a field still holds the value it was drawn with (a select: its
+  // drawn choice), for data-require-edit below.
+  const openedValue = (field) => (field instanceof HTMLSelectElement
+    ? [...field.options].every((option) => option.selected === option.defaultSelected)
+    : field.value === field.defaultValue);
   const gateComplete = (form) => {
     if (!form || !form.hasAttribute("data-require-complete")) return;
     requiredWhen(form);
@@ -3571,9 +3584,18 @@
       && SERVER_SPACE.test(node.value);
     // A live check (the follow-up contact time) marks a field it found in
     // error with data-client-error, whose text is the hint.
-    const missing = [...form.elements].find((node) => node.willValidate
+    const invalid = [...form.elements].find((node) => node.willValidate
       && !node.closest("[hidden]")
       && (node.hasAttribute("data-client-error") || !node.validity.valid || blank(node)));
+    // An editor marked data-require-edit (the review worklist's Edit, R38
+    // finding 4) also holds Save until one of its fields differs from the
+    // value it opened with, saying so in its data-unchanged-hint: saving
+    // the value the item already carries forward records no edit, only a
+    // plain Accept, which reads as a lost edit.
+    const unchanged = invalid ? null : [...form.querySelectorAll("[data-require-edit]")]
+      .find((group) => !group.closest("[hidden]") && [...group.querySelectorAll("[name]")]
+        .filter((field) => field.willValidate).every(openedValue));
+    const missing = invalid || unchanged?.querySelector("[name]") || null;
     const hint = form.querySelector("[data-complete-hint]");
     // An empty required field may say what to type (data-empty-hint) where
     // its data-missing-hint describes the format (a placeholder name, #563).
@@ -3585,7 +3607,9 @@
       // or going never moves what follows it (no layout shift: the System
       // logs table under its filter bar, #953). Any other hint hides.
       hint.hidden = !missing && hint.dataset.completeHint !== "reserve";
-      hint.textContent = missing
+      hint.textContent = unchanged
+        ? (unchanged.dataset.unchangedHint || "Change the value to save it.")
+        : missing
         ? (missing.dataset.clientError
           // An unreadable time entry (#398) or DUID list (#1577) says why
           // itself.
@@ -4607,6 +4631,20 @@
       }
       field.dispatchEvent(new Event("change", {bubbles: true}));
     });
+    // The review worklist's choice field (#1681): a nameless hidden input
+    // marked data-confirm-choice, which a data-required-when rule on the
+    // dialog's note reads, so one dialog asks for a note only when the
+    // action needs one. A row's icon gives its data-confirm-choice
+    // ("reopen" when it sends an Ignored item back to review); a bulk button's
+    // holds only while some ticked row's box carries the same choice, so
+    // sending items back to review in bulk asks for a reason only when it reopens an
+    // Ignored item (review pipeline spec, "Reviewed stage").
+    const want = opener.dataset.confirmChoice || "";
+    const holds = !bulk || [...form.elements].some((box) =>
+      box.matches("input[data-select-row]:checked") && box.dataset.confirmChoice === want);
+    dialog.querySelectorAll("input[data-confirm-choice]").forEach((field) => {
+      field.value = want && holds ? want : "";
+    });
     if (form.hasAttribute("data-require-complete")) gateComplete(form);
     confirming = {
       dialog, opener, form, chosen, values, busy: false, done: false,
@@ -4908,6 +4946,12 @@
     // returns focus to that row's first action once it is redrawn, so the
     // reader stays where they were; when the row is gone, the fallback.
     const row = state.opener.closest("tr[id]")?.id;
+    // A review worklist icon (data-row-action, #1681) returns focus to the
+    // same action's icon in the redrawn row, now drawn selected, so the
+    // reader hears the decision in force (data-focus-action names another
+    // when the decision is drawn on it: an Edit's is its Accept); otherwise
+    // to the row's first action, as above.
+    const kind = state.opener.dataset.focusAction || state.opener.dataset.rowAction || "";
     const fresh = dialog.hasAttribute("data-confirm-answer-page")
       ? new DOMParser().parseFromString(answer.text, "text/html")
       : await freshPage(region?.dataset.refreshUrl || window.location.href);
@@ -4916,8 +4960,10 @@
     dialog.close();
     const fallback = dialog.dataset.confirmFallback || "";
     redrawFrom(fresh);
+    const redrawn = row ? document.getElementById(row) : null;
     const target = (state.opener.isConnected && state.opener)
-      || (row && document.getElementById(row)?.querySelector("[data-confirm-open]:not(:disabled)"))
+      || (kind && redrawn?.querySelector(`[data-row-action="${CSS.escape(kind)}"]`))
+      || redrawn?.querySelector("[data-confirm-open]:not(:disabled)")
       || document.getElementById(fallback) || document.querySelector("main h1");
     target?.focus({preventScroll: true});
     target?.scrollIntoView({block: "nearest"});

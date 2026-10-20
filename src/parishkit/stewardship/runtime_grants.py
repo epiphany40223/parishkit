@@ -624,6 +624,18 @@ CLOSURE_TABLES = {
     # An Administrator's review of an Automatic census change (0096, #528),
     # which web records and reads.
     "stewardship_proposal_review": ("stewardship_responses", "0006_proposal_review"),
+    # Review decisions on cannot-participate and cannot-attend answers
+    # (0126, #1685), which web records and reads.
+    "stewardship_limitation_review": (
+        "stewardship_responses",
+        "0013_information_limitation_review",
+    ),
+    # A census change the parish added and its later step (0129, #1710),
+    # which web records and reads.
+    **dict.fromkeys(
+        ("stewardship_census_addition", "stewardship_census_addition_resolution"),
+        ("stewardship_responses", "0015_census_additions"),
+    ),
     # A Campaign setup step an Administrator kept as is (0105, #1404), which
     # web records and reads.
     "stewardship_campaign_setup_review": (
@@ -640,6 +652,9 @@ CLOSURE_TABLES = {
         ),
         ("stewardship_jobs", "0035_leader_emails"),
     ),
+    # A pledge's review history (0127, provisional number, #1686), which
+    # web records and reads.
+    "stewardship_pledge_review": ("stewardship_reports", "0032_pledge_review"),
 }
 
 

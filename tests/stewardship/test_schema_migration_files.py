@@ -408,6 +408,21 @@ FROZEN = {
     "0125_secret_request_session.sql": (
         "aaa27b6bb22e3e3df0723f659195396fd944b2137cc10111a130f7cc5ee982fd"
     ),
+    "0126_information_limitation_review.sql": (
+        "4acebc765834c122f5a007e690658b6a99280b9e8a56f066250841e19a7eb669"
+    ),
+    "0127_pledge_review.sql": (
+        "bb2729437fdec314ee1c79d3fef4e3c8ffa0a4f372ded37b21b1bc68f54afeb4"
+    ),
+    "0128_census_pipeline_review.sql": (
+        "a586f0a0100242e02ee493f9baaf8fb8116efea5525dc6329cb35072239be7c1"
+    ),
+    "0129_census_additions.sql": (
+        "a63622c0286872d9fea2ed9fd2cbc8dc09ea338a4aea3089f3cd550762ea44c8"
+    ),
+    "0130_census_address_guard.sql": (
+        "3c1ede0cb9790113bffc6d57d71da1aa6371defc3ff28b754bd8acf6d04a0f9e"
+    ),
 }
 
 

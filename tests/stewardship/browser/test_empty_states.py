@@ -18,38 +18,30 @@ HISTORY_SAVE = "Each follow-up you save, with Save follow-up or Save and next"
 # Fixture page, and the start of each message its empty tables or lists show.
 EMPTY_PAGES = {
     "/census-changes-none": (
-        "No census changes need your work right now. Changes that do are",
+        "Nothing to review yet. Items are listed here as Families' answers",
     ),
-    "/census-changes-none-all": (
-        "No census changes yet. A change is listed here when a Family's live "
-        "response reports one; to see superseded",
-    ),
-    "/census-changes-none-everything": (
-        "No census changes yet. A change is listed here when a Family's live "
-        "response reports one.",
-    ),
-    "/census-changes-none-searched": (
-        "No census changes match these filters. Clear the Search name",
+    "/census-changes-none-stage": (
+        "Nothing is at this stage. Choose another Stage above to see more.",
     ),
     "/delivery-no-evidence": ("No Admin evidence yet. Each note or decision",),
     "/go-live-families-none": (
         "No Families have Testing responses left to delete, so cleanup has",
     ),
-    "/information-item-new": ("No Staff edits yet. " + HISTORY_SAVE,),
-    "/information-item-past-end": (
-        "No Staff edits on this page of the history. Use Newer history",
+    "/information-item-new": (
+        "No Staff decisions yet. Each decision made on the Additional",
     ),
+    "/information-item-past-end": (
+        "No Staff decisions on this page of the history. Use Newer history",
+    ),
+    "/information-none": ("Nothing to review yet. Items are listed here as",),
+    "/information-none-stage": ("Nothing is at this stage. Choose another Stage",),
     "/followup-item-new": ("No follow-up edits yet. " + HISTORY_SAVE,),
     "/followup-item-past-end": (
         "No follow-up edits on this page of the history. Use Newer history",
     ),
-    "/limitations-report-none": (
-        "No Member has said they cannot participate",
-        "No Family has said it cannot attend Mass",
-    ),
+    "/limitations-report-none": ("Nothing to review yet. Items are listed here as",),
     "/limitations-report-none-searched": (
-        "No Members match these filters. Clear the Search name",
-        "No Families match these filters. Clear the Search name",
+        "Nothing is at this stage. Choose another Stage",
     ),
     "/roster-none": ("No roster changes to enter. A change is listed here",),
     "/roster-none-ministry": (
@@ -61,15 +53,10 @@ EMPTY_PAGES = {
     ),
     "/source-form-none": ("Every Family that can use the portal can open the form,",),
 }
-# The Filters box beside each empty table with one (#227): its title, from
-# the same count the message is chosen by, so the two can't disagree. Census
-# changes' box is always open (#1682).
-FILTER_PANELS = {
-    "/census-changes-none": "Filters: none applied",
-    "/census-changes-none-all": "Filters: 1 applied",
-    "/census-changes-none-everything": "Filters: 2 applied",
-    "/census-changes-none-searched": "Filters: 1 applied",
-}
+# The Filters panel beside each empty table with one (#227): its summary and
+# whether it arrives open, from the same count the message is chosen by, so
+# the two can't disagree.
+FILTER_PANELS = {}
 
 
 @pytest.mark.parametrize("path", sorted(EMPTY_PAGES))

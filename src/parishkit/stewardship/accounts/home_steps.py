@@ -42,7 +42,8 @@ _ACTIVE = {
     "staff": _WORK,
     "ministry_leader": ("ministry_report",),
 }
-# What each menu count means, after the number: the page's default view.
+# What each menu count means, after the number: Census changes' To review
+# and Conflict rows, Roster changes to enter's default view.
 _NOTES = {
     "census_changes": _("to do"),
     "ministry_roster": _("not yet entered"),
