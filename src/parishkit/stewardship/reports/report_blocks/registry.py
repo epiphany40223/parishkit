@@ -60,6 +60,15 @@ class Frame:
     copy_url: str | None = None
 
 
+def no_options(options):
+    """The option check of a block that declares no options: nothing to check.
+
+    A report's stored options hold only keys the block declares
+    (``campaigns.report_values``), so a block without options always gets
+    an empty mapping here.
+    """
+
+
 @dataclass(frozen=True)
 class Block:
     """One block's declaration (report-emails spec, "Block contract").
@@ -70,6 +79,12 @@ class Block:
     nothing to show ("" for a block the spec leaves out instead, or that
     always draws something). Nothing draws it yet: today's digests never
     send an empty block.
+
+    ``check(options)`` raises ``ValueError`` for an option value the block
+    cannot draw; a report's stored options are checked with it on save.
+    ``version`` is the version of the block's captured data that a report
+    stores and a snapshot keeps beside it, so a saved copy drawn later
+    knows how its data was captured.
     """
 
     key: str
@@ -82,6 +97,8 @@ class Block:
     placement: str = BODY
     reader_role: str = "staff"
     options: dict = field(default_factory=dict)
+    check: Callable[[dict], None] = no_options
+    version: int = 1
 
     def __post_init__(self):
         """Reject a declaration outside the contract's closed values."""
