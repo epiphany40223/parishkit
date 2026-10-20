@@ -547,6 +547,7 @@ sections:
     "Reviewed form accessibility": [FAM-06, DOM-04]
     "Credentials and the submit path": [ARC-05, FAM-06]
     "Reviewed form delivery": [FAM-06]
+    "Reviewed form implementation": [FAM-06, DAT-08]
     "Reviewed form decisions": [DOM-01]
     "Baseline refresh re-evaluation": [DAT-08]
     "Refresh checks": [DAT-08]
