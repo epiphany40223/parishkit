@@ -1,4 +1,4 @@
--- Frozen forward migration file 0141 (the repository-wide file sequence;
+-- Frozen forward migration file 0137 (the repository-wide file sequence;
 -- provisional, the number is assigned centrally in merge order): refresh
 -- checks of an entered move, death and email opt-out (#1738).
 -- This file is installed by its Django migration in the workflows app and
@@ -7,7 +7,7 @@
 --
 -- The review pipeline (docs/specs/stewardship/review-pipeline/spec.md,
 -- "Refresh checks") confirms a census change Entered by hand when the
--- promoted data shows it. 0136 (provisional number) checks the Member
+-- promoted data shows it. 0132 (provisional number) checks the Member
 -- fields the Member contact read carries. This file adds three fields the
 -- contact read does not carry, each read from the snapshot its own way:
 --   * moved_household: true unless the snapshot lists the Member as an
@@ -20,15 +20,19 @@
 --     2026-10-18, #1680), only while the snapshot lists the Family active.
 -- Created: stewardship_refresh_census_source_v1, the snapshot's value for
 -- a census change, which returns stewardship_response_field_source_v1's
--- for every other Member field. Replaced, from 0136's body, with these
--- changes and only these:
+-- for every other Member field. Replaced, from 0133's body (0132's with
+-- Entered incorrectly's two fixes, #1737), with these changes and only
+-- these:
 --   * stewardship_refresh_check_guard_v1: a census check's change may be
 --     the Family's email opt-out as well as a Member's field; its observed
 --     value must be stewardship_refresh_census_source_v1's (the same as
---     before for every field 0136 admitted, since moved and deceased were
+--     before for every field 0132 admitted, since moved and deceased were
 --     never checked); and entered_incorrectly is refused for the three
 --     fields, which have no third value to be wrong at (a yes-or-no
---     request, and an opt-out whose baseline was never read).
+--     request, and an opt-out whose baseline was never read); for the
+--     same reason 0133's comparison with the value recorded at an Entered
+--     by hand mark leaves them out, so such a check is unchanged whenever
+--     it is not confirmed.
 -- No table, column, constraint or row changes. Neither function is
 -- SECURITY DEFINER (the guard was created without one), so nothing else
 -- is restored. The file ends with a DO block that refuses to commit
@@ -100,6 +104,7 @@ DECLARE
     change stewardship_proposed_change%ROWTYPE;
     request stewardship_ministry_request%ROWTYPE;
     family uuid; phase text; carried jsonb; matches boolean; roster boolean;
+    marked jsonb;
 BEGIN
     IF TG_OP<>'INSERT' THEN
         RAISE EXCEPTION 'Refresh checks are immutable' USING ERRCODE='23514';
@@ -151,6 +156,45 @@ BEGIN
                OR change.field IN ('moved_household','deceased_status','email_opt_out')))
         THEN RAISE EXCEPTION 'A census refresh check differs from its evidence'
             USING ERRCODE='23514'; END IF;
+        -- A change a later response of the Family replaced (the same field
+        -- answered again) is history and gets no check (#1737).
+        IF EXISTS (SELECT 1 FROM stewardship_proposed_change later
+            JOIN stewardship_submission answered ON answered.id=later.submission_id
+            JOIN stewardship_submission earlier ON earlier.id=change.submission_id
+            WHERE answered.family_id=earlier.family_id
+              AND answered.campaign_id=earlier.campaign_id AND answered.mode=earlier.mode
+              AND answered.family_version>earlier.family_version
+              AND ROW(later.entity_kind,later.entity_key,later.field)
+                  =ROW(change.entity_kind,change.entity_key,change.field))
+        THEN RAISE EXCEPTION 'A replaced census change is not checked'
+            USING ERRCODE='23514'; END IF;
+        -- A change Entered by hand is judged against the value recorded at
+        -- its mark (#1737): the change's stored ParishSoft value, which its
+        -- first mark froze, unless the mark was made again over Entered
+        -- incorrectly. A final change's version moves only by such a mark
+        -- (by one), so a check at the version before the current one means
+        -- the change was marked again there, and the latest such check holds
+        -- the value recorded then. With no value recorded (ParishSoft could
+        -- not report one at the first mark) the refresh's own value stands
+        -- in, so the check may not say Entered incorrectly. A field with no
+        -- third value is unchanged whenever it is not confirmed (above).
+        IF change.execution='resolved_external' AND NEW.outcome<>'confirmed'
+           AND change.field NOT IN ('moved_household','deceased_status','email_opt_out') THEN
+            SELECT k.observed INTO marked FROM stewardship_refresh_check k
+                WHERE k.proposal_id=change.id AND k.item_version=change.version-1
+                ORDER BY k.created_at DESC, k.id DESC LIMIT 1;
+            IF marked IS NULL AND change.current_available THEN
+                marked:=jsonb_build_object('available',true,'value',change.current_value);
+            END IF;
+            IF (marked IS NULL AND NEW.outcome='entered_incorrectly')
+               OR (marked IS NOT NULL
+                   AND (stewardship_response_comparison_v1(change.field,NEW.observed->'value')
+                        IS NOT DISTINCT FROM
+                        stewardship_response_comparison_v1(change.field,marked->'value'))
+                   IS DISTINCT FROM (NEW.outcome='unchanged'))
+            THEN RAISE EXCEPTION 'A census refresh check differs from the value recorded at its mark'
+                USING ERRCODE='23514'; END IF;
+        END IF;
     ELSE
         -- A live Ministry request a person resolved or closed, at its
         -- current version, judged by the Member's roster state for the
@@ -213,7 +257,10 @@ BEGIN
               AND prosrc LIKE '%change.field IN (''moved_household'',''deceased_status'',''email_opt_out'')%'
               AND prosrc LIKE '%stewardship_response_source_owner_v1(NEW.snapshot_id)%'
               AND prosrc LIKE '%stewardship_response_ministry_current_v1(%'
-              AND prosrc LIKE '%k.outcome=''confirmed''%')
+              AND prosrc LIKE '%k.outcome=''confirmed''%'
+              AND prosrc LIKE '%A replaced census change is not checked%'
+              AND prosrc LIKE '%k.item_version=change.version-1%'
+              AND prosrc LIKE '%AND change.field NOT IN (''moved_household'',''deceased_status'',''email_opt_out'') THEN%')
     THEN
         RAISE EXCEPTION 'The refresh check guard is not installed as declared';
     END IF;

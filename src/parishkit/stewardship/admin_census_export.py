@@ -52,6 +52,7 @@ JSONL_KEYS = (
     "parishsoft_status",
     "family_duid",
     "who",
+    "member_parishsoft_status",
     "member_duid",
     "what",
     "parishsoft_now",

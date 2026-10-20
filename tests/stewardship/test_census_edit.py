@@ -119,3 +119,21 @@ def test_rows_offer_edit_value_with_the_value_to_publish():
     # A Conflict and an ignored change may still be edited.
     assert shape(row(execution="conflict"))["edit"] is not None
     assert shape(row(decision="ignored"))["edit"] is not None
+
+
+def test_an_edited_address_past_the_guards_size_is_refused():
+    """Each part within its own limit, the whole edit past the review
+    guard's 1,024 bytes (two bytes a character), is refused before SQL;
+    the same script within the limit is kept (#1719)."""
+    from parishkit.stewardship.responses.census_review import (
+        LONG_ADDRESS,
+        edited_address,
+    )
+
+    from .census_factory import address
+
+    parts = {"line1": "1" + "é" * 199, "city": "é" * 100, "country": "GB"}
+    assert edited_address(address(**parts))["city"] == "é" * 100
+    longer = address(**parts, line2="é" * 200, region="é" * 100)
+    with pytest.raises(InvalidEdit, match=LONG_ADDRESS):
+        edited_address(longer)
