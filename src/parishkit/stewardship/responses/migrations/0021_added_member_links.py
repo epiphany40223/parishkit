@@ -1,7 +1,7 @@
 """Forward migration: link a Member the Family added to their ParishSoft record.
 
-Its SQL is the frozen file ``schema/migrations/0149_added_member_links.sql``
-(number 0149, provisional until it is assigned in merge order), read whole
+Its SQL is the frozen file ``schema/migrations/0141_added_member_links.sql``
+(number 0141, provisional until it is assigned in merge order), read whole
 and never parsed (#1670). It creates ``stewardship_added_member_link`` (one
 immutable row per Family campaign and added Member, which only the promoting
 source worker writes, with the snapshot's own evidence), its guard and the
@@ -29,20 +29,20 @@ FROZEN_SQL = (
     Path(__file__).resolve().parents[2]
     / "schema"
     / "migrations"
-    / "0149_added_member_links.sql"
+    / "0141_added_member_links.sql"
 )
 
 
 class Migration(migrations.Migration):
     dependencies = [
         # This app's previous migration, so the app keeps one leaf.
-        ("stewardship_responses", "0012_gender_by_hand"),
-        # The migration that installs the previous frozen file (0144, a
+        ("stewardship_responses", "0020_new_member_id_correction"),
+        # The migration that installs the previous frozen file (0140, a
         # Ministry request's details follow its Edit, #1718), whose
         # selection bodies this file copies, so the files apply in prefix
         # order. It follows the users swap, so the new table is in
         # runtime_grants.CLOSURE_TABLES.
-        ("stewardship_reports", "0032_edited_ministry_contacts"),
+        ("stewardship_reports", "0035_edited_ministry_contacts"),
         ("stewardship_campaigns", "0014_digest_skip_dates"),
     ]
 

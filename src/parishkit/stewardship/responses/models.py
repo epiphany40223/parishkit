@@ -732,7 +732,7 @@ class AddedMemberLink(ImmutableRecord):
     Member change the link rests on and ``snapshot_id`` the promoted snapshot
     that showed the Member. Only the promoting source worker inserts one,
     SQL checks the evidence again, and a link never changes
-    (schema/migrations/0149_added_member_links.sql).
+    (schema/migrations/0141_added_member_links.sql).
     """
 
     family = models.ForeignKey(

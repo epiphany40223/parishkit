@@ -1,4 +1,4 @@
--- Frozen forward migration file 0149 (the repository-wide file sequence;
+-- Frozen forward migration file 0141 (the repository-wide file sequence;
 -- provisional, the number is assigned centrally in merge order): a Member
 -- the Family added on the form is linked to the ParishSoft Member Staff
 -- later create for them, for the cannot-participate contact rule (#1670).
@@ -36,7 +36,7 @@
 --     It returns identifiers only; the worker has no grant on the answers.
 --   * stewardship_ministry_packet_v1 (the baseline) and
 --     stewardship_ministry_report_v3 (migration-owned, 0064), each copied
---     whole from its newest definition (0144) with only the 'answered' CTE
+--     whole from its newest definition (0140) with only the 'answered' CTE
 --     changed: an added Member and their linked ParishSoft Member are one
 --     person, so a checked box as either key's current answer withholds
 --     the requests under both. The link only adds a checked box, never
@@ -45,7 +45,7 @@
 --     there is no ALTER FUNCTION to repeat for them; they keep their
 --     settings and grants.
 -- The file ends with a DO block that refuses to commit unless all of this
--- is installed as declared, and refuses the 0144 bodies. Reversing needs
+-- is installed as declared, and refuses the 0140 bodies. Reversing needs
 -- its own forward migration.
 SET LOCAL check_function_bodies = false;
 SET LOCAL search_path = public;
@@ -55,7 +55,7 @@ SET LOCAL search_path = public;
 -- compared in sorted order: an installed database may hold them in the
 -- order of a later ALTER FUNCTION ... SET. A transaction-local setting holds
 -- them, not a temporary table: the migration login has no TEMP privilege.
-SELECT set_config('stewardship.migration_0149_acl', (
+SELECT set_config('stewardship.migration_0141_acl', (
     SELECT count(*)||':'||coalesce(string_agg(p.proname||'='||coalesce(p.proacl::text,'default')
             ||'/'||coalesce((SELECT array_agg(c ORDER BY c) FROM unnest(p.proconfig) c)::text,''),';'
         ORDER BY p.proname),'')
@@ -170,7 +170,7 @@ CREATE TRIGGER stewardship_added_member_link_guard
     BEFORE INSERT OR UPDATE OR DELETE ON public.stewardship_added_member_link
     FOR EACH ROW EXECUTE FUNCTION public.stewardship_added_member_link_guard_v1();
 
--- stewardship_ministry_packet_v1: copied from its newest definition (0144);
+-- stewardship_ministry_packet_v1: copied from its newest definition (0140);
 -- only the 'answered' CTE changed.
 CREATE OR REPLACE FUNCTION public.stewardship_ministry_packet_v1(
     campaign_uuid uuid, selection bigint[], include_history boolean,
@@ -429,7 +429,7 @@ SELECT CASE WHEN NOT z.values->'modules' ? 'ministry'
 FROM selected z LEFT JOIN source x ON true;
 $$;
 
--- stewardship_ministry_report_v3: copied from its newest definition (0144);
+-- stewardship_ministry_report_v3: copied from its newest definition (0140);
 -- only the 'answered' CTE changed.
 CREATE OR REPLACE FUNCTION public.stewardship_ministry_report_v3(
     campaign_uuid uuid, filters jsonb, operational boolean, ministry_scope bigint[],
@@ -833,7 +833,7 @@ BEGIN
         RAISE EXCEPTION 'The added Member candidates function is not installed as declared';
     END IF;
     -- Each replaced selection, once, invoker, stable, reading the links in
-    -- its 'answered' CTE, with no 0144 'answered' left.
+    -- its 'answered' CTE, with no 0140 'answered' left.
     IF (SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public'
           AND p.proname IN ('stewardship_ministry_packet_v1',
@@ -853,7 +853,7 @@ BEGIN
           AND p.prosrc NOT LIKE '%    ORDER BY s.family_id,g.kind,e.key,s.family_version DESC
 ), requests AS MATERIALIZED (%'
           AND p.prosrc LIKE '%AND a.cannot_serve IS NOT TRUE%')<>2 THEN
-        RAISE EXCEPTION 'Migration 0149 (added Member links) did not replace the selections';
+        RAISE EXCEPTION 'Migration 0141 (added Member links) did not replace the selections';
     END IF;
     -- CREATE OR REPLACE keeps the grants and names the same settings; check
     -- that nothing changed them.
@@ -863,8 +863,8 @@ BEGIN
         FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
         WHERE n.nspname='public' AND p.proname IN ('stewardship_ministry_packet_v1',
             'stewardship_ministry_report_v3'))
-        IS DISTINCT FROM current_setting('stewardship.migration_0149_acl') THEN
-        RAISE EXCEPTION 'Migration 0149 changed the selections'' grants or settings';
+        IS DISTINCT FROM current_setting('stewardship.migration_0141_acl') THEN
+        RAISE EXCEPTION 'Migration 0141 changed the selections'' grants or settings';
     END IF;
 END
 $check$;

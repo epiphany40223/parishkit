@@ -453,8 +453,8 @@ FROZEN = {
     "0140_edited_ministry_contacts.sql": (
         "fca7ffa4f76a74ccc422264b303b79a4af5c859f55017abf6f3267fcba4e223c"
     ),
-    "0149_added_member_links.sql": (
-        "10896cc8cb65a6e6a9a43cda357bc67a731f99aa8d35eb3f3ea7aba2e6a68c83"
+    "0141_added_member_links.sql": (
+        "01bf1e8b13a9f293d3c3713984a6b8e3cfab64288b22784688e10ff02d917820"
     ),
 }
 

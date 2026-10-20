@@ -3,9 +3,9 @@
 A Member the Family adds on the form has only the form's local UUID. Once
 Staff create the person in ParishSoft and mark the New Member change Entered
 by hand, the next promotion links the two keys
-(``responses/added_members.py``, frozen migration 0149), and the Ministry
+(``responses/added_members.py``, frozen migration 0141), and the Ministry
 selections read them as one person. These tests run real promotions and
-the leader's selections, and check 0149's guard and closing check.
+the leader's selections, and check 0141's guard and closing check.
 """
 
 import json
@@ -359,16 +359,16 @@ def test_only_the_worker_may_ask_for_candidates(response_service):
         )
 
 
-MIGRATION = (SCHEMA_FILES / "migrations/0149_added_member_links.sql").read_text(
+MIGRATION = (SCHEMA_FILES / "migrations/0141_added_member_links.sql").read_text(
     encoding="utf-8"
 )
-EARLIER = (SCHEMA_FILES / "migrations/0144_edited_ministry_contacts.sql").read_text(
+EARLIER = (SCHEMA_FILES / "migrations/0140_edited_ministry_contacts.sql").read_text(
     encoding="utf-8"
 )
 CHECK = MIGRATION[MIGRATION.index("DO $check$") :]
 ACL = MIGRATION[
-    MIGRATION.index("SELECT set_config('stewardship.migration_0149_acl'") : (
-        MIGRATION.index(", true);", MIGRATION.index("migration_0149_acl"))
+    MIGRATION.index("SELECT set_config('stewardship.migration_0141_acl'") : (
+        MIGRATION.index(", true);", MIGRATION.index("migration_0141_acl"))
         + len(", true);")
     )
 ]
@@ -377,7 +377,7 @@ CANDIDATES = "public.stewardship_added_member_candidates_v1(uuid, uuid)"
 
 
 def check_refuses(statement, message):
-    """Run ``statement`` and then 0149's closing check, which must refuse it."""
+    """Run ``statement`` and then 0141's closing check, which must refuse it."""
     with (
         pytest.raises(DatabaseError, match=message),
         transaction.atomic(),
@@ -403,10 +403,10 @@ def test_the_closing_check_passes_on_the_installed_schema():
 
 @pytest.mark.parametrize("name", REPLACED)
 def test_the_closing_check_refuses_each_earlier_body(name):
-    """A selection left on its 0144 body (no links read) is refused."""
+    """A selection left on its 0140 body (no links read) is refused."""
     earlier = definition(EARLIER, name)
     assert "stewardship_added_member_link" not in earlier
-    check_refuses(earlier, "Migration 0149 \\(added Member links\\)")
+    check_refuses(earlier, "Migration 0141 \\(added Member links\\)")
 
 
 @pytest.mark.parametrize(

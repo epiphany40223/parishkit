@@ -797,7 +797,7 @@ CLOSURE_CREATED = {
         "stewardship_responses",
         "0019_published_refresh_conflicts",
     ),
-    # 0149 (#1670, provisional number) creates the added Member link table
+    # 0141 (#1670, provisional number) creates the added Member link table
     # (in CLOSURE_TABLES), its guard and the definer candidates function;
     # all go, so its file installs whole again (and replaces the two
     # Ministry selections; see CLOSURE_REPLACED_ONLY).
@@ -806,7 +806,7 @@ CLOSURE_CREATED = {
             "public.stewardship_added_member_candidates_v1(uuid,uuid)",
             "public.stewardship_added_member_link_guard_v1()",
         ),
-        ("stewardship_responses", "0013_added_member_links"),
+        ("stewardship_responses", "0021_added_member_links"),
     ),
 }
 
@@ -1064,18 +1064,18 @@ def rerun_old_bodies(cursor, migrations):
 # after 0108's and 0112's reruns; 0138's body keeps 0096's, 0108's, 0112's,
 # 0113's, 0118's and 0133's rules, so only the latest replacement runs.
 CLOSURE_REPLACED_ONLY = {
-    # 0149 (#1670) replaces both Ministry selections last, reading added
-    # Member links; 0144's rerun (CLOSURE_REPLACED) can put 0144's bodies
-    # back, and 0149 creates a table, so only its replacements run again.
+    # 0141 (#1670) replaces both Ministry selections last, reading added
+    # Member links; 0140's rerun (CLOSURE_REPLACED) can put 0140's bodies
+    # back, and 0141 creates a table, so only its replacements run again.
     **dict.fromkeys(
         ("stewardship_ministry_packet_v1", "stewardship_ministry_report_v3"),
         (
-            ("stewardship_responses", "0013_added_member_links"),
+            ("stewardship_responses", "0021_added_member_links"),
             "bool_or(v.cannot_serve) AS cannot_serve",
         ),
     ),
-    # 0132 (#1684) replaces the follow-up selection last; 0094's rerun
-    # (above) puts back its older body, and 0132 adds columns, so only its
+    # 0131 (#1684) replaces the follow-up selection last; 0094's rerun
+    # (above) puts back its older body, and 0131 adds columns, so only its
     # replacement statement runs again.
     "stewardship_ministry_followup_v1": (
         ("stewardship_workflows", "0003_ministry_review_pipeline"),
@@ -1775,7 +1775,7 @@ def test_database_grants_wait_for_the_swap_closures_functions(tmp_path, monkeypa
             "stewardship_pledge_refresh_check": ("pk_stewardship_worker", "INSERT"),
             # To review pledges' checks (0135, #1747), the same way.
             "stewardship_pledge_open_check": ("pk_stewardship_worker", "INSERT"),
-            # Added Member links (0149, #1670): the worker records them in
+            # Added Member links (0141, #1670): the worker records them in
             # promotion; web only reads them.
             "stewardship_added_member_link": ("pk_stewardship_worker", "INSERT"),
         }

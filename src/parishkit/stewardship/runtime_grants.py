@@ -450,7 +450,7 @@ DEBUG_OFF_CLEAR_FUNCTION = "stewardship_debug_off_clear_v2()"
 PUBLICATION_AUDITED_FUNCTION = (
     "stewardship_publication_audited_v1(text, uuid, uuid, jsonb)"
 )
-# Added Member links (#1670, migration 0149): the links a promoted
+# Added Member links (#1670, migration 0141): the links a promoted
 # snapshot's evidence supports, which promotion records, the quick update's
 # skip check asks and the link table's guard checks again. Identifiers only;
 # the worker has no grant on the answers it reads.
@@ -503,10 +503,10 @@ CLOSURE_FUNCTIONS = {
     ),
     # Ministry leader changes (0070, #1034) follow 0069.
     LEADER_CHANGES_FUNCTION: ("stewardship_accounts", "0018_leader_changes"),
-    # Added Member links (0149, #1670, provisional number).
+    # Added Member links (0141, #1670, provisional number).
     ADDED_MEMBER_CANDIDATES_FUNCTION: (
         "stewardship_responses",
-        "0013_added_member_links",
+        "0021_added_member_links",
     ),
     # Mail dispatch's one token read (0073, #389 L1) follows 0072.
     DISPATCH_TOKEN_FUNCTION: ("stewardship_jobs", "0025_dispatch_token_access"),
@@ -688,12 +688,12 @@ CLOSURE_TABLES = {
     # A To review pledge's refresh checks (0135, provisional number, #1747),
     # which the worker records in promotion and web and the worker read.
     "stewardship_pledge_open_check": ("stewardship_reports", "0034_pledge_conflicts"),
-    # Added Member links (0149, #1670, provisional number): the worker
+    # Added Member links (0141, #1670, provisional number): the worker
     # records them in promotion, and web and the worker read them in the
     # Ministry selections.
     "stewardship_added_member_link": (
         "stewardship_responses",
-        "0013_added_member_links",
+        "0021_added_member_links",
     ),
 }
 
