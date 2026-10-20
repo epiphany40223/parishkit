@@ -1,32 +1,39 @@
 """Census changes on the shared review worklist (#1683), without a database."""
 
 import re
+from datetime import UTC
 from html import unescape
-from uuid import UUID
 
 import pytest
 from django.template.loader import render_to_string
 
-from parishkit.stewardship.pipeline import Action, Decision, Stage
+from parishkit.stewardship.pipeline import (
+    Action,
+    Decision,
+    Placement,
+    Stage,
+    census_addition_placement,
+)
 from parishkit.stewardship.reports.census_change_views import SORTING
 from parishkit.stewardship.reports.census_changes import (
     CensusQuery,
     editor,
+    export_rows,
+    link_additions,
     placement,
     select,
     shape,
+    shape_addition,
 )
 from parishkit.stewardship.reports.census_worklist import (
-    CensusDecisions,
     _value,
+    add_fields,
     worklist_page,
 )
+from parishkit.stewardship.responses.census_additions import AddRefusal, parse_add
+from parishkit.stewardship.responses.comparison import ADDRESS_COMPONENTS
 from parishkit.stewardship.responses.refresh_checks import CheckState
-from parishkit.stewardship.web.review_worklist import (
-    INCORRECT_BODIES,
-    WORDS,
-    WorklistDecision,
-)
+from parishkit.stewardship.web.review_worklist import INCORRECT_BODIES, WORDS
 from parishkit.stewardship.web.tables import paginate
 
 from .test_census_changes import SUBMITTED, row
@@ -40,11 +47,12 @@ def shaped(**values):
     return shape(row(reopened=False) | values)
 
 
-def page(rows, *, stage="all", roles=STAFF, mutable=True, **extra):
+def page(rows, *, stage="all", roles=STAFF, mutable=True, replacements=None, **extra):
     """The rendered Census changes page for ``rows`` and its worklist."""
     query = CensusQuery(stage=stage)
     result = select(rows, query, administrator="administrator" in roles)
     result["roles"] = roles
+    result["replacements"] = replacements or {}
     table = paginate(result["rows"], {}, sorting=SORTING)
     worklist, table = worklist_page(
         result, query, table, "/admin/reports/census/", mutable=mutable
@@ -246,7 +254,6 @@ def test_the_page_draws_the_worklist_columns_and_the_download_below():
         "Who",
         "Member DUID",
         "What changed",
-        "How it reaches ParishSoft",
         "Baseline",
         "Family's answer",
         "Reviewer's value",
@@ -336,16 +343,138 @@ def test_the_edit_value_is_read_from_the_editors_fields():
             _value(fields, field)
 
 
-def test_census_takes_no_add_yet():
-    """Census Add is its own slice (#1710): the page offers none, and a
-    posted one is refused before anything is read."""
-    decision = WorklistDecision(
-        Action.ADD, {}, "", UUID("00000000-0000-0000-0000-000000000001")
+def test_staff_get_add_while_the_campaign_admits_changes():
+    """Staff get Add in the selection bar, with its dialog: What changed
+    first, a value control per field and the ignored changes to add in
+    place of; none while other campaign work holds the campaign (#1710)."""
+    extra = {"add_fields": add_fields(), "add_replaceable": [("7", "Prefix for X")]}
+    worklist, html = page([shaped()], **extra)
+    assert worklist.add and 'id="census-add-dialog"' in html
+    assert html.index('name="value_field"') < html.index('name="value_family"')
+    assert 'name="value_birth_date" type="date"' in html
+    assert 'name="value_line1"' in html and '<option value="7">Prefix for X' in html
+    assert 'data-show-when="value_field=home_address|mailing_address"' in html
+    worklist, html = page([shaped()], mutable=False, **extra)
+    assert not worklist.add and "census-add-dialog" not in html
+
+
+def add_post(**changes):
+    """The Add dialog's fields for a Member's nickname, with ``changes``."""
+    fields = {
+        "value_field": ["nickname"],
+        "value_family": ["1001"],
+        "value_member": ["101"],
+        "value_nickname": ["Bo"],
+        "value_in_place_of": [""],
+    }
+    return {key: value for key, value in (fields | changes).items() if value}
+
+
+def test_parse_add_reads_only_the_chosen_fields_controls():
+    """A Member field sends its Member and value; a Family address its parts;
+    a stray or missing control is a malformed form, a bad DUID or field a
+    refusal at its field."""
+    found = parse_add(add_post())
+    assert (found["family_duid"], found["member_duid"], found["value"]) == (
+        1001,
+        101,
+        "Bo",
     )
+    parts = {f"value_{part}": [""] for part in ADDRESS_COMPONENTS}
+    address = parse_add(
+        {"value_field": ["home_address"], "value_family": ["1001"]}
+        | {"value_in_place_of": [""]}
+        | parts
+    )
+    assert address["entity_kind"] == "family" and address["member_duid"] is None
+    for broken in (
+        add_post(value_line1=[""]),
+        add_post(value_member=None),
+        add_post(value_nickname=["Bo", "Bob"]),
+    ):
+        with pytest.raises(ValueError):
+            parse_add(broken)
+    for changes, code in (
+        ({"value_field": ["moved_household"]}, "add_field"),
+        ({"value_family": ["0"]}, "add_family"),
+        ({"value_member": ["New"]}, "add_member"),
+    ):
+        with pytest.raises(AddRefusal) as refused:
+            parse_add(add_post(**changes))
+        assert refused.value.code == code
+
+
+def test_an_addition_is_added_to_enter_by_hand_until_its_step():
+    """Open, an addition is To enter by hand, Added by the parish; entered,
+    Entered by hand; withdrawn, History (#1710)."""
+    assert census_addition_placement("open") == Placement(
+        Stage.TO_ENTER_BY_HAND, Decision.ADDED
+    )
+    assert census_addition_placement("entered").stage is Stage.ENTERED_BY_HAND
+    assert census_addition_placement("withdrawn") == Placement(Stage.HISTORY)
     with pytest.raises(ValueError):
-        CensusDecisions(None, None).decide(None, decision)
-    worklist, _ = page([shaped()])
-    assert not worklist.add
+        census_addition_placement("ignored")
+
+
+def added(**values):
+    """One shaped parish-added row, as ``ADDITION_ROWS`` returns it."""
+    return shape_addition(
+        {
+            "id": "a1",
+            "entity_kind": "member",
+            "entity_key": "41",
+            "field": "mobile_phone",
+            "value": '{"display": "555-0123", "number": "5550123"}',
+            "in_place_of": None,
+            "created_at": SUBMITTED,
+            "baseline": '{"available": true, "value": "555-0100"}',
+            "family_duid": 7001,
+            "family_name": "Sample",
+            "member_name": "Pat Sample",
+            "snapshot_id": None,
+            "added_by": "staff@example.org",
+            "added_note": "",
+            "step": None,
+            "step_note": None,
+            "step_at": None,
+            "step_by": None,
+        }
+        | values
+    )
+
+
+def test_additions_are_tied_to_the_familys_changes_of_their_field():
+    """Every addition in place of an ignored change is listed under it; an
+    open addition beside the Family's open change of the field says so; an
+    ignored change an open addition covers offers no Back to review."""
+    ignored = shaped(id="9", decision="ignored")
+    asked = shaped(id="8", entity_key="42")
+    first = added(in_place_of="9")
+    second = added(id="a2", in_place_of="9", entity_key="42")
+    gone = added(id="a3", in_place_of="9", step="withdrawn", step_at=SUBMITTED)
+    replacements = link_additions([ignored, asked], [first, second, gone])
+    assert len(replacements["9"]) == 2
+    assert ignored["covered"] and not asked.get("covered")
+    assert second["overlap"] and not first["overlap"] and not gone["overlap"]
+    worklist, _ = page([ignored, asked, first, second, gone], replacements=replacements)
+    rows = {row["id"]: row for row in worklist.rows}
+    assert "back_to_review" not in [icon["action"] for icon in rows["9"]["icons"]]
+    assert rows["9"]["decision_label"].count("Mobile phone: 555-0123") == 2
+    assert "open change of this field too" in rows["add-a2"]["decision_label"]
+    (back,) = [item for item in worklist.bulk if item["value"] == "back_to_review"]
+    assert back["body"].endswith("is withdrawn instead.")
+
+
+def test_downloads_list_an_addition_as_the_page_does():
+    """The files carry an addition's row: no Family's answer, the added value
+    as the reviewer's, By hand, To enter by hand and who added it."""
+    result = select(
+        [added(added_note="Phoned in")], CensusQuery(stage="all"), administrator=False
+    )
+    (line,) = export_rows(result, UTC)
+    assert line[8:12] == ("", "555-0123", "By hand", "To enter by hand")
+    assert line[13] == "staff@example.org" and line[15] == "Phoned in"
+    assert result["rows"][0]["baseline"] == "555-0100"
 
 
 def test_refresh_checks_place_final_changes_and_flag_not_seen():
@@ -443,6 +572,24 @@ def test_a_current_member_has_no_badge():
     assert "data-source-status" not in html
 
 
+def test_link_pairs_carry_only_the_link_safe_choices():
+    """The view's own address keeps the Stage and closed filters other than
+    their defaults, the zone only with a day, and the table's choices; the
+    name search never (R38 finding 6)."""
+    from parishkit.stewardship.reports.census_changes import CensusQuery
+    from parishkit.stewardship.reports.census_worklist import link_pairs
+    from parishkit.stewardship.web.review_worklist import page_address
+
+    plain = CensusQuery(stage="to_review", search="Smith", zone="UTC")
+    assert page_address("/c", link_pairs(plain)) == "/c"
+    chosen = CensusQuery(
+        stage="all", route="automatic", start="2054-10-01", zone="UTC", search="Smith"
+    )
+    assert page_address("/c", link_pairs(chosen, {"sort": "-who"})) == (
+        "/c?stage=all&route=automatic&start=2054-10-01&zone=UTC&sort=-who"
+    )
+
+
 def test_a_refresh_conflict_and_a_member_id_say_so_under_the_stage():
     """#1749: an Updated in ParishSoft change a refresh put back in Conflict
     says why (an ordinary Conflict does not), and a New Member's mark names
@@ -489,8 +636,11 @@ def test_a_refresh_conflict_and_a_member_id_say_so_under_the_stage():
     assert rows["3"]["decision_label"].endswith("ParishSoft Member ID 7.")
     assert rows["4"]["offers_entered"] and not rows["1"]["offers_entered"]
     assert 'id="census-entered-dialog-4"' in html
-    # Row 3's mark may be made again with another ID (#1773, below).
-    assert html.count('name="value_member"') == 2
+    # Census Add's dialog (#1710) has a value_member field of its own.
+    assert html.count("ParishSoft Member ID (optional)") == 1
+    # Row 3's mark may be made again with another ID (#1773, below), and
+    # Census Add's dialog has a value_member field of its own.
+    assert html.count('name="value_member"') == 3
 
 
 def entered_new_member(**values):
@@ -542,7 +692,7 @@ def test_an_entered_new_member_offers_correcting_its_member_id():
     dialog = html.split('id="census-entered-3"')[1].split("</form>")[0]
     field = re.search(r"<input[^>]*name=\"value_member\"[^>]*>", dialog)[0]
     assert "required" in field and 'value="7"' in field
-    assert "(optional)" not in dialog
+    assert "ParishSoft Member ID (optional)" not in dialog
     assert "The next refresh checks the entry again with this ID." in dialog
     # A mark that named no ID may gain one: Add, the field starts blank.
     worklist, html = page([entered_new_member(resolution_member=None)])

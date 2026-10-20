@@ -250,10 +250,9 @@ def test_follow_up_page_labels_no_utc_entry():
     # both fields carry the gate marker for an unknown one.
     assert ZONE_NOTE in text
     assert text.count("data-browser-zone-field>") == 2
-    # The request page names no fixed zone (the shared note names the
-    # browser's); the worklist's Export these requests (#1157, #1684), on
-    # Ministry requests, offers UTC among its zone choices, as every export
-    # asking for a zone does.
+    # Neither the follow-up nor the queue's Export these requests names a
+    # fixed zone: the export asks for none (#1679), and the shared note
+    # names the browser's.
     assert "UTC" not in text
     # Every follow-up instant shown (the request's submitted time, history,
     # contact, source as of) is converted in the browser; the worklist's own
@@ -351,11 +350,12 @@ def test_browser_day_start_needs_a_known_zone(zone):
 def test_log_page_dates_are_browser_local():
     """The System logs filters name no fixed zone (#558): From and Through
     carry the browser zone field and its note, and the only "UTC" left is the
-    export's own time zone choice (the reader picks the file's zone)."""
+    export's own "Times in" choice, drawn by the shared export row (#1679),
+    which the page's comments explain."""
     text = (TEMPLATES / "logs.html").read_text()
-    assert [line for line in text.splitlines() if "UTC" in line] == [
-        line for line in text.splitlines() if '<option value="UTC">UTC</option>' in line
-    ]
+    code = re.sub(r"{% comment %}.*?{% endcomment %}", "", text, flags=re.S)
+    assert "UTC" not in code
+    assert "zone_choice=True" in code
     assert 'name="zone" value="{{ query.zone }}" data-browser-zone ' in text
     assert ZONE_NOTE in text
     assert text.count("data-browser-zone-field>") == 2
@@ -372,35 +372,3 @@ def test_log_page_dates_are_browser_local():
     assert (
         'value="{{ admin_chrome.critical_since_day }}" data-zone-dependent>' in banner
     )
-
-
-@pytest.mark.parametrize(
-    ("zone", "day"),
-    [
-        # 03:30 UTC on Oct 5 is still the evening of Oct 4 in New York and
-        # Los Angeles, and already the afternoon of Oct 5 in Tokyo.
-        ("UTC", "Oct 5, 2054"),
-        ("America/New_York", "Oct 4, 2054"),
-        ("America/Los_Angeles", "Oct 4, 2054"),
-        ("Asia/Tokyo", "Oct 5, 2054"),
-    ],
-)
-def test_roster_resolved_day_is_the_browser_day(zone, day):
-    """A stale roster bulk refusal names a row's resolved day in the zone the
-    dialog posts (#558), never the parish's."""
-    from parishkit.stewardship.reports.ministry_roster_views import resolved_on
-
-    assert resolved_on(datetime(2054, 10, 5, 3, 30, tzinfo=UTC), zone) == day
-
-
-def test_roster_bulk_form_sends_the_browser_zone():
-    """The roster bulk dialog's form carries the browser zone field, and each
-    duplicate row's controls mark their instant for date-format-v1.js."""
-    page = (TEMPLATES / "ministry-roster.html").read_text()
-    assert (
-        "{% csrf_token %}"
-        '<input type="hidden" name="zone" value="" data-browser-zone>' in page
-    )
-    assert 'data-local-day="{{ row.local_day }}"' in page
-    tick = (TEMPLATES / "roster-tick-row.html").read_text()
-    assert tick.count("data-local-day=row.local_day") == 2

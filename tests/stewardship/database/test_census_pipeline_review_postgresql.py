@@ -4,7 +4,7 @@ Staff and Administrators review every census change, By hand ones too:
 Accept, Edit (Accept with a value, a Family address included), Ignore, Back
 to review (a note to reopen an ignored change) and Entered by hand, one by
 one or in bulk, all or none (``census_review.decide_census_changes``). The
-frozen file 0131 widens the review guard for them; its own rules are tested
+frozen file 0128 widens the review guard for them; its own rules are tested
 here with the service bypassed.
 """
 
@@ -48,7 +48,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 
 FROZEN = (
     Path(__file__).resolve().parents[3]
-    / "src/parishkit/stewardship/schema/migrations/0131_census_pipeline_review.sql"
+    / "src/parishkit/stewardship/schema/migrations/0128_census_pipeline_review.sql"
 )
 
 
@@ -315,7 +315,7 @@ def forge(proposal, actor, *, decision, value_set=False, value=None, note=""):
 def test_sql_refuses_a_forged_pipeline_edit(
     response_service, field, decision, value, message
 ):
-    """The 0131 guard holds every writer to the edit rules."""
+    """The 0128 guard holds every writer to the edit rules."""
     harness, _, staff, rows = prepared(response_service)
     with pytest.raises((IntegrityError, DatabaseError), match=message):
         forge(rows[field], staff, decision=decision, value_set=True, value=value)

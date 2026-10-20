@@ -1,10 +1,10 @@
-"""The refresh's last census cases (#1749), under migration 0150's guards.
+"""The refresh's last census cases (#1749), under migration 0138's guards.
 
 The review pipeline (spec, "Refresh checks") re-evaluates an Updated in
 ParishSoft change, an entered New Member and an entered home address
 against each promoted refresh. The checks and the change's move to
 Conflict are written by real promotions (``prepare`` and ``promote``) on
-the guards migration 0150 (provisional number) installs, and read by the
+the guards migration 0138 (provisional number) installs, and read by the
 real page's row reader.
 """
 
@@ -53,7 +53,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 MIGRATIONS = (
     Path(__file__).resolve().parents[3] / "src/parishkit/stewardship/schema/migrations"
 )
-FROZEN = MIGRATIONS / "0150_published_refresh_conflicts.sql"
+FROZEN = MIGRATIONS / "0138_published_refresh_conflicts.sql"
 # The New Member's ParishSoft Member ID Staff record, and their record.
 ADDED = 7
 # Family 1's primary address in ParishSoft, and the census answer it holds.
@@ -424,7 +424,7 @@ ADDRESSES = {
 def test_the_sql_home_address_agrees_with_census_source(
     response_service, variant, active
 ):
-    """Migration 0150's stewardship_refresh_census_source_v1 reads the home
+    """Migration 0138's stewardship_refresh_census_source_v1 reads the home
     address exactly as ``refresh_checks.census_source`` does, and the
     address keys agree, so the guard never refuses a check a promotion
     owes."""
@@ -468,7 +468,7 @@ def test_the_sql_home_address_agrees_with_census_source(
 
 
 def _check():
-    """0150's closing DO block, as the file has it."""
+    """0138's closing DO block, as the file has it."""
     text = FROZEN.read_text(encoding="utf-8")
     return text[text.index("DO $check$") :]
 
@@ -494,34 +494,34 @@ def test_do_block_refuses_the_old_definitions(db):
     for statement, words in (
         (
             _body(
-                "0140_entered_incorrectly_fixes.sql",
+                "0133_entered_incorrectly_fixes.sql",
                 "stewardship_response_derived_guard_v1",
             ),
             "published Conflict rules",
         ),
         (
             _body(
-                "0140_entered_incorrectly_fixes.sql",
+                "0133_entered_incorrectly_fixes.sql",
                 "stewardship_proposal_resolution_guard_v1",
             ),
             "New Member ID rule",
         ),
         (
             _body(
-                "0141_census_refresh_sources.sql", "stewardship_refresh_check_guard_v1"
+                "0137_census_refresh_sources.sql", "stewardship_refresh_check_guard_v1"
             ),
             "refresh_check_guard_v1",
         ),
         (
             _body(
-                "0140_entered_incorrectly_fixes.sql",
+                "0133_entered_incorrectly_fixes.sql",
                 "stewardship_refresh_check_guard_v1",
             ),
             "refresh_check_guard_v1",
         ),
         (
             _body(
-                "0141_census_refresh_sources.sql",
+                "0137_census_refresh_sources.sql",
                 "stewardship_refresh_census_source_v1",
             ),
             "census refresh source",

@@ -313,6 +313,10 @@ ACTIVITY_TYPES = {
         "census_publication_switched_off",
         "census_publication_read_unconfirmed",
         "census_publication_refused",
+        # The command line's Check ParishSoft, Update and Run again (#1755).
+        "admin_cmd_census_update_check",
+        "admin_cmd_census_update_confirm",
+        "admin_cmd_census_update_rerun",
     ),
     "downloads": (
         *(
@@ -351,6 +355,7 @@ ACTIVITY_TYPES = {
         "response_started_list_exported",
         "response_submitted_list_exported",
         "roster_changes_exported",
+        "pledges_to_enter_exported",
         "ministry_followup_exported",
         "talents_report_exported",
         "system_logs_exported",
@@ -419,6 +424,7 @@ UNGROUPED_REASONS = {
         "response_started_list_viewed",
         "response_submitted_list_viewed",
         "roster_changes_viewed",
+        "pledges_to_enter_viewed",
         "source_form_viewed",
         "system_health_viewed",
         "system_logs_viewed",
@@ -438,14 +444,19 @@ UNGROUPED_REASONS = {
         "admin_cmd_followup_roster_bulk",
         "admin_cmd_followup_roster_entered",
         "admin_cmd_followup_update",
+        "admin_cmd_information_decide",
+        "admin_cmd_limitations_decide",
+        "admin_cmd_pledges_decide",
         "census_change_updated",
         "census_handling_corrected",
         "refresh_checks_started",
         "chair_review_decided",
         "information_updated",
+        "limitation_reviewed",
         "ministry_request_updated",
         "ministry_followup_bulk_applied",
         "ministry_roster_entered",
+        "pledge_review_updated",
     ),
     "Staff opening a Family's form through Open form, and the Family sign-in "
     "it starts (#529); not a portal sign-in": (

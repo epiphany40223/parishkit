@@ -27,13 +27,20 @@ from django.utils.datastructures import MultiValueDict
 
 from parishkit.stewardship.accounts.policy import Capability, allows
 from parishkit.stewardship.campaigns.read_guards import ReadUnavailable
-from parishkit.stewardship.pipeline import Decision, Placement, Stage, census_placement
+from parishkit.stewardship.pipeline import (
+    Decision,
+    Placement,
+    Stage,
+    census_addition_placement,
+    census_placement,
+)
 from parishkit.stewardship.responses.census import (
     ADDRESS_LIMITS,
     FAMILY_FIELDS,
     blank_address,
     country_choices,
 )
+from parishkit.stewardship.responses.census_additions import ADDED_PREFIX
 from parishkit.stewardship.responses.census_resolution import allowed
 from parishkit.stewardship.responses.census_review import (
     ADDRESS_FIELDS,
@@ -57,6 +64,7 @@ from parishkit.stewardship.responses.refresh_checks import (
 )
 from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.source.source_status import (
+    MEMBER_STATUS_HEADING,
     NAME_NOT_RECORDED,
     STATUS_HEADING,
     family_status,
@@ -138,14 +146,17 @@ EARLIEST, LATEST = date(2000, 1, 1), date(2999, 12, 31)
 # The download's columns: the page's columns, names and order (#932), so
 # Member DUID sits right after Who in every format. ParishSoft status follows
 # Family, blank unless the data no longer has it: the page's badge beside the
-# name has a column of its own in a file (#1216). The latest Entered in
-# ParishSoft, Ignore or Reopen (#528) follows Submitted, as on the page: who,
-# when and its note.
+# name has a column of its own in a file (#1216). Member's ParishSoft status
+# follows Who in the same way, for the badge the page shows beside a Member
+# no longer active and living in the Family (rule 4, #1738; #1752). The
+# latest Entered in ParishSoft, Ignore or Reopen (#528) follows Submitted, as
+# on the page: who, when and its note.
 HEADINGS = (
     "Family",
     STATUS_HEADING,
     "Family DUID",
     "Who",
+    MEMBER_STATUS_HEADING,
     "Member DUID",
     "What changed",
     "ParishSoft now",
@@ -158,30 +169,31 @@ HEADINGS = (
     "Recorded at",
     "Note",
 )
-# Relative PDF column widths, in percent of the page's body width. Fifteen
+# Relative PDF column widths, in percent of the page's body width. Sixteen
 # columns share one landscape page, so a compact time ("Sep 30, 2026
 # 12:04 PM") keeps its date on one line and its time on the next, and a
 # status may take two lines ("Being" / "published"); a whole DUID and
-# "Automatic" stay on one line, and ParishSoft status, blank on most rows,
-# takes Family's narrow width. The resolution's who and note get room of
-# their own, and the values Families typed and ParishSoft holds share the
+# "Automatic" stay on one line, and each ParishSoft status, blank on most
+# rows, takes its name's narrow width. The resolution's who and note get room
+# of their own, and the values Families typed and ParishSoft holds share the
 # rest, long ones wrapping within their column.
 PDF_WEIGHTS = {
     "Family": 5,
     STATUS_HEADING: 5,
     "Family DUID": 7,
     "Who": 5,
+    MEMBER_STATUS_HEADING: 5,
     "Member DUID": 7,
     "What changed": 5,
-    "ParishSoft now": 6,
+    "ParishSoft now": 5,
     "Family's answer": 6,
     "Reviewer's value": 4,
     "How it reaches ParishSoft": 8,
     "Stage": 8,
     "Submitted": 10,
-    "Recorded by": 7,
+    "Recorded by": 5,
     "Recorded at": 10,
-    "Note": 7,
+    "Note": 5,
 }
 PRIVACY = "Sensitive parish report. Share only with authorized recipients."
 # The report's name: the PDF's page title, the XLSX sheet and workbook title.
@@ -352,6 +364,59 @@ WHERE c.id=%s AND p.handling<>'report-only'
 ORDER BY f.family_duid, s.submitted_at, p.entity_kind,
     p.entity_key, p.field
 """
+# One row per census change the parish added (#1710), named as ROWS names
+# a change: the Family from the shared lookup, a Member from the current
+# ParishSoft source (an addition has no Family answer to take a name from).
+# Its creator, the note and its later step (Entered by hand or withdrawn)
+# come with it. Takes the unnamed-Family words, then the campaign.
+ADDITION_ROWS = """
+SELECT a.id::text, a.entity_kind, a.entity_key, a.field, a.value::text,
+    a.in_place_of_id::text, a.created_at, a.baseline::text, f.family_duid,
+    stewardship_family_display_name_v1(sc.snapshot_id, f.family_duid, %s)
+        AS family_name,
+    nullif(btrim(concat_ws(' ',
+        nullif(btrim(sm.canonical::jsonb->>'firstName'),''),
+        nullif(btrim(sm.canonical::jsonb->>'lastName'),''))),'') AS member_name,
+    sc.snapshot_id, u.email, a.note, r.action, r.note, r.created_at, ru.email
+FROM stewardship_census_addition a
+JOIN stewardship_family_campaign f ON f.id=a.family_id
+LEFT JOIN stewardship_source_current sc ON sc.singleton
+LEFT JOIN stewardship_snapshot_member mm ON a.entity_kind='member'
+    AND mm.snapshot_id=sc.snapshot_id AND mm.source_key=a.entity_key
+LEFT JOIN stewardship_source_member sm ON sm.id=mm.payload_id
+LEFT JOIN stewardship_census_addition_resolution r ON r.addition_id=a.id
+LEFT JOIN stewardship_portal_user u ON u.id=a.actor_id
+LEFT JOIN stewardship_portal_user ru ON ru.id=r.actor_id
+WHERE f.campaign_id=%s
+ORDER BY f.family_duid, a.created_at, a.entity_kind, a.entity_key, a.field
+"""
+ADDITION_COLUMNS = (
+    "id",
+    "entity_kind",
+    "entity_key",
+    "field",
+    "value",
+    "in_place_of",
+    "created_at",
+    "baseline",
+    "family_duid",
+    "family_name",
+    "member_name",
+    "snapshot_id",
+    "added_by",
+    "added_note",
+    "step",
+    "step_note",
+    "step_at",
+    "step_by",
+)
+# How an addition's state reads as a proposal's execution, so the shared
+# shaping words it (``status``: To do, Entered by hand, Cancelled).
+ADDITION_EXECUTION = {
+    "open": "pending",
+    "entered": "resolved_external",
+    "withdrawn": "cancelled",
+}
 COLUMNS = (
     "id",
     "entity_kind",
@@ -405,6 +470,19 @@ FROM (
 """
 
 
+# The stages at which a Family's change is still open: decided, or still
+# to be, but not yet in ParishSoft. An addition of the same field beside one
+# says so (#1710).
+OPEN_CHANGE_STAGES = frozenset(
+    stage.value
+    for stage in (
+        Stage.TO_REVIEW,
+        Stage.CONFLICT,
+        Stage.READY_TO_UPDATE,
+        Stage.UPDATING,
+        Stage.TO_ENTER_BY_HAND,
+    )
+)
 # The stages the menu and Home count (``open_count``).
 OPEN_STAGES = frozenset({Stage.TO_REVIEW, Stage.CONFLICT})
 
@@ -450,7 +528,21 @@ def census_changes(campaign_id, query, principal):
     if not allows(principal, Capability.VIEW_CENSUS):
         raise PermissionError("Census changes are unavailable.")
     administrator = allows(principal, Capability.PUBLISH_CENSUS)
-    result = select(census_rows(campaign_id), query, administrator=administrator)
+    changes = census_rows(campaign_id)
+    added = addition_rows(campaign_id)
+    result = select(changes + added, query, administrator=administrator)
+    # What the worklist's Add needs from every row, whatever the filters:
+    # the ignored changes an addition may be added in place of, and each
+    # one's addition, which its history line names (#1710).
+    result["replaceable"] = [
+        (
+            row["id"],
+            f"{row['label']} for {row['who']}, Family DUID {row['family_duid']}",
+        )
+        for row in changes
+        if row["stage"] == Stage.IGNORED.value
+    ]
+    result["replacements"] = link_additions(changes, added)
     # The reader's pipeline roles on the census stream (the review
     # worklist's icons and bulk bar follow them): Staff hold the census
     # capability, an Administrator also publishes.
@@ -463,6 +555,45 @@ def census_changes(campaign_id, query, principal):
         if allows(principal, capability)
     )
     return result
+
+
+def _key(row):
+    """A row's Family, Member (or Family) and field."""
+    return (row["family_duid"], row["entity_kind"], row["entity_key"], row["field"])
+
+
+def link_additions(changes, added):
+    """Tie the parish's additions to the Family's changes of the same field.
+
+    Returns each ignored change's additions made in place of it (its
+    history line names them), and marks rows in place: an open addition
+    whose field the Family has an open change of too (``overlap``, from a
+    later response), and an ignored change an open addition of its field
+    covers (``covered``: it is not sent back to review while that addition
+    is open, so the field never has two open changes, #1710).
+    """
+    replacements = {}
+    for row in added:
+        if row["in_place_of"] and row["stage"] != Stage.HISTORY.value:
+            replacements.setdefault(row["in_place_of"], []).append(
+                f"{row['label']}: {row['edited']}"
+            )
+    # An open addition whose field the Family has an open change of too (a
+    # later response asked again): the row says so, so one is withdrawn.
+    asked = {_key(row) for row in changes if row["stage"] in OPEN_CHANGE_STAGES}
+    for row in added:
+        key = _key(row)
+        row["overlap"] = row["stage"] == Stage.TO_ENTER_BY_HAND.value and key in asked
+    # An ignored change an open addition of its field covers is not sent
+    # back to review while it is open (``census_resolution.
+    # covered_by_addition`` refuses it too), so the field never has two.
+    covering = {
+        _key(row) for row in added if row["stage"] == Stage.TO_ENTER_BY_HAND.value
+    }
+    for row in changes:
+        key = _key(row)
+        row["covered"] = row["stage"] == Stage.IGNORED.value and key in covering
+    return replacements
 
 
 def census_rows(campaign_id):
@@ -512,6 +643,84 @@ def census_rows(campaign_id):
         # A New Member's ID correction (#1773) is not offered on history.
         row["replaced"] = row["family_version"] != latest[key(row)]
     return [shape(row) for row in rows]
+
+
+def addition_rows(campaign_id):
+    """Every census change the parish added in the campaign, worded (#1710).
+
+    The caller has checked who may read them. Each is shaped as a change
+    is (``shape_addition``), so the page, its filters and the downloads
+    treat both alike.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute(ADDITION_ROWS, [NAME_NOT_RECORDED, campaign_id])
+        rows = [dict(zip(ADDITION_COLUMNS, values, strict=True)) for values in cursor]
+    return [shape_addition(row) for row in rows]
+
+
+def shape_addition(raw):
+    """Word one parish-added change as ``shape`` words a Family's change.
+
+    It reads as a change that is accepted with a reviewer's value and no
+    Family's answer, By hand (nothing writes an addition to ParishSoft
+    until #1688), in the stage ``census_addition_placement`` gives it:
+    To enter by hand while open, then Entered by hand, or History once
+    withdrawn. Its version is 1 while open and 2 after its one later step.
+    Its last decision is that step, else the Add itself (who, when, the
+    note). Its Submitted time is when it was added, and its Baseline
+    ParishSoft's value then, where the source could read it.
+    """
+    state = raw["step"] or "open"
+    value = json.loads(raw["value"])
+    # ParishSoft's value when the change was added, where it could be read.
+    baseline = json.loads(raw["baseline"]) if raw["baseline"] else {}
+    known = baseline.get("available") is True
+    shown = shape(
+        {
+            "id": ADDED_PREFIX + raw["id"],
+            "entity_kind": raw["entity_kind"],
+            "entity_key": raw["entity_key"],
+            "field": raw["field"],
+            "baseline_available": known,
+            "baseline_value": baseline.get("value") if known else None,
+            "submitted_value": None,
+            "current_available": False,
+            "current_value": None,
+            "admin_value_set": True,
+            "admin_value": value,
+            "handling": "manual",
+            "decision": "approved",
+            "execution": ADDITION_EXECUTION[state],
+            "submitted_at": raw["created_at"],
+            "family_duid": raw["family_duid"],
+            "family_name": raw["family_name"],
+            "member_name": raw["member_name"],
+            "snapshot_id": raw["snapshot_id"],
+            "version": 1 if state == "open" else 2,
+            "resolution_action": raw["step"] or "added",
+            "resolution_note": raw["step_note"] if raw["step"] else raw["added_note"],
+            "resolution_at": raw["step_at"] if raw["step"] else raw["created_at"],
+            "resolution_by": raw["step_by"] if raw["step"] else raw["added_by"],
+            "reopened": False,
+        }
+    )
+    placement = census_addition_placement(state)
+    return shown | {
+        "added": True,
+        "in_place_of": raw["in_place_of"],
+        "placement": placement,
+        "stage": placement.stage.value,
+        "stage_label": placement.stage.label,
+        # Nothing but its own later step: no review, edit or conflict.
+        "family_answer": "",
+        "editor": None,
+        "edit": None,
+        "review_actions": [],
+        "resolve_conflict": False,
+        "resolvable": False,
+        "can_reopen": False,
+        "can_resolve": state == "open",
+    }
 
 
 def automatic(row):
@@ -912,6 +1121,8 @@ def export_rows(result, zone, *, time_text=iso_time):
             source_status_label(family_status(row["family_name"])),
             str(row["family_duid"]),
             row["who"],
+            # The Who cell's badge (rule 4, #1738) in its own column (#1752).
+            source_status_label(row.get("member_status")),
             export_member_duid(row),
             row["label"],
             row["parishsoft_now"],

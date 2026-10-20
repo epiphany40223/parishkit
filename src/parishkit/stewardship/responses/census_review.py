@@ -29,7 +29,7 @@ that edit (``edit_census_change``, ADM-09.04): the same kind of review row,
 which keeps the decision and changes only the edit fields
 (``schema/migrations/0107_proposal_review_edit.sql``). The worklist's Edit
 is Accept with a value: one review row that approves and edits together
-(``decide_census_changes``, ``schema/migrations/0131_census_pipeline_review.sql``).
+(``decide_census_changes``, ``schema/migrations/0128_census_pipeline_review.sql``).
 The Family's answer is never changed. An edit is per change only, never in
 bulk.
 
@@ -70,7 +70,14 @@ from parishkit.stewardship.web.tables import PAGE_SIZES
 from .accepted_base import has_active_base
 from .capabilities import Handling, capability
 from .census import InvalidHousehold, validate_address
-from .census_resolution import MAX_NOTE, KeyRebound, member_id, record_resolution
+from .census_resolution import (
+    MAX_NOTE,
+    KeyRebound,
+    ReopenCovered,
+    covered_by_addition,
+    member_id,
+    record_resolution,
+)
 from .comparison import ADDRESS_COMPONENTS, ValueKind
 from .contact_schema import PUT_SCHEMA, sendable
 from .member_census import InvalidMemberValue, validate_member_value
@@ -168,6 +175,10 @@ def editable(proposal):
 
 ISO_DATE = re.compile(r"[0-9]{4}-[0-9]{2}-[0-9]{2}")
 BLANK_EDIT = "Enter the value to publish. To leave ParishSoft as it is, choose Ignore."
+# The review guard keeps at most this many bytes of an edit, measured as
+# PostgreSQL prints its JSON (``octet_length(admin_value::text)``, 0128).
+EDIT_BYTES = 1024
+LONG_ADDRESS = "This address is too long to save. Shorten its longest lines."
 # The Family form's messages that read wrong for an edit, in Edit value's
 # own words: a blank required name is a blank edit like any other, and an
 # edit cannot be left blank.
@@ -240,7 +251,9 @@ def edited_address(raw):
     ``raw`` maps each address part to its text (the editor's
     ``value_<part>`` fields). A blank address is refused, as any blank edit
     is; each part's reason is kept by its part's name, so the page marks
-    the part in error (``InvalidEdit.fields``).
+    the part in error (``InvalidEdit.fields``). The review guard holds the
+    edit to the same rules (``stewardship_response_address_guard_v1``,
+    migration 0130) and to its size limit, so what passes here is stored.
     """
     if type(raw) is not dict or set(raw) != set(ADDRESS_COMPONENTS):
         raise ValueError("This census change cannot take an edited value.")
@@ -253,6 +266,11 @@ def edited_address(raw):
         raise InvalidEdit(next(iter(reasons.values())), fields=reasons) from None
     if value is None:
         raise InvalidEdit(BLANK_EDIT)
+    # Each part fits its own limit, yet parts in a script of several bytes a
+    # character can together pass the guard's limit for the whole edit. The
+    # JSON's length is PostgreSQL's (same separators, characters unescaped).
+    if len(json.dumps(value, ensure_ascii=False).encode()) > EDIT_BYTES:
+        raise InvalidEdit(LONG_ADDRESS)
     return value
 
 
@@ -418,6 +436,13 @@ def _record(
         # Reopening an ignored change says why (the review pipeline's
         # "Reviewed stage"); the SQL guard requires the same.
         raise ValueError("Sending an ignored census change back needs a note.")
+    if (
+        decision == "unreviewed"
+        and proposal.decision == "ignored"
+        and covered_by_addition(proposal)
+    ):
+        # An open parish addition stands in for it (#1710).
+        raise ReopenCovered("An open addition covers this census change.")
     # The row records the whole resulting review state: a decision keeps
     # the edit fields as the proposal has them, an edit keeps the decision.
     # A resolution accepts exactly the value and source the proposal holds

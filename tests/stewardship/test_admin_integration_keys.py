@@ -101,19 +101,20 @@ def test_the_replacement_catalog_entry():
 
 
 def test_the_ledger_covers_the_status_and_the_switch():
-    """Both routes are covered, and key replacement on the settings page,
-    which with the Backup encryption key's steps owes nothing more."""
+    """Key replacement and Finish switching on the settings page (its review
+    dialog, #1568) and the key change's status on its status line are
+    covered, and the retired key change pages have no entry."""
     entry = LEDGER["integration_settings"]
-    assert "integration key replace" in entry.detail and entry.owed is None
-    entry = LEDGER["credential_status"]
     assert entry.kind == "command" and entry.owed is None
-    assert entry.detail == ("integration key status",)
-    entry = LEDGER["select_credential"]
-    assert entry.kind == "command" and entry.owed is None
-    assert entry.detail == (
+    assert {
+        "integration key replace",
         "integration key finish-switching-preview",
         "integration key finish-switching",
-    )
+    } <= set(entry.detail)
+    entry = LEDGER["integration_status"]
+    assert entry.kind == "command" and entry.owed is None
+    assert entry.detail == ("integration status", "integration key status")
+    assert "credential_status" not in LEDGER and "select_credential" not in LEDGER
 
 
 REQUEST = "0b9e1c4e-8a8e-4f43-9a51-3f6c1d2e7a10"
@@ -334,3 +335,13 @@ def test_every_key_form_problem_is_a_refusal_at_the_key():
     [other] = _credential_problems(_Form(valid=False, errors=intent))
     assert other["field"] == "key" and other["code"] == "invalid"
     assert other["message"] == "The key could not be checked."
+
+
+def test_the_command_refuses_a_locked_organization_in_the_pages_words():
+    """``integration key finish-switching`` refuses a changed loaded
+    organization with the same words as the page's dialog (#1568)."""
+    from parishkit.stewardship import admin_integration_keys
+    from parishkit.stewardship.accounts import integration_selection_views
+
+    page = str(integration_selection_views.ORGANIZATION_LOCKED)
+    assert page == admin_integration_keys.ORGANIZATION_LOCKED

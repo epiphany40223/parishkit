@@ -34,6 +34,7 @@ from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
 from parishkit.stewardship.pipeline import Stage
+from parishkit.stewardship.responses.census_additions import AddRefusal
 from parishkit.stewardship.responses.census_resolution import InvalidMemberId
 from parishkit.stewardship.responses.census_review import (
     InvalidEdit,
@@ -53,7 +54,7 @@ from parishkit.stewardship.web.exports import (
     download_headers,
     page_download,
 )
-from parishkit.stewardship.web.refusals import Refusal, with_status_code
+from parishkit.stewardship.web.refusals import Refusal, with_codes, with_status_code
 from parishkit.stewardship.web.responses import campaign_response
 from parishkit.stewardship.web.review_worklist import read_decision, record
 from parishkit.stewardship.web.tables import Sorting, paginate, table_parameters
@@ -69,7 +70,7 @@ from .census_changes import (
     census_pdf,
     census_xlsx,
 )
-from .census_worklist import CensusDecisions, worklist_page
+from .census_worklist import LINK_DEFAULTS, CensusDecisions, add_fields, worklist_page
 from .export_services import admit_campaign
 from .export_views import SAFE_FAILURES
 from .family_links import link_families
@@ -96,6 +97,11 @@ KIND_LABELS = dict(
 )
 
 
+# What a GET of the page may carry: the filters a link may (the view's own
+# address, census_worklist.link_pairs) and the table's choices.
+LINK_PARAMETERS = frozenset(LINK_DEFAULTS) | table_parameters()
+
+
 def _text(value):
     """Case-insensitive text sort key; a missing value sorts as empty."""
     return (value or "").casefold()
@@ -115,8 +121,6 @@ SORTING = Sorting.by_column(
             row["member_duid"] or 0,
         ),
         "what": lambda row: _text(row["label"]),
-        # Automatic first, then By hand, whatever the labels say.
-        "route": lambda row: not row["automatic"],
         "status": lambda row: list(STATUSES).index(row["status"]),
         "submitted": lambda row: row["submitted_at"],
     },
@@ -192,19 +196,22 @@ def _audit(action, principal, campaign_id, outcome, count=0):
 
 
 def _choices(parameters, *, export):
-    """Parse the posted form: paging (page) or format and timezone (download)."""
+    """Parse the posted form: paging (page) or format and zone (download).
+
+    The download's zone is the browser's, posted unasked, or an explicit
+    ``timezone`` from an older tab (``dates.download_zone``, #1679).
+    """
     extra = {}
     if export:
         fmt = parameters.pop("format", [DEFAULT_EXPORT_FORMAT])
-        zone = parameters.pop("timezone", ["UTC"])
-        if (
-            len(fmt) != 1
-            or fmt[0] not in FORMATS
-            or len(zone) != 1
-            or (zone[0] != "UTC" and zone[0] not in timezone_names())
-        ):
+        chosen = parameters.pop("timezone", [None])
+        browser = parameters.pop("browser_timezone", [None])
+        if len(fmt) != 1 or len(chosen) != 1 or len(browser) != 1:
             raise ValueError("Invalid census change export choice.")
-        extra = {"format": fmt[0], "zone": ZoneInfo(zone[0])}
+        zone = dates.download_zone(chosen[0], browser[0])
+        if fmt[0] not in FORMATS or (zone != "UTC" and zone not in timezone_names()):
+            raise ValueError("Invalid census change export choice.")
+        extra = {"format": fmt[0], "zone": ZoneInfo(zone)}
     else:
         extra["paging"] = paging_values(parameters)
     return extra
@@ -237,6 +244,20 @@ MEMBER_ID_REFUSED = "Correct the Member ID, or leave it blank, then record it ag
 MEMBER_ID_CORRECTION_REFUSED = "Correct the Member ID, then record it again."
 
 
+def _add_refusal(error):
+    """The page's answer to an Add, or a reopen, the reader can correct (#1710).
+
+    Its static reason and next step, shown in the dialog at the fields it
+    names (``AddRefusal.field_ids``), with its closed code for the refusal
+    log.
+    """
+    fields = [FieldError(ErrorCode.INVALID, name) for name in error.field_ids]
+    return with_codes(
+        validation_response(fields, refusal=Refusal(str(error), error.fix)),
+        error.code,
+    )
+
+
 def _respond(request, campaign_id, *, export, render):
     """Shared admission, purge protection, audit and failure handling.
 
@@ -252,9 +273,16 @@ def _respond(request, campaign_id, *, export, render):
         principal = _principal(request, service.store, export=export)
         admit_report_read(campaign_id)
         try:
-            if request.GET:
+            if request.GET and (export or request.method != "GET"):
                 raise ValueError("Census change filters require private POST state.")
-            parameters = request.POST.copy()
+            # A GET carries only the choices a link may (R38 finding 6): the
+            # view's own address, which the page puts in the address bar, so
+            # a reload draws the same view; the name search never does.
+            if set(request.GET) - LINK_PARAMETERS:
+                raise ValueError("Census change links carry no private filter.")
+            parameters = (
+                request.GET if request.method == "GET" else request.POST
+            ).copy()
             parameters.pop("csrfmiddlewaretoken", None)
             decision = None if export else read_decision(parameters)
             extra = _choices(parameters, export=export)
@@ -276,6 +304,8 @@ def _respond(request, campaign_id, *, export, render):
             return validation_response(
                 [FieldError(ErrorCode.STALE)], status=409, refusal=REBOUND
             )
+        except AddRefusal as error:
+            return _add_refusal(error)
         except InvalidEdit as error:
             return _edit_refusal(error)
         except InvalidMemberId as error:
@@ -362,7 +392,8 @@ def _respond(request, campaign_id, *, export, render):
 
 @require_http_methods(["GET", "POST"])
 def report(request, campaign_id):
-    """The default GET shows the changes To review; filters use POST."""
+    """The default GET shows the changes To review; filters use POST, and a
+    GET may carry the view's own address (its link-safe choices, R38)."""
 
     def render(result, query, extra):
         """The census stream's review worklist: one table, redrawn in place."""
@@ -384,7 +415,9 @@ def report(request, campaign_id):
             admit_campaign(campaign_id, mutating=True)
         except PermissionError:
             mutable = False
-        worklist, table = worklist_page(result, query, table, action, mutable=mutable)
+        worklist, table = worklist_page(
+            result, query, table, action, mutable=mutable, paging=extra["paging"]
+        )
         return render_to_string(
             "stewardship/census-changes.html",
             {
@@ -395,7 +428,6 @@ def report(request, campaign_id):
                 "query_fields": query.form_values(),
                 "route_choices": ROUTE_LABELS.items(),
                 "kind_choices": KIND_LABELS.items(),
-                "export_timezones": sorted(timezone_names()),
                 "notice": extra.get("notice"),
                 # The latest date an edited birth or death date may hold:
                 # the campaign's today, as the server checks it.
@@ -405,6 +437,10 @@ def report(request, campaign_id):
                     )
                 ).isoformat(),
                 "mutable": mutable,
+                # The Add dialog's choices (#1710): what may change, and the
+                # ignored changes an addition may be added in place of.
+                "add_fields": add_fields(),
+                "add_replaceable": result["replaceable"],
                 "administrator": result["administrator"],
                 # Update ParishSoft's link (#528, ADM-09; #1688), the
                 # Administrator's: unavailable, with its reason, while the

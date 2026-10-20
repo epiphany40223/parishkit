@@ -239,9 +239,11 @@ class CampaignForm(AdminForm):
 
         Each end names its start by element id (data-not-before), so the page
         script makes the start its min and the complete gate holds Review with
-        the end's hint until the order is right. A financial end left empty
-        keeps the financial fieldset's own hint (data-empty-hint). The server
-        still checks the order and the one-year span (_date_errors). A live
+        the end's hint until the order is right; a financial period's end
+        (data-one-year) must be exactly one year after its start, so that day
+        is its min and max (#1577). A financial end left empty keeps the
+        financial fieldset's own hint (data-empty-hint). The server still
+        checks the order and the one-year span (_date_errors). A live
         campaign's end date (``whole`` False) has its own live check instead.
         """
         hints = {
@@ -264,6 +266,10 @@ class CampaignForm(AdminForm):
                 attrs["data-empty-hint"] = _(
                     "Fill in both financial periods and their funds."
                 )
+                # Exactly the day before the start's first anniversary, as
+                # _date_errors requires (#1577): the page script makes that
+                # day the end's min and max.
+                attrs["data-one-year"] = True
 
     def _date_errors(self, data):
         """Put a date order or one-year refusal at the end field it is about.

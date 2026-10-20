@@ -23,8 +23,10 @@ from parishkit.stewardship import (
     admin_hosted_files,
     admin_integration_changes,
     admin_integration_keys,
+    admin_pledges,
     admin_roster_tick,
     admin_tests,
+    admin_worklists,
     mail_halt_clear,
     system_health,
 )
@@ -65,6 +67,10 @@ ROLE_FIRST = {
     "send confirm": None,
     # The Email Ministry leaders Apply (#1622); its --confirm path.
     "users email-leaders": Capability.MANAGE_USERS,
+    # Update ParishSoft's Update and Run again (#1755): an Administrator's,
+    # before the request key is made or the page's checks run.
+    "census update-confirm": Capability.PUBLISH_CENSUS,
+    "census update-rerun": Capability.PUBLISH_CENSUS,
 }
 
 # The prompting commands Staff may run, as on their pages.
@@ -83,8 +89,15 @@ ADMITTING_READ = {
     "history confirm": (admin_history, "pending_replacement", {"token": "-"}),
     # The page's own admission, which admits a leader of any Ministry.
     "followup bulk": (admin_followup, "admit_followup", {}),
-    # Roster changes to enter's admission: Administrators and Staff only.
+    # The roster tick's admission: Administrators and Staff only.
     "followup roster-bulk": (admin_roster_tick, "admit_roster", {}),
+    # The worklist pages' own admission: Administrators and Staff only
+    # (#1735).
+    "information decide": (admin_worklists, "admit_decide", {}),
+    "limitations decide": (admin_worklists, "admit_decide", {}),
+    # The worklist pages' own admission: Administrators and Staff only
+    # (#1733).
+    "pledges decide": (admin_pledges, "admit_decide", {}),
 }
 
 # Everything a handler may read, look up or prompt with after its role check.

@@ -311,19 +311,16 @@ DAILY_SENDS_FUNCTION = "stewardship_family_daily_sends_v1()"
 # When that count falls below the Family limit ("Sending resumes at about
 # 3:10 PM", #530): one instant, for the same reason.
 DAILY_RESUME_FUNCTION = "stewardship_family_daily_resume_v1()"
-# Whether a sign-in instant recorded on a secret request is a live full-scope
-# automation session's (ADM-11 PR 5): the web's intake guard and each
-# credential installer's staged-to-testing guard call it, and the installers
-# read no automation table.
-AUTOMATION_FRESH_FUNCTION = (
-    "stewardship_automation_fresh_principal_v1(uuid, timestamp with time zone)"
-)
-# Whether that instant is a full-scope automation session's and every such
-# session has ended (0114, #1547): the same guards call it now that a
-# request's sign-in may be of any age, so ending an automation session still
-# stops its secret requests. Granted to the same logins.
-AUTOMATION_ENDED_FUNCTION = (
-    "stewardship_automation_instant_ended_v1(uuid, timestamp with time zone)"
+# Whether the automation session a secret request names is live, of full
+# scope, the requester's and holds the request's sign-in instant (0125,
+# #1763): the web's intake guard and each key-replacement installer's
+# staged-to-testing guard call it, so ending an automation session still
+# stops its secret requests, and the installers read no automation table.
+# It replaced 0114's ended-instant check (#1547), which 0125 dropped with
+# its grants, and which also refused a browser's own requests once every
+# automation session it approved had ended.
+AUTOMATION_REQUEST_FUNCTION = (
+    "stewardship_automation_request_live_v1(uuid, uuid, timestamp with time zone)"
 )
 # The credential installers whose secret requests an automation session may
 # make (key replacement); the other targets have no such request.
@@ -458,6 +455,11 @@ PUBLICATION_AUDITED_FUNCTION = (
 # owner-run discard functions (reports.export_cleanup.produce_discards); a
 # batch of 0 only asks whether any is due.
 EXPORT_DISCARD_FUNCTION = "stewardship_export_discard_due_v1(integer)"
+# The pledges a refresh re-evaluates (0135, #1747, superseding 0134's v1 of
+# #1704), with each one's carried-forward, marked and baseline amounts and
+# latest check: the source worker's one read of them, so it is granted no
+# response answers or decision rows.
+PLEDGE_REFRESH_ITEMS_FUNCTION = "stewardship_pledge_refresh_items_v2(uuid, uuid, uuid)"
 # Publication plans and outcomes (#528, DAT-09.01, migration 0087): the
 # worker writes a preflight's plan and each write attempt's outcome; web
 # reads them all and writes only an Administrator's confirmation.
@@ -538,8 +540,11 @@ CLOSURE_FUNCTIONS = {
         "stewardship_reports",
         "0029_point_in_time_exports",
     ),
-    # The ended-automation check of secret requests (0114, #1547).
-    AUTOMATION_ENDED_FUNCTION: ("stewardship_accounts", "0027_no_sign_in_age"),
+    # The named automation session check of secret requests (0125, #1763).
+    AUTOMATION_REQUEST_FUNCTION: (
+        "stewardship_accounts",
+        "0030_secret_request_session",
+    ),
     # Sent mail's recipient reads (0116, #1562).
     **dict.fromkeys(
         (ADDRESS_DELIVERIES_FUNCTION, PAGE_RECIPIENTS_FUNCTION),
@@ -547,6 +552,8 @@ CLOSURE_FUNCTIONS = {
     ),
     # The Email Ministry leaders review (0120, #1592).
     LEADER_EMAILS_FUNCTION: ("stewardship_jobs", "0035_leader_emails"),
+    # The pledges a refresh re-evaluates (0135, provisional, #1747).
+    PLEDGE_REFRESH_ITEMS_FUNCTION: ("stewardship_reports", "0034_pledge_conflicts"),
 }
 
 
@@ -624,6 +631,18 @@ CLOSURE_TABLES = {
     # An Administrator's review of an Automatic census change (0096, #528),
     # which web records and reads.
     "stewardship_proposal_review": ("stewardship_responses", "0006_proposal_review"),
+    # Review decisions on cannot-participate and cannot-attend answers
+    # (0126, #1685), which web records and reads.
+    "stewardship_limitation_review": (
+        "stewardship_responses",
+        "0013_information_limitation_review",
+    ),
+    # A census change the parish added and its later step (0129, #1710),
+    # which web records and reads.
+    **dict.fromkeys(
+        ("stewardship_census_addition", "stewardship_census_addition_resolution"),
+        ("stewardship_responses", "0015_census_additions"),
+    ),
     # A Campaign setup step an Administrator kept as is (0105, #1404), which
     # web records and reads.
     "stewardship_campaign_setup_review": (
@@ -640,13 +659,25 @@ CLOSURE_TABLES = {
         ),
         ("stewardship_jobs", "0035_leader_emails"),
     ),
-    # The baseline refresh re-evaluation's checks and their start (0136,
+    # The baseline refresh re-evaluation's checks and their start (0132,
     # #1689, provisional number): the worker records checks in promotion,
     # and web and the worker read both.
     **dict.fromkeys(
         ("stewardship_refresh_check", "stewardship_refresh_check_start"),
         ("stewardship_workflows", "0004_refresh_checks"),
     ),
+    # A pledge's review history (0127, provisional number, #1686), which
+    # web records and reads.
+    "stewardship_pledge_review": ("stewardship_reports", "0032_pledge_review"),
+    # A decided pledge's refresh checks (0134, provisional number, #1704),
+    # which the worker records in promotion and web and the worker read.
+    "stewardship_pledge_refresh_check": (
+        "stewardship_reports",
+        "0033_pledge_refresh_checks",
+    ),
+    # A To review pledge's refresh checks (0135, provisional number, #1747),
+    # which the worker records in promotion and web and the worker read.
+    "stewardship_pledge_open_check": ("stewardship_reports", "0034_pledge_conflicts"),
 }
 
 
@@ -668,7 +699,7 @@ CLOSURE_COLUMNS = {
         "stewardship_reports",
         "0022_digest_funnel_charts",
     ),
-    # The review pipeline's Ministry Edit (0132, #1684): web updates a
+    # The review pipeline's Ministry Edit (0131, #1684): web updates a
     # request's edited Ministry with its paired revision.
     ("stewardship_ministry_request", "reviewed_ministry_duid"): (
         "stewardship_workflows",
@@ -756,7 +787,8 @@ def runtime_functions(role, *, target=None):
     export's read-guard stops, prunes old task events and refreshes a staged
     source snapshot's planner statistics (#895).
     Web and the parishsoft, google_workspace and slack credential installers
-    check a secret request's automation sign-in instant (ADM-11 PR 5). Web,
+    check that the automation session a secret request names is live
+    (``stewardship_automation_request_live_v1``, #1763). Web,
     the general worker and the download login read a user's role-derived
     Ministry scope (#922); the general worker and the configuration
     installer record the Ministry leader pairs a promotion or an activation
@@ -792,7 +824,7 @@ def runtime_functions(role, *, target=None):
     if role is ServiceRole.CREDENTIAL_INSTALLER:
         functions = {DEBUG_OFF_FUNCTION}
         if target in AUTOMATION_SECRET_TARGETS:
-            functions |= {AUTOMATION_FRESH_FUNCTION, AUTOMATION_ENDED_FUNCTION}
+            functions.add(AUTOMATION_REQUEST_FUNCTION)
         return frozenset(functions)
     return frozenset(
         {
@@ -800,8 +832,7 @@ def runtime_functions(role, *, target=None):
                 FAMILY_LOGIN_FUNCTION,
                 DAILY_SENDS_FUNCTION,
                 DAILY_RESUME_FUNCTION,
-                AUTOMATION_FRESH_FUNCTION,
-                AUTOMATION_ENDED_FUNCTION,
+                AUTOMATION_REQUEST_FUNCTION,
                 LEADER_SCOPE_FUNCTION,
                 PORTAL_IDENTITIES_FUNCTION,
                 MEMBER_NAMES_FUNCTION,
@@ -842,6 +873,7 @@ def runtime_functions(role, *, target=None):
                 DEBUG_OFF_FUNCTION,
                 ARCHIVE_ANSWERS_FUNCTION,
                 PUBLICATION_AUDITED_FUNCTION,
+                PLEDGE_REFRESH_ITEMS_FUNCTION,
             },
             "download": {LEADER_SCOPE_FUNCTION},
             ServiceRole.ADMIN_RECOVERY: {
@@ -949,6 +981,14 @@ def runtime_grants(role, *, target=None):
             columns.setdefault("stewardship_submission", {}).setdefault(
                 "SELECT", set()
             ).update({"family_version", "mode"})
+            # A decided pledge's refresh checks (#1704): promotion reads the
+            # decided pledges through their definer selection
+            # (PLEDGE_REFRESH_ITEMS_FUNCTION) and records a check whose
+            # outcome changed. Its guard admits INSERT alone.
+            tables["stewardship_pledge_refresh_check"] = {"SELECT", "INSERT"}
+            # A To review pledge's refresh checks (#1747), recorded the same
+            # way; the definer selection gives their state.
+            tables["stewardship_pledge_open_check"] = {"SELECT", "INSERT"}
             add_service_status_housekeeping_grants(tables, columns)
         else:
             add_service_status_writer_grants(tables, columns)

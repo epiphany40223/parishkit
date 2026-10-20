@@ -98,16 +98,22 @@ def test_moved_routes_follow_the_scheme(pattern):
 
 @pytest.mark.parametrize(
     "name",
-    sorted(name for name, page in navigation.PAGES.items() if page.section in MOVED),
+    sorted(
+        name
+        for name, page in navigation.PAGES.items()
+        if navigation.SECTION_PATHS.get(page.section) in MOVED
+    ),
 )
 def test_every_moved_page_reverses_under_its_group(name):
-    """Each page's URL is /admin/<group>/…/ for its menu group."""
+    """Each page's URL is /admin/<segment>/…/ for its menu group: Review work
+    shares Reports and queries' ``reports`` segment (R39 finding 4)."""
     arguments = {
         parameter: "parishsoft" if parameter == "target" else TASK
         for parameter in navigation.route_parameters()[name]
     }
     url = reverse(f"admin:{name}", kwargs=arguments)
-    assert url.startswith(f"/admin/{navigation.PAGES[name].section}/")
+    segment = navigation.SECTION_PATHS[navigation.PAGES[name].section]
+    assert url.startswith(f"/admin/{segment}/")
     assert url.endswith("/")
 
 
@@ -192,10 +198,6 @@ SLASHLESS_EXPECTED = {
     "/admin/system/source-form": "/admin/system/source-form/",
     "/admin/system/integrations": "/admin/system/integrations/",
     "/admin/system/integrations/parishsoft": "/admin/system/integrations/parishsoft/",
-    f"/admin/system/key-changes/{T}": f"/admin/system/key-changes/{T}/",
-    f"/admin/system/key-changes/{T}/selection": (
-        f"/admin/system/key-changes/{T}/selection/"
-    ),
     "/admin/system/background": "/admin/system/background/",
     f"/admin/system/background/{T}": f"/admin/system/background/{T}/",
     "/admin/system/logs": "/admin/system/logs/",
@@ -268,11 +270,13 @@ SLASHLESS_EXPECTED = {
     "/admin/users/sessions": "/admin/users/sessions/",
     "/admin/users/automation": "/admin/users/automation/",
     "/admin/users/automation/approval": "/admin/users/automation/approval/",
-    # Responses and reports pages without their trailing slash (NAV-11).
+    # Review work and Reports and queries pages without their trailing slash
+    # (NAV-11).
     "/admin/reports": "/admin/reports/",
     "/admin/reports/responses": "/admin/reports/responses/",
     "/admin/reports/comparison": "/admin/reports/comparison/",
     "/admin/reports/financial": "/admin/reports/financial/",
+    "/admin/reports/financial/pledges": "/admin/reports/financial/pledges/",
     "/admin/reports/limitations": "/admin/reports/limitations/",
     "/admin/reports/census": "/admin/reports/census/",
     "/admin/reports/census/update-parishsoft": (
@@ -283,9 +287,6 @@ SLASHLESS_EXPECTED = {
     "/admin/reports/ministries": "/admin/reports/ministries/",
     f"/admin/reports/ministries/follow-up/{T}": (
         f"/admin/reports/ministries/follow-up/{T}/"
-    ),
-    "/admin/reports/ministries/follow-up/roster": (
-        "/admin/reports/ministries/follow-up/roster/"
     ),
     "/admin/reports/families": "/admin/reports/families/",
     f"/admin/reports/families/{T}": f"/admin/reports/families/{T}/",
@@ -538,7 +539,6 @@ def test_report_actions_and_records_resolve_to_their_own_routes():
         (f"/admin/reports/families/{T}/", "timeline"),
         ("/admin/reports/information/exports/", "information_export"),
         (f"/admin/reports/information/{T}/", "information_item"),
-        (f"/admin/reports/information/{T}/record/", "information_update"),
         ("/admin/reports/ministries/", "ministry_report"),
         (f"/admin/reports/ministries/follow-up/{T}/", "ministry_followup_item"),
         (f"/admin/reports/exports/{T}/", "report_export"),

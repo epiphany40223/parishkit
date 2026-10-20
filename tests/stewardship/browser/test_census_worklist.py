@@ -22,6 +22,8 @@ from .census_components import (
     BULKED,
     EDITED,
     EDITED_NOTICE,
+    EDITED_PHONE,
+    EDITED_PHONE_NOTICE,
     ENTERED,
     ENTERED_NOTICE,
     INCORRECT,
@@ -181,7 +183,10 @@ def test_a_stale_decision_is_announced_as_such(page, component_origin):
     page.locator("#census-decide-dialog").get_by_role("button", name="Record").click()
     has_text(page.locator("#census-notice"), STALE_NOTICE)
     has_text(
-        page.get_by_role("status").filter(has_text="someone else first"), STALE_NOTICE
+        page.get_by_role("status").filter(
+            has_text="not recorded, changed by someone else"
+        ),
+        STALE_NOTICE,
     )
 
 
@@ -235,7 +240,7 @@ def test_an_address_is_edited_part_by_part(page, component_origin):
     )
     assert zip_code.get_attribute("aria-invalid") == "true"
     assert "value_postal_code=402" in sent[0] and "decide=edit" in sent[0]
-    zip_code.fill("40223")
+    zip_code.fill("40224")
     save = editor.get_by_role("button", name="Save")
     available(save)
     save.click()
@@ -335,6 +340,57 @@ def test_back_to_review_on_an_entered_incorrectly_row(page, component_origin):
     assert "decide=back_to_review" in sent[-1] and "item=3" in sent[-1]
     has_text(row(page, 3).locator(".stage-chip .status-word"), "To review")
     assert page.evaluate(MARKED) == "kept"
+
+
+@pytest.mark.parametrize("width", [390, 1280])
+def test_apply_follows_the_last_filter_with_no_line_between(
+    page, component_origin, width
+):
+    """No zone line sits under Census changes' filters (R38 finding 8), and
+    Apply filters with Clear filters follow Through, beside it at 1280 px
+    (R38 finding 9); the page never scrolls sideways."""
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(component_origin + PATH)
+    form = page.locator("#table-filters")
+    assert form.locator("[data-browser-zone-note]").count() == 0
+    through = form.locator("#census-end").locator("xpath=..").bounding_box()
+    actions = form.locator(".filter-actions").bounding_box()
+    if width == 1280:
+        assert actions["x"] >= through["x"] + through["width"]
+        assert (
+            abs((actions["y"] + actions["height"]) - (through["y"] + through["height"]))
+            <= 2
+        )
+    else:
+        assert through["y"] + through["height"] <= actions["y"]
+    assert page.evaluate("document.documentElement.scrollWidth") <= width
+
+
+def test_an_edited_value_shows_as_the_reviewers_value(page, component_origin):
+    """Edit's Save waits until the value changes (saving the Family's answer
+    would record a plain Accept), and the answer shows the edited value in
+    Reviewer's value, not only in Last decision (R38 finding 4)."""
+    page.goto(component_origin + PATH)
+    sent = posts(page, component_origin, EDITED_PHONE)
+    icon(page, 0, "Edit").click()
+    editor = page.locator("#census-edit-dialog-0")
+    save = editor.get_by_role("button", name="Save")
+    assert save.is_disabled()
+    has_text(
+        editor.locator("[data-complete-hint]"),
+        "Change the value to save it; Accept keeps it as it is.",
+    )
+    editor.get_by_label("Reviewer's value").fill("555-9999")
+    available(save)
+    save.click()
+    has_text(page.locator("#census-notice"), EDITED_PHONE_NOTICE)
+    assert "decide=edit" in sent[-1] and "value=555-9999" in sent[-1]
+    headings = [
+        node.inner_text().strip() for node in page.locator("#table thead th").all()
+    ]
+    cells = row(page, 0).locator("th, td")
+    reviewer = cells.nth(headings.index("Reviewer's value")).inner_text()
+    assert "555-9999" in reviewer
 
 
 def test_a_new_members_entered_by_hand_asks_for_its_member_id(

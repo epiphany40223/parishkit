@@ -431,6 +431,10 @@ def test_clipped_name_tip_never_swallows_the_next_tap(browser_engine, component_
         page = context.new_page()
         page.goto(component_origin + "/followup-all")
         name = page.locator(ROWS).nth(1).locator(".cell-clamp")
+        # The Ministry name now opens the request's page (R38 finding 13),
+        # and a tap on a link opens it as it shows the tip; the tip itself is
+        # what this checks, so its link is set aside.
+        name.evaluate("node => node.closest('a').removeAttribute('href')")
         name.tap()
         tip = page.locator(".admin-tip.is-shown")
         expect(tip).to_have_text(name.text_content())
@@ -500,14 +504,17 @@ def test_followup_columns_follow_the_shared_order(page, component_origin):
     short = first.nth(3).locator(".cell-clamp")
     height = name.bounding_box()["height"]
     assert abs(height - 2 * short.bounding_box()["height"]) <= 2, height
-    assert name.get_attribute("tabindex") == "0"
-    # The short name in the first row fits, so it stays out of the tab order.
+    # The Ministry cell is the request's link (R38 finding 13), so the
+    # keyboard reaches a clipped name through it: neither name joins the tab
+    # order itself, and focus on the link shows the clipped one's tip.
+    assert name.get_attribute("tabindex") is None
     assert short.get_attribute("tabindex") is None
-    name.focus()
+    link = name.locator("xpath=ancestor::a[1]")
+    link.focus()
     expect(page.locator(".admin-tip.is-shown")).to_have_text(name.text_content())
-    # A resize keeps focus on the name and its tip shown beside it.
+    # A resize keeps focus on the link and the name's tip shown beside it.
     page.set_viewport_size({"width": 1100, "height": 900})
-    assert name.evaluate("e => document.activeElement === e")
+    assert link.evaluate("e => document.activeElement === e")
     expect(page.locator(".admin-tip.is-shown")).to_have_count(1)
     assert page.evaluate("document.documentElement.scrollWidth <= innerWidth")
 
@@ -597,7 +604,7 @@ def test_each_stage_shows_its_decision_on_the_icons(page, component_origin):
     chosen = icon_named(page, accepted, "Accept")
     assert chosen.get_attribute("aria-pressed") == "true"
     assert chosen.get_attribute("title") == (
-        "Accepted. To change it, choose Back to review."
+        "Accepted; choose Back to review to change it"
     )
     visible(icon_named(page, accepted, "Send"))
     visible(icon_named(page, accepted, "Mark"))
@@ -610,7 +617,15 @@ def test_each_stage_shows_its_decision_on_the_icons(page, component_origin):
     assert "Stayed in the Ministry" in ignored.inner_text()
     edited = worklist_row(page, UUID(int=123))
     assert "Accepted (edited)" in edited.inner_text()
-    assert "Join Another Ministry" in edited.inner_text()
+    # The edited Ministry is in the Reviewer's value column itself (R38
+    # finding 11), not only somewhere in the row.
+    headings = [
+        node.inner_text().strip() for node in page.locator("#table thead th").all()
+    ]
+    cells = edited.locator(":scope > th, :scope > td")
+    assert cells.nth(headings.index("Reviewer's value")).inner_text().strip() == (
+        "Join Another Ministry"
+    )
     added = worklist_row(page, UUID(int=124))
     assert "Added by the parish" in added.inner_text()
     confirmed = worklist_row(page, UUID(int=125))
@@ -696,6 +711,8 @@ def test_edit_offers_another_ministry(page, component_origin):
 def test_add_asks_for_the_member_ministry_and_request(page, component_origin):
     """Staff's Add opens its dialog: the Member DUID, a campaign Ministry,
     Join or Leave and the optional ignored request it replaces."""
+    from playwright.sync_api import expect
+
     page.set_viewport_size({"width": 1280, "height": 900})
     page.goto(component_origin + STAGES)
     page.locator(".bulk-bar").get_by_role("button", name="Add").click()
@@ -707,5 +724,7 @@ def test_add_asks_for_the_member_ministry_and_request(page, component_origin):
     dialog.get_by_label("Ministry to add").select_option("12")
     dialog.get_by_label("Request to add").select_option("join")
     replaced = dialog.get_by_label("Added in place of (optional)")
-    assert "Ignored <Member>" in replaced.inner_text()
+    # The choices follow the Ministry and Request chosen; wait for them, as
+    # Firefox fills them a moment later.
+    expect(replaced).to_contain_text("Ignored <Member>")
     available(add)

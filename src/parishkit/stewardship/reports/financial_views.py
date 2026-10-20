@@ -1,5 +1,6 @@
 """Private native Admin/Staff financial stewardship detail report."""
 
+from urllib.parse import urlencode
 from uuid import uuid4
 
 from django.core.exceptions import ObjectDoesNotExist
@@ -19,7 +20,6 @@ from parishkit.stewardship.audit.services import record_action
 from parishkit.stewardship.campaigns.domain import Money
 from parishkit.stewardship.campaigns.models import Campaign
 from parishkit.stewardship.observability import Event, debug_swallowed, emit_failure
-from parishkit.stewardship.schema_primitives import timezone_names
 from parishkit.stewardship.storage import StorageInvariantError
 from parishkit.stewardship.web.dates import UnknownZone
 from parishkit.stewardship.web.filter_errors import (
@@ -101,6 +101,56 @@ FIELD_LINES = {
 }
 
 
+# The closed, non-identifying values the page's own address may carry
+# (UX conventions, "Reload on a POST report", #1586): each is a closed
+# vocabulary FinancialQuery.parse checks (a share method is an option's
+# identity, never a Family's). The search, the response dates and the
+# pledge range stay in the POST body; the page number is never kept, since
+# the list it numbered may have had a private filter.
+LINK_FIELDS = ("active", "amount", "frequency", "share", "sort")
+
+
+def page_address(report_url, query, size):
+    """The address bar after an in-place answer (``data-page-address``).
+
+    ui-v1.js puts it in the address bar after each in-place answer, so a
+    reload draws the same view from the page's GET: the ``LINK_FIELDS``
+    values and the rows per page that differ from the defaults, in a fixed
+    order, or the bare page when every one is the default.
+    """
+    defaults = FinancialQuery()
+    values = [
+        (key, getattr(query, key))
+        for key in LINK_FIELDS
+        if getattr(query, key) != getattr(defaults, key)
+    ]
+    if size != PAGE_SIZE:
+        values.append(("size", str(size)))
+    return report_url + ("?" + urlencode(values) if values else "")
+
+
+def _parameters(request):
+    """The submitted filters as a mutable QueryDict, without the CSRF token.
+
+    A POST carries every filter privately. A GET may carry only the page's
+    own address (``page_address``): the closed ``LINK_FIELDS`` and the rows
+    per page, so a reload keeps the view; any other GET parameter is a
+    ``ValueError`` (400), and a repeated or unknown value is refused by
+    ``pop_page_size`` and ``FinancialQuery.parse`` as a POST's would be.
+    A POST with a query string is refused too, so its filters never mix
+    with an address's.
+    """
+    if request.method != "GET" and request.GET:
+        raise ValueError("Financial filters require private POST state.")
+    if request.method == "GET":
+        if not set(request.GET) <= {*LINK_FIELDS, "size"}:
+            raise ValueError("Financial filters require private POST state.")
+        return request.GET.copy()
+    parameters = request.POST.copy()
+    parameters.pop("csrfmiddlewaretoken", None)
+    return parameters
+
+
 def _principal(request, store, *, read_only=False):
     """Every page reloads current policy; a Ministry leader never qualifies."""
     principal = authenticated_admin(
@@ -156,7 +206,9 @@ def _audit(principal, campaign_id, outcome, count=0, total=0):
 def report(request, campaign_id):
     """Hold purge protection through projection, rendering and streaming.
 
-    Default GET is safe; identifying filters and pagination use native POST.
+    A GET draws the default view, or the view its own address names (only
+    closed choices, ``_parameters``, #1586); identifying filters and
+    pagination use native POST.
     Filters refused at a field (``FilterError``) draw the page again,
     answered 400, with the error at that field and the results for no
     filters, as Campaign comparison shows its current day for a refused
@@ -170,10 +222,7 @@ def report(request, campaign_id):
         # is denied rather than described as a filter problem with a dead link.
         admit_report_read(campaign_id)
         try:
-            if request.GET:
-                raise ValueError("Financial filters require private POST state.")
-            parameters = request.POST.copy()
-            parameters.pop("csrfmiddlewaretoken", None)
+            parameters = _parameters(request)
             size = pop_page_size(parameters, PAGE_SIZES, default=PAGE_SIZE)
             query = FinancialQuery.parse(parameters)
         except FilterError as error:
@@ -284,8 +333,11 @@ def report(request, campaign_id):
                     sizes=PAGE_SIZES,
                 ),
                 "mutable": mutable,
+                # This view's own address, for the address bar (#1586).
+                "page_address": page_address(
+                    reverse("admin:financial_report"), query, size
+                ),
                 "request_key": uuid4(),
-                "export_timezones": sorted(timezone_names()),
                 # Per request, in the request's language.
                 "filter_sizes": line_sizes(FIELD_MESSAGES, FIELD_LINES),
             }

@@ -31,7 +31,15 @@ from .publication_components import (
 )
 from .test_in_place import MARK, MARKED, VIEWPORT
 from .test_live_status_in_place import answer_reads
-from .waits import available, greyed, has_attribute, has_text, hidden, visible
+from .waits import (
+    available,
+    eventually,
+    greyed,
+    has_attribute,
+    has_text,
+    hidden,
+    visible,
+)
 
 pytestmark = pytest.mark.parametrize(
     "browser_engine", ["chromium", "webkit"], indirect=True
@@ -164,7 +172,7 @@ def test_update_confirms_in_the_dialog_and_shows_the_run_in_place(
     visible(dialog)
     title = dialog.get_by_role("heading", name="Write 2 changes for 2 Members to")
     visible(title)
-    page.wait_for_function("document.activeElement?.hasAttribute('data-review-title')")
+    eventually(page, "document.activeElement?.hasAttribute('data-review-title')")
     has_text(
         dialog.locator("#update-review-summary"),
         "Each Member's contact record in ParishSoft is read again, and only "

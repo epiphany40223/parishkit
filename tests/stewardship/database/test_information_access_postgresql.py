@@ -34,7 +34,7 @@ def test_staff_capability_is_rechecked_and_gates_preserve_read_history(
     live_response_service,
     google,
 ):
-    """Actual Staff access does not grant leaders the queue or its write endpoint."""
+    """Actual Staff access does not grant leaders the worklist or its decisions."""
     harness = live_response_service
     respond(harness, "Restricted household request")
     item = AdditionalInformationItem.objects.get()
@@ -50,10 +50,14 @@ def test_staff_capability_is_rechecked_and_gates_preserve_read_history(
     browser, _ = signed_in()
     route = reverse("admin:information_queue")
     detail = reverse("admin:information_item", args=[item.pk])
+    # The worklist's Accept on the request (#1685): a decision posted to the
+    # list itself.
     values = {
-        "expected_version": str(item.version),
+        "decide": "accept",
+        "item": str(item.pk),
+        "version": str(item.version),
         "request_key": str(uuid4()),
-        "notes": "Staff note",
+        "note": "Staff note",
     }
     export_values = InformationQuery().form_values() | {
         "format": "csv",
@@ -63,12 +67,8 @@ def test_staff_capability_is_rechecked_and_gates_preserve_read_history(
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         assert read(browser, route)[0].status_code == 200
         assert read(browser, detail)[0].status_code == 200
-        assert (
-            post(
-                browser, reverse("admin:information_update", args=[item.pk]), values
-            ).status_code
-            == 302
-        )
+        response, body = search(browser, route, values)
+        assert response.status_code == 200 and b"accepted." in body
         exported = post(browser, reverse("admin:information_export"), export_values)
         assert exported.status_code == 302
         export_path = exported["Location"]
@@ -88,13 +88,18 @@ def test_staff_capability_is_rechecked_and_gates_preserve_read_history(
     with task_login(ServiceRole.WEB, exact=True, reconnect=True):
         response, body = read(browser, detail)
         assert response.status_code == 200 and b"Other campaign work" in body
-        assert b"<fieldset disabled>" in body
-        assert (
-            post(
-                browser, reverse("admin:information_update", args=[item.pk]), values
-            ).status_code
-            == 403
-        )
+        # The list offers no decision while the campaign is held, and one
+        # posted anyway is refused.
+        response, body = read(browser, route)
+        assert response.status_code == 200 and b"Other campaign work" in body
+        assert b"data-row-action" not in body
+        item.refresh_from_db()
+        held = values | {
+            "decide": "handled",
+            "version": str(item.version),
+            "request_key": str(uuid4()),
+        }
+        assert search(browser, route, held)[0].status_code == 403
         assert (
             post(
                 browser, reverse("admin:information_export"), export_values
@@ -129,12 +134,7 @@ def test_staff_capability_is_rechecked_and_gates_preserve_read_history(
                 and b"Staff note" not in body
             )
         assert search(browser, route, {"search": "Restricted"})[0].status_code == 403
-        assert (
-            post(
-                browser, reverse("admin:information_update", args=[item.pk]), values
-            ).status_code
-            == 403
-        )
+        assert search(browser, route, held)[0].status_code == 403
         assert (
             post(
                 browser, reverse("admin:information_export"), export_values

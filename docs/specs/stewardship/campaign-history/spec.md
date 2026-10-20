@@ -796,7 +796,7 @@ appear only when the current campaign has the financial module, as on the
 leaders never see it.
 
 The page is **Campaign comparison** at `/admin/reports/comparison/`, in the
-Responses and reports menu group after Participation. It is unavailable
+Reports and queries menu group after the Response dashboard. It is unavailable
 when there is no current campaign. With no imported years it shows the
 current campaign only, with one line saying no past campaigns are imported
 and, for an Administrator, a link to Past campaigns.
@@ -1064,8 +1064,14 @@ Each view reads under the campaign's
 [read guard](../data/spec.md#campaign-read-guards), sends `Cache-Control:
 no-store` (the figures are financial), and records one
 `campaign_comparison_viewed` audit event with the day and outcome, no
-figure. If the current fact set is not ready, the page shows the last ready
-one with the participation graph's **Updating** notice.
+figure; a view the page made by itself to bring newer figures in is marked
+`automatic: true`. If the current fact set is not ready, the page shows the
+last ready one with the participation graph's **Updating** notice, and
+brings the new figures in by itself once they are ready, as the Response
+dashboard does
+([pages that update themselves](../ui-conventions/spec.md#pages-that-update-themselves)).
+A page that refuses the day asked for (a 400) still shows the notice but
+does not follow, since its own re-read would only be refused again.
 
 ### Downloads and sharing
 
@@ -1081,10 +1087,9 @@ aggregates only, apply the [small-count
 protection](#pledge-distribution), carry none of the free-text notes, and
 record
 `campaign_comparison_exported` like other exports. No public or
-unauthenticated link exists. The files hold campaign days and dates, no
-exact action times, so the download form asks for no time zone: the
+unauthenticated link exists. The download asks for no time zone: the
 browser's sets the file's request time, else the parish's, under the
-[time zone question](../ui-conventions/spec.md#downloaded-files) rule
+[time zones](../ui-conventions/spec.md#downloaded-files) rule
 ([#1161](https://github.com/epiphany40223/parishkit/issues/1161)).
 
 ### Digest section

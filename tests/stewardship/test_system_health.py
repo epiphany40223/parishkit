@@ -20,6 +20,7 @@ from parishkit.stewardship.source.data_age import Connection
 from parishkit.stewardship.source.refresh_status import FullRefreshStatus
 from parishkit.stewardship.system_health import (
     BACKUP_SUMMARIES,
+    BLOCKS_PAGE,
     DEBUG_SUMMARIES,
     INCIDENTS,
     LOADED_TILES,
@@ -3067,63 +3068,35 @@ def test_a_sentence_links_its_tile_only_off_the_page(kind, tile, link, following
     assert f'#health-{tile}">{link}</a>' in home
 
 
-# One problem of every registry kind, as Home lists them (#1214).
 MAILER = Subject("mail-dispatch", "mail")
-HOME_SUBJECTS = {
-    "sender_halted": (MAILER,),
-    "sender_outage": (MAILER,),
-    "not_running": (Subject("worker", "source"),),
-    "not_reported": (Subject("scheduler"),),
-    "debug_logging": (Subject("web", "main"),),
-}
 
 
-def home_line(kind):
-    """Home's line for one problem of ``kind``, as Home draws it."""
-    problem = Problem(
-        kind,
-        subjects=HOME_SUBJECTS.get(kind, ()),
-        at=NOW,
-        count=1 if kind == "refusal_unrecorded" else 0,
-    )
-    return problem, render_to_string(
+@pytest.mark.parametrize("kind", sorted(BLOCKS_PAGE))
+def test_a_problem_that_blocks_the_page_keeps_its_own_line_on_home(kind):
+    """A problem that keeps System health from opening is not counted on
+    Home (#1673): its line shows the registry's icon and state word beside
+    the page's sentence, and links nothing, since the page cannot open."""
+    problem = Problem(kind, at=NOW)
+    line = render_to_string(
         "stewardship/system-health-home-line.html", {"problem": problem}
     )
-
-
-@pytest.mark.parametrize("kind", sorted(REGISTRY))
-def test_a_home_line_shows_its_state_and_links_its_tile_once(kind):
-    """Each Home line shows the registry's icon and state word beside the
-    page's sentence, and links its problem's tile exactly once: by the
-    sentence's own link when it has one, else by "See … in System health"."""
-    problem, line = home_line(kind)
     severity = REGISTRY[kind][1]
-    assert problem.severity == severity
     assert f'data-severity="{severity}"' in line
     assert f"level-icon-{severity}" in line
     word = {"warning": "Warning", "error": "Error"}[severity]
     assert f'<span class="status-word">{word}</span>' in line
     assert ("notice-error" in line) is (severity == "error")
-    anchor = f'href="/admin/system/health/#health-{REGISTRY[kind][0]}"'
-    # An unreadable backup key keeps System health from opening, so its
-    # line links no tile at all.
-    assert line.count(anchor) == (kind != "backup_key_unchecked"), line
-    assert line.count('href="/admin/system/health/"') == 0
-    own = f"See {problem.tile_name} in System health" in line
-    assert own is problem.tile_link
+    assert "System health cannot be shown" in line
+    assert "<a " not in line
 
 
-def test_home_words_and_tiles_for_a_split_process_problem():
-    """A stopped installer alone is a warning; with a mail sender the line
-    links the Mail tile, its first, and is an error."""
+def test_severity_and_tiles_for_a_split_process_problem():
+    """A stopped installer alone is a warning on the Version tile; with a
+    mail sender it is an error, shown first on the Mail tile."""
     installer = Problem("not_running", (Subject("config-installer"),), NOW)
-    assert (installer.severity, installer.word, installer.tile) == (
-        "warning",
-        "Warning",
-        "version",
-    )
+    assert (installer.severity, installer.tiles) == ("warning", ("version",))
     both = replace(installer, subjects=(MAILER, Subject("config-installer")))
-    assert (both.severity, both.tile, both.tile_name) == ("error", "mail", "Mail")
+    assert (both.severity, both.tiles[0]) == ("error", "mail")
 
 
 def refresh_block(**context):
@@ -3149,60 +3122,24 @@ def refresh_block(**context):
     )
 
 
-def test_home_shows_a_listed_refresh_problem_once_and_keeps_its_links():
-    """#1214: with ``source_failed`` and ``source_late`` listed, Home's
-    refresh block leaves both notices out but keeps "See what went wrong"
-    and one Run a full refresh now. Without them both notices stay."""
-    listed = refresh_block(failed_listed=True, problems_listed=True, keep_action=True)
+def test_a_listed_refresh_problem_shows_once_and_keeps_its_link():
+    """#1214: with ``source_failed`` and ``source_late`` listed (System
+    health's ParishSoft refresh panel), the refresh block leaves both
+    notices out but keeps "See what went wrong". Without them both notices
+    stay, each once with Run a full refresh now."""
+    listed = refresh_block(failed_listed=True, problems_listed=True)
     assert "notice-error" not in listed
     assert "did not finish" not in listed and "minutes late" not in listed
     assert "See what went wrong" in listed
-    assert listed.count("Run a full refresh now") == 1
+    assert "Run a full refresh now" not in listed
     # Only the failure listed (the late refresh is not): the late notice
     # keeps the button, and the failure's plain line adds none.
-    failed = refresh_block(failed_listed=True, keep_action=True)
+    failed = refresh_block(failed_listed=True)
     assert failed.count("notice-error") == 1 and "minutes late" in failed
     assert failed.count("Run a full refresh now") == 1
     plain = refresh_block()
     assert plain.count("notice-error") == 2 and "did not finish" in plain
     assert plain.count("Run a full refresh now") == 1
-
-
-def test_only_a_listed_failure_gives_the_off_site_line_way():
-    """``health_listed``: each notice gives way only to its own listed
-    problem, and the off-site line only while it reports the failure."""
-    from parishkit.stewardship.accounts.admin_dashboard import health_listed
-    from parishkit.stewardship.accounts.backup_destination import OffsiteStatus
-
-    def offsite(kind):
-        """An off-site line of ``kind``."""
-        return OffsiteStatus(kind, "Words.", NOW, NOW, None)
-
-    listed = (
-        Problem("source_failed", at=NOW),
-        Problem("source_late", at=NOW),
-        Problem("backup_offsite_failed", at=NOW),
-    )
-    assert health_listed(listed, offsite("failed")) == {
-        "failed": True,
-        "late": True,
-        "offsite": True,
-        "offsite_unset": False,
-    }
-    # The incident is open, but the newest copy went through: the line no
-    # longer reports a failure, so it stays.
-    for kind in ("uploaded", "disabled", "none"):
-        assert health_listed(listed, offsite(kind))["offsite"] is False, kind
-    assert health_listed(listed, None)["offsite"] is False
-    # A failing off-site line with no listed problem stays too.
-    assert health_listed((), offsite("failed")) == {
-        "failed": False,
-        "late": False,
-        "offsite": False,
-        "offsite_unset": False,
-    }
-    # Off-site copies not set up (Production): the invitation gives way.
-    assert health_listed((Problem("offsite_missing"),), None)["offsite_unset"]
 
 
 def home_page(dashboard):
@@ -3231,29 +3168,65 @@ def home_page(dashboard):
     )
 
 
-def test_home_keeps_both_notices_for_a_viewer_without_system_health():
-    """A viewer who may not open System health gets no lines and no
-    ``health_listed``, so the failed refresh and the failed off-site copy
-    keep their own notices; a viewer with the lines sees each once."""
-    other = home_page({})
+def test_home_counts_problems_in_one_line_linking_system_health():
+    """Home shows only the count of System health problems, in the error
+    look when any is an error, linking System health (#1673); a viewer who
+    may not open System health gets the one ParishSoft line instead, and
+    neither sees the problem sentences, the refresh block or the off-site
+    line, which System health carries."""
+    other = home_page({"refresh_stale": True})
     assert "data-home-health" not in other
-    assert "did not finish." in other
-    assert "Copying the newest backup failed." in other
-    assert other.count("Run a full refresh now") == 1
+    assert "ParishSoft data may be out of date" in other
+    assert "The most recent full ParishSoft reload" not in other
+    assert "Copying the newest backup failed." not in other
+    assert "Run a full refresh now" not in other
     problems = (
         Problem("source_failed", at=NOW - timedelta(hours=1)),
         Problem("backup_offsite_failed", at=NOW),
     )
-    admin = home_page(
+    admin = home_page({"health_problems": problems, "health_severity": "warning"})
+    line = re.search(r"<li [^>]*data-home-health>.*?</li>", admin, re.S).group(0)
+    assert 'class="notice" data-home-health' in line
+    assert "2 system problems." in line
+    assert 'href="/admin/system/health/">See System health</a>' in line
+    assert "The most recent full ParishSoft reload" not in admin
+    assert "ParishSoft data may be out of date" not in admin
+    assert '<span class="status-word">Warning</span>' in line
+    errors = home_page({"health_problems": problems[:1], "health_severity": "error"})
+    assert 'class="notice notice-error" data-home-health' in errors
+    assert "1 system problem." in errors
+
+
+def test_home_states_a_problem_that_keeps_system_health_from_opening():
+    """While the backup key cannot be read, System health answers 503, so
+    Home shows that problem's own sentence, with no link, and the count
+    line for the other problems links nothing either (#1673)."""
+    page = home_page(
         {
-            "health_problems": problems,
-            "health_listed": {"failed": True, "late": False, "offsite": True},
+            "health_lines": [Problem("backup_key_unchecked")],
+            "health_problems": [Problem("source_failed", at=NOW)],
+            "health_severity": "warning",
         }
     )
-    assert admin.count("did not finish.") == 1
-    assert "Copying the newest backup failed." not in admin
-    assert admin.count("Run a full refresh now") == 1
-    assert admin.count("Off-site backups (Google Drive)") == 1
+    row = re.search(r'<ul class="home-alerts".*?</ul>', page, re.S).group(0)
+    assert 'data-problem="backup_key_unchecked"' in row
+    assert "so System health cannot be shown" in row
+    assert "1 system problem." in row
+    assert "<a " not in row
+    alone = home_page({"health_lines": [Problem("backup_key_unchecked")]})
+    assert 'data-problem="backup_key_unchecked"' in alone
+    assert "data-home-health" not in alone
+
+
+def test_every_home_problem_line_leads_with_its_state():
+    """Each Home line that reports a problem is a status indicator (#1673,
+    ui-conventions "Overview pages"): the failed tasks and out-of-date data
+    lines lead with the error icon and word."""
+    page = home_page({"refresh_stale": True, "failed_tasks": 2})
+    for marker in ("data-home-refresh", "data-home-failed-tasks"):
+        line = re.search(rf"<li [^>]*{marker}>.*?</li>", page, re.S).group(0)
+        assert "level-icon-error" in line, marker
+        assert '<span class="status-word">Error</span>' in line, marker
 
 
 @pytest.mark.parametrize(

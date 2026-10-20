@@ -9,7 +9,8 @@ docs/specs/stewardship/local-environment/spec.md), has no control or write
 endpoint, injects no faults, and answers 401 with an empty body to any
 request without the fixed ``LOCAL_PARISHSOFT_KEY``.
 
-It reads its configuration file once at start. Apart from one comparison of
+It reads its configuration file once at start, including any operator edits
+to the generated parish (``fake_edits``). Apart from one comparison of
 the current time with ``release_at`` (which decides whether the late-added
 Family is served yet), every response depends only on that file's contents,
 and ordering within every collection is stable across pages and calls.
@@ -30,6 +31,7 @@ from parishkit.config import ConfigError
 from parishkit.stewardship.deployment import DeploymentProfile, load_deployment
 
 from . import LOCAL_PARISHSOFT_KEY
+from .fake_edits import MAXIMUM_EDITS, apply_edits
 from .synthetic_parish import MAXIMUM_FAMILIES, generate
 
 LOGGER = logging.getLogger(__name__)
@@ -58,13 +60,18 @@ class _Reply(Exception):
 
 @dataclass(frozen=True)
 class FakeConfiguration:
-    """The file ``up`` writes: seed, Family count, anchor date and release instant."""
+    """The file ``up`` writes: seed, Family count, anchor date and release instant.
+
+    ``edits`` is the operator's optional list of changes to the generated
+    parish (``fake_edits``, #1780), replayed in order when the fake starts.
+    """
 
     seed: int
     families: int
     anchor_date: date
     release_at: datetime | None
     change_feed: str = DEFAULT_CHANGE_FEED
+    edits: tuple = ()
 
     @classmethod
     def parse(cls, document):
@@ -72,7 +79,7 @@ class FakeConfiguration:
         if (
             type(document) is not dict
             or not set(document) >= CONFIGURATION_FIELDS
-            or not set(document) <= CONFIGURATION_FIELDS | {"change_feed"}
+            or not set(document) <= CONFIGURATION_FIELDS | {"change_feed", "edits"}
         ):
             raise ValueError("The fake ParishSoft configuration has unexpected fields.")
         change_feed = document.get("change_feed", DEFAULT_CHANGE_FEED)
@@ -96,7 +103,17 @@ class FakeConfiguration:
             release = datetime.fromisoformat(release)
             if release.tzinfo is None or release.utcoffset() is None:
                 raise ValueError("The fake ParishSoft release instant needs a zone.")
-        return cls(seed, families, date.fromisoformat(anchor), release, change_feed)
+        edits = document.get("edits", [])
+        if type(edits) is not list or len(edits) > MAXIMUM_EDITS:
+            raise ValueError("The fake ParishSoft edits list is invalid.")
+        return cls(
+            seed,
+            families,
+            date.fromisoformat(anchor),
+            release,
+            change_feed,
+            tuple(edits),
+        )
 
     @classmethod
     def read(cls, path):
@@ -216,12 +233,21 @@ class FakeParishSoft:
     """
 
     def __init__(self, configuration, *, parish=None, now=None):
-        """Generate the parish once; both release views are precomputed."""
+        """Generate the parish once and apply the operator's edits.
+
+        Both release views are precomputed from the edited parish, so every
+        response reflects the edits; an edit the parish cannot take raises
+        ``ValueError`` and the fake does not start.
+        """
         if not isinstance(configuration, FakeConfiguration):
             raise TypeError("A FakeConfiguration is required.")
         self.configuration = configuration
-        self.parish = parish or generate(
-            configuration.seed, configuration.families, configuration.anchor_date
+        self.parish = apply_edits(
+            parish
+            or generate(
+                configuration.seed, configuration.families, configuration.anchor_date
+            ),
+            configuration.edits,
         )
         self.organization_id = self.parish.organization_id
         self.now = now or (lambda: datetime.now(UTC))

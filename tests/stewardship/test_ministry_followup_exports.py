@@ -31,6 +31,7 @@ from parishkit.stewardship.reports.ministry_followup_exports import (
     _choices,
     queue_document,
 )
+from parishkit.stewardship.reports.ministry_worklist import WorklistQuery
 from parishkit.stewardship.web.tables import report_table
 
 from .test_ministry_table_columns import ministry_page
@@ -108,9 +109,10 @@ def result(rows):
     }
 
 
-def document():
+def document(roster=False, **changes):
     """A queue export with a join, a leave, a request without details and a
-    Member the Family added on the form."""
+    Member the Family added on the form; ``roster`` is a Staff reader's file
+    (the roster-entry columns), ``changes`` override the third row."""
     rows = [
         row(JOIN, last_contact_at=CONTACTED),
         row(
@@ -133,6 +135,7 @@ def document():
             stage_label="To enter by hand",
             decision_label="Accepted (edited)",
             reviewed_ministry_name="Food pantry",
+            **changes,
         ),
         row(PROPOSED, member_name="New, Kid", member_duid=None),
     ]
@@ -148,12 +151,14 @@ def document():
         parish_name="Example Parish",
         requested_at=SUBMITTED,
         zone=CHICAGO,
+        roster=roster,
     )
 
 
 def test_the_file_holds_the_queue_columns_then_the_contact_details():
     """The worklist's columns in the pipeline's words (Stage, Decision and
-    Reviewer's value, #1684), then contacts; no Submitted.
+    Reviewer's value, #1684) with the roster-entry columns (R39 finding 2),
+    then contacts; no Submitted.
 
     The Administrator asked for the file without the Submitted time
     (2026-10-13), as the queue has no such column; the request page still
@@ -162,14 +167,20 @@ def test_the_file_holds_the_queue_columns_then_the_contact_details():
     """
     built = document()
     assert built.headings == HEADINGS
-    assert HEADINGS[:8] == (
+    assert HEADINGS[:14] == (
         "Member",
         "Member DUID",
+        "ParishSoft status",
+        "Family",
+        "Family DUID",
         "Ministry",
         "Request",
         "Stage",
         "Decision",
         "Reviewer's value",
+        "Replaced by a later response",
+        "Entered by",
+        "Entered at",
         "Last contact",
     )
     assert HEADINGS[-1] == "Current Ministry role"
@@ -210,6 +221,64 @@ def test_the_file_holds_the_queue_columns_then_the_contact_details():
     assert bare["Email"] == bare["Phones"] == bare["Age"] == "Unavailable"
     assert bare["Current Ministry role"] == ""
     assert proposed["Member DUID"] == "New Member"
+    # A Ministry leader's file (no ``roster``) leaves the roster-entry
+    # columns blank.
+    assert all(
+        line[name] == ""
+        for line in (joined, left, bare, proposed)
+        for name in ("Family", "Family DUID", "Entered by", "Entered at")
+    )
+
+
+def test_a_staff_file_carries_the_roster_entry_columns():
+    """Staff's file names each request's Family and, for a roster change,
+    whether a later response replaced it and who marked it entered, and
+    when; a Member no longer in ParishSoft has their status (R39 finding 2,
+    the retired Roster changes to enter file's columns)."""
+    marked = datetime(2054, 10, 9, 15, 0, tzinfo=UTC)
+    built = document(
+        roster=True,
+        family_name="Gone, Old and Ann",
+        family_duid=4321,
+        latest=False,
+        roster_entered=True,
+        roster_by="",
+        roster_at=marked,
+        source_mark=("Deceased in ParishSoft", "reason"),
+    )
+    joined, _left, bare, _proposed = (
+        dict(zip(HEADINGS, line, strict=True)) for line in built.rows
+    )
+    assert (bare["Family"], bare["Family DUID"]) == ("Gone, Old and Ann", "4321")
+    assert bare["ParishSoft status"] == "Deceased in ParishSoft"
+    assert bare["Replaced by a later response"] == "Yes"
+    assert bare["Entered by"] == "Former portal user"
+    assert bare["Entered at"] == marked.astimezone(CHICAGO)
+    assert joined["Replaced by a later response"] == joined["Entered by"] == ""
+
+
+def test_a_leader_file_blanks_the_roster_entry_cells_the_rows_carry():
+    """A Ministry leader's file (``roster=False``) leaves every roster-entry
+    cell blank even when its rows carry the values (R39 review): Family,
+    Family DUID, Replaced by a later response, Entered by and Entered at."""
+    built = document(
+        family_name="Gone, Old and Ann",
+        family_duid=4321,
+        latest=False,
+        roster_entered=True,
+        roster_by="staff@example.org",
+        roster_at=datetime(2054, 10, 9, 15, 0, tzinfo=UTC),
+    )
+    bare = dict(zip(HEADINGS, built.rows[2], strict=True))
+    assert bare["Stage"] == "To enter by hand"
+    for name in (
+        "Family",
+        "Family DUID",
+        "Replaced by a later response",
+        "Entered by",
+        "Entered at",
+    ):
+        assert bare[name] == "", name
 
 
 def test_the_file_names_its_scope_and_privacy_but_no_internal_reference():
@@ -261,6 +330,21 @@ def test_request_history_notes_that_values_are_current():
     assert "Request history" not in labels("current")
     note = labels("all")["Request history"]
     assert "not from when each version was submitted" in note
+
+
+def test_the_worklist_view_exports_without_a_history_choice():
+    """Export these requests posts the worklist's view, which has no history
+    choice: the file is built (no AttributeError, which answered 500) and
+    has no Request history note."""
+    built = queue_document(
+        result([]),
+        {},
+        WorklistQuery(),
+        parish_name="P",
+        requested_at=SUBMITTED,
+        zone=CHICAGO,
+    )
+    assert "Request history" not in dict(built.metadata)
 
 
 def test_two_new_members_with_one_name_are_numbered():
@@ -457,7 +541,6 @@ def followup_page(**context):
             "form": {},
             "history": [],
             "export_fields": query.form_values(),
-            "export_timezones": ["America/Chicago", "UTC"],
             "export_pdf_limit": 1000,
             # Ministry requests' totals and packet (#1133), with no request.
             "totals": {"joining": 0, "leaving": 0, "requests": 0},
@@ -499,15 +582,12 @@ def contact_section(html):
 
 
 def test_the_queue_offers_export_these_requests():
-    """The closed export disclosure (#227) carries the applied view, the
-    source note and the zone."""
+    """The shared export row (#1679) carries the applied view, the source
+    note (its toggletip) and the browser's zone, unasked."""
     html = followup_page(total=1)
-    start = html.index('<details class="export-panel">')
-    section = html[start : html.index("</details>", start)]
-    assert (
-        '<summary id="followup-export-heading">'
-        "Export these requests (CSV, XLSX or PDF)</summary>" in section
-    )
+    start = html.index('<form id="table-export"')
+    section = html[start : html.index("</form>", start)]
+    assert 'aria-label="Export these requests"' in section
     assert 'id="table-export" data-table-sync' in section
     assert '<input type="hidden" name="search" value="">' in section
     assert '<input type="hidden" name="stage" value="to_review">' in section
@@ -515,8 +595,12 @@ def test_the_queue_offers_export_these_requests():
     assert "Sensitive parish" not in section
     assert "trusted device" not in section
     assert "Ministry leaders receive the email and phones of each Member" in section
-    assert 'name="timezone" data-browser-timezone' in section
-    assert 'id="followup-export-count" data-table-sync' in section
+    assert 'name="browser_timezone" data-browser-zone' in section
+    assert 'name="timezone"' not in section
+    # No count line (R37); the PDF limit line is drawn hidden below the limit.
+    assert 'id="followup-export-pdf-limit" data-table-sync hidden' in html
+    assert "The file holds" not in html
+    assert "Export XLSX" in section and "Export CSV" in section
 
 
 def test_a_join_request_page_shows_its_members_contact_details():
@@ -553,21 +637,25 @@ def test_no_details_say_so():
     assert "No contact details are available for this request." in section
 
 
-def format_menu(html):
-    """The export's format menu."""
-    start = html.index('id="followup-export-format"')
-    return html[start : html.index("</select>", start)]
+def export_buttons(html):
+    """The export row's buttons, the data-table-sync node each view redraws."""
+    start = html.index('id="followup-export-buttons"')
+    return html[start : html.index("</span>", start)]
 
 
 def test_the_pdf_is_offered_only_up_to_its_limit():
-    """Above the limit PDF is unavailable, and the export line says why;
-    CSV and XLSX stay offered. The menu is redrawn with each applied view."""
+    """Above the limit Export PDF is unavailable, and the line below the row
+    says why; CSV and XLSX stay offered. The row and the line are redrawn with
+    each applied view."""
     html = followup_page(total=3, export_pdf_limit=2)
-    assert '<option value="pdf" disabled>PDF</option>' in format_menu(html)
-    assert 'id="followup-export-format-field" data-table-sync' in html
+    buttons = export_buttons(html)
+    assert 'value="pdf" disabled data-server-disabled' in buttons
+    assert 'value="csv" aria-describedby' in buttons
+    assert 'id="followup-export-buttons" data-table-sync' in html
     assert "The PDF is limited to 2 requests" in html
+    assert 'id="followup-export-pdf-limit" data-table-sync>' in html
     html = followup_page(total=2, export_pdf_limit=2)
-    assert '<option value="pdf">PDF</option>' in format_menu(html)
+    assert "disabled" not in export_buttons(html)
     assert "The PDF is limited" not in html
 
 
@@ -611,7 +699,7 @@ def test_the_file_reads_the_queues_own_selection(monkeypatch):
     Members no longer in ParishSoft must stay out of the file (Administrator,
     2026-10-13). The queue's selection leaves them out by default (#1217), so
     the export must read it exactly as the queue does: never with
-    ``every_member``, which Roster changes to enter alone uses to list them.
+    ``every_member``, which only the roster rows use to list them.
     """
     calls = []
 
