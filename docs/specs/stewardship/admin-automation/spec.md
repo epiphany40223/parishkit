@@ -2362,9 +2362,11 @@ the campaign is `stale_version`; an archived campaign, none, or an unknown
 slot or revision `not_available`. It prints `action` (`edit`), `version`,
 `campaign_id`, `edit` (`kind`, `slot`, `revision_id`, `name`, the
 fictional sample's `before` and `after`, each `subject`, `html` and `text`
-or null, and `schedules`, the saved schedules the new text switches, each
-`id`, `kind`, `name` (the mail type's), `subject` and `due_at`, null for a recurring
-digest) and `preview.token`, and records nothing, as the editor's Preview
+or null, and `schedules`, the saved schedules the new text switches, in
+sending order, each `id`, `kind`, `name` (as Dates and mail schedules names
+it), `subject`, `due_at` (null for a recurring digest) and `sent`, true for
+one that already sent, which the review dialog lists apart) and
+`preview.token`, and records nothing, as the editor's Preview
 changes records nothing. `content confirm --edit` is the dialog's Apply:
 `confirm_intent` with the editor's salt for the same page or email and the
 page's scope (`campaign_views._scope`), with one
