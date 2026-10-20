@@ -142,6 +142,11 @@ BEGIN
               AND prosrc LIKE '%AND NEW.member_duid IS DISTINCT FROM (SELECT r.member_duid%'
               AND prosrc LIKE '%r.expected_version=proposal.version-1%'
               AND prosrc LIKE '%OR (NOT incorrect AND NOT open_state) AND NOT again%'
+              AND prosrc LIKE '%AND NOT incorrect AND NOT replaced%'
+              -- Entered incorrectly's fixes still skip a replaced change.
+              AND prosrc LIKE '%LIMIT 1),false)
+        AND NOT replaced;%'
+              AND prosrc LIKE '%replaced:=EXISTS (SELECT 1 FROM public.stewardship_proposed_change later%'
               -- 0140's and 0150's rules, kept.
               AND prosrc LIKE '%k.outcome=''entered_incorrectly''%'
               AND prosrc LIKE '%NEW.action=''reopened'' AND NOT incorrect)%'

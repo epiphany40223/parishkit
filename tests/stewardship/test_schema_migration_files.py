@@ -415,7 +415,7 @@ FROZEN = {
         "02d2351b4641177268cae19efdee41d2b5fe3807af66f5d18f7514f88dbb1ab7"
     ),
     "0273_new_member_id_correction.sql": (
-        "428ad2a843fa0eb673527a8e04dce46c9bf2de85048fb29f38e704dbcdc59576"
+        "22fb10827c8e98ce1a40e5160ce22481eed29382f56d8bfcc2b3d00edf7f3464"
     ),
 }
 
