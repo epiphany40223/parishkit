@@ -317,7 +317,7 @@ def test_staff_export_the_timeline_and_leaders_cannot(
     """Staff export the timeline they see (#1774, #1799): the form, the
     post, the worker's file with the Family code and their download. A
     Ministry leader is refused by the page and the post, and SQL's request
-    authorization (migration 0160) admits Staff's own request but not the
+    authorization (migration 0144) admits Staff's own request but not the
     leader's reading of it."""
     from parishkit.stewardship.accounts.policy_models import PortalUser
 
@@ -871,9 +871,9 @@ def test_migration_check_refuses_the_previous_authorization():
     ],
 )
 def test_migration_0160_check_refuses_the_previous_definitions(name, earlier):
-    """0160's DO block (#1799) passes as installed and fails on each function's
+    """0144's DO block (#1799) passes as installed and fails on each function's
     previous body, the latest before it, which admits Administrators only."""
-    text = (MIGRATIONS / "0160_staff_timeline_export.sql").read_text(encoding="utf-8")
+    text = (MIGRATIONS / "0144_staff_timeline_export.sql").read_text(encoding="utf-8")
     acl = text[text.index("SELECT set_config(") : text.index("), true);") + 9]
     check = text[text.index("DO $check$") : text.index("$check$;") + len("$check$;")]
     previous = _function((MIGRATIONS / earlier).read_text(encoding="utf-8"), name)
@@ -881,7 +881,7 @@ def test_migration_0160_check_refuses_the_previous_definitions(name, earlier):
     with transaction.atomic(), connection.cursor() as cursor:
         cursor.execute(acl)
         cursor.execute(check)  # The installed definitions pass.
-        with pytest.raises(DatabaseError, match="Migration 0160"), transaction.atomic():
+        with pytest.raises(DatabaseError, match="Migration 0144"), transaction.atomic():
             cursor.execute(previous)
             cursor.execute(check)
         cursor.execute(check)  # Rolled back to the installed definitions.
@@ -889,8 +889,8 @@ def test_migration_0160_check_refuses_the_previous_definitions(name, earlier):
 
 
 def test_migration_0160_check_refuses_changed_grants():
-    """0160's DO block fails when a replaced function's grants changed."""
-    text = (MIGRATIONS / "0160_staff_timeline_export.sql").read_text(encoding="utf-8")
+    """0144's DO block fails when a replaced function's grants changed."""
+    text = (MIGRATIONS / "0144_staff_timeline_export.sql").read_text(encoding="utf-8")
     acl = text[text.index("SELECT set_config(") : text.index("), true);") + 9]
     check = text[text.index("DO $check$") : text.index("$check$;") + len("$check$;")]
     with transaction.atomic(), connection.cursor() as cursor:
@@ -905,6 +905,6 @@ def test_migration_0160_check_refuses_changed_grants():
             "public.stewardship_export_request_authorized_v1"
             "(uuid, stewardship_export_request) TO PUBLIC"
         )
-        with pytest.raises(DatabaseError, match="Migration 0160"):
+        with pytest.raises(DatabaseError, match="Migration 0144"):
             cursor.execute(check)
         transaction.set_rollback(True)

@@ -1,4 +1,4 @@
--- Frozen forward migration 0160: Staff may export a Family's Timeline (#1799).
+-- Frozen forward migration 0144: Staff may export a Family's Timeline (#1799).
 -- It is installed by the Django migration that names it in FROZEN_SQL and
 -- must never change once released; tests/stewardship/test_schema_migration_files.py
 -- pins its digest and checks that its copies of the replaced baseline
@@ -27,7 +27,7 @@ SET LOCAL check_function_bodies = false;
 SET LOCAL search_path = public;
 
 -- The three functions' grants as they are now, for the closing check.
-SELECT set_config('parishkit.migration_0160_acl', coalesce((
+SELECT set_config('parishkit.migration_0144_acl', coalesce((
     SELECT string_agg(proname||'='||coalesce(proacl::text,'-')||'/'||proowner::regrole::text,
         ';' ORDER BY proname)
     FROM pg_proc WHERE pronamespace='public'::regnamespace
@@ -302,7 +302,7 @@ BEGIN
           AND position('131072' IN prosrc)=0
           AND position('stewardship_export_capture_cleared_v1' IN prosrc)>0)
     THEN
-        RAISE EXCEPTION 'Migration 0160: the timeline capture does not admit Staff';
+        RAISE EXCEPTION 'Migration 0144: the timeline capture does not admit Staff';
     END IF;
     IF NOT EXISTS(SELECT 1 FROM pg_proc
         WHERE pronamespace='public'::regnamespace
@@ -320,13 +320,13 @@ BEGIN
           AND position('stewardship_ministry_scope_authorized_v1' IN prosrc)>0
           AND position('campaign_archive' IN prosrc)>0)
     THEN
-        RAISE EXCEPTION 'Migration 0160: the timeline export request does not admit Staff';
+        RAISE EXCEPTION 'Migration 0144: the timeline export request does not admit Staff';
     END IF;
     IF NOT EXISTS(SELECT 1 FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid
         WHERE t.tgrelid='public.stewardship_timeline_export_snapshot'::regclass
           AND t.tgname='timeline_export_capture' AND t.tgenabled='O'
           AND p.proname='stewardship_timeline_export_capture_v1')
-       OR current_setting('parishkit.migration_0160_acl') IS DISTINCT FROM coalesce((
+       OR current_setting('parishkit.migration_0144_acl') IS DISTINCT FROM coalesce((
         SELECT string_agg(proname||'='||coalesce(proacl::text,'-')||'/'||proowner::regrole::text,
             ';' ORDER BY proname)
         FROM pg_proc WHERE pronamespace='public'::regnamespace
@@ -338,7 +338,7 @@ BEGIN
                           'stewardship_export_request_guard_v1',
                           'stewardship_export_request_authorized_v1'))<>3
     THEN
-        RAISE EXCEPTION 'Migration 0160: the timeline export guards changed owner, grants or trigger';
+        RAISE EXCEPTION 'Migration 0144: the timeline export guards changed owner, grants or trigger';
     END IF;
 END
 $check$;

@@ -1233,7 +1233,7 @@ buttons](../ui-conventions/spec.md#downloaded-files) for XLSX, CSV and PDF,
 in the browser's time zone), the shared export lifecycle's `family_timeline`
 kind (ADM-11 PR 8g, frozen migration 0063, unchanged by #1570).
 Administrators and Staff may use it: Staff see the full timeline since #1774,
-and frozen migration 0160 (#1799) opened the export's capture
+and frozen migration 0144 (#1799) opened the export's capture
 trigger, request guard and request authorization to a current Staff member
 as well. Its form posts to `reports/families/<family>/exports/`; a Ministry
 leader, who cannot open the page, is refused there and by the capture's SQL.
@@ -1284,7 +1284,7 @@ capture, which the page no longer makes, for an Administrator only), an
 admitted campaign, the active configuration and a Family of that campaign
 (with its DUID), with the document's keys and value types checked and its
 size bounded, and sets the event count itself. The bound is 1 MiB of JSON
-since migration 0160 (it was 128 KiB): the review lines (#1774) made a busy
+since migration 0144 (it was 128 KiB): the review lines (#1774) made a busy
 Family's file longer, and 1 MiB holds several thousand lines, far beyond
 any Family's timeline. A document over it is refused like any malformed
 capture, with no message of its own: the bound was raised rather than

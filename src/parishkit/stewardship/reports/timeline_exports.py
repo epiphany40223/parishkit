@@ -11,7 +11,7 @@ a lifecycle change.
 
 The page builds its timeline in Python, not in a SQL report function, so the
 web supplies the captured document. SQL checks everything around it (frozen
-migrations 0063 and 0160): only the web, for a current Administrator or
+migrations 0063 and 0144): only the web, for a current Administrator or
 Staff member (#1799), an admitted campaign, the active configuration, a
 Family of that campaign, the document's closed shape and its event count.
 The Family code is never captured; the worker decrypts it into the file
