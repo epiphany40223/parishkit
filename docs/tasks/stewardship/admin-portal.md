@@ -897,7 +897,27 @@ removed, a stale version, an empty slot, an altered, another slot's or
 another page's token, another Administrator's token denied, a token
 reviewed before the settings changed, no current campaign,
 a read-only session and Staff denied, an ended session) and the unchanged
-Campaign images page suite. Another part adds `workgroup show`,
+Campaign images page suite. Another part (#1865) adds `branding preview`
+and `branding confirm`, Parish logos' upload with its review and the review
+dialog's Apply, in `parishkit.stewardship.admin_branding`, through the
+page's own form, staging (moved into `branding_views.stage_upload`, which
+the page now calls), review and `admin_editing.confirm_intent`, with staged
+uploads owned by the automation session on the command line
+(`branding_staging.sign_in`) and no schema change; proven by
+`tests/stewardship/test_admin_branding.py` (the printed sizes, the bound
+form, the reader's limit, the catalog entries, the described events, the
+ledger, usage errors), `tests/stewardship/test_admin_cli.py`,
+`tests/stewardship/test_admin_route_parity.py`,
+`tests/stewardship/database/test_admin_branding_cli_postgresql.py` (a
+preview and confirm staging under the automation session, recording both
+events and the request, installed and read back by `branding show`, a
+repeat; one size replaced alone; a stale version, a non-image, a size
+outside its rules, a size with nothing to keep and empty input staging
+nothing; logos staged on the page or by another automation session not
+available; an altered, another bundle's or another page's token, another
+Administrator's denied, a token reviewed before the settings changed; a
+read-only session and Staff denied, an ended session) and the unchanged
+Parish logos page suites. Another part adds `workgroup show`,
 `workgroup preview` and `workgroup confirm`, the No-reminders WorkGroup
 page's read, Review and Apply, in `parishkit.stewardship.admin_workgroup`,
 through the page's own campaign check, form, review (moved into

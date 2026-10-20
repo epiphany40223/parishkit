@@ -1257,8 +1257,9 @@ session of any scope may run them, and they record nothing in System
 logs, as opening the pages records nothing. Each prints `version`, the
 applied configuration's version. Changing the parish profile is
 `parish preview` and `parish confirm`, and changing Share options is
-`campaign shares-preview` and `campaign shares-confirm` (both below);
-uploading logos stays on the page for now.
+`campaign shares-preview` and `campaign shares-confirm` (both below),
+and changing the logos is `branding preview` and `branding confirm`
+([Parish logos](#parish-logos)).
 
 ```sh
 pk-admin parish show
@@ -1285,8 +1286,8 @@ organization, the page cannot show a catalog and `ministries list` is
 exit 3 (`unavailable`). Unlike the Share options page, which only edits
 and refuses a locked campaign, `campaign shares` reads a live or ended
 campaign's options too, with `editable` false. With no current campaign,
-or an unknown one, `campaign shares` is exit 1 (`not_available`). Logo
-images stay on the page.
+or an unknown one, `campaign shares` is exit 1 (`not_available`).
+`branding show` prints the logos' stored facts, never their images.
 
 `parish preview` and `parish confirm` are the Parish settings page's
 **Review** and **Apply**, as `schedule preview` and `schedule confirm` are
@@ -1362,6 +1363,51 @@ unknown one for `campaign shares-preview`, is exit 1 (`not_available`).
 `campaign shares-confirm` records `admin_cmd_campaign_shares_confirm` in System logs
 with the request; repeating it with the same token returns the same
 request.
+
+## Parish logos
+
+`branding preview` and `branding confirm` are the **Parish logos** page's
+upload, with its review, and the review's **Apply**. They need a
+full-scope session. `branding preview` reads one PNG, JPEG or WebP image
+(up to 5 MB) from standard input: without `--size` it is the page's
+Basic mode, and the image is made into all four sizes; with `--size
+large`, `menu`, `icon` or `favicon` it is Advanced for that one size, and
+the other three keep their current images. To replace several sizes one by
+one, apply each before previewing the next. The preview stores the sizes
+it made, as the page's upload does, but nothing changes on the site until
+`branding confirm`.
+
+```sh
+VERSION=$(pk-admin branding show | jq -r .result.version)
+pk-admin branding preview - --expected-version "$VERSION" < logo.png > review.json
+jq .result.logos review.json
+pk-admin branding confirm --bundle "$(jq -r .result.bundle review.json)" \
+    --token "$(jq -r .result.preview.token review.json)"
+```
+
+| Field | What it holds |
+| --- | --- |
+| `version` (`branding preview`) | The configuration version the logos were made and reviewed against |
+| `bundle` | The uploaded logos, which `branding confirm --bundle` names |
+| `mode` | `basic` (one image for every size) or `advanced` (one size replaced) |
+| `logos` | Each size in the order `large`, `menu`, `icon`, `favicon`: `slot`, `name` (its label on the page), the new image's `id`, `width` and `height` (pixels), `size` (bytes) and `sha256`, and `changed`, whether this upload changes that size |
+| `preview.token` | What `branding confirm --token` takes with the same `--bundle`, valid for fifteen minutes |
+| `created`, `request` (`branding confirm`) | As `parish confirm` prints them; follow the change with `config request show --watch` |
+
+An image the page refuses (too large, not a supported still image, or a
+size outside its rules) is exit 1 (`invalid`) at `branding.logo`, or
+`branding.<size>` with `--size`, in the page's words. A version that is
+no longer current, logos older than a day, or an expired token is exit 1
+(`stale_version`): read `branding show` and preview again. Uploaded logos
+belong to the session that uploaded them, as on the page: `branding
+confirm` applies only what the same `pk-admin` session's `branding
+preview` uploaded (at any time in the upload's day), never logos uploaded on the page or under another
+session, which are exit 1 (`not_available`). Another bundle's or an
+altered token is exit 1 (`invalid`). Logos never applied expire within a
+day, so previewing again is always safe. `branding preview` records
+`admin_cmd_branding_preview` in System logs and `branding confirm`
+records `admin_cmd_branding_confirm` with the request; repeating
+`branding confirm` with the same token returns the same request.
 
 ## Integrations
 
@@ -3923,3 +3969,8 @@ Each change is recorded in System logs as on the page
   `--stage` and the `stage` and `stages` fields (null without it);
   `export limitations` gains `--stage`, `--format jsonl` and the
   document's `stage`; `export information` gains `--stage`.
+- `pk-admin/1` (#1865): additive. `branding preview - [--size SIZE]
+  --expected-version VERSION` and `branding confirm --bundle ID --token
+  TOKEN|-`, the Parish logos page's upload with its review and its Apply
+  (full scope, Administrators only); they record
+  `admin_cmd_branding_preview` and `admin_cmd_branding_confirm`.

@@ -580,7 +580,10 @@ its command session at most once a minute, as a heartbeat, so the 60-minute
 idle checks hold while the process lives. At exit the command sets the command
 session's `revoked_at` directly, without an audit event (the automation
 session's events carry the attribution); a crashed process leaves a row that
-idles out and is cleaned up as usual.
+idles out and is cleaned up as usual. Where a page ties staged work to the
+sign-in that made it (Parish logos' staged uploads), the command line's
+sign-in is the automation session, not one command session, so a later
+command of the same automation session can finish it (#1865).
 
 If the principal's roles or Ministries change while a command runs, ordinary
 admission on the web would rotate the session. For a command session it
@@ -1736,7 +1739,8 @@ signatures:
   read with its stored file's receipt (`export_services.export_state`).
 - **PR 8c to 8h:** report reads and the Family-level exports from the
   report and export views; for `digest list`, the Emailed reports page's
-  lists as `emailed_views.listing`. `report source-form` needed none: the
+  lists as `emailed_views.listing` (both replaced by `report-email` in
+  #1786). `report source-form` needed none: the
   page's admission and `blocked_families` were already request-free.
 - **PR 9a:** `delivery_views.preparation_retry` and
   `export_views.retry_cleanup_command`, with the delivery views' admission and
@@ -1770,6 +1774,11 @@ signatures:
   pages' profile, catalog and campaign-target reads were already
   request-free; `branding show` moved the logo page's current-logo query
   into `branding_slots.current_assets`, which the page now calls.
+  `branding preview` moved the upload's staging (after the page's field
+  checks) into `branding_views.stage_upload`, which the page now calls,
+  and adds a `record` callback to `branding_staging.stage_branding`;
+  a staged upload's owning sign-in is `branding_staging.sign_in`, which
+  is the request's own portal session on the web, unchanged (#1865).
   `parish preview` moved the parish page's review (after form validation)
   into `parish_views.review_change`, which the page's Review now calls.
   `integration list`, `integration show` and `integration status` moved the
@@ -2013,8 +2022,8 @@ none.
 | `parish_settings`, `ministries` | `parish show`, `parish preview`, `parish confirm`, `ministries list` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); Ministries changes nothing since [#1267](https://github.com/epiphany40223/parishkit/issues/1267) |
 | `hosted_files`, `hosted_file_delete`, `hosted_file_rename` | `files list`, `files delete`, `files rename` ([#463](https://github.com/epiphany40223/parishkit/issues/463)) |
 | `artwork_settings` (its upload and removal reviews, #750) | `artwork show`, `artwork remove-preview`, `artwork remove` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); uploads are `artwork_upload`'s, below |
-| `branding_settings`: **Apply** in its review dialog (#750) | `branding show` ([#463](https://github.com/epiphany40223/parishkit/issues/463)); applying logos comes with the uploads below: staged logos belong to the sign-in that uploaded them, and each `pk-admin` run is its own sign-in, so a command cannot apply logos staged in the browser |
-| `hosted_file_upload`, `artwork_upload`, `branding_settings` uploads | Pending: file uploads; a later PR may accept `--file` |
+| `branding_settings` (its upload, review dialog and **Apply**, #750) | `branding show`, `branding preview`, `branding confirm` ([#1865](https://github.com/epiphany40223/parishkit/issues/1865)); the preview takes the image on standard input |
+| `hosted_file_upload`, `artwork_upload` | Pending: file uploads; a later PR may accept the file on standard input, as `branding preview` does |
 | `branding_asset` | Permanent: image previews and bytes for the browser |
 
 Every configuration change still becomes a configuration request that the
@@ -2036,17 +2045,12 @@ values, as a schedule saves them; when the same document changes
 `window.timezone`, they are in the proposed zone, and a saved schedule the
 document leaves alone keeps its wall-clock time in that zone. A saved schedule named by `id` keeps what the
 document leaves out, `delete` removes it, an entry without `id` adds one,
-and saved schedules it does not name stay unchanged; a daily digest's
-`comparison` is the page's Include Compared with past campaigns checkbox,
-which `schedule show` lists too. A saved digest's `skip` (one slot date,
-`YYYY-MM-DD`) is Edit's Delete with
-[This email only](../admin-portal/spec.md#delete-a-scheduled-email)
-([#1658](https://github.com/epiphany40223/parishkit/issues/1658)): it adds
-that send to the digest's `skip_dates`, which `schedule show` and each side
-of `schedule preview` list, with the page's refusals (a send already past
-or with Production work, one already skipped, or a date that is not a send
-of the digest). An entry with `skip` may not also give `date`, `time` or
-`weekday` (`invalid`), so the skip always names a send of the saved digest. A `repeat` entry
+and saved schedules it does not name stay unchanged. Report emails are not
+schedules of these commands: `pk-admin report-email` reviews and applies
+them, including a report's `comparison` block and a single send's `skip`
+([#1786](https://github.com/epiphany40223/parishkit/issues/1786),
+[report emails command line](../report-emails/spec.md#command-line)), and
+`schedule show` and `schedule preview` no longer list them. A `repeat` entry
 ([#469](https://github.com/epiphany40223/parishkit/issues/469)) takes a
 repeat rule, a `time` and a `template_version` and adds one ordinary
 reminder per date the rule gives, expanded by the server's copy of the
@@ -2269,8 +2273,8 @@ the page's work transaction, reads the page's pinned state and campaign
 check (`content_views._content_campaign`), checks the version (another is
 `stale_version`) and builds the page's own removal
 (`content_delete_views.review_deletion`). As on the page, `--delete`
-names one or more `content list` email revisions (invitation, reminder or
-Admin digest), each once; an email that cannot be deleted (the
+names one or more `content list` email revisions (invitation or
+reminder), each once; an email that cannot be deleted (the
 confirmation email, one a schedule still sends, an unknown id), a
 repeated id, or a configuration the removal would make invalid is
 `invalid` at `delete` with the page's words; background work holding the
@@ -2319,6 +2323,58 @@ and shows no confirmation dialog: the reviewed token is the confirmation,
 and a removal deletes nothing (the image stays in the activated
 configurations' history). The command shapes are defaults, pending
 Administrator confirmation.
+
+`branding preview - [--size SIZE] --expected-version …` and `branding
+confirm --bundle ID --token …` are Parish logos' upload with its review
+dialog and the dialog's **Apply** (#750, #1062,
+[#1865](https://github.com/epiphany40223/parishkit/issues/1865)), as
+`parish preview` and `parish confirm` are Parish settings' Review and
+Apply. The preview reads one image from standard input after the preamble
+(at most the page's 5 MB; the wrapper forwards it for the `-` input, as
+for `history preview -`) and admits as the page's upload does
+(`CONFIGURE`, recording activity). It binds the image to the page's own
+form (`branding_views.LogoUploadForm`): without `--size` it is Basic, one
+image made into all four sizes; `--size large|menu|icon|favicon` is
+Advanced for that one size, the others keeping their current images, as
+on the page (one size per run, as standard input carries one file). It
+stages the sizes through the page's own `branding_views.stage_upload`
+(`branding_staging.stage_branding`), with `admin_cmd_branding_preview` in
+the transaction that makes them ready (so the event means the logos were
+staged; a later review refusal is logged as the command's refusal), then, as the page's dialog does,
+reads the staged upload before the configuration and builds the page's own
+review (`branding_views._review`). The form's refusals (an image too
+large, unsupported or animated, a size outside its rules) are `invalid`
+at `branding.logo` or `branding.<size>` with the page's words; another
+version is `stale_version`, before anything is staged; settings that
+changed between staging and review are `stale_version` too; media storage
+that cannot be used is `unavailable`. A refusal after staging leaves only
+an unapplied upload, which expires within a day as the page's do, so a
+new preview is always safe. It prints `version`, `bundle` (the staged
+upload), `mode` (`basic` or `advanced`), `logos` (each size in the page's
+order with its label, the staged image's stored facts and `changed`,
+whether this upload changes it) and `preview.token`, the page's own signed
+binding (its salt, bound to the bundle); never image bytes. `branding
+confirm` records the configuration request as the dialog's Apply does,
+through `admin_editing.confirm_intent` with the page's salt and staged-upload
+scope (`branding_views._scope`), with `admin_cmd_branding_confirm` in the
+request's own transaction; a repeat returns the original request. Another
+bundle's token is `invalid`. Staged logos belong to the sign-in that
+uploaded them (`branding_staging.sign_in`, recorded as the bundle's
+`session_id`): in the browser that is the portal session, and on the
+command line it is the automation session, not the short-lived command
+session of one run (see [Command sessions](#command-sessions)), so
+`branding confirm` applies what the same automation session's `branding
+preview` staged for the upload's whole day, even after the maintenance
+task has removed the preview's command session. Logos staged in the browser or by another automation
+session, even the same Administrator's, are `not_available`, as the page
+refuses another sign-in's upload; expired ones are `stale_version`. Both
+need a full-scope session; neither is fresh-gated nor prompts, as the
+page's upload and Apply are not privileged and show no confirmation
+dialog: the reviewed token is the confirmation. The command shapes,
+`--size` and one size per run are defaults, pending Administrator
+confirmation. The
+[operator guide](../../../guides/stewardship-admin-automation.md#parish-logos)
+lists the fields.
 
 `workgroup show`, `workgroup preview (--name … | --clear)
 --expected-version …` and `workgroup confirm --token …` are the
@@ -2582,7 +2638,7 @@ or closed) follows the page's nesting: `pause_available`,
 `resume_available` and `resolve_available` are false without it; the
 Resolve held messages choices (`resolution`) are null unless
 `resolve_available`; and `family_recovery` and `report_recovery` (the
-overdue Admin digests) are null unless the campaign is also paused. The
+overdue report emails) are null unless the campaign is also paused. The
 fingerprints a preview binds are internal, so they do not print. The
 [operator guide](../../../guides/stewardship-admin-automation.md#pause-and-resume-mail)
 lists the fields.
@@ -2601,8 +2657,8 @@ being handed to the mail service or not sure it arrived. They add no send
 path: a resume or a release lets held mail go through the ordinary delivery
 workers, as the page's does. The previews need a full-scope session, as
 the page's preview posts record activity, and record no event; `--type` is
-the Resolve held messages form's message types (`receipt`, `daily_digest`,
-`weekly_digest`), which Release and Cancel need and Clear refuses (a usage
+the Resolve held messages form's message types (`receipt` and `report`, the
+report emails, which replaced `daily_digest` and `weekly_digest` in #1786), which Release and Cancel need and Clear refuses (a usage
 error, as the form cannot send either). Each prints `action`, `campaign_id`, the
 `reason`, `expires_at`, the bound `inventory` as `send controls` prints it,
 a resume's `plan` (`before_start` or `family`, with `family_recovery` and
@@ -2743,10 +2799,10 @@ deleted when the export ends, so nothing regenerates it.
 | `reports` | `report list` (PR 8c) |
 | `campaign_comparison` | `report comparison [--day N]` ([#1018](https://github.com/epiphany40223/parishkit/issues/1018) slice 3, [campaign history](../campaign-history/spec.md#command-line)): aggregates only, with the small-count protection |
 | `campaign_comparison_export` | `export comparison [--day N] --format F [--timezone Z]` ([#1018](https://github.com/epiphany40223/parishkit/issues/1018) slice 6, [downloads](../campaign-history/spec.md#downloads-and-sharing)): the page's download form, through the same capture (`comparison_exports.read_capture`) and service (`create_comparison_export`), with the page's `campaign_comparison_exported` and `admin_cmd_export_comparison`; without `--timezone` the file's request time uses the parish's time zone ([#1161](https://github.com/epiphany40223/parishkit/issues/1161)) |
-| `daily_digest_chart`, `daily_digest_download` | Permanent: PNG images; the data is in the matching report or digest read |
+| `daily_digest_chart`, `daily_digest_download` | Permanent: PNG images; the data is in the matching report or `report-email copy` read |
 | `financial_report`, `limitations_report`, `information_queue` | `report financial`, `report limitations`, `report information`: summaries and counts (PR 8c; `report limitations` was `report talents` until #970), by worklist stage with `--stage` ([#1735](https://github.com/epiphany40223/parishkit/issues/1735)); Family-level rows only as exports (PR 8e, PR 8h for limitations). The worklists' decisions ([#1685](https://github.com/epiphany40223/parishkit/issues/1685)) are `limitations decide` and `information decide`, through the pages' own `LimitationDecisions` and `InformationDecisions` services; `information list` prints the requests' ids, versions, stages and actions, never their content ([#1735](https://github.com/epiphany40223/parishkit/issues/1735)) |
 | `pledges_to_enter`, `pledges_to_enter_export` ([#1686](https://github.com/epiphany40223/parishkit/issues/1686)) | `report pledges` (counts by stage), `pledges decide` and `export pledges` ([#1733](https://github.com/epiphany40223/parishkit/issues/1733)), through the page's own read, `PledgeDecisions` service and `export_body`; the rows with their ids and versions only as `export pledges --format jsonl`, as for `export census` |
-| `information_item` | One Family's submission and its follow-up history: `followup information-show ITEM_ID` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11b; see [users and follow-up](#users-and-follow-up)); it prints only the item's state and history, and the submission's content comes through `export information` (PR 8e) |
+| `information_item`, `information_contacts_status` (its Contact details' passive status, [#1863](https://github.com/epiphany40223/parishkit/issues/1863)) | One Family's submission and its follow-up history: `followup information-show ITEM_ID` ([#463](https://github.com/epiphany40223/parishkit/issues/463) PR 11b; see [users and follow-up](#users-and-follow-up)); it prints only the item's state and history, and the submission's content comes through `export information` (PR 8e) |
 | `ministry_report` | `report ministry`, and `report ministry --ministry DUID --requests join\|leave` for one Ministry's join or leave count (PR 8c); rows only as exports (PR 8e). The Members joining and leaving pages (`ministry_joiners`, `ministry_leavers`) were retired ([#1157](https://github.com/epiphany40223/parishkit/issues/1157)); the commands stay, and `export ministry`, which writes one Ministry's join or leave list, now covers this summary, whose counts it lists. Since [#1133](https://github.com/epiphany40223/parishkit/issues/1133) the page is one Ministry requests page with the follow-up queue: its By Ministry counts are `report ministry`'s summary, and its queue is `followup list` (PR 11a) |
 | `ministry_packet` | A packet of Members' contacts, so export only: `export ministry-packet` (PR 8e) |
 | `past_campaign_archive` | `export archive` ([#1018](https://github.com/epiphany40223/parishkit/issues/1018) part (a), [archive export](../campaign-history/spec.md#download-campaign-archive)): Past campaigns' Download campaign archive, through the same service (`create_archive_export`), with the page's `campaign_archive_exported` and `admin_cmd_export_archive`; [fresh-gated](#fresh-gated-actions-from-the-command-line) |
@@ -2760,10 +2816,10 @@ deleted when the export ends, so nothing regenerates it.
 | `census_changes`, `census_changes_export` | `report census`, counts ([#463](https://github.com/epiphany40223/parishkit/issues/463)); the rows through `export census` (PR 8h, [#463](https://github.com/epiphany40223/parishkit/issues/463)). A row's Entered in ParishSoft, Ignore and Reopen ([#528](https://github.com/epiphany40223/parishkit/issues/528)) post to `census_changes`; their command is `census resolve PROPOSAL_ID --action entered\|ignored\|reopened` ([#463](https://github.com/epiphany40223/parishkit/issues/463)), through the same `census_resolution` service. An Automatic row's Review (Approve, Ignore, Back to To review; ADM-09) posts there too; its command is `census review PROPOSAL_ID --decision approved\|ignored\|unreviewed` ([#528](https://github.com/epiphany40223/parishkit/issues/528)), through the same `census_review` service. The Review's Edit value and Clear edit (ADM-09.04) are `census edit PROPOSAL_ID --value TEXT\|- \| --clear`, and its Use the Family's value anyway (ADM-09.03) is `census resolve-conflict PROPOSAL_ID` ([#1434](https://github.com/epiphany40223/parishkit/issues/1434)), through the same service |
 | `census_publication`, `census_publication_confirmation`, `census_publication_retries` (new, [#528](https://github.com/epiphany40223/parishkit/issues/528); not built yet) | `census publish-check`, `census publish-plan`, `census publish-confirm` and `census publish-rerun`: the [Publish to ParishSoft](../reports/spec.md#publish-to-parishsoft) page's Check ParishSoft, plan, Apply and Run again, through the same `publication_tasks` and `publication_plans` services; see [the commands](#publish-to-parishsoft-commands) |
 | `report_export_create`, `report_export`, `report_export_cancel`, `report_export_retry`, `report_export_download` | `export create` (and `export exact create`, the latest-data export, whose page form [#1537](https://github.com/epiphany40223/parishkit/issues/1537) removed), `export status --watch`, `export cancel`, `export retry`, `export download --stream` (PR 8b; `report_export_regenerate` and `export regenerate` were removed by [#1398](https://github.com/epiphany40223/parishkit/issues/1398)); an exact request's status, cancel and retry, which these pages also serve, are `export exact status --watch`, `export exact cancel` and `export exact retry` (PR 8h) |
-| `daily_digest_snapshot` | `digest daily SNAPSHOT_ID` (PR 8d) |
-| `weekly_digest_snapshot`, `weekly_digest_item` | `digest weekly SNAPSHOT_ID`: each item's identifier and states; an item's text stays on the page (PR 8d) |
-| `weekly_digest_manual` | `digest weekly-request` (PR 8d) |
-| `emailed_reports` | `digest list [--requested KEY]`: the Emailed reports page's lists, ids and dates only (PR 8d follow-up) |
+| `report_emails`, `report_email_edit` | `report-email list`, `report-email show`, `report-email preview`, `report-email confirm`, `report-email render`, `report-email send-test`, `report-email send-now` ([#1786](https://github.com/epiphany40223/parishkit/issues/1786), [report emails](../report-emails/spec.md#command-line)) |
+| `report_email_send`, `daily_digest_snapshot`, `weekly_digest_snapshot`, `weekly_digest_item` | `report-email sends`, `report-email copy SEND`: each block's figures, each request's identifier and states; a request's text stays on the page (#1786; replaced `digest daily` and `digest weekly`, PR 8d) |
+| `weekly_digest_manual` | `digest weekly-request`: current until Report emails delivery PR 5 retires it, no redirect (#1786) |
+| `emailed_reports` | `digest list [--requested KEY]`: current until Report emails delivery PR 5 retires it, no redirect (#1786) |
 | `logs`, `logs_export` | `logs list`, `logs export` (PR 8a) |
 | `past_campaigns`, `past_campaign_review`, `past_campaign_import`, `past_campaign_removal` | `history list`, `history preview -`, `history confirm`, `history remove` ([#1018](https://github.com/epiphany40223/parishkit/issues/1018), [campaign history](../campaign-history/spec.md#command-line)): the Past campaigns page's list, Review (the workbook on standard input), Apply and Remove. The commands came first (slice 2), listed in `admin_parity.AHEAD_OF_PAGE` until the page (slice 4); that list is empty now |
 
@@ -2975,37 +3031,15 @@ derived from it) is `invalid`, so one key never records two decisions. It prints
 `item_id`, `sequence`, `action`, `decision`, `entered` and `created_at`,
 never the amount, the note or the Family.
 
-The digest commands (PR 8d) read a retained report an emailed digest
-links to from its stored snapshot, through its page's own functions
-(`digest_views.retained_document`, `weekly_views.retained_context`), never
-the email's markup, inside the same campaign read guard, and record the
-page's `daily_digest_viewed` or `weekly_digest_viewed`. `digest daily`
-also prints the digest's retained
-[Compared with past campaigns](../campaign-history/spec.md#digest-section)
-section, without its chart specifications. `digest daily`
-admits as the daily report page (report readers) and `digest weekly` as
-the weekly one (Administrators); both are any-scope reads. `digest weekly`
-prints each selected item's identifier and captured and current
-disposition, never a Family's text. `digest weekly-request` is the Send a
-weekly report now page's form (`request_manual_report`) in the page's
-command scope, keyed by its `command_id`: the same database rules (a
-digest still in progress or awaiting review is `stale_version`, as the
-page's 409), the same `weekly_manual_requested` event and task, and
-`admin_cmd_digest_weekly_request` when it creates the request. The page's
-ticked acknowledgement is asked at the
-[prompt](#command-line-confirmation) (or given by `--yes`); without it the
-command exits 4 (`confirmation_required`). `digest list` is the Emailed
-reports page: through the page's own `emailed_views.listing`, the current
-campaign's newest ready daily reports and, for an Administrator, weekly
-reports (`weekly` is null for any other reader, who sees only the daily
-list on the page), by snapshot id and date only, whether
-`digest weekly-request` is available, and with `--requested` the page's
-`?requested=` request (its task and, once captured, its report). It admits
-as the page does (any session) and, as the page's read, records no event.
-Leaving out the weekly row's request key and a null `weekly` are defaults,
-pending Administrator confirmation. The
-[operator guide](../../../guides/stewardship-admin-automation.md#digests)
-lists the fields.
+The report email commands
+([#1786](https://github.com/epiphany40223/parishkit/issues/1786)) are
+defined with the page in the
+[report emails command line](../report-emails/spec.md#command-line). They
+replaced the digest commands of PR 8d (`digest list`, `digest daily`,
+`digest weekly` and `digest weekly-request`), which are removed with no
+aliases; `report-email copy` reads the saved copies those commands read,
+through the same page functions (`digest_views.retained_document`,
+`weekly_views.retained_context`) for a copy made before the conversion.
 
 The Family-level export commands (PR 8e) are the export forms of the
 financial report, the information queue and the Ministry report (its
@@ -3321,7 +3355,7 @@ other publication types in their
 | URL names | Command or exemption |
 | --- | --- |
 | `background`, `background_tasks`, `background_task` | `task list`, `task show` (PR 3a) |
-| `retry_family_preparation`, `retry_daily_digest`, `retry_weekly_digest`, `retry_export_cleanup` | `task retry` (PR 9a) |
+| `retry_family_preparation`, `retry_report_email` (which replaced `retry_daily_digest` and `retry_weekly_digest`, #1786), `retry_export_cleanup` | `task retry` (PR 9a) |
 | `deliveries`, `delivery`, `delivery_resolve` | `delivery list`, `delivery show`, `delivery resolve` (PR 9b), `delivery resend` (PR 9c) |
 | `delivery_refusals`, `delivery_refusal`, `delivery_refusal_clear` | `delivery refusals`, `delivery refusal-show` (PR 9b), `delivery refusal-clear` (PR 9c) |
 | `delivery_bounce_report` (#806 slice 4) | `delivery bounce-report` ([#1211](https://github.com/epiphany40223/parishkit/issues/1211)) |
@@ -3507,7 +3541,7 @@ unknown email `not_available`, and a key used with another intent `invalid`.
 | `users` | `users list` (#952 slice 2); its Apply is `users confirm` (#952 slice 5); the interim page's Upgrade preview panel was `users preview-upgrade` (#952 slice 2), which stays |
 | `user_new`, `user_edit`, `user_delete` | `users preview`, `users confirm` (#952 slice 5): a change document adds, changes or deletes users, including the [high-impact changes](#high-impact-changes) |
 | `user_name_suggestions` | Covered by `users preview` (#952 slice 5): a new user in the change document without a `name` gets the [default from ParishSoft](../admin-portal/spec.md#name-from-parishsoft), which the preview shows; the other suggested Member names are only counted, under the [personal data](#personal-data-on-the-command-line) rule. Each such lookup is audited and counts toward the Administrator's 60 lookups an hour; past that the preview is `unavailable`. The lookup definer checks the command session itself, so a session it refuses (ended, begun before a recovery, or no longer an Administrator's) is `session_ended` |
-| `user_leader_import` | `users import-leaders --preview`, `users import-leaders --confirm` (#952 leaders slice) |
+| `user_leader_import`, `user_leaders_status` (the leaders section's passive status, [#1863](https://github.com/epiphany40223/parishkit/issues/1863)) | `users import-leaders --preview`, `users import-leaders --confirm` (#952 leaders slice) |
 | `user_leader_emails` | `users email-leaders --preview`, `users email-leaders --confirm` ([#1622](https://github.com/epiphany40223/parishkit/issues/1622)) |
 | `user_rules`, `rule_apply`, `rule_base`, `rule_request` | Retired by #952: removed with the rule tables and autosave when the users commands land; no rule commands are built |
 | `chair_confirmations`, `chair_reviews`, `assignments` | Retired by #922: removed with Ministry assignments and Chairperson flows; no commands are built |
@@ -4547,7 +4581,8 @@ exactly the commands that exist.
   **PR 8b:** the export lifecycle with streamed fetch (including the
   wrapper's `export fetch` and its tests). **PR 8c:** the aggregate report
   reads, and later `report source-form`. **PR 8d:** digests (`digest daily`, `digest weekly`,
-  `digest weekly-request`, and later `digest list`). **PR 8e:** the Family-level exports that
+  `digest weekly-request`, and later `digest list`; replaced by
+  `report-email` in #1786). **PR 8e:** the Family-level exports that
   create an export record without the Family keys (`export financial`,
   `export information`, `export ministry`, `export ministry-packet`).
   **PR 8f:** the Active parishioner family directory's exports (`export

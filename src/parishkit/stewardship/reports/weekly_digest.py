@@ -7,29 +7,16 @@ or recapture mutable dispositions. Corrections have no text field by design.
 
 from dataclasses import dataclass
 from datetime import datetime
-from html import escape
 from uuid import UUID
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from parishkit.stewardship.web import dates
 from parishkit.stewardship.web.content import bounded_text
-from parishkit.stewardship.web.dates import format_date, format_local
-from parishkit.stewardship.web.report_markup import STYLES, button
+from parishkit.stewardship.web.dates import format_date
 from parishkit.stewardship.web.weekly_digest_content import validate_weekly_body
 
-from .daily_digest import funnel_html
-from .digest_funnel import TESTING_NOTE, funnel_text
-from .links import report_url
 from .response_metrics import ResponseMetrics
 
 EXCERPT_CHARACTERS = 240
-# A full-width presentational table, as the report layout builds them (#720).
-TABLE = ' role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"'
-
-
-def _style(name):
-    """One compiler-owned inline style attribute from the validator's closed set."""
-    return f' style="{STYLES[name]}"'
 
 
 def _instant(value):
@@ -167,6 +154,18 @@ class WeeklyDigestDocument:
         return reverse("admin:weekly_digest_snapshot", args=[self.snapshot_id])
 
     @property
+    def title(self):
+        """The report's name and capture date in the campaign's zone.
+
+        For example "Weekly information digest — November 2, 2026", or
+        "Manual weekly …" for a report an Administrator sent; the envelope
+        completes it into the subject. The caller pins the date format.
+        """
+        observed = self.observed_at.astimezone(ZoneInfo(self.campaign_timezone))
+        name = "Manual weekly" if self.manual else "Weekly"
+        return f"{name} information digest — {format_date(observed.date())}"
+
+    @property
     def empty(self):
         """The durable owner records empty coverage instead of creating a message."""
         return not self.information and not self.corrections
@@ -203,102 +202,34 @@ def excerpt(text):
     return shorten(text)[0]
 
 
+# The Weekly digest's blocks, in its order (report-emails spec, "Block
+# registry"): the requests, which the weekly report exists for, then the
+# response funnel (#477), drawn with the daily report's rows and bars.
+WEEKLY_BLOCKS = ("additional_information", "response_funnel")
+
+
 def render_weekly_digest(document, *, public_origin):
-    """Escape every Family value and retain every selected row, or fail explicitly."""
+    """Escape every Family value and retain every selected row, or fail explicitly.
+
+    The Administrator asked (#720) for the email to open straight into the
+    numbered requests: the subject names the parish, campaign, report and
+    capture date (see render_digest_envelope), so the body repeats none of
+    them and has no explanatory small print. It closes with the button to
+    the protected saved report.
+    """
+    # The blocks read this module's rows, so the compiler is imported here
+    # rather than at the top, where it would be circular.
+    from .report_blocks.compiler import compile_report
+
     if not isinstance(document, WeeklyDigestDocument):
         raise TypeError("Weekly digest rendering requires an immutable document.")
     if document.empty:
         raise ValueError("An empty weekly interval must not create an email.")
-    # Pin the snapshot configuration's style, not the worker's active one.
-    with dates.using(document.date_format):
-        return _render_weekly_digest(document, public_origin=public_origin)
-
-
-def _render_weekly_digest(document, *, public_origin):
-    """Compile the email body; the caller has pinned the parish date format."""
-    zone = ZoneInfo(document.campaign_timezone)
-    observed = document.observed_at.astimezone(zone)
-    title = (
-        "Manual weekly" if document.manual else "Weekly"
-    ) + f" information digest — {format_date(observed.date())}"
-    url = report_url(public_origin, document.report_path)
-    # The Administrator asked (#720) for the email to open straight into the
-    # numbered requests: the subject names the parish, campaign, report and
-    # capture date (see render_digest_envelope), so the body repeats none of
-    # them and has no explanatory small print. Each section's heading
-    # carries its count; rows give submitted times without a zone.
-    new = "current" if document.manual else "new"
-    sections = (
-        (
-            f"{len(document.information):,} {new} actionable request"
-            + ("" if len(document.information) == 1 else "s"),
-            document.information,
-        ),
-        (
-            f"{len(document.corrections):,} correction"
-            + ("" if len(document.corrections) == 1 else "s")
-            + " to previously reported requests",
-            document.corrections,
-        ),
+    report = compile_report(
+        document,
+        WEEKLY_BLOCKS,
+        public_origin=public_origin,
+        copy_path=document.report_path,
     )
-    text = ""
-
-    def plain(value):
-        """Escape a text node; canonical HTML leaves quotes literal there."""
-        return escape(value, quote=False)
-
-    html = ""
-    for heading, rows in sections:
-        if not rows:
-            continue
-        html += f"<h2{_style('heading')}>{heading}</h2>"
-        html += f"<table{TABLE}{_style('table')}><tbody>"
-        text += ("\n\n" if text else "") + heading
-        numbered = rows is document.information
-        for number, row in enumerate(rows, start=1):
-            # Imported names can contain NBSP or CR; collapse display-only
-            # whitespace so the strict HTML serializer agrees.
-            family = " ".join(
-                f"{row.family_name} — Family DUID {row.family_duid}".split()
-            )
-            submitted = "Submitted " + format_local(
-                row.submitted_at.astimezone(zone), compact=True
-            )
-            if isinstance(row, WeeklyInformation):
-                detail, shortened = shorten(row.text)
-            else:
-                detail = (
-                    f"{row.disposition.title()}: the previously reported request "
-                    "is no longer actionable."
-                )
-                shortened = False
-            item_url = escape(url + f"items/{row.item_id}/", quote=True)
-            link = f'<a href="{item_url}"{_style("link")} rel="noopener noreferrer">'
-            # Numbers are table cells, not list markers, so every mail program
-            # shows the same stable 1, 2, 3 a reader can refer back to.
-            label = f"{number}." if numbered else ""
-            html += (
-                f'<tr><td width="4%"{_style("number")}>{label}</td>'
-                f'<td width="32%"{_style("who")}>{link}{plain(family)}</a><br>'
-                f"{plain(submitted)}</td>"
-                f'<td width="64%"{_style("excerpt")}>{plain(detail)}'
-                + (f" {link}Read the full request</a>" if shortened else "")
-                + "</td></tr>"
-            )
-            prefix = f"{number}. " if numbered else ""
-            text += f"\n\n{prefix}{family}. {submitted}\n{detail}"
-            link_label = "Read the full request: " if shortened else ""
-            text += "\n" + link_label + url + f"items/{row.item_id}/"
-        html += "</tbody></table>"
-    # The response funnel (#477) follows the requests, which the weekly
-    # report exists for, and uses the daily report's rows and bars, so the
-    # two emails draw it alike. A Testing report says where it is instead.
-    html += funnel_html(document, plain)
-    if document.funnel is not None:
-        text += "\n\n" + funnel_text(document.funnel)
-    elif document.mode == "testing":
-        text += "\n\n" + TESTING_NOTE
-    html += button(url, "Open protected report")
-    text += "\n\nOpen protected report (staff login required): " + url
-    validate_weekly_body(html, text)
-    return WeeklyDigestContent(title, html, text)
+    validate_weekly_body(report.html, report.text)
+    return WeeklyDigestContent(report.subject, report.html, report.text)

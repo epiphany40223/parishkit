@@ -223,11 +223,11 @@ instant's day without its time (#1544, guarded in every style by the browser
 `test_date_format.py`); a calendar date uses the `parish_date_compact`
 filter; `tests/stewardship/test_date_format.py` guards the compact forms. Background output
 uses the format of the configuration it pinned, not whichever is active when
-it runs (issue #280): a PDF export uses its requesting configuration, a daily
-or weekly digest its snapshot's configuration, and a receipt the configuration
+it runs (issue #280): a PDF export uses its requesting configuration, a
+report email its snapshot's configuration, and a receipt the configuration
 its render records, so a retry after an Admin changes the format keeps the
-captured style. The Admin pages for a retained daily or weekly digest are
-ordinary Admin pages and use the live format, so after a change they can show
+captured style. A report email's saved copy is an
+ordinary Admin page and uses the live format, so after a change it can show
 the same retained data in a different style from the emailed copy. One Python
 formatter (`web/dates.py`) and one browser script (`date-format-v1.js`, which
 reads `<body data-date-format>`) implement the same table. Exports that
@@ -834,7 +834,8 @@ the [in-place controls](#in-place-controls); no other mechanism.
   of the page's own address when that view is itself passive (Background
   work, Families on the form now). A read never extends the sign-in and
   never records an audited view, except a report's re-read that brings
-  newer figures in, once per newer set of figures (below).
+  newer figures in, once per newer set of figures, and a page's re-read
+  that brings in a part it could not read (both below).
 - **Reports whose figures are being prepared.** The Response dashboard and
   Campaign comparison audit every view, so they are never re-read on a timer.
   Their **Updating** notice sits in a figures status region that reads a
@@ -871,6 +872,26 @@ the [in-place controls](#in-place-controls); no other mechanism.
   even after failed re-reads), so the page re-reads itself once another
   generation of figures is ready
   ([reports](../reports/spec.md#response-dashboard)).
+- **Parts a page could not read.** A page whose view is audited and
+  that could not read one of its parts says so in place of that part, never
+  asking for a reload, and brings the part in by itself
+  ([#1863](https://github.com/epiphany40223/parishkit/issues/1863)): the
+  notice sits in a status region that reads a passive, unaudited status
+  saying only whether a re-read would now show the part, never any of its
+  values. Once it would, the page re-reads its own address once, quietly
+  and in place, through the same hidden `a[data-reread]` follow-up link
+  and with the same rules as a report's figures: one audited view marked
+  `automatic`, `X-ParishKit-Read: passive` so the sign-in is never
+  extended, waiting while the reader is busy and stopping at a refusal.
+  The status answers ready only once something has changed since the
+  page's own read, so a part that stays unreadable is never re-read once a
+  minute. The Information request page's Contact details, when the
+  ParishSoft data was replaced while it was read, wait for the newer data
+  ([reports](../reports/spec.md#additional-information)); the
+  Users page's ParishSoft Ministry leaders, when they could not be read,
+  are tried again once a minute later and, if that read fails too, wait for
+  the next ParishSoft data
+  ([admin portal](../admin-portal/spec.md#parishsoft-ministry-leaders-without-a-user)).
 - **Pace.** While background work is pending a status region reads fast
   (2 s backing off to 10 s, or the fixed pace the page asks for). A page
   whose state changes without the reader's own action re-reads every 30
@@ -1214,8 +1235,8 @@ The same holds for the rest of the Admin portal (#563, the audit's last
 slice): Start Testing cleanup on Go-live readiness and Confirm Production
 before a passing check (named by the step still needed); Confirm cancelling
 go-live while mail blocks it; the retry the Mail message page would offer while
-the resend admission refuses it; Queue new manual report while an earlier
-Weekly Admin digest is still being prepared or delivered (checked when the
+the resend admission refuses it; a report email's Send now while an earlier
+send of that report is still being prepared or delivered (checked when the
 page opens); and Upload on Hosted files while the library is full. A button
 the server draws disabled because other campaign work holds the page (report
 exports, follow-up saves, the Response dashboard) names that notice too.
@@ -2351,8 +2372,8 @@ registry and the rendered pages.
    converts a page, its separate status page returns there); Preview and test email returns to the page it was
    opened from, remembered in the signed-in session as a change's origin is
    (never in the URL); a manual ParishSoft refresh stays on Refresh from
-   ParishSoft and shows its progress there; sending a weekly report now ends
-   on Emailed reports with a link to the report; Cancel returns to the page it
+   ParishSoft and shows its progress there; a report email's Send now stays
+   on Report emails, its status line linking the saved copy; Cancel returns to the page it
    was pressed on, never Home unless the flow started there. In a
    [wizard](#wizards), a completed step opens the next step not done yet
    instead (rule 8; in the campaign wizard built for Continue, and planned
@@ -2794,7 +2815,7 @@ The portal and the emails share one visual style
   secondary buttons for email: a one-cell table with inline styles from the
   tokens, `bgcolor`, and Outlook padding. The label is real text, so the
   button reads with images off and in an inverted dark mode. It links only
-  to absolute http(s) addresses. The daily and weekly report emails, and
+  to absolute http(s) addresses. The report emails, and
   Family mail's call to action, draw their button with it, and a guard
   test keeps any other module from building an email button by hand. Its markup is already in the
   sanitizer's canonical form, so the report validators admit it unchanged;
@@ -3091,7 +3112,7 @@ two ways of reading to a screen reader. **Precedent.**
   draws a row of them. Its `shown()` takes a value that is already text,
   only for figures that must read word for word as another renderer
   formats them: Campaign comparison's, shared with its PDF and the report
-  emails, and a saved daily report's, which shows exactly what was
+  emails, and a report email's saved copy, which shows exactly what was
   emailed. A guard test fails when a template outside `components/` draws
   stat-tile markup by hand, with no exceptions. Email and PDF reports
   cannot load the stylesheet and keep their own layouts.
@@ -3322,7 +3343,7 @@ refresh times, since quick updates left the Admin UI
 
 **Rule.** Every Admin editor that sets a future or repeating event looks and
 behaves the same way. These editors are the mail schedules (with their
-repeats and the daily and weekly Admin digests), the ParishSoft refresh
+repeats), [report emails](../report-emails/spec.md#schedules), the ParishSoft refresh
 schedule, and the campaign dates. They share plain words with no cron text,
 the [Basic and Advanced modes](#basic-and-advanced-modes), one time input,
 one day-of-week picker, one zone note, one preview pattern and one
@@ -3452,7 +3473,9 @@ Repeat a reminder, draw one repeat rule, so they offer the same choices in
 the same order and one page script expands both. Later
 [#1129](https://github.com/epiphany40223/parishkit/issues/1129) slices bring
 the shared preview and Basic and Advanced modes to the mail schedule
-editors, reminder repeats and digests. Until each change lands, an
+editors and reminder repeats; the report email editor is built with them
+([#1786](https://github.com/epiphany40223/parishkit/issues/1786)). Until
+each change lands, an
 editor keeps the behavior its feature spec describes.
 
 ### Schedule previews
@@ -3485,7 +3508,7 @@ its feature spec: the
     what the schedule does, not what has run.
 
   Each occurrence is one line: its time, then what runs ("Full refresh",
-  "Reminder 2", "Daily Admin digest for Monday, October 19"). An
+  "Reminder 2", "Daily report for Monday, October 19"). An
   occurrence that will not run stays listed, struck through, with its
   reason in words ("covered by the 06:00 full refresh"), so a struck line
   never relies on the strike alone.
@@ -4196,10 +4219,10 @@ Member"); the Financial, Limitations and Additional information reports
 mark a Family the data no longer has (no longer "Unavailable Family"), and
 the Financial and Additional information reports an inactive one, with a
 ParishSoft status column in their downloads; and the Family codes
-directory, the information reports and the weekly report no longer stand
+directory, the information reports and the report emails no longer stand
 "Family" in for a blank name. Packets and Ministry requests list only
-current Members (#1217), so they have nothing to mark. The weekly report is
-an email with no badge, so it names a Family the data no longer has "Not
+current Members (#1217), so they have nothing to mark. A report email's open
+additional information requests block is an email with no badge, so it names a Family the data no longer has "Not
 in ParishSoft".
 
 ### Table fit and row height

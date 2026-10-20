@@ -123,6 +123,13 @@ patterns = [
         information_views.detail,
         "information_item",
     ),
+    # The passive status a request page's Contact details poll when the
+    # ParishSoft data was replaced while it was read (#1863).
+    _page(
+        "reports/information/contacts/status/",
+        information_views.contacts_status,
+        "information_contacts_status",
+    ),
     # A request's Save (information_update) was retired, with no redirect
     # (#1685): decisions are made on the Additional information worklist,
     # which posts them to its own address.

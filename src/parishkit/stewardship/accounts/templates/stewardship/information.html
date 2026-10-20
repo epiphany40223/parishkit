@@ -1,4 +1,5 @@
 {% extends 'stewardship/admin-base.html' %}{% load i18n stewardship static %}
+{% block head %}<script src="{% static 'stewardship/live-status-v1.js' %}" defer></script>{% endblock %}
 {% block title %}{% if item %}{% translate "Information request" %}{% else %}{% translate "Additional information" %}{% endif %}{% endblock %}
 {% block content %}
 <h1>{% if item %}{% translate "Information request" %}{% else %}{% translate "Additional information" %}{% endif %}</h1>
@@ -25,7 +26,7 @@
 <dl><dt>{% translate "Email" %}</dt><dd>{% for email in owner.emails %}{{ email }}{% if not forloop.last %}<br>{% endif %}{% empty %}{% translate "None recorded" %}{% endfor %}</dd>
 <dt>{% translate "Phones" %}</dt><dd>{% for kind, value in owner.phones %}{{ kind }}: {{ value|phone }}{% if not forloop.last %}<br>{% endif %}{% empty %}{% translate "None recorded" %}{% endfor %}</dd></dl>{% endfor %}
 {% elif contacts.state == 'missing' %}<p>{% translate "This Family is not in the current ParishSoft data, so no contact details are available." %}</p>
-{% else %}<p>{% translate "The ParishSoft data was replaced while this page was read, so contact details are unavailable. Reload the page to see them." %}</p>{% endif %}</section>{% endif %}
+{% else %}{# The data was replaced while the page read it: the notice brings the details in by itself once newer data is in use (#1863). #}{% include "stewardship/components/part-status.html" with part_status=contacts.status %}{% endif %}</section>{% endif %}
 {% if item.followed_up_at %}<p>{% translate "Handled by" %} {{ item.completed_by }} <time datetime="{{ item.followed_up_at|date:'c' }}" data-local-instant>{{ item.followed_up_at|date:'c' }}</time></p>{% endif %}
 <p>{% translate "Decide this request on the Additional information list, where its row offers the decisions its stage allows." %}</p>
 {# The history pages in place by itself (data-in-place-only) (#519). #}

@@ -20,11 +20,15 @@ from django.urls import reverse
 
 from parishkit.stewardship.pipeline import information_placement
 from parishkit.stewardship.reports.information import InformationQuery
+from parishkit.stewardship.reports.information_views import (
+    CONTACTS as UNREAD,
+)
 from parishkit.stewardship.reports.information_worklist import (
     SORTING,
     WorklistQuery,
     worklist_page,
 )
+from parishkit.stewardship.web.part_status import part_status
 from parishkit.stewardship.web.tables import paginate
 
 # The browser zone of the dated fixtures, named alike by every engine.
@@ -36,6 +40,12 @@ CAMPAIGN, ITEM_ID = UUID(int=80), UUID(int=81)
 PATH = reverse("admin:information_queue")
 ITEM = reverse("admin:information_item", args=[ITEM_ID])
 OLDER, NEWER = ITEM + "?page=2", ITEM + "?page=1"
+# A request page whose Contact details the replaced ParishSoft data could
+# not give (#1863), and its notice's status answers: still the page's data,
+# then newer data in use.
+REPLACED = "/information-item-replaced"
+CONTACTS_WAITING = "/information-contacts-waiting"
+CONTACTS_READY = "/information-contacts-ready"
 ROWS = 30
 # The selection's filters with none applied, over every request.
 EVERY_REQUEST = InformationQuery(disposition="all")
@@ -257,6 +267,24 @@ def components(context, admin):
             request | {"history_page": 2, "previous_history": 1, "history": [older]},
         ),
         "/information-gated": ("information", request | {"mutable": False}),
+        REPLACED: (
+            "information",
+            request
+            | {
+                "contacts": {
+                    "state": "unavailable",
+                    "status": part_status(UNREAD, shown=3),
+                }
+            },
+        ),
+        CONTACTS_WAITING: (
+            "components/part-status",
+            {"part_status": part_status(UNREAD, shown=3)},
+        ),
+        CONTACTS_READY: (
+            "components/part-status",
+            {"part_status": part_status(UNREAD, shown=3, ready=True)},
+        ),
         "/information-unavailable": (
             "information-error",
             {"campaign_id": CAMPAIGN, "item_id": None, "status": 503},

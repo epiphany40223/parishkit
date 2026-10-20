@@ -203,10 +203,13 @@ LEDGER = {
     "artwork_settings": command(
         "artwork show", "artwork remove-preview", "artwork remove"
     ),
-    # Applying logos is owed with the uploads: staged logos belong to the
-    # sign-in that uploaded them, and each pk-admin run is its own sign-in,
-    # so a command cannot apply logos staged in the browser (#463).
-    "branding_settings": command("branding show", owed="PR 10"),
+    # The upload with its review and the dialog's Apply (#1865). Staged
+    # logos belong to the sign-in that uploaded them, which for pk-admin is
+    # the automation session, so branding confirm applies the logos its own
+    # session's branding preview staged, never the browser's.
+    "branding_settings": command(
+        "branding show", "branding preview", "branding confirm"
+    ),
     "hosted_file_upload": permanent(UPLOAD),
     "artwork_upload": permanent(UPLOAD),
     "branding_asset": permanent(IMAGES),
@@ -319,6 +322,8 @@ LEDGER = {
     # and history, as the Ministry follow-up items are read; its content is
     # Family-level and comes through ``export information``.
     "information_item": command("followup information-show"),
+    # Its Contact details' passive status (#1863): no data of its own.
+    "information_contacts_status": command("followup information-show"),
     # Ministry requests (#1133) is the follow-up queue with the summary's
     # By Ministry counts. ``report ministry`` prints those counts, and
     # ``export ministry`` writes one Ministry's join or leave list, the file
@@ -457,6 +462,8 @@ LEDGER = {
     "user_name_suggestions": command("users preview"),
     # The leaders table and its import review (#952 slice 6).
     "user_leader_import": command("users import-leaders"),
+    # The leaders section's passive status (#1863): no data of its own.
+    "user_leaders_status": command("users import-leaders"),
     # Email Ministry leaders (#1592): its review and Apply (#1622).
     "user_leader_emails": command("users email-leaders"),
     # Home's Acknowledge buttons; events list reads what they acknowledge.

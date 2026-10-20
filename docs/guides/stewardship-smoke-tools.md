@@ -45,8 +45,11 @@ ParishSoft against the fake service (or the real API, when the deployment
 chose it with `deploy --parishsoft real`), the mailbox against the mail catcher,
 the sentinel OAuth client (or a real localhost-only one, which needs the
 normal clock), and a test Slack token. A `--send-to` is refused
-there, because the send path takes only a Google service account, which the
-local environment still refuses. The local environment's
+there: without a mail redirect before the key is read, and with one because
+the send path takes only a Google service account, which the local
+environment still refuses. With a redirect, its one recipient would be the
+redirect address, never the address given; today both cases are refused.
+The local environment's
 [safety guarantees](../specs/stewardship/local-environment/spec.md#safety-guarantees)
 say what each check can reach.
 

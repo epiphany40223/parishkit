@@ -167,6 +167,14 @@ DESCRIPTIONS = {
         "An automation session confirmed a reviewed removal of a campaign "
         "image, which became a configuration request."
     ),
+    "admin_cmd_branding_preview": _(
+        "An automation session uploaded parish logos for review, as the "
+        "Parish logos page's upload does."
+    ),
+    "admin_cmd_branding_confirm": _(
+        "An automation session confirmed reviewed parish logos, which became "
+        "a configuration request."
+    ),
     "admin_cmd_content_confirm": _(
         "An automation session confirmed a built delete of unused campaign "
         "emails, which became a configuration request."

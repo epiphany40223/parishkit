@@ -270,22 +270,16 @@ Field errors and live checks follow the
 
 The mail schedule pages start with a short guide (in the About panel): what
 each mail type is, that exactly one initial invitation is required before
-go-live, that reminders and the daily and weekly Admin digests are optional (at
-most one digest of each kind), that submission receipts and critical alerts are
-sent automatically and never scheduled, the time zone send times are entered in
+go-live, that reminders are optional, that Administrator report emails are on
+[Report emails](../report-emails/spec.md#report-emails-page), that submission
+receipts and critical alerts are sent automatically and never scheduled, the time zone send times are entered in
 (this computer's on every schedule page, except the retired Copy campaign page,
 which keeps the campaign's; see [time
 entry](../ui-conventions/spec.md#time-entry)), and the current campaign dates. Wherever a schedule is
 edited (the date-change review and the
 New and Edit scheduled email pages below), its fields show only those its mail
-type uses (initial invitation and reminder: date, time and email; daily digest:
-time, email and the **Include Compared with past campaigns** checkbox, off by
-default, which adds the
-[comparison section](../campaign-history/spec.md#digest-section), and
-clearing it on a saved digest removes that section from later digests
-([#1698](https://github.com/epiphany40223/parishkit/issues/1698)); weekly
-digest: weekday, time and email) and offer only emails of
-that type; the page script clears a field it hides. The send time is a [time
+type uses (initial invitation and reminder: date, time and email) and offer
+only emails of that type; the page script clears a field it hides. The send time is a [time
 entry](../ui-conventions/spec.md#time-entry) field. A saved schedule's mail type is shown but cannot
 change. The server reports a missing or inapplicable value on its own field (for
 example a weekday on an invitation, or a date outside the campaign with the
@@ -607,8 +601,8 @@ follow-up issues #520 (one name per page), #521 (every page reachable, every
 flow with a way back) and #525 (one URL scheme). Every page already uses the
 table's name (NAV-4, NAV-5a and NAV-5b), except Portal users, which becomes
 Users with the Users revamp (#952), which replaced the planned split into
-Sign-in rules, Ministry assignments and Chairpersons (Emailed reports exists
-since NAV-14). The System pages already have their new
+Sign-in rules, Ministry assignments and Chairpersons (Emailed reports existed
+from NAV-14 until Report emails replaced it, #1786). The System pages already have their new
 addresses (NAV-6), and so do the Parish data pages and a change's status page
 (NAV-7), the Mail and Family portal pages (NAV-8) and the Campaign setup
 pages (NAV-9: settings, Copy campaign, content and its history, images,
@@ -621,7 +615,9 @@ setup, Mail and Family portal and Parish data group roots open their first
 entry, and `/admin/reports/` keeps its meaning. Exports and the reports sent
 by email follow (NAV-12): every export shares
 `/admin/reports/exports/<request>/`, a latest-data export included, and the
-daily and weekly reports sit under `/admin/reports/emailed/`. No old address
+daily and weekly reports sit under `/admin/reports/emailed/` (since #1786
+only the saved copies made before the conversion stay there; new saved
+copies are under Report emails). No old address
 is kept ([#864](https://github.com/epiphany40223/parishkit/issues/864)), so
 a link in a report email sent before the move no longer opens. The Users
 and access pages moved with the Users revamp
@@ -660,6 +656,7 @@ these groups, each listing the entries the viewer's role may open:
 | Mail and Family portal | Family email progress | `/admin/mail/family-progress/` | Administrator | No current campaign |
 | Mail and Family portal | Family email history | `/admin/mail/family-history/` | Administrator | No current campaign |
 | Mail and Family portal | Sent mail | `/admin/mail/sent/` | Administrator | Never |
+| Mail and Family portal | Report emails | `/admin/mail/report-emails/` | Administrator, Staff (read-only) | No current campaign |
 | Mail and Family portal | Family portal availability | `/admin/mail/family-portal/` | Administrator | Never |
 | Mail and Family portal | Families on the form now | `/admin/mail/presence/` | Administrator | Never |
 | Review work | My review work | `/admin/` | Staff, Ministry leader (not Administrators) | Never |
@@ -672,7 +669,6 @@ these groups, each listing the entries the viewer's role may open:
 | Reports and queries | Campaign comparison | `/admin/reports/comparison/` | Administrator, Staff | No current campaign |
 | Reports and queries | Financial stewardship | `/admin/reports/financial/` | Administrator, Staff | The campaign has no financial module |
 | Reports and queries | Active parishioner family directory | `/admin/reports/families/` | Administrator, Staff | No current campaign, or ParishSoft data has not been downloaded yet |
-| Reports and queries | Emailed reports | `/admin/reports/emailed/` | Administrator, Staff | Never |
 | Parish data | Parish settings | `/admin/parish/settings/` | Administrator | Never |
 | Parish data | Parish logos | `/admin/parish/logos/` | Administrator | Never |
 | Parish data | Ministries | `/admin/parish/ministries/` | Administrator | ParishSoft data has not been downloaded yet |
@@ -764,19 +760,13 @@ Notes on the groups:
   pointer; a save that updates a page in place changes them on the next page
   load. Ministry follow-up has no assignment (#552): a request keeps its
   status, notes and outcome, and its Ministry leader handles it.
-- **Emailed reports** is a new page listing the past daily and weekly
-  [Administrator digests](../background-processing/spec.md#administrator-digests)
-  the viewer may open (Staff see daily reports only, as today), newest first,
-  so a digest page is no longer reachable only from its email. Sending a
-  weekly report now is an Administrator action on this page and returns to
-  it, linking the report it produced. Its button leads the page, above both
-  lists, so a long list of daily reports never hides it; while the campaign
-  has no Weekly Admin digest schedule (which the report needs) it is
-  unavailable, with a short hint after it linking Dates and mail schedules.
-  That link, and the one in Send a weekly report now's own missing-schedule
-  notice, grey out with the menu's reason while the menu greys Dates and mail
-  schedules, as for an archived campaign (#1261;
-  [unavailable menu pages](../ui-conventions/spec.md#unavailable-menu-pages)).
+- **Report emails**
+  ([report emails page](../report-emails/spec.md#report-emails-page),
+  [#1786](https://github.com/epiphany40223/parishkit/issues/1786)) is in the
+  Mail group: the campaign's Administrator report emails, each with its past
+  sends and their saved copies. It replaced the Emailed reports page and its
+  Send a weekly report now, which are removed with no redirect (#864); Staff
+  open it read-only to reach the saved copies they may read.
 - **Ministries** is the one home for Ministries: the parish's
   [ParishSoft Ministries](#ministries-page), with
   [this campaign's Ministries](#changing-a-live-campaigns-ministries) reached
@@ -789,8 +779,6 @@ Notes on the groups:
   their entries.
 - [Portal user management](#portal-user-management) is one **Users** entry
   with one table of users (#952). Each review started on it returns to it.
-- Emailed reports is a new page: #520 and #521 add its registry entry and
-  view.
 - Each group's root URL (`/admin/campaign/`, `/admin/mail/`,
   `/admin/reports/`, `/admin/parish/`, `/admin/users/`, `/admin/system/`)
   redirects to the group's first entry available to the viewer, except
@@ -1008,7 +996,7 @@ instead, so it is not repeated here):
 | Production being activated | Production activation, Sent mail (while the campaign is still a draft, Go-live readiness leads) |
 | Active | Census changes, Ministry requests to enter by hand, Additional information and Ministry requests (each with its count), Family email progress, Sent mail problems (with count) |
 | Mail paused | Pause and resume mail first, then the Active list |
-| Closed or archived | Census changes, Ministry requests to enter by hand, Additional information, Ministry requests (each with its count), Emailed reports |
+| Closed or archived | Census changes, Ministry requests to enter by hand, Additional information, Ministry requests (each with its count), Report emails |
 | No current campaign | Create the campaign when the deployment has never had one; otherwise says so, with no next steps |
 
 At 1366 × 768 with the menu open, an Administrator's Home on an active
@@ -1158,6 +1146,9 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `delivery_refusals` | Refused addresses | Sent mail | Administrator | (same) | `/admin/mail/refusals/` | (same) | Also linked from Data to fix in ParishSoft (#1011). |
 | `delivery_refusal` | Refused address | Refused addresses | Administrator | Verify refused address | `/admin/mail/refusals/<refusal>/` | (same) |  |
 | `family_portal` | Family portal availability | Menu: Family portal availability | Administrator | (same) | `/admin/mail/family-portal/` | (same) |  |
+| `report_emails` | Report emails | Menu: Report emails | Administrator, Staff | (new, #1786) | `/admin/mail/report-emails/` | (same) | [Report emails page](../report-emails/spec.md#report-emails-page); Staff read-only. Replaces `emailed_reports` and `weekly_digest_manual`, which delivery PR 5 retires. |
+| `report_email_edit` | _report name_ | Report emails | Administrator | (new, #1786) | `/admin/mail/report-emails/<report>/`; New at `/admin/mail/report-emails/new/` | (same) | Object-named (exception). [New and Edit report email](../report-emails/spec.md#new-and-edit-report-email). |
+| `report_email_send` | _report name and date_ | Report emails | Administrator, Staff (when every block allows) | (new, #1786) | `/admin/mail/report-emails/sends/<send>/`, with `items/<item>/` for one request | (same) | Object-named (exception). A [saved copy](../report-emails/spec.md#saved-copies). |
 | `presence` | Families on the form now | Menu: Families on the form now | Administrator | (same) | `/admin/mail/presence/` | (same) | The header's count is still polled at `/admin/presence?format=count` (decision 8); any other read of that address is 404. |
 | `held_emails` | Held emails | Reached from: Home | Administrator | (new, #757) | `/admin/mail/held-emails/` | (same) | Not a menu entry: Home links to it while a held email is undecided. Its trail is Home › Mail and Family portal. See [restore release](#restore-release). |
 | `response_dashboard` | Response dashboard | Menu: Response dashboard | Administrator, Staff | (same); Participation and campaign statistics | `/admin/reports/responses/` | (same) | Absorbed Participation ([#1537](https://github.com/epiphany40223/parishkit/issues/1537)): `/admin/reports/participation/` and its `exact-exports/` form action are gone, with no redirect (#864); the export form posts to `responses/exports/`. |
@@ -1181,11 +1172,11 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `ministry_roster` | (retired) | (retired) | Administrator, Staff | Roster changes to enter (#528, #1660) | `/admin/reports/ministries/follow-up/roster/` | (retired; 404) | Folded into Ministry requests with no redirect (R39 finding 2): its rows are Ministry requests' Stages To enter by hand and Entered by hand ([roster entry](#roster-entry-on-ministry-requests)). |
 | `family_directory` | Active parishioner family directory | Menu: Active parishioner family directory | Administrator, Staff | (same) | `/admin/reports/families/` | (same) |  |
 | `timeline` | Timeline | Active parishioner family directory | Administrator, Staff | (new, #477; renamed from Family timeline, #1570) | `/admin/reports/families/<family>/` | (same) | One Family's [Timeline](../reports/spec.md#timeline); opened from every Family name the shared `family_link` helper draws (directory rows, Find a Family, NAV-19, and every other Admin table that names a Family; see the [Timeline](../reports/spec.md#timeline) for the list); `<family>` is the opaque campaign record id. Staff see the summary only. It is the Family's [information hub](#family-information-hub): a header strip above tabs (`?tab=`), on this one address. |
-| `emailed_reports` | Emailed reports | Menu: Emailed reports | Administrator, Staff | (new) | `/admin/reports/emailed/` | (same) | New page (decision 7, ADM-12.17): the current campaign's daily reports (and weekly reports for Administrators), newest first, each linking its page; Send a weekly report now is on it and returns to it, linking the report it produced. |
-| `weekly_digest_manual` | Send a weekly report now | Emailed reports | Administrator | Request a manual information report; Manual information report | `/admin/reports/emailed/weekly/new/` | (same) | Was the Manual information report menu entry; now a button on Emailed reports, where it ends, linking the report it produced (or its background task until it is ready). Its address named the campaign until #865; that old address is gone, with no redirect (#864). |
-| `weekly_digest_snapshot` | Weekly report | Emailed reports | Administrator | Weekly information report; Weekly summary | `/admin/reports/emailed/weekly/<snapshot>/` | (same) | Its old address, which weekly report emails sent before NAV-12 link, is gone, with no redirect (#864). |
-| `weekly_digest_item` | Weekly report item | Weekly report | Administrator | Weekly information report (one item); Weekly summary item | `/admin/reports/emailed/weekly/<snapshot>/items/<item>/` | (same) | Links the live Additional information request. |
-| `daily_digest_snapshot` | Daily report | Emailed reports | Administrator, Staff | (report document title) daily report | `/admin/reports/emailed/daily/<snapshot>/` | (same) | Its old address, which daily report emails sent before NAV-12 link, is gone, with no redirect (#864). |
+| `emailed_reports` | Emailed reports | Menu: Emailed reports | Administrator, Staff | (new) | `/admin/reports/emailed/` | (same) | New page (decision 7, ADM-12.17): the current campaign's daily reports (and weekly reports for Administrators), newest first, each linking its page; Send a weekly report now is on it and returns to it, linking the report it produced. Retired with no redirect by [Report emails](../report-emails/spec.md#delivery-plan) delivery PR 5 (#1786); until it lands this page is current, and the Report emails page replaces it. |
+| `weekly_digest_manual` | Send a weekly report now | Emailed reports | Administrator | Request a manual information report; Manual information report | `/admin/reports/emailed/weekly/new/` | (same) | Was the Manual information report menu entry; now a button on Emailed reports, where it ends, linking the report it produced (or its background task until it is ready). Its address named the campaign until #865; that old address is gone, with no redirect (#864). Retired with no redirect by [Report emails](../report-emails/spec.md#delivery-plan) delivery PR 5 (#1786); until it lands this page is current, and the Report emails page replaces it. |
+| `weekly_digest_snapshot` | Weekly report | Report emails | Administrator, Staff | Weekly information report; Weekly summary | `/admin/reports/emailed/weekly/<snapshot>/` | (same) | Its old address, which weekly report emails sent before NAV-12 link, is gone, with no redirect (#864). |
+| `weekly_digest_item` | Weekly report item | Weekly report | Administrator, Staff | Weekly information report (one item); Weekly summary item | `/admin/reports/emailed/weekly/<snapshot>/items/<item>/` | (same) | Links the live Additional information request. |
+| `daily_digest_snapshot` | Daily report | Report emails | Administrator, Staff | (report document title) daily report | `/admin/reports/emailed/daily/<snapshot>/` | (same) | Its old address, which daily report emails sent before NAV-12 link, is gone, with no redirect (#864). |
 | `parish_settings` | Parish settings | Menu: Parish settings | Administrator | (same) | `/admin/parish/settings/` | (same) | Hand-written Administration link removed. |
 | `branding_settings` | Parish logos | Menu: Parish logos | Administrator | (same) | `/admin/parish/logos/` | (same) | An upload answers with the review dialog's review of the staged logos, and the dialog's Apply posts here (#750); a refused upload re-renders Parish logos (status 400). The page takes no query: the old Review parish logos address and the `?review=` and `?request=` addresses are gone. |
 | `ministries` | Ministries | Menu: Ministries | Administrator | Ministry activity | `/admin/parish/ministries/` | (same) | A read-only catalog: no Activity column, sort, filter or Review activation / inactivation, and every POST is refused (Administrator, 2026-10-13, #1267). |
@@ -1360,7 +1351,7 @@ follows them.
 6. **Move Sent mail, Family portal availability and Families on the form
    now out of System?** Yes, into Mail and Family portal (as proposed).
 7. **Add an Emailed reports page with Send a weekly report now on it?** Yes (as
-   proposed).
+   proposed). (Replaced by Report emails in #1786.)
 8. **Fold the latest-data participation export into the shared export page?**
    Yes (as proposed).
 9. **Accept the proposed renames?** All as recommended, except Withdraw from
@@ -2683,7 +2674,7 @@ The campaign editor includes:
   relabelled, given or losing its free-text response, or moved, with its old
   and new position), never both whole lists;
 - initial and repeatable reminder date/time, subject, and templates;
-- daily/weekly digest local schedules;
+- [report email](../report-emails/spec.md) schedules (on Report emails);
 - additional-information toggle;
 - named content slots with WYSIWYG/plain-text views, each of which can start
   an empty slot from built-in, parish-neutral default text or reset a saved
@@ -2744,7 +2735,7 @@ change once that work finishes, and a review posted meanwhile is refused as
 locked. Its
 review is the Dates and mail schedules review of the same change, built from
 the saved schedules left as they are; it names the end date before and
-after and every digest re-planned for the new dates, and notes that Family
+after and every report email re-planned for the new dates, and notes that Family
 codes and links already sent keep working until the new end date. A date
 that has passed, falls on or before the campaign's start date, or
 would need the financial-period overlap acknowledged again is
@@ -2824,7 +2815,7 @@ every campaign state. There is no second, read-only copy of the settings.
   (#1356), titled "Save this change?": one line per changed setting, such
   as "Campaign name: old → new", with the change's notes (the share
   options a removed Financial stewardship discards). Every other change,
-  including a live end date with its re-planned digests and a live Ministry
+  including a live end date with its re-planned report emails and a live Ministry
   change, keeps the full review below. Inside the campaign wizard the page
   has no Save of its own: the wizard's Save and continue saves directly
   ([guided steps](#create-the-campaign), #1404 PR 4), and Share options
@@ -2843,7 +2834,7 @@ every campaign state. There is no second, read-only copy of the settings.
   covers a changed end date and changed Ministry leader roles together: one
   configuration request with one campaign update holding both values,
   applied together or not at all (decision 2 on #1119). Its review lists the
-  end date, the digests re-planned for it and the leader roles, with the end
+  end date, the report emails re-planned for it and the leader roles, with the end
   date's notes. A Ministry change is the exception: it is reviewed and
   applied on its own, with its impact (the Ministries to add and remove,
   what each touches and the Families with a form open now), and a Review
@@ -2872,19 +2863,18 @@ the link beside it the read-only [Campaign calendar](#campaign-calendar).
 The **Scheduled emails** table
 ([#448](https://github.com/epiphany40223/parishkit/issues/448)) is an
 [action table](../ui-conventions/spec.md#row-actions-and-confirmation) with one row per saved schedule.
-It opens in time order: a dated send at its date and time and a digest at its
-next send (the time its When cell shows,
-[#1652](https://github.com/epiphany40223/parishkit/issues/1652)), so a digest
-sits among the dated sends rather than after them. At a tie the Initial
+It opens in time order, each send at its date and time
+([#1652](https://github.com/epiphany40223/parishkit/issues/1652)); report
+emails are not listed here (they are on
+[Report emails](../report-emails/spec.md#report-list)). At a tie the Initial
 invitation comes first and the saved ID breaks any remaining one, so the order
-is the same on every load at a given moment; a digest with no more sends this
-campaign is listed last. Its **When** heading sorts it in place (time order, or
+is the same on every load at a given moment. Its **When** heading sorts it in place (time order, or
 the reverse), as any [Admin table](../ui-conventions/spec.md#admin-tables) heading
 does. Reminders are numbered in sending order, as [Family email
 sends](#family-email-sends) numbers them, whichever way the table is sorted. The
 columns are a selection box, the schedule, when it sends (a browser-local time,
-like every time in the Admin portal, so the heading names no zone; a digest
-shows its day and its next send), the email's name, a status, the last send and
+like every time in the Admin portal, so the heading names no zone), the
+email's name, a status, the last send and
 the row's actions. For a Family send with results, the last send gives its
 delivered and failed counts with a link to Family email history. Work that
 blocks a change (in progress or with an uncertain result) makes a schedule
@@ -2894,7 +2884,7 @@ running. Once that work is finished it is Sent when any of its email was
 delivered or prepared, "Sent (failed)" when its only results are failures (with
 the same link), and Done when it settled every Family without an email of its
 own (the coalesced and empty dispositions). Otherwise it is "Not sent yet" (the
-scheduler, a hold or catch-up may still send it); a digest is Repeats. The
+scheduler, a hold or catch-up may still send it). The
 status reads the same counts-only schedule work summary as the review, never
 Family data. A short line under the table states the rules between schedules.
 
@@ -2959,13 +2949,10 @@ twice (the hour they repeat when they fall back) is refused on its send time,
 since a schedule keeps only a campaign wall-clock time and the scheduler reads
 it as the first of the two; the Admin chooses a time outside that hour. A typed
 time the browser's own clocks skip reads forward, as every browser-local time
-does, and no moment falls in an hour the campaign's clocks skip. A digest's
-row also posts the moment the page drew it from, so a page drawn before a
-daylight-saving change and posted after it still reads as unchanged. These
+does, and no moment falls in an hour the campaign's clocks skip. These
 rules are the shared conversion, so New and Edit scheduled email follow them
 too. The review dialog, like every schedule review, shows when each
-schedule sends only as moments in the browser's zone (a digest also says it
-recurs), never the saved campaign-local date and time.
+schedule sends only as moments in the browser's zone, never the saved campaign-local date and time.
 
 Each side of a schedule change (Current schedule and Proposed schedule)
 lists when it sends with the shared
@@ -2976,12 +2963,9 @@ lands; until then each lists its first five sends from the campaign's
 start as a date key and a browser-local moment. With the component, a side
 uses the count-from-now scope: its next five sends after now, each line
 naming the day in words ("Tuesday, October 20, 2026") and the
-browser-local time. A dated email lists its one send. A daily digest line
-names the campaign day it reports on, the day before it sends ("Daily
-Admin digest for Monday, October 19"); a weekly digest reports what is new
-since its last send, so its line names only the day it sends ("Weekly
-Admin digest, Wednesday, October 21"). Together they replace the general
-sentence about digest dates. A side with nothing ahead says so ("No more
+browser-local time. A dated email lists its one send. A report email whose
+sends move with the new dates is reviewed here too, its sides listed as
+[Report emails](../report-emails/spec.md#schedule-fields) lists them. A side with nothing ahead says so ("No more
 sends: this email's time has passed."), where it showed nothing before.
 While [live delivery is paused](#live-delivery-pause) the sends are
 listed under the component's paused notice, with a link to Pause and
@@ -3030,8 +3014,7 @@ read-only is refused there too, even from an old link (a GET or a POST).
 The editor follows the shared
 [schedules](../ui-conventions/spec.md#schedules) rules. Planned
 ([#1129](https://github.com/epiphany40223/parishkit/issues/1129)):
-the schedule editors here, including reminder repeats and the Admin digests,
-adopt the
+the schedule editors here, including reminder repeats, adopt the
 [Basic and Advanced modes](../ui-conventions/spec.md#basic-and-advanced-modes)
 convention.
 
@@ -3040,14 +3023,11 @@ time zone, like every Admin time ([#558](https://github.com/epiphany40223/parish
 the [browser-local time rule](../ui-conventions/spec.md#dates-and-times)); a note
 beside the fields names the zone, and no field or help text names the
 campaign's. A schedule still keeps campaign-local values, which the scheduler
-resolves. Edit's page carries the schedule's moment (a digest's: its next send)
-and the page script fills the fields from it in the browser's zone; the server
+resolves. Edit's page carries the schedule's moment and the page script fills the fields from it in the browser's zone; the server
 converts what is posted, with the browser's zone the page sends, back to the
 campaign's zone through the same moment, so the rules above (inside the
 campaign dates, after the initial invitation, no two Family mailings at once)
-compare the moments the Admin chose. A digest's time and weekday are converted
-at its next send; where the two zones change their clocks on different dates, a
-digest keeps its campaign wall-clock time between them. A typed time follows
+compare the moments the Admin chose. A typed time follows
 the shared [daylight-saving rule](../ui-conventions/spec.md#schedules); a
 saved campaign-local time that the campaign's own change skips stays as saved
 and the scheduler resolves it. An
@@ -3077,7 +3057,7 @@ without an edited email, is a
 nothing exists yet, so the dialog, "Add this scheduled email?", repeats none
 of the form's values and no counts (all zero for an add) and says only
 "This schedules the email to send once, at the date and time chosen;
-nothing is sent now." A recurring schedule, a digest, a repeat or an edited
+nothing is sent now." A recurring schedule, a repeat or an edited
 email keeps the full review, since its send times, generated reminders or
 email sample are not on the page. While sends block the change it says so and offers
 no Apply. **Apply** records the change, with the same signed preview,
@@ -3190,7 +3170,7 @@ counterpart: `test sample` tests a saved email.
 
 On New, choosing Reminder offers a **Repeat** checkbox
 ([#469](https://github.com/epiphany40223/parishkit/issues/469)); other mail
-types do not repeat (one Initial invitation; the digests repeat by themselves).
+types do not repeat (one Initial invitation).
 Checking it replaces the send date with the repeat fields: how often (every day;
 every week on the chosen days; or every month on a day of the month or on the
 first, second, third, fourth or last chosen weekday) and the first and last
@@ -3328,23 +3308,11 @@ directly; the wizard's list has its own Delete.
   prepared, and the series itself, as the command line's series delete does
   (`series_edits.plan`, scope `delete`); its reminders that sent stay as
   ordinary reminders. The review names the series' rule and says so.
-- **An Admin digest** is one repeating schedule. Opened from the Edit
-  link of one of its sends on the [Campaign calendar](#campaign-calendar)
-  (`?send=` that send's slot, below), Delete has a **Delete** choice above
-  the button ([#1658](https://github.com/epiphany40223/parishkit/issues/1658)):
-  **This email only** (the default) and **The whole digest**. This email
-  only skips just that send: the digest keeps every other send, and the
-  review shows the digest's change and says which send it skips. The whole
-  digest removes it, as Delete does when Edit is opened from the list (with
-  no send named): every send still to come stops, and the review says so.
-  Only a send whose time is still ahead, that is a send of this digest, is
-  not skipped already and has no Production work yet (nothing prepared,
-  sending, sent or failed) is offered; for any other, Edit draws the
-  whole-digest Delete alone. A Testing rehearsal's work for the send does
-  not count: it is practice mail, so the real send can still be skipped.
-  The review names the skipped send by its send time, browser-local (a
-  Daily digest's send is the morning after the day it reports on). The page's status line after Apply says "Email skipped." or
-  "Scheduled email deleted.".
+- **Report emails** are not here: a report email's single send is skipped
+  with [Skip this send](../report-emails/spec.md#skip-one-send) and a report
+  is deleted with [Delete a report email](../report-emails/spec.md#delete-a-report-email),
+  both on Report emails (#1786; the digests' This email only choice moved
+  there).
 - **Refusals.** Edit already refuses a schedule that has run or has work
   prepared (a GET or a POST, even from an old link), so an email that sent or
   is being sent cannot be deleted, and the deletion checks that again. A
@@ -3354,28 +3322,7 @@ directly; the wizard's list has its own Delete.
   which then offers no Apply and names Sent mail; a stale page or another
   Administrator's change is refused as any review is. Reminder planning,
   live-campaign rules and emailed Family codes and links are those of any
-  schedule change. Skipping a digest send whose time has passed, or that has
-  Production work (prepared, sending, sent or failed), is refused (403) with
-  nothing recorded, and so is one skipped again (409, a stale page); a send that is
-  not one of the digest's, or a skip of anything but a digest, is refused
-  as an unknown request (400). The reviewed send's time is signed into the
-  review, so Apply refuses under the work lock once it has passed, and the
-  review's work fingerprint refuses once any work for the digest has
-  changed since it was drawn.
-- **A skipped send** is stored on the digest as one of its `skip_dates`
-  (the slot dates it skips: a Weekly digest's send day, a Daily digest's
-  reported day, sent the next morning), so it is an ordinary schedule
-  change: a new revision of the digest, reviewed, applied and audited like
-  any other. Every later change to the digest keeps its past skip dates.
-  A change that moves the digest's sends (its weekday, or the campaign's
-  dates) drops each skip of a send still ahead that is no longer a send,
-  so changing the weekday back later does not skip that date again; the
-  change's review lists the dropped skips by their send times. Each side of
-  a digest's review lists the sends it skips the same way. How the
-  scheduler and database honour skip dates is in
-  [skipped digest sends](../background-processing/spec.md#schedule-replacement-and-removal).
-  A skipped send cannot be brought back in this release. Only digests take
-  skip dates, so Family mail is never skipped this way.
+  schedule change.
 
 #### Campaign calendar
 
@@ -3387,9 +3334,9 @@ day starts a new schedule ([Editing from the
 calendar](#editing-from-the-calendar)), and each send links to its Edit
 scheduled email page, which has [Delete](#delete-a-scheduled-email). It reads
 the current schedules: the
-Initial invitation, each reminder, and every day or week of the Daily and
-Weekly Admin digests, expanded the way the scheduler evaluates them (a Daily Admin digest's last send is the day after
-the campaign closes).
+Initial invitation, each reminder, and every send of each
+[report email](../report-emails/spec.md#campaign-calendar-and-other-pages),
+expanded the way the scheduler evaluates them.
 
 - **By month** shows one month at a time, Sunday first (#1656), with
   **Previous month** and **Next month** buttons above it and the month's name
@@ -3418,16 +3365,16 @@ the campaign closes).
 - **Every email by date** is the same sends as a table, the grids' text
   equivalent: when, the schedule ("Reminder 2"), the email it sends, its
   status and Edit. The status is the scheduled emails table's, from the same
-  counts-only work summary; each day or week of a digest shows the digest's
-  "Repeats" until its time has passed, then "Past", and a skipped one
+  counts-only work summary; each send of a report email shows "Repeats" (or
+  "Once") until its time has passed, then "Past", and a skipped or paused one
   ([#1658](https://github.com/epiphany40223/parishkit/issues/1658)) shows
-  "Skipped". Every send of a digest is listed, however long the campaign,
-  skipped ones included. Above it, **Show** is a [binary
+  "Skipped" or "Paused". Every send of a report email is listed, however long
+  the campaign, skipped ones included. Above it, **Show** is a [binary
   choice](../ui-conventions/spec.md#binary-choices) (`?show=`): **Upcoming
   emails** (the default) or **Include past emails**. A past email is one
   whose time has passed and is not still sending; the default leaves them
   out because the list is where the Administrator finds what is still to
-  come and can be edited, and a long campaign's past digest days would
+  come and can be edited, and a long campaign's past report sends would
   otherwise bury it, while the grid above still shows every send. With
   nothing upcoming the table's one row says so and names Include past
   emails. The **When** and **Schedule** headings sort the table on the
@@ -3448,12 +3395,13 @@ send of a schedule that has not run links to its Edit scheduled email page,
 in the grid and through Edit in the table, with `?calendar=` and the month
 shown (`?calendar=2054-11`), so that page's Cancel, Apply and Delete return
 to that month of the calendar; a schedule that has run, or has work
-prepared, is listed muted and not linked, as on the list, and so is a digest's
-send whose time has passed (editing the digest changes only its later sends)
-or that is skipped. A digest send still to come links to the digest's Edit
-page with that send's slot too (`?send=2054-11-03`), so Edit's Delete can
-offer [This email only](#delete-a-scheduled-email); a `send` that is not a
-date is refused as an unknown address.
+prepared, is listed muted and not linked, as on the list, and so is a report
+email's send whose time has passed (editing the report changes only its later
+sends) or that is skipped or paused. A report email send still to come links
+to its [Edit report email](../report-emails/spec.md#new-and-edit-report-email)
+page with that send's slot key (`?send=2054-11-03`), so it can offer
+[Skip this send](../report-emails/spec.md#skip-one-send); a `send` that is
+not a date is refused as an unknown address.
 A muted send is told apart by its status, in words in the table and read to
 screen readers in the grid. A week view,
 Production activation and go-live milestones, ParishSoft refresh times and the
@@ -3513,9 +3461,9 @@ checks it exactly as that page does.
   not give, it leaves the series, and the review says so. The series scopes
   stay on Edit, where every reminder keeps its own date.
 - **Not movable:** a send that has run, is being prepared or was missed, and
-  every send of a Daily or Weekly Admin digest (a digest is one repeating
-  schedule; one of its sends can only be skipped, through Edit's
-  [Delete](#delete-a-scheduled-email)). These keep their look on the
+  every send of a report email (a report keeps its own schedule; one of its
+  sends can only be skipped, through
+  [Skip this send](../report-emails/spec.md#skip-one-send)). These keep their look on the
   calendar and offer neither Move… nor a drag.
 
 ### Ministry leader roles
@@ -3880,8 +3828,9 @@ live.
   schedules", drawn as the list draws saved schedules and marked "Not saved
   yet": the initial invitation on the campaign's start date at 9:00 AM in the
   campaign's time zone, one reminder seven days before its end date at
-  9:00 AM, and the weekly digest at its configured default; like every
-  schedule, they are shown in the browser's time
+  9:00 AM (the Daily report and Weekly report are offered as report emails,
+  [starting points](../report-emails/spec.md#campaign-wizard-starting-points));
+  like every schedule, they are shown in the browser's time
   ([dates and times](../ui-conventions/spec.md#dates-and-times)). Its primary is
   **Add these schedules and continue**; **Continue without schedules for
   now** (a link) keeps the step as is, and Go-live readiness then still asks
@@ -4769,7 +4718,7 @@ report is still being prepared, and, after a direct activation, until the
 [activation catch-up](../background-processing/spec.md#activation-catch-up)
 has finished. Resuming before the campaign starts has no recovery plan,
 because no campaign email is due yet. Under Campaign and
-affected-work locks, it applies the normal overdue Family-mail/digest coalescing
+affected-work locks, it applies the normal overdue Family-mail/report-email coalescing
 plan, cancels redundant pending outbox rows, records semantic coverage, clears
 pause holds/control, and queues only selected messages in one transaction.
 Submission receipts remain distinct and are all released. Failure leaves every
@@ -4782,7 +4731,7 @@ preparation failed) has no worker to apply that policy and cannot be retried
 after close, so every resolution below cancels it the same way and counts it
 toward clearing the pause; an uncertain provider outcome is never cancelled
 this way and still blocks the clear.
-Accepted receipts and completed-day Admin digests remain held. Before archive,
+Accepted receipts and report email sends remain held. Before archive,
 an Admin must use the **Resolve held messages** workflow to
 release selected non-Family-access message types (after the sender check
 above, when one is needed) or
@@ -5808,9 +5757,10 @@ An unfinished ActivationCatchUpDemand also blocks archive/Return to Testing,
 even when its current TaskRun has exhausted retries or no occurrences have yet
 been materialized.
 
-Archive preparation also inventories every outstanding receipt and required
-daily/weekly digest semantic slot, including obligations whose scheduled due
-time has not arrived and whose occurrence has not been materialized. It uses
+Archive preparation also inventories every outstanding receipt and every
+report email send due by the archive check that is not settled, and lists
+the report sends still to come, which archive cancels
+([archive and post-close sends](../report-emails/spec.md#archive-and-post-close-sends)). It uses
 the shared inventory defined by
 [post-close reporting obligations](../background-processing/spec.md#post-close-reporting-obligations).
 The UI shows the covered event/date range, due time, delivery state, and any
@@ -6172,7 +6122,22 @@ while no row is ticked, its reserved reason line under the buttons says
 "Select at least one leader to use Import selected."; with no row at all,
 both buttons are unavailable and the same line says there is nothing to
 import. If the leaders cannot be read, the section says so in place of the
-table and the users table above stays usable. Reading the leaders has no
+table and the users table above stays usable. It never asks for a reload:
+the section
+[brings the leaders in by itself](../ui-conventions/spec.md#pages-that-update-themselves)
+([#1863](https://github.com/epiphany40223/parishkit/issues/1863)). Its
+notice is a status region that reads the passive status
+`/admin/users/leaders/status/` (`user_leaders_status`) every 60 seconds; it
+admits Administrators only, never extends the sign-in, records no audit
+event and never reads a leader. A failed read is a database failure that
+no passive read can foresee, so after the reader's own view the status
+answers ready at its first check that works (`retry=1`), and the page
+re-reads its own address once, in place and marked automatic: one
+`users_viewed` view with `automatic: true`, plus the leaders read's own
+`user_leaders_listed` event when that read works. If the leaders still
+cannot be read on that automatic read, the status waits instead for a
+ParishSoft data generation other than the one in use then (`shown`), so a
+lasting failure is never re-read once a minute. Reading the leaders has no
 rate cap, unlike the [Name lookup](#name-from-parishsoft): one read already
 returns every row, so repeating it discloses nothing more;
 the audit of each read and storing the session keys only as digests
@@ -9907,7 +9872,9 @@ every `'<prefix>_'||` an installed audit-writing function builds to be a
   `admin_cmd_users_import_leaders`), and the operator's one-time conversion
   of sign-in rules into users, `operator_users_upgraded`), the command
   line's parish profile changes (`admin_cmd_parish_confirm`) and Campaign
-  image removals (`admin_cmd_artwork_remove`), email template deletions
+  image removals (`admin_cmd_artwork_remove`), parish logo uploads and
+  their Apply (`admin_cmd_branding_preview`, `admin_cmd_branding_confirm`),
+  email template deletions
   (`admin_cmd_content_confirm`), No-reminders WorkGroup changes
   (`admin_cmd_workgroup_confirm`), Campaign settings changes
   (`admin_cmd_campaign_confirm`), Share options changes
@@ -9964,8 +9931,10 @@ every `'<prefix>_'||` an installed audit-writing function builds to be a
 - **Reports and downloads** (`downloads`, audit records only): reports and
   exports requested, made, cancelled or downloaded (`export_requested`,
   `export_cancelled`, `export_downloaded`, every `*_exported`,
-  `weekly_manual_requested`), and the same from the command line
-  (`admin_cmd_export_*`, `admin_cmd_digest_weekly_request`). Opening a report
+  `weekly_manual_requested` for sends before #1786, `report_email_send_now`
+  after), and the same from the command line (`admin_cmd_export_*`,
+  `admin_cmd_digest_weekly_request` before #1786,
+  `admin_cmd_report_email_send_now` after). Opening a report
   page (`*_viewed`) downloads nothing and is in no group.
 - **Security events** (`security`, audit records only): a settings change that
   widened access or replaced the backup encryption key

@@ -265,24 +265,25 @@ and email image keep their own renderer):
   asserts that both charts render, take a pointer, open their table and
   follow a resize with zero policy violations or script errors.
 - **On the server**, vl-convert-python renders the same specification to PNG
-  (at twice its CSS size, for the digests' `cid:` images) and SVG, without
+  (at twice its CSS size, for the report emails' `cid:` images) and SVG, without
   Node or a browser, and reports the image's CSS width and height. These are
   the engine's two formats; how a report page offers the downloads above is
   specified in a later increment (the [response dashboard](#response-dashboard)
-  does not offer them yet). The daily digest's participation chart is the
-  participation graph's renderer. The daily digest's optional
+  does not offer them yet). A report email's
+  [participation charts block](../report-emails/spec.md#participation-charts-block)
+  is the participation graph's renderer. The
   [Compared with past campaigns](../campaign-history/spec.md#digest-section)
-  section's two charts are drawn by this renderer at the email's width (the
+  block's two charts are drawn by this renderer at the email's width (the
   axes and legend inside it) under the timeout name `digest_chart`, and
-  retained as PNGs with the digest so a retry sends the same bytes. Each is
+  retained as PNGs with the report's snapshot so a retry sends the same bytes. Each is
   an inline `cid:` image in the email's related part, never a `data:` URI,
   which Gmail does not show. A chart the renderer cannot draw fails the
-  compile, which is retried; on the last attempt the digest is compiled
+  compile, which is retried; on the last attempt the report is compiled
   without any of these server-drawn charts and sent anyway, since its tables
-  and text part carry every number they draw. That digest retains no images,
-  keeps its comparison section without charts, and its saved page draws none
+  and text part carry every number they draw. That send retains no images,
+  keeps its comparison block without charts, and its saved page draws none
   either, while one ERROR `task_failed` entry (no incident) names the chart and the
-  attempt. A digest is never left unsent for a chart.
+  attempt. A report email is never left unsent for a chart.
   Rendering happens only in workers and
   [export tasks](../background-processing/spec.md#exports-and-graph-rendering),
   never on a page view, and always in a short-lived helper process isolated
@@ -357,9 +358,9 @@ cumulative participant count can shrink and its percentage cannot exceed 100%.
 Current-population scope excludes currently inactive Families at every point.
 The statistics cards have no inactive subtotal; the
 [Response dashboard](#response-dashboard) ignores the retired `inactive`
-query parameter so old bookmarks still load. Digest
-parameters record whichever single population scope applies, so digest parity
-never combines the controls.
+query parameter so old bookmarks still load. Report email
+parameters record whichever single population scope applies, so report
+email parity never combines the controls.
 
 Eligible email follows active `get_family_heads()` Members with at least one
 syntactically valid normalized address. Publish privacy flags do not suppress
@@ -419,10 +420,10 @@ carries the campaign or fact-generation UUIDs, source generation numbers
 or the submission cutoff
 ([#966](https://github.com/epiphany40223/parishkit/issues/966)); the PNG
 and PDF are the chart, not a table.
-The daily digest email states a plain as-of line instead
-([daily campaign digest](../background-processing/spec.md#daily-campaign-digest)),
-and its chart PNG keeps the metadata. The PNG and PDF exports and the daily
-digest email draw this plot with matplotlib; the PDF sets it in the shared
+A report email states a plain as-of line instead
+([shared email layout](../report-emails/spec.md#shared-email-layout)),
+and its chart PNG keeps the metadata. The PNG and PDF exports and the report
+email draw this plot with matplotlib; the PDF sets it in the shared
 report page frame ([file design](#file-design)), while the export and email
 PNGs keep their own titles and layout. Each process draws one matplotlib file
 at a time, because matplotlib's style settings are process-global; only
@@ -479,8 +480,8 @@ exact campaign, scope, promoted-source generation cutoff, effective-submission
 cutoff, and campaign-timezone version. Historical scope reads immutable first-
 eligibility provenance through that generation; current scope reads the exact
 cutoff snapshot population. It atomically publishes that generation only
-after every expected date validates; UI, accessible table, PNG/PDF, and digest
-consumers never combine rows from different input generations.
+after every expected date validates; UI, accessible table, PNG/PDF, and
+report email consumers never combine rows from different input generations.
 
 A successful source promotion, live submission, qualifying eligibility change,
 or approved rebuild request transactionally creates an idempotent rebuild hint.
@@ -509,8 +510,10 @@ uniqueness still deduplicates builds after inputs are frozen. Failed or
 interrupted generations remain unpublished and retryable. Publishing an older
 pinned or recovered generation never moves the interactive pointer backward.
 
-Exports pin their inputs when requested; digests pin theirs when the occurrence
-first records its report inputs, using its stored as-of boundary. These requests
+Exports pin their inputs when requested; report emails pin theirs when the
+occurrence first records its report inputs, using its stored as-of boundary
+(the end of its report day, or its capture instant;
+[as of](../report-emails/spec.md#as-of)). These requests
 bypass ordinary debounce and receive priority exact-generation work. They reuse
 an existing ready/building generation with the same key and never chase later
 submissions, including on retry. Pinning protects the required input records
@@ -533,7 +536,7 @@ never refreshes the page to check. That read records the dashboard's views
 like any other (`response_dashboard_viewed` and `participation_viewed`),
 each marked `automatic: true` in its audit context so it reads as an
 automatic refresh, not as the reader opening the page. A pinned export or
-digest waits/retries for its exact generation and fails visibly rather than
+report email waits/retries for its exact generation and fails visibly rather than
 substituting a different cutoff.
 Recalculation from the pinned source/submission inputs must reproduce every
 stored fact, and a verification job detects drift.
@@ -554,8 +557,8 @@ local date as its heading, then "First submissions",
 "Families that have responded" (out of the scoped population, with
 percentage) and, when financial is enabled, "Effective annual pledges", with no
 explanatory text. A keyboard or screen-reader user gets every date's figures
-from the daily table ([chart engine](#chart-engine)). A saved daily digest's
-page shows its retained chart image instead: pointing at or tapping a date, or
+from the daily table ([chart engine](#chart-engine)). A report email's saved
+copy shows its retained chart image instead: pointing at or tapping a date, or
 choosing it with the date slider, draws the guide line over the image at that
 date and shows a short tooltip: the local date as a
 small heading, then "Families" (cumulative count), "New today" (daily count)
@@ -565,7 +568,7 @@ not move; the screen-reader live text and the slider's value text keep the
 fuller form: scope, local date, daily count, cumulative count out of the scoped
 population with percentage, and exact pledge. Either tooltip's pledge is whole
 dollars (halves round up, such as $760,410); everything else keeps exact
-cents. Report URLs, pinned digest inputs, equivalent data
+cents. Report URLs, pinned report email inputs, equivalent data
 tables, PNG/PDF output, and structured downloads record the scope and exactly
 match the displayed values. A scope note explains why the historical endpoint
 may differ from current-statistics cards.
@@ -643,7 +646,7 @@ same numbers for as long as the evidence is retained (Production-transition
 cleanup removes a rehearsal's records, and the campaign purge the campaign's),
 as [daily email report parity](#daily-email-report-parity) requires. A cutoff
 of "now" can miss rows committing at that moment; a report meant to be
-reproduced uses a cutoff in the past, as the digests do. Mail
+reproduced uses a cutoff in the past, as report emails as of the end of the previous day do. Mail
 evidence is bounded by the as-of instant alone, across every Production cycle
 of the campaign, so a withdrawal and re-activation after the cutoff cannot
 change an earlier reading; in Testing it is the rehearsal epoch's: that
@@ -657,21 +660,21 @@ instant as it stood at the cutoff, so the totals, the series below and the
 lists of Families behind any count all come from the same rows. It is the
 installed SQL function `stewardship_family_response_v1` (migration 0050,
 [#933](https://github.com/epiphany40223/parishkit/issues/933)), which the
-dashboard, the digest and the
+dashboard, report emails and the
 [directory's Response filter](#response-filters) all read, so their counts
 cannot drift apart. The
 [Response dashboard](#response-dashboard) shows its stages as stat tiles
-(no funnel chart is drawn anywhere, neither on the page nor in the emailed
-daily report, which dropped its chart in
+(no funnel chart is drawn anywhere, neither on the page nor in report
+emails; the daily report dropped its chart in
 [#1370](https://github.com/epiphany40223/parishkit/issues/1370)),
 `pk-admin report responses` reports the activity series, and the
 directory's [Response filters](#response-filters) list the Families behind
 the counts; the
 [Timeline](#timeline) shows what happened with one Family; and
-a Production [daily digest](../background-processing/spec.md#daily-campaign-digest)
-states the funnel at the end of its report day, and a Production
-[weekly report](../background-processing/spec.md#weekly-additional-information-digest)
-at its capture instant.
+a Production report email's
+[response funnel block](../report-emails/spec.md#response-funnel-block)
+states the funnel at the report's as-of moment (the end of its report day,
+or its capture instant).
 
 ### Funnel stages
 
@@ -802,7 +805,7 @@ heading, and the page sends `Cache-Control: no-store`. Top to bottom:
    the Families by stage tiles give the funnel's counts and shares and draw
    its bars, and the responses that chart drew are the Submitted tile, so
    both were removed as redundant (`pk-admin report participation` still
-   reports the email reach counts). The emailed daily report has drawn no
+   reports the email reach counts). The emailed reports have drawn no
    funnel chart since
    [#1370](https://github.com/epiphany40223/parishkit/issues/1370), so no
    funnel chart remains anywhere; the Administrator can ask for one back.
@@ -1277,7 +1280,8 @@ migration 0126 with follow-up not needed reads as Ignored, since a Staff
 member chose that; a request no Staff member has saved is To review.
 
 Each request's own page shows the submitted text in full, its disposition and
-replacement link, whether a weekly digest already reported it, its Stage,
+replacement link, whether a weekly digest already reported it (a report email,
+which replaced the weekly digest in #1786, records no such mark), its Stage,
 the Family's **Contact details**
 ([#1595](https://github.com/epiphany40223/parishkit/issues/1595)) and the
 request's history, each entry worded by its decision (Accepted, Ignored,
@@ -1296,12 +1300,24 @@ flags do not hide them. Source text that is not a valid address is shown
 with "not a valid address; fix in ParishSoft", as the
 [directory](#active-parishioner-family-directory) shows it, and a detail
 with no value reads "None recorded". A Family the data no longer has shows
-no details and says so; if the data is replaced while the page is read, the
-section says to reload the page. Who sees the section is exactly who may
+no details and says so. If the data is replaced while the page is read,
+the section says the details appear by themselves once the newer ParishSoft
+data can be read, and the page
+[brings them in by itself](../ui-conventions/spec.md#pages-that-update-themselves)
+([#1863](https://github.com/epiphany40223/parishkit/issues/1863)): the
+notice is a status region that reads the passive status
+`/admin/reports/information/contacts/status/?shown=<generation>`
+(`information_contacts_status`), which admits the same readers as the page,
+never extends the sign-in, records no audit event, and says only whether a
+ParishSoft data generation other than the page's own (`shown`) is now in
+use, never a contact value. Once one is, the page re-reads its own address
+once, in place and marked automatic, which records one
+`information_viewed` view with `automatic: true` and reads the details from
+the newer data. Who sees the section is exactly who may
 open the page, Administrators and Staff (`ADDITIONAL_FOLLOWUP`), checked
 again by the contact read itself; Ministry leaders still cannot open the
 page. Only the request page reads the details, never the worklist, its
-exports, the weekly digest or `followup information-show`, and the page's
+exports, report emails or `followup information-show`, and the page's
 `information_viewed` access audit covers them; the audit records no contact
 values. The section reads the snapshot's Family, head Member and contact
 rows directly, as the directory's Family head emails do, so it needed no
@@ -1352,7 +1368,8 @@ broken is refused, as a bad filter is.
 Every decision is checked against the request's version the row showed; a
 request someone else changed first is left as it is and the notice says so
 ([Concurrency](../review-pipeline/spec.md#concurrency)). This report is also
-the source for the weekly Admin digest.
+the source for report emails'
+[open additional information requests block](../report-emails/spec.md#open-additional-information-requests-block).
 
 ## Active parishioner family directory
 
@@ -3168,9 +3185,10 @@ Staff.
 
 ## Daily email report parity
 
-The daily Admin digest uses the same query/calculation service and chart data as
-the participation/statistics web reports for its stored as-of point and defaults
-to Historical as of day. The digest occurrence records the promoted source
+A report email's fact blocks use the same query/calculation service and chart
+data as the participation/statistics web reports for the report's stored as-of
+point ([as of](../report-emails/spec.md#as-of)) and default to Historical as
+of day. The report occurrence records the promoted source
 snapshot, effective-submission version cutoff, selected population scope,
 report parameters, and campaign-local day boundary. That boundary is resolved
 using the immutable campaign timezone recorded with the campaign, not the
@@ -3181,4 +3199,4 @@ those inputs and fact generation even when current eligibility later changes.
 Separate implementations that can drift are prohibited. The email simplifies
 interaction into an image/text table but its values must be reproducible from
 those recorded inputs. Its [response funnel](#response-funnel) is reproduced
-from durable timestamps instead, at the end of the report day.
+from durable timestamps instead, at the report's as-of moment.
