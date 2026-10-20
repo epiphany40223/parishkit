@@ -398,6 +398,9 @@ ADDRESS_RETRIES_FUNCTION = "stewardship_delivery_address_retries_v1(uuid, uuid)"
 # renderings that hold them.
 ADDRESS_DELIVERIES_FUNCTION = "stewardship_delivery_ids_for_address_v1(text, uuid)"
 PAGE_RECIPIENTS_FUNCTION = "stewardship_delivery_page_recipients_v1(uuid[], uuid)"
+# The ParishSoft Member name of each of a page's emails to people (0220,
+# #1562), for the same caller: one name per email, never an address.
+PAGE_MEMBER_NAMES_FUNCTION = "stewardship_delivery_page_member_names_v1(uuid[], uuid)"
 # An Administrator's report that a delivered email bounced at one address
 # (#806 slice 4): the report's only writer, so web keeps SELECT only on the
 # refusal table; the definer and the refusal guard admit it only from web.
@@ -547,6 +550,8 @@ CLOSURE_FUNCTIONS = {
     ),
     # The Email Ministry leaders review (0120, #1592).
     LEADER_EMAILS_FUNCTION: ("stewardship_jobs", "0035_leader_emails"),
+    # Sent mail's Member names (0220, #1562).
+    PAGE_MEMBER_NAMES_FUNCTION: ("stewardship_jobs", "0036_page_member_names"),
 }
 
 
@@ -803,6 +808,7 @@ def runtime_functions(role, *, target=None):
                 BOUNCE_REPORT_FUNCTION,
                 ADDRESS_DELIVERIES_FUNCTION,
                 PAGE_RECIPIENTS_FUNCTION,
+                PAGE_MEMBER_NAMES_FUNCTION,
                 DEBUG_OFF_FUNCTION,
             },
             ServiceRole.CONFIG_INSTALLER: {
