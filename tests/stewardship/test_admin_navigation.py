@@ -554,7 +554,7 @@ ROLES = ("administrator", "staff", "ministry_leader")
 REPORTS = [
     "census_changes",
     "ministry_report",
-    "ministry_roster",
+    "pledges_to_enter",
     "information_queue",
     "limitations_report",
     "response_dashboard",
@@ -586,7 +586,7 @@ SPEC_ORDER = [
     # Review work
     "census_changes",
     "ministry_report",
-    "ministry_roster",
+    "pledges_to_enter",
     "information_queue",
     "limitations_report",
     # Reports and queries
@@ -672,11 +672,11 @@ def test_every_campaign_entry_is_greyed_out_without_a_current_campaign():
         "response_dashboard",
         "campaign_comparison",
         "financial_report",
+        "pledges_to_enter",
         "limitations_report",
         "census_changes",
         "information_queue",
         "ministry_report",
-        "ministry_roster",
         "family_directory",
     }
     for item in items:
@@ -731,12 +731,6 @@ def test_every_campaign_entry_is_greyed_out_without_a_current_campaign():
             "census only",
             "testing",
             "ministry_report",
-            "This campaign does not include Ministry stewardship",
-        ),
-        (
-            "census only",
-            "testing",
-            "ministry_roster",
             "This campaign does not include Ministry stewardship",
         ),
     ],
@@ -1214,6 +1208,7 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
                 json.dumps(groups) if statements[-1]["census"] else None,
                 6 if statements[-1]["roster"] else None,
                 [] if statements[-1]["roster"] else None,
+                4 if statements[-1]["limitations"] else None,
             )
 
     monkeypatch.setattr(
@@ -1224,11 +1219,12 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
     active = _campaign("active")
     census = _campaign("active", modules=("ministry", "census"))
     draft = _campaign("draft")
-    queues = {"information_queue": 3, "ministry_report": 2}
+    # Limitations (R39 finding 10) is counted for Administrators and Staff.
+    queues = {"information_queue": 3, "ministry_report": 2, "limitations_report": 4}
     cases = (
-        # Both queues and Roster changes to enter (#1660) for Staff: every
-        # Ministry.
-        ("staff", active, {**queues, "ministry_roster": 6}),
+        # Both queues and the To enter by hand count (ENTRY_COUNT, which
+        # replaced Roster changes to enter's, R39) for Staff: every Ministry.
+        ("staff", active, {**queues, "ministry_entry": 6}),
         # A draft has nothing to enter yet, so its roster count is not read.
         ("staff", draft, queues),
         # With the census: Staff and an Administrator both count To review
@@ -1236,15 +1232,15 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
         (
             "staff",
             census,
-            {"census_changes": 7, **queues, "ministry_roster": 6},
+            {"census_changes": 7, **queues, "ministry_entry": 6},
         ),
         (
             "administrator",
             census,
-            {"census_changes": 7, **queues, "ministry_roster": 6},
+            {"census_changes": 7, **queues, "ministry_entry": 6},
         ),
-        # A leader has no Census changes or Roster changes to enter entry, so
-        # neither count is read.
+        # A leader has no Census changes entry and never sees To enter by
+        # hand, so neither count is read.
         ("ministry_leader", census, {"ministry_report": 2}),
         # A leader only has Ministry requests, scoped to their Ministry.
         ("ministry_leader", active, {"ministry_report": 2}),
@@ -1285,6 +1281,17 @@ def test_open_counts_read_once_per_request_and_only_for_offered_entries(
                 | {"assignee": "any", "presence": "any"}
             )
             assert statements[0]["roster_outcomes"] == ["joined", "leave_confirmed"]
+            # Limitations runs its page's selection with the page's defaults.
+            assert statements[0]["limitations"] is (role != "ministry_leader")
+            # With Pledges in the menu, Limitations' count adds the Cannot
+            # contribute answers at To review (R39 finding 11).
+            assert statements[0]["pledges"] is any(
+                item.name == "pledges_to_enter" and item.url for item in items
+            )
+            assert json.loads(statements[0]["limitation_filters"]) == {
+                "search": "",
+                "show": "any",
+            }
     # A count over a Ministry outside the leader's own scope is drift the
     # follow-up page refuses, so the menu shows no number either.
     selected[:] = [9, 77]

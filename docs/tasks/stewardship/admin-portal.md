@@ -332,8 +332,11 @@ session and still record `automation_fresh_gate` and the `fresh_gated` and
 `irreversible` notices (names kept). Every session-bound SQL guard still
 requires a command session's live full-scope automation session
 (`stewardship_automation_fresh_v1`), and the secret request guards refuse a
-request whose full-scope automation session ended
-(`stewardship_automation_instant_ended_v1`, migration 0114);
+request whose named automation session ended
+(`stewardship_automation_request_live_v1`, frozen migration 0125,
+[#1763](https://github.com/epiphany40223/parishkit/issues/1763), which
+replaced 0114's `stewardship_automation_instant_ended_v1`, so a browser's
+own requests no longer depend on the automation sessions it approved);
 `stewardship_automation_fresh_principal_v1`, unused after 0114, was
 dropped by frozen migration 0123
 ([#1550](https://github.com/epiphany40223/parishkit/issues/1550)), which also

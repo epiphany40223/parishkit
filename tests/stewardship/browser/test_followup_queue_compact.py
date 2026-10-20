@@ -27,8 +27,11 @@ MAX_FILTER_HEIGHT = 220
 # 320 to 1,170 px tall each (about 19,400 px in all), since the cells were
 # squeezed until they broke between letters; one line each, they are about
 # 43 px each (about 1,075 px in all). Since #1136 the 12 rows with a long
-# Ministry name take two lines, about 67 px each.
-MAX_ROWS_HEIGHT = 1800
+# Ministry name take two lines, about 67 px each. On the review worklist
+# (#1684) a row's Stage chip with its decision line and the Actions icons
+# make even a one-line row about 70 px; 25 rows took about 1,810 px with
+# Linux's wider fonts (CI, R38 and R39 integration).
+MAX_ROWS_HEIGHT = 1900
 FIELDS = (
     "#requests-stage",
     "#followup-search",
@@ -193,7 +196,10 @@ def test_queue_clipped_member_name_tip(page, component_origin):
     whole = "Member0 Bartholomew-Fitzgerald <Example>"
     assert link.text_content() == whole
     assert link.get_attribute("title") is None
-    assert link.evaluate("e => e.scrollWidth > e.clientWidth")
+    # The name's own box is the one cut short; the shared name link (the
+    # Family hub's, R38 finding 13) wraps it.
+    clipped = link.locator("[data-clip-tip]")
+    assert clipped.evaluate("e => e.scrollWidth > e.clientWidth")
     link.focus()
     tip = page.locator(".admin-tip.is-shown")
     expect(tip).to_have_text(whole)

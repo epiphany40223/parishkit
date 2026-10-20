@@ -4,7 +4,7 @@ The review pipeline (spec, "Refresh checks") confirms an entered move, death
 and email opt-out against their own reading of the promoted data, and keeps
 an open change whose Member left the Family at its stage (rule 4) rather
 than cancelling it. The checks are written by real promotions (``prepare``
-and ``promote``), under migration 0141's guard, and read by the real page's
+and ``promote``), under migration 0137's guard, and read by the real page's
 row reader.
 """
 
@@ -47,7 +47,7 @@ pytestmark = pytest.mark.django_db(transaction=True)
 MIGRATIONS = (
     Path(__file__).resolve().parents[3] / "src/parishkit/stewardship/schema/migrations"
 )
-FROZEN = MIGRATIONS / "0141_census_refresh_sources.sql"
+FROZEN = MIGRATIONS / "0137_census_refresh_sources.sql"
 UTC = ZoneInfo("UTC")
 
 
@@ -269,7 +269,7 @@ def test_an_open_change_whose_member_left_keeps_its_stage(
 def test_the_guard_refuses_a_forged_move_check(
     response_service, monkeypatch, outcome, observed, words
 ):
-    """Migration 0141's guard: a move's check must carry the snapshot's own
+    """Migration 0137's guard: a move's check must carry the snapshot's own
     reading, and a yes-or-no request is never Entered incorrectly."""
     from parishkit.stewardship.responses import refresh_checks
 
@@ -356,7 +356,7 @@ READS = (
 
 @pytest.mark.parametrize("variant", sorted(VARIANTS))
 def test_the_sql_source_agrees_with_census_source(response_service, variant):
-    """Migration 0141's stewardship_refresh_census_source_v1 returns exactly
+    """Migration 0137's stewardship_refresh_census_source_v1 returns exactly
     what ``refresh_checks.census_source`` reads from the same promoted data,
     for every field it reads, so the guard never refuses a check the
     promotion owes (which would roll the whole refresh back)."""
@@ -401,14 +401,14 @@ def test_the_sql_source_agrees_with_census_source(response_service, variant):
 
 
 def _check():
-    """0141's closing DO block, as the file has it."""
+    """0137's closing DO block, as the file has it."""
     text = FROZEN.read_text(encoding="utf-8")
     return text[text.index("DO $check$") :]
 
 
 def _previous_guard():
-    """0136's refresh check guard, as a replacement statement."""
-    text = (MIGRATIONS / "0136_refresh_checks.sql").read_text(encoding="utf-8")
+    """0132's refresh check guard, as a replacement statement."""
+    text = (MIGRATIONS / "0132_refresh_checks.sql").read_text(encoding="utf-8")
     start = text.index("CREATE FUNCTION public.stewardship_refresh_check_guard_v1")
     end = text.index("END $$;", start) + len("END $$;")
     return "CREATE OR REPLACE" + text[start + len("CREATE") : end]
@@ -416,7 +416,7 @@ def _previous_guard():
 
 def test_do_block_refuses_the_old_definitions(db):
     """The closing check passes as installed and raises once the guard is put
-    back to 0136's body, its trigger is disabled, or the source function is
+    back to 0132's body, its trigger is disabled, or the source function is
     made SECURITY DEFINER."""
     with transaction.atomic(), connection.cursor() as cursor:
         cursor.execute(_check())
