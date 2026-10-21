@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 from django.utils.translation import gettext, ngettext
 
 from parishkit.stewardship.wall_clock import WEEKDAYS, wall_hhmm
+from parishkit.stewardship.web.dates import format_time
 
 
 @dataclass(frozen=True)
@@ -62,6 +63,23 @@ class Day:
     extra: dict | None = None
 
 
+def wall_shift(day, value, due, timezone):
+    """How a clock change moves the wall time ``value`` on ``day``, or None.
+
+    The one daylight-saving rule (ui-conventions "Schedules"), for every
+    preview: "forward" when ``value`` ("HH:MM") falls in the missing hour
+    of ``timezone`` (``due``, its resolved instant, is the first real one
+    after), "back" when it falls in the repeated hour (it happens once, at
+    the earlier instant).
+    """
+    zone = ZoneInfo(timezone)
+    wall = datetime.combine(day, time.fromisoformat(value))
+    if due.astimezone(zone).replace(tzinfo=None) != wall:
+        return "forward"
+    folds = {wall.replace(tzinfo=zone, fold=fold).utcoffset() for fold in (0, 1)}
+    return "back" if len(folds) > 1 else None
+
+
 def _shift_text(shift, at, *, same_zone, schedule_zone, verb):
     """The words for an occurrence a clock change moves, or None.
 
@@ -74,7 +92,15 @@ def _shift_text(shift, at, *, same_zone, schedule_zone, verb):
         return None
     if same_zone:
         if shift == "forward":
-            moved = wall_hhmm(at, schedule_zone) if at is not None else ""
+            # A refresh list writes its times as 24-hour HH:MM; a send list
+            # in the parish's clock, as its "set for" time.
+            moved = (
+                ""
+                if at is None
+                else wall_hhmm(at, schedule_zone)
+                if verb == "runs"
+                else format_time(at.astimezone(ZoneInfo(schedule_zone)).time())
+            )
             words = {
                 "runs": gettext("runs at %(time)s, clocks go forward"),
                 "sends": gettext("sends at %(time)s, clocks go forward"),
