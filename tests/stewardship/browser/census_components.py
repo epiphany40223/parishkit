@@ -126,6 +126,9 @@ def components(context, admin):
                 )
                 if index in incorrect
                 else None,
+                # Member 01 moved to another Family (#1738): the change keeps
+                # its stage and the Who cell shows the shared badge.
+                "member_status": "moved" if index == 1 else None,
             }
         )
 
