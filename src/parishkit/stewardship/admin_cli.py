@@ -50,7 +50,9 @@ source-form`` (in ``admin_source_form``), ``report data-to-fix`` (in
 delete`` and ``files rename`` (PR 10, in ``admin_hosted_files``),
 ``content list``, ``content show``, ``content history``, ``content preview``
 and ``content confirm`` (PR 10, in
-``admin_content``), ``integration list``, ``integration show``, ``integration status``
+``admin_content``; their ``--edit`` mode, #1873, is the content editor's
+Review and Apply, reading its fields from standard input after the
+preamble), ``integration list``, ``integration show``, ``integration status``
 and ``integration schedule-preview`` (PR 10, in ``admin_integrations``),
 ``integration key replace`` (PR 10, in ``admin_integration_keys``), which
 takes a key from the host wrapper on the line after the preamble,
@@ -1473,22 +1475,41 @@ def content_show(args, preamble, runtime, context):
 
 
 def content_preview(args, preamble, runtime, context):
-    """Build a Pages and emails Delete, or preview typed HTML's plain text (PR 10).
+    """Build an editor change or a Pages and emails Delete, or preview typed
+    HTML's plain text (PR 10, #1873).
 
-    ``--delete`` (repeatable) needs ``--expected-version`` and ``--html``
-    takes none (``main`` checks both before admission). The role is
-    checked first (#1341), before any input is read.
+    ``--edit`` and ``--delete`` (repeatable) need ``--expected-version``,
+    ``--edit`` also ``-`` for its fields, and ``--html`` takes neither
+    (``main`` checks each before admission). The role is checked first
+    (#1341), before any input is read.
     """
     from .admin_content import (
         admit_preview,
         plain_text_preview,
         preview_deletion,
+        preview_edit,
     )
     from .web.content import MAX_TEXT_BYTES
 
-    delete = args.delete is not None
-    actor = admit_preview(context["caller"], runtime, delete=delete)
-    if not delete:
+    change = args.delete is not None or args.edit is not None
+    actor = admit_preview(context["caller"], runtime, change=change)
+    if args.edit is not None:
+        kind, slot = args.edit
+        return preview_edit(
+            context["caller"],
+            runtime,
+            actor,
+            kind,
+            slot,
+            args.revision,
+            # The editor's two long fields and the subject fit, even with
+            # every character escaped in JSON (up to twelve bytes, for a
+            # surrogate pair); the page's own form then checks each field's
+            # limit in its own words.
+            _input(args.fields, context, 24 * MAX_TEXT_BYTES),
+            expected_version=args.expected_version,
+        )
+    if args.delete is None:
         # Unstripped: the page converts the posted HTML exactly as typed.
         return plain_text_preview(
             _input(args.html, context, MAX_TEXT_BYTES, strip=False)
@@ -1503,7 +1524,8 @@ def content_preview(args, preamble, runtime, context):
 
 
 def content_confirm(args, preamble, runtime, context):
-    """Confirm a built Pages and emails Delete as a configuration request (PR 10).
+    """Confirm a reviewed editor change (``--edit``, #1873) or a built Pages
+    and emails Delete as a configuration request (PR 10).
 
     The role is checked first (#1341), before the token is read.
     """
@@ -1517,6 +1539,7 @@ def content_confirm(args, preamble, runtime, context):
         actor,
         token=_input(args.token, context, TOKEN_LIMIT),
         context=context,
+        edit=None if args.edit is None else (*args.edit, args.revision),
     )
 
 
@@ -3237,6 +3260,21 @@ def users_list(args, preamble, runtime, context):
     return read_users(context["caller"], runtime, args.sort, audit=context["audit"])
 
 
+def users_timeline(args, preamble, runtime, context):
+    """One user's Timeline, as the page shows it (#1866)."""
+    from .admin_reads import read_user_timeline
+
+    return read_user_timeline(
+        context["caller"],
+        runtime,
+        args.user,
+        kind=args.kind or "all",
+        start=args.start or "",
+        end=args.end or "",
+        zone=args.zone or "",
+    )
+
+
 def users_preview(args, preamble, runtime, context):
     """Review a change to Admin portal users (#952 slice 5)."""
     from .admin_users import CHANGES_LIMIT, preview_users
@@ -3955,9 +3993,27 @@ def _integration_backup_key_confirm_options(parser):
     )
 
 
+def _content_edit_options(parser, mode):
+    """``--edit KIND SLOT`` (in ``mode``, a group or the parser) and
+    ``--revision``: the editor's page or email, as ``content show`` names it."""
+    mode.add_argument(
+        "--edit",
+        nargs=2,
+        metavar=("KIND", "SLOT"),
+        help="the content editor's page or email (page or email, and its slot)",
+    )
+    parser.add_argument(
+        "--revision",
+        type=_uuid,
+        help="with --edit: one email of the mail type, by its content list id",
+    )
+
+
 def _content_preview_options(parser):
-    """Options of ``content preview``: the emails to delete, or HTML to preview."""
+    """Options of ``content preview``: an editor change and its fields, the
+    emails to delete, or HTML to preview."""
     mode = parser.add_mutually_exclusive_group(required=True)
+    _content_edit_options(parser, mode)
     mode.add_argument(
         "--delete",
         action="append",
@@ -3972,12 +4028,21 @@ def _content_preview_options(parser):
     parser.add_argument(
         "--expected-version",
         type=_digest,
-        help="the version content list printed (with --delete)",
+        help="the version content list printed (with --edit or --delete)",
+    )
+    parser.add_argument(
+        "fields",
+        nargs="?",
+        choices=("-",),
+        metavar="-",
+        help="with --edit: read the fields as one JSON object from standard input",
     )
 
 
 def _content_confirm_options(parser):
-    """Options of ``content confirm``: the preview's token."""
+    """Options of ``content confirm``: the editor's page or email, for its
+    review's Apply, and the preview's token."""
+    _content_edit_options(parser, parser)
     parser.add_argument(
         "--token",
         required=True,
@@ -5102,6 +5167,21 @@ def _users_list_options(parser):
     )
 
 
+def _users_timeline_options(parser):
+    """Options of ``users timeline``: the user and the page's filters."""
+    parser.add_argument(
+        "--user", required=True, type=_uuid, help="the user's ID, as users list prints"
+    )
+    parser.add_argument(
+        "--kind", help="all (default), sessions, actions, roles or emails"
+    )
+    parser.add_argument("--from", dest="start", help="first day, YYYY-MM-DD, in --zone")
+    parser.add_argument("--to", dest="end", help="last day, YYYY-MM-DD, in --zone")
+    parser.add_argument(
+        "--zone", help="the IANA time zone of --from and --to, e.g. America/New_York"
+    )
+
+
 def _wait_options(parser):
     """Options of ``login wait``."""
     parser.add_argument("--name", help="the session file's name (wrapper only)")
@@ -6007,14 +6087,16 @@ def _file_specs():
             options=(_content_history_options,),
             audit_event=None,
         ),
-        # The email tables' Delete, split into a preview and a confirm as
-        # schedule preview / schedule confirm split a schedule's Delete,
+        # The editor's Preview changes and its review's Apply (#1873) and
+        # the email tables' Delete, each split into a preview and a confirm
+        # as schedule preview / schedule confirm split a schedule's Delete,
         # and the editors' plain-text preview. Full scope, as the Delete
         # post records activity; neither is privileged, and the reviewed
         # token stands in for the dialog, so neither prompts.
         CommandSpec(
             "content preview",
-            "Build a delete of unused emails, or preview HTML as plain text.",
+            "Review an editor change or a delete of unused emails, or preview "
+            "HTML as plain text.",
             content_preview,
             "full",
             False,
@@ -6026,7 +6108,7 @@ def _file_specs():
         ),
         CommandSpec(
             "content confirm",
-            "Confirm a built delete of unused emails.",
+            "Apply a reviewed editor change or a built delete of unused emails.",
             content_confirm,
             "full",
             True,
@@ -7199,13 +7281,15 @@ def _users_specs():
 
     ``users list`` and ``users preview-upgrade`` are passive reads any
     session may run; each records the page's view event,
-    ``portal_users_viewed``. ``users preview`` and ``users confirm`` change
-    users as the Users page does (slice 5) and need a full-scope session, as
+    ``portal_users_viewed``. ``users timeline`` is one user's Timeline
+    (#1866), also passive, recording ``user_timeline_viewed``. ``users
+    preview`` and ``users confirm`` change users as the Users page does
+    (slice 5) and need a full-scope session, as
     does ``users import-leaders``, the page's leaders table and import
     (slice 6), and ``users email-leaders``, its Email Ministry leaders
     review and Apply (#1622).
     """
-    from .admin_reads import UsersList, UsersUpgradePreview
+    from .admin_reads import UsersList, UsersUpgradePreview, UserTimelineRead
     from .admin_users import LeaderEmails, LeaderImport, UsersConfirm, UsersPreview
 
     return (
@@ -7219,6 +7303,17 @@ def _users_specs():
             11,
             options=(_users_list_options,),
             audit_event="portal_users_viewed",
+        ),
+        CommandSpec(
+            "users timeline",
+            "Show one user's timeline: sign-ins, actions, role changes, emails.",
+            users_timeline,
+            "read_only",
+            False,
+            UserTimelineRead.field_names(),
+            11,
+            options=(_users_timeline_options,),
+            audit_event="user_timeline_viewed",
         ),
         CommandSpec(
             "users preview-upgrade",
@@ -9501,6 +9596,29 @@ def streaming_command(argv):
     return any(spec.streams and named(spec.name.split()) for spec in COMMANDS)
 
 
+def _check_content_usage(args):
+    """The content verbs' option rules argparse cannot say (#1873).
+
+    An editor change (``--edit``) and a Delete are built against a version;
+    the plain-text preview reads no configuration, so it takes none. Only
+    an editor change reads its fields (``-``), and only it names a
+    ``--revision``; its kind is ``page`` or ``email``.
+    """
+    if args.edit is None:
+        if args.revision is not None:
+            raise UsageError("--revision goes with --edit.")
+    elif args.edit[0] not in {"page", "email"}:
+        raise UsageError("--edit takes page or email, then the slot.")
+    if args.command_name != "content preview":
+        return
+    if (args.delete is None and args.edit is None) != (args.expected_version is None):
+        raise UsageError(
+            "--expected-version goes with --edit or --delete, and only there."
+        )
+    if (args.edit is None) != (args.fields is None):
+        raise UsageError("--edit reads its fields from standard input (-), alone.")
+
+
 def main(argv=None, *, stdin=None, stdout=None, stderr=None):
     """Console entry for ``pk-stewardship admin``: parse, run, exit with its code."""
     from .observability import configure_logging
@@ -9516,12 +9634,8 @@ def main(argv=None, *, stdin=None, stdout=None, stderr=None):
             raise UsageError("A command is required.")
         if args.command_name == "login wait" and not 1 <= args.timeout <= 600:
             raise UsageError("The timeout is 1 to 600 seconds.")
-        if args.command_name == "content preview" and (
-            (args.delete is None) != (args.expected_version is None)
-        ):
-            # The Delete is built against a version; the plain-text preview
-            # reads no configuration, so it takes none.
-            raise UsageError("--expected-version goes with --delete, and only there.")
+        if args.command_name in {"content preview", "content confirm"}:
+            _check_content_usage(args)
         if args.command_name == "integration key replace" and args.changes == "-":
             # Standard input carries the key (and the prompt's answer).
             raise UsageError("Give --changes as JSON; standard input holds the key.")

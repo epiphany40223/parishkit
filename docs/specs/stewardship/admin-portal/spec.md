@@ -1193,6 +1193,7 @@ which the access gate shows; "setup stepper" pages are the wizard's;
 | `users` | Users | Menu: Users | Administrator | Portal users; Sign-in rules | `/admin/users` | `/admin/users/` | One table of users (#952), which replaces the planned split into Sign-in rules, Ministry assignments and Chairpersons (decision 13). |
 | `user_new` | New user | Users | Administrator | (new, #952) | (none) | `/admin/users/new/` | Its review applies through Users. |
 | `user_edit` | Edit user | Users | Administrator | (new, #952) | (none) | `/admin/users/<user>/edit/` | The New page filled in; `<user>` is the user's stable ID. |
+| `user_timeline` | Timeline | Users | Administrator | (new, [#1866](https://github.com/epiphany40223/parishkit/issues/1866)) | (none) | `/admin/users/<user>/timeline/` | One user's [Timeline](#user-timeline): sign-ins, Admin actions, role changes and emails; opened from each user's Email on Users and from Edit user; `<user>` is the user's stable ID. |
 | `user_delete` | Delete user | Users | Administrator | (new, #952) | (none) | `/admin/users/deletion/` (POST only) | The table's confirmation dialog posts here. |
 | `user_name_suggestions` | (not a page) | New user | Administrator | (new, #952) | (none) | `/admin/users/new/names/` (POST only, JSON) | Read-only Name suggestions from ParishSoft. |
 | `user_leader_import` | Import Ministry leaders | Users | Administrator | (new, #952) | (none) | `/admin/users/leaders/import/` (POST only) | Review of the chosen ParishSoft Ministry leaders, shown in the review dialog on Users; applies through Users. |
@@ -2041,6 +2042,20 @@ credential file, and only the one-shot `backup-worker` profile reads it
   the proof) never reaches the page source. Only then is the change offered
   for review and confirmation; the review shows the old and new
   fingerprints.
+- **On the page (#750).** The paste step's **Continue** and the challenge's
+  **Start over** act [in place](../ui-conventions/spec.md#in-place-controls),
+  and the challenge's heading ("Prove you have the new private key") takes
+  focus. **Check code and continue** opens the
+  [review dialog](../ui-conventions/spec.md#review-dialog) with a compact
+  review, "Replace the backup encryption key?": "Key fingerprint: old →
+  new" ("Not known yet" before the first backup) and a sentence that
+  backups already made still need the old private key. A wrong code is the
+  code field's refusal, with the same challenge; so is a code checked after
+  the challenge's 15 minutes, which says the code expired and to choose
+  **Start over** and paste the public key again. Either is said in the
+  change's status line under the step, where the reader is, never in a
+  summary above the page heading. Once applied, the key in use
+  and the change, back at its paste step, are redrawn in place.
 - **Authority and audit.** Only Administrators with the Configure capability
   may use the page; neither starting a change nor confirming it checks the
   sign-in's age ([#1547](https://github.com/epiphany40223/parishkit/issues/1547)).
@@ -3589,6 +3604,33 @@ email, or is no longer listed, or if the page is out of date. The
 confirmation email has no schedules and stays a single entry, with Edit
 only.
 
+The editor of one page or email (a table's Edit, or a Family page's link)
+stays a full page with its visual editor, HTML source and plain-text panel.
+Its **Preview changes** reviews in the shared
+[review dialog](../ui-conventions/spec.md#review-dialog)
+([#750](https://github.com/epiphany40223/parishkit/issues/750)), a full
+review: a fictional sample of the current and proposed content (subject,
+the page or email as Families see it, and its plain-text version, with
+placeholders filled in with sample values and disallowed markup removed),
+and the schedules the new text switches at once, in sending order and named
+as Dates and mail schedules names them (Reminder 1, Reminder 2, ...). Apply
+switches every schedule that sends the email, since the old text is
+removed, but a schedule that already sent is listed apart under Already
+sent: Families who already got it are not sent it again. A schedule whose
+send failed for every Family stays with the others, since nobody got it.
+Apply records the change;
+once it is applied the dialog closes and the reader returns to Pages and
+emails, whose status line says what was applied and when ("Family welcome
+changed. Applied at 3:04 PM."), as New and Edit scheduled email return to
+their table: saving an email makes a new revision, so the editor's own
+address would no longer name the current text. Preview changes waits for a
+change ([prerequisite gates](../ui-conventions/spec.md#prerequisite-gates)).
+A refusal of the values (a placeholder, a hosted file, a required link) stays
+on the form, with an HTML source error also shown at the visual editor; a
+stale page, an expired or out-of-date preview, or removing an email a
+schedule now sends is refused in the dialog. Inside the Campaign setup
+stepper the editor saves directly instead (below).
+
 ### Create the campaign
 
 System setup ends without a campaign
@@ -4019,7 +4061,7 @@ notice, a folded closing note, a refused save) it stays available, as
 Preview changes does; the server still refuses an unchanged save at the
 form ("No content has changed."). The
 editor's own preview (the visual editor and the plain text drawn from it)
-stays; the Preview changes page with its fictional sample and the schedules
+stays; the Preview changes review with its fictional sample and the schedules
 the new text switches is not shown on a draft, whose schedules have sent
 nothing, and Preview and test email shows the sample. Send work in progress
 that would block a schedule change refuses the save with its reason, and the
@@ -6304,6 +6346,8 @@ time ([date format](../ui-conventions/spec.md#date-format)), with users who
 never signed in sorting last; it sorts by the time itself. The default order is Email. The table
 refreshes in place like every other Admin table.
 
+Each row's Email links that user's [Timeline](#user-timeline).
+
 Each row is one line. An email or Name too long for its column is cut short
 with an ellipsis; the full value stays the cell's text for screen readers and
 copying, the cell's `title` attribute shows it whole as a hover tooltip, and
@@ -6410,6 +6454,102 @@ open Admin sessions end on their next request, and that the address can be
 added again later as a new user. Confirming records one configuration change
 and follows it until it is applied, as
 [row actions](../ui-conventions/spec.md#row-actions-and-confirmation) describe.
+
+### User timeline
+
+**Timeline** (`/admin/users/<user>/timeline/`, URL name `user_timeline`;
+[#1866](https://github.com/epiphany40223/parishkit/issues/1866), the first
+half of [#1570](https://github.com/epiphany40223/parishkit/issues/1570)'s
+person timelines) answers "did this person sign in, what did they do, which
+role did they have when, and what did we email them?" for one user, so an
+Administrator helping a Staff member or Ministry leader does not have to
+search Sent mail and System logs by hand. It is the person counterpart of a
+Family's [Timeline](../reports/spec.md#timeline) and shares its table and
+filter rules; the Family part of a person's timeline (the ParishSoft Family
+they belong to, and that Family's lines) follows in
+[#1867](https://github.com/epiphany40223/parishkit/issues/1867).
+
+**Access and address.** Administrators only (`MANAGE_USERS`, rechecked after
+the answer is built, as every Users route does); Staff and Ministry leaders
+get the standard denial. `<user>` is the user's stable record ID, the one
+Edit user's address uses; the address is never in a URL. Each user's Email
+in the [Users table](#users-table) links the page, and Edit user links it
+beside the Sign-in activity controls. A user deleted since is still found
+through the latest configuration that held the record, and reads as no
+longer a user; an ID no configuration ever held is refused as not found,
+with no audit row. The heading is the user's Name (the address when the
+Name is blank), but the browser title is "Timeline" alone, so browser
+history does not keep the name. Its breadcrumb parent is Users.
+
+**Summary.** Fields shown only when they apply
+([conditional fields](../ui-conventions/spec.md#conditional-fields)):
+
+- **Role:** Administrator, Staff or Ministry leader, or "No longer a user since"
+  followed by the activation time of the configuration that removed
+  the user.
+- **Email:** the user's address, which this Administrator-only page may show.
+- **Ministry leader of:** the Ministries the person leads now through a
+  ParishSoft leader role (the shared leader scope), when there are any.
+- **Last signed in:** the newest successful sign-in of any Google account
+  with the address, or "Never".
+- **Last email:** the email to the address, not cancelled, whose line is
+  newest (its outcome's time, or when it was planned while still on its
+  way), with that time and its outcome in the shared outcome words, or
+  "None sent".
+
+**Timeline table.** The Family Timeline's
+[shared Admin table](../ui-conventions/spec.md#admin-tables): When, What
+happened and Details, newest first, with When reversing it in place. A
+person can have thousands of lines, so it is paged, 50 rows a page by
+default, with the shared row navigator. Its lines are:
+
+- **Sign-ins and sign-outs:** every Admin portal sign-in, confirmed sign-in,
+  sign-out, inactivity sign-out, session replaced or ended, and refused
+  sign-in of the person's Google accounts (System logs'
+  [sign-in activity](#sign-in-activity) types).
+- **Admin actions:** every other audit record whose actor is one of those
+  accounts, worded with its [System logs](#logs) sentence, plus
+  "Refused" or "Failed" when that is its outcome. Opening pages and lookups
+  (the types System logs leaves ungrouped because they only read) are left
+  out until #1570's slice 3 adds them as their own kind; an Administrator
+  signing out another person's session is an action.
+- **Role changes:** "Became a user", "Role changed" and "Removed as a user",
+  from the user's role in each activated configuration, at its activation
+  time. A Name change is not a line. Role changes follow the user's record,
+  but sign-ins, actions and emails follow the address (its Google accounts
+  and the emails meant for it), so a user deleted and added again (a new
+  record) also shows the address's earlier sign-ins, actions and emails.
+- **Emails:** every email whose intended recipients include the address, of
+  every kind (Administrator reports, notices, Ministry leader emails, and a
+  Family email that went to it), with its outcome and a Testing tag for a
+  Testing email; an email Sent mail lists links its
+  [Mail message page](#mail-message-page).
+
+**Filters.** The Family Timeline's filter bar, acting in place on the
+table: **Kind** (All, Sign-ins and sign-outs, Admin actions, Role changes,
+Emails) and **From** and **Through** days in the browser's time zone, with
+the same validation (a refused choice is 400). Paging and the When sort
+keep the filters. The summary is not filtered.
+
+**Reads and audit.** One read-only snapshot: the user's records in every
+configuration and the activations, the Google accounts of the address, their
+audit records through the audit's `(actor_id, created_at)` index (frozen
+migration 0152, which adds that index), the emails
+through the Administrator-only address read of
+[Sent mail](#sent-mail) (frozen migration 0116), and the leader scope. Each
+view sends `Cache-Control: no-store` and records one `user_timeline_viewed`
+audit event ("Someone opened a user's timeline") whose subject is the user's
+record ID, with the outcome and no address, Name, filter or shown value.
+The role history reads the user's rows of every configuration version by
+record ID with no index (a few thousand rows at parish scale). Unlike the
+other Users routes, the page reads the configuration records directly
+rather than through the applied configuration, as a Family's Timeline
+does: it only reads history, so it still answers during a restore review.
+A sign-in ends the browser's earlier session in the same transaction, so
+that end ("Earlier session ended", replaced by a new sign-in) is listed as
+happening just before the sign-in in both sort directions.
+`pk-admin users timeline` prints the same lines
+([Admin automation](../admin-automation/spec.md#users-and-follow-up)).
 
 ### User change checks and alerts
 
@@ -10295,7 +10435,7 @@ every `'<prefix>_'||` an installed audit-writing function builds to be a
   line's parish profile changes (`admin_cmd_parish_confirm`) and Campaign
   image removals (`admin_cmd_artwork_remove`), parish logo uploads and
   their Apply (`admin_cmd_branding_preview`, `admin_cmd_branding_confirm`),
-  email template deletions
+  email template deletions and page and email text changes
   (`admin_cmd_content_confirm`), No-reminders WorkGroup changes
   (`admin_cmd_workgroup_confirm`), Campaign settings changes
   (`admin_cmd_campaign_confirm`), the first campaign's creation

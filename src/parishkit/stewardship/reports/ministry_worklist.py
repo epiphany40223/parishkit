@@ -100,6 +100,17 @@ COLUMNS = (
 )
 FORMER = "Former portal user"
 REPLACED = "Replaced by a later response"
+# A decided request a Family undid on a reviewed form, kept in force (#1705).
+UNTICKED = "Family unticked"
+CONTINUED = "Family chose to continue"
+# Add's dialog: what a Family's reviewed form (#1705) shows of an added
+# request, which the Family cannot withdraw.
+ADD_BODY = (
+    "Add a request the Family did not ask for. It starts Accepted, shown as "
+    "Added by the parish. The Family will see it chosen the next time it "
+    "signs in: a join as selected, a leave as Stop participating. If the "
+    "Family undoes it, this row will say so."
+)
 # A current request: the newest revision, neither withdrawn nor replaced
 # (the follow-up selection's own "current" history, schema 0131).
 NOT_CURRENT = frozenset({"cancelled", "superseded"})
@@ -413,12 +424,18 @@ def _last_decisions(rows):
 
 
 def _asked_again(rows):
-    """When the Family last asked again for each decided request shown.
+    """When the Family last asked again for, or undid, each decided request shown.
 
-    A Family's later response that repeats a decided request's action for
-    the same Member and Ministry creates no request (#1684); it is found
-    here, read for the rows shown: the latest such response after the
-    decision in force, by request id.
+    Returns ``{request id: (asked, undone)}``, each the time of the latest
+    such live response after the decision in force, or None. Before the
+    reviewed Family form, a response that repeats a decided request's
+    action for the same Member and Ministry creates no request (#1684): it
+    "asked again". A reviewed form (#1705) shows a decided request chosen
+    instead, so a response drawn as one never asks again; one whose form
+    showed the request chosen (on the Ministry it carries forward) and that
+    no longer chooses it "undid" it, which keeps the request in force only
+    when the parish added it or Staff entered it in ParishSoft (Family
+    unticked, Family chose to continue). One statement, for the rows shown.
     """
     ids = [
         row["id"] for row in rows if row["state"] in ("resolved", "closed_no_response")
@@ -427,19 +444,35 @@ def _asked_again(rows):
         return {}
     with connection.cursor() as cursor:
         cursor.execute(
-            "SELECT r.id::text,max(later.submitted_at) "
+            "SELECT r.id::text,"
+            "max(later.submitted_at) FILTER (WHERE NOT later.reviewed_view "
+            "AND later.answers#>ARRAY['ministries',g.name,r.entity_key,r.action] "
+            "@> to_jsonb(r.ministry_duid)),"
+            "max(later.submitted_at) FILTER (WHERE later.reviewed_view AND EXISTS ("
+            "SELECT 1 FROM jsonb_array_elements(later.shown_items) e "
+            "WHERE e->>'stream'='ministry' AND e->>'item'=r.id::text "
+            "AND e->>'shown' IN ('family','reviewer') "
+            "AND NOT coalesce(later.answers#>ARRAY['ministries',g.name,r.entity_key,"
+            "r.action] @> to_jsonb(CASE WHEN e->>'decision' IS NOT NULL THEN "
+            "(SELECT v.reviewed_ministry_duid FROM stewardship_ministry_revision v "
+            "WHERE v.id::text=e->>'decision' AND v.request_id=r.id) "
+            "ELSE r.ministry_duid END),false))) "
             "FROM stewardship_ministry_request r "
+            "CROSS JOIN LATERAL (SELECT CASE WHEN r.entity_kind='member' "
+            "THEN 'members' ELSE 'proposed_members' END AS name) g "
             "JOIN stewardship_submission s ON s.id=r.submission_id "
             "JOIN stewardship_submission later ON later.family_id=s.family_id "
             "AND later.campaign_id=s.campaign_id AND later.mode='live' "
             "AND later.family_version>s.family_version "
             "WHERE r.id=ANY(%s::uuid[]) AND later.submitted_at>r.resolved_at "
-            "AND later.answers#>ARRAY['ministries',CASE WHEN r.entity_kind='member' "
-            "THEN 'members' ELSE 'proposed_members' END,r.entity_key,r.action] "
-            "@> to_jsonb(r.ministry_duid) GROUP BY r.id",
+            "GROUP BY r.id",
             [ids],
         )
-        return dict(cursor.fetchall())
+        return {
+            key: (asked, undone)
+            for key, asked, undone in cursor.fetchall()
+            if asked or undone
+        }
 
 
 def _time(value):
@@ -559,7 +592,8 @@ def _decision_line(row, leader, asked, replaced_by, reader_leads):
     """The line under a row's stage, as safe HTML (or "").
 
     An ignored request names its stored outcome ("Stayed in the
-    Ministry"); one the Family asked for again says when; an ignored one the
+    Ministry"); one the Family asked for again, or undid on a reviewed form
+    ("Family unticked", "Family chose to continue"), says when; an ignored one the
     parish added a request in place of names it; an edited request read by
     a leader of the Family's Ministry only says where it went. Accepted
     stays under To enter by hand and Entered by hand, as the component
@@ -586,8 +620,15 @@ def _decision_line(row, leader, asked, replaced_by, reader_leads):
         parts.append(format_html("{}", NOW_MATCHES))
     if replaced_by:
         parts.append(format_html("Added in its place: {}", replaced_by))
-    if asked:
-        parts.append(format_html("Family asked again {}", _time(asked)))
+    again, undone = asked or (None, None)
+    if again:
+        parts.append(format_html("Family asked again {}", _time(again)))
+    if undone:
+        # A request the parish added, or Staff entered in ParishSoft, that a
+        # Family's reviewed form showed chosen and the Family undid (#1705):
+        # it keeps its decision for Staff to decide.
+        undid = UNTICKED if row["action"] == "join" else CONTINUED
+        parts.append(format_html("{} {}", undid, _time(undone)))
     if not leader and row.get("latest") is False:
         parts.append(format_html("{}", REPLACED))
     if not leader and placement.stage is Stage.ENTERED_BY_HAND:
@@ -670,6 +711,9 @@ def decorate(
                 else "None recorded",
                 "baseline": "",
                 "family_answer": "" if row.get("parish_added") else _request_words(row),
+                # A Family's reviewed form (#1705) shows an Ignored request
+                # as the roster has it, which its Ignore dialog says.
+                "shown_baseline": True,
                 "reviewer_value": reviewer_value(row),
                 # Shown only beside Not seen in ParishSoft: the roster still
                 # shows the Member as before the entry.
@@ -801,6 +845,7 @@ def worklist_context(
         export_template="stewardship/ministry-worklist-export.html",
         # A roster tick records no note, so its dialog shows none.
         silent=SILENT,
+        add_body=ADD_BODY,
     )
     worklist.stage_choices = stage_choices(counts, leader)
     for row in worklist.rows:

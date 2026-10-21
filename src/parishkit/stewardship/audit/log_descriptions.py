@@ -177,7 +177,8 @@ DESCRIPTIONS = {
     ),
     "admin_cmd_content_confirm": _(
         "An automation session confirmed a built delete of unused campaign "
-        "emails, which became a configuration request."
+        "emails, or a reviewed change to a campaign page or email, which "
+        "became a configuration request."
     ),
     "admin_cmd_integration_confirm": _(
         "An automation session confirmed a reviewed change to an "
@@ -1030,6 +1031,7 @@ DESCRIPTIONS = {
     "family_timeline_viewed": _("Someone opened a Family's timeline."),
     "family_form_opened": _("Opened the Family form for a Family through Open form."),
     "portal_users_viewed": _("An Administrator opened the Users page."),
+    "user_timeline_viewed": _("Someone opened a user's timeline."),
     "user_change_requested": _(
         "An Administrator asked to add, change or delete Admin portal users."
     ),
@@ -1089,6 +1091,7 @@ DESCRIPTIONS = {
     ),
     "runtime_transition": _("The system changed mode (for example, Testing to live)."),
     "weekly_manual_requested": _("A weekly report was requested by hand."),
+    "report_email_manual_requested": _("A report email was sent by hand."),
     "rehearsal_invalidated": _("A test run no longer counts after a change."),
     "rehearsal_gate_released": _("A required test run was completed."),
 }
@@ -1139,6 +1142,7 @@ DIRECT_AUDIT_TYPES = frozenset(
         "recipient_refusal_cleared",
         "rehearsal_gate_released",
         "rehearsal_invalidated",
+        "report_email_manual_requested",
         "restore_hold_resolved",
         "restore_review_released",
         "restore_review_started",

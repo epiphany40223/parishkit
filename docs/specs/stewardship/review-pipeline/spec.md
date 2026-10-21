@@ -631,7 +631,7 @@ when there is one, else the Family's.
 | --- | --- | --- | --- |
 | Census field | the carried-forward value in the field, marked changed | the current ParishSoft value, unmarked; for a field whose baseline the form cannot show (the home and mailing addresses, the email opt-out), the Family's own latest answer, unmarked | the current ParishSoft value, unmarked |
 | Member moved, deceased, death date | the Member in that state, as the form shows it today, Entered by hand and Updated included | the Member as ParishSoft has them | the Member as ParishSoft has them |
-| Proposed Member | the Member's page with the carried-forward names and details | not shown; its absence from the submit is rule 1 (it stays Ignored), and a Member added again has a new key, so it is a new item | a current Member, as ParishSoft has them |
+| Proposed Member | the Member's page with the carried-forward names and details, until Entered by hand (ParishSoft then lists the Member itself, so the New Member is not shown again) | not shown; its absence from the submit is rule 1 (it stays Ignored), and a Member added again has a new key, so it is a new item | a current Member, as ParishSoft has them |
 | Ministry join | the carried-forward Ministry selected and listed under "Joining:" (a join added by the parish too, [below](#what-the-reviewed-form-shows)) | not selected | a current Ministry, "Continue in this ministry" |
 | Ministry leave | "Stop participating in this ministry" selected, in the attention colour (a leave added by the parish too, below) | "Continue in this ministry" | not listed (no longer a current Ministry) |
 | Pledge | the carried-forward annual pledge and frequency, with the Family's own share methods and Cannot contribute answer | the Family's own latest answer | the carried-forward answer (ParishSoft holds its amount) |
@@ -684,8 +684,11 @@ stream, as the table above says. Notes on the table:
 - **Cannot participate and Cannot contribute.** Unchecking either restores
   the shown values of the answers it hides, not the Family's older ones.
 - **Not yet in this design:** census Add
-  ([#1710](https://github.com/epiphany40223/parishkit/issues/1710)); once it
-  lands, an Added census change shows like any decided census field.
+  ([#1710](https://github.com/epiphany40223/parishkit/issues/1710)). It has
+  landed, but a change the parish added is its own record, with no Family
+  answer and no version a Family's resubmission could keep or replace, so
+  the reviewed form does not show it yet and its Add dialog says nothing of
+  the Family. Showing it like any decided census field is follow-up work.
 
 #### Shown items
 
@@ -797,14 +800,22 @@ each item under the reviewed rule:
   ignored, ParishSoft's value where the form can show it, otherwise the
   Family's own answer. Edit a Family's answer only to make it consistent
   (for example "St." for "Street") or to make a correction the Family asked
-  for." The Edit, Add and Ignore dialogs add one sentence: "The Family will see this
-  value the next time it signs in." (Edit, Add; for a Ministry join Add:
-  "The Family will see this Ministry selected the next time it signs in. If
-  it unticks it, this row will say so."; for a Ministry leave Add: "The
-  Family will see 'Stop participating' chosen for this Ministry the next
-  time it signs in. If it chooses to continue, this row will say so.") or "The Family will see ParishSoft's
-  value the next time it signs in." (Ignore, on Ministry requests and on
-  census fields whose ParishSoft value the form shows).
+  for." The Ministry page help also says that a Family undoing a request
+  the parish added, or one already Entered by hand, leaves it decided with
+  "Family unticked" or "Family chose to continue" on its row. The Edit,
+  Add and Ignore dialogs add one sentence: Edit (every stream) "The Family
+  will see this value the next time it signs in."; Ministry Add "The Family
+  will see it chosen the next time it signs in: a join as selected, a leave
+  as Stop participating. If the Family undoes it, this row will say so."
+  (one dialog takes both a join and a leave, so one sentence covers both);
+  and Ignore, on Ministry requests and on a Member's census fields and
+  requests, whose ParishSoft value the form shows, "The Family will see
+  ParishSoft's value the next time it signs in." Census Add says nothing
+  of the Family: the reviewed form does not show a change the parish added
+  to the census yet ([What the reviewed form shows](#what-the-reviewed-form-shows)),
+  so the sentence would be untrue. Ignore on a Family address, the email
+  opt-out or a New Member says nothing either, as the form shows the
+  Family's own answer, or leaves the New Member out.
 - Open form shows Staff the same reviewed form, with the same rules, and
   records the Staff member as the actor, as today.
 
@@ -836,7 +847,10 @@ form's existing keyboard, focus and accessible-name checks run on a reviewed for
 
 #### Reviewed form delivery
 
-Small pull requests after every Staff and leader slice. Slices 1 to 5
+Small pull requests after every Staff and leader slice. Slice 1 shipped
+alone (#1779); slices 2 to 6 ship together in one pull request, since
+slices 2 to 5 draw nothing on their own, with each slice's tests as listed.
+Slices 1 to 5
 build the reviewed form without drawing it for a Family: each stream's
 reader and reviewed derivation is called only by tests until slice 6
 connects the live form and the submit to them; slice 2's recording of
@@ -910,6 +924,65 @@ problem found after that deploy is fixed in a new release.
    release (a stale-form review) still showing the Family's own answers and
    judged by the earlier rule; a Testing form showing its
    own Testing answers; and that no credential is touched.
+
+#### Reviewed form implementation
+
+How the design above is built (`responses/reviewed.py` and each stream's
+derivation), where the design leaves a choice:
+
+- **Entries.** A census entry is `{stream: "census", entity, key, field,
+  item, version, decision, shown}`: the change (`item`, a
+  `ProposedChange`) at its version, the `ProposalReview` whose Edit set a
+  reviewer's value (`decision`, found on the change or, for a value carried
+  to a same-answer successor before the reviewed form, on the change it
+  replaced), and `shown` (`family`, `reviewer` or `baseline`). A Ministry
+  entry names the request, the Family's own Ministry and action, and, for an
+  Edit, the `MinistryWorkflowRevision` that carried another Ministry
+  forward. The pledge entry names the Family's current live response and,
+  for an edited pledge, the `PledgeReview` in force. Entries are sorted by
+  stream and identity. A form drawn as the reviewed form records an empty
+  array when nothing is in force.
+- **Stages.** Each entry's stage is read as the stream's worklist reads it:
+  a census change by `census_placement` with its latest refresh check, a
+  Ministry request by its workflow, roster tick and refresh check, the
+  pledge by the pledge stage selection. `pipeline.shown_value` maps the
+  stage to the shown value; a reviewer's value with no review row to read
+  it back from shows the Family's answer.
+- **Read back.** The submit compares each answer with the entry's value by
+  the stream's canonical comparison (`reviewed.left_as_shown`); an Ignored
+  census entry shown as the baseline reads the baseline from the form's own
+  snapshot. Census and Ministry rule 1 make no row; the next form finds the
+  change kept on its earlier response through the response's shown items
+  (`effective.proposal_index`; a Ministry request is already the newest for
+  its identity).
+- **Refresh while open.** The fresh form keeps the earlier entry of each
+  item whose relevant inputs did not change (a census field's ParishSoft
+  value, a Member's roster and the offered Ministries, the pledge's
+  financial inputs), and only while the Family's response it answers is
+  still the latest; otherwise it takes fresh entries. A form drawn before
+  the release keeps the earlier rule on a refresh only while it answers the
+  same response; after another session's response it is drawn as the
+  reviewed form.
+- **Ministry withdrawal and replacement.** A decided request the Family
+  replaced or withdrew keeps no outcome or Edit on its row, as the table
+  requires (its revisions keep the decision's history). One Staff ticked
+  Entered in ParishSoft is never replaced or withdrawn by the Family: a
+  changed answer adds a new request beside it, and the refresh judges the
+  entered one. An undo of a
+  request the parish added or Staff ticked Entered in ParishSoft is kept and
+  shown on the row ("Family unticked", "Family chose to continue"). An
+  Ignored New Member's Ministry requests are judged as before the reviewed
+  form, since the New Member itself is not shown.
+- **Pledge.** The pledge stage selection treats a response that sent back
+  an edited pledge as shown as unchanged. Its row's Family's answer then
+  shows what the response sent (the reviewer's amount), since the stream's
+  item is the Family's current response; the Reviewer's value stays beside
+  it.
+- **Database.** Frozen files 0153 (census: the derived guard and the
+  submission completeness check), 0154 (Ministry: the request guard and the
+  Ministry completeness check) and 0155 (the pledge item selection), each
+  with a self-verifying block. A response not drawn as the reviewed form
+  takes exactly the earlier paths.
 
 #### Reviewed form decisions
 

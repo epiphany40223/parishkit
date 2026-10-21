@@ -52,6 +52,16 @@ def draw(document, frame, options):
     return Section(html, "", (InlineImage(stream.getvalue(), CHART_ID),))
 
 
+def capture(document, options):
+    """The charted dates and the alt text's figures; the image is kept beside them."""
+    chart = document.participation
+    return {
+        "first_date": chart.first_date.isoformat(),
+        "last_date": chart.last_date.isoformat(),
+        "alt": " ".join(chart_alt(document).split()),
+    }
+
+
 BLOCK = Block(
     key="participation_charts",
     label="Participation charts",
@@ -62,5 +72,6 @@ BLOCK = Block(
     kind=STATUS,
     fact=True,
     draw=draw,
+    capture=capture,
     empty="No campaign day has ended yet.",
 )

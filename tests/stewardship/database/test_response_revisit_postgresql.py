@@ -185,6 +185,9 @@ def revisit(harness):
     )
 
 
+# The rule before the reviewed Family form (#1705): forms drawn before
+# its release, as one open across the deploy is.
+@pytest.mark.usefixtures("earlier_rule")
 def test_repeat_response_keeps_pending_value_and_first_participation(
     live_response_service,
 ):

@@ -409,6 +409,9 @@ def test_migration_self_check_refuses_a_database_without_the_guards():
             raise Rollback
 
 
+# The rule before the reviewed Family form (#1705): forms drawn before
+# its release, as one open across the deploy is.
+@pytest.mark.usefixtures("earlier_rule")
 def test_a_resubmitted_family_keeps_its_resolved_change_on_the_list(
     response_service, google
 ):
