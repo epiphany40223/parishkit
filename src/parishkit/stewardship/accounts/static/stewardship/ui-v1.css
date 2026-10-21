@@ -1864,25 +1864,81 @@ h1:has(+ details.about-page) { display: inline-block; margin-inline-end: 1.25rem
    Warning looks with their icon (UX conventions, "Status indicators"). */
 .stage-chip { display: inline-flex; align-items: center; gap: .3rem; padding: .1rem .55rem; border: 1px solid var(--border); border-radius: 999px; background: var(--paper-soft); color: var(--ink); font-size: .8125rem; font-weight: 600; white-space: nowrap; }
 .stage-chip:is(.status-error, .status-warning) { border-color: var(--status-line); background: var(--status-bg); color: var(--status-ink); }
-/* A worklist's filters are always open (no Filters disclosure), in rows
-   that wrap: each field cell is 13rem and does not grow, so the room left
-   at a row's end is kept for the buttons. Apply filters and Clear filters
-   (.filter-actions) are placed by the shared three-step rule like every
-   filter form's (#table-filters rules above, ui-conventions "Clear
-   filters"). A wrapping row, not the Filters panel's equal grid columns,
-   because a grid cell can be narrower than the pair with Linux's or
-   WebKit's wider fonts. On a phone each field takes the whole row. The
-   reserved hint takes its own row. */
-.worklist-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .5rem 1rem; margin-block: .5rem; }
+/* A worklist's filters are always open (no Filters disclosure), on one
+   compact row that wraps only when the window is too narrow for it
+   (#1653), so a laptop window (1366 px, Admin menu beside) holds a
+   stream's fields and Apply filters and Clear filters on one row and its
+   first rows show on the first screen. A select's cell starts at 8rem and
+   shares the row's spare room up to 11rem, so a choice such as "All my
+   Ministries" reads whole when there is room; a search's cell is a fixed
+   10.5rem (24rem when Stage is the only other field, below), its long
+   label wrapping above it rather than being cut. Only the selects grow,
+   and their labels are short, so the fields' row keeps its height with
+   Apply and Clear beside it or not, which the shared placement's
+   measurement needs. The form takes the content's whole width (not the
+   60rem of other forms), the cells' gap is narrower, and a select's inner
+   padding is slimmer. The fields line up along the row's foot. Apply
+   filters and Clear filters (.filter-actions) are placed by the shared
+   three-step rule like every filter form's (#table-filters rules above,
+   ui-conventions "Clear filters"): beside the last field, or Clear under
+   Apply when a two-line label already makes the row that tall (Ministry
+   requests' five fields). A wrapping row, not the Filters panel's equal
+   grid columns, because a grid cell can be narrower than the pair with
+   Linux's or WebKit's wider fonts. On a phone each field takes the whole
+   row. The reserved hint takes its own row. */
+.worklist-filters { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .5rem; max-width: none; margin-block: .5rem; }
 .worklist-filters label { margin: 0 0 .25rem; font-size: .925rem; }
-.worklist-filters > div:not(.filter-actions) { flex: 0 1 13rem; margin: 0; }
-.worklist-filters > div > :is(input, select) { max-width: none; }
+.worklist-filters > div:not(.filter-actions) { flex: 1 1 8rem; min-width: 0; max-width: 11rem; margin: 0; }
+.worklist-filters > div:has(> input[name=search]) { flex: 0 0 10.5rem; max-width: none; }
+/* With Stage and a search alone (Additional information, Pledges), the row
+   has room to spare, so the search takes 24rem and its long label one or
+   two lines rather than three. The form's divs are then Stage, the search
+   and the buttons' pair: no fourth. */
+.worklist-filters:not(:has(> div:nth-of-type(4))) > div:has(> input[name=search]) { flex-basis: 24rem; }
+.worklist-filters select:not([multiple]):not([size]) { padding-inline: .6rem 2rem; background-position: right .6rem center; }
+.worklist-filters > div > :is(input, select) { width: 100%; max-width: none; }
 .worklist-filters > :is(p, [data-complete-hint]) { flex-basis: 100%; margin: 0; }
 /* A worklist filter whose choices are long phrases (Limitations' Show,
-   #1685) takes two field cells and their gap, so its chosen text reads
-   whole; on a phone it takes the whole row like every field (below). */
-.worklist-filters > div.wide { flex-basis: 27rem; }
-@media (max-width: 40rem) { .worklist-filters > div:not(.filter-actions) { flex-basis: 100%; } }
+   #1685) starts at two cells and their gap, and grows further, so its
+   chosen text reads whole; on a phone it takes the whole row like every
+   field (below). */
+.worklist-filters > div.wide { flex-basis: 16.5rem; max-width: 24rem; }
+/* The search's own widths name the form, so their phone rule does too. */
+@media (max-width: 40rem) { .worklist-filters > div:not(.filter-actions), .worklist-filters > div:has(> input[name=search]), .worklist-filters:not(:has(> div:nth-of-type(4))) > div:has(> input[name=search]) { flex-basis: 100%; max-width: none; } }
+/* Ministry requests' By Ministry counts (#1133, #1653): a closed
+   disclosure whose control sits on the heading's line after About this
+   page, drawn like it (a quiet summary with a fixed chevron), so the
+   counts cost the page no line until the reader opens them and the
+   worklist starts on a laptop's first screen; each browser remembers it
+   open (remember-open-v1.js). Its summary holds the section's h2, drawn
+   at the summary's size. */
+details.by-ministry, details.by-ministry[open] { margin: 0; padding: 0; border: 0; background: none; }
+details.by-ministry > summary { display: inline-flex; align-items: center; gap: .5rem; margin-inline-start: 1.25rem; list-style: none; }
+details.by-ministry > summary::-webkit-details-marker { display: none; }
+details.by-ministry > summary::before { content: ""; flex: none; width: .5rem; height: .5rem; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(-45deg); }
+details.by-ministry[open] > summary::before { transform: rotate(45deg); }
+details.by-ministry > summary > h2 { display: inline; margin: 0; font: inherit; color: inherit; }
+details.by-ministry > section { display: block; margin-block: 0 .5rem; }
+/* A heading with two disclosures (Ministry requests: About this page and
+   By Ministry) is a grid, as the System health tiles are: the h1 and both
+   controls share the first row, and each disclosure's content takes a
+   full-width row of its own below it, About's first. The details elements
+   draw no box (display: contents), so their summaries and contents are
+   the grid's cells. Opening either one, while the page is read or when
+   ui-v1.js reopens a remembered About after the page shows, then moves
+   only what follows the controls' row, never the other control (UX
+   conventions, "No layout shift" and "Disclosures"). A closed content box
+   is empty and has no height. On a phone the h1 takes the first row and
+   the two controls the second. */
+.heading-row { display: grid; grid-template-columns: auto auto minmax(0, 1fr); grid-template-areas: "heading about other" "about-body about-body about-body" "other-body other-body other-body"; align-items: baseline; }
+.heading-row > h1 { grid-area: heading; }
+.heading-row > details, .heading-row > details[open] { display: contents; }
+.heading-row > details.about-page > summary { grid-area: about; }
+.heading-row > details.about-page::details-content { grid-area: about-body; }
+.heading-row > details:not(.about-page) > summary { grid-area: other; justify-self: start; }
+.heading-row > details:not(.about-page)::details-content { grid-area: other-body; }
+.heading-row > details::details-content { align-self: start; }
+@media (max-width: 40rem) { .heading-row { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: "heading heading" "about other" "about-body about-body" "other-body other-body"; } }
 .button-danger { background: var(--error-border); border-color: var(--error-border); color: var(--paper); }
 .button-danger:not(:disabled):hover { background: var(--error-ink); border-color: var(--error-ink); }
 .confirm-dialog { margin: 12vh auto auto; width: min(34rem, calc(100vw - 2rem)); padding: 1.25rem 1.5rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--paper); color: var(--ink); box-shadow: var(--shadow); }

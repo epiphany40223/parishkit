@@ -2313,6 +2313,7 @@ def component_origin():
         ("admin-gate-v1.js", "application/javascript"),
         ("admin-menu-v1.js", "application/javascript"),
         ("admin-menu-state-v1.js", "application/javascript"),
+        ("remember-open-v1.js", "application/javascript"),
         ("find-family-v1.js", "application/javascript"),
         ("date-format-v1.js", "application/javascript"),
         ("family-v1.js", "application/javascript"),
