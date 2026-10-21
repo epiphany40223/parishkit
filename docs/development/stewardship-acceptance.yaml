@@ -307,6 +307,7 @@ sections:
     "Host virtual machine": [OPS-10]
     "The local deployment profile": [OPS-10]
     "Existing profile branches": [OPS-10]
+    "Remaining LOCAL branches": [OPS-10]
     "Origin, proxy and image": [OPS-10]
     "Topology and web differences": [OPS-10]
     "Production invariants": [OPS-10]

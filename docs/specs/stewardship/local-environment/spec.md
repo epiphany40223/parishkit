@@ -45,9 +45,10 @@ code as possible, with as little LOCAL branching as possible
 ([#1399](https://github.com/epiphany40223/parishkit/issues/1399)). Differences
 come from configuration and installed credentials, with Testing mode and the
 configured mail redirect as the guard against reaching a real parishioner,
-not from code that refuses or disables an integration in LOCAL. A
-remaining LOCAL branch needs a reason stated in this specification; #1399 records the inventory of branches still being removed
-and the order in which they go.
+not from code that refuses or disables an integration in LOCAL. Every
+remaining LOCAL branch is listed, with its reason, in
+[remaining LOCAL branches](#remaining-local-branches), and a test fails when
+the code and that table disagree.
 
 ## Host virtual machine
 
@@ -137,6 +138,61 @@ Line numbers are as of `main` on 2026-10-03 and are for orientation only.
 A fast test MUST assert, for each row, that LOCAL never receives the
 development or test result, and that every other profile's result is
 unchanged.
+
+### Remaining LOCAL branches
+
+[#1399](https://github.com/epiphany40223/parishkit/issues/1399) has removed
+the LOCAL branches that only refused or disabled an integration; pk-local now runs
+Production's Slack, smoke, egress, ParishSoft, Google sign-in, Workspace mail
+and Drive code. The branches that remain are listed here, each with the reason
+it stays. A branch is any comparison with, or use of, the LOCAL profile in the
+package code: `DeploymentProfile.LOCAL`, the helpers' `LOCAL_PROFILE`, or the
+string `"local"` compared with, tested for membership in a set, tuple or list,
+or matched by a `case`. Shared `behind_proxy` tests are not branches,
+because Production takes the same path. The operator scripts under `tools/`
+are laptop tooling and are not listed.
+
+The first column names each module (under `src/parishkit/`) and the top-level
+functions, classes or module-level names that hold its branches. A fast test
+(`tests/stewardship/test_local_branch_inventory.py`) MUST fail when the code
+holds a branch in a function this table does not name, or the table names one
+that holds none, so a new LOCAL branch needs a reason here before it merges.
+
+Every remaining branch falls in one of three kinds:
+
+- **laptop topology:** what a laptop needs that Production cannot have
+  (the localhost origin, Caddy's local CA, the fake clock, the extra
+  services);
+- **safety rule:** a refusal in the safe direction, which keeps a LOCAL-only
+  value out of Production or keeps LOCAL from writing to ParishSoft or
+  mailing anyone but the redirect address;
+- **laptop tool:** a command or page that exists for the developer only and
+  refuses any other profile, which protects a real deployment.
+
+Rendering Mailpit or the fake ParishSoft, the banner, or the test sign-in from
+a deployment setting instead of the profile was considered and rejected: each
+would make a laptop-only behaviour something a Production configuration could
+switch on, and for the test sign-in that would be an authentication bypass.
+The profile, which Production can never hold, stays the switch.
+
+| Location | Branch | Kind and reason |
+| --- | --- | --- |
+| `stewardship/deployment.py`: `PROXIED_PROFILES`, `_origin`, `load_deployment` | One proxy hop; exactly the [localhost origin](#origin-proxy-and-image), and it is the default | Laptop topology: the browser reaches Caddy on `localhost` |
+| `stewardship/web/security.py`: `browser_settings` | The invalid-origin message names the proxy, not Production | Laptop topology: wording only |
+| `stewardship/origin_check.py`: `check_public_origin`; `stewardship/origin_check_worker.py`: `resolve` | Accepts exactly the localhost origin without a DNS lookup | Laptop topology: `localhost` has no public name to resolve |
+| `stewardship/runtime_topology.py`: `_image`, `render_runtime`, `render_faketime_override`, `_project_name`, `_networks`, `_mailpit`, `_fake_parishsoft`, `_caddy` | The local image tags, the `mailpit` and `fake-parishsoft` services, the fake-clock override, the `parishkit-local` project, the no-masquerade `ingress` network, loopback-only Caddy | Laptop topology ([topology](#topology-and-web-differences)); Mailpit and the fake refuse any other profile |
+| `stewardship/runtime_ingress.py`: `render_local_caddy`, `render_ingress` | The local Caddyfile with `tls internal` on `localhost` | Laptop topology: no public name, so no ACME |
+| `stewardship/runtime_provisioning.py`: `provisioning_plan` | The fake-clock override document and the Mailpit store directory | Laptop topology |
+| `stewardship/service_boundaries.py`: `_check_extra`; `stewardship/backup_boundaries.py`: `validate_backup_mounts`; `stewardship/offline_boundaries.py`: `validate_offline_mounts` | Admit the read-only [fake-clock](#fake-clock) mount | Laptop topology: the fake clock exists only here |
+| `stewardship/deployment.py`: `load_deployment`, `recorded_mail_redirect` | `local_smtp_latency_ms` and `mail_redirect` are refused outside LOCAL; `parishsoft_publication` is refused in LOCAL unless it reads the fake | Safety rule: a rehearsal delay or a redirect would withhold real mail; LOCAL never writes to the real ParishSoft |
+| `stewardship/mail_catcher.py`: `admit_real_workspace`, `workspace_transport`, `request_redirect`, `envelope`; `stewardship/provider_checks.py`: `check_candidate`; `stewardship/accounts/integration_views.py`: `_drive_in_local` | The mail catcher only in LOCAL; a real Workspace key, and Drive, in LOCAL only beside the [mail redirect](#safety-guarantees) on the normal clock; the redirect only in LOCAL | Safety rule: the redirect is what keeps real-data mail to one address |
+| `stewardship/family_delivery_process.py`: `local_smtp_latency` | The modeled SMTP latency waits only before a mail-catcher submission | Safety rule: a real deployment never waits on purpose |
+| `parishsoft_http_worker.py`: `default_base_url`, `admitted_base_url`, `contact_put_admitted` | The fake is LOCAL's default and admitted only in a local request; a local request may write a Member contact only to the fake, through the one `contact_put_admitted` rule that the deployment loader, the publication session and every helper request apply | Safety rule: [ParishSoft](#safety-guarantees) is read only from LOCAL |
+| `stewardship/smoke.py`: `check_parishsoft_contact` | The Member contact check is refused in LOCAL | Safety rule: the check writes to ParishSoft |
+| `stewardship/runtime_web.py`: `parse_google_client` | The sentinel OAuth client is refused outside LOCAL | Safety rule: the sentinel is not a real client |
+| `stewardship/runtime_web.py`: `url_configuration`; `stewardship/accounts/local_sign_in.py`: `sign_in`, `admit_local_configuration` | The [test sign-in](#local-test-sign-in) route and command exist only in LOCAL | Laptop tool: Production's URL module never imports it |
+| `stewardship/accounts/branding_context.py`: `local_environment`; `stewardship/web/error_pages.py`: `_is_local` | The LOCAL banner on every Admin and Family page; the Admin sign-in page's test sign-in instructions (with `google_sign_in` deciding whether Google is also offered); the sign-in wording on the Users and setup-step pages | Laptop tool: says which environment, and which ParishSoft, the developer is looking at, and how to sign in there |
+| `stewardship/local/fake_parishsoft.py`: `execute_fake_parishsoft`; `stewardship/local/seeder.py`: `admit_seeder_mounts`, `configure_web_process`, `execute_local_seed`; `stewardship/local/spike.py`: `execute_spike` | The fake ParishSoft, the seeder and the spike check refuse any other profile | Laptop tool: they ship in the one image but are inert in Production |
 
 ### Origin, proxy and image
 
