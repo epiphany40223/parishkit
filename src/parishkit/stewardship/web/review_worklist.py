@@ -415,6 +415,56 @@ def decision_label(placement):
     return " ".join(parts)
 
 
+@dataclass(frozen=True, slots=True)
+class Remark:
+    """How a row words making its Entered by hand mark again (``remark``).
+
+    ``label`` names the icon ("Correct … of {name}"), ``title_one`` the
+    dialog, ``done`` what it announces and ``body`` what the dialog says.
+    """
+
+    icon: str
+    label: str
+    title_one: str
+    done: str
+    body: str
+
+
+def remark_icon(words, row, prefix, *, name):
+    """The icon that makes a row's Entered by hand mark again, in ``words``
+    (a ``Remark``).
+
+    It opens the row's own Entered by hand dialog (``entered_template``) and
+    posts Entered by hand, so the stream's service tells the mark made again
+    from a first one. It records the same state again, so it is no toggle;
+    the mark in force stays drawn selected beside it, and focus returns to
+    that mark once the row is redrawn (the first ``data-row-action`` match).
+    """
+    return {
+        "action": Action.ENTERED_BY_HAND.value,
+        "icon": words.icon,
+        "label": words.label.format(name=name),
+        "title": words.label.format(name=name),
+        "selected": False,
+        "css": "icon-button",
+        "focus": Action.ENTERED_BY_HAND.value,
+        "pressed": None,
+        "post": urlencode(
+            {
+                "decide": Action.ENTERED_BY_HAND.value,
+                "version": row["version"],
+                "request_key": uuid4(),
+            }
+        ),
+        "dialog": f"{prefix}-entered-dialog-{row['id']}",
+        "title_one": words.title_one,
+        "done": "{name} " + words.done,
+        "choice": "",
+        "body": words.body,
+        "remark": True,
+    }
+
+
 def _decorate(stream, row, roles, prefix, columns, silent=frozenset()):
     """Give one row what its cells, box and icons need.
 
@@ -426,6 +476,9 @@ def _decorate(stream, row, roles, prefix, columns, silent=frozenset()):
     data-confirm-choice). A row whose Entered by hand asks for fields of its
     own (``entered_template``: a census New Member's ParishSoft Member ID,
     #1749) opens a dialog of its own for it, drawn per row as Edit's is.
+    A row that may make its Entered by hand mark again over the one in force
+    (``remark``: a census New Member's Member ID correction, #1773) gains
+    that icon (``remark_icon``) after its selected mark.
     """
     placement = row["placement"]
     name = row["name"]
@@ -475,8 +528,18 @@ def _decorate(stream, row, roles, prefix, columns, silent=frozenset()):
         icon["body"] = (
             REOPEN_BODY if icon["choice"] else bodies.get(action, DECIDE_BODY)
         )
+    remark = row.get("remark")
+    if remark is not None and any(
+        icon["action"] == Action.ENTERED_BY_HAND and icon["selected"] for icon in icons
+    ):
+        icons.append(remark_icon(remark, row, prefix, name=name))
     row["icons"] = icons
-    kinds = [icon["action"] for icon in icons if not icon["selected"]]
+    # A remark is one row at a time: it asks for the row's own fields.
+    kinds = [
+        icon["action"]
+        for icon in icons
+        if not icon["selected"] and not icon.get("remark")
+    ]
     row["kinds"] = " ".join(kind for kind in kinds if Action(kind) in BULK)
     # A bulk Back to review asks for a note while a ticked row is Ignored.
     row["choice"] = REOPEN if reopen else ""
@@ -665,8 +728,10 @@ def build(
     ``not_seen`` (the Not seen in ParishSoft flag), ``now_matches``
     (ParishSoft now holds an Ignored item's Family answer), ``stage_note``
     (the stream's own line under the stage), ``entered_template`` (the
-    fields its Entered by hand asks for, in a dialog of its own) and
-    ``withheld`` (actions this item cannot take). ``roles`` is the reader's role set.
+    fields its Entered by hand asks for, in a dialog of its own), ``remark``
+    (a ``Remark``: the row may make its Entered by hand mark again, in that
+    dialog) and ``withheld`` (actions this item cannot take). ``roles`` is
+    the reader's role set.
     ``stage`` is the Stage filter's value and ``fields`` the stream's other
     filters, posted by every form; ``baseline`` and ``reviewer`` say whether
     the stream has those columns. ``address`` is the view's own address

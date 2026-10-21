@@ -86,6 +86,12 @@ MEMBER_ENTERED = "/census-changes-member-entered"
 MEMBER_ENTERED_NOTICE = (
     "New Member for a New Member in Family DUID 1004 marked entered by hand."
 )
+# The page after the New Member's Member ID is corrected to 9 (#1773).
+MEMBER_CORRECTED = "/census-changes-member-corrected"
+MEMBER_CORRECTED_NOTICE = (
+    "New Member for a New Member in Family DUID 1004 had its ParishSoft Member ID "
+    "corrected."
+)
 
 
 def components(context, admin):
@@ -93,17 +99,24 @@ def components(context, admin):
     when = datetime(2054, 10, 5, 12, tzinfo=UTC)
 
     def shaped(
-        index, accepted=(), entered=(), incorrect=(), edited=(), new_members=False
+        index,
+        accepted=(),
+        entered=(),
+        incorrect=(),
+        edited=(),
+        new_members=False,
+        member=7,
     ):
         """One shaped row: To review unless ``accepted`` (approved, one
         version on), ``entered`` (Entered by hand) or ``incorrect`` (Entered
         by hand, then found at a third value) holds its index; ``edited``
         rows carry a reviewer's value. With ``new_members``, row 4 is a New
-        Member and row 5 a refresh Conflict."""
+        Member (marked with Member ID ``member``) and row 5 a refresh
+        Conflict."""
         family = index == 2
         entered = set(entered) | set(incorrect)
         if new_members and index == 4:
-            return shape(new_member(index, entered=index in entered))
+            return shape(new_member(index, entered=index in entered, member=member))
         if new_members and index == 5:
             return shape(
                 row(index)
@@ -151,8 +164,10 @@ def components(context, admin):
             }
         )
 
-    def new_member(index, *, entered):
-        """Row ``index`` as a New Member the Family added (#1749)."""
+    def new_member(index, *, entered, member):
+        """Row ``index`` as a New Member the Family added (#1749), marked
+        with Member ID ``member`` when ``entered``; a correction (#1773)
+        is one version on."""
         return row(index) | {
             "entity_kind": "proposed_member",
             "entity_key": "local-key",
@@ -165,9 +180,9 @@ def components(context, admin):
             "handling": "manual",
             "decision": "approved" if entered else "unreviewed",
             "execution": "resolved_external" if entered else "pending",
-            "version": 2 if entered else 1,
+            "version": (2 if member == 7 else 3) if entered else 1,
             "resolution_action": "entered" if entered else None,
-            "resolution_member": 7 if entered else None,
+            "resolution_member": member if entered else None,
             "member_status": None,
         }
 
@@ -271,6 +286,9 @@ def components(context, admin):
         NEW_MEMBER: page(size, new_members=True),
         MEMBER_ENTERED: page(
             size, MEMBER_ENTERED_NOTICE, new_members=True, entered={4}
+        ),
+        MEMBER_CORRECTED: page(
+            size, MEMBER_CORRECTED_NOTICE, new_members=True, entered={4}, member=9
         ),
         INCORRECT: page(size, incorrect={3}),
         REENTERED: page(size, REENTERED_NOTICE, entered={3}),

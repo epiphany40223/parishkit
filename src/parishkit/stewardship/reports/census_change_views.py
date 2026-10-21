@@ -244,8 +244,10 @@ def _edit_refusal(error):
     return validation_response(fields, refusal=Refusal(str(error), EDIT_REFUSED))
 
 
-# A refused ParishSoft Member ID's fix (#1749), beside its static reason.
+# A refused ParishSoft Member ID's fix (#1749), beside its static reason; a
+# correction's (#1773) cannot be left blank.
 MEMBER_ID_REFUSED = "Correct the Member ID, or leave it blank, then record it again."
+MEMBER_ID_CORRECTION_REFUSED = "Correct the Member ID, then record it again."
 
 
 def _add_refusal(error):
@@ -319,7 +321,12 @@ def _respond(request, campaign_id, *, export, render):
             # at the dialog's field (#1749).
             return validation_response(
                 [FieldError(ErrorCode.INVALID, "value_member")],
-                refusal=Refusal(str(error), MEMBER_ID_REFUSED),
+                refusal=Refusal(
+                    str(error),
+                    MEMBER_ID_CORRECTION_REFUSED
+                    if error.correcting
+                    else MEMBER_ID_REFUSED,
+                ),
             )
         except ValueError:
             # A malformed form, or a decision the change's stage does not
